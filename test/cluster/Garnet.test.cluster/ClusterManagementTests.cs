@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -147,6 +148,186 @@ namespace Garnet.test.cluster
             {
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(0).Address.ToString(), nodeNetInfo.ip);
             }
+        }
+
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterClientEndpointTest()
+        {
+            const string clientAddress = "203.0.113.10";
+            const int clientPortBase = 17000;
+
+            context.CreateInstances(defaultShards, clusterClientAnnounceIp: clientAddress, clusterClientAnnouncePortBase: clientPortBase);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var nodeConfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            ClassicAssert.AreEqual(defaultShards, nodeConfig.Nodes.Count);
+            ClassicAssert.IsTrue(nodeConfig.Nodes.All(node => node.IsConnected));
+            ClassicAssert.IsTrue(nodeConfig.Nodes.All(node => ((IPEndPoint)node.EndPoint).Address.ToString() == clientAddress));
+            ClassicAssert.IsTrue(nodeConfig.Nodes.All(node => ((IPEndPoint)node.EndPoint).Port >= clientPortBase));
+
+            var slots = context.clusterTestUtils.ClusterSlots(0, context.logger);
+            ClassicAssert.IsTrue(slots.SelectMany(slot => slot.nnInfo).All(node => node.endpoint == clientAddress));
+            ClassicAssert.IsTrue(slots.SelectMany(slot => slot.nnInfo).All(node => node.port >= clientPortBase && node.port < clientPortBase + defaultShards));
+
+            var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            ClassicAssert.IsTrue(shards.SelectMany(shard => shard.nodes).All(node => node.ip == clientAddress));
+            ClassicAssert.IsTrue(shards.SelectMany(shard => shard.nodes).All(node => node.port >= clientPortBase && node.port < clientPortBase + defaultShards));
+
+            byte[] key = null;
+            ushort slot = 0;
+            var ownerIndex = 0;
+            for (var i = 0; ownerIndex <= 0 && i < 1000; i++)
+            {
+                key = Encoding.ASCII.GetBytes($"client-endpoint-{i}");
+                slot = ClusterTestUtils.HashSlot(key);
+                ownerIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot(slot, context.logger);
+            }
+            ClassicAssert.Greater(ownerIndex, 0);
+
+            var response = context.clusterTestUtils.SetKey(0, key, [1], out var redirectSlot, out var redirectEndpoint, logger: context.logger);
+            var slotInfo = slots.Single(item => slot >= item.startSlot && slot <= item.endSlot);
+            ClassicAssert.AreEqual(ResponseState.MOVED, response);
+            ClassicAssert.AreEqual(slot, redirectSlot);
+            ClassicAssert.AreEqual(clientAddress, redirectEndpoint.Address.ToString());
+            ClassicAssert.AreEqual(slotInfo.nnInfo[0].port, redirectEndpoint.Port);
+
+            var targetId = context.clusterTestUtils.GetNodeIdFromNode(0, context.logger);
+            var ownerClient = context.clusterTestUtils.GetGarnetClientSession(ownerIndex);
+            var resp = ownerClient.ExecuteAsync("CLUSTER", "SETSLOT", slot.ToString(), "MIGRATING", targetId).GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("OK", resp);
+            var ask = Assert.Throws<Exception>(() => ownerClient.ExecuteAsync("GET", Encoding.ASCII.GetString(key)).GetAwaiter().GetResult());
+            ClassicAssert.AreEqual($"ASK {slot} {clientAddress}:{clientPortBase}", ask.Message);
+        }
+
+        [Test]
+        [Category("CLUSTER")]
+        public void ClusterClientHostnameEndpointTest()
+        {
+            const string clientAddress = "203.0.113.10";
+            const string clientHostname = "cluster.example.com";
+            const int clientPortBase = 17000;
+
+            context.CreateInstances(
+                defaultShards,
+                clusterPreferredEndpointType: ClusterPreferredEndpointType.Hostname,
+                clusterClientAnnounceIp: clientAddress,
+                clusterClientAnnouncePortBase: clientPortBase,
+                clusterClientAnnounceHostname: clientHostname);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var nodeConfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
+            ClassicAssert.IsTrue(nodeConfig.Nodes.All(node => node.IsConnected));
+            ClassicAssert.IsTrue(nodeConfig.Nodes.All(node => ((IPEndPoint)node.EndPoint).Address.ToString() == clientAddress));
+
+            var slots = context.clusterTestUtils.ClusterSlots(0, context.logger);
+            ClassicAssert.IsTrue(slots.SelectMany(slot => slot.nnInfo).All(node => node.endpoint == clientHostname));
+            ClassicAssert.IsTrue(slots.SelectMany(slot => slot.nnInfo).All(node => node.ip == clientAddress));
+            ClassicAssert.IsTrue(slots.SelectMany(slot => slot.nnInfo).All(node => node.port >= clientPortBase && node.port < clientPortBase + defaultShards));
+
+            var shards = context.clusterTestUtils.ClusterShards(0, context.logger);
+            ClassicAssert.IsTrue(shards.SelectMany(shard => shard.nodes).All(node => node.endpoint == clientHostname));
+            ClassicAssert.IsTrue(shards.SelectMany(shard => shard.nodes).All(node => node.ip == clientAddress));
+            ClassicAssert.IsTrue(shards.SelectMany(shard => shard.nodes).All(node => node.port >= clientPortBase && node.port < clientPortBase + defaultShards));
+
+            byte[] key = null;
+            ushort slot = 0;
+            var ownerIndex = 0;
+            for (var i = 0; ownerIndex <= 0 && i < 1000; i++)
+            {
+                key = Encoding.ASCII.GetBytes($"client-hostname-endpoint-{i}");
+                slot = ClusterTestUtils.HashSlot(key);
+                ownerIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot(slot, context.logger);
+            }
+            ClassicAssert.Greater(ownerIndex, 0);
+
+            var slotInfo = slots.Single(item => slot >= item.startSlot && slot <= item.endSlot);
+            var client = context.clusterTestUtils.GetGarnetClientSession(0);
+            var exception = Assert.Throws<Exception>(() => client.ExecuteAsync("SET", Encoding.ASCII.GetString(key), "1").GetAwaiter().GetResult());
+            ClassicAssert.AreEqual($"MOVED {slot} {clientHostname}:{slotInfo.nnInfo[0].port}", exception.Message);
+
+            var targetId = context.clusterTestUtils.GetNodeIdFromNode(0, context.logger);
+            var ownerClient = context.clusterTestUtils.GetGarnetClientSession(ownerIndex);
+            var resp = ownerClient.ExecuteAsync("CLUSTER", "SETSLOT", slot.ToString(), "MIGRATING", targetId).GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("OK", resp);
+            var ask = Assert.Throws<Exception>(() => ownerClient.ExecuteAsync("GET", Encoding.ASCII.GetString(key)).GetAwaiter().GetResult());
+            ClassicAssert.AreEqual($"ASK {slot} {clientHostname}:{clientPortBase}", ask.Message);
+        }
+
+        [Test, Order(3)]
+        [Category("CLUSTER")]
+        public void ClusterClientEndpointMigrationUsesPeerEndpointTest()
+        {
+            context.CreateInstances(
+                3,
+                clusterClientAnnounceIp: "203.0.113.10",
+                clusterClientAnnouncePortBase: 17000,
+                clusterClientAnnounceHostname: "node.example.com");
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var key = Encoding.ASCII.GetBytes("{abc}endpoint");
+            var slot = ClusterTestUtils.HashSlot(key);
+            var sourceId = context.clusterTestUtils.GetNodeIdFromNode(1, context.logger);
+            var targetId = context.clusterTestUtils.GetNodeIdFromNode(2, context.logger);
+            var source = context.clusterTestUtils.GetGarnetClientSession(1);
+            var target = context.clusterTestUtils.GetGarnetClientSession(2);
+
+            var resp = source.ExecuteAsync("SET", Encoding.ASCII.GetString(key), "value").GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("OK", resp);
+            resp = context.clusterTestUtils.SetSlot(2, slot, "IMPORTING", sourceId);
+            ClassicAssert.AreEqual("OK", resp);
+            resp = context.clusterTestUtils.SetSlot(1, slot, "MIGRATING", targetId);
+            ClassicAssert.AreEqual("OK", resp);
+
+            context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(1), context.clusterTestUtils.GetEndPoint(2), [key], context.logger);
+            resp = target.ExecuteAsync("ASKING").GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("OK", resp);
+            resp = target.ExecuteAsync("GET", Encoding.ASCII.GetString(key)).GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("value", resp);
+
+            var redirect = Assert.Throws<Exception>(() => source.ExecuteAsync("GET", Encoding.ASCII.GetString(key)).GetAwaiter().GetResult());
+            ClassicAssert.AreEqual($"ASK {slot} 203.0.113.10:17002", redirect.Message);
+        }
+
+        [Test, Order(3)]
+        [TestCase(false)]
+        [TestCase(true)]
+        [Category("CLUSTER")]
+        public void ClusterClientEndpointReplicationAndFailoverTest(bool diskless)
+        {
+            context.CreateInstances(
+                2,
+                enableAOF: true,
+                enableDisklessSync: diskless,
+                clusterClientAnnounceIp: "203.0.113.10",
+                clusterClientAnnouncePortBase: 17000,
+                clusterClientAnnounceHostname: "node.example.com");
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+
+            var primary = context.clusterTestUtils.GetGarnetClientSession(0);
+            var replica = context.clusterTestUtils.GetGarnetClientSession(1);
+            var resp = primary.ExecuteAsync("SET", "client-endpoint-data", "value").GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("OK", resp);
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, logger: context.logger, cancellation: context.cts.Token);
+            resp = replica.ExecuteAsync("READONLY").GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("OK", resp);
+            resp = replica.ExecuteAsync("GET", "client-endpoint-data").GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("value", resp);
+
+            resp = context.clusterTestUtils.ClusterFailover(1, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+            while (context.clusterTestUtils.GetReplicationRole(1, logger: context.logger) != "master")
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
+
+            resp = replica.ExecuteAsync("GET", "client-endpoint-data").GetAwaiter().GetResult();
+            ClassicAssert.AreEqual("value", resp);
+            var slots = context.clusterTestUtils.ClusterSlots(1, context.logger);
+            ClassicAssert.IsTrue(slots.SelectMany(item => item.nnInfo).Where(node => node.isPrimary).All(node => node.port == 17001));
+            ClassicAssert.IsTrue(context.clusterTestUtils.ClusterNodes(1).Nodes.All(node => node.IsConnected));
         }
 
         [Test, Order(3)]
