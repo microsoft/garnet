@@ -323,9 +323,15 @@ namespace Tsavorite.core
                         continue;
 
                     // We have found the exact version to recover to: the above conditional establishes that the checkpointed version is <= requested version,
-                    // and if nextVersion is larger than requestedVersion, there cannot be any closer version. 
-                    if (current.info.nextVersion > requestedVersion)
+                    // and if nextVersion is larger than requestedVersion, there cannot be any closer version.
+                    // Recovering to the latest version (-1) has no such target to stop at: every version satisfies
+                    // this test, so taking the shortcut would accept whichever token was enumerated first. Enumeration
+                    // is ordered by checkpoint directory timestamp, which does not order checkpoints - the timestamps
+                    // come from a coarse system clock, so checkpoints taken close together can tie and fall back to
+                    // filesystem order. The scan below is what establishes the latest version.
+                    if (requestedVersion != -1 && current.info.nextVersion > requestedVersion)
                     {
+                        closest.Dispose();
                         closest = current;
                         closestToken = hybridLogToken;
                         cookie = currCookie;
