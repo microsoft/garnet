@@ -117,6 +117,25 @@ Simple string reply: OK.
 
 ## Generic Commands
 
+### COPY
+
+#### Syntax
+
+```bash
+    COPY source destination [DB destination-db] [REPLACE]
+```
+
+Copies the value of source to destination, leaving source unchanged. The copied key retains the source expiration. If destination exists, COPY returns 0 unless REPLACE is specified. COPY supports string keys and Garnet object keys; Vector Sets and Range Indexes are not supported. DB is accepted only when destination-db is the current database.
+
+#### Resp Reply
+
+One of the following:
+
+* Integer reply: 1 if the key was copied.
+* Integer reply: 0 if source does not exist or destination already exists and REPLACE was not specified.
+
+---
+
 ### DEL
 
 #### Syntax

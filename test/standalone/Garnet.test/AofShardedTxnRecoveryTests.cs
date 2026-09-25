@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -89,6 +90,51 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 ClassicAssert.AreEqual("v1", (string)db.StringGet("k2"), "renamed key should survive recovery");
                 ClassicAssert.IsFalse(db.KeyExists("k1"), "old key should not exist after rename + recovery");
+            }
+        }
+
+        [Test]
+        public void ShardedStandaloneCopySurvivesRecovery()
+        {
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                db.StringSet("copy-aof-src", "value", TimeSpan.FromMinutes(2));
+                ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-aof-src", "copy-aof-dst"));
+                db.ListRightPush("copy-aof-list-src", ["one", "two"]);
+                ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-aof-list-src", "copy-aof-list-dst"));
+                db.KeyExpire("copy-aof-list-src", TimeSpan.FromMinutes(2));
+                ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-aof-list-src", "copy-aof-list-ttl-dst"));
+                db.ListRightPush("copy-aof-replace-src", ["one", "two"]);
+                db.KeyExpire("copy-aof-replace-src", TimeSpan.FromMinutes(2));
+                db.ListRightPush("copy-aof-replace-dst", "old");
+                ClassicAssert.AreEqual(1, (long)db.Execute("COPY", "copy-aof-replace-src", "copy-aof-replace-dst", "REPLACE"));
+                db.Execute("COMMITAOF");
+            }
+
+            server.Dispose(false);
+            server = CreateShardedAofServer(1, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual("value", (string)db.StringGet("copy-aof-src"));
+                ClassicAssert.AreEqual("value", (string)db.StringGet("copy-aof-dst"));
+                ClassicAssert.IsTrue(db.KeyTimeToLive("copy-aof-dst").HasValue);
+                ClassicAssert.IsTrue(db.KeyTimeToLive("copy-aof-src").HasValue);
+                ClassicAssert.AreEqual(new RedisValue[] { "one", "two" }, db.ListRange("copy-aof-list-src"));
+                ClassicAssert.AreEqual(new RedisValue[] { "one", "two" }, db.ListRange("copy-aof-list-dst"));
+                ClassicAssert.IsTrue(db.KeyTimeToLive("copy-aof-list-ttl-dst").HasValue);
+                ClassicAssert.AreEqual(new RedisValue[] { "one", "two" }, db.ListRange("copy-aof-list-ttl-dst"));
+                ClassicAssert.AreEqual(new RedisValue[] { "one", "two" }, db.ListRange("copy-aof-replace-src"));
+                ClassicAssert.AreEqual(new RedisValue[] { "one", "two" }, db.ListRange("copy-aof-replace-dst"));
+                ClassicAssert.IsTrue(db.KeyTimeToLive("copy-aof-replace-src").HasValue);
+                ClassicAssert.IsTrue(db.KeyTimeToLive("copy-aof-replace-dst").HasValue);
+                db.ListRightPush("copy-aof-replace-dst", "dst-change");
+                ClassicAssert.AreEqual(new RedisValue[] { "one", "two" }, db.ListRange("copy-aof-replace-src"));
+                db.ListRightPush("copy-aof-replace-src", "src-change");
+                ClassicAssert.AreEqual(new RedisValue[] { "one", "two", "dst-change" }, db.ListRange("copy-aof-replace-dst"));
             }
         }
     }

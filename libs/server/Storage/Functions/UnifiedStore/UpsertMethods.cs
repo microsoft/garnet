@@ -20,7 +20,7 @@ namespace Garnet.server
             if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
 
-            // RENAMEs use arg1 for RecordType, not expiration
+            // RENAMEs use arg1 for RecordType, not expiration. COPY carries the source expiration in arg1.
             if (input.header.cmd is not (RespCommand.RENAME or RespCommand.RENAMENX))
             {
                 if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
@@ -40,7 +40,7 @@ namespace Garnet.server
 
             // TODO ETag
 
-            // RENAMEs use arg1 for RecordType, not expiration
+            // RENAMEs use arg1 for RecordType, not expiration. COPY carries the source expiration in arg1.
             if (input.header.cmd is not (RespCommand.RENAME or RespCommand.RENAMENX))
             {
                 if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
@@ -56,6 +56,28 @@ namespace Garnet.server
             ref UnifiedInput input, in TSourceLogRecord inputLogRecord, ref UnifiedOutput output,
             ref UpsertInfo upsertInfo) where TSourceLogRecord : ISourceLogRecord
         {
+            if (input.header.cmd == RespCommand.COPY && inputLogRecord.DataHeader.ValueIsObject)
+            {
+                GarnetObjectSerializer.Serialize((IGarnetObject)inputLogRecord.ValueObject, out var serialized);
+                var copy = (IHeapObject)functionsState.garnetObjectSerializer.Deserialize(serialized);
+                if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(copy, in sizeInfo))
+                    return false;
+                // Object COPY expiration is set by the follow-up PEXPIREAT RMW so it is persisted in AOF.
+                return true;
+            }
+
+            // COPY of an overflow value must not share the source's byte[] (TryCopyFrom would), or later
+            // in-place writes to one key would mutate the other; write the span so the destination owns a copy.
+            if (input.header.cmd == RespCommand.COPY && inputLogRecord.DataHeader.ValueIsOverflow)
+            {
+                if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputLogRecord.ValueSpan, in sizeInfo))
+                    return false;
+                if (!dstLogRecord.TryCopyOptionals(in inputLogRecord, in sizeInfo))
+                    return false;
+                sizeInfo.AssertOptionalsIfSet(dstLogRecord.DataHeader);
+                return true;
+            }
+
             if (!dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
                 return false;
             return true;
@@ -120,6 +142,9 @@ namespace Garnet.server
             in TSourceLogRecord inputLogRecord, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            if (input.header.cmd == RespCommand.COPY)
+                return false;
+
             if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;
             if (functionsState.appendOnlyFile != null)

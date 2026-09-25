@@ -554,6 +554,33 @@ namespace Garnet.test.cluster
         }
     }
 
+    internal class COPY : BaseCommand
+    {
+        public override bool IsArrayCommand => true;
+        public override bool ArrayResponse => false;
+        public override bool RequiresExistingKey => true;
+        public override string Command => nameof(COPY);
+
+        public override string[] GetSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            return [ssk[0], ssk[1]];
+        }
+
+        public override string[] GetCrossSlotRequest()
+        {
+            var csk = GetCrossSlotKeys;
+            return [csk[0], csk[1]];
+        }
+
+        public override ArraySegment<string>[] SetupSingleSlotRequest()
+        {
+            var ssk = GetSingleSlotKeys;
+            var setup = new ArraySegment<string>[] { new(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
+            return setup;
+        }
+    }
+
     internal class DEL : BaseCommand
     {
         public override bool IsArrayCommand => true;

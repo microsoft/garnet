@@ -1102,6 +1102,7 @@ namespace Garnet.server
                 RespCommand.CustomProcedure => NetworkCustomProcedure(),
                 //General key commands
                 RespCommand.DBSIZE => NetworkDBSIZE(ref storageApi),
+                RespCommand.COPY => NetworkCOPY(ref storageApi),
                 RespCommand.KEYS => NetworkKEYS(ref storageApi),
                 RespCommand.SCAN => NetworkSCAN(ref storageApi),
                 RespCommand.TYPE => NetworkTYPE(ref storageApi),
