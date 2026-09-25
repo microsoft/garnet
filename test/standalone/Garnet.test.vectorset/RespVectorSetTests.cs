@@ -401,7 +401,7 @@ namespace Garnet.test
 
             // Basic overwrite works
             var res1 = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 4, 5, 6 })).ConfigureAwait(false);
-            //ClassicAssert.IsFalse(res1);
+            ClassicAssert.IsFalse(res1);
 
             using var res2 = await db.VectorSetGetApproximateVectorAsync(Key, Element).ConfigureAwait(false);
             ClassicAssert.IsTrue(res2.Span.SequenceEqual([4, 5, 6]));
@@ -417,7 +417,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(res5.Span.SequenceEqual([7, 8, 9]));
 
             var res6 = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 10, 11, 12 })).ConfigureAwait(false);
-            //ClassicAssert.IsFalse(res6);
+            ClassicAssert.IsFalse(res6);
 
             using var res7 = await db.VectorSetGetApproximateVectorAsync(Key, Element).ConfigureAwait(false);
             ClassicAssert.IsTrue(res7.Span.SequenceEqual([10, 11, 12]));

@@ -2468,11 +2468,11 @@ namespace Garnet.test.cluster
 
                     await Task.Delay(1_000).ConfigureAwait(false);
 
-                    var onPrimaryData = (double[])await cons[0].GetServer(primary).ExecuteAsync("VEMB", [Key, Element]).ConfigureAwait(false);
-                    var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+                    var onPrimaryData = (double[])await cons[0].GetServer(primary).ExecuteAsync(database: 0, "VEMB", [Key, Element]).ConfigureAwait(false);
+                    var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync(database: 0, "VGETATTR", [Key, Element]).ConfigureAwait(false);
 
-                    var onSecondaryData = (double[])await cons[0].GetServer(secondary).ExecuteAsync("VEMB", [Key, Element]).ConfigureAwait(false);
-                    var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+                    var onSecondaryData = (double[])await cons[0].GetServer(secondary).ExecuteAsync(database: 0, "VEMB", [Key, Element]).ConfigureAwait(false);
+                    var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync(database: 0, "VGETATTR", [Key, Element]).ConfigureAwait(false);
 
                     // Valid
                     ClassicAssert.AreEqual(3, onPrimaryData.Length);
@@ -2568,8 +2568,8 @@ namespace Garnet.test.cluster
 
                     await Task.Delay(1_000).ConfigureAwait(false);
 
-                    var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
-                    var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync("VGETATTR", [Key, Element]).ConfigureAwait(false);
+                    var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync(database: 0, "VGETATTR", [Key, Element]).ConfigureAwait(false);
+                    var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync(database: 0, "VGETATTR", [Key, Element]).ConfigureAwait(false);
 
                     // Matching
                     ClassicAssert.AreEqual(onPrimaryAttr, onSecondaryAttr);
@@ -2680,15 +2680,15 @@ namespace Garnet.test.cluster
                     // Check that state is consistent between primary and secondary
                     foreach (var element in allElements)
                     {
-                        var onPrimary = (bool)await cons[0].GetServer(primary).ExecuteAsync("VISMEMBER", [Key, element]).ConfigureAwait(false);
+                        var onPrimary = (bool)await cons[0].GetServer(primary).ExecuteAsync(database: 0, "VISMEMBER", [Key, element]).ConfigureAwait(false);
 
                         if (onPrimary)
                         {
-                            var onPrimaryData = (double[])await cons[0].GetServer(primary).ExecuteAsync("VEMB", [Key, element]).ConfigureAwait(false);
-                            var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync("VGETATTR", [Key, element]).ConfigureAwait(false);
+                            var onPrimaryData = (double[])await cons[0].GetServer(primary).ExecuteAsync(database: 0, "VEMB", [Key, element]).ConfigureAwait(false);
+                            var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync(database: 0, "VGETATTR", [Key, element]).ConfigureAwait(false);
 
-                            var onSecondaryData = (double[])await cons[0].GetServer(secondary).ExecuteAsync("VEMB", [Key, element]).ConfigureAwait(false);
-                            var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync("VGETATTR", [Key, element]).ConfigureAwait(false);
+                            var onSecondaryData = (double[])await cons[0].GetServer(secondary).ExecuteAsync(database: 0, "VEMB", [Key, element]).ConfigureAwait(false);
+                            var onSecondaryAttr = (string)await cons[0].GetServer(secondary).ExecuteAsync(database: 0, "VGETATTR", [Key, element]).ConfigureAwait(false);
 
                             // Valid
                             ClassicAssert.AreEqual(3, onPrimaryData.Length);
@@ -2704,7 +2704,7 @@ namespace Garnet.test.cluster
                         }
                         else
                         {
-                            var onSecondary = (bool)await cons[0].GetServer(secondary).ExecuteAsync("VISMEMBER", [Key, element]).ConfigureAwait(false);
+                            var onSecondary = (bool)await cons[0].GetServer(secondary).ExecuteAsync(database: 0, "VISMEMBER", [Key, element]).ConfigureAwait(false);
                             ClassicAssert.IsFalse(onSecondary);
                         }
                     }
