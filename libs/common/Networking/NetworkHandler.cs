@@ -38,11 +38,6 @@ namespace Garnet.networking
         readonly NetworkBufferBudget budget;
 
         /// <summary>
-        /// Configured base sizes, cached off <see cref="networkBufferSettings"/> for the same reason.
-        /// </summary>
-        readonly int configuredReceiveBufferSize, configuredSendBufferSize;
-
-        /// <summary>
         /// Size for a new TLS plaintext send buffer. Send buffers never grow -- an oversized response is
         /// chunked through whatever buffer it was given -- so the size is safe to adapt, and must be: the pool
         /// measures a returned entry of this type against the send target, so an unadapted allocation would be
@@ -51,7 +46,7 @@ namespace Garnet.networking
         protected int BaseSendBufferSize
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => budget.ClampSendBufferSize(configuredSendBufferSize);
+            get => budget.ClampSendBufferSize(networkBufferSettings.sendBufferSize);
         }
 
         /// <summary>
@@ -68,7 +63,7 @@ namespace Garnet.networking
         protected int BaseReceiveBufferSize
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => budget.ClampReceiveBufferSize(configuredReceiveBufferSize);
+            get => budget.ClampReceiveBufferSize(networkBufferSettings.initialReceiveBufferSize);
         }
 
         /// <summary>
@@ -173,8 +168,6 @@ namespace Garnet.networking
             this.networkBufferSettings = networkBufferSettings;
             this.networkPool = networkPool;
             this.budget = networkPool.Budget;
-            this.configuredReceiveBufferSize = networkBufferSettings.initialReceiveBufferSize;
-            this.configuredSendBufferSize = networkBufferSettings.sendBufferSize;
 
             if (!useTLS)
             {
@@ -414,13 +407,14 @@ namespace Garnet.networking
             {
                 // Guarded here rather than inside the callee so a buffer still at its base size -- every pass
                 // on a connection that has never grown -- costs one comparison and makes no call.
-                MaybeShrinkNetworkReceiveBuffer(demand);
+                TryShrinkNetworkReceiveBuffer(demand);
             }
         }
 
         /// <summary>
-        /// Releases a grown receive buffer once the connection's traffic no longer needs it, so that a single
-        /// large payload does not permanently inflate the per-connection footprint.
+        /// Decides whether a grown receive buffer should be released, and what size should replace it. The
+        /// network and transport buffers run the same policy over their own occupancy and countdown, so both
+        /// go through here.
         /// </summary>
         /// <remarks>
         /// Three regimes, checked cheapest first. A buffer larger than
@@ -429,64 +423,87 @@ namespace Garnet.networking
         /// process-wide budget is binding, shrinking is immediate so the aggregate converges rather than
         /// waiting out a per-connection countdown. Otherwise the buffer is kept until
         /// <see cref="ShrinkHysteresis"/> consecutive receives have fit comfortably in the smaller size.
+        /// <para>
+        /// The countdown bookkeeping and the budget's shrink accounting both happen here, leaving a caller
+        /// with nothing to do but swap the buffer.
+        /// </para>
         /// </remarks>
+        /// <param name="current">Size of the buffer being considered.</param>
+        /// <param name="buffered">Bytes still buffered, which the replacement has to be able to hold.</param>
         /// <param name="demand">
         /// Bytes the buffer held for this pass, sampled before consumed bytes were shifted away. This is the
         /// capacity the traffic needed; the residual left after processing is not.
         /// </param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        void MaybeShrinkNetworkReceiveBuffer(int demand)
+        /// <param name="countdown">The caller's shrink hysteresis countdown, updated in place.</param>
+        /// <param name="target">Size to replace the buffer with, when this returns <see langword="true"/>.</param>
+        /// <returns><see langword="true"/> when the caller should replace its buffer with a <paramref name="target"/>-byte one.</returns>
+        bool TryPlanReceiveBufferShrink(int current, int buffered, int demand, ref int countdown, out int target)
         {
             var baseSize = BaseReceiveBufferSize;
-            var current = networkReceiveBuffer.Length;
+            target = current;
             if (current <= baseSize)
-                return;
+                return false;
 
             if (current > networkBufferSettings.maxReceiveBufferSize)
             {
                 // Above the pool's largest size class, so this buffer cannot be recycled on return. Release it
                 // without waiting out the hysteresis, sized to what is still buffered rather than to the
                 // pass's demand, which is already consumed.
-                var residual = TargetReceiveBufferSize(networkBytesRead, baseSize, current);
+                target = TargetReceiveBufferSize(buffered, baseSize, current);
 
                 // The floor applies only while the budget is slack, where it saves a connection that needs the
                 // capacity on every request from re-growing through every size class. While the budget is
                 // binding, a buffer that size is above the adapted target, so the pool discards it on return
                 // and the pressure countdown shrinks it out again within a few receives.
                 if (!budget.IsUnderPressure)
-                    residual = Math.Max(networkBufferSettings.maxReceiveBufferSize, residual);
+                    target = Math.Max(networkBufferSettings.maxReceiveBufferSize, target);
 
-                networkShrinkCountdown = ShrinkHysteresis;
-                if (residual < current)
-                {
-                    ShrinkNetworkReceiveBuffer(residual);
-                    budget.RecordIdleShrink();
-                }
-                return;
+                countdown = ShrinkHysteresis;
+                if (target >= current)
+                    return false;
+
+                budget.RecordIdleShrink();
+                return true;
             }
 
-            var target = TargetReceiveBufferSize(demand, baseSize, current);
+            target = TargetReceiveBufferSize(demand, baseSize, current);
             if (target >= current)
             {
-                networkShrinkCountdown = ShrinkHysteresis;
-                return;
+                countdown = ShrinkHysteresis;
+                return false;
             }
 
             var underPressure = budget.IsUnderPressure;
             // Clamp rather than reload, so pressure arriving mid-countdown converges promptly instead of
             // waiting out however much of the idle countdown was left.
-            if (underPressure && networkShrinkCountdown > PressureShrinkHysteresis)
-                networkShrinkCountdown = PressureShrinkHysteresis;
+            if (underPressure && countdown > PressureShrinkHysteresis)
+                countdown = PressureShrinkHysteresis;
 
-            if (--networkShrinkCountdown > 0)
-                return;
+            if (--countdown > 0)
+                return false;
 
-            ShrinkNetworkReceiveBuffer(target);
-            networkShrinkCountdown = ShrinkHysteresis;
+            countdown = ShrinkHysteresis;
             if (underPressure)
                 budget.RecordPressureShrink();
             else
                 budget.RecordIdleShrink();
+            return true;
+        }
+
+        /// <summary>
+        /// Releases a grown network receive buffer once the connection's traffic no longer needs it, so that a
+        /// single large payload does not permanently inflate the per-connection footprint. See
+        /// <see cref="TryPlanReceiveBufferShrink"/> for the policy.
+        /// </summary>
+        /// <param name="demand">
+        /// Bytes the buffer held for this pass, sampled before consumed bytes were shifted away. This is the
+        /// capacity the traffic needed; the residual left after processing is not.
+        /// </param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void TryShrinkNetworkReceiveBuffer(int demand)
+        {
+            if (TryPlanReceiveBufferShrink(networkReceiveBuffer.Length, networkBytesRead, demand, ref networkShrinkCountdown, out var target))
+                ShrinkNetworkReceiveBuffer(target);
         }
 
         /// <summary>
@@ -550,7 +567,7 @@ namespace Garnet.networking
                     }
                     else
                     {
-                        MaybeShrinkTransportReceiveBuffer(transportDemand);
+                        TryShrinkTransportReceiveBuffer(transportDemand);
                     }
                 }
                 else
@@ -594,7 +611,7 @@ namespace Garnet.networking
                 }
                 else
                 {
-                    MaybeShrinkTransportReceiveBuffer(transportDemand);
+                    TryShrinkTransportReceiveBuffer(transportDemand);
                 }
                 // If more work, passthrough to the general SslReaderAsync, else this task is done.
                 // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
@@ -656,7 +673,7 @@ namespace Garnet.networking
                     }
                     else
                     {
-                        MaybeShrinkTransportReceiveBuffer(transportDemand);
+                        TryShrinkTransportReceiveBuffer(transportDemand);
                     }
                 }
 
@@ -769,7 +786,7 @@ namespace Garnet.networking
         }
 
         /// <summary>
-        /// Mirror of <see cref="MaybeShrinkNetworkReceiveBuffer"/> for the decrypted TLS transport buffer.
+        /// Mirror of <see cref="TryShrinkNetworkReceiveBuffer"/> for the decrypted TLS transport buffer.
         /// Only safe to call from the reader while it owns the buffer and no <c>ReadAsync</c> is outstanding
         /// against it, which is exactly where <see cref="DoubleTransportReceiveBuffer"/> is called from.
         /// </summary>
@@ -777,66 +794,32 @@ namespace Garnet.networking
         /// Bytes the buffer held for this pass, sampled before consumed bytes were shifted away. This is the
         /// capacity the traffic needed; the residual left after processing is not.
         /// </param>
-        unsafe void MaybeShrinkTransportReceiveBuffer(int demand)
+        void TryShrinkTransportReceiveBuffer(int demand)
         {
             if (sslStream == null)
                 return;
 
-            var baseSize = BaseReceiveBufferSize;
-            var current = transportReceiveBuffer.Length;
-            if (current <= baseSize)
-                return;
+            if (TryPlanReceiveBufferShrink(transportReceiveBuffer.Length, transportBytesRead, demand, ref transportShrinkCountdown, out var target))
+                ShrinkTransportReceiveBuffer(target);
+        }
 
+        // NoInlining as this should be a rare call if Garnet is properly configured
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        unsafe void ShrinkTransportReceiveBuffer(int newSize)
+        {
             Debug.Assert(transportReadHead == 0, "Shouldn't call if remaining data not already moved to head of transport buffer");
+            Debug.Assert(transportBytesRead <= newSize, "Shrink target must hold the bytes already buffered");
 
-            var aboveMax = current > networkBufferSettings.maxReceiveBufferSize;
-            int target;
-
-            // See MaybeShrinkNetworkReceiveBuffer for the policy, including why the above-max branch is
-            // measured against the residual rather than the pass's demand, is floored at the largest
-            // poolable size only while the budget is slack, and is checked first.
-            if (aboveMax)
-            {
-                target = TargetReceiveBufferSize(transportBytesRead, baseSize, current);
-                if (!budget.IsUnderPressure)
-                    target = Math.Max(networkBufferSettings.maxReceiveBufferSize, target);
-                if (target >= current)
-                {
-                    transportShrinkCountdown = ShrinkHysteresis;
-                    return;
-                }
-            }
-            else
-            {
-                target = TargetReceiveBufferSize(demand, baseSize, current);
-                if (target >= current)
-                {
-                    transportShrinkCountdown = ShrinkHysteresis;
-                    return;
-                }
-            }
-
-            var underPressure = budget.IsUnderPressure;
-            // Clamp rather than reload, so pressure arriving mid-countdown converges promptly.
-            if (underPressure && transportShrinkCountdown > PressureShrinkHysteresis)
-                transportShrinkCountdown = PressureShrinkHysteresis;
-
-            if (!aboveMax && --transportShrinkCountdown > 0)
-                return;
-
-            var tmp = networkPool.Get(target, PoolEntryBufferType.ShrinkTransportReceiveBuffer);
+            var tmp = networkPool.Get(newSize, PoolEntryBufferType.ShrinkTransportReceiveBuffer);
             if (transportBytesRead > 0)
+            {
                 Array.Copy(transportReceiveBuffer, tmp.entry, transportBytesRead);
+            }
+
             transportReceiveBufferEntry.Dispose();
             transportReceiveBufferEntry = tmp;
             transportReceiveBuffer = tmp.entry;
             transportReceiveBufferPtr = tmp.entryPtr;
-            transportShrinkCountdown = ShrinkHysteresis;
-
-            if (underPressure && !aboveMax)
-                budget.RecordPressureShrink();
-            else
-                budget.RecordIdleShrink();
         }
 
         unsafe void ShiftTransportReceiveBuffer()
