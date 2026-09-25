@@ -1288,10 +1288,12 @@ namespace Garnet.client
 
                         tcs.nextTaskId = taskId;
 
+                        // Hand of payload for flush preparation.
                         networkWriter.EnqueuePayload(address, payload);
                         payloadRegistered = true;
                         unsafe
                         {
+                            // Signal payload is ready to be flushed.
                             *(long*)networkWriter.GetPhysicalAddress(address) = address;
                         }
 
