@@ -2407,5 +2407,47 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(4096, options.GetServerOptions().GetInitialIORecordSizeBytes());
             }
         }
+
+        [Test]
+        public void CompactionLowYieldBackoffSegmentsParsing()
+        {
+            // Default from defaults.conf is 0 (disabled) and must reach GarnetServerOptions.
+            {
+                var args = Array.Empty<string>();
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(0, options.CompactionLowYieldBackoffSegments);
+                ClassicAssert.AreEqual(0, options.GetServerOptions().CompactionLowYieldBackoffSegments);
+            }
+
+            // A positive CLI value is accepted and mapped onto GarnetServerOptions.
+            {
+                var args = new[] { "--compaction-low-yield-backoff-segments", "16" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(16, options.CompactionLowYieldBackoffSegments);
+                ClassicAssert.AreEqual(16, options.GetServerOptions().CompactionLowYieldBackoffSegments);
+            }
+
+            // A positive JSON value is accepted and mapped onto GarnetServerOptions.
+            {
+                const string JSON = @"{ ""CompactionLowYieldBackoffSegments"": 8 }";
+                var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(0, invalidOptions.Count);
+                ClassicAssert.AreEqual(8, options.CompactionLowYieldBackoffSegments);
+                ClassicAssert.AreEqual(8, options.GetServerOptions().CompactionLowYieldBackoffSegments);
+            }
+
+            // A negative value is rejected by IntRangeValidation.
+            {
+                var args = new[] { "--compaction-low-yield-backoff-segments", "-1" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out var invalidOptions, out _, out _, silentMode: true);
+                ClassicAssert.IsFalse(parseSuccessful, "A negative backoff segment count must be rejected");
+                ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.CompactionLowYieldBackoffSegments)));
+            }
+        }
     }
 }
