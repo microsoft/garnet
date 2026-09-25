@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.IO;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;

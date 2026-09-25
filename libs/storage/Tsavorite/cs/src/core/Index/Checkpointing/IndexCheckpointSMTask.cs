@@ -62,5 +62,14 @@ namespace Tsavorite.core
         public void GlobalAfterEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
         {
         }
+
+        /// <inheritdoc />
+        public void OnAbort(StateMachineDriver stateMachineDriver, Exception exception)
+        {
+            // Mirrors the Phase.REST handling above, which an aborted state machine never reaches. Leaving
+            // _indexCheckpoint set would make the PREPARE phase of every later checkpoint fail its IsDefault check,
+            // so one failed checkpoint would stop the store from ever checkpointing again.
+            store._indexCheckpoint.Reset();
+        }
     }
 }

@@ -4,7 +4,6 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -65,20 +64,22 @@ namespace Tsavorite.test
                 var bContext = session.BasicContext;
 
                 var key = new KeyStruct() { kfield1 = 1, kfield2 = 2 };
-                var value = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
+                // Locals in an async method can be moved by the GC, so the value must live in pinned storage
+                var values = GC.AllocateArray<ValueStruct>(1, pinned: true);
+                values[0] = new ValueStruct() { vfield1 = 1000, vfield2 = 2000 };
                 var input = default(InputStruct);
                 var output = default(OutputStruct);
 
                 var upsertOptions = new UpsertOptions();
-                var status = bContext.Upsert(key, ref input, SpanByte.FromPinnedVariable(ref value), ref output, ref upsertOptions, out RecordMetadata recordMetadata1);
+                var status = bContext.Upsert(key, ref input, SpanByte.FromPinnedVariable(ref values[0]), ref output, ref upsertOptions, out RecordMetadata recordMetadata1);
                 ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
 
                 // InPlaceWriter and InPlaceUpater return false, so we create a new record.
                 RecordMetadata recordMetadata2;
-                value = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
+                values[0] = new ValueStruct() { vfield1 = 1001, vfield2 = 2002 };
                 if (updateOp == UpdateOp.Upsert)
                 {
-                    status = bContext.Upsert(key, ref input, SpanByte.FromPinnedVariable(ref value), ref output, ref upsertOptions, out recordMetadata2);
+                    status = bContext.Upsert(key, ref input, SpanByte.FromPinnedVariable(ref values[0]), ref output, ref upsertOptions, out recordMetadata2);
                     ClassicAssert.AreEqual(1, copyOnWrite.InPlaceWriterCallCount);
                     ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }

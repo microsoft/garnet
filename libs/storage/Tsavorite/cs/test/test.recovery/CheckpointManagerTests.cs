@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -65,12 +64,16 @@ namespace Tsavorite.test
                 var indexCheckpoints = new Dictionary<Guid, int>();
                 var fullCheckpoints = new Dictionary<Guid, int>();
 
+                // Local variables in an async function can be moved, so we must use arrays for the key and value
+                var keyArray = new byte[sizeof(long)];
+                var valueArray = new byte[sizeof(long)];
+
                 for (var i = 0; i < 10; i++)
                 {
                     // Do some dummy update
-                    var key = 0L;
-                    var value = (long)random.Next();
-                    _ = bContext.Upsert(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), SpanByte.FromPinnedVariable(ref value));
+                    new Span<byte>(keyArray).AsRef<long>() = 0L;
+                    new Span<byte>(valueArray).AsRef<long>() = random.Next();
+                    _ = bContext.Upsert(TestSpanByteKey.FromArray(keyArray), valueArray);
 
                     var checkpointType = random.Next(5);
                     Guid result = default;
