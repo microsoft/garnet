@@ -9,6 +9,16 @@
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
     <Nullable>enable</Nullable>
+    <!--
+      Disable implicit usings so the SDK does not emit a GlobalUsings.g.cs
+      for this project. The Microsoft.NET.Sdk may default ImplicitUsings=enable
+      for executable projects, which can produce a GlobalUsings.g.cs with
+      <Using> items referencing namespaces not visible to this project (e.g.
+      Tsavorite.test.*), causing CS0234 in CI. This project only references
+      Garnet's public API and the stock redis-server / redis-sentinel binaries,
+      so implicit usings are not needed.
+    -->
+    <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
 
   <!--
