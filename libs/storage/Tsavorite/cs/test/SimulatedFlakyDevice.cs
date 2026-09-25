@@ -28,6 +28,8 @@ namespace Tsavorite.test
         /// <inheritdoc/>
         public byte[] GetCookie() => throw new NotSupportedException();
         /// <inheritdoc/>
+        public int[] GetDatabaseMapping(out long swapEpoch) => throw new NotSupportedException();
+        /// <inheritdoc/>
         public void InitializeIndexCheckpoint(Guid indexToken) => throw new NotSupportedException();
         /// <inheritdoc/>
         public void InitializeLogCheckpoint(Guid logToken) => throw new NotSupportedException();

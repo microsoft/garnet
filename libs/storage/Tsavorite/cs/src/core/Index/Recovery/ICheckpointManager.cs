@@ -44,6 +44,15 @@ namespace Tsavorite.core
         byte[] GetCookie();
 
         /// <summary>
+        /// Get the current mapping of storage slot to logical database id, to be persisted with the
+        /// checkpoint as <see cref="HybridLogRecoveryInfo.databaseMapping"/>. Hosts that do not
+        /// relabel their databases return null, which records the identity mapping.
+        /// </summary>
+        /// <param name="swapEpoch">Monotonic counter identifying how recent the returned mapping is</param>
+        /// <returns>Mapping of slot to logical database id, or null for the identity mapping</returns>
+        int[] GetDatabaseMapping(out long swapEpoch);
+
+        /// <summary>
         /// Initialize index checkpoint
         /// </summary>
         /// <param name="indexToken"></param>

@@ -132,7 +132,12 @@ namespace Garnet.server
         /// <summary>
         /// Definition for delegate creating a new logical database
         /// </summary>
-        public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId);
+        /// <summary>
+        /// Delegate for creating a new logical database bound to a storage slot. A newly created
+        /// database takes the slot matching its logical ID.
+        /// </summary>
+        /// <param name="storageSlot">Storage slot, which is also the initial logical database ID</param>
+        public delegate GarnetDatabase DatabaseCreatorDelegate(int storageSlot);
 
         /// <summary>
         /// Number of active databases

@@ -13,7 +13,14 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        public const int CheckpointVersion = 7;
+        public const int CheckpointVersion = 8;
+
+        /// <summary>
+        /// Oldest checkpoint version this build can recover. Checkpoints at this version predate
+        /// <see cref="databaseMapping"/> and <see cref="swapEpoch"/>, so those fields are absent
+        /// from the payload and read back as their defaults.
+        /// </summary>
+        public const int MinRecoverableCheckpointVersion = 7;
 
         /// <summary>
         /// HybridLogRecoveryVersion 
@@ -94,6 +101,22 @@ namespace Tsavorite.core
         public byte[] cookie;
 
         /// <summary>
+        /// Maps a host-defined storage slot to the logical database id that occupied it when this
+        /// checkpoint was taken, as <c>databaseMapping[slot] = logicalDatabaseId</c>. Null or empty
+        /// when the mapping is the identity, which is the case for any host that does not relabel
+        /// its databases. The full mapping is recorded in every database's checkpoint so that the
+        /// most recent one describes the whole permutation on its own.
+        /// </summary>
+        public int[] databaseMapping;
+
+        /// <summary>
+        /// Monotonic counter incremented by the host each time it swaps two logical databases.
+        /// Because checkpoints are taken per database, two checkpoints can carry different
+        /// <see cref="databaseMapping"/> values; the one with the highest epoch is authoritative.
+        /// </summary>
+        public long swapEpoch;
+
+        /// <summary>
         /// If struct deserialized succesfully
         /// </summary>
         public bool Deserialized { get; private set; }
@@ -116,6 +139,9 @@ namespace Tsavorite.core
             snapshotFinalLogicalAddress = 0;
             headAddress = 0;
 
+            databaseMapping = null;
+            swapEpoch = 0;
+
             hlogEndObjectLogTail = new();       // Marks as "unset"
             snapshotStartObjectLogTail = new();
             snapshotEndObjectLogTail = new();
@@ -130,8 +156,8 @@ namespace Tsavorite.core
             var value = reader.ReadLine();
             var cversion = int.Parse(value);
 
-            if (cversion != CheckpointVersion)
-                throw new TsavoriteException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
+            if (cversion < MinRecoverableCheckpointVersion || cversion > CheckpointVersion)
+                throw new TsavoriteException($"Invalid checkpoint version {cversion} encountered, this build recovers versions {MinRecoverableCheckpointVersion} through {CheckpointVersion}, cannot recover with this checkpoint");
 
             hybridLogRecoveryVersion = cversion;
 
@@ -189,6 +215,26 @@ namespace Tsavorite.core
                     value = reader.ReadLine();
                     cookie[i] = byte.Parse(value);
                 }
+            }
+
+            // Read the database mapping. Absent at MinRecoverableCheckpointVersion, in which case the
+            // defaults set by Initialize(Guid, long) stand for "identity mapping, no swaps".
+            if (cversion > MinRecoverableCheckpointVersion)
+            {
+                value = reader.ReadLine();
+                var mappingLength = int.Parse(value);
+                if (mappingLength > 0)
+                {
+                    databaseMapping = new int[mappingLength];
+                    for (var i = 0; i < mappingLength; i++)
+                    {
+                        value = reader.ReadLine();
+                        databaseMapping[i] = int.Parse(value);
+                    }
+                }
+
+                value = reader.ReadLine();
+                swapEpoch = long.Parse(value);
             }
 
             if (checksum != Checksum())
@@ -263,6 +309,16 @@ namespace Tsavorite.core
                         for (var i = 0; i < cookieSize; i++)
                             writer.WriteLine(cookie[i]);
                     }
+
+                    // Write the database mapping. Like the cookie, this is host-supplied and sits
+                    // outside Checksum(). A reader at MinRecoverableCheckpointVersion stops before
+                    // these fields, so an older build sees a well-formed payload ending at the cookie.
+                    var mappingLength = databaseMapping == null ? 0 : databaseMapping.Length;
+                    writer.WriteLine(mappingLength);
+                    for (var i = 0; i < mappingLength; i++)
+                        writer.WriteLine(databaseMapping[i]);
+
+                    writer.WriteLine(swapEpoch);
                 }
                 return ms.ToArray();
             }
@@ -297,6 +353,8 @@ namespace Tsavorite.core
             logger?.LogInformation("Hybrid Log End Object Tail Position: {hlogEndObjLogTail}", hlogEndObjectLogTail);
             logger?.LogInformation("Snapshot Begin Object Log Tail Position: {snapshotStartObjLogTail}", snapshotStartObjectLogTail);
             logger?.LogInformation("Snapshot End Object Log Tail Position: {snapshotEndObjLogTail}", snapshotEndObjectLogTail);
+            if (databaseMapping?.Length > 0)
+                logger?.LogInformation("Database Mapping (slot -> logical): {databaseMapping}; Swap Epoch: {swapEpoch}", string.Join(",", databaseMapping), swapEpoch);
         }
     }
 

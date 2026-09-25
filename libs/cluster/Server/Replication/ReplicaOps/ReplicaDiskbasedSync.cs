@@ -260,8 +260,8 @@ namespace Garnet.cluster
                     var LogDir = !string.IsNullOrEmpty(opts.LogDir) ? opts.LogDir : Directory.GetCurrentDirectory();
                     var logFactory = opts.GetInitializedDeviceFactory(LogDir);
 
-                    // These must match GarnetServerOptions.GetSettings, EnableStorageTier
-                    return logFactory.Get(new FileDescriptor("Store", isObj ? "hlog_objs" : "hlog"));
+                    // Cluster mode permits only the default database, so the log devices are always database 0's
+                    return logFactory.Get(GarnetServerOptions.GetHybridLogFileDescriptor(dbId: 0, isObj));
                 }
                 return null;
             }

@@ -218,6 +218,13 @@ namespace Tsavorite.core
         public virtual byte[] GetCookie() => null;
 
         /// <inheritdoc />
+        public virtual int[] GetDatabaseMapping(out long swapEpoch)
+        {
+            swapEpoch = 0;
+            return null;
+        }
+
+        /// <inheritdoc />
         public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
             using var device = NextIndexCheckpointDevice(indexToken);

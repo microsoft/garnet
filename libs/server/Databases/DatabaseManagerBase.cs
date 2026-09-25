@@ -604,7 +604,9 @@ namespace Garnet.server
                 else
                 {
                     checkpointCoveredAofAddress = db.AppendOnlyFile.Log.TailAddress;
-                    StoreWrapper.StoreCheckpointManager.SetCurrentSafeAofAddress(ref checkpointCoveredAofAddress);
+                    // Record the address on this database's own checkpoint manager; StoreWrapper's
+                    // resolves to the default database's and would mislabel every other database.
+                    (db.Store.CheckpointManager as GarnetCheckpointManager)?.SetCurrentSafeAofAddress(ref checkpointCoveredAofAddress);
                 }
 
                 if (checkpointCoveredAofAddress.AnyGreater(0))
