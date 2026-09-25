@@ -85,10 +85,10 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Per <c>(pool, thread)</c> shard owning one <see cref="Bucket"/> per size-class. Finalizable so that a
-    /// thread which dies with buffers still cached releases those buffers' budget permits (there is no
-    /// thread-exit callback). Self-clears its heavy references on seal so a lingering thread-static slot on
-    /// another thread roots nothing large.
+    /// Per <c>(pool, thread)</c> shard owning one <see cref="Bucket"/> per size-class, and the byte ceiling those
+    /// buckets share (see <see cref="localByteCap"/>). Finalizable so that a thread which dies with buffers still
+    /// cached releases those buffers' budget permits (there is no thread-exit callback). Self-clears its heavy
+    /// references on seal so a lingering thread-static slot on another thread roots nothing large.
     /// </summary>
     internal sealed class ThreadShard
     {
@@ -100,9 +100,19 @@ namespace Tsavorite.core
         internal int state;                          // Alive / Sealed
         internal int drainedOnce;                    // CAS 0->1: arbitrates explicit seal vs. finalization (drain at most once)
 
-        internal ThreadShard(SectorAlignedBufferPool pool, int numClasses, int sectorSize, int[] classCaps, bool bornSealed)
+        /// <summary>Bytes currently parked on this shard's owner-local chains; owner-only, no atomics.</summary>
+        internal long localBytes;
+
+        /// <summary>Number of size classes with a non-empty owner-local chain; owner-only, no atomics.</summary>
+        internal int activeClasses;
+
+        /// <summary>Ceiling for <see cref="localBytes"/>, shared across this shard's size classes.</summary>
+        internal readonly long localByteCap;
+
+        internal ThreadShard(SectorAlignedBufferPool pool, int numClasses, int sectorSize, int[] classCaps, long localByteCap, bool bornSealed)
         {
             this.pool = pool;
+            this.localByteCap = localByteCap;
             state = bornSealed ? Sealed : Alive;
             buckets = new Bucket[numClasses];
             for (var c = 0; c < numClasses; c++)
@@ -162,9 +172,10 @@ namespace Tsavorite.core
     /// <item><b>No per-push allocation.</b> <c>ConcurrentStack.Push</c> allocates a link node per item; this pool
     /// exists to avoid exactly that. <see cref="Stack{T}"/> pushes into a pre-grown array.</item>
     /// </list>
-    /// Contention is a non-issue: the depot is already striped <c>DepotStripes</c> ways, is reached only on
-    /// magazine overflow/underflow, and each critical section is O(1). A lock-free CAS on one shared head would
-    /// reintroduce the cross-core ping-pong on a single cache line that this design removes.
+    /// Contention is bounded by striping: the depot is spread <c>DepotStripes</c> ways, sized from the
+    /// machine's processor count, is reached only on magazine overflow/underflow, and each critical section
+    /// is O(1). A lock-free CAS on one shared head would reintroduce the cross-core ping-pong on a single
+    /// cache line that this design removes.
     /// </remarks>
     internal sealed class DepotStripe
     {
@@ -226,12 +237,19 @@ namespace Tsavorite.core
         private const int NumClasses = LinearClasses + 2 * GeometricDoublings;      // 28 (2 classes per doubling)
         private const int MaxPooledSectors = LinearTopSectors << GeometricDoublings; // 32768 (16 MB at 512 B sectors)
 
-        // Soft reuse targets (the byte budget is the only hard bound).
-        private const int LocalCap = 128;               // buffers retained per (thread, class) before spilling to depot
-        private const long LocalByteCap = 32L << 20;    // and a per-(thread, class) byte ceiling so large classes can't park the whole budget on one thread
-        private const int DepotStripes = 8;             // power of two
+        // Local retention is bounded in bytes, per thread. Bytes are the resource the budget is denominated in;
+        // a buffer count is not, since one size class's buffer is up to 512x another's, and the count a thread
+        // needs is its in-flight IO pipeline depth, which is a property of the caller rather than of the pool.
+        // A thread's ceiling is its equal slice of the sub-budget that local caching draws from, so the slices
+        // of the expected concurrent threads sum to that sub-budget and no thread can retain enough to starve
+        // the others. Within a thread the ceiling is shared across size classes and enforced only once the
+        // thread reaches it: a thread whose traffic is a single class keeps the whole slice, and at the ceiling
+        // a class below its equal share reclaims from the class furthest above its share (see TryMakeRoom).
+        private const long MinThreadLocalBytes = 1L << 20;   // floor, so a small configured budget still caches
+        private static readonly int DepotStripes = ConcurrencySharding.DepotStripeCount;   // power of two
+        private static readonly int DepotStripeMask = DepotStripes - 1;
         private const int DepotStripeCap = 1024;        // buffers per depot stripe
-        private const int InitialRegistryCompactThreshold = 64;  // compact dead shard weak-references once the registry first exceeds this
+        private const int InitialPoolShardRegistryCompactThreshold = 64;  // compact dead shard weak-references once the registry first exceeds this
 
         // Budget partitioning. The pool's total byte budget is split into two isolated sub-budgets so a burst of
         // large record/flush buffers (up to 16 MB each) cannot consume the whole budget and starve caching of the
@@ -251,10 +269,40 @@ namespace Tsavorite.core
         /// reroutes to the depot — the sentinel is never swapped out for null.</summary>
         internal static readonly SectorAlignedMemory Sealed = new();
 
-        /// <summary>Per-thread map from this pool's <see cref="slotIndex"/> to the thread's <see cref="ThreadShard"/>.
-        /// A recyclable-slot array (NOT ThreadLocal, NOT a monotonic index) bounded by the number of
-        /// concurrently-live pools; the pool-identity check on read replaces a shard left by a pool that has
-        /// since recycled the slot.</summary>
+        // ---- Shard indexing: the (pool, thread) -> ThreadShard relation -----------------------------------------
+        //
+        // Every thread that touches a pool gets its own ThreadShard for that pool, so live shards form a sparse
+        // (pool x thread) matrix. Two indexes cover that matrix, one per axis, and slotIndex is the key joining
+        // them:
+        //
+        //   t_shards           Thread-side index. [ThreadStatic], so each thread owns its array, indexed by the
+        //                      POOL's slotIndex: t_shards[slotIndex] is the calling thread's shard for this pool.
+        //                      The hot Get/Return lookup, so it is a bounds check plus an array read - no lock, no
+        //                      allocation. References are STRONG: a shard and every buffer parked on its
+        //                      owner-local chains stay rooted for the life of the thread, which is why teardown
+        //                      detaches those chains rather than leaving them for the GC.
+        //
+        //   poolShardRegistry  Pool-side index. One list per pool holding a WEAK reference to each of that pool's
+        //                      shards across all threads, guarded by poolShardRegistryLock and read only on cold
+        //                      paths (teardown, diagnostics). Weak so that a shard whose thread has exited becomes
+        //                      collectable and its finalizer returns the permits; dead entries are compacted
+        //                      amortized (see CompactPoolShardRegistryLocked).
+        //
+        //   slotIndex          The join key: this pool's position within every thread's t_shards array, taken from
+        //                      the process-wide free list below at construction and returned on Free.
+        //                      Slots RECYCLE, so a thread's array may still hold a shard left by an earlier pool
+        //                      at the same position; every read therefore confirms identity before trusting the
+        //                      entry - against the pool (ReferenceEquals(shard.pool, this)) where the shard is
+        //                      being resolved, or against the bucket's owner (ReferenceEquals(arr[slot], owner))
+        //                      where a shard is already in hand. Recycling is also what bounds the array length by
+        //                      the number of CONCURRENTLY-LIVE pools instead of by how many pools the process has
+        //                      created over its lifetime.
+        //
+        // The two indexes are intentionally not symmetric in how they are cleared. A new shard is added to both,
+        // but Free empties only the registry: the thread-side entry is left in place and repaired lazily, since
+        // teardown nulls shard.pool and the owning thread's next Get fails the identity check and builds a fresh
+        // (born-sealed) shard. Neither index is a source of truth for the other - the registry answers "which
+        // shards belong to this pool", t_shards answers "which shard is mine".
         [ThreadStatic]
         private static ThreadShard[] t_shards;
 
@@ -264,15 +312,16 @@ namespace Tsavorite.core
         private static int s_slotHighWater;
 
         // ---- Per-pool origin-return state (set in InitOriginReturn) --------------------------------------------
-        private int slotIndex;
+        private int slotIndex;                            // this pool's position in every thread's t_shards array (see above)
         private BudgetState smallBudget;                  // isolated sub-budget for small classes (capacity <= LargeTierMinBytes)
         private BudgetState largeBudget;                  // isolated sub-budget for large (record/flush) classes
         private int firstLargeClass;                      // classes at or above this index draw from largeBudget
+        private long threadLocalByteCap;                  // per-thread ceiling on locally-retained (small-class) bytes
         private int[] classCaps;                          // capacity in sectors per class
         private DepotStripe[] depot;                      // [NumClasses * DepotStripes]
-        private List<WeakReference<ThreadShard>> registry;
-        private object registryLock;
-        private int registryCompactThreshold;             // amortized dead-weak-reference compaction trigger (guarded by registryLock)
+        private List<WeakReference<ThreadShard>> poolShardRegistry;   // weak ref to each of this pool's shards, all threads (see above)
+        private object poolShardRegistryLock;
+        private int poolShardRegistryCompactThreshold;    // amortized dead-weak-reference compaction trigger (guarded by poolShardRegistryLock)
         private int poolState;                            // PoolActive / PoolClosing / PoolClosed
         private long totalManagedAllocations;             // test-only reuse-efficiency counter
 
@@ -285,6 +334,8 @@ namespace Tsavorite.core
             var smallBudgetBytes = ManagedBudgetBytes / SmallBudgetDivisor;
             smallBudget = new BudgetState(smallBudgetBytes);
             largeBudget = new BudgetState(ManagedBudgetBytes - smallBudgetBytes);
+            // Local caching parks only small classes, so a thread's slice is cut from the small sub-budget.
+            threadLocalByteCap = Math.Max(smallBudgetBytes / ConcurrencySharding.ExpectedConcurrentThreads, MinThreadLocalBytes);
             classCaps = new int[NumClasses];
             firstLargeClass = NumClasses;
             for (var c = 0; c < NumClasses; c++)
@@ -296,9 +347,9 @@ namespace Tsavorite.core
             depot = new DepotStripe[NumClasses * DepotStripes];
             for (var i = 0; i < depot.Length; i++)
                 depot[i] = new DepotStripe(DepotStripeCap);
-            registry = new List<WeakReference<ThreadShard>>();
-            registryLock = new object();
-            registryCompactThreshold = InitialRegistryCompactThreshold;
+            poolShardRegistry = new List<WeakReference<ThreadShard>>();
+            poolShardRegistryLock = new object();
+            poolShardRegistryCompactThreshold = InitialPoolShardRegistryCompactThreshold;
             poolState = PoolActive;
         }
 
@@ -378,6 +429,9 @@ namespace Tsavorite.core
                 bucket.localHead = page.next;
                 bucket.localCount--;
                 bucket.localBytes -= page.permitBytes;
+                shard.localBytes -= page.permitBytes;
+                if (bucket.localCount == 0)
+                    shard.activeClasses--;
                 RecordReuse(cls);
                 return PrepareForRent(page, bucket, required_bytes, clearOnReturn);
             }
@@ -515,12 +569,11 @@ namespace Tsavorite.core
                 return;
             }
 
-            // Large (record/flush) classes are shared globally via the striped depot instead of parking per-thread
-            // (on either the owner-local stack or the origin's cross-thread stack). With a wide value-size mix a
-            // thread rarely re-requests the same large class back-to-back, so per-thread parking strands big
-            // buffers and multiplies the working set across (thread x class), inflating RSS / GC. Routing both the
-            // owner and foreign returns of large buffers to the pool-owned depot lets any thread reuse them under
-            // the same byte budget, restoring legacy-like memory behavior; it also sidesteps the origin-shard
+            // Large (record/flush) classes are shared globally via the striped depot, on both the owner and the
+            // foreign return path. The per-thread tiers exploit a thread reusing the same size back-to-back; with
+            // a wide value-size mix a thread rarely re-requests the same large class, so a large buffer parked on
+            // its origin thread sits idle while the working set grows as (thread x class). One global working set
+            // under the same byte budget serves every thread, and keeps large returns clear of the origin-shard
             // finalize race (the depot is pool-owned). Large-buffer ops are low-rate and the workload is
             // bandwidth-bound, so the striped-depot handoff costs ~nothing. Small classes keep the atomic-free
             // per-thread origin-return fast path below. If the depot is closed (pool teardown), drop the buffer and
@@ -537,6 +590,9 @@ namespace Tsavorite.core
             // Small class, same-thread owner (this pool's shard is in our slot, still alive)? -> owner-only local
             // push, no atomics. On this path the bucket is reachable via page.originBucket and owned by this live
             // thread, so no finalizer race is possible and no GC.KeepAlive is needed.
+            // The buffer already names its owning shard, so the thread-side lookup is compared against that owner
+            // rather than against the pool: matching arr[slot] proves the owner is the calling thread's shard for
+            // this pool, which subsumes the pool-identity check a slot recycle would otherwise require.
             var arr = t_shards;
             var slot = slotIndex;
             if (arr is not null && slot < arr.Length && ReferenceEquals(arr[slot], owner) && owner.state == ThreadShard.Alive)
@@ -586,35 +642,101 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void PushLocal(Bucket bucket, SectorAlignedMemory page)
         {
-            if (!CanRetainLocal(bucket, page))
+            var shard = bucket.owner;
+            var bytes = page.permitBytes;
+            if (shard.localBytes + bytes > shard.localByteCap && !TryMakeRoom(shard, bucket, bytes))
             {
                 if (!DepotPush(page.Level, page))
                     DropBuffer(page);
                 return;
             }
+            RetainLocal(shard, bucket, page, bytes);
+        }
+
+        /// <summary>Park a buffer on its bucket's owner-local chain and account for it on the owning shard.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static void RetainLocal(ThreadShard shard, Bucket bucket, SectorAlignedMemory page, long bytes)
+        {
+            if (bucket.localCount == 0)
+                shard.activeClasses++;
             page.next = bucket.localHead;
             bucket.localHead = page;
             bucket.localCount++;
-            bucket.localBytes += page.permitBytes;
+            bucket.localBytes += bytes;
+            shard.localBytes += bytes;
         }
 
-        /// <summary>Whether a buffer may still be parked on the owner-local stack: bounded by both a count cap
-        /// and a byte ceiling (so a large-class buffer can't monopolize the pool's byte budget on one thread),
-        /// but always keeping at least one buffer for reuse locality.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool CanRetainLocal(Bucket bucket, SectorAlignedMemory page)
-            => bucket.localCount < LocalCap && (bucket.localCount == 0 || bucket.localBytes + page.permitBytes <= LocalByteCap);
+        /// <summary>
+        /// The thread is at its local byte ceiling. Admit <paramref name="bytes"/> for <paramref name="bucket"/>'s
+        /// class only if that class holds less than an equal share of the ceiling, making room by spilling the
+        /// class furthest above its share to the shared depot, where any thread can still reuse those buffers.
+        /// Reached only at the ceiling, so a thread whose traffic is a single size class keeps the whole slice;
+        /// under contention the outcome is max-min fair across the classes that thread is actually using.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool TryMakeRoom(ThreadShard shard, Bucket bucket, long bytes)
+        {
+            // The requester counts as active even when its chain is currently empty, so a starved class is not
+            // shut out by the classes crowding it. A thread using a single class therefore gets share == cap and
+            // fails here without scanning, which is the steady state once its chain is full.
+            var active = bucket.localCount == 0 ? shard.activeClasses + 1 : shard.activeClasses;
+            var share = shard.localByteCap / active;
+            if (bucket.localBytes + bytes > share)
+                return false;
+
+            var buckets = shard.buckets;
+            Bucket victim = null;
+            while (shard.localBytes + bytes > shard.localByteCap)
+            {
+                if (victim is null || victim.localBytes <= share || victim.localHead is null)
+                    victim = WorstOverShare(buckets, share);
+                if (victim is null)
+                    return false;
+                SpillOneLocal(shard, victim);
+            }
+            return true;
+        }
+
+        /// <summary>The owner-local chain holding the most bytes above <paramref name="share"/>, or null if none is.</summary>
+        private Bucket WorstOverShare(Bucket[] buckets, long share)
+        {
+            Bucket victim = null;
+            var worst = 0L;
+            for (var c = 0; c < firstLargeClass; c++)
+            {
+                var candidate = buckets[c];
+                var over = candidate.localBytes - share;
+                if (over > worst && candidate.localHead is not null)
+                {
+                    worst = over;
+                    victim = candidate;
+                }
+            }
+            return victim;
+        }
+
+        /// <summary>Move one buffer off an owner-local chain to the shared depot, dropping it if the depot is full.</summary>
+        private void SpillOneLocal(ThreadShard shard, Bucket victim)
+        {
+            var page = victim.localHead;
+            victim.localHead = page.next;
+            victim.localCount--;
+            victim.localBytes -= page.permitBytes;
+            shard.localBytes -= page.permitBytes;
+            if (victim.localCount == 0)
+                shard.activeClasses--;
+            if (!DepotPush(page.Level, page))
+                DropBuffer(page);
+        }
 
         private void SpliceIntoLocal(Bucket bucket, SectorAlignedMemory rest)
         {
+            var shard = bucket.owner;
             var node = rest;
-            while (node is not null && CanRetainLocal(bucket, node))
+            while (node is not null && shard.localBytes + node.permitBytes <= shard.localByteCap)
             {
                 var nx = node.next;
-                node.next = bucket.localHead;
-                bucket.localHead = node;
-                bucket.localCount++;
-                bucket.localBytes += node.permitBytes;
+                RetainLocal(shard, bucket, node, node.permitBytes);
                 node = nx;
             }
             while (node is not null)
@@ -662,7 +784,7 @@ namespace Tsavorite.core
         // ---- Depot ---------------------------------------------------------------------------------------------
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int ThreadStripe() => Environment.CurrentManagedThreadId & (DepotStripes - 1);
+        private static int ThreadStripe() => Environment.CurrentManagedThreadId & DepotStripeMask;
 
         private bool DepotPush(int cls, SectorAlignedMemory page)
         {
@@ -677,7 +799,7 @@ namespace Tsavorite.core
             var start = ThreadStripe();
             for (var i = 0; i < DepotStripes; i++)
             {
-                var page = depot[baseIdx + ((start + i) & (DepotStripes - 1))].TryPop();
+                var page = depot[baseIdx + ((start + i) & DepotStripeMask)].TryPop();
                 if (page is not null)
                     return page;
             }
@@ -725,6 +847,9 @@ namespace Tsavorite.core
 
         // ---- Shard resolution ----------------------------------------------------------------------------------
 
+        /// <summary>Resolve the calling thread's shard for this pool, creating it on first touch. Reads the
+        /// thread-side index (t_shards[slotIndex]); the pool-identity check rejects a shard left behind by an
+        /// earlier pool that has since released this slot. See the shard-indexing notes above.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private ThreadShard GetOrCreateShard()
         {
@@ -742,6 +867,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         private ThreadShard CreateShardSlow(int slot)
         {
+            // Grow the thread-side array to cover this pool's slot, then register the new shard on the pool side so
+            // teardown can reach it. Both indexes gain the shard here; only the registry is cleared by Free.
             var arr = t_shards;
             if (arr is null || slot >= arr.Length)
             {
@@ -754,10 +881,10 @@ namespace Tsavorite.core
             }
 
             ThreadShard shard;
-            lock (registryLock)
+            lock (poolShardRegistryLock)
             {
                 var bornSealed = poolState != PoolActive;
-                shard = new ThreadShard(this, NumClasses, sectorSize, classCaps, bornSealed);
+                shard = new ThreadShard(this, NumClasses, sectorSize, classCaps, threadLocalByteCap, bornSealed);
                 if (bornSealed)
                     shard.drainedOnce = 1;      // nothing cached; no drain, no permits held
                 else
@@ -766,9 +893,9 @@ namespace Tsavorite.core
                     // the registry bounded by (roughly) the live shard count rather than growing with every
                     // historical thread. Amortized O(1): compaction runs only when the list outgrows the last
                     // compacted size.
-                    if (registry.Count >= registryCompactThreshold)
-                        CompactRegistryLocked();
-                    registry.Add(new WeakReference<ThreadShard>(shard));
+                    if (poolShardRegistry.Count >= poolShardRegistryCompactThreshold)
+                        CompactPoolShardRegistryLocked();
+                    poolShardRegistry.Add(new WeakReference<ThreadShard>(shard));
                 }
             }
             arr[slot] = shard;
@@ -776,19 +903,19 @@ namespace Tsavorite.core
         }
 
         /// <summary>Remove dead (collected-shard) weak-references from the registry in place. Caller holds
-        /// <see cref="registryLock"/>. Resets the compaction threshold to twice the surviving count so the next
+        /// <see cref="poolShardRegistryLock"/>. Resets the compaction threshold to twice the surviving count so the next
         /// compaction is amortized against real growth.</summary>
-        private void CompactRegistryLocked()
+        private void CompactPoolShardRegistryLocked()
         {
             var w = 0;
-            for (var r = 0; r < registry.Count; r++)
+            for (var r = 0; r < poolShardRegistry.Count; r++)
             {
-                if (registry[r].TryGetTarget(out _))
-                    registry[w++] = registry[r];
+                if (poolShardRegistry[r].TryGetTarget(out _))
+                    poolShardRegistry[w++] = poolShardRegistry[r];
             }
-            if (w < registry.Count)
-                registry.RemoveRange(w, registry.Count - w);
-            registryCompactThreshold = Math.Max(InitialRegistryCompactThreshold, registry.Count * 2);
+            if (w < poolShardRegistry.Count)
+                poolShardRegistry.RemoveRange(w, poolShardRegistry.Count - w);
+            poolShardRegistryCompactThreshold = Math.Max(InitialPoolShardRegistryCompactThreshold, poolShardRegistry.Count * 2);
         }
 
         // ---- Teardown ------------------------------------------------------------------------------------------
@@ -796,18 +923,18 @@ namespace Tsavorite.core
         private void FreeOriginReturn()
         {
             List<ThreadShard> live;
-            lock (registryLock)
+            lock (poolShardRegistryLock)
             {
                 // Elect exactly one closer: only the caller that observes PoolActive proceeds. A second concurrent
                 // (or later sequential) Free sees PoolClosing/PoolClosed and returns, so the slot is released once.
                 if (poolState != PoolActive)
                     return;
                 poolState = PoolClosing;    // stops new permit reservations and makes new shards born-sealed
-                live = new List<ThreadShard>(registry.Count);
-                foreach (var wr in registry)
+                live = new List<ThreadShard>(poolShardRegistry.Count);
+                foreach (var wr in poolShardRegistry)
                     if (wr.TryGetTarget(out var s))
                         live.Add(s);
-                registry.Clear();
+                poolShardRegistry.Clear();
             }
 
             foreach (var shard in live)
@@ -817,7 +944,7 @@ namespace Tsavorite.core
                 foreach (var stripe in depot)
                     stripe.Close(DropBuffer);
 
-            lock (registryLock)
+            lock (poolShardRegistryLock)
                 poolState = PoolClosed;
 
             ReleaseSlot(slotIndex);
@@ -883,6 +1010,8 @@ namespace Tsavorite.core
                         ReleaseChainPermits(localChain);
                     }
                 }
+                shard.localBytes = 0;
+                shard.activeClasses = 0;
             }
 
             // Hand repair of any resurrected buffers back to ~ThreadShard by releasing drainedOnce: once this
@@ -913,10 +1042,10 @@ namespace Tsavorite.core
         private void PrintOriginReturn()
         {
             List<ThreadShard> live;
-            lock (registryLock)
+            lock (poolShardRegistryLock)
             {
-                live = new List<ThreadShard>(registry.Count);
-                foreach (var wr in registry)
+                live = new List<ThreadShard>(poolShardRegistry.Count);
+                foreach (var wr in poolShardRegistry)
                     if (wr.TryGetTarget(out var s))
                         live.Add(s);
             }
@@ -1018,6 +1147,26 @@ namespace Tsavorite.core
         internal long LargeReservedBytes => largeBudget?.Used ?? 0;
         /// <summary>First size-class index that draws from the large sub-budget. Test-only.</summary>
         internal int FirstLargeClass => firstLargeClass;
+        /// <summary>Per-thread ceiling on locally-retained small-class bytes. Test-only.</summary>
+        internal long ThreadLocalByteCap => threadLocalByteCap;
+        /// <summary>Bytes the calling thread holds on all of its owner-local chains. Test-only.</summary>
+        internal long CallerLocalBytes => CallerShard()?.localBytes ?? 0;
+        /// <summary>Bytes the calling thread holds on its owner-local chain for <paramref name="cls"/>. Test-only.</summary>
+        internal long CallerLocalBytesForClass(int cls) => CallerShard()?.buckets[cls].localBytes ?? 0;
+
+        /// <summary>The calling thread's shard for this pool, or null if it has none. Test-only.</summary>
+        private ThreadShard CallerShard()
+        {
+            var arr = t_shards;
+            var slot = slotIndex;
+            if (arr is not null && slot < arr.Length)
+            {
+                var s = arr[slot];
+                if (s is not null && ReferenceEquals(s.pool, this))
+                    return s;
+            }
+            return null;
+        }
         /// <summary>Total managed buffer allocations served by this pool (reuse-efficiency measure). Test-only.</summary>
         internal long TotalManagedAllocations => Interlocked.Read(ref totalManagedAllocations);
         /// <summary>Number of live shards registered with this pool. Test-only.</summary>
@@ -1025,11 +1174,11 @@ namespace Tsavorite.core
         {
             get
             {
-                if (registry is null)
+                if (poolShardRegistry is null)
                     return 0;
                 var n = 0;
-                lock (registryLock)
-                    foreach (var wr in registry)
+                lock (poolShardRegistryLock)
+                    foreach (var wr in poolShardRegistry)
                         if (wr.TryGetTarget(out _))
                             n++;
                 return n;

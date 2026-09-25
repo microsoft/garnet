@@ -98,7 +98,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                Logger?.LogInformation(ex,
+                Logger?.LogError(ex,
                     "Error during recovery of database ids; checkpointParentDir = {checkpointParentDir}; checkpointDirBaseName = {checkpointDirBaseName}",
                     checkpointParentDir, checkpointDirBaseName);
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
@@ -120,14 +120,35 @@ namespace Garnet.server
                 }
                 catch (TsavoriteNoHybridLogException ex)
                 {
-                    // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                    Logger?.LogInformation(ex,
-                        "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
-                        storeVersion, objectStoreVersion);
+                    // Finding no hybrid log is not by itself a recovery error: a fresh start and an AOF-only database
+                    // both land here. Record what the scan saw so VerifyRecoveryIsComplete can tell those apart from
+                    // a checkpointed prefix that exists on disk but could not be read, once the AOF state is known.
+                    db.CheckpointRecovery = new CheckpointRecoveryOutcome
+                    {
+                        CandidateTokenCount = ex.CandidateTokenCount,
+                        UnreadableTokenCount = ex.UnreadableTokenCount
+                    };
+
+                    if (ex.CandidateTokenCount == 0)
+                    {
+                        // As in SingleDatabaseManager, nothing was ever written, so recovery cannot tell that a
+                        // checkpoint the client was told had succeeded is missing; see RecordCheckpointOutcome.
+                        Logger?.LogInformation(ex,
+                            "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
+                            storeVersion, objectStoreVersion);
+                    }
+                    else
+                    {
+                        Logger?.LogError(ex,
+                            "Unable to read any of the {candidateTokenCount} HybridLog checkpoint token(s) found on disk (DB ID: {id}); storeVersion = {storeVersion}",
+                            ex.CandidateTokenCount, dbId, storeVersion);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Logger?.LogInformation(ex,
+                    // Unless FailOnRecoveryError is set the server continues with whatever was recovered, so this
+                    // must be visible at the default log level.
+                    Logger?.LogError(ex,
                         "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
                         storeVersion, objectStoreVersion);
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
@@ -140,16 +161,17 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override Task<bool> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
+        public override Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
         {
             // Acquire databasesContentLock (read) so a concurrent swap-db can't move GarnetDatabase
             // wrappers out from under us mid-checkpoint (which would mis-attribute LASTSAVE to the
             // swapped DB and let a second BGSAVE race against the in-flight checkpoint).
-            if (!TryGetDatabasesContentReadLock(token)) return Task.FromResult(false);
+            if (!TryGetDatabasesContentReadLock(token)) return Task.FromResult(CheckpointStatus.AlreadyInProgress);
 
             var multiDbLockHeld = false;
             int[] pausedDbIds = null;
             var pausedCount = 0;
+            var requestedCount = 0;
 
             try
             {
@@ -166,12 +188,13 @@ namespace Garnet.server
                         if (!multiDbCheckpointingLock.TryWriteLock())
                         {
                             databasesContentLock.ReadUnlock();
-                            return Task.FromResult(false);
+                            return Task.FromResult(CheckpointStatus.AlreadyInProgress);
                         }
 
                         multiDbLockHeld = true;
                     }
 
+                    requestedCount = activeDbIdsMapSize;
                     pausedDbIds = new int[activeDbIdsMapSize];
                     var activeDbIdsMapSnapshot = activeDbIds.Map;
                     for (var i = 0; i < activeDbIdsMapSize; i++)
@@ -190,11 +213,12 @@ namespace Garnet.server
                     if (!TryPauseCheckpoints(dbId))
                     {
                         databasesContentLock.ReadUnlock();
-                        return Task.FromResult(false);
+                        return Task.FromResult(CheckpointStatus.AlreadyInProgress);
                     }
 
                     pausedDbIds = [dbId];
                     pausedCount = 1;
+                    requestedCount = 1;
                 }
             }
             catch
@@ -212,10 +236,10 @@ namespace Garnet.server
                 throw;
             }
 
-            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, multiDbLockHeld, token, logger);
+            var checkpointTask = RunPausedCheckpointsAndReleaseLocksAsync(pausedDbIds, pausedCount, requestedCount, multiDbLockHeld, token, logger);
 
             if (background)
-                return Task.FromResult(true);
+                return Task.FromResult(CheckpointStatus.Success);
 
             return checkpointTask;
         }
@@ -240,8 +264,8 @@ namespace Garnet.server
                     return;
 
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
-                var storeTailAddress = await TakeCheckpointAsync(db, logger: Logger).ConfigureAwait(false);
-                UpdateLastSaveData(dbId, storeTailAddress);
+                var result = await TakeCheckpointAsync(db, logger: Logger).ConfigureAwait(false);
+                UpdateLastSaveData(dbId, result);
             }
             finally
             {
@@ -297,8 +321,8 @@ namespace Garnet.server
 
                 try
                 {
-                    var storeTailAddress = await TakeCheckpointAsync(databasesMapSnapshot[pausedDbId], logger: logger, token: token).ConfigureAwait(false);
-                    UpdateLastSaveData(pausedDbId, storeTailAddress);
+                    var result = await TakeCheckpointAsync(databasesMapSnapshot[pausedDbId], logger: logger, token: token).ConfigureAwait(false);
+                    UpdateLastSaveData(pausedDbId, result);
                 }
                 finally
                 {
@@ -430,9 +454,13 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                Logger?.LogInformation(ex,
+                // Failing to enumerate the AOF database ids means no database recovers its AOF, so log it at the
+                // default level and honor FailOnRecoveryError as the checkpoint path above does.
+                Logger?.LogError(ex,
                     "Error during recovery of database ids; aofParentDir = {aofParentDir}; aofDirBaseName = {aofDirBaseName}",
                     aofParentDir, aofDirBaseName);
+                if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                    throw;
                 return;
             }
 
@@ -444,6 +472,13 @@ namespace Garnet.server
 
                 await RecoverDatabaseAOFAsync(db).ConfigureAwait(false);
             }
+        }
+
+        /// <inheritdoc/>
+        public override void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false)
+        {
+            foreach (var db in GetDatabasesSnapshot())
+                VerifyDatabaseRecoveryIsComplete(db, canBeRepairedBySync);
         }
 
         /// <inheritdoc/>
@@ -467,8 +502,13 @@ namespace Garnet.server
                 for (var i = 0; i < activeDbIdsMapSize; i++)
                 {
                     var dbId = activeDbIdsMapSnapshot[i];
-                    var offset = ReplayDatabaseAOF(aofProcessor, databasesMapSnapshot[dbId], dbId == 0 ? untilAddress : AppendOnlyFile.InvalidAofAddress);
+                    var db = databasesMapSnapshot[dbId];
+
+                    var offset = ReplayDatabaseAOF(aofProcessor, db, dbId == 0 ? untilAddress : AppendOnlyFile.InvalidAofAddress);
                     if (dbId == 0) replicationOffset = offset;
+
+                    // Wait for Vector Sets to catch up before declaring us "recovered"
+                    db.VectorManager?.WaitForQuiescence();
                 }
             }
             finally
@@ -983,14 +1023,25 @@ namespace Garnet.server
         /// individual one) so a per-DB BGSAVE issued mid-flight during a general BGSAVE reliably
         /// observes the in-progress checkpoint and fails with "checkpoint already in progress".
         /// </summary>
-        private async Task<bool> RunPausedCheckpointsAndReleaseLocksAsync(int[] pausedDbIds, int pausedCount,
-            bool multiDbLockHeld, CancellationToken token, ILogger logger)
+        /// <param name="pausedDbIds">Buffer whose first <paramref name="pausedCount"/> entries are pause-locked database IDs.</param>
+        /// <param name="pausedCount">Number of databases this request pause-locked and will checkpoint.</param>
+        /// <param name="requestedCount">Number of databases this request was asked to checkpoint, which exceeds
+        /// <paramref name="pausedCount"/> when a database was skipped because its checkpoint lock was already held.</param>
+        /// <param name="multiDbLockHeld">Whether the caller holds <see cref="multiDbCheckpointingLock"/>.</param>
+        /// <param name="token">Cancellation token.</param>
+        /// <param name="logger">Logger.</param>
+        private async Task<CheckpointStatus> RunPausedCheckpointsAndReleaseLocksAsync(int[] pausedDbIds, int pausedCount,
+            int requestedCount, bool multiDbLockHeld, CancellationToken token, ILogger logger)
         {
             // Pre-fill with Task.CompletedTask so the catch path can safely await Task.WhenAll
             // even if the synchronous task-creation loop below throws partway through.
             var checkpointTasks = new Task[pausedCount];
             for (var i = 0; i < pausedCount; i++)
                 checkpointTasks[i] = Task.CompletedTask;
+
+            // Each checkpoint records its own outcome here rather than through its task's result, so a database
+            // whose task was never created or which threw stays counted as a failure.
+            var succeeded = new bool[pausedCount];
 
             try
             {
@@ -1002,7 +1053,7 @@ namespace Garnet.server
                 try
                 {
                     for (var i = 0; i < pausedCount; i++)
-                        checkpointTasks[i] = TakeOneCheckpointAsync(databaseMapSnapshot[pausedDbIds[i]], pausedDbIds[i]);
+                        checkpointTasks[i] = TakeOneCheckpointAsync(databaseMapSnapshot[pausedDbIds[i]], pausedDbIds[i], i);
 
                     await Task.WhenAll(checkpointTasks).ConfigureAwait(false);
                 }
@@ -1028,28 +1079,48 @@ namespace Garnet.server
                 databasesContentLock.ReadUnlock();
             }
 
-            return true;
+            var allSucceeded = true;
+            for (var i = 0; i < pausedCount; i++)
+                allSucceeded &= succeeded[i];
+
+            if (!allSucceeded)
+                return CheckpointStatus.Failed;
+
+            // A database that could not be pause-locked already had a checkpoint in flight, so this request never
+            // attempted it and cannot vouch for it. Reporting success would tell a foreground SAVE that every
+            // requested database is on disk when one of them was skipped, and that skipped checkpoint may still
+            // fail. The skipped database records its own outcome through its own RecordCheckpointOutcome, so its
+            // LASTSAVE and rdb_last_bgsave_status stay truthful either way; this only stops the aggregate reply
+            // from claiming more than the request actually did.
+            //
+            // Background requests reply before this runs, so the BGSAVE contract of "skip the busy databases and
+            // report started" - asserted by MultiDatabaseSaveInProgressTest - is unaffected.
+            return pausedCount < requestedCount ? CheckpointStatus.AlreadyInProgress : CheckpointStatus.Success;
 
             // Local function: take one per-DB checkpoint and update LASTSAVE. Does NOT resume the
             // per-DB lock — the outer finally above resumes all paused DBs after WhenAll completes.
-            async Task TakeOneCheckpointAsync(GarnetDatabase db, int dbId)
+            async Task TakeOneCheckpointAsync(GarnetDatabase db, int dbId, int slot)
             {
-                var storeTailAddress = await TakeCheckpointAsync(db, logger: logger, token: token).ConfigureAwait(false);
-                UpdateLastSaveData(dbId, storeTailAddress);
+                var result = await TakeCheckpointAsync(db, logger: logger, token: token).ConfigureAwait(false);
+                UpdateLastSaveData(dbId, result);
+                succeeded[slot] = result.IsSuccessful;
             }
         }
 
-        private void UpdateLastSaveData(int dbId, long? storeTailAddress)
+        /// <summary>
+        /// Resolve the database for the given ID and record its checkpoint outcome
+        /// </summary>
+        /// <param name="dbId">ID of the database that was checkpointed</param>
+        /// <param name="result">Outcome of the checkpoint attempt</param>
+        /// <remarks>
+        /// The database is read from the map here rather than taken from the caller, so that a swap-db that ran while
+        /// the checkpoint was in flight cannot attribute the outcome to the database that was swapped away.
+        /// </remarks>
+        private void UpdateLastSaveData(int dbId, CheckpointResult result)
         {
             var databasesMapSnapshot = databases.Map;
 
-            var db = databasesMapSnapshot[dbId];
-            db.LastSaveTime = DateTimeOffset.UtcNow;
-
-            if (storeTailAddress.HasValue)
-            {
-                db.LastSaveStoreTailAddress = storeTailAddress.Value;
-            }
+            RecordCheckpointOutcome(databasesMapSnapshot[dbId], result);
         }
 
         /// <inheritdoc/>
@@ -1063,8 +1134,11 @@ namespace Garnet.server
             for (var i = 0; i < activeDbIdsMapSize; i++)
             {
                 var dbId = activeDbIdsMapSnapshot[i];
-                databasesMapSnapshot[dbId].VectorManager.Initialize();
-                databasesMapSnapshot[dbId].VectorManager.ReconcileRecoveredState();
+                var db = databasesMapSnapshot[dbId];
+
+                db.VectorManager?.Initialize();
+                db.VectorManager?.ReconcileRecoveredState();
+                db.VectorManager?.WaitForQuiescence();
             }
         }
 

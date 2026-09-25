@@ -548,10 +548,10 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "d", 4);
             db.SortedSetAdd("key1", "e", 5);
 
-            // Set expiration for the minimum, maximum and middle items
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "3", "a", "e", "c");
-
-            Thread.Sleep(300);
+            // Expire the minimum, maximum and middle items
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "3", "a", "e", "c");
+            MemberExpiry.WaitUntilPast(deadline);
 
             // ZCARD
             var count = db.SortedSetLength("key1");
@@ -825,6 +825,63 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommands("ZMSCORE zmscore a z b", "PING", 4, 1);
             expectedResponse = "*3\r\n$1\r\n0\r\n$-1\r\n$1\r\n1\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void ZRangeStoreInvalidParamsReturnErrorAndKeepSessionAlive()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            lightClientRequest.SendCommands("ZADD zrs 1 a 2 b 3 c", "PING");
+            // A pre-existing destination must survive a rejected ZRANGESTORE.
+            lightClientRequest.SendCommands("ZADD zrsdst 9 keep", "PING");
+
+            // Index mode with LIMIT. On unpatched main SortedSetRange writes the
+            // "-ERR syntax error, LIMIT ..." into the range output buffer, which the
+            // store path then parses as an array length, aborting the RESP session
+            // with a protocol error (a missing reply here would hang this request).
+            var response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1 LIMIT 0 2", "PING");
+            var expectedResponse = "-ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Non-float min/max in BYSCORE mode reaches the same faulty path on main.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs notafloat 5 BYSCORE", "PING");
+            expectedResponse = "-ERR min or max is not a float\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // The destination is left untouched by the rejected commands.
+            response = lightClientRequest.SendCommands("ZRANGE zrsdst 0 -1", "PING", 2, 1);
+            expectedResponse = "*1\r\n$4\r\nkeep\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A well-formed ZRANGESTORE still overwrites the destination.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1", "PING");
+            expectedResponse = ":3\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANGE zrsdst 0 -1", "PING", 4, 1);
+            expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // BYSCORE and BYLEX are independent options, so both range blocks run and the
+            // BYLEX error is written after BYSCORE has already produced an array. Only the
+            // error may reach the client - forwarding both would answer one command with two
+            // RESP replies, which is the desync this test exists to prevent.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 1 3 BYSCORE BYLEX", "PING");
+            expectedResponse = "-ERR min or max not valid string range item\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // ... and the destination still survives that one.
+            response = lightClientRequest.SendCommands("ZRANGE zrsdst 0 -1", "PING", 4, 1);
+            expectedResponse = "*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n+PONG\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A rejected ZRANGESTORE pipelined with another scratch-allocating command
+            // in the same network batch must not corrupt the shared scratch buffer: the
+            // error payload has to coexist with the following ZRANGE's own allocation.
+            response = lightClientRequest.SendCommands("ZRANGESTORE zrsdst zrs 0 -1 LIMIT 0 2", "ZRANGE zrs (1 3 BYSCORE LIMIT 0 2", 1, 3);
+            expectedResponse = "-ERR syntax error, LIMIT is only supported in combination with either BYSCORE or BYLEX\r\n*2\r\n$1\r\nb\r\n$1\r\nc\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -2430,14 +2487,14 @@ namespace Garnet.test
             db.SortedSetAdd("key2", "b", 2);
             db.SortedSetAdd("key2", "c", 3);
 
-            // Set expiration for some items in key1
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "c");
-            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "d");
+            // Give "d" a pending expiration that is not reached while the test runs
+            db.Execute("ZPEXPIREAT", "key1", MemberExpiry.Pending(), "MEMBERS", "1", "d");
 
-            // Set expiration for matching items in key2
-            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
-
-            Thread.Sleep(300);
+            // Expire some items in key1 and the matching item in key2
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "2", "a", "c");
+            db.Execute("ZPEXPIREAT", "key2", deadline, "MEMBERS", "1", "a");
+            MemberExpiry.WaitUntilPast(deadline);
 
             // Perform ZDIFF
             var diff = db.SortedSetCombine(SetOperation.Difference, ["key1", "key2"]);
@@ -2451,7 +2508,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual("e", diffWithScores[1].Element.ToString());
             ClassicAssert.AreEqual(5, diffWithScores[1].Score);
 
-            Thread.Sleep(300);
+            // Expire "d"
+            deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "d");
+            MemberExpiry.WaitUntilPast(deadline);
 
             // Perform ZDIFF again after more items have expired
             diff = db.SortedSetCombine(SetOperation.Difference, ["key1", "key2"]);
@@ -2481,14 +2541,14 @@ namespace Garnet.test
             db.SortedSetAdd("key2", "b", 2);
             db.SortedSetAdd("key2", "c", 3);
 
-            // Set expiration for some items in key1
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "2", "a", "c");
-            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "d");
+            // Give "d" a pending expiration that is not reached while the test runs
+            db.Execute("ZPEXPIREAT", "key1", MemberExpiry.Pending(), "MEMBERS", "1", "d");
 
-            // Set expiration for matching items in key2
-            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
-
-            Thread.Sleep(300);
+            // Expire some items in key1 and the matching item in key2
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "2", "a", "c");
+            db.Execute("ZPEXPIREAT", "key2", deadline, "MEMBERS", "1", "a");
+            MemberExpiry.WaitUntilPast(deadline);
 
             // Perform ZDIFFSTORE
             var diffStoreCount = db.SortedSetCombineAndStore(SetOperation.Difference, "key3", ["key1", "key2"]);
@@ -2502,7 +2562,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual("e", diffStoreResult[1].Element.ToString());
             ClassicAssert.AreEqual(5, diffStoreResult[1].Score);
 
-            Thread.Sleep(300);
+            // Expire "d"
+            deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "d");
+            MemberExpiry.WaitUntilPast(deadline);
 
             // Perform ZDIFFSTORE again after more items have expired
             diffStoreCount = db.SortedSetCombineAndStore(SetOperation.Difference, "key3", ["key1", "key2"]);
@@ -2526,10 +2589,9 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "b", 2);
             db.SortedSetAdd("key1", "c", 3);
 
-            // Set expiration for some items in key1
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "a");
-
-            Thread.Sleep(10);
+            // Give "a" a pending expiration that is not reached while the test runs
+            var pending = MemberExpiry.Pending();
+            db.Execute("ZPEXPIREAT", "key1", pending, "MEMBERS", "1", "a");
 
             // Try to increment the score of an expiring item
             var newScore = db.SortedSetIncrement("key1", "a", 5);
@@ -2537,10 +2599,17 @@ namespace Garnet.test
 
             // Check the TTL of the expiring item
             var ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
-            ClassicAssert.LessOrEqual((long)ttl, 200);
+            ClassicAssert.LessOrEqual((long)ttl, MemberExpiry.PendingTtlMs);
             ClassicAssert.Greater((long)ttl, 0);
 
-            Thread.Sleep(200);
+            // The increment leaves the deadline of the item untouched
+            var expireTime = db.Execute("ZPEXPIRETIME", "key1", "MEMBERS", "1", "a");
+            ClassicAssert.AreEqual(pending, (long)expireTime);
+
+            // Expire "a"
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "a");
+            MemberExpiry.WaitUntilPast(deadline);
 
             // Check the item has expired
             ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
@@ -2572,21 +2641,30 @@ namespace Garnet.test
             db.SortedSetAdd("key2", "b", 2);
             db.SortedSetAdd("key2", "c", 3);
 
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "c");
-            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
-            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+            // Give the items that must survive the first two phases a pending expiration that is not
+            // reached while the test runs
+            var pending = MemberExpiry.Pending();
+            db.Execute("ZPEXPIREAT", "key1", pending, "MEMBERS", "2", "c", "b");
+            db.Execute("ZPEXPIREAT", "key2", pending, "MEMBERS", "1", "a");
 
             var inter = db.SortedSetCombine(SetOperation.Intersect, ["key1", "key2"]);
             ClassicAssert.AreEqual(3, inter.Length);
 
-            Thread.Sleep(300);
+            // Expire "c" in key1 and "a" in key2
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "c");
+            db.Execute("ZPEXPIREAT", "key2", deadline, "MEMBERS", "1", "a");
+            MemberExpiry.WaitUntilPast(deadline);
 
             var interWithScores = db.SortedSetCombineWithScores(SetOperation.Intersect, ["key1", "key2"]);
             ClassicAssert.AreEqual(1, interWithScores.Length);  // Only "b" should remain
             ClassicAssert.AreEqual("b", interWithScores[0].Element.ToString());
             ClassicAssert.AreEqual(4, interWithScores[0].Score); // Sum of scores
 
-            Thread.Sleep(300);
+            // Expire "b" in key1
+            deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "b");
+            MemberExpiry.WaitUntilPast(deadline);
 
             inter = db.SortedSetCombine(SetOperation.Intersect, ["key1", "key2"]);
             ClassicAssert.AreEqual(0, inter.Length);
@@ -2608,16 +2686,22 @@ namespace Garnet.test
             db.SortedSetAdd("key2", "b", 2);
             db.SortedSetAdd("key2", "c", 3);
 
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "c");
-            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
-            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+            // Give "b" a pending expiration that is not reached while the test runs
+            db.Execute("ZPEXPIREAT", "key1", MemberExpiry.Pending(), "MEMBERS", "1", "b");
 
-            Thread.Sleep(300);
+            // Expire "c" in key1 and "a" in key2
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "c");
+            db.Execute("ZPEXPIREAT", "key2", deadline, "MEMBERS", "1", "a");
+            MemberExpiry.WaitUntilPast(deadline);
 
             var interCardCount = (long)db.Execute("ZINTERCARD", "2", "key1", "key2");
             ClassicAssert.AreEqual(1, interCardCount); // Only "b" should remain
 
-            Thread.Sleep(300);
+            // Expire "b" in key1
+            deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "b");
+            MemberExpiry.WaitUntilPast(deadline);
 
             interCardCount = (long)db.Execute("ZINTERCARD", "2", "key1", "key2");
             ClassicAssert.AreEqual(0, interCardCount); // No items should remain
@@ -2639,11 +2723,14 @@ namespace Garnet.test
             db.SortedSetAdd("key2", "b", 2);
             db.SortedSetAdd("key2", "c", 3);
 
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "c");
-            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "1", "b");
-            db.Execute("ZPEXPIRE", "key2", "200", "MEMBERS", "1", "a");
+            // Give "b" a pending expiration that is not reached while the test runs
+            db.Execute("ZPEXPIREAT", "key1", MemberExpiry.Pending(), "MEMBERS", "1", "b");
 
-            Thread.Sleep(300);
+            // Expire "c" in key1 and "a" in key2
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "c");
+            db.Execute("ZPEXPIREAT", "key2", deadline, "MEMBERS", "1", "a");
+            MemberExpiry.WaitUntilPast(deadline);
 
             var interStoreCount = db.SortedSetCombineAndStore(SetOperation.Intersect, "key3", ["key1", "key2"]);
             ClassicAssert.AreEqual(1, interStoreCount); // Only "b" should remain
@@ -2653,7 +2740,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual("b", interStoreResult[0].Element.ToString());
             ClassicAssert.AreEqual(4, interStoreResult[0].Score); // Sum of scores
 
-            Thread.Sleep(300);
+            // Expire "b" in key1
+            deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "b");
+            MemberExpiry.WaitUntilPast(deadline);
 
             interStoreCount = db.SortedSetCombineAndStore(SetOperation.Intersect, "key3", ["key1", "key2"]);
             ClassicAssert.AreEqual(0, interStoreCount); // No items should remain
@@ -2674,10 +2764,13 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "d", 4);
             db.SortedSetAdd("key1", "e", 5);
 
-            db.Execute("ZPEXPIRE", "key1", "500", "MEMBERS", "3", "a", "e", "c");
-            db.Execute("ZPEXPIRE", "key1", "2000", "MEMBERS", "1", "b");
+            // Give "b" a pending expiration that is not reached while the test runs
+            db.Execute("ZPEXPIREAT", "key1", MemberExpiry.Pending(), "MEMBERS", "1", "b");
 
-            Thread.Sleep(1000);
+            // Expire "a", "e" and "c"
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "3", "a", "e", "c");
+            MemberExpiry.WaitUntilPast(deadline);
 
             var lexCount = (int)db.Execute("ZLEXCOUNT", "key1", "-", "+"); // SortedSetLengthByValue will check - and + to [- and [+
             ClassicAssert.AreEqual(2, lexCount); // Only "b" and "d" should remain
@@ -2685,7 +2778,10 @@ namespace Garnet.test
             var lexCountRange = db.SortedSetLengthByValue("key1", "b", "d", Exclude.Stop);
             ClassicAssert.AreEqual(1, lexCountRange); // Only "b" should remain within the range
 
-            Thread.Sleep(1500);
+            // Expire "b"
+            deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "b");
+            MemberExpiry.WaitUntilPast(deadline);
 
             lexCount = (int)db.Execute("ZLEXCOUNT", "key1", "-", "+");
             ClassicAssert.AreEqual(1, lexCount); // Only "d" should remain
@@ -3322,10 +3418,9 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "b", 2);
             db.SortedSetAdd("key1", "c", 3);
 
-            // Set expiration for some items in key1
-            db.Execute("ZPEXPIRE", "key1", "200", "MEMBERS", "1", "a");
-
-            Thread.Sleep(10);
+            // Give "a" a pending expiration that is not reached while the test runs
+            var pending = MemberExpiry.Pending();
+            db.Execute("ZPEXPIREAT", "key1", pending, "MEMBERS", "1", "a");
 
             // Check the score of an expiring item
             var score = db.SortedSetScore("key1", "a");
@@ -3333,10 +3428,13 @@ namespace Garnet.test
 
             // Check the TTL of the expiring item
             var ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
-            ClassicAssert.LessOrEqual((long)ttl, 200);
+            ClassicAssert.LessOrEqual((long)ttl, MemberExpiry.PendingTtlMs);
             ClassicAssert.Greater((long)ttl, 0);
 
-            Thread.Sleep(200);
+            // Expire "a"
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("ZPEXPIREAT", "key1", deadline, "MEMBERS", "1", "a");
+            MemberExpiry.WaitUntilPast(deadline);
 
             // Check the item has expired
             ttl = db.Execute("ZPTTL", "key1", "MEMBERS", "1", "a");
@@ -4578,6 +4676,70 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanUseZRandMemberWithOverflowingCount()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD randzset 1 m1 2 m2 3 m3");
+            var expectedResponse = ":3\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // A count too large for the packed count field that carries it to the object store is pinned to
+            // the largest representable count, which for a positive count is then saturated to the size of
+            // the sorted set. Pipelining PING checks that each reply is complete and correctly framed.
+
+            // This count used to unpack to 0, for which ZRANDMEMBER wrote no reply at all
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 1073741824", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // This count used to unpack to -536870912, and the object store then attempted a ~2GB reply
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 536870912", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // This count used to unpack to -1, and only a single member came back
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2147483647", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // The clamp must not disturb the WITHSCORES bit packed next to the count
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2147483647 WITHSCORES", "PING", 7, 1);
+            expectedResponse = "*6\r\n"; // 3 member/score pairs
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // int.MaxValue >> 2 is the largest count the packing represents faithfully, so the clamp is a no-op
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 536870911", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // all 3 members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Counts well inside the representable range are untouched
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2", "PING", 3, 1);
+            expectedResponse = "*2\r\n"; // 2 distinct members
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 5", "PING", 4, 1);
+            expectedResponse = "*3\r\n"; // saturated to the size of the sorted set
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset -5", "PING", 6, 1);
+            expectedResponse = "*5\r\n"; // 5 members, repeats allowed
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 0", "PING", 1, 1);
+            expectedResponse = "*0\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Without a count the reply is a single bulk string, not an array
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset", "PING", 1, 1);
+            expectedResponse = "$2\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("ZRANDMEMBER randzset 2 WITHSCORES", "PING", 5, 1);
+            expectedResponse = "*4\r\n"; // 2 member/score pairs
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
         public async Task CanUseZRandMemberWithSE()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -5224,6 +5386,41 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommands("ZINTERSTORE dest 2147483646 zset1", "PING");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void CanDoSortedSetCommandsWithBadNumKeysLC()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            // Same overflow as CanDoZInterStoreWithBadNumKeysLC, for the sibling commands.
+            var expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR)}\r\n+PONG\r\n";
+
+            var commands = new[]
+            {
+                "ZMPOP 2147483647 zset1 MIN",
+                "ZUNION 2147483647 zset1",
+                "ZUNIONSTORE dest 2147483647 zset1",
+                "ZINTER 2147483647 zset1",
+                "ZINTERCARD 2147483647 zset1",
+                "ZMPOP 2147483646 zset1 MIN",
+                "ZUNION 2147483646 zset1",
+                "ZUNIONSTORE dest 2147483646 zset1",
+                "ZINTER 2147483646 zset1",
+                "ZINTERCARD 2147483646 zset1",
+            };
+
+            foreach (var command in commands)
+            {
+                var response = lightClientRequest.SendCommands(command, "PING");
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
+
+            // COMMAND GETKEYS applies keynum key-specs before the command handlers run,
+            // so an inflated numkeys must be clamped there too instead of walking the
+            // parse state out of bounds.
+            var getKeysResponse = lightClientRequest.SendCommands("COMMAND GETKEYS ZUNION 2147483647 zset1", "PING");
+            TestUtils.AssertEqualUpToExpectedLength("*1\r\n$5\r\nzset1\r\n+PONG\r\n", getKeysResponse);
         }
 
         [Test]

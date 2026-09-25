@@ -291,6 +291,45 @@ namespace Garnet.test.cluster
             ClusterSRPrimaryCheckpointRetrieve(performRMW, disableObjects, false, true);
         }
 
+        [Test, Order(5)]
+        [Category("REPLICATION")]
+        public void ReadWriteSessionDoesNotEnableReplicaWritesAfterFailover()
+        {
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            const string key = "readwrite-failover-key";
+            const string value = "value";
+
+            context.CreateInstances(2, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+
+            using var session = context.clusterTestUtils.CreateGarnetClientSession(primaryIndex, useTLS: useTLS);
+            session.Connect();
+            ClassicAssert.AreEqual("OK", session.ExecuteAsync("READWRITE").GetAwaiter().GetResult());
+            ClassicAssert.AreEqual("OK", session.ExecuteAsync("SET", key, value).GetAwaiter().GetResult());
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+
+            _ = context.clusterTestUtils.ClusterFailover(replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForNoFailover(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForFailoverCompleted(replicaIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, primaryIndex, context.logger);
+
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            var exception = Assert.Throws<Exception>(() => session.ExecuteAsync("GET", key).GetAwaiter().GetResult());
+            StringAssert.StartsWith($"MOVED {slot} ", exception.Message);
+
+            exception = Assert.Throws<Exception>(() => session.ExecuteAsync("SET", key, "local-value").GetAwaiter().GetResult());
+            StringAssert.StartsWith($"MOVED {slot} ", exception.Message);
+
+            exception = Assert.Throws<Exception>(() => session.ExecuteAsync("FLUSHALL").GetAwaiter().GetResult());
+            ClassicAssert.AreEqual("ERR You can't write against a read only replica.", exception.Message);
+
+            ClassicAssert.AreEqual("OK", session.ExecuteAsync("READONLY").GetAwaiter().GetResult());
+            ClassicAssert.AreEqual(value, session.ExecuteAsync("GET", key).GetAwaiter().GetResult());
+        }
+
         [Test, Order(6)]
         [Category("REPLICATION")]
         public void ClusterSRPrimaryCheckpointRetrieve([Values] bool performRMW, [Values] bool disableObjects, [Values] bool manySegments)
@@ -633,6 +672,9 @@ namespace Garnet.test.cluster
             // Enable when old primary becomes replica
             context.clusterTestUtils.WaitForReplicaRecovery(primaryIndex, logger: context.logger);
 
+            // The promoted node has to be usable as a primary by this client before writes are sent to it
+            context.clusterTestUtils.WaitForPrimaryRole(replicaIndex, context.logger);
+
             // Check if allowed to write to new Primary
             if (!performRMW)
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, slotMap: slotMap);
@@ -705,6 +747,9 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForNoFailover(1, context.logger);
             context.clusterTestUtils.WaitForNoFailover(2, context.logger);
 
+            // Node 1 has to be usable as a primary by this client before writes are sent to it
+            context.clusterTestUtils.WaitForPrimaryRole(1, context.logger);
+
             // Wait for replica to recover
             context.clusterTestUtils.WaitForReplicaRecovery(2, context.logger);
 
@@ -772,6 +817,136 @@ namespace Garnet.test.cluster
                 Assert.Fail($"Task timeout - checkpointTask: {context.checkpointTask.Status}, attachReplicaTask: {attachReplicaTask.Status}");
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: primaryIndex, secondaryIndex: replicaIndex, logger: context.logger);
+        }
+
+        [Test]
+        [Category("REPLICATION")]
+        public void ClusterCheckpointCleanupRetiresEntriesWithSharedIndex()
+        {
+            context.CreateInstances(1, enableAOF: true, DisableStorageTier: true, useTLS: useTLS, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
+            ClassicAssert.IsTrue(context.clusterTestUtils.GetDatabase().StringSet("checkpoint-key", "value"));
+
+            var checkpointRoot = Path.Combine(context.nodeOptions[0].CheckpointDir, "Store", "checkpoints");
+            var logRoot = Path.Combine(checkpointRoot, "cpr-checkpoints");
+            var indexRoot = Path.Combine(checkpointRoot, "index-checkpoints");
+            string previousLogDirectory = null;
+            string sharedIndexDirectory = null;
+
+            for (var checkpoint = 0; checkpoint < 3; checkpoint++)
+            {
+                context.clusterTestUtils.Checkpoint(0, context.logger);
+
+                var logDirectories = Directory.GetDirectories(logRoot);
+                ClassicAssert.AreEqual(1, logDirectories.Length, "Only the latest log checkpoint should remain");
+                var logDirectory = logDirectories[0];
+                ClassicAssert.IsTrue(new FileInfo(Path.Combine(logDirectory, "info.dat.0")).Length > 0,
+                    "The retained checkpoint metadata must be readable");
+
+                if (previousLogDirectory != null)
+                    ClassicAssert.IsFalse(Directory.Exists(previousLogDirectory), "The previous log checkpoint should be removed");
+
+                var indexDirectories = Directory.GetDirectories(indexRoot);
+                ClassicAssert.AreEqual(1, indexDirectories.Length, "Log-only checkpoints should retain the shared index");
+                if (sharedIndexDirectory != null)
+                    ClassicAssert.AreEqual(sharedIndexDirectory, indexDirectories[0]);
+
+                previousLogDirectory = logDirectory;
+                sharedIndexDirectory = indexDirectories[0];
+            }
+        }
+
+        [Test]
+        [Category("REPLICATION")]
+        [CancelAfter(60_000)]
+        public void ClusterCheckpointCleanupRetiresEntriesPinnedByActiveReader(CancellationToken cancellationToken)
+        {
+#if !DEBUG
+            Assert.Ignore($"Depends on {nameof(ExceptionInjectionHelper)}, which is disabled in non-Debug builds");
+#endif
+            var primaryIndex = 0;
+            var replicaIndex = 1;
+            var keyLength = 16;
+            var kvpairCount = 32;
+
+            context.CreateInstances(2, enableAOF: true, DisableStorageTier: true, useTLS: useTLS, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], true, context.logger));
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaIndex, primaryIndex, logger: context.logger);
+
+            context.kvPairs = [];
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
+
+            var checkpointRoot = Path.Combine(context.nodeOptions[primaryIndex].CheckpointDir, "Store", "checkpoints");
+            var logRoot = Path.Combine(checkpointRoot, "cpr-checkpoints");
+            var indexRoot = Path.Combine(checkpointRoot, "index-checkpoints");
+
+            // The first checkpoint creates the index that every later log-only checkpoint shares
+            context.clusterTestUtils.Checkpoint(primaryIndex, context.logger);
+            var indexDirectories = Directory.GetDirectories(indexRoot);
+            ClassicAssert.AreEqual(1, indexDirectories.Length);
+            var sharedIndexDirectory = indexDirectories[0];
+
+            try
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+
+                // The attaching replica pins the latest checkpoint entry on the primary as an active reader
+                var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, async: true, failEx: false, logger: context.logger);
+                ClassicAssert.AreEqual("OK", resp);
+
+                while (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition))
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for the replica to acquire the checkpoint");
+
+                // Checkpoints taken while the oldest entry is pinned cannot retire anything
+                for (var checkpoint = 0; checkpoint < 2; checkpoint++)
+                {
+                    context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
+                    context.clusterTestUtils.Checkpoint(primaryIndex, context.logger);
+                }
+                ClassicAssert.AreEqual(3, Directory.GetDirectories(logRoot).Length, "Checkpoints pinned by an active reader must be retained");
+
+                var syncTask = Task.Run(() =>
+                {
+                    context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+                    context.clusterTestUtils.WaitForReplicaRecovery(replicaIndex, context.logger);
+                });
+
+                // Let the pinned reader finish. Checkpoint acquisition can re-enter the wait, so keep re-arming the signal.
+                while (!syncTask.IsCompleted)
+                {
+                    ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for the replica to release the checkpoint and sync");
+                }
+                syncTask.GetAwaiter().GetResult();
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Wait_After_Checkpoint_Acquisition);
+            }
+
+            // Once the reader is gone a single cleanup pass has to retire every entry before the tail,
+            // even though all of them share the index of the checkpoint that is still in use
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex);
+            context.clusterTestUtils.Checkpoint(primaryIndex, context.logger);
+
+            var logDirectories = Directory.GetDirectories(logRoot);
+            ClassicAssert.AreEqual(1, logDirectories.Length, "Only the latest log checkpoint should remain");
+            ClassicAssert.IsTrue(new FileInfo(Path.Combine(logDirectories[0], "info.dat.0")).Length > 0,
+                "The retained checkpoint metadata must be readable");
+
+            indexDirectories = Directory.GetDirectories(indexRoot);
+            ClassicAssert.AreEqual(1, indexDirectories.Length, "Log-only checkpoints should retain the shared index");
+            ClassicAssert.AreEqual(sharedIndexDirectory, indexDirectories[0]);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, context.logger);
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
 
         [Test, Order(14)]
@@ -962,6 +1137,11 @@ namespace Garnet.test.cluster
             _ = context.clusterTestUtils.AddDelSlotsRange(newPrimaryIndex, [(0, 16383)], addslot: true, context.logger);
             context.clusterTestUtils.BumpEpoch(newPrimaryIndex, logger: context.logger);
 
+            // Slot re-assignment settles asynchronously, so the new primary has to observe itself as the
+            // owner before it will serve writes instead of redirecting them
+            var newPrimaryId = context.clusterTestUtils.ClusterMyId(newPrimaryIndex, context.logger);
+            context.clusterTestUtils.WaitForSlotOwnership(newPrimaryIndex, newPrimaryId, [0, 16383], context.logger);
+
             // New primary diverges to its own history by new random seed
             kvpairCount <<= 1;
             if (disableObjects)
@@ -974,7 +1154,6 @@ namespace Garnet.test.cluster
 
             if (!ckptBeforeDivergence || multiCheckpointAfterDivergence) context.clusterTestUtils.Checkpoint(newPrimaryIndex, logger: context.logger);
 
-            var newPrimaryId = context.clusterTestUtils.ClusterMyId(newPrimaryIndex, context.logger);
             while (true)
             {
                 var replicaConfig = context.clusterTestUtils.ClusterNodes(replicaIndex, context.logger);
@@ -1153,14 +1332,14 @@ namespace Garnet.test.cluster
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
-            _ = primaryServer.Execute("EVAL", "redis.call('SET', KEYS[1], ARGV[1])", "1", "foo", "bar");
-            _ = primaryServer.Execute("EVAL", "redis.call('SET', KEYS[1], ARGV[1])", "1", "fizz", "buzz");
+            _ = primaryServer.Execute(0, "EVAL", ["redis.call('SET', KEYS[1], ARGV[1])", "1", "foo", "bar"]);
+            _ = primaryServer.Execute(0, "EVAL", ["redis.call('SET', KEYS[1], ARGV[1])", "1", "fizz", "buzz"]);
 
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
 
             var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
-            var res1 = (string)replicaServer.Execute("EVAL", "return redis.call('GET', KEYS[1])", "1", "foo");
-            var res2 = (string)replicaServer.Execute("EVAL", "return redis.call('GET', KEYS[1])", "1", "fizz");
+            var res1 = (string)replicaServer.Execute(0, "EVAL", ["return redis.call('GET', KEYS[1])", "1", "foo"]);
+            var res2 = (string)replicaServer.Execute(0, "EVAL", ["return redis.call('GET', KEYS[1])", "1", "fizz"]);
 
             ClassicAssert.AreEqual("bar", res1);
             ClassicAssert.AreEqual("buzz", res2);
@@ -1229,14 +1408,14 @@ namespace Garnet.test.cluster
                 ClusterReplicate();
 
             // Validate primary keys
-            var resp = primaryServer.Execute("KEYS", ["*"]);
+            var resp = primaryServer.Execute(0, "KEYS", ["*"]);
             ClassicAssert.AreEqual(expectedKeys, (string[])resp);
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
             replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             while (true)
             {
-                resp = replicaServer.Execute("KEYS", ["*"]);
+                resp = replicaServer.Execute(0, "KEYS", ["*"]);
                 if (expectedKeys.Length == ((string[])resp).Length)
                     break;
                 ClusterTestUtils.BackOff(cts.Token);
@@ -1248,9 +1427,9 @@ namespace Garnet.test.cluster
 
             void ExecuteRateLimit()
             {
-                var resp = primaryServer.Execute("RATELIMIT", [expectedKeys[0], "1000000000", "1000000000"]);
+                var resp = primaryServer.Execute(0, "RATELIMIT", [expectedKeys[0], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
-                resp = primaryServer.Execute("RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
+                resp = primaryServer.Execute(0, "RATELIMIT", [expectedKeys[1], "1000000000", "1000000000"]);
                 ClassicAssert.AreEqual("ALLOWED", (string)resp);
             }
 
@@ -1480,9 +1659,9 @@ namespace Garnet.test.cluster
                 while (start++ < end)
                 {
                     var key = start.ToString();
-                    var resp = primaryServer.Execute("SET", [key, key]);
+                    var resp = primaryServer.Execute(0, "SET", [key, key]);
                     ClassicAssert.AreEqual("OK", (string)resp);
-                    resp = primaryServer.Execute("GET", key);
+                    resp = primaryServer.Execute(0, "GET", [key]);
                     ClassicAssert.AreEqual(key, (string)resp);
                 }
             }
@@ -1527,8 +1706,8 @@ namespace Garnet.test.cluster
 
             void ValidateKeys()
             {
-                var resp = (string[])primaryServer.Execute("KEYS", ["*"]);
-                var resp2 = (string[])replicaServer.Execute("KEYS", ["*"]);
+                var resp = (string[])primaryServer.Execute(0, "KEYS", ["*"]);
+                var resp2 = (string[])replicaServer.Execute(0, "KEYS", ["*"]);
                 ClassicAssert.AreEqual(resp.Length, resp2.Length);
                 Array.Sort(resp);
                 Array.Sort(resp2);
@@ -1621,17 +1800,17 @@ namespace Garnet.test.cluster
                 while (start++ < end)
                 {
                     var key = start.ToString();
-                    var resp = server.Execute("SET", [key, key]);
+                    var resp = server.Execute(0, "SET", [key, key]);
                     ClassicAssert.AreEqual("OK", (string)resp);
-                    resp = server.Execute("GET", key);
+                    resp = server.Execute(0, "GET", [key]);
                     ClassicAssert.AreEqual(key, (string)resp);
                 }
             }
 
             void ValidateKeys()
             {
-                var resp = (string[])primaryServer.Execute("KEYS", ["*"]);
-                var resp2 = (string[])replicaServer.Execute("KEYS", ["*"]);
+                var resp = (string[])primaryServer.Execute(0, "KEYS", ["*"]);
+                var resp2 = (string[])replicaServer.Execute(0, "KEYS", ["*"]);
                 ClassicAssert.AreEqual(resp.Length, resp2.Length);
                 Array.Sort(resp);
                 Array.Sort(resp2);

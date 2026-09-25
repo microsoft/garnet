@@ -134,5 +134,45 @@ namespace Garnet.server
             AofEntryType.RangeIndexStreamChunk => true,
             _ => false,
         };
+
+        /// <summary>
+        /// True if this op's replayed record carries a length-prefixed value currentComponent after the key (Upsert shapes). This mirrors
+        /// the layout the replay parsers expect, and is used by both the chunked writer (which components to emit) and the reader
+        /// (how to reconstruct), so they always agree.
+        /// </summary>
+        internal static bool HasChunkValue(this AofEntryType opType) => opType switch
+        {
+            AofEntryType.StoreUpsert or
+            AofEntryType.ObjectStoreUpsert or
+            AofEntryType.UnifiedStoreStringUpsert or
+            AofEntryType.UnifiedStoreObjectUpsert => true,
+            _ => false,
+        };
+
+        /// <summary>
+        /// True if this op's replayed record carries a raw (non-length-prefixed) input tail after the key/value (Upsert-with-input
+        /// and RMW shapes). Object upserts and deletes carry no input. Used by both the chunked writer and reader.
+        /// </summary>
+        internal static bool HasChunkInput(this AofEntryType opType) => opType switch
+        {
+            AofEntryType.StoreUpsert or
+            AofEntryType.StoreRMW or
+            AofEntryType.ObjectStoreRMW or
+            AofEntryType.UnifiedStoreStringUpsert or
+            AofEntryType.UnifiedStoreRMW => true,
+            _ => false,
+        };
+
+        /// <summary>
+        /// True if this op's chunked value is a streamed OBJECT value (whose length is not known up front), so the reader must
+        /// accumulate it rather than pre-allocate from the header's overflowValueLength (which is 0 for these). Span (string)
+        /// upsert values are pre-sized instead.
+        /// </summary>
+        internal static bool HasChunkObjectValue(this AofEntryType opType) => opType switch
+        {
+            AofEntryType.ObjectStoreUpsert or
+            AofEntryType.UnifiedStoreObjectUpsert => true,
+            _ => false,
+        };
     }
 }

@@ -53,6 +53,9 @@ namespace Resp.benchmark
         [Option('t', "threads", Separator = ',', Default = new[] { 1, 2, 4, 8, 16, 32 }, HelpText = "Number of threads (comma separated)")]
         public IEnumerable<int> NumThreads { get; set; }
 
+        [Option("load-threads", Required = false, Default = 8, HelpText = "Number of threads used for the initial data load phase")]
+        public int LoadThreads { get; set; }
+
         [Option('a', "auth", Required = false, Default = null, HelpText = "Authentication password")]
         public string Auth { get; set; }
 
@@ -85,6 +88,12 @@ namespace Resp.benchmark
 
         [Option("cert-password", Required = false, HelpText = "TLS certificate password (example: placeholder).")]
         public string CertPassword { get; set; }
+
+        [Option("cert-password-file", Required = false, HelpText = "File containing the TLS certificate password.")]
+        public string CertPasswordFile { get; set; }
+
+        [Option("issuer-certificate-path", Required = false, HelpText = "CA certificate used to validate the TLS server certificate.")]
+        public string IssuerCertificatePath { get; set; }
 
         [Option('o', "online", Required = false, Default = false, HelpText = "Online get/set mix based on --readpercent.")]
         public bool Online { get; set; }

@@ -39,7 +39,7 @@ namespace Tsavorite.core
         internal static bool IsBlittable => Utility.IsBlittable<T>();
 
         private int checkpointCallbackCount;
-        private int checkpointErrorCode;
+        private IoFailure checkpointError;
         private TaskCompletionSource<bool> checkpointTcs;
 
         private readonly ConcurrentQueue<long> freeList;
@@ -258,12 +258,6 @@ namespace Tsavorite.core
         #region Checkpoint
 
         /// <summary>
-        /// Is checkpoint complete
-        /// </summary>
-        /// <returns></returns>
-        public bool IsCheckpointCompleted() => checkpointCallbackCount == 0;
-
-        /// <summary>
         /// Is checkpoint completed
         /// </summary>
         /// <returns></returns>
@@ -272,7 +266,11 @@ namespace Tsavorite.core
             await checkpointTcs.Task.WaitAsync(token).ConfigureAwait(false);
         }
 
-        public Task GetCheckpointTask() => checkpointTcs.Task;
+        /// <summary>
+        /// Task that completes when the flush started by the most recent <see cref="BeginCheckpoint(IDevice, ulong, out ulong)"/>
+        /// has finished, or <c>null</c> if no checkpoint has been started on this allocator.
+        /// </summary>
+        public Task GetCheckpointTask() => checkpointTcs?.Task;
 
         /// <summary>
         /// Public facing persistence API
@@ -298,73 +296,156 @@ namespace Tsavorite.core
             int recordsCountInLastLevel = localCount & PageSizeMask;
             int numCompleteLevels = localCount >> PageSizeBits;
             int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
-            checkpointCallbackCount = numLevels;
-            checkpointErrorCode = 0;
+
+            // Count an issuance sentinel alongside the levels, retired in the finally below once issuance has ended
+            // and the catch has recorded any exception. A device may invoke a completion callback synchronously and
+            // then throw out of the same submit; without the sentinel that completion can drive the count to zero and
+            // report the checkpoint successful before the failure is recorded.
+            checkpointCallbackCount = numLevels + 1;
+            checkpointError = null;
             checkpointTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             uint alignedPageSize = PageSize * (uint)RecordSize;
             uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
 
             int sectorSize = (int)device.SectorSize;
             numBytesWritten = 0;
-            for (int i = 0; i < numLevels; i++)
+            int i = 0;
+
+            // Levels whose retirement is accounted for: the device accepted the write and its completion callback will
+            // retire the level, or the submit failed and the catch retired it in place. Levels past this point were
+            // counted but never handed to the device.
+            var accountedLevels = 0;
+            try
             {
-                OverflowPagesFlushAsyncResult result = default;
-
-                uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
-
-                if (!useReadCache)
+                for (; i < numLevels; i++)
                 {
-                    device.WriteAsync(pointers[i], offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                    OverflowPagesFlushAsyncResult result = default;
+                    result.levelIndex = i;
+                    result.retirementGuard = new(0);
+
+                    uint writeSize = (uint)((i == numCompleteLevels) ? (lastLevelSize + (sectorSize - 1)) & ~(sectorSize - 1) : alignedPageSize);
+                    result.numBytesToWrite = writeSize;
+
+                    try
+                    {
+                        if (!useReadCache)
+                        {
+                            device.WriteAsync(pointers[i], offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                        }
+                        else
+                        {
+                            result.mem = new SectorAlignedMemory((int)writeSize, (int)device.SectorSize);
+                            bool prot = false;
+                            if (!epoch.ThisInstanceProtected())
+                            {
+                                prot = true;
+                                epoch.Resume();
+                            }
+
+                            try
+                            {
+                                Buffer.MemoryCopy((void*)pointers[i], result.mem.aligned_pointer, writeSize, writeSize);
+                                int j = 0;
+                                if (i == 0) j += AllocateChunkSize * RecordSize;
+                                for (; j < writeSize; j += sizeof(HashBucket))
+                                {
+                                    skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
+                                }
+                            }
+                            finally
+                            {
+                                // Staging can throw, and this thread may be a pooled one. Leaving it epoch-protected
+                                // would pin the safe-to-reclaim boundary for the life of the process.
+                                if (prot) epoch.Suspend();
+                            }
+
+                            device.WriteAsync((IntPtr)result.mem.aligned_pointer, offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // A device may invoke the completion callback synchronously and then throw back out of the
+                        // submit, so this level may already have been retired and its buffer already released. Claim
+                        // exactly once: retiring it twice would complete the checkpoint while earlier writes are still
+                        // reading from the buffers they were given. Record the error before retiring, so a retirement
+                        // that completes the checkpoint reports the failure.
+                        RecordCheckpointError($"level {i} could not be issued", ex);
+                        if (result.TryClaimRetirement())
+                        {
+                            result.mem?.Dispose();
+                            RetireCheckpointLevel();
+                        }
+                        accountedLevels++;
+                        throw;
+                    }
+                    accountedLevels++;
+                    numBytesWritten += writeSize;
                 }
+            }
+            catch (Exception ex)
+            {
+                // The levels already issued will still complete, but the ones counted after the failure have no
+                // callback to retire them. Without this the outstanding count never reaches zero and every waiter on
+                // the checkpoint task blocks forever. Staging a level can throw before its submit is attempted, so
+                // this counts from the levels actually accounted for rather than assuming level i was retired.
+                RecordCheckpointError($"level {i} could not be issued", ex);
+                for (var unaccounted = accountedLevels; unaccounted < numLevels; unaccounted++)
+                    RetireCheckpointLevel();
+                throw;
+            }
+            finally
+            {
+                // Retire the issuance sentinel, now that issuance has ended and the catch above has recorded any
+                // exception it hit. This is what completes the checkpoint, so it completes with that error rather
+                // than with a success a synchronous completion reached before the submit threw.
+                RetireCheckpointLevel();
+            }
+        }
+
+        /// <summary>Retire one outstanding level from the checkpoint, completing the checkpoint task when the last one
+        /// is retired.</summary>
+        private void RetireCheckpointLevel()
+        {
+            if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
+            {
+                var error = checkpointError;
+                if (error is not null)
+                    checkpointTcs.TrySetException(error.ToException("Overflow-bucket checkpoint flush failed"));
                 else
-                {
-                    result.mem = new SectorAlignedMemory((int)writeSize, (int)device.SectorSize);
-                    bool prot = false;
-                    if (!epoch.ThisInstanceProtected())
-                    {
-                        prot = true;
-                        epoch.Resume();
-                    }
-
-                    Buffer.MemoryCopy((void*)pointers[i], result.mem.aligned_pointer, writeSize, writeSize);
-                    int j = 0;
-                    if (i == 0) j += AllocateChunkSize * RecordSize;
-                    for (; j < writeSize; j += sizeof(HashBucket))
-                    {
-                        skipReadCache((HashBucket*)(result.mem.aligned_pointer + j));
-                    }
-
-                    if (prot) epoch.Suspend();
-
-                    device.WriteAsync((IntPtr)result.mem.aligned_pointer, offset + numBytesWritten, writeSize, AsyncFlushCallback, result);
-                }
-                numBytesWritten += writeSize;
+                    checkpointTcs.TrySetResult(true);
             }
         }
 
         private unsafe void AsyncFlushCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            var result = (OverflowPagesFlushAsyncResult)context;
             if (errorCode != 0)
             {
                 if (ioException is null)
                     logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{errorCode}}", errorCode);
                 else
                     logger?.LogError($"{nameof(AsyncFlushCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
-                _ = Interlocked.CompareExchange(ref checkpointErrorCode, (int)errorCode, 0);
+                RecordCheckpointError($"level {result.levelIndex} failed with error code {errorCode}");
             }
-
-            var mem = ((OverflowPagesFlushAsyncResult)context).mem;
-            mem?.Dispose();
-
-            if (Interlocked.Decrement(ref checkpointCallbackCount) == 0)
+            else if (numBytes != 0 && numBytes < result.numBytesToWrite)
             {
-                var err = checkpointErrorCode;
-                if (err != 0)
-                    checkpointTcs.TrySetException(new TsavoriteException($"Overflow-bucket checkpoint flush failed with error code {err}"));
-                else
-                    checkpointTcs.TrySetResult(true);
+                // A transferred count below the requested length means the level is not fully on disk. A count of
+                // zero means the device does not report one (see DeviceIOCompletionCallback), not a short write.
+                logger?.LogError($"{nameof(AsyncFlushCallback)} error: wrote {{numBytes}} of {{numBytesToWrite}} bytes", numBytes, result.numBytesToWrite);
+                RecordCheckpointError($"level {result.levelIndex} wrote {numBytes} of {result.numBytesToWrite} bytes");
             }
+
+            if (!result.TryClaimRetirement())
+                return;
+
+            result.mem?.Dispose();
+            RetireCheckpointLevel();
         }
+
+        /// <summary>Record the first failure seen while flushing the overflow buckets, so the checkpoint fails with
+        /// the error that occurred first; subsequent failures are logged but do not overwrite it.</summary>
+        private void RecordCheckpointError(string detail, Exception exception = null)
+            => _ = Interlocked.CompareExchange(ref checkpointError, new IoFailure(detail, exception), null);
 
         /// <summary>
         /// Max valid address
@@ -392,11 +473,15 @@ namespace Tsavorite.core
         {
             BeginRecovery(device, offset, buckets, numBytes, out ulong numBytesRead, isAsync: true);
             await recoveryCountdown.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var error = recoveryError;
+            if (error is not null)
+                throw error.ToException("Overflow-bucket recovery failed");
             return numBytesRead;
         }
 
         // Implementation of asynchronous recovery
         private CountdownWrapper recoveryCountdown;
+        private IoFailure recoveryError;
 
         internal unsafe void BeginRecovery(IDevice device,
                                     ulong offset,
@@ -405,43 +490,102 @@ namespace Tsavorite.core
                                     out ulong numBytesRead,
                                     bool isAsync = false)
         {
+            // Drop any state left by an earlier recovery first, so that a failure in the allocation below cannot
+            // leave a caller draining against the previous recovery's countdown.
+            recoveryCountdown = null;
+            recoveryError = null;
+
             // Allocate as many records in memory
             while (count < buckets)
             {
                 Allocate();
             }
 
-            int numRecords = (int)(numBytesToRead / (ulong)RecordSize);
-            int recordsCountInLastLevel = numRecords & PageSizeMask;
-            int numCompleteLevels = numRecords >> PageSizeBits;
-            int numLevels = numCompleteLevels + (recordsCountInLastLevel > 0 ? 1 : 0);
+            // Derive the level layout from the byte count the checkpoint wrote rather than from a record count.
+            // The checkpoint rounds its final level up to a sector, so the persisted size need not be a multiple of
+            // RecordSize; round-tripping through records would drop that padding and issue a read that is both short
+            // and unaligned, which the O_DIRECT device paths reject outright.
+            uint alignedPageSize = (uint)PageSize * (uint)RecordSize;
+            int numCompleteLevels = (int)(numBytesToRead / alignedPageSize);
+            uint lastLevelSize = (uint)(numBytesToRead - ((ulong)numCompleteLevels * alignedPageSize));
+            int numLevels = numCompleteLevels + (lastLevelSize > 0 ? 1 : 0);
 
             recoveryCountdown = new CountdownWrapper(numLevels, isAsync);
 
             numBytesRead = 0;
-            uint alignedPageSize = (uint)PageSize * (uint)RecordSize;
-            uint lastLevelSize = (uint)recordsCountInLastLevel * (uint)RecordSize;
-            for (int i = 0; i < numLevels; i++)
+            int i = 0;
+            try
             {
-                //read a full page
-                uint length = (uint)PageSize * (uint)RecordSize;
-                OverflowPagesReadAsyncResult result = default;
-                device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
-                numBytesRead += (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
+                for (; i < numLevels; i++)
+                {
+                    // Read exactly what the checkpoint wrote for this level: the final level is shorter than a page and
+                    // is the end of the checkpoint region, so requesting a full page would read past the end of the file.
+                    uint length = (i == numCompleteLevels) ? lastLevelSize : alignedPageSize;
+                    OverflowPagesReadAsyncResult result = default;
+                    result.levelIndex = i;
+                    result.numBytesToRead = length;
+                    result.retirementGuard = new(0);
+                    try
+                    {
+                        device.ReadAsync(offset + numBytesRead, pointers[i], length, AsyncPageReadCallback, result);
+                    }
+                    catch
+                    {
+                        // A device may invoke the completion callback synchronously and then throw back out of the
+                        // submit, so this level may already have been retired. Claim exactly once: retiring it twice
+                        // would let the countdown reach zero while earlier reads are still writing into the pages,
+                        // and the caller would close the device out from under them.
+                        if (result.TryClaimRetirement())
+                            recoveryCountdown.Decrement();
+                        throw;
+                    }
+                    numBytesRead += length;
+                }
+                Debug.Assert(numBytesRead == numBytesToRead);
+            }
+            catch
+            {
+                // The levels already issued will still complete and touch the device, so the countdown must reach
+                // zero for the caller to know when it is safe to dispose. Retire the levels never issued; the one
+                // that failed to issue was retired above.
+                for (i++; i < numLevels; i++)
+                    recoveryCountdown.Decrement();
+                throw;
             }
         }
 
+        /// <summary>Wait for every overflow-bucket read that was issued to complete, ignoring whether it succeeded.
+        /// Used on failure paths before the caller disposes the device these reads are still using.</summary>
+        internal ValueTask DrainRecoveryAsync()
+            => recoveryCountdown is null ? default : recoveryCountdown.DrainAsync();
+
         private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            var result = (OverflowPagesReadAsyncResult)context;
             if (errorCode != 0)
             {
                 if (ioException is null)
                     logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
                 else
                     logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{exception}}", Utility.GetCallbackExceptionDetail(ioException));
+                RecordRecoveryError($"level {result.levelIndex} failed with error code {errorCode}", ioException);
             }
-            recoveryCountdown.Decrement();
+            else if (numBytes != 0 && numBytes < result.numBytesToRead)
+            {
+                // A transferred count below the requested length means part of the level still holds its pre-read
+                // contents, so fail recovery rather than bring up overflow buckets that are missing entries. A count
+                // of zero means the device does not report one (see DeviceIOCompletionCallback), not a short read.
+                logger?.LogError($"{nameof(AsyncPageReadCallback)} error: read {{numBytes}} of {{numBytesToRead}} bytes", numBytes, result.numBytesToRead);
+                RecordRecoveryError($"level {result.levelIndex} read {numBytes} of {result.numBytesToRead} bytes");
+            }
+            if (result.TryClaimRetirement())
+                recoveryCountdown.Decrement();
         }
+
+        /// <summary>Record the first failure seen while reading the overflow buckets, so recovery fails with the error
+        /// that occurred first; subsequent failures are logged but do not overwrite it.</summary>
+        private void RecordRecoveryError(string detail, Exception exception = null)
+            => _ = Interlocked.CompareExchange(ref recoveryError, new IoFailure(detail, exception), null);
         #endregion
     }
 }

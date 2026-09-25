@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -106,13 +107,25 @@ namespace Garnet.server
                 , allows ref struct
 #endif
         {
-            // We know namespaces aren't present in string/object functions, so don't populate
+            // During renames we might be moving a Vector Set or Ranged Index, if so we need to set the RecordType appropriately
+            byte recordType;
+            if (input.header.cmd is RespCommand.RENAME or RespCommand.RENAMENX)
+            {
+                recordType = (byte)input.arg1;
+                Debug.Assert(recordType is 0 or VectorManager.RecordType or RangeIndexManager.RangeIndexRecordType, "Unexpected RecordType on rename operation");
+            }
+            else
+            {
+                recordType = 0;
+            }
+
             return new RecordFieldInfo
             {
                 KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
-                HasETag = false
+                HasETag = false,
+                RecordType = recordType,
             };
         }
 

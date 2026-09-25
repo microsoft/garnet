@@ -200,7 +200,7 @@ namespace Garnet.test
             db.GeoAdd(new RedisKey("Sicily"), 13.361389, 38.115556, new RedisValue("Palermo"), CommandFlags.None);
             var response = db.GeoPosition(new RedisKey("Sicily"), ["Palermo", "Unknown"]);
             ClassicAssert.AreEqual(2, response.Length);
-            ClassicAssert.AreEqual(default(GeoPosition), response[1]);
+            ClassicAssert.AreEqual(default(GeoPosition?), response[1]);
 
             var memresponse = db.Execute("MEMORY", "USAGE", "Sicily");
             var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;

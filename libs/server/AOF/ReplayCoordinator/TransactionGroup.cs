@@ -32,7 +32,7 @@ namespace Garnet.server
         /// <summary>
         /// Operations associated with this transaction group.
         /// </summary>
-        public List<byte[]> Operations = [];
+        internal List<ReplayOperation> Operations = [];
 
         /// <summary>
         /// Clear the underlying buffer that holds the individual transaction operations.

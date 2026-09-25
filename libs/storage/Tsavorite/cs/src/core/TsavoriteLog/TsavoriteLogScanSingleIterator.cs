@@ -28,7 +28,7 @@ namespace Tsavorite.core
 
         public override void Dispose()
         {
-            tsavoriteLog.RemoveIterator(this);
+            tsavoriteLog.RemoveSingleIterator(this);
             base.Dispose();
             // Any awaiting iterator should be woken up during dispose
             onEnqueue.Signal();

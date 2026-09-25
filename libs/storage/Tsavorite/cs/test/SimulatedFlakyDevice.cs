@@ -1,13 +1,70 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    /// <summary>
+    /// A checkpoint manager that serves one preset index device. Only <see cref="GetIndexDevice"/> is reachable from
+    /// the index recovery path; every other member throws so that an unexpected call is not silently ignored.
+    /// </summary>
+    public sealed class SingleDeviceCheckpointManager : ICheckpointManager
+    {
+        private readonly IDevice indexDevice;
+
+        public SingleDeviceCheckpointManager(IDevice indexDevice) => this.indexDevice = indexDevice;
+
+        /// <inheritdoc/>
+        public IDevice GetIndexDevice(Guid indexToken) => indexDevice;
+
+        /// <inheritdoc/>
+        public bool PerformAutomaticCleanup => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public byte[] GetCookie() => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void InitializeIndexCheckpoint(Guid indexToken) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void InitializeLogCheckpoint(Guid logToken) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void CleanupIndexCheckpoint(Guid indexToken) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void CleanupLogCheckpoint(Guid logToken) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void CheckpointVersionShiftStart(long oldVersion, long newVersion, bool isStreaming) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void CheckpointVersionShiftEnd(long oldVersion, long newVersion, bool isStreaming) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public byte[] GetIndexCheckpointMetadata(Guid indexToken) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public byte[] GetLogCheckpointMetadata(Guid logToken) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public IEnumerable<Guid> GetIndexCheckpointTokens() => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public IEnumerable<Guid> GetLogCheckpointTokens() => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public IDevice GetSnapshotLogDevice(Guid token) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public IDevice GetSnapshotObjectLogDevice(Guid token) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void Purge(Guid token) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void PurgeAll() => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void OnRecovery(Guid indexToken, Guid logToken) => throw new NotSupportedException();
+        /// <inheritdoc/>
+        public void Dispose() { }
+    }
+
     public class ErrorSimulationOptions
     {
         public double readTransientErrorRate;
@@ -184,6 +241,814 @@ namespace Tsavorite.test
         {
             underlying.Dispose();
             versionScheme.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Device whose <see cref="ReadAsync"/> throws synchronously once armed, simulating a device that fails before
+    /// the read is ever issued (e.g. native device creation failure, misalignment rejection, or use after dispose).
+    /// No completion callback is delivered for such a read.
+    /// </summary>
+    public class SyncThrowOnReadDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>When true, reads throw synchronously instead of being issued.</summary>
+        public volatile bool ArmReadFailure;
+
+        /// <summary>
+        /// When non-negative, only the read with this zero-based ordinal throws synchronously; every other read is
+        /// issued normally. Lets a test fail one specific page read (e.g. a read-ahead) rather than all of them.
+        /// </summary>
+        public int ThrowOnReadOrdinal = -1;
+
+        private int readOrdinal = -1;
+
+        /// <summary>True once the <see cref="ThrowOnReadOrdinal"/> read has thrown, so a test can assert its fault
+        /// injection fired.</summary>
+        public volatile bool ReadFailureInjected;
+
+        public SyncThrowOnReadDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (ArmReadFailure)
+                throw new IOException("Simulated synchronous device read failure");
+            if (ThrowOnReadOrdinal >= 0 && Interlocked.Increment(ref readOrdinal) == ThrowOnReadOrdinal)
+            {
+                ReadFailureInjected = true;
+                throw new IOException($"Simulated synchronous device read failure on read ordinal {ThrowOnReadOrdinal}");
+            }
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Wraps a device and throws synchronously from <see cref="WriteAsync"/> when armed, so a caller that fans one
+    /// logical write out across several shards can be tested for correct cleanup of the shard that was never issued.
+    /// </summary>
+    public class SyncThrowOnWriteDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>When true, writes throw synchronously instead of being issued.</summary>
+        public volatile bool ArmWriteFailure;
+
+        public SyncThrowOnWriteDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (ArmWriteFailure)
+                throw new IOException("Simulated synchronous device write failure");
+            underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Completes reads through the IO callback with a non-zero error code rather than throwing, exercising callers
+    /// that inspect the callback's error code instead of relying on an exception.
+    /// </summary>
+    public class ErrorCodeOnReadDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>When non-zero, reads complete with this error code and no data is transferred.</summary>
+        public volatile uint ReadErrorCode;
+
+        /// <summary>When non-negative, reads succeed but report only this many bytes transferred, as a device does
+        /// when the file ends before the requested length.</summary>
+        public volatile int ShortReadBytes = -1;
+
+        public ErrorCodeOnReadDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            var errorCode = ReadErrorCode;
+            if (errorCode != 0)
+            {
+                callback(errorCode, 0, context, null);
+                return;
+            }
+
+            var shortReadBytes = ShortReadBytes;
+            if (shortReadBytes >= 0)
+            {
+                callback(0, (uint)shortReadBytes, context, null);
+                return;
+            }
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Simulates an operating system that caps a single transfer, as Linux does at MAX_RW_COUNT (INT_MAX rounded down
+    /// to a page boundary): a request longer than <see cref="MaxBytesPerRequest"/> is issued to the underlying device
+    /// for only that many bytes, and therefore completes successfully reporting the truncated count.
+    /// </summary>
+    public class TruncatingIoDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>Maximum number of bytes a single request transfers; longer requests complete short. Defaults to
+        /// no truncation.</summary>
+        public volatile uint MaxBytesPerRequest = uint.MaxValue;
+
+        private int truncatedRequestCount;
+
+        /// <summary>Number of requests that were truncated, so a test can assert its fault injection fired.</summary>
+        public int TruncatedRequestCount => truncatedRequestCount;
+
+        /// <summary>Offset and requested (pre-truncation) length of every write issued to this device, in issue order.</summary>
+        public readonly ConcurrentQueue<(ulong offset, uint length)> Writes = new();
+
+        /// <summary>Offset and requested (pre-truncation) length of every read issued to this device, in issue order.</summary>
+        public readonly ConcurrentQueue<(ulong offset, uint length)> Reads = new();
+
+        public TruncatingIoDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            Writes.Enqueue((destinationAddress, numBytesToWrite));
+            underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, Truncate(numBytesToWrite), callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            Reads.Enqueue((sourceAddress, readLength));
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, Truncate(readLength), callback, context);
+        }
+
+        private uint Truncate(uint numBytes)
+        {
+            var maxBytes = MaxBytesPerRequest;
+            if (numBytes <= maxBytes)
+                return numBytes;
+            _ = Interlocked.Increment(ref truncatedRequestCount);
+            return maxBytes;
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Simulates a device that completes transfers successfully but does not populate the transferred byte count,
+    /// which <see cref="DeviceIOCompletionCallback"/> permits by reporting 0. Used to verify that short-transfer
+    /// detection treats 0 as "not reported" rather than as a truncated transfer.
+    /// </summary>
+    public class ZeroCountReportingDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        public ZeroCountReportingDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, ZeroCount(callback), context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, ZeroCount(callback), context);
+
+        private static DeviceIOCompletionCallback ZeroCount(DeviceIOCompletionCallback callback)
+            => (errorCode, numBytes, context, ioException) => callback(errorCode, 0, context, ioException);
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Simulates a device whose request submission fails partway through a multi-request operation: the first
+    /// <see cref="ThrowReadsAfter"/> reads are forwarded and the next submission throws synchronously, leaving the
+    /// forwarded reads outstanding.
+    /// </summary>
+    public class ThrowOnNthReadDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+        private int readCount;
+
+        /// <summary>Number of reads to forward before the next submission throws.</summary>
+        public int ThrowReadsAfter = int.MaxValue;
+
+        /// <summary>Number of reads forwarded to the underlying device.</summary>
+        public int ForwardedReadCount => readCount;
+
+        public ThrowOnNthReadDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (Interlocked.Increment(ref readCount) > ThrowReadsAfter)
+            {
+                _ = Interlocked.Decrement(ref readCount);
+                throw new IOException("Simulated submission failure");
+            }
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Simulates a device whose write submission fails partway through a multi-request operation: the first
+    /// <see cref="ThrowWritesAfter"/> writes are forwarded and the next submission throws synchronously, leaving the
+    /// forwarded writes outstanding.
+    /// </summary>
+    public class ThrowOnNthWriteDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+        private readonly ConcurrentQueue<Action> deferred = new();
+        private int writeCount;
+
+        /// <summary>Number of writes to forward before the next submission throws.</summary>
+        public int ThrowWritesAfter = int.MaxValue;
+
+        /// <summary>When set, the completion of the throwing write is invoked, reporting success, immediately before
+        /// the submit throws. Local devices behave this way when they complete inline and then propagate an exception
+        /// out of the same call.</summary>
+        public bool CompleteBeforeThrowing;
+
+        /// <summary>When set, the completion of every forwarded write is held until <see cref="CompleteDeferred"/>, so
+        /// the writes issued before the failing submission stay in flight across it.</summary>
+        public bool DeferWriteCompletions;
+
+        /// <summary>Number of forwarded writes whose completion is still being held.</summary>
+        public int DeferredCount => deferred.Count;
+
+        public ThrowOnNthWriteDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (Interlocked.Increment(ref writeCount) > ThrowWritesAfter)
+            {
+                _ = Interlocked.Decrement(ref writeCount);
+
+                // Report the write as having succeeded before failing the submit, so the caller sees its retirement
+                // bookkeeping run to completion and then an exception out of the same call.
+                if (CompleteBeforeThrowing)
+                    callback(0, numBytesToWrite, context, null);
+                throw new IOException("Simulated submission failure");
+            }
+
+            if (!DeferWriteCompletions)
+            {
+                underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+                return;
+            }
+
+            void Held(uint errorCode, uint numBytes, object ctx, Exception ex)
+                => deferred.Enqueue(() => callback(errorCode, numBytes, ctx, ex));
+
+            underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, Held, context);
+        }
+
+        /// <summary>Invoke the write completions held back by <see cref="DeferWriteCompletions"/>.</summary>
+        public void CompleteDeferred()
+        {
+            while (deferred.TryDequeue(out var complete))
+                complete();
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Simulates a device that holds one read's completion until released, and records whether it was disposed while
+    /// a completion was still outstanding. Used to verify that a failed recovery closes the checkpoint file only
+    /// after every read it issued against that file has called back.
+    /// </summary>
+    public class DeferredCompletionDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+        private readonly ConcurrentQueue<Action> deferred = new();
+        private int readCount;
+        private int outstanding;
+
+        /// <summary>One-based index of the read whose completion is held until <see cref="CompleteDeferred"/>.</summary>
+        public int DeferReadNumber = 1;
+
+        /// <summary>Whether <see cref="Dispose"/> has run.</summary>
+        public bool Disposed { get; private set; }
+
+        /// <summary>Set if <see cref="Dispose"/> ran while a read had been issued but had not yet called back.</summary>
+        public bool DisposedWithIoOutstanding { get; private set; }
+
+        /// <summary>Number of reads whose completion is still being held.</summary>
+        public int DeferredCount => deferred.Count;
+
+        public DeferredCompletionDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            _ = Interlocked.Increment(ref outstanding);
+
+            // Retire the request before handing control to the caller's callback: the caller's last callback is what
+            // releases the waiter that then disposes this device, so the count must already be settled.
+            void Wrapped(uint errorCode, uint numBytes, object ctx, Exception ex)
+            {
+                _ = Interlocked.Decrement(ref outstanding);
+                callback(errorCode, numBytes, ctx, ex);
+            }
+
+            if (Interlocked.Increment(ref readCount) == DeferReadNumber)
+            {
+                deferred.Enqueue(() => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, Wrapped, context));
+                return;
+            }
+            underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, Wrapped, context);
+        }
+
+        /// <summary>Submit the held reads.</summary>
+        public void CompleteDeferred()
+        {
+            while (deferred.TryDequeue(out var submit))
+                submit();
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose()
+        {
+            if (Volatile.Read(ref outstanding) > 0)
+                DisposedWithIoOutstanding = true;
+            Disposed = true;
+            underlying.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Simulates a device whose transfers fail asynchronously, reporting the failure through
+    /// <see cref="DeviceIOCompletionCallback"/> with both an error code and the originating exception, as the local
+    /// storage devices do. Used to verify that the exception survives to the caller as an inner exception.
+    /// </summary>
+    public class CallbackExceptionDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+
+        /// <summary>The exception reported to the completion callback of every failed request.</summary>
+        public readonly IOException Injected = new("Simulated device failure");
+
+        /// <summary>Whether to fail reads; when false, reads are forwarded to the underlying device.</summary>
+        public bool FailReads;
+
+        /// <summary>Whether to fail writes; when false, writes are forwarded to the underlying device.</summary>
+        public bool FailWrites;
+
+        public CallbackExceptionDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (FailWrites)
+                callback(uint.MaxValue, 0, context, Injected);
+            else
+                underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (FailReads)
+                callback(uint.MaxValue, 0, context, Injected);
+            else
+                underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Simulates a device that defers the completion of its first reads and then, on the next read, invokes the
+    /// completion callback synchronously before throwing out of the submit. Used to verify that a request retired by
+    /// its own callback is not retired a second time by the submission-failure path.
+    /// </summary>
+    public class CallbackThenThrowDevice : StorageDeviceBase
+    {
+        private readonly IDevice underlying;
+        private readonly ConcurrentQueue<Action> deferred = new();
+        private int readCount;
+
+        /// <summary>Number of initial reads to capture without completing, leaving them outstanding.</summary>
+        public int DeferReadsBefore = int.MaxValue;
+
+        /// <summary>Number of reads whose completion is still pending.</summary>
+        public int DeferredCount => deferred.Count;
+
+        public CallbackThenThrowDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+            => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (Interlocked.Increment(ref readCount) <= DeferReadsBefore)
+            {
+                // Hold this read open: it stays outstanding until CompleteDeferred is called.
+                deferred.Enqueue(() => callback(0, readLength, context, null));
+                return;
+            }
+
+            // Complete this read and then fail the submit, the interleaving the one-shot retirement guard exists for.
+            callback(0, readLength, context, null);
+            throw new IOException("Simulated submission failure after synchronous completion");
+        }
+
+        /// <summary>Complete every read that was held open.</summary>
+        public void CompleteDeferred()
+        {
+            while (deferred.TryDequeue(out var complete))
+                complete();
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose() => underlying.Dispose();
+    }
+
+    /// <summary>
+    /// Holds each read and write until a test releases it, so completions can be delivered in an order the test chooses.
+    /// The underlying IO is deferred along with its callback, so a caller woken by an unrelated completion observes its
+    /// own buffer exactly as it left it rather than data the device delivered in the meantime.
+    /// </summary>
+    public class GatedCompletionDevice : StorageDeviceBase
+    {
+        /// <summary>A read or write captured by the gate, replayed against the underlying device on release.</summary>
+        private sealed class PendingIo
+        {
+            public bool IsWrite;
+            public int SegmentId;
+            public ulong DeviceAddress;
+            public IntPtr MemoryAddress;
+            public uint Length;
+            public DeviceIOCompletionCallback Callback;
+            public object Context;
+            public int CompletionStamp;
+        }
+
+        private readonly IDevice underlying;
+        private readonly List<PendingIo> pending = [];
+        private readonly object gateLock = new();
+        private readonly ManualResetEventSlim callerGate = new(true);
+        private volatile bool holdCallers;
+        private int sequence;
+
+        /// <summary>When true, reads and writes are captured rather than issued, until <see cref="Release"/> is called.
+        /// Leave it false to let a test seed or verify the file through the same device.</summary>
+        public volatile bool Gate;
+
+        /// <summary>
+        /// Blocks a caller inside the IO call once its operation has been captured, so it never reaches the wait that
+        /// follows. A test can then deliver a different operation's completion while exactly one caller is waiting,
+        /// which is what makes completion theft observable without depending on <see cref="SemaphoreSlim"/>'s wake
+        /// order — that order is explicitly unspecified, so a test that assumed FIFO could pass against a shared
+        /// semaphore purely by scheduling luck.
+        /// </summary>
+        public void HoldCallersAfterCapture()
+        {
+            callerGate.Reset();
+            holdCallers = true;
+        }
+
+        /// <summary>Lets callers held by <see cref="HoldCallersAfterCapture"/> proceed to their wait.</summary>
+        public void ReleaseHeldCallers()
+        {
+            holdCallers = false;
+            callerGate.Set();
+        }
+
+        public GatedCompletionDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
+            => this.underlying = underlying;
+
+        /// <inheritdoc/>
+        public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
+        {
+            base.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+            underlying.Initialize(segmentSize, epoch, omitSegmentIdFromFilename);
+        }
+
+        /// <inheritdoc/>
+        public override void RemoveSegmentAsync(int segment, AsyncCallback callback, IAsyncResult result)
+            => underlying.RemoveSegmentAsync(segment, callback, result);
+
+        /// <summary>
+        /// Takes the next value of the counter that orders gated completions against events a test records itself, so
+        /// "did this caller return before its own completion?" can be asserted without timing.
+        /// </summary>
+        public int NextSequence() => Interlocked.Increment(ref sequence);
+
+        /// <summary>Counter value taken when the gated operation's callback fired, or 0 while it is still pending.</summary>
+        public int CompletionStamp(int index)
+        {
+            lock (gateLock)
+                return Volatile.Read(ref pending[index].CompletionStamp);
+        }
+
+        /// <summary>Blocks until the gate has captured <paramref name="count"/> operations.</summary>
+        public void WaitForPending(int count, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            var spinWait = new SpinWait();
+            while (true)
+            {
+                lock (gateLock)
+                {
+                    if (pending.Count >= count)
+                        return;
+                }
+                if (DateTime.UtcNow >= deadline)
+                    throw new TimeoutException($"Only {pending.Count} of {count} operations reached the gate");
+                spinWait.SpinOnce();
+            }
+        }
+
+        /// <summary>
+        /// Blocks until the released operation's callback has fired. Lets a test separate one completion from the next
+        /// release, so a caller that wakes on a completion it does not own does so while its own IO has not run at all.
+        /// </summary>
+        public void WaitForCompletion(int index, TimeSpan timeout)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            var spinWait = new SpinWait();
+            while (CompletionStamp(index) == 0)
+            {
+                if (DateTime.UtcNow >= deadline)
+                    throw new TimeoutException($"Operation {index} did not complete");
+                spinWait.SpinOnce();
+            }
+        }
+
+        /// <summary>
+        /// Issues the captured operation and lets its callback run. A non-zero <paramref name="errorCode"/> completes it
+        /// with that error instead, without touching the underlying device.
+        /// </summary>
+        public void Release(int index, uint errorCode = 0)
+        {
+            PendingIo io;
+            lock (gateLock)
+                io = pending[index];
+
+            if (errorCode != 0)
+            {
+                Complete(io, errorCode, 0, null);
+                return;
+            }
+
+            if (io.IsWrite)
+                underlying.WriteAsync(io.MemoryAddress, io.SegmentId, io.DeviceAddress, io.Length,
+                    (code, numBytes, _, ioException) => Complete(io, code, numBytes, ioException), io.Context);
+            else
+                underlying.ReadAsync(io.SegmentId, io.DeviceAddress, io.MemoryAddress, io.Length,
+                    (code, numBytes, _, ioException) => Complete(io, code, numBytes, ioException), io.Context);
+        }
+
+        /// <inheritdoc/>
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (!Gate)
+            {
+                underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+                return;
+            }
+            Capture(new PendingIo
+            {
+                IsWrite = true,
+                SegmentId = segmentId,
+                DeviceAddress = destinationAddress,
+                MemoryAddress = sourceAddress,
+                Length = numBytesToWrite,
+                Callback = callback,
+                Context = context
+            });
+        }
+
+        /// <inheritdoc/>
+        public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
+            DeviceIOCompletionCallback callback, object context)
+        {
+            if (!Gate)
+            {
+                underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+                return;
+            }
+            Capture(new PendingIo
+            {
+                SegmentId = segmentId,
+                DeviceAddress = sourceAddress,
+                MemoryAddress = destinationAddress,
+                Length = readLength,
+                Callback = callback,
+                Context = context
+            });
+        }
+
+        private void Capture(PendingIo io)
+        {
+            lock (gateLock)
+                pending.Add(io);
+
+            // Outside the lock: a held caller must not block the test thread that releases it.
+            if (holdCallers)
+                callerGate.Wait();
+        }
+
+        // Stamped before the caller's callback runs: the callback is what unblocks the caller, so a stamp taken after it
+        // could not be ordered against the caller's own return.
+        private void Complete(PendingIo io, uint errorCode, uint numBytes, Exception ioException)
+        {
+            Volatile.Write(ref io.CompletionStamp, NextSequence());
+            io.Callback(errorCode, numBytes, io.Context, ioException);
+        }
+
+        /// <inheritdoc/>
+        public override void Dispose()
+        {
+            // Never leave a captured caller parked on a disposed gate.
+            ReleaseHeldCallers();
+            underlying.Dispose();
         }
     }
 }

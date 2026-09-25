@@ -4,6 +4,7 @@
 #pragma once
 
 #include <atomic>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -18,6 +19,12 @@
 
 #ifdef FASTER_URING
 #include <liburing.h>
+// Kernel 5.11 signals via this feature bit that SQPOLL accepts non-registered file descriptors.
+// The value is fixed ABI; define it when building against a liburing that predates the bit so the
+// SQPOLL capability check below still compiles (and correctly refuses on such kernels).
+#ifndef IORING_FEAT_SQPOLL_NONFIXED
+#define IORING_FEAT_SQPOLL_NONFIXED (1U << 7)
+#endif
 #endif
 
 #include "async.h"
@@ -174,10 +181,13 @@ class QueueIoHandler {
   typedef QueueFile async_file_t;
 
  private:
-  /// Default per-context libaio ring depth. Used when the caller does not specify one.
-  /// The effective depth is sized up from the device throttle limit (see the 3-arg ctor and
-  /// NativeStorageDevice.ComputeNativeRingDepth) so that io_submit never sees a perpetually
-  /// full ring under a throttle > kMaxEvents; never sized below this floor.
+  /// Default per-context libaio ring depth. Used when the caller does not specify one (a
+  /// non-positive <c>max_events</c>). When the caller passes an explicit positive depth (the 3-arg
+  /// ctor) it is honored verbatim — including values BELOW this default — so the managed
+  /// per-device fs.aio-max-nr reservation accounting stays authoritative (see that ctor).
+  /// The effective depth is otherwise sized up from the device throttle limit (see the 3-arg ctor
+  /// and NativeStorageDevice.ResolveQueueDepth) so that io_submit never sees a perpetually
+  /// full ring under a throttle > kMaxEvents.
   constexpr static int kMaxEvents = 128;
 
  public:
@@ -197,12 +207,27 @@ class QueueIoHandler {
     : init_errno_{ 0 } {
     Init(num_contexts < 1 ? 1 : num_contexts);
   }
-  /// As above, plus an explicit per-context ring depth. `max_events` is clamped up to the
-  /// kMaxEvents floor; callers pass NextPowerOf2(throttle_limit) so the kernel ring can hold
-  /// the full in-flight burst the device throttle permits, eliminating the io_submit
-  /// EAGAIN/ring-full backoff spin (which would otherwise pin epoch slots).
+  /// As above, plus an explicit per-context ring depth. A positive `max_events` is honored
+  /// VERBATIM (only a non-positive value falls back to the kMaxEvents default): callers pass
+  /// NextPowerOf2(throttle_limit) so the kernel ring can hold the full in-flight burst the device
+  /// throttle permits, eliminating the io_submit EAGAIN/ring-full backoff spin (which would
+  /// otherwise pin epoch slots). The managed layer (NativeStorageDevice.ResolveLibaioReservationDepth)
+  /// may deliberately pass a depth BELOW kMaxEvents to fit many coexisting single-ring devices
+  /// within the global fs.aio-max-nr budget; flooring it back up to kMaxEvents here would silently
+  /// reserve more events than the managed budget math accounted for (io_setup draws from the shared
+  /// budget), so fewer devices than promised would fit and later io_setup calls would fail with
+  /// EAGAIN. Honoring the explicit value keeps the managed reservation accounting authoritative.
   QueueIoHandler(size_t /*max_threads*/, int num_contexts, int max_events)
-    : max_events_{ max_events < kMaxEvents ? kMaxEvents : max_events }
+    : max_events_{ max_events > 0 ? max_events : kMaxEvents }
+    , init_errno_{ 0 } {
+    Init(num_contexts < 1 ? 1 : num_contexts);
+  }
+
+  /// 5-arg overload accepted for cross-backend symmetry with UringIoHandler. libaio has no
+  /// submission-poll thread, so the io_uring SQPOLL parameters (`sqpoll`, `sq_thread_idle_ms`)
+  /// are silently ignored.
+  QueueIoHandler(size_t /*max_threads*/, int num_contexts, int max_events, bool /*sqpoll*/, int /*sq_thread_idle_ms*/)
+    : max_events_{ max_events > 0 ? max_events : kMaxEvents }
     , init_errno_{ 0 } {
     Init(num_contexts < 1 ? 1 : num_contexts);
   }
@@ -252,9 +277,11 @@ class QueueIoHandler {
   /// against any cross-instance index reuse (which would be a memory-safety bug
   /// if A had more shards than B).
   /// </para>
-  io_context_t pick_context() {
+  /// Index (into io_objects_) of the calling thread's affine context. Shared by pick_context()
+  /// (submit) and TryCompleteMine() (drain) so a thread reaps from the same context it submits to.
+  int pick_context_index() {
     if (io_objects_.size() == 1) {
-      return io_objects_[0];
+      return 0;
     }
     thread_local const QueueIoHandler* tls_owner = nullptr;
     thread_local int tls_idx = -1;
@@ -263,7 +290,21 @@ class QueueIoHandler {
       tls_idx = static_cast<int>(
           submit_counter_.fetch_add(1, std::memory_order_relaxed) % io_objects_.size());
     }
-    return io_objects_[tls_idx];
+    return tls_idx;
+  }
+
+  io_context_t pick_context() {
+    return io_objects_[pick_context_index()];
+  }
+
+  /// Drain ONLY the calling thread's affine context (the one pick_context() submits to). The inline
+  /// submitter-thread completion path (Tsavorite's CompletePending / AsyncGetFromDisk throttle-wait)
+  /// is the primary reaper at high IOPS; having each run thread poll just its own context issues one
+  /// io_getevents per poll instead of walking every context (Nx fewer syscalls and no cross-context
+  /// aio ring-lock contention). Coverage is preserved because each context has sharing submitters
+  /// and/or a dedicated drainer (QueueRunFor). Reaps a batch per call (kTryCompleteBatchEvents).
+  bool TryCompleteMine() {
+    return TryCompleteFor(pick_context_index());
   }
 
   /// Invoked whenever a Linux AIO completes.
@@ -465,9 +506,21 @@ class UringIoHandler {
   /// rounded up (RoundUpPow2) before use.
   constexpr static int kMaxEvents = 128;
 
-  /// Smallest power of two >= v (v already assumed > 0). Used to satisfy io_uring_queue_init's
-  /// power-of-two entries requirement when a throttle-derived depth is passed in.
+  /// Default IORING_SETUP_SQPOLL sq_thread_idle (milliseconds): how long the kernel submission-poll
+  /// thread keeps spinning after the last submission before parking. Used when SQPOLL is enabled and
+  /// the caller passes a non-positive idle value. A generous default keeps the poll thread hot across
+  /// brief gaps (e.g. benchmark warmup->run transitions) so submissions stay syscall-free; once parked,
+  /// liburing's io_uring_submit re-wakes it with a single IORING_ENTER_SQ_WAKEUP syscall.
+  constexpr static int kDefaultSqThreadIdleMs = 10000;
+
+  /// Largest per-ring depth accepted. Matches io_uring's IORING_MAX_ENTRIES. Clamping here keeps
+  /// RoundUpPow2 from overflowing when a caller passes an out-of-range depth through the C ABI.
+  constexpr static int kMaxEventsLimit = 32768;
+
+  /// Smallest power of two >= v, clamped to kMaxEventsLimit (v already assumed > 0). Used to satisfy
+  /// io_uring_queue_init's power-of-two entries requirement when a throttle-derived depth is passed in.
   static int RoundUpPow2(int v) {
+    if (v >= kMaxEventsLimit) return kMaxEventsLimit;
     int p = 1;
     while (p < v) p <<= 1;
     return p;
@@ -491,11 +544,29 @@ class UringIoHandler {
     Init(num_rings < 1 ? 1 : num_rings);
   }
 
-  /// As above, plus an explicit per-ring SQ depth (rounded up to a power of two and floored at
-  /// kMaxEvents). Callers pass NextPowerOf2(throttle_limit) so the SQ ring can absorb the full
-  /// in-flight burst without io_uring_get_sqe returning null (which forces the backoff spin).
+  /// As above, plus an explicit per-ring SQ depth. A positive value is honoured VERBATIM apart from
+  /// the power-of-two rounding io_uring_queue_init requires (only a non-positive value falls back to
+  /// the kMaxEvents default), matching QueueIoHandler: a caller that deliberately asks for a shallow
+  /// ring to bound per-ring memory must get one. Callers that want the full in-flight burst to fit
+  /// without io_uring_get_sqe returning null (which forces the backoff spin) pass
+  /// NextPowerOf2(throttle_limit).
   UringIoHandler(size_t /*max_threads*/, int num_rings, int max_events)
-    : max_events_{ RoundUpPow2(max_events < kMaxEvents ? kMaxEvents : max_events) }
+    : max_events_{ RoundUpPow2(max_events > 0 ? max_events : kMaxEvents) }
+    , init_errno_{ 0 } {
+    Init(num_rings < 1 ? 1 : num_rings);
+  }
+
+  /// As the 3-arg ctor, plus io_uring SQPOLL configuration. When `sqpoll` is true every ring is created
+  /// with IORING_SETUP_SQPOLL so a kernel thread polls the SQ and submissions need no io_uring_enter
+  /// syscall on the hot path (submit-side offload only; completion draining is unchanged). Each ring
+  /// gets its OWN kernel poll thread (no IORING_SETUP_ATTACH_WQ) so submission stays parallel across
+  /// rings — sharing a single poll thread across rings serialises submission and is a hard throughput
+  /// ceiling. `sq_thread_idle_ms` sets the poll thread's idle-before-park window
+  /// (<= 0 => kDefaultSqThreadIdleMs).
+  UringIoHandler(size_t /*max_threads*/, int num_rings, int max_events, bool sqpoll, int sq_thread_idle_ms)
+    : max_events_{ RoundUpPow2(max_events > 0 ? max_events : kMaxEvents) }
+    , sqpoll_{ sqpoll }
+    , sq_thread_idle_ms_{ sq_thread_idle_ms > 0 ? sq_thread_idle_ms : kDefaultSqThreadIdleMs }
     , init_errno_{ 0 } {
     Init(num_rings < 1 ? 1 : num_rings);
   }
@@ -506,6 +577,8 @@ class UringIoHandler {
     , sq_locks_{ std::move(other.sq_locks_) }
     , cq_locks_{ std::move(other.cq_locks_) }
     , max_events_{ other.max_events_ }
+    , sqpoll_{ other.sqpoll_ }
+    , sq_thread_idle_ms_{ other.sq_thread_idle_ms_ }
     , init_errno_{ other.init_errno_ } {
     other.rings_.clear();
     other.sq_locks_.clear();
@@ -538,6 +611,18 @@ class UringIoHandler {
   /// Number of io_uring shards. >= 1 once initialized.
   int num_contexts() const { return static_cast<int>(rings_.size()); }
 
+  /// True iff these rings were created with IORING_SETUP_SQPOLL (opt-in submit-side offload). Under
+  /// SQPOLL a kernel thread consumes SQEs asynchronously, so the submit path must not treat
+  /// io_uring_sq_ready() as a synchronous "consumed" signal nor mutate an SQE after flushing it.
+  bool sqpoll() const { return sqpoll_; }
+
+  /// Claims the right to report a permanent SQPOLL wakeup failure. Returns true for the first
+  /// caller only, so the diagnostic is emitted once per device rather than once per affected IO.
+  /// Cold path: only reached after the submit retry budget is exhausted.
+  bool TryClaimSqPollWakeFailureReport() {
+    return !sqpoll_wake_failure_reported_.exchange(true, std::memory_order_relaxed);
+  }
+
   /// Pick a (ring, sq_lock) pair for the next submission via per-thread affinity.
   /// Each calling thread is assigned a ring on first call (round-robin against other
   /// callers) and continues to use that same ring for every subsequent submission.
@@ -551,11 +636,9 @@ class UringIoHandler {
   /// cross-instance index reuse, which would otherwise be an out-of-bounds read on B's
   /// rings_/sq_locks_ when A had more rings than B. (Mirrors QueueIoHandler::pick_context.)
   /// </para>
-  void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out) {
+  int pick_ring_index() {
     if (rings_.size() == 1) {
-      ring_out = rings_[0];
-      lock_out = sq_locks_[0];
-      return;
+      return 0;
     }
     thread_local const UringIoHandler* tls_owner = nullptr;
     thread_local int my_ring_idx = -1;
@@ -564,8 +647,22 @@ class UringIoHandler {
       my_ring_idx = static_cast<int>(
           submit_counter_.fetch_add(1, std::memory_order_relaxed) % rings_.size());
     }
-    ring_out = rings_[my_ring_idx];
-    lock_out = sq_locks_[my_ring_idx];
+    return my_ring_idx;
+  }
+
+  void pick_ring(struct io_uring*& ring_out, SpinLock*& lock_out) {
+    int idx = pick_ring_index();
+    ring_out = rings_[idx];
+    lock_out = sq_locks_[idx];
+  }
+
+  /// Drain ONLY the calling thread's affine ring (mirrors QueueIoHandler::TryCompleteMine).
+  /// Reaps a batch per call (up to kCqeBatch) in one cq_lock section with dispatch outside the
+  /// lock, so the inline submitter-thread completion path (Tsavorite CompletePending /
+  /// AsyncGetFromDisk throttle-wait) drains its own ring the same batch-at-a-time way the
+  /// dedicated drainer's QueueRunFor does, rather than one io_uring_peek_cqe per completion.
+  bool TryCompleteMine() {
+    return TryCompleteMineBatch(pick_ring_index());
   }
 
   struct IoCallbackContext {
@@ -594,6 +691,9 @@ class UringIoHandler {
   bool TryComplete();
   /// Drain one completion from ring `idx`.
   bool TryCompleteFor(int idx);
+  /// Non-blocking batch drain of ring `idx` (the caller's affine ring): reaps up to kCqeBatch
+  /// completions in a single cq_lock section. Backs TryCompleteMine().
+  bool TryCompleteMineBatch(int idx);
   /// Drain completions across all rings (back-compat for callers that do not know about sharding).
   int QueueRun(int timeout_secs);
   /// Drain completions on ring `idx` only.
@@ -625,13 +725,35 @@ private:
 
     for (int i = 0; i < num_rings; ++i) {
       auto raw_ring = new struct io_uring();
-      int ret = io_uring_queue_init(max_events_, raw_ring, 0);
+      int ret;
+      unsigned params_features = 0;
+      if (sqpoll_) {
+        // IORING_SETUP_SQPOLL: a kernel thread polls this ring's SQ, so submissions are syscall-free
+        // while it is awake. sq_thread_idle is in milliseconds. Each ring gets its OWN poll thread
+        // (no IORING_SETUP_ATTACH_WQ) so submission stays parallel across rings; the kernel is free to
+        // place each poll thread.
+        struct io_uring_params params = {};
+        params.flags = IORING_SETUP_SQPOLL;
+        params.sq_thread_idle = static_cast<unsigned>(sq_thread_idle_ms_);
+        ret = io_uring_queue_init_params(max_events_, raw_ring, &params);
+        params_features = params.features;
+      } else {
+        ret = io_uring_queue_init(max_events_, raw_ring, 0);
+      }
       if (ret != 0) {
         init_errno_ = -ret;
         delete raw_ring;
         return;
       }
       rings.emplace_back(raw_ring);
+      if ((raw_ring->features & IORING_FEAT_EXT_ARG) == 0) ext_arg_supported_ = false;
+      if (sqpoll_ && (params_features & IORING_FEAT_SQPOLL_NONFIXED) == 0) {
+        // Before kernel 5.11 SQPOLL only accepts files registered with the ring; we submit
+        // ordinary descriptors, which would complete with EBADF on every IO. Refuse at init so
+        // the caller sees an actionable error instead of a silently failing data path.
+        init_errno_ = EOPNOTSUPP;
+        return;
+      }
       sq_locks.emplace_back(std::make_unique<SpinLock>());
       cq_locks.emplace_back(std::make_unique<SpinLock>());
     }
@@ -656,9 +778,23 @@ private:
   std::vector<SpinLock*> cq_locks_;
   /// Round-robin submit counter; only consulted when rings_.size() > 1.
   std::atomic<uint64_t> submit_counter_{ 0 };
-  /// Per-ring io_uring SQ depth passed to io_uring_queue_init(). Power of two, defaulted to
-  /// (and floored at) kMaxEvents; sized up from the device throttle limit by the 3-arg ctor.
+  /// Per-ring io_uring SQ depth passed to io_uring_queue_init(). Power of two; kMaxEvents when the
+  /// caller supplies no positive depth, otherwise the caller's value rounded up to a power of two.
   int max_events_ = kMaxEvents;
+  /// True iff IORING_SETUP_SQPOLL was requested: rings are created with a kernel SQ-poll thread so
+  /// submissions are syscall-free. Off by default (opt-in via the managed --device-uring-sqpoll knob).
+  bool sqpoll_ = false;
+  /// SQPOLL sq_thread_idle window in milliseconds (poll-thread spin-before-park). Only consulted when
+  /// sqpoll_ is true; the ctor floors a non-positive request at kDefaultSqThreadIdleMs.
+  int sq_thread_idle_ms_ = kDefaultSqThreadIdleMs;
+  /// True iff every ring reports IORING_FEAT_EXT_ARG (kernel 5.11+), i.e. io_uring_enter accepts the
+  /// wait timeout directly. Without it liburing emulates io_uring_wait_cqe_timeout by posting a
+  /// timeout SQE, which mutates the SQ (and its user_data) from the completion side; submitters hold
+  /// sq_lock while mutating the same SQ, so the drainer must not take that path. See QueueRunFor.
+  bool ext_arg_supported_ = true;
+  /// Set once a permanent SQPOLL wakeup failure has been reported, so the diagnostic is emitted a
+  /// single time per device rather than once per affected IO.
+  std::atomic<bool> sqpoll_wake_failure_reported_{ false };
   /// If non-zero, the positive errno from a failed io_uring_queue_init() in the constructor.
   int init_errno_;
 };

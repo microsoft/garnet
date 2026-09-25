@@ -22,6 +22,8 @@ namespace Garnet.test.cluster.MultiLogTests
             {"ClusterDisklessSyncParallelAttach", true},
             {"ClusterDisklessSyncFailover", true},
             {"ClusterDisklessSyncResetSyncManagerCts", true},
+            {"ClusterDisklessSyncLargeValuesChunked", true},
+            {"ClusterDisklessSyncHugeObjectChunked", true},
         };
 
         [OneTimeSetUp]

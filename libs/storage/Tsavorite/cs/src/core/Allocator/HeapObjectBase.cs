@@ -62,10 +62,18 @@ namespace Tsavorite.core
                 // CopyUpdater does that, as it must ensure the object's (v1) data is not changed during the checkpoint.
                 if (SerializationPhase == SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
                 {
-                    // Directly serialize to wire, do not cache serialized state
-                    WriteType(writer, isNull: false);
-                    DoSerialize(writer);
-                    SerializationPhase = SerializationPhase.REST;
+                    // Directly serialize to wire, do not cache serialized state. Restore REST even if DoSerialize
+                    // throws: leaving the object in SERIALIZING would make every later Serialize() and
+                    // CacheSerializedObjectData() spin on it forever, wedging the checkpoint pipeline.
+                    try
+                    {
+                        WriteType(writer, isNull: false);
+                        DoSerialize(writer);
+                    }
+                    finally
+                    {
+                        SerializationPhase = SerializationPhase.REST;
+                    }
                     return;
                 }
 
@@ -144,10 +152,20 @@ namespace Tsavorite.core
             {
                 if (SerializationPhase == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
                 {
-                    using var ms = new MemoryStream();
-                    using var writer = new BinaryWriter(ms, Encoding.UTF8);
-                    DoSerialize(writer);
-                    serializedBytes = ms.ToArray();
+                    try
+                    {
+                        using var ms = new MemoryStream();
+                        using var writer = new BinaryWriter(ms, Encoding.UTF8);
+                        DoSerialize(writer);
+                        serializedBytes = ms.ToArray();
+                    }
+                    catch
+                    {
+                        // Publish no partial capture, and do not strand the object in SERIALIZING.
+                        serializedBytes = null;
+                        SerializationPhase = SerializationPhase.REST;
+                        throw;
+                    }
 
                     SerializationPhase = SerializationPhase.SERIALIZED;    // This is the only place .SERIALIZED is set
                     break;
@@ -167,9 +185,18 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void ClearSerializedObjectData()
         {
-            // Clear the serialized data, so it can be GC'd
-            serializedBytes = null;
-            SerializationPhase = SerializationPhase.REST; // Reset to initial state
+            // Release the cached (v) bytes so they can be GC'd, but deliberately leave the phase terminal.
+            //
+            // Bytes are only ever cached by CacheSerializedObjectData for a source object that a CopyUpdate
+            // has just superseded, and Clone() is a shallow copy: the (v+1) record that replaced this one
+            // shares this object's internal collections and keeps mutating them. Returning to REST would let
+            // a later checkpoint take the direct-serialize path and enumerate those still-shared, still-live
+            // collections with no synchronization against the writer.
+            //
+            // SERIALIZED with null bytes is the state Serialize() already documents as "superseded after
+            // checkpoint completion": it writes a null indicator. That is safe because the superseding record
+            // always sits at a higher address and carries the live data.
+            _ = Interlocked.Exchange(ref serializedBytes, null);
         }
     }
 }

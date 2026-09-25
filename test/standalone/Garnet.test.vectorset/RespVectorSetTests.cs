@@ -718,7 +718,7 @@ namespace Garnet.test
         [Test]
         public void VSIMWithAttribs()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
             var db = redis.GetDatabase();
 
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "hello world"]);
@@ -890,7 +890,7 @@ namespace Garnet.test
             const int VectorCount = 100;
             const int Select = 10;
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
             var db = redis.GetDatabase(0);
 
             _ = db.KeyDelete(VectorSet);
@@ -1788,7 +1788,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1838,7 +1838,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1892,7 +1892,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 7, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1940,7 +1940,7 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 8 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "fizz"u8.ToArray();
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
@@ -1950,7 +1950,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 1, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -2010,14 +2010,14 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 4 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "hello012"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
-                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
                 var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
                 var key4 = Array.Empty<byte>();
-                var key5 = new byte[] { 1 };
-                var key6 = new byte[] { 2, 3 };
-                var key7 = new byte[] { 4, 5, 6 };
+                var key5 = new byte[] { 1, 2, 3, 4 };
+                var key6 = new byte[] { 2, 3, 4, 5, 6, 7, 8, 9 };
+                var key7 = new byte[] { 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
@@ -2069,7 +2069,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -2143,14 +2143,14 @@ namespace Garnet.test
 
                 ReadOnlySpan<byte> namespaceBytes = stackalloc byte[1] { 2 };
 
-                var key0 = "hello"u8.ToArray();
+                var key0 = "hello012"u8.ToArray();
                 var key1 = "fizz"u8.ToArray();
-                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog."u8.ToArray();
                 var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
                 var key4 = Array.Empty<byte>();
-                var key5 = new byte[] { 1 };
-                var key6 = new byte[] { 2, 3 };
-                var key7 = new byte[] { 4, 5, 6 };
+                var key5 = new byte[] { 1, 2, 3, 4 };
+                var key6 = new byte[] { 2, 3, 4, 5, 6, 7, 8, 9 };
+                var key7 = new byte[] { 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
                 var data =
                     MemoryMarshal.Cast<int, byte>([key0.Length])
                         .ToArray()
@@ -2202,7 +2202,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, keyData, namespaceBytes, new ReadCopyOptions { CopyFrom = ReadCopyFrom.AllImmutable, CopyTo = ReadCopyTo.MainLog }, 0);
 
                     var rand = new Random(2025_10_06_01);
 
@@ -2757,7 +2757,7 @@ namespace Garnet.test
 
             // Test success case - element with no attribute
             var res2 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId1]);
-            ClassicAssert.AreEqual(0, res2.Length);
+            ClassicAssert.IsNull(res2);
 
             // Test various attribute sizes
             int[] attributeSizes = [64, 128, 256, 257, 512, 1024];
@@ -2784,7 +2784,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (int)res3);
 
             var res4 = (byte[])db.Execute("VGETATTR", [vectorSetKey, emptyAttrElement]);
-            ClassicAssert.AreEqual(0, res4.Length);
+            ClassicAssert.IsNull(res4);
         }
 
         [Test]
@@ -3438,6 +3438,11 @@ namespace Garnet.test
                 var store = server.Provider.StoreWrapper;
                 var vectorManager = store.DefaultDatabase.VectorManager;
 
+                // A context released by a delete or an overwrite is only marked for cleanup on a background
+                // task, so it still reads as live until that task runs. Settle that work before sampling the
+                // slot, otherwise the released context is counted alongside the live one.
+                vectorManager.WaitForQuiescence();
+
                 unsafe
                 {
                     fixed (byte* indexKeyPtr = Encoding.ASCII.GetBytes(indexKey))
@@ -3455,6 +3460,240 @@ namespace Garnet.test
                             ClassicAssert.IsTrue(namespacesForHashSlot.Contains(ns));
                         }
                     }
+                }
+            }
+        }
+
+        [Test]
+        public async Task RenamesThenRecoverFromAOFAsync(CancellationToken cancellation)
+        {
+            const string SourceKey = nameof(RenamesThenRecoverFromAOFAsync) + "_source";
+            const string DestKey = nameof(RenamesThenRecoverFromAOFAsync) + "_dest";
+
+            // Old key is Vector Set, and new key does not exist
+            {
+                // Get a clean Garnet Server
+                server.Dispose(deleteDir: true);
+                server = CreateGarnetServer(tryRecover: false);
+                server.Start();
+
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+                ClassicAssert.IsTrue(renameRes);
+
+                // Validate
+                {
+                    var existsRes = await db.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+
+                // Commit AOF and then shutdown
+                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+                ClassicAssert.IsTrue(commitAOF);
+                server.Dispose(deleteDir: false);
+
+                // Recover
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+
+                // Validate after recovery
+                {
+                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var dbRecovery = redisRecovery.GetDatabase();
+
+                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+            }
+
+            // Old key is Vector Set, new key exists and is NOT a Vector Set
+            {
+                // Get a clean Garnet Server
+                server.Dispose(deleteDir: true);
+                server = CreateGarnetServer(tryRecover: false);
+                server.Start();
+
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var setRes = await db.StringSetAsync(DestKey, "fizzbuzz");
+                ClassicAssert.IsTrue(setRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+                ClassicAssert.IsTrue(renameRes);
+
+                // Validate
+                {
+                    var existsRes = await db.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+
+                // Commit AOF and then shutdown
+                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+                ClassicAssert.IsTrue(commitAOF);
+                server.Dispose(deleteDir: false);
+
+                // Recover
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+
+                // Validate after recovery
+                {
+                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var dbRecovery = redisRecovery.GetDatabase();
+
+                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+            }
+
+            // Old key is Vector Set, new key exists and IS a Vector Set
+            {
+                // Get a clean Garnet Server
+                server.Dispose(deleteDir: true);
+                server = CreateGarnetServer(tryRecover: false);
+                server.Start();
+
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", SourceKey, "VALUES", "3", "1", "2", "3", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var vaddRes2 = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
+                ClassicAssert.AreEqual(1, vaddRes2);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+                ClassicAssert.IsTrue(renameRes);
+
+                // Validate
+                {
+                    var existsRes = await db.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await db.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+
+                // Commit AOF and then shutdown
+                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+                ClassicAssert.IsTrue(commitAOF);
+                server.Dispose(deleteDir: false);
+
+                // Recover
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+
+                // Validate after recovery
+                {
+                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var dbRecovery = redisRecovery.GetDatabase();
+
+                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
+                    ClassicAssert.AreEqual(3, vembRes.Length);
+                    ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
+                    ClassicAssert.AreEqual(2f, float.Parse(vembRes[1]));
+                    ClassicAssert.AreEqual(3f, float.Parse(vembRes[2]));
+                }
+            }
+
+            // Old key is NOT a Vector Set, new key exists and IS a Vector Set
+            {
+                // Get a clean Garnet Server
+                server.Dispose(deleteDir: true);
+                server = CreateGarnetServer(tryRecover: false);
+                server.Start();
+
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase();
+
+                _ = db.KeyDelete(SourceKey);
+                _ = db.KeyDelete(DestKey);
+
+                var setRes = await db.StringSetAsync(SourceKey, "fizzbuzz");
+                ClassicAssert.IsTrue(setRes);
+
+                var vaddRes = (int)await db.ExecuteAsync("VADD", DestKey, "VALUES", "3", "4", "5", "6", "foo");
+                ClassicAssert.AreEqual(1, vaddRes);
+
+                var renameRes = await db.KeyRenameAsync(SourceKey, DestKey, When.Always);
+                ClassicAssert.IsTrue(renameRes);
+
+                // Validate
+                {
+                    var existsRes = await db.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var getRes = (string)await db.StringGetAsync(DestKey);
+                    ClassicAssert.AreEqual("fizzbuzz", getRes);
+                }
+
+                // Commit AOF and then shutdown
+                var commitAOF = await server.Store.CommitAOFAsync(cancellation).ConfigureAwait(false);
+                ClassicAssert.IsTrue(commitAOF);
+                server.Dispose(deleteDir: false);
+
+                // Recover
+                server = CreateGarnetServer(tryRecover: true);
+                server.Start();
+
+                // Validate after recovery
+                {
+                    using var redisRecovery = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                    var dbRecovery = redisRecovery.GetDatabase();
+
+                    var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
+                    ClassicAssert.IsFalse(existsRes);
+
+                    var getRes = (string)await dbRecovery.StringGetAsync(DestKey);
+                    ClassicAssert.AreEqual("fizzbuzz", getRes);
                 }
             }
         }
@@ -4011,7 +4250,7 @@ namespace Garnet.test
                         var elementKey = new VectorElementKey(new ReadOnlySpan<byte>(nsPtr, ns.Length), new ReadOnlySpan<byte>(keyPtr, key.Length));
 
                         {
-                            var input = new VectorInput { AlignmentExpected = true };
+                            var input = new VectorInput();
                             var valueSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
                             var output = new VectorOutput();
 
@@ -4026,7 +4265,7 @@ namespace Garnet.test
                             Span<byte> buffer = stackalloc byte[256];
                             fixed (byte* bufferPtr = buffer)
                             {
-                                var input = new VectorInput { AlignmentExpected = true, ReadDesiredSize = -1 };
+                                var input = new VectorInput { ReadDesiredSize = -1 };
                                 var output = new VectorOutput(bufferPtr, buffer.Length);
 
                                 var status = context.Read(elementKey, ref input, ref output);
@@ -4096,6 +4335,412 @@ namespace Garnet.test
             var res8 = await db.VectorSetGetAttributesJsonAsync(Key, Element0).ConfigureAwait(false);
             ClassicAssert.IsNull(res8);
         }
+
+        [Test]
+        public async Task ContinueSearchAsync()
+        {
+            // Super long element names require continuations since our buffers can't hold the whole result
+
+            const string Key = nameof(ContinueSearchAsync);
+            const string ElementPrefix = "VeryVeryLongExternalIdThatWillForceSomeExtraContinueSearchCalls";
+            const int VectorCount = 1_000;
+            const int ResultCount = 50;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+            }
+
+            // vector search, no attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simSearch = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+                simSearch.Count = ResultCount;
+                using var simRes = await db.VectorSetSimilaritySearchAsync(Key, simSearch).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simRes.Length);
+                foreach (var res in simRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // vector search, attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simSearchWithAttrs = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+                simSearchWithAttrs.Count = ResultCount;
+                simSearchWithAttrs.WithAttributes = true;
+                using var simWithAttrsRes = await db.VectorSetSimilaritySearchAsync(Key, simSearchWithAttrs).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simWithAttrsRes.Length);
+                foreach (var res in simWithAttrsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    var actualJson = res.AttributesJson;
+                    ClassicAssert.IsNotNull(actualJson);
+                    var id = ((string)res.Member).Substring(ElementPrefix.Length + 1);
+
+                    var expectedJson = $"{{\"PrettyLongFieldName\":{id}, \"AnotherPrettyLongFieldName\":{id}, \"YetAnotherPrettyLongFieldName\":{id}, \"Id\":{id}}}";
+                    ClassicAssert.AreEqual(expectedJson, actualJson);
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // element search, no attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simElementSearch = VectorSetSimilaritySearchRequest.ByMember($"{ElementPrefix}_{0}");
+                simElementSearch.Count = ResultCount;
+                using var simElementRes = await db.VectorSetSimilaritySearchAsync(Key, simElementSearch).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simElementRes.Length);
+                foreach (var res in simElementRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+
+            // element search, attributes
+            {
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                var simElementSearchWithAttrs = VectorSetSimilaritySearchRequest.ByMember($"{ElementPrefix}_{0}");
+                simElementSearchWithAttrs.Count = ResultCount;
+                simElementSearchWithAttrs.WithAttributes = true;
+                using var simElementWithAttrsRes = await db.VectorSetSimilaritySearchAsync(Key, simElementSearchWithAttrs).ConfigureAwait(false);
+                ClassicAssert.AreEqual(ResultCount, simElementWithAttrsRes.Length);
+                foreach (var res in simElementWithAttrsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+
+                    var actualJson = res.AttributesJson;
+                    ClassicAssert.IsNotNull(actualJson);
+                    var id = ((string)res.Member).Substring(ElementPrefix.Length + 1);
+
+                    var expectedJson = $"{{\"PrettyLongFieldName\":{id}, \"AnotherPrettyLongFieldName\":{id}, \"YetAnotherPrettyLongFieldName\":{id}, \"Id\":{id}}}";
+                    ClassicAssert.AreEqual(expectedJson, actualJson);
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+        }
+
+        [Test]
+        [TestCase(RedisProtocol.Resp2)]
+        [TestCase(RedisProtocol.Resp3)]
+        public async Task VLINKSAsync(RedisProtocol proto)
+        {
+            const string Key = nameof(VLINKSAsync);
+            const string ElementPrefix = "foo";
+            const int VectorCount = 100;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(protocol: proto));
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+
+                // Check with single element Vector Set
+                if (i == 0)
+                {
+                    using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+                    ClassicAssert.AreEqual(0, neighborsRes.Length);
+                }
+            }
+
+            // Normal
+            {
+                using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+                ClassicAssert.IsTrue(neighborsRes.Length >= 1);
+
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                foreach (var res in neighborsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res).StartsWith(ElementPrefix));
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res));
+                }
+            }
+
+            // WITHSCORES
+            {
+                using var neighborsRes = await db.VectorSetGetLinksWithScoresAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+                ClassicAssert.IsTrue(neighborsRes.Length >= 1);
+
+                var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+                foreach (var res in neighborsRes.Span)
+                {
+                    ClassicAssert.IsTrue(((string)res.Member).StartsWith(ElementPrefix));
+                    ClassicAssert.IsTrue(res.Score >= 0);
+
+                    ClassicAssert.IsTrue(uniqueRes.Add((byte[])res.Member));
+                }
+            }
+        }
+
+        [Test]
+        public async Task VLINKSContinueSearchAsync()
+        {
+            // Super long element names require continuations since our buffers can't hold the whole result
+
+            const string Key = nameof(VLINKSAsync);
+            const string ElementPrefix = "SuchALongElementPrefixNoSeriouslySoLongYouShouldWorryAboutTheSizeOfYourBuffersForAnyReasonablMYouMightChooseForYourVectorSetAndItWouldBeVerySillyToActuallyUseSuchAPrefixInProductionButItMustWorkOrWeAreViolatingTheBehaviorSpecifiedByRedisFooBarFizzBuzzHelloWorldYadaYadaYada";
+            const int VectorCount = 100;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var json = $"{{\"PrettyLongFieldName\":{i}, \"AnotherPrettyLongFieldName\":{i}, \"YetAnotherPrettyLongFieldName\":{i}, \"Id\":{i}}}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member($"{ElementPrefix}_{i}", new float[] { 1, 2, 3 }, json)).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+            }
+
+            using var neighborsRes = await db.VectorSetGetLinksAsync(Key, $"{ElementPrefix}_0").ConfigureAwait(false);
+            ClassicAssert.IsTrue(neighborsRes.Length >= 1);
+
+            var uniqueRes = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            foreach (var res in neighborsRes.Span)
+            {
+                ClassicAssert.IsTrue(((string)res).StartsWith(ElementPrefix));
+
+                ClassicAssert.IsTrue(uniqueRes.Add((byte[])res));
+            }
+        }
+
+        [Test]
+        public async Task VRANDMEMBERAsync()
+        {
+            const string Key = nameof(VRANDMEMBERAsync);
+            const string ElementPrefix = "element_";
+            const int VectorCount = 20;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var actualMembers = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            for (var i = 0; i < VectorCount; i++)
+            {
+                var elementKey = (RedisValue)$"{ElementPrefix}_{i}";
+                var addRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(elementKey, new float[] { 1, 2, 3 })).ConfigureAwait(false);
+                ClassicAssert.True(addRes);
+
+                ClassicAssert.True(actualMembers.Add((byte[])elementKey));
+            }
+
+            // one random element
+            var res0 = await db.VectorSetRandomMemberAsync(Key).ConfigureAwait(false);
+            Assert.IsTrue(actualMembers.Contains((byte[])res0));
+
+            // one random element, on null key
+            var res1 = await db.VectorSetRandomMemberAsync("foo").ConfigureAwait(false);
+            Assert.IsTrue(res1.IsNull);
+
+            // N < Count random elements without repeats
+            var res2 = await db.VectorSetRandomMembersAsync(Key, VectorCount / 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount / 2, res2.Length);
+            Assert.AreEqual(VectorCount / 2, res2.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res2.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N = Count random elements without repeats
+            var res3 = await db.VectorSetRandomMembersAsync(Key, VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res3.Length);
+            Assert.AreEqual(VectorCount, res3.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res3.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N > Count random elements without repeats
+            var res4 = await db.VectorSetRandomMembersAsync(Key, VectorCount * 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res4.Length);
+            Assert.AreEqual(VectorCount, res4.Select(static t => (byte[])t).Distinct(ByteArrayComparer.Instance).Count());
+            Assert.IsTrue(res4.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N < Count random elements, allow repeats
+            var res5 = await db.VectorSetRandomMembersAsync(Key, -VectorCount / 2).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount / 2, res5.Length);
+            Assert.IsTrue(res5.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N = Count random elements, allow repeats
+            var res6 = await db.VectorSetRandomMembersAsync(Key, -VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(VectorCount, res6.Length);
+            Assert.IsTrue(res6.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N > Count random elements, allow repeats
+            var res7 = await db.VectorSetRandomMembersAsync(Key, -VectorCount * 2).ConfigureAwait(false);
+            Assert.AreEqual(2 * VectorCount, res7.Length);
+            Assert.IsTrue(res7.Select(static t => (byte[])t).All(t => actualMembers.Contains(t)));
+
+            // N random element, on null key
+            var res8 = await db.VectorSetRandomMembersAsync("foo", VectorCount).ConfigureAwait(false);
+            Assert.AreEqual(0, res8.Length);
+        }
+
+        /// <summary>
+        /// A Vector Set whose index record was flushed to the main log before the checkpoint was taken must
+        /// survive recovery: the checkpoint snapshot only reports records in its own range, so the index
+        /// record is recovered from the main log without ever being reported, and the recovered context must
+        /// not be mistaken for an abandoned one and swept by the cleanup task.
+        /// </summary>
+        [Test]
+        public async Task RecoverVectorSetFlushedBeforeCheckpointAsync()
+        {
+            // This test drives the log through a real flush, so it needs its own small-page server.
+            server.Dispose(deleteDir: true);
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = CreateSmallPageGarnetServer(tryRecover: false);
+            server.Start();
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
+
+            var vector = Enumerable.Range(0, 8).Select(static x => (byte)x).ToArray();
+            var element = new byte[] { 0, 0, 0, 0 };
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                ClassicAssert.IsTrue(db.StringSet("control", "controlvalue"));
+                _ = db.Execute("VADD", ["flushed", "XB8", vector, element, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+
+                // Fill past the tail page so the product's own page-fill path moves the read-only boundary and
+                // flushes "flushed" to the main log well before the checkpoint below starts.
+                for (var i = 0; i < 4_000; i++)
+                {
+                    ClassicAssert.IsTrue(db.StringSet($"filler:{i}", new string('x', 64)));
+                }
+
+                var log = server.Provider.StoreWrapper.DefaultDatabase.Store.Log;
+                ClassicAssert.Greater(log.FlushedUntilAddress, log.BeginAddress, "the filler writes did not flush any of the log, so this test would not cover the flushed-before-checkpoint case");
+
+                _ = db.Execute("VADD", ["snapshotted", "XB8", vector, element, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+
+#pragma warning disable CS0618 // ForegroundSave is deprecated in the client, but is what this test needs
+                redis.GetServers()[0].Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+                _ = await server.Store.WaitForCommitAsync();
+            }
+
+            server.Dispose(deleteDir: false);
+            server = CreateSmallPageGarnetServer(tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Plain keys prove recovery itself worked, isolating any Vector Set loss below.
+                ClassicAssert.AreEqual("controlvalue", (string)db.StringGet("control"));
+                ClassicAssert.AreEqual(new string('x', 64), (string)db.StringGet("filler:0"));
+
+                foreach (var key in new[] { "flushed", "snapshotted" })
+                {
+                    var embedding = (string[])db.Execute("VEMB", [key, element]);
+                    ClassicAssert.AreEqual(8, embedding?.Length ?? 0, $"VEMB {key} did not return the recovered embedding");
+                }
+            }
+        }
+
+#if DEBUG
+        /// <summary>
+        /// A ContextMetadata update that lands inside a checkpoint's fuzzy region is copied to the tail, so the
+        /// snapshot holds both the old and the new version of that record. Recovery must take the newest
+        /// version rather than treating the pair as corruption and aborting.
+        /// </summary>
+        [Test]
+        public async Task RecoverContextMetadataUpdatedInsideFuzzyRegionAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const ExceptionInjectionType MetadataPause = ExceptionInjectionType.VectorSet_Pause_Before_Context_Metadata_Rmw;
+            const ExceptionInjectionType CheckpointPause = ExceptionInjectionType.Checkpoint_Pause_At_Flush_Begin;
+
+            var vector = Enumerable.Range(0, 8).Select(static x => (byte)x).ToArray();
+            var element = new byte[] { 0, 0, 0, 0 };
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // First version of the ContextMetadata record.
+                _ = db.Execute("VADD", ["before", "XB8", vector, element, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+
+                ExceptionInjectionHelper.EnableException(MetadataPause);
+                try
+                {
+                    // Park a second VADD just before it persists its ContextMetadata update.
+                    var vaddTask = Task.Run(() =>
+                    {
+                        using var vaddRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                        return vaddRedis.GetDatabase(0).Execute("VADD", ["during", "XB8", vector, element, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+                    });
+                    await ExceptionInjectionHelper.WaitOnClearAsync(MetadataPause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                    // Park a checkpoint at the end of its fuzzy region, before it captures the last address the
+                    // snapshot covers.
+                    ExceptionInjectionHelper.EnableException(CheckpointPause);
+                    try
+                    {
+#pragma warning disable CS0618 // ForegroundSave is deprecated in the client, but is what this test needs
+                        var saveTask = Task.Run(() => redis.GetServers()[0].Save(SaveType.ForegroundSave));
+#pragma warning restore CS0618
+                        await ExceptionInjectionHelper.WaitOnClearAsync(CheckpointPause).WaitAsync(TimeSpan.FromSeconds(30));
+
+                        // Release the metadata update into the new version, forcing it to be copied to the tail
+                        // while the old version stays in the snapshot's range.
+                        ExceptionInjectionHelper.EnableException(MetadataPause);
+                        _ = await vaddTask.WaitAsync(TimeSpan.FromSeconds(30));
+                        ExceptionInjectionHelper.DisableException(MetadataPause);
+
+                        ExceptionInjectionHelper.EnableException(CheckpointPause);
+                        await saveTask.WaitAsync(TimeSpan.FromSeconds(60));
+                    }
+                    finally
+                    {
+                        ExceptionInjectionHelper.DisableException(CheckpointPause);
+                    }
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.DisableException(MetadataPause);
+                }
+
+                _ = await server.Store.WaitForCommitAsync();
+            }
+
+            server.Dispose(deleteDir: false);
+
+            // failOnRecoveryError surfaces a recovery failure that the server would otherwise log and continue
+            // past, leaving a partially recovered store behind.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true, aofMemorySize: DefaultAOFMemorySize, enableVectorSetPreview: true, failOnRecoveryError: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                foreach (var key in new[] { "before", "during" })
+                {
+                    var embedding = (string[])db.Execute("VEMB", [key, element]);
+                    ClassicAssert.AreEqual(8, embedding?.Length ?? 0, $"VEMB {key} did not return the recovered embedding");
+                }
+            }
+        }
+#endif
+
+        /// <summary>
+        /// Create a new GarnetServer instance with a small enough log that ordinary writes flush pages.
+        /// </summary>
+        private static GarnetServer CreateSmallPageGarnetServer(bool tryRecover)
+        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, aofMemorySize: DefaultAOFMemorySize, enableVectorSetPreview: true, lowMemory: true, memorySize: "64m", pageSize: "16k", failOnRecoveryError: true);
 
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.

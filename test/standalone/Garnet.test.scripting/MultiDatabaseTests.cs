@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -173,6 +174,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [SuppressMessage("Usage", "SER304:Repeated queued operations may suit the variadic overload", Justification = "Separate ops are intentional")]
         public void MultiDatabaseSimpleTransactionTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -180,8 +182,8 @@ namespace Garnet.test
 
             var tran = db1.CreateTransaction();
 
-            tran.StringSetAsync("db2:key1", "db2:val1");
-            tran.StringSetAsync("db2:key2", "db2:val2");
+            _ = tran.StringSetAsync("db2:key1", "db2:val1");
+            _ = tran.StringSetAsync("db2:key2", "db2:val2");
 
             var committed = tran.Execute();
             ClassicAssert.IsTrue(committed);
@@ -397,7 +399,7 @@ namespace Garnet.test
             var db2data = new RedisValue[] { "db2:a", "db2:b", "db2:c", "db2:d" };
             var db12data = new RedisValue[] { "db12:a", "db12:b", "db12:c", "db12:d" };
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
 
             var db1 = redis.GetDatabase(0);
             var result = db1.StringSet(db1Key1, "db1:val1");
@@ -1332,7 +1334,7 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseSaveInProgressTest()
         {
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db1 = redis.GetDatabase(0);
                 var db2 = redis.GetDatabase(1);
@@ -1411,7 +1413,7 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseGeneralSaveBlocksGeneralSaveTest()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db0 = redis.GetDatabase(0);
             var db1 = redis.GetDatabase(1);
 
@@ -1460,6 +1462,66 @@ namespace Garnet.test
         }
 
         [Test]
+        public void MultiDatabaseForegroundSaveSkippingBusyDatabaseDoesNotReportSuccess()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db0 = redis.GetDatabase(0);
+            var db1 = redis.GetDatabase(1);
+
+            db0.StringSet("k", "v");
+            db1.StringSet("k", "v");
+
+            var storeWrapper = server.Provider.StoreWrapper;
+
+            // Hold DB 1's per-DB checkpoint lock, which is exactly the state a per-DB BGSAVE on DB 1
+            // leaves the server in while it is running. TakeCheckpointAsync skips a database it cannot
+            // pause-lock, so a general SAVE here checkpoints DB 0 only. Taking the lock directly makes
+            // the skip deterministic rather than depending on a real checkpoint still being in flight.
+            ClassicAssert.IsTrue(storeWrapper.TryPauseCheckpoints(1), "Could not pause checkpoints on DB 1");
+
+            try
+            {
+                // A foreground SAVE consumes the aggregate outcome, so it must not answer +OK after
+                // skipping DB 1 - that would tell the client every database is on disk when one was
+                // never attempted.
+                var ex = Assert.Throws<RedisServerException>(() => db0.Execute("SAVE"));
+                ClassicAssert.AreEqual(
+                    Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS),
+                    ex.Message);
+
+                // BGSAVE replies before the aggregate is computed, so its contract of "skip the busy
+                // databases and report started" is unchanged.
+                var res = db0.Execute("BGSAVE");
+                ClassicAssert.AreEqual("Background saving started", res.ToString());
+            }
+            finally
+            {
+                storeWrapper.ResumeCheckpoints(1);
+            }
+
+            // Once no database is busy, a general SAVE succeeds again - the error above was the skip,
+            // not a permanent refusal. The BGSAVE above may still be finishing, so poll.
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            string saveResult;
+            do
+            {
+                try
+                {
+                    saveResult = db0.Execute("SAVE").ToString();
+                    break;
+                }
+                catch (RedisServerException)
+                {
+                    saveResult = null;
+                    Thread.Sleep(10);
+                }
+            }
+            while (DateTime.UtcNow < deadline);
+
+            ClassicAssert.AreEqual("OK", saveResult, "SAVE did not succeed within timeout once all DBs were free");
+        }
+
+        [Test]
         [TestCase(false)]
         [TestCase(true)]
         public void MultiDatabaseSaveRecoverByDbIdTest(bool backgroundSave)
@@ -1479,7 +1541,7 @@ namespace Garnet.test
             long expectedLastSave;
             long actualLastSave;
 
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 // Add object & raw string data to DB 0
                 var db1 = redis.GetDatabase(0);
@@ -1521,7 +1583,7 @@ namespace Garnet.test
                 actualLastSave = lastSave;
 
                 // Verify DB 0 was not saved
-                lastSaveStr = db1.Execute("LASTSAVE").ToString();
+                lastSaveStr = db1.Execute("LASTSAVE", "0").ToString();
                 parsed = long.TryParse(lastSaveStr, out lastSave);
                 ClassicAssert.IsTrue(parsed);
                 ClassicAssert.AreEqual(0, lastSave);
@@ -1532,7 +1594,7 @@ namespace Garnet.test
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
             server.Start();
 
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var lastSave = 0L;
                 string lastSaveStr;
@@ -1577,7 +1639,7 @@ namespace Garnet.test
                 var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
                 while (!cts.IsCancellationRequested)
                 {
-                    lastSaveStr = db1.Execute("LASTSAVE").ToString();
+                    lastSaveStr = db1.Execute("LASTSAVE", "0").ToString();
                     parsed = long.TryParse(lastSaveStr, out lastSave);
                     ClassicAssert.IsTrue(parsed);
                     if (lastSave != 0)

@@ -108,7 +108,7 @@ namespace Tsavorite.kvbench
               .Append(_opts.RumdHasDeletes() ? "true" : "false").Append(",")
               .Append(KvSessionFunctions.kReaderCopyBytes).Append(",")
               .Append(_opts.ResolvedDeviceType).Append(",")
-              .Append(_opts.DeviceThrottle).Append(",")
+              .Append(_opts.DeviceThrottleLimit).Append(",")
               .Append(_opts.DeviceCompletionThreads).Append(",")
               .Append(_opts.ResolvedIoBackend).Append(",")
               .Append("basic").Append(",")

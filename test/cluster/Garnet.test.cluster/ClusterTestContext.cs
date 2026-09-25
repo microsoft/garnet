@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -54,7 +55,18 @@ namespace Garnet.test.cluster
         public ILogger logger;
 
         public int defaultShards = 3;
-        public static int Port = (int)ClusterPortAssignment.ClusterTest;    // No OneTimeSetUp needed for "Garnet.test.cluster" to set this
+        public static int Port = (int)ClusterPortAssignment.ClusterTest + TestUtils.PortOffset;    // No OneTimeSetUp needed for "Garnet.test.cluster" to set this
+
+        /// <summary>
+        /// Sets the cluster test port for the current sub-project. Mirrors <see cref="TestUtils.SetTestPort"/>;
+        /// call from a <c>[SetUpFixture]</c> in each sub-project.
+        /// </summary>
+        /// <param name="port">The sub-project's port assignment.</param>
+        public static void SetPort(ClusterPortAssignment port)
+        {
+            Port = (int)port + TestUtils.PortOffset;
+            TestUtils.EnsureClusterPortsAvailable(Port, port.ToString());
+        }
 
         public Random r = new();
         public ManualResetEventSlim waiter;
@@ -64,6 +76,14 @@ namespace Garnet.test.cluster
         public ClusterTestUtils clusterTestUtils = null;
 
         public CancellationTokenSource cts;
+
+        /// <summary>
+        /// Total time budget shared across all nodes in <see cref="DisposeCluster"/>. Kept below the
+        /// teardown timeout so stalled nodes are reported precisely instead of tripping the outer guard.
+        /// No per-node cap is applied on top of this: a single slow node is only a problem once it
+        /// threatens the budget the remaining nodes still need to release their ports.
+        /// </summary>
+        private static readonly TimeSpan DisposeClusterBudget = TimeSpan.FromSeconds(45);
 
         public void EnableGarnetLoggingEvents(GarnetTestLoggingEventType[] events)
         {
@@ -304,6 +324,7 @@ namespace Garnet.test.cluster
             bool FastAofTruncate = false,
             bool OnDemandCheckpoint = false,
             string AofMemorySize = "64m",
+            string AofPageSize = default,
             int CommitFrequencyMs = 0,
             bool useAofNullDevice = false,
             bool DisableStorageTier = false,
@@ -365,6 +386,7 @@ namespace Garnet.test.cluster
                 SegmentSize: segmentSize,
                 FastAofTruncate: FastAofTruncate,
                 AofMemorySize: AofMemorySize,
+                AofPageSize: AofPageSize,
                 CommitFrequencyMs: CommitFrequencyMs,
                 useAofNullDevice: useAofNullDevice,
                 DisableStorageTier: DisableStorageTier,
@@ -537,20 +559,89 @@ namespace Garnet.test.cluster
         /// </summary>
         public void DisposeCluster()
         {
-            if (nodes != null)
+            if (nodes == null)
+                return;
+
+            // Every node's dispose is started before any of them is waited on, and each is then waited on
+            // under a bounded share of one budget. GarnetServer.Dispose closes its listeners before draining
+            // handlers, so a node that stalls late in its own dispose cannot keep the others bound to their
+            // ports. Starting them inside the wait loop instead would mean a single node exhausting the
+            // budget left every later node undisposed, and aborting the loop on the first failure would do
+            // the same - either way the abandoned ports cascade into startup failures for subsequent tests
+            // in the same process.
+            var stalledNodes = new List<int>();
+            var disposeFailures = new List<Exception>();
+            var disposeTasks = new Task[nodes.Length];
+
+            for (var i = 0; i < nodes.Length; i++)
             {
-                for (var i = 0; i < nodes.Length; i++)
-                {
-                    if (nodes[i] != null)
-                    {
-                        logger.LogDebug("\t a. Before dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
-                        var node = nodes[i];
-                        nodes[i] = null;
-                        node.Dispose(true);
-                        logger.LogDebug("\t b. After dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
-                    }
-                }
+                var node = nodes[i];
+                if (node == null)
+                    continue;
+
+                nodes[i] = null;
+                logger.LogDebug("\t a. Before dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
+
+                // Dispose blocks, so it gets a dedicated thread rather than a pool thread: on a two-core
+                // runner the pool injects threads slowly enough that a queued dispose could sit unstarted
+                // behind the ones already blocked, which is the same abandoned port by another route.
+                disposeTasks[i] = Task.Factory.StartNew(() => node.Dispose(true), TaskCreationOptions.LongRunning);
             }
+
+            var elapsed = Stopwatch.StartNew();
+
+            for (var i = 0; i < disposeTasks.Length; i++)
+            {
+                var disposeTask = disposeTasks[i];
+                if (disposeTask == null)
+                    continue;
+
+                var wait = DisposeClusterBudget - elapsed.Elapsed;
+
+                // Task.Wait rethrows a faulted dispose as an AggregateException. Letting it propagate
+                // would abandon every later node, which is the cascade this loop exists to prevent, so
+                // the fault is caught here and reported from disposeTask.Exception below.
+                bool completed;
+                try
+                {
+                    completed = wait > TimeSpan.Zero && disposeTask.Wait(wait);
+                }
+                catch (AggregateException)
+                {
+                    completed = true;
+                }
+
+                // The dispose is already running on its own thread, so a node that outlives the budget
+                // still goes on to free its port; it is only the waiting that is given up here.
+                if (!completed)
+                {
+                    stalledNodes.Add(i);
+                    logger.LogError("\t !. Dispose stalled for node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
+                    continue;
+                }
+
+                if (disposeTask.Exception is { } disposeException)
+                {
+                    // Unwrapped so the reported failure names the original fault rather than the
+                    // AggregateException the task wraps it in.
+                    disposeFailures.Add(disposeException.InnerExceptions.Count == 1
+                        ? disposeException.InnerExceptions[0]
+                        : disposeException);
+                    logger.LogError(disposeException, "\t !. Dispose failed for node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
+                    continue;
+                }
+
+                logger.LogDebug("\t b. After dispose node {i}{testName}", i, TestContext.CurrentContext.Test.Name);
+            }
+
+            if (stalledNodes.Count > 0)
+                disposeFailures.Add(new TimeoutException($"Dispose stalled for node(s): {string.Join(", ", stalledNodes)}"));
+
+            if (disposeFailures.Count == 1)
+                throw disposeFailures[0];
+
+            if (disposeFailures.Count > 1)
+                throw new AggregateException("Dispose failed for multiple nodes", disposeFailures);
         }
 
         /// <summary>
@@ -829,18 +920,7 @@ namespace Garnet.test.cluster
             _ = clusterTestUtils.ClusterFailover(replicaNodeIndex, "ABORT", logger);
             _ = clusterTestUtils.ClusterFailover(replicaNodeIndex, logger: logger);
 
-            var retryCount = 0;
-            while (true)
-            {
-                var role = clusterTestUtils.GetReplicationRole(replicaNodeIndex, logger: logger);
-                if (role.Equals("master")) break;
-                if (retryCount++ > 10000)
-                {
-                    logger?.LogError("CLUSTER FAILOVER retry count reached");
-                    Assert.Fail();
-                }
-                Thread.Sleep(1000);
-            }
+            clusterTestUtils.WaitForPrimaryRole(replicaNodeIndex, logger);
         }
 
         /// <summary>Opens a connection, assigns all slots to primaryIndex, and introduces every other created node.</summary>
@@ -939,16 +1019,16 @@ namespace Garnet.test.cluster
         {
             try
             {
-                var resp = server.Execute("MULTI");
+                var resp = server.Execute(0, "MULTI", []);
                 ClassicAssert.AreEqual("OK", (string)resp);
 
                 foreach (var key in keys)
                 {
-                    resp = server.Execute("GET", key);
+                    resp = server.Execute(0, "GET", [key]);
                     ClassicAssert.AreEqual("QUEUED", (string)resp);
                 }
 
-                resp = server.Execute("EXEC");
+                resp = server.Execute(0, "EXEC", []);
                 return (string[])resp;
             }
             catch (Exception ex)
@@ -969,7 +1049,7 @@ namespace Garnet.test.cluster
                     args[1 + (i * 2)] = keys[i];
                     args[1 + (i * 2) + 1] = values[i];
                 }
-                var resp = server.Execute("BULKINCRBY", args);
+                var resp = server.Execute(0, "BULKINCRBY", args);
                 ClassicAssert.AreEqual("OK", (string)resp);
             }
             catch (Exception ex)
@@ -986,7 +1066,7 @@ namespace Garnet.test.cluster
                 args[0] = keys.Length;
                 for (var i = 0; i < keys.Length; i++)
                     args[1 + i] = keys[i];
-                var resp = server.Execute("BULKREAD", args);
+                var resp = server.Execute(0, "BULKREAD", args);
                 var result = (string[])resp;
                 ClassicAssert.AreEqual(keys.Length, result.Length);
                 return result;

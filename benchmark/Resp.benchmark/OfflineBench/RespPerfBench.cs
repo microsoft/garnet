@@ -295,7 +295,7 @@ namespace Resp.benchmark
                 rg = run_rg;
             else
             {
-                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, ttl: ttl);
+                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, flatBufferClient: (opts.Client == ClientType.SERedis || opts.Client == ClientType.GarnetClientSession), ttl: ttl);
                 rg.Generate();
             }
 
@@ -476,11 +476,11 @@ namespace Resp.benchmark
 
             Stopwatch sw = new();
             sw.Start();
+            // GetRequestArgs returns a shared, cached argument array that already includes the "MSET" command
+            // token at index 0, so it is sent directly with no per-request allocation, copy, or mutation.
             while (!done)
             {
-                var reqArgs = rg.GetRequestArgs();
-                reqArgs.Insert(0, "MSET");
-                c.Execute([.. reqArgs]);
+                c.Execute(rg.GetRequestArgs());
                 c.CompletePending(true);
                 numReqs++;
                 if (numReqs == maxReqs) break;
@@ -511,7 +511,8 @@ namespace Resp.benchmark
             while (!done)
             {
                 var reqArgs = rg.GetRequestArgs();
-                for (var i = 0; i < reqArgs.Count; i += 2)
+                // Index 0 is the command token ("MSET"); key/value pairs start at index 1.
+                for (var i = 1; i < reqArgs.Length; i += 2)
                     db.StringSet(reqArgs[i], reqArgs[i + 1]);
                 numReqs++;
                 if (numReqs == maxReqs) break;

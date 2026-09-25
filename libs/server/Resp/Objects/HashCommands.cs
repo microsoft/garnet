@@ -246,6 +246,10 @@ namespace Garnet.server
                 }
             }
 
+            // We reserve 2 bits of metadata (1 for "include count", 1 for "with values") in
+            // ObjectInput.arg1, so cap count to what will fit in the remaining signed 30 bits.
+            paramCount = Math.Min(paramCount, int.MaxValue >> 2);
+
             var countWithMetadata = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (withValues ? 1 : 0);
 
             // Create a random seed

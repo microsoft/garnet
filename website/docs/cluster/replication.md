@@ -113,29 +113,24 @@ Currently, we do not support chained replication.
 
 ## Querying a Replica
 
-By default replicas only serve read queries but can also be configure to process write requests.
-This option is available by issuing once ```READWRITE``` command just before executing any write operation in a single client session.
-Issuing ```READONLY``` will toggle back to serving read queries.
+By default, a replica redirects commands to the primary that owns the requested hash slot. Clients can issue `READONLY` to allow the current connection to serve read commands directly from the replica for slots owned by its primary. These reads may return stale data while replication catches up.
 
-If a replica is set to process read-only queries, it will respond with *-MOVED* to any write requests, redirecting them to the primary that is replicating.
+Write commands are always redirected to the primary, including on connections that issued `READONLY`. The `READWRITE` command clears the connection's read-only mode and restores the default behavior of redirecting reads to the primary; it does not enable writes on the replica.
 
 ```bash
-PS C:\Dev> redis-cli -h 192.168.1.26 -p 7001 -c
-192.168.1.26:7001> set x 1234
--> Redirected to slot [16287] located at 192.168.1.26:7000
+PS C:\Dev> redis-cli -h 192.168.1.26 -p 7001
+192.168.1.26:7001> get x
+(error) MOVED 16287 192.168.1.26:7000
+192.168.1.26:7001> readonly
 OK
-192.168.1.26:7000> set x 1234
-OK
-192.168.1.26:7000> get x
-"1234"
-192.168.1.26:7000> exit
-PS C:\Dev> redis-cli -h 192.168.1.26 -p 7001 -c
 192.168.1.26:7001> get x
 "1234"
-192.168.1.26:7001> exit
-PS C:\Dev> redis-cli -h 192.168.1.26 -p 7002
-192.168.1.26:7002> get x
-"1234"
+192.168.1.26:7001> set x 5678
+(error) MOVED 16287 192.168.1.26:7000
+192.168.1.26:7001> readwrite
+OK
+192.168.1.26:7001> get x
+(error) MOVED 16287 192.168.1.26:7000
 ```
 
 ## Checkpointing & Recovery

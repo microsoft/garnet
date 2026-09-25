@@ -17,12 +17,12 @@ cd benchmark/Device.benchmark
 dotnet build -c Release -f net10.0
 DB=bin/Release/net10.0/Device.benchmark.dll
 
-# Linux NVMe, libaio
+# Linux NVMe RAID-0, libaio
 numactl --membind=0 --cpunodebind=0 dotnet $DB \
-  --file-name /mnt/nvme/devbench.dat --device-type Native --io-backend libaio \
-  --file-size 17179869184 --sector-size 4096 \
-  --batch-size 4096 --threads 16 --throttle-limit 512 --runtime 8
-# → Benchmark finished: ... throughput: ~750000 ops/sec
+  --file-name /raid/devbench.dat --device-type Native --device-io-backend libaio \
+  --file-size 12801015808 --sector-size 512 \
+  --batch-size 4096 --threads 32 --device-completion-threads 8 --device-throttle-limit 4096 --runtime 8
+# → Benchmark finished: ... throughput: ~8.2M ops/sec (8×NVMe RAID-0)
 ```
 
 Always measure on a **Release** build. Run `dotnet $DB --help` for all flags.
@@ -37,61 +37,133 @@ from RAM with no device.)
 
 ### NVMe storage-bound
 
-Measured on a Dell P5600 NVMe (`fio` 4K randread ceiling ≈ 749K IOPS); reproduces
-within ±2%. Common flags: `--file-size 17179869184 --sector-size 4096
---segment-size 1073741824 --batch-size 4096 --throttle-limit 512 --runtime 8`.
+Reference host: **8×NVMe SSD RAID-0** (Linux `md`, mounted `/raid`). The array is
+IOPS-bound rather than bandwidth-bound at these sizes, so its `fio` random-read
+ceiling is effectively the same at both block sizes used across this suite:
+**8.24 M IOPS at 4 K** and **8.20 M IOPS at 512 B** (same job — 32 jobs × QD64,
+`io_uring`, `O_DIRECT`, 8 files). The runs below issue 512 B reads, so **8.2 M** is
+the like-for-like ceiling. The Device benchmark reaches it at the raw
+`IDevice` level with **either** backend. The config is kept **compatible with the
+KV/RESP benchmarks**: `--sector-size 512` (the array's logical block size — Garnet
+reads the sector-aligned window covering a 128 B record) and `--file-size
+12801015808` (12.8 GB = 100 M × 128 B). Common flags: `--segment-size 1073741824
+--batch-size 4096 --device-completion-threads 8 --device-throttle-limit 4096 --runtime 8`.
 
 ```bash
+# libaio — a few kernel io_contexts suffice (default ct rings):
 numactl --membind=0 --cpunodebind=0 dotnet $DB \
-  --file-name /mnt/nvme/devbench.dat --device-type Native --io-backend libaio \
-  --completion-threads 1 --threads 16 \
-  --file-size 17179869184 --sector-size 4096 --batch-size 4096 --throttle-limit 512 --runtime 8
+  --file-name /raid/devbench.dat --device-type Native --device-io-backend libaio \
+  --device-completion-threads 8 --threads 32 \
+  --file-size 12801015808 --sector-size 512 --segment-size 1073741824 \
+  --batch-size 4096 --device-throttle-limit 4096 --runtime 8
+
+# uring — the smart default sizes rings to min(2×cores, 64) (>= submitters here),
+# so it reaches the ceiling out of the box; only set --device-io-contexts for >64 submitters:
+numactl --membind=0 --cpunodebind=0 dotnet $DB \
+  --file-name /raid/devbench.dat --device-type Native --device-io-backend uring \
+  --device-completion-threads 8 --threads 32 \
+  --file-size 12801015808 --sector-size 512 --segment-size 1073741824 \
+  --batch-size 4096 --device-throttle-limit 4096 --runtime 8
 ```
 
-| backend | --completion-threads | --threads | ops/sec |
+| backend | rings | --threads | ops/sec |
 |---|---|---|---|
-| Native libaio | 1 | 16 | **750 K** |
-| Native libaio | 1 | 32 | 755 K |
-| Native uring  | 1 | 16 | 342 K (single-ring SpinLock cap) |
-| Native uring  | 8 | 16 | **758 K** |
+| Native libaio | ct=8 (8 io_contexts) | 32 | **8.23 M** |
+| Native libaio | ct=8 | 64 | 7.7 M |
+| Native uring | ct=8, default rings (smart → 64) | 32 | **8.45 M** |
+| Native uring | ct=8, `--device-io-contexts 8` (under-provisioned) | 32 | 2.9 M (per-ring SpinLock cap) |
+| Native uring | ct=8, `--device-io-contexts 32` | 32 | 8.00 M |
+
+Both backends hit the `fio` ceiling. **libaio needs only ~8 kernel io_contexts**
+(its io_context mutex is cheap), whereas **io_uring needs one ring per submitter** to
+escape the managed per-ring `SpinLock`. io_uring's ring count is **smart-defaulted** to
+`min(2 × cores, 64)` (floored at the drainer count), so with 32 submitters it uses 64
+rings and reaches the ceiling **out of the box** (8.45 M); explicitly under-provisioning
+rings below the submitter count (`--device-io-contexts 8`) exposes the SpinLock cap (~2.9 M). NUMA pinning is ~neutral at the raw device layer (node-0
+pin vs no pin within ±2%); it matters far more up the stack (KV/RESP). Peak is at
+`--threads 32` (32 submit + 8 drain ≈ node-0's physical cores); `--threads 64`
+oversubscribes and falls to ~7.5 M.
 
 ### Memory-device-bound (`LocalMemory`)
 
 `LocalMemory` is an in-RAM `IDevice`: reads are a `memcpy` served by per-thread
-SPSC rings drained by `--completion-threads` worker threads. With no real device
+SPSC rings drained by `--device-completion-threads` worker threads. With no real device
 latency, this measures the **submission/completion path ceiling** (ring routing,
 wakeups, callback dispatch) — the upper bound for `KV`/`resp` LocalMemory runs and
 a regression test for the ring code.
 
 ```bash
-# Sweep; set --completion-threads == --threads (one SPSC ring per submitter).
+# Sweep; set --device-completion-threads == --threads (one SPSC ring per submitter).
 for T in 8 16 32 40; do
   numactl --cpunodebind=0 --membind=0 dotnet $DB \
-    --device-type LocalMemory --completion-threads $T --threads $T \
+    --device-type LocalMemory --device-completion-threads $T --threads $T \
     --file-size 1073741824 --segment-size 1073741824 --sector-size 512 \
-    -b 1024 --throttle-limit 8192 --runtime 6
+    -b 1024 --device-throttle-limit 8192 --runtime 6
 done
 ```
 
-| --threads (= --completion-threads) | 8 | 16 | 32 | 40 |
+| --threads (= --device-completion-threads) | 8 | 16 | 32 | 40 |
 |---|---|---|---|---|
 | MIOps/s | 34 | 57 | **78** | 74 |
 
-Peaks near the physical core count, then falls off. Use a large `--throttle-limit`
+Peaks near the physical core count, then falls off. Use a large `--device-throttle-limit`
 (8192) — there is no kernel ring to overflow, so back-pressure should not gate.
 
 ## Key knobs
 
-- **`--throttle-limit`** — user-side in-flight cap (not a kernel limit). On fast
-  NVMe, 512 is safe (Little's Law keeps actual kernel in-flight ≈ 45, below the
-  128-slot libaio/io_uring ring). `0` floods the ring → `code4` (EAGAIN) errors;
-  halve until errors disappear. For `LocalMemory`, use a large value (8192).
-- **`--completion-threads`** — libaio: 1 (kernel mutex already efficient; sharding
-  is a no-op). io_uring: 4–8 sharded rings to escape the per-ring SpinLock.
-  LocalMemory: match `--threads`.
-- **`--threads`** — 16 is the NVMe sweet spot; LocalMemory peaks near core count.
-- **`numactl --membind=0 --cpunodebind=0`** — required; cross-NUMA costs 10–15%.
+- **`--device-throttle-limit`** — user-side in-flight cap (not a kernel limit). On a fast
+  multi-drive array use **4096**; on a single NVMe **512** is enough (Little's Law
+  keeps actual kernel in-flight well below the ring depth). `0` disables the cap: this is
+  safe — a submit that finds the ring full unwinds and retries after a completion, it does
+  not error — but the retry churn costs throughput, so prefer sizing it. For `LocalMemory`,
+  use a large value (8192).
+- **`--device-completion-threads`** — background drainer count. **8** is a good default for
+  a fast array (both backends); 1 suffices for a single NVMe. LocalMemory: match
+  `--threads`.
+- **`--device-io-contexts`** — kernel io_contexts / io_uring rings, decoupled from drainers.
+  **libaio**: leave at default (= ct rings) — its io_context mutex is cheap, more
+  rings are a no-op. **io_uring**: the **smart default** already sizes rings to
+  `min(2 × cores, 64)`, enough for ≤ 64 submitters, so leave it unset in the common
+  case; set it explicitly (**>= submitter `--threads`**) only when submitters exceed 64
+  or to pin an exact count. Rings **below** the submitter count share a per-ring
+  `SpinLock` and cap uring at ~a third of libaio.
+- **`--threads`** — 32 is the NVMe-array sweet spot (submit + drain ≈ node-0 cores);
+  >32 oversubscribes and falls off. LocalMemory peaks near core count.
+- **`numactl --membind=0 --cpunodebind=0`** — near-neutral at the raw device layer,
+  but keeps memory local; matters much more up the stack (KV/RESP cross-NUMA costs
+  10–30%).
 - **`--file-size`** must be a multiple of `1024 × --sector-size`.
+
+## Completion model & high-latency (cloud) devices
+
+The completion path is **block-on-signal**, not busy-spin. A read that misses
+memory goes pending; the waiting thread suspends its epoch and parks on the
+session's `readyResponses` semaphore (`SemaphoreSlim`, via `WaitPending`). A drainer that
+owns a single ring parks in the kernel — `io_getevents(min_nr=1, timeout)` (libaio) or
+`io_uring_wait_cqe_timeout` (uring) — and releases the semaphore when a completion lands.
+A drainer that owns several rings (the common uring case, where the smart default creates
+more rings than drainers) must not park on one of them or it would hide the siblings, so it
+polls the whole slice non-blocking and sleeps 1 ms only after a sustained idle. Either way a
+waiting reader burns no CPU during the device-latency window; this is the steady state on a
+**high-latency (cloud) device** (Azure/EBS-class, ~0.5–2 ms), where throughput is
+latency×concurrency-bound, as it must be. SQPOLL (a kernel-side submission poller) is
+opt-in via `--device-uring-sqpoll` and off by default.
+
+Two poll levers exist only to reach the local-NVMe ceiling; neither is a hot
+idle-spin, and both fall through to the block-on-signal path when completions are
+not immediately ready:
+
+- **Inline affine drain** (always on): before parking, the reader does **one**
+  non-blocking peek of its own ring (`TryCompleteMine`). On a saturated fast array
+  the completion is usually already there, so the reader never parks (poll-driven →
+  peak IOPS). On a cloud device the peek usually misses and the thread parks on the
+  semaphore, so the one extra peek is a negligible cost there.
+- **Submit-side backpressure**: `AsyncGetFromDisk` spins **only** while a thread's
+  in-flight exceeds its per-thread `--device-throttle-limit` share, and it drains
+  completions on each turn. A request/response reader holds ≤1 in-flight, so it
+  never hits this; it engages only for bulk multi-issue callers (recovery/scan).
+  Size `--device-throttle-limit` to the device's bandwidth-delay product (deep queues are
+  how you hide cloud latency) and the spin stays at the ceiling only.
 
 ## Output
 
@@ -100,8 +172,9 @@ Benchmark finished: <ok> ok, <err> err, <submitted> submitted in <T> s, throughp
   error breakdown: code<N>=<count> ...   # only when err > 0
 ```
 
-`code4` (`Status::IOError`) = kernel ring full (libaio `io_submit` EAGAIN /
-io_uring SQ full). Fix by lowering `--throttle-limit`.
+`code4` (`Status::IOError`) = a **permanent** submit or completion error (a non-retryable
+`io_submit` / `io_uring_enter` return, or a failed IO). A transiently full kernel ring is
+**not** an error — it unwinds and retries after a completion drains a slot.
 
 ## Related
 

@@ -44,12 +44,10 @@ namespace Tsavorite.core
             ctx.InitialIORecordSize = initialIORecordSize;
 
             var session = new ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions, enableConsistentRead);
-
             lock (_activeSessions)
             {
                 _ = _activeSessions.TryAdd(session, new SessionInfo { session = session, isActive = true });
             }
-
             return session;
         }
 

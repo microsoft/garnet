@@ -47,7 +47,11 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref UnifiedInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+        void WriteLogUpsert<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
@@ -55,19 +59,19 @@ namespace Garnet.server
 
             input.header.flags |= RespInputFlags.Deterministic;
 
-            GarnetObjectSerializer.Serialize(value, out var valueBytes);
-            fixed (byte* valPtr = valueBytes)
-            {
-                functionsState.appendOnlyFile.Log.Enqueue(
-                    AofEntryType.UnifiedStoreObjectUpsert,
-                    version,
-                    sessionID,
-                    key,
-                    new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
-                    ref input,
-                    epochAccessor,
-                    out _);
-            }
+            // Object serialization is deferred to the AOF: GarnetLog.EnqueueObjectChunked streams the object into chunk
+            // records via the ChunkedObjectSerializer without materializing the whole serialized value. The store epoch
+            // (epochAccessor) is suspended only while blocked on an AOF flush during chunk allocation.
+            functionsState.appendOnlyFile.Log.EnqueueObjectChunked(
+                AofEntryType.UnifiedStoreObjectUpsert,
+                version,
+                sessionID,
+                key,
+                value,
+                ref input,
+                functionsState.garnetObjectSerializer,
+                epochAccessor,
+                out _);
         }
 
         /// <summary>

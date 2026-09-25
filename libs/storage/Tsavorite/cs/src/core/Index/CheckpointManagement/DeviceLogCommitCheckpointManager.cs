@@ -29,10 +29,32 @@ namespace Tsavorite.core
         /// checkpointNamingScheme
         /// </summary>
         protected readonly ICheckpointNamingScheme checkpointNamingScheme;
-        private readonly SemaphoreSlim semaphore;
-        /// <summary>First non-zero error code from the most recent metadata write via <see cref="IOCallback"/> (0 == success). Read after
-        /// the write's <see cref="semaphore"/> wait in <see cref="WriteInto"/> so a failed checkpoint-metadata write is not silently ignored.</summary>
-        private uint metadataWriteErrorCode;
+
+        /// <summary>
+        /// Completion state for a single metadata read or write. Each <see cref="ReadInto"/> and <see cref="WriteInto"/>
+        /// creates its own instance and passes it as the device IO context, so a completion releases only the operation
+        /// that issued it and an error code belongs to exactly one operation. Sharing this state across operations would
+        /// let one operation's completion wake another whose IO is still outstanding, which would then copy or recycle a
+        /// buffer the device is still writing into.
+        /// </summary>
+        private sealed class MetadataIoCompletion
+        {
+            /// <summary>Released by <see cref="IOCallback"/> when this operation's IO completes.</summary>
+            /// <remarks>Not disposed: no wait handle is ever allocated for it (<see cref="SemaphoreSlim.AvailableWaitHandle"/>
+            /// is never accessed), and disposing it would risk a late <see cref="SemaphoreSlim.Release()"/> faulting a device
+            /// IO thread on a path where no completion is guaranteed.</remarks>
+            public readonly SemaphoreSlim Semaphore = new(0);
+
+            /// <summary>Error code from this operation's <see cref="IOCallback"/> (0 == success). Published to the waiting
+            /// thread by the <see cref="Semaphore"/> release/wait pair.</summary>
+            public uint ErrorCode;
+        }
+
+        /// <summary>
+        /// Windows <c>ERROR_HANDLE_EOF</c>. <see cref="ReadInto"/> rounds its length up to a sector boundary, so a metadata
+        /// file shorter than one sector reports this. It means the file ended, not that the read failed.
+        /// </summary>
+        private const uint ErrorHandleEof = 38;
 
         private readonly bool removeOutdated;
         private SectorAlignedBufferPool bufferPool;
@@ -63,8 +85,6 @@ namespace Tsavorite.core
             this.deviceFactory = deviceFactoryCreator.Create(checkpointNamingScheme.BaseName);
             this.checkpointNamingScheme = checkpointNamingScheme;
             this.fastCommitThrottleFreq = fastCommitThrottleFreq;
-
-            semaphore = new SemaphoreSlim(0);
 
             this.removeOutdated = removeOutdated;
             if (removeOutdated)
@@ -156,7 +176,8 @@ namespace Tsavorite.core
             using var device = deviceFactory.Get(checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
-            int size = BitConverter.ToInt32(writePad, 0);
+            var size = BitConverter.ToInt32(writePad, 0);
+            ThrowIfInvalidMetadataSize(size, checkpointNamingScheme.TsavoriteLogCommitMetadata(commitNum));
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
@@ -165,6 +186,29 @@ namespace Tsavorite.core
                 ReadInto(device, 0, out body, size + sizeof(int));
 
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
+        }
+
+        /// <summary>
+        /// Upper bound on metadata length, orders of magnitude above the kilobytes real checkpoint and log-commit
+        /// metadata occupies. Turns a corrupt length into a named error instead of a huge allocation, and keeps
+        /// <see cref="ReadInto"/>'s sector rounding clear of <see cref="int"/> overflow.
+        /// </summary>
+        private const int MaxMetadataSize = 1 << 26;
+
+        /// <summary>
+        /// Rejects a metadata length that a truncated or corrupt metadata file can produce, naming the offending file.
+        /// </summary>
+        /// <remarks>
+        /// Zero is rejected along with negative and oversized lengths. <see cref="ReadInto"/> clears its buffer before
+        /// reading, so a file that is empty or shorter than its length prefix yields a length of zero; accepting it
+        /// would return empty metadata as though it were a valid commit.
+        /// </remarks>
+        /// <param name="size">Metadata length read from the file's length prefix.</param>
+        /// <param name="fileDescriptor">The metadata file the length was read from, used to name it in the error.</param>
+        protected static void ThrowIfInvalidMetadataSize(int size, FileDescriptor fileDescriptor)
+        {
+            if (size <= 0 || size > MaxMetadataSize)
+                throw new TsavoriteException($"Invalid metadata length {size} in {Path.Combine(fileDescriptor.directoryName ?? string.Empty, fileDescriptor.fileName ?? string.Empty)}; the metadata file is truncated or corrupt");
         }
         #endregion
 
@@ -176,7 +220,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public void CommitIndexCheckpoint(Guid indexToken, byte[] commitMetadata)
         {
-            var device = NextIndexCheckpointDevice(indexToken);
+            using var device = NextIndexCheckpointDevice(indexToken);
 
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
@@ -185,7 +229,6 @@ namespace Tsavorite.core
             writer.Write(commitMetadata);
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
-            device.Dispose();
         }
 
         /// <inheritdoc />
@@ -213,24 +256,24 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public byte[] GetIndexCheckpointMetadata(Guid indexToken)
         {
-            var device = deviceFactory.Get(checkpointNamingScheme.IndexCheckpointMetadata(indexToken));
+            using var device = deviceFactory.Get(checkpointNamingScheme.IndexCheckpointMetadata(indexToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
-            int size = BitConverter.ToInt32(writePad, 0);
+            var size = BitConverter.ToInt32(writePad, 0);
+            ThrowIfInvalidMetadataSize(size, checkpointNamingScheme.IndexCheckpointMetadata(indexToken));
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            device.Dispose();
             return new Span<byte>(body).Slice(sizeof(int)).ToArray();
         }
 
         /// <inheritdoc />
         public void CommitLogCheckpointMetadata(Guid logToken, byte[] commitMetadata)
         {
-            var device = NextLogCheckpointDevice(logToken);
+            using var device = NextLogCheckpointDevice(logToken);
 
             // Two phase to ensure we write metadata in single Write operation
             using var ms = new MemoryStream();
@@ -239,7 +282,6 @@ namespace Tsavorite.core
             writer.Write(commitMetadata);
 
             WriteInto(device, 0, ms.ToArray(), (int)ms.Position);
-            device.Dispose();
         }
 
         /// <inheritdoc />
@@ -264,17 +306,17 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public virtual byte[] GetLogCheckpointMetadata(Guid logToken)
         {
-            var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
+            using var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
             var size = BitConverter.ToInt32(writePad, 0);
+            ThrowIfInvalidMetadataSize(size, checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            device.Dispose();
 
             return body.AsSpan().Slice(sizeof(int), size).ToArray();
         }
@@ -364,6 +406,7 @@ namespace Tsavorite.core
 
         private unsafe void IOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            var completion = (MetadataIoCompletion)context;
             if (errorCode != 0)
             {
                 if (ioException is null)
@@ -373,13 +416,34 @@ namespace Tsavorite.core
                 }
                 else
                     logger?.LogError("[DeviceLogManager] OverlappedStream GetQueuedCompletionStatus error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
-                metadataWriteErrorCode = errorCode;
+                completion.ErrorCode = errorCode;
             }
-            semaphore.Release();
+            completion.Semaphore.Release();
         }
 
         [DllImport("libc")]
         private static extern IntPtr strerror(int errnum);
+
+        /// <summary>
+        /// Returns the pool backing metadata IO, creating it on first use. Concurrent metadata operations share one pool,
+        /// so the creation is published with a compare-exchange rather than a check-then-assign. A candidate that loses
+        /// the race is freed rather than dropped: its constructor reserves a process-wide pool slot that sizes every
+        /// thread's shard array, and only <see cref="SectorAlignedBufferPool.Free"/> returns that slot.
+        /// </summary>
+        private SectorAlignedBufferPool GetBufferPool(IDevice device)
+        {
+            var pool = bufferPool;
+            if (pool is not null)
+                return pool;
+
+            var candidate = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            var published = Interlocked.CompareExchange(ref bufferPool, candidate, null);
+            if (published is null)
+                return candidate;
+
+            candidate.Free();
+            return published;
+        }
 
         /// <summary>
         /// Note: will read potentially more data (based on sector alignment)
@@ -390,19 +454,31 @@ namespace Tsavorite.core
         /// <param name="size"></param>
         protected unsafe void ReadInto(IDevice device, ulong address, out byte[] buffer, int size)
         {
-            if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            var pool = GetBufferPool(device);
 
             long numBytesToRead = size;
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
-            var pbuffer = bufferPool.Get((int)numBytesToRead);
+            var pbuffer = pool.Get((int)numBytesToRead);
 
             try
             {
+                // The read is rounded up to a sector and so routinely asks for more bytes than the metadata file
+                // holds. Clear the pooled buffer so a short read yields zeros rather than stale metadata.
+                new Span<byte>(pbuffer.aligned_pointer, (int)numBytesToRead).Clear();
+
+                // The completion is this operation's own, so the wait below returns only once this read has finished
+                // with the buffer; the buffer is therefore never recycled while the device is still writing into it.
+                var completion = new MetadataIoCompletion();
                 device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
-                    (uint)numBytesToRead, IOCallback, null);
-                semaphore.Wait();
+                    (uint)numBytesToRead, IOCallback, completion);
+                completion.Semaphore.Wait();
+
+                // A failed read leaves no metadata in the buffer, so report it rather than let the caller parse it.
+                // End-of-file is excluded: the sector rounding above over-reads, which Windows reports as
+                // ERROR_HANDLE_EOF and Linux as a short read, and in both cases the requested bytes were transferred.
+                if (completion.ErrorCode is not 0 and not ErrorHandleEof)
+                    throw new TsavoriteException($"Checkpoint metadata read failed with error code {completion.ErrorCode}");
 
                 buffer = new byte[numBytesToRead];
                 fixed (byte* bufferRaw = buffer)
@@ -410,6 +486,8 @@ namespace Tsavorite.core
             }
             finally
             {
+                // Reached either after this operation's completion was observed above, or after the device rejected the
+                // read synchronously, in which case no completion is coming and no IO holds the buffer.
                 pbuffer.Return();
             }
         }
@@ -423,13 +501,12 @@ namespace Tsavorite.core
         /// <param name="size"></param>
         protected unsafe void WriteInto(IDevice device, ulong address, byte[] buffer, int size)
         {
-            if (bufferPool == null)
-                bufferPool = new SectorAlignedBufferPool(1, (int)device.SectorSize);
+            var pool = GetBufferPool(device);
 
             long numBytesToWrite = size;
             numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
-            var pbuffer = bufferPool.Get((int)numBytesToWrite);
+            var pbuffer = pool.Get((int)numBytesToWrite);
             fixed (byte* bufferRaw = buffer)
             {
                 Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
@@ -437,11 +514,13 @@ namespace Tsavorite.core
 
             try
             {
-                metadataWriteErrorCode = 0;
-                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, null);
-                semaphore.Wait();
-                if (metadataWriteErrorCode != 0)
-                    throw new TsavoriteException($"Checkpoint metadata write failed with error code {metadataWriteErrorCode}");
+                // As in ReadInto, the completion is this operation's own, so the buffer stays leased until this write
+                // has finished reading from it.
+                var completion = new MetadataIoCompletion();
+                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, completion);
+                completion.Semaphore.Wait();
+                if (completion.ErrorCode != 0)
+                    throw new TsavoriteException($"Checkpoint metadata write failed with error code {completion.ErrorCode}");
             }
             finally
             {

@@ -343,18 +343,35 @@ namespace Garnet.cluster
                 while (true)
                 {
                     ctsGossip.Token.ThrowIfCancellationRequested();
-                    await InitConnectionsAsync().ConfigureAwait(false);
 
-                    // Choose between full broadcast or sample gossip to few nodes
-                    if (GossipSamplePercent == 100)
-                        await BroadcastGossipSendAsync().ConfigureAwait(false);
-                    else
-                        await GossipSampleSendAsync().ConfigureAwait(false);
+                    try
+                    {
+                        ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Cluster_Gossip_Round_Fail);
+                        await InitConnectionsAsync().ConfigureAwait(false);
+
+                        // Choose between full broadcast or sample gossip to few nodes
+                        if (GossipSamplePercent == 100)
+                            await BroadcastGossipSendAsync().ConfigureAwait(false);
+                        else
+                            await GossipSampleSendAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Nothing restarts this task, so letting a single failed round leave the loop would stop
+                        // this node gossiping for the rest of the process. Its view then stops being offered to
+                        // the rest of the cluster and no further configuration change can ever converge.
+                        // Every round failure is classified here rather than in an exception filter, so one that
+                        // races shutdown is still handled as a round failure: the outer handlers recognize
+                        // cancellation by exception type and treat anything else as terminal. Cancellation makes
+                        // the failure shutdown noise, so the loop ends without logging it.
+                        if (!ctsGossip.Token.IsCancellationRequested)
+                            logger?.LogWarning("Gossip round failed {msg}", ex.Message);
+                    }
 
                     await Task.Delay(gossipDelay, ctsGossip.Token).ConfigureAwait(false);
                 }
             }
-            catch (TaskCanceledException) when (ctsGossip.Token.IsCancellationRequested)
+            catch (OperationCanceledException) when (ctsGossip.Token.IsCancellationRequested)
             {
                 // Suppress the exception if the task was cancelled because of store wrapper disposal
             }

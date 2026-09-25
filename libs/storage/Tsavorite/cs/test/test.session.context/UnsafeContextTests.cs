@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -282,12 +281,14 @@ namespace Tsavorite.test.UnsafeContext
 
             try
             {
+                // Locals in an async method can be moved by the GC, so the value must live in pinned storage
+                var values = GC.AllocateArray<ValueStruct>(1, pinned: true);
                 for (int c = 0; c < NumRecs; c++)
                 {
                     var i = r.Next(RandRange);
                     var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                    var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                    _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                    values[0] = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
+                    _ = uContext.Upsert(key1, SpanByte.FromPinnedVariable(ref values[0]), Empty.Default);
                 }
 
                 r = new Random(RandSeed);

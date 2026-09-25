@@ -290,7 +290,7 @@ namespace Garnet.cluster
         /// Method to create a background replay task that iterates and consume this replicas physical log
         /// </summary>
         /// <param name="startAddress"></param>
-        public void InitialiazeBackgroundReplayTask(long startAddress)
+        public void InitializeBackgroundReplayTask(long startAddress)
         {
             if (replayIterator == null)
             {

@@ -92,6 +92,14 @@ namespace Tsavorite.core
         /// <summary>Construct an <see cref="OverflowByteArray"/> from a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/>.</summary>
         internal OverflowByteArray(byte[] data) => Array = data;
 
+        /// <summary>
+        /// Allocate an overflow buffer with a data region of exactly <paramref name="length"/> bytes (start/end offsets zero), for a
+        /// caller that will populate the region directly via <see cref="AsSpan(int, int)"/> — e.g. the chunked migration/replication
+        /// receiver copying network chunks straight into the record's final overflow buffer (a single up-front allocation).
+        /// </summary>
+        /// <param name="length">The size in bytes of the data region.</param>
+        public static OverflowByteArray AllocateData(int length) => new(length, startOffset: 0, endOffset: 0, zeroInit: false);
+
         internal OverflowByteArray(int length, int startOffset, int endOffset, bool zeroInit)
         {
             // Allocate with enough extra space for the metadata (offset from start and end)

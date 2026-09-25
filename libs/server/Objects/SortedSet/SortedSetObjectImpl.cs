@@ -365,6 +365,13 @@ namespace Garnet.server
             writer.WriteDoubleNumeric(sortedSetDict[member]);
         }
 
+        /// <summary>
+        /// Written to <see cref="ObjectOutput.result1"/> by <see cref="SortedSetRange"/> when it has written a RESP
+        /// error into the output instead of a range. ZRANGESTORE relies on this to tell an error apart from a result
+        /// without having to inspect the RESP payload; a range reply never produces a negative result1.
+        /// </summary>
+        internal const int RangeError = -1;
+
         private void SortedSetRange(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
@@ -420,6 +427,7 @@ namespace Garnet.server
                             if (input.parseState.Count - currIdx < 2)
                             {
                                 writer.WriteError(CmdStrings.RESP_SYNTAX_ERROR);
+                                output.result1 = RangeError;
                                 return;
                             }
 
@@ -428,6 +436,7 @@ namespace Garnet.server
                                 !input.parseState.TryGetInt(currIdx++, out var countLimit))
                             {
                                 writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                                output.result1 = RangeError;
                                 return;
                             }
 
@@ -447,6 +456,7 @@ namespace Garnet.server
                         !TryParseParameter(maxSpan, out var maxValue, out var maxExclusive))
                     {
                         writer.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
+                        output.result1 = RangeError;
                         return;
                     }
 
@@ -464,6 +474,7 @@ namespace Garnet.server
                         if (options.ValidLimit)
                         {
                             writer.WriteError(CmdStrings.RESP_ERR_LIMIT_NOT_SUPPORTED);
+                            output.result1 = RangeError;
                             return;
                         }
                         else if (minValue > setCount - 1)
@@ -523,7 +534,15 @@ namespace Garnet.server
 
                     if (errorCode == int.MaxValue)
                     {
+                        // Unlike the other RangeError sites, this one is reachable after a reply has
+                        // already been written: BYSCORE and BYLEX are independent options, so
+                        // "ZRANGE key 1 3 BYSCORE BYLEX" runs the block above first and leaves an
+                        // array in the buffer. Rewind so the output holds the error alone - two
+                        // replies to one command desynchronise the RESP stream, and RangeError
+                        // promises the caller that the output is an error and nothing else.
+                        writer.ResetPosition();
                         writer.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING);
+                        output.result1 = RangeError;
                     }
                     else
                     {

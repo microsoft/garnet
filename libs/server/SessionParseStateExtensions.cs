@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using Garnet.common;
@@ -989,16 +988,25 @@ namespace Garnet.server
             else
             {
                 var keyNumIdx = beginSearchIdx + keySpec.FindKeys.KeyNumIndex;
-                Debug.Assert(keyNumIdx >= 0 && keyNumIdx < parseState.Count);
+                if (keyNumIdx < 0 || keyNumIdx >= parseState.Count)
+                {
+                    return false;
+                }
 
                 var keyNumFound = parseState.TryGetInt(keyNumIdx, out var keyNum);
-                Debug.Assert(keyNumFound);
+                if (!keyNumFound)
+                {
+                    return false;
+                }
 
                 firstKeyIdx += keySpec.FindKeys.FirstKey;
                 lastKeyIdx = firstKeyIdx + ((keyNum - 1) * keyStep);
             }
 
-            Debug.Assert(lastKeyIdx < parseState.Count);
+            if (lastKeyIdx >= parseState.Count)
+            {
+                lastKeyIdx = parseState.Count - 1;
+            }
 
             searchArgs = (firstKeyIdx, lastKeyIdx, keyStep);
             return true;

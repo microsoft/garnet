@@ -189,9 +189,15 @@ namespace Resp.benchmark
                 return true;
             }
 
-            if (!opts.EnableTLS && opts.CertFileName != null)
+            if (!opts.EnableTLS && (opts.CertFileName != null || opts.CertPasswordFile != null || opts.IssuerCertificatePath != null))
             {
-                Console.WriteLine("Certificate file name is not required for non-TLS");
+                Console.WriteLine("TLS certificate options are not valid for non-TLS");
+                return true;
+            }
+
+            if (opts.CertPassword != null && opts.CertPasswordFile != null)
+            {
+                Console.WriteLine("Specify either certificate password or certificate password file, not both");
                 return true;
             }
 
@@ -216,6 +222,20 @@ namespace Resp.benchmark
             if (DisabledFeatures(opts))
                 return;
 
+            if (opts.CertPasswordFile != null)
+            {
+                try
+                {
+                    opts.CertPassword = File.ReadAllText(opts.CertPasswordFile).TrimEnd('\r', '\n');
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Unable to read certificate password file: {ex.Message}");
+                    return;
+                }
+            }
+
+            BenchUtils.ConfigureTlsValidation(opts.IssuerCertificatePath);
             loggerFactory = CreateLoggerFactory(opts);
 
             if (!(opts.Client == ClientType.InProc || opts.AofBench))
@@ -333,7 +353,11 @@ namespace Resp.benchmark
                 var bench = new RespPerfBench(opts, 0, redis);
 
                 if (!opts.SkipLoad)
-                    bench.LoadData(keyLen: keyLen, valueLen: valueLen, numericValue: opts.Op == OpType.INCR);
+                {
+                    if (opts.LoadThreads < 1)
+                        throw new Exception($"--load-threads must be at least 1 (got {opts.LoadThreads})");
+                    bench.LoadData(loadDbThreads: opts.LoadThreads, keyLen: keyLen, valueLen: valueLen, numericValue: opts.Op == OpType.INCR);
+                }
 
                 // --runtime 0 seeds the keyspace only; skip the run phase.
                 if (opts.RunTime != 0)

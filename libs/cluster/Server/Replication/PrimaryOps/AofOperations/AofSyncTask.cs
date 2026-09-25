@@ -114,7 +114,10 @@ namespace Garnet.cluster
                 this.remoteNodeId = remoteNodeId;
                 this.cts = cts;
                 appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
-                timePulseEnabled = clusterProvider.serverOptions.MultiLogEnabled;
+                // Only a log sharded across several physical sublogs needs the pulse. On a single
+                // physical sublog every replay task rendezvouses on the same batch and publishes the
+                // same log address, so no virtual sublog can lag behind another for a pulse to relieve.
+                timePulseEnabled = clusterProvider.serverOptions.AofPhysicalSublogCount > 1;
                 if (timePulseEnabled)
                 {
                     physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
@@ -141,6 +144,19 @@ namespace Garnet.cluster
                             clientName: $"AofSyncTask-{physicalSublogIdx}:({currentConfig.LocalNodeEndpoint})",
                             logger: logger);
                 this.logger = logger;
+            }
+
+            /// <summary>
+            /// Closes the network connection so a task blocked on a send fails fast, without
+            /// disposing the client session the task may still be writing through.
+            /// </summary>
+            public void CloseConnection()
+            {
+                try
+                {
+                    garnetClient?.CloseConnection();
+                }
+                catch { }
             }
 
             public void Dispose()
@@ -297,6 +313,12 @@ namespace Garnet.cluster
                 lastAdvanceTimePulse = now;
             }
 
+            /// <summary>
+            /// This does a direct copy of the AOF records from the primary to the replica, starting from startAddress. We don't deserialize anything;
+            /// it is a vein-to-vein transfusion of records that we do not otherwise operate on.
+            /// </summary>
+            /// <param name="aofSyncDriver"></param>
+            /// <returns></returns>
             public async Task RunAofSyncTaskAsync(AofSyncDriver aofSyncDriver)
             {
                 var enteredMonitor = false;
@@ -308,7 +330,7 @@ namespace Garnet.cluster
 
                     logger?.LogInformation(
                         "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",
-                        nameof(AofSyncTask.RunAofSyncTaskAsync),
+                        nameof(RunAofSyncTaskAsync),
                         physicalSublogIdx,
                         remoteNodeId,
                         startAddress);
@@ -338,9 +360,24 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    if (enteredMonitor)
-                        _ = aofSyncDriver.activeWorkerMonitor.Exit();
-                    garnetClient?.Dispose();
+                    try
+                    {
+                        // The client is disposed before leaving the monitor so that a drained monitor
+                        // means every client has already been torn down by the one thread that was
+                        // using it, and the send buffer it rented is back in the replication pool.
+                        garnetClient?.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        // Leaving the monitor is what releases the dispose that is waiting on this
+                        // task, so it has to happen even if tearing the client down fails.
+                        logger?.LogError(ex, "[{sublogIdx}]({method}) failed to dispose client", physicalSublogIdx, nameof(RunAofSyncTaskAsync));
+                    }
+                    finally
+                    {
+                        if (enteredMonitor)
+                            _ = aofSyncDriver.activeWorkerMonitor.Exit();
+                    }
                 }
 
                 [Conditional("DEBUG")]

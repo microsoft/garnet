@@ -89,6 +89,18 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal IHeapObject GetHeapObject(int objectId) => Unsafe.As<IHeapObject>(objectArray.Get(objectId));
 
+        /// <summary>Try to get a slot only when it currently contains a heap object.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryGetHeapObject(int objectId, out IHeapObject heapObject)
+        {
+            heapObject = default;
+            if (!objectArray.TryGet(objectId, out var element) || element is not IHeapObject candidate)
+                return false;
+
+            heapObject = candidate;
+            return true;
+        }
+
         /// <summary>Returns the slot's object as an <see cref="OverflowByteArray"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OverflowByteArray GetOverflowByteArray(int objectId) => new(Unsafe.As<byte[]>(objectArray.Get(objectId)));

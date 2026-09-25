@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -68,29 +70,225 @@ namespace Garnet.cluster
             }
         }
 
+        // Reusable per-record scratch for the accumulator send path (one record is fully sent before the next begins).
+        readonly List<ReadOnlyMemory<byte>> sendPieces = [];
+        byte[] sendAssembleBuffer = [];
+
+        // Reusable 4-byte length prefixes for the overflow key/value on the chunked send path (safe to reuse: one record is fully
+        // sent before the next begins).
+        readonly byte[] chunkedKeyLengthPrefix = new byte[sizeof(int)];
+        readonly byte[] chunkedValueLengthPrefix = new byte[sizeof(int)];
+
         private unsafe ValueTask<bool> WriteOrSendRecordAsync(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out GarnetStatus status)
         {
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
 
-            // Read the value for the key. This will populate output with the entire serialized record.
+            // Read the key. HandleMigrate captures the record's pieces in-epoch: the inline portion into output.SpanByteAndMemory,
+            // and any overflow key / overflow value / object value into output.Accumulator. We assemble and send them out of epoch
+            // (migration sends asynchronously and the store epoch must not be held across an await).
             status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
 
             // Skip (but do not fail) if key NOTFOUND, WRONGTYPE, BADSTATE, etc.
             if (status != GarnetStatus.OK)
-            {
                 return new(true);
-            }
 
-            fixed (byte* ptr = output.SpanByteAndMemory.Span)
+            var acc = output.Accumulator;
+
+            // Fully-inline record: SpanByteAndMemory holds the whole record. Send it whole (or chunked if it is unusually large).
+            if (acc.IsEmpty)
             {
-                var serializedRecordLength = new LogRecord((long)ptr).GetSerializedSize();
-
-                ReadOnlySpan<byte> toWrite = new(ptr, serializedRecordLength);
-
-                return WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.LogRecord, toWrite);
+                if (acc.InlineLength <= NetworkBufferSettings.MaxSendBufferContentSize)
+                {
+                    fixed (byte* ptr = output.SpanByteAndMemory.Span)
+                        return WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.LogRecord, new ReadOnlySpan<byte>(ptr, acc.InlineLength));
+                }
+                return WriteOrSendChunkedRecordAsync(gcs, output.SpanByteAndMemory.Memory.Memory[..acc.InlineLength]);
             }
+
+            // Non-inline: assemble [inline][overflow key][overflow value | object chunks] and send it whole (if it fits a send
+            // buffer) or as ChunkedLogRecord chunks (large record / > 2 GB object).
+            return WriteOrSendAccumulatedRecordAsync(gcs, output.SpanByteAndMemory.Memory.Memory[..acc.InlineLength], acc);
+        }
+
+        /// <summary>
+        /// Assemble a non-inline record from its captured pieces (inline portion + overflow key + overflow value or object value
+        /// chunks) and send it: whole (type <see cref="MigrationRecordSpanType.LogRecord"/>) if it fits a send buffer, else as a
+        /// sequence of <see cref="MigrationRecordSpanType.ChunkedLogRecord"/> chunks (continuation flag set until the record's
+        /// final byte). Each overflow key/value is preceded by its 4-byte little-endian length; an object value is streamed with no
+        /// prefix (its length is derived by the receiver). The concatenated pieces form exactly the stream the receiver reassembles.
+        /// </summary>
+        private async ValueTask<bool> WriteOrSendAccumulatedRecordAsync(GarnetClientSession gcs, ReadOnlyMemory<byte> inline, MigrationChunkWriterAccumulator acc)
+        {
+            var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
+            // Each overflow key/value carries a 4-byte length prefix; an object value is the tail with no prefix.
+            var keyPrefixLen = acc.HasKey ? sizeof(int) : 0;
+            var valuePrefixLen = acc.HasValueOverflow ? sizeof(int) : 0;
+            var total = inline.Length + keyPrefixLen + acc.KeyLength + valuePrefixLen + acc.ValueLength;
+
+            // A record whose whole serialized form fits one send buffer is sent as a single LogRecord, including an object value:
+            // its object bytes are the tail of the image, so the receiver derives the object length from the record span. A larger
+            // record is streamed as ChunkedLogRecord chunks.
+            if (total <= maxChunk)
+            {
+                // Small enough for one send buffer: assemble contiguously and send as a single whole record.
+                if (sendAssembleBuffer.Length < total)
+                    sendAssembleBuffer = new byte[(int)total];
+                var span = sendAssembleBuffer.AsSpan(0, (int)total);
+                var off = inline.Length;
+                inline.Span.CopyTo(span);
+                if (acc.HasKey)
+                {
+                    BinaryPrimitives.WriteInt32LittleEndian(span.Slice(off), (int)acc.KeyLength);
+                    off += sizeof(int);
+                    acc.KeyMemory.Span.CopyTo(span.Slice(off));
+                    off += (int)acc.KeyLength;
+                }
+                if (acc.HasValueOverflow)
+                {
+                    BinaryPrimitives.WriteInt32LittleEndian(span.Slice(off), (int)acc.ValueLength);
+                    off += sizeof(int);
+                    acc.ValueOverflowMemory.Span.CopyTo(span.Slice(off));
+                }
+                else if (acc.HasObjectValue)
+                {
+                    foreach (var chunk in acc.ObjectValueChunks)
+                    {
+                        chunk.CopyTo(span.Slice(off));
+                        off += chunk.Length;
+                    }
+                }
+                return await WriteOrSendRecordSpanAsync(gcs, MigrationRecordSpanType.LogRecord, sendAssembleBuffer.AsSpan(0, (int)total)).ConfigureAwait(false);
+            }
+
+            // Large (or > 2 GB object): send the pieces in order as ChunkedLogRecord chunks. Chunk boundaries are arbitrary
+            // send-buffer cut points; the receiver reassembles the stream and routes each component by the layout header and the
+            // 4-byte length prefixes that precede each overflow key/value.
+            sendPieces.Clear();
+            sendPieces.Add(inline);
+            if (acc.HasKey)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(chunkedKeyLengthPrefix, (int)acc.KeyLength);
+                sendPieces.Add(chunkedKeyLengthPrefix);
+                sendPieces.Add(acc.KeyMemory);
+            }
+            if (acc.HasValueOverflow)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(chunkedValueLengthPrefix, (int)acc.ValueLength);
+                sendPieces.Add(chunkedValueLengthPrefix);
+                sendPieces.Add(acc.ValueOverflowMemory);
+            }
+            else if (acc.HasObjectValue)
+            {
+                // Object value: streamed with no length prefix (the receiver derives its length from the reassembled stream).
+                foreach (var chunk in acc.ObjectValueChunks)
+                    sendPieces.Add(chunk);
+            }
+
+            // Recompute the total across the pieces so the continuation flag clears exactly on the record's last byte.
+            long chunkedTotal = 0;
+            foreach (var piece in sendPieces)
+                chunkedTotal += piece.Length;
+
+            long sent = 0;
+            foreach (var piece in sendPieces)
+            {
+                var offset = 0;
+                while (offset < piece.Length)
+                {
+                    var chunkLength = Math.Min(maxChunk, piece.Length - offset);
+                    var moreChunksFollow = sent + chunkLength < chunkedTotal;
+
+                    if (gcs.NeedsInitialization)
+                        gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+
+                    if (gcs.TryWriteChunkedRecordSpan(piece.Span.Slice(offset, chunkLength), moreChunksFollow, out var task))
+                    {
+                        offset += chunkLength;
+                        sent += chunkLength;
+                        continue;
+                    }
+
+                    // Client buffer is full: flush and retry the same chunk.
+                    if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                        return false;
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+                }
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Send a serialized record larger than one send buffer as a sequence of <see cref="MigrationRecordSpanType.ChunkedLogRecord"/>
+        /// chunks, flushing and retrying when the client buffer fills. The receiver reassembles the chunks and deserializes.
+        /// </summary>
+        private async ValueTask<bool> WriteOrSendChunkedRecordAsync(GarnetClientSession gcs, ReadOnlyMemory<byte> record)
+        {
+            var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
+            var offset = 0;
+            while (offset < record.Length)
+            {
+                var chunkLength = Math.Min(maxChunk, record.Length - offset);
+                var moreChunksFollow = offset + chunkLength < record.Length;
+
+                if (gcs.NeedsInitialization)
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+
+                if (gcs.TryWriteChunkedRecordSpan(record.Span.Slice(offset, chunkLength), moreChunksFollow, out var task))
+                {
+                    offset += chunkLength;
+                    continue;
+                }
+
+                // Client buffer is full: flush and retry the same chunk.
+                if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                    return false;
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Send a serialized record held as a list of segments (used when an object value serialized to more than 2 GB, which a
+        /// single buffer cannot hold) as a sequence of <see cref="MigrationRecordSpanType.ChunkedLogRecord"/> chunks. The chunks
+        /// carry the concatenated segment bytes; the continuation flag is set until the record's final byte.
+        /// </summary>
+        private async ValueTask<bool> WriteOrSendSegmentedRecordAsync(GarnetClientSession gcs, List<byte[]> segments)
+        {
+            var maxChunk = NetworkBufferSettings.MaxSendBufferContentSize;
+            long total = 0;
+            foreach (var segment in segments)
+                total += segment.Length;
+
+            long sent = 0;
+            foreach (var segment in segments)
+            {
+                var offset = 0;
+                while (offset < segment.Length)
+                {
+                    var chunkLength = (int)Math.Min(maxChunk, segment.Length - offset);
+                    var moreChunksFollow = sent + chunkLength < total;
+
+                    if (gcs.NeedsInitialization)
+                        gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+
+                    if (gcs.TryWriteChunkedRecordSpan(new ReadOnlySpan<byte>(segment, offset, chunkLength), moreChunksFollow, out var task))
+                    {
+                        offset += chunkLength;
+                        sent += chunkLength;
+                        continue;
+                    }
+
+                    // Client buffer is full: flush and retry the same chunk.
+                    if (!await HandleMigrateTaskResponseAsync(task).ConfigureAwait(false))
+                        return false;
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: false);
+                }
+            }
+
+            return true;
         }
 
         /// <summary>

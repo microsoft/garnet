@@ -647,7 +647,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var result = (string)server.Execute("zadd", args);
+                var result = (string)server.Execute(0, "zadd", args);
                 data.Sort((x, y) => x.Item1.CompareTo(y.Item1));
                 return (result, data);
             }
@@ -672,7 +672,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var result = server.Execute("zcount", args, CommandFlags.NoRedirect);
+                var result = server.Execute(0, "zcount", args, CommandFlags.NoRedirect);
                 count = int.Parse((string)result);
                 address = ((IPEndPoint)server.EndPoint).Address.ToString();
                 port = ((IPEndPoint)server.EndPoint).Port;
@@ -725,7 +725,7 @@ namespace Garnet.test.cluster
             ];
             try
             {
-                var result = server.Execute("zrange", args, CommandFlags.NoRedirect);
+                var result = server.Execute(0, "zrange", args, CommandFlags.NoRedirect);
                 address = ((IPEndPoint)server.EndPoint).Address.ToString();
                 port = ((IPEndPoint)server.EndPoint).Port;
                 slot = ClusterTestUtils.HashSlot(key);
@@ -924,6 +924,236 @@ namespace Garnet.test.cluster
 
             context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
             context.logger.LogDebug("15. ClusterSimpleMigrateKeysTest done");
+        }
+
+        [Test, Order(100)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateLargeValueChunked()
+        {
+            // A small page size gives a small migration send buffer (1 << PageSizeBits), so values larger than it are migrated
+            // via the chunked (MigrationRecordSpanType.ChunkedLogRecord) path: serialized to a buffer, sliced into chunks, then
+            // reassembled and deserialized on the target.
+            context.logger.LogDebug("0. ClusterMigrateLargeValueChunked started");
+            context.CreateInstances(defaultShards, useTLS: UseTLS, pageSize: "16k", memorySize: "1m", lowMemory: true);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var otherNodeIndex = 0;
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            var keyCount = 4;
+            var key = Encoding.ASCII.GetBytes("{abc}a");
+            var _workingSlot = ClusterTestUtils.HashSlot(key);
+            ClassicAssert.AreEqual(7638, _workingSlot);
+
+            var keys = new List<byte[]>();
+            var values = new Dictionary<byte[], byte[]>(new ByteArrayComparer());
+            for (var i = 0; i < keyCount; i++)
+            {
+                var newKey = new byte[key.Length];
+                Array.Copy(key, 0, newKey, 0, key.Length);
+                newKey[^1] = (byte)(newKey[^1] + i);
+                keys.Add(newKey);
+                ClassicAssert.AreEqual(_workingSlot, ClusterTestUtils.HashSlot(newKey));
+
+                // 96 KB each, well beyond the 16 KB send buffer => several chunks per record. ASCII so GetKey's string round-trips.
+                var value = new byte[96 * 1024];
+                for (var j = 0; j < value.Length; j++)
+                    value[j] = (byte)('a' + ((i + j) % 26));
+                values[newKey] = value;
+
+                var resp = context.clusterTestUtils.SetKey(sourceNodeIndex, newKey, value, out _, out _, logger: context.logger);
+                ClassicAssert.AreEqual(ResponseState.OK, resp);
+            }
+
+            // Start migration
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "IMPORTING", sourceNodeId, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "MIGRATING", targetNodeId, logger: context.logger));
+
+            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _workingSlot, keyCount, context.logger);
+            context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), keysInSlot, context.logger);
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true, logger: context.logger);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true, logger: context.logger);
+            // End migration
+
+            // Wait for config epoch to converge across nodes.
+            var targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, context.logger);
+            var targetConfigEpochFromSource = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(sourceNodeIndex, targetNodeId, context.logger);
+            var targetConfigEpochFromOther = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(otherNodeIndex, targetNodeId, context.logger);
+            while (targetConfigEpochFromOther != targetConfigEpochFromTarget || targetConfigEpochFromSource != targetConfigEpochFromTarget)
+            {
+                _ = Thread.Yield();
+                targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, context.logger);
+                targetConfigEpochFromSource = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(sourceNodeIndex, targetNodeId, context.logger);
+                targetConfigEpochFromOther = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(otherNodeIndex, targetNodeId, context.logger);
+            }
+
+            // Verify each large value round-tripped to the target through the chunked path.
+            foreach (var _key in keys)
+            {
+                var resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out var slot, out var endpoint, out var responseState, logger: context.logger);
+                while (endpoint.Port != context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port && responseState != ResponseState.OK)
+                    resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out endpoint, out responseState, logger: context.logger);
+                Assert.That(resp, Is.EqualTo("MOVED"));
+                Assert.That(slot, Is.EqualTo(_workingSlot));
+                Assert.That(endpoint, Is.EqualTo(context.clusterTestUtils.GetEndPoint(targetNodeIndex)));
+
+                resp = context.clusterTestUtils.GetKey(targetNodeIndex, _key, out _, out _, out responseState, logger: context.logger);
+                Assert.That(responseState, Is.EqualTo(ResponseState.OK));
+                Assert.That(resp, Is.EqualTo(Encoding.ASCII.GetString(values[_key])));
+            }
+
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+            context.logger.LogDebug("Done ClusterMigrateLargeValueChunked");
+        }
+
+        // Deterministic field value so a huge hash can be verified without holding every value in memory.
+        static byte[] MakeHashFieldBytes(int fieldIndex, int size)
+        {
+            var v = new byte[size];
+            var seed = (byte)(fieldIndex * 131 + 7);
+            for (var j = 0; j < size; j++)
+                v[j] = (byte)(seed + j);
+            return v;
+        }
+
+        [Test, Order(101)]
+        [Category("CLUSTER")]
+        [Explicit("Heavy: builds up to a >6 GB hash object (needs ~20 GB RAM); run on demand. Exercises migration object chunking past the 2 GB (int-overflow) boundary via the in-epoch segmented serialize.")]
+        public void ClusterMigrateHugeObjectChunked(
+            [Values(1024L * 1024 * 1024, 6L * 1024 * 1024 * 1024)] long targetBytes)
+        {
+            // Migrate a single large hash whose serialized form exceeds the send buffer (and, at 6 GB, int.MaxValue). The object
+            // value is serialized in-epoch into segments and sent as ChunkedLogRecord chunks; the target reassembles the object
+            // via a ReadOnlySequence.
+            const int fieldSize = 16 * 1024 * 1024;              // 16 MB per field
+            var fieldCount = (int)(targetBytes / fieldSize);
+
+            context.CreateInstances(defaultShards, useTLS: UseTLS, memorySize: "16g");
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            var key = "{abc}hugehash";
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            ClassicAssert.AreEqual(7638, slot);
+
+            // Build the hash on the source (cluster routes by key slot).
+            var db = context.clusterTestUtils.GetDatabase();
+            for (var i = 0; i < fieldCount; i++)
+                db.HashSet(key, "f" + i, MakeHashFieldBytes(i, fieldSize));
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+
+            // Migrate the slot source -> target.
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", sourceNodeId, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "MIGRATING", targetNodeId, logger: context.logger));
+
+            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, slot, 1, context.logger);
+            context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), keysInSlot, context.logger);
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true, logger: context.logger);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true, logger: context.logger);
+
+            // Verify each field on the target (reads route to the new slot owner).
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+            for (var i = 0; i < fieldCount; i++)
+                ClassicAssert.AreEqual(MakeHashFieldBytes(i, fieldSize), (byte[])db.HashGet(key, "f" + i), $"field f{i}");
+
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+        }
+
+        [Test, Order(102)]
+        [Category("CLUSTER")]
+        public void ClusterMigrateLargeObjectMultiLogAofReplay()
+        {
+            // Migrate a large hash into a target whose AOF is split across multiple physical sublogs (sublogCount: 2).
+            // On the target the migrated object is logged to its multiLog AOF via the chunked object path
+            // (GarnetLog.EnqueueObjectChunked selects a physical sublog by key hash and streams the value as
+            // AofShardedChunkHeader chunk records, rather than the single-log AofBasicChunkHeader path). Restarting the
+            // target with recovery replays that multiLog AOF, so the migrated object must be reconstructed from the
+            // sharded chunk records - exercising both the sharded chunked-object write and the multiLog chunked recovery.
+            context.logger.LogDebug("0. ClusterMigrateLargeObjectMultiLogAofReplay started");
+
+            // Small main-store page => small migration send buffer (1 << PageSizeBits), so the object migrates over the
+            // wire via the chunked path. Small AOF page => the target streams the object as several AOF chunk records.
+            // enableAOF + tryRecover let the target replay its AOF on restart; sublogCount: 2 forces the sharded
+            // (multi physical sublog) chunk write + recovery path.
+            context.CreateInstances(defaultShards, useTLS: UseTLS, enableAOF: true, tryRecover: true, sublogCount: 2,
+                pageSize: "16k", AofPageSize: "32k", memorySize: "1m", lowMemory: true);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            var key = "{abc}mlhash";
+            var slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            ClassicAssert.AreEqual(7638, slot);
+
+            // Build a hash far larger than the AOF page: 200 * 4 KB => ~800 KB object streamed as many AOF chunk
+            // records on the target's selected sublog. Each individual HSET is a small AOF entry that fits the page.
+            const int fieldCount = 200;
+            const int fieldSize = 4 * 1024;
+            var db = context.clusterTestUtils.GetDatabase();
+            for (var i = 0; i < fieldCount; i++)
+                db.HashSet(key, "f" + i, MakeHashFieldBytes(i, fieldSize));
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+
+            // Migrate the single-key slot source -> target.
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", sourceNodeId, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "MIGRATING", targetNodeId, logger: context.logger));
+
+            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, slot, 1, context.logger);
+            context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), keysInSlot, context.logger);
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true, logger: context.logger);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "NODE", targetNodeId, logger: context.logger));
+            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true, logger: context.logger);
+
+            context.clusterTestUtils.WaitForMigrationCleanup(logger: context.logger);
+
+            // The target owns the slot now; verify the migrated object round-tripped (reads route to the target).
+            ClassicAssert.AreEqual(fieldCount, db.HashLength(key));
+            for (var i = 0; i < fieldCount; i++)
+                ClassicAssert.AreEqual(MakeHashFieldBytes(i, fieldSize), (byte[])db.HashGet(key, "f" + i), $"field f{i} (pre-restart)");
+
+            // Restart the target with recovery: ensureAofFlush commits the multiLog AOF before shutdown, then startup
+            // replays it and must reconstruct the migrated object from the sharded chunk records.
+            context.RestartNode(targetNodeIndex, ensureAofFlush: true);
+            context.CreateConnection(useTLS: UseTLS);
+            db = context.clusterTestUtils.GetDatabase();
+
+            // Wait for the recovered target to finish loading (it may transiently report LOADING/MOVED/CLUSTERDOWN),
+            // then verify every field survived the multiLog AOF replay.
+            while (true)
+            {
+                try
+                {
+                    if (db.HashLength(key) == fieldCount)
+                        break;
+                }
+                catch (RedisException) { /* target still loading/redirecting right after restart; retry */ }
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
+            }
+            for (var i = 0; i < fieldCount; i++)
+                ClassicAssert.AreEqual(MakeHashFieldBytes(i, fieldSize), (byte[])db.HashGet(key, "f" + i), $"field f{i} (post-restart AOF replay)");
+
+            context.logger.LogDebug("Done ClusterMigrateLargeObjectMultiLogAofReplay");
         }
 
         [Test, Order(10)]
@@ -1138,6 +1368,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
             context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(dstNodeIndex, srcNodeIndex, logger: context.logger);
+            // MIGRATE is issued against the source, so the source has to know the target endpoint
+            context.clusterTestUtils.WaitUntilNodeIsKnown(srcNodeIndex, dstNodeIndex, logger: context.logger);
             var migrateSlots = new List<int> { 0, 10 };
 
             // Start operations
@@ -1518,6 +1750,9 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(srcNodeIndex, srcNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(dstNodeIndex, dstNodeIndex + 2, logger: context.logger);
             context.clusterTestUtils.Meet(srcNodeIndex, dstNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(dstNodeIndex, srcNodeIndex, logger: context.logger);
+            // MIGRATE is issued against the source, so the source has to know the target endpoint
+            context.clusterTestUtils.WaitUntilNodeIsKnown(srcNodeIndex, dstNodeIndex, logger: context.logger);
 
             var keySize = 16;
             var keyCount = 1024;
@@ -1853,6 +2088,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
+            // Slot state transitions are issued against the source, so the source has to know the target node id
+            context.clusterTestUtils.WaitUntilNodeIsKnown(sourceNodeIndex, targetNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
@@ -1939,6 +2176,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
+            // Slot state transitions are issued against the source, so the source has to know the target node id
+            context.clusterTestUtils.WaitUntilNodeIsKnown(sourceNodeIndex, targetNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
@@ -1953,9 +2192,9 @@ namespace Garnet.test.cluster
 
             foreach (var value in values)
             {
-                var result = (string)sourceServer.Execute("set", key, value);
+                var result = (string)sourceServer.Execute(0, "set", [key, value]);
                 ClassicAssert.AreEqual("OK", result);
-                result = (string)sourceServer.Execute("get", key);
+                result = (string)sourceServer.Execute(0, "get", [key]);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), result);
             }
 
@@ -1974,9 +2213,9 @@ namespace Garnet.test.cluster
                 values = context.GenerateIncreasingSizeValues(6, 7);
                 foreach (var value in values)
                 {
-                    var result = (string)sourceServer.Execute("set", key, value);
+                    var result = (string)sourceServer.Execute(0, "set", [key, value]);
                     ClassicAssert.AreEqual("OK", result);
-                    result = (string)sourceServer.Execute("get", key);
+                    result = (string)sourceServer.Execute(0, "get", [key]);
                     ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), result);
                 }
 
@@ -1993,7 +2232,7 @@ namespace Garnet.test.cluster
 
             foreach (var value in values)
             {
-                var result = (string)targetServer.Execute("get", key);
+                var result = (string)targetServer.Execute(0, "get", [key]);
                 ClassicAssert.AreEqual(Encoding.ASCII.GetString(value), result);
             }
         }
@@ -2012,6 +2251,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.SetConfigEpoch(targetNodeIndex, targetNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(sourceNodeIndex, targetNodeIndex, logger: context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(targetNodeIndex, sourceNodeIndex, logger: context.logger);
+            // Slot state transitions are issued against the source, so the source has to know the target node id
+            context.clusterTestUtils.WaitUntilNodeIsKnown(sourceNodeIndex, targetNodeIndex, logger: context.logger);
 
             var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
             var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
@@ -2025,9 +2266,9 @@ namespace Garnet.test.cluster
             var value = "12345";
             var value2 = "67890";
             var slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key));
-            var resp = sourceServer.Execute("set", key, value);
+            var resp = sourceServer.Execute(0, "set", [key, value]);
             ClassicAssert.AreEqual("OK", (string)resp);
-            resp = sourceServer.Execute("get", key);
+            resp = sourceServer.Execute(0, "get", [key]);
             ClassicAssert.AreEqual(value, (string)resp);
 
             try
@@ -2043,7 +2284,7 @@ namespace Garnet.test.cluster
                 }
 
                 // At this point we should have switched to MIGRATING state but not yet started migration, hence we can still operate on the key
-                _ = sourceServer.Execute("DELRMW", [key, value2]);
+                _ = sourceServer.Execute(0, "DELRMW", [key, value2]);
 
                 // Re-enable to signal migration to continue
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
@@ -2056,7 +2297,7 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Migration_Slot_End_Scan_Range_Acquisition);
             }
 
-            resp = targetServer.Execute("get", key);
+            resp = targetServer.Execute(0, "get", [key]);
             ClassicAssert.AreEqual(value2, (string)resp);
         }
 #endif
@@ -2107,7 +2348,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var resp = server.Execute("migrate", args);
+                var resp = server.Execute(0, "migrate", args);
                 ClassicAssert.AreEqual("OK", (string)resp);
             }
             catch (Exception ex)
@@ -2175,7 +2416,7 @@ namespace Garnet.test.cluster
 
             try
             {
-                var resp = server.Execute("migrate", args);
+                var resp = server.Execute(0, "migrate", args);
                 Assert.Fail($"Migration with invalid hostname '{invalidHostname}' should fail");
             }
             catch (RedisServerException ex)
@@ -2365,10 +2606,10 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.RandomBytesRestrictedToSlot(ref keepObjectKey, keepSlot);
 
             var server = context.clusterTestUtils.GetServer(0);
-            _ = server.Execute("SET", delStringKey, "raw-del");
-            _ = server.Execute("SADD", delObjectKey, "del-m1", "del-m2", "del-m3");
-            _ = server.Execute("SET", keepStringKey, "raw-keep");
-            _ = server.Execute("SADD", keepObjectKey, "keep-m1", "keep-m2", "keep-m3");
+            _ = server.Execute(0, "SET", [delStringKey, "raw-del"]);
+            _ = server.Execute(0, "SADD", [delObjectKey, "del-m1", "del-m2", "del-m3"]);
+            _ = server.Execute(0, "SET", [keepStringKey, "raw-keep"]);
+            _ = server.Execute(0, "SADD", [keepObjectKey, "keep-m1", "keep-m2", "keep-m3"]);
 
             // Both slots should each contain their two keys before deletion.
             ClassicAssert.AreEqual(2, context.clusterTestUtils.CountKeysInSlot(0, delSlot, context.logger),
@@ -2390,17 +2631,17 @@ namespace Garnet.test.cluster
                 "Keys in keepSlot must NOT be collateral-deleted by DELKEYSINSLOT on delSlot");
 
             // Direct GET / EXISTS confirm the delSlot keys are gone.
-            var delStringRes = server.Execute("GET", delStringKey);
+            var delStringRes = server.Execute(0, "GET", [delStringKey]);
             ClassicAssert.IsTrue(delStringRes.IsNull, "delSlot string key should no longer exist after DELKEYSINSLOT");
-            var delObjectRes = (long)server.Execute("EXISTS", delObjectKey);
+            var delObjectRes = (long)server.Execute(0, "EXISTS", [delObjectKey]);
             ClassicAssert.AreEqual(0, delObjectRes, "delSlot object key should no longer exist after DELKEYSINSLOT");
 
             // Direct GET / EXISTS confirm the keepSlot keys still exist with their original payloads.
-            var keepStringRes = (string)server.Execute("GET", keepStringKey);
+            var keepStringRes = (string)server.Execute(0, "GET", [keepStringKey]);
             ClassicAssert.AreEqual("raw-keep", keepStringRes, "keepSlot string key value should be unchanged");
-            var keepObjectExists = (long)server.Execute("EXISTS", keepObjectKey);
+            var keepObjectExists = (long)server.Execute(0, "EXISTS", [keepObjectKey]);
             ClassicAssert.AreEqual(1, keepObjectExists, "keepSlot object key should still exist after DELKEYSINSLOT");
-            var keepObjectCard = (long)server.Execute("SCARD", keepObjectKey);
+            var keepObjectCard = (long)server.Execute(0, "SCARD", [keepObjectKey]);
             ClassicAssert.AreEqual(3, keepObjectCard, "keepSlot object key should still contain all 3 members");
         }
     }

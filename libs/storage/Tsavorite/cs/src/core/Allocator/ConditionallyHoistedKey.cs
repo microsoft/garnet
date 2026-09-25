@@ -220,7 +220,7 @@ namespace Tsavorite.core
         ///     and freed by <see cref="Dispose"/>.</item>
         /// </list>
         /// </remarks>
-        internal static ConditionallyHoistedKey Create<TKey>(TKey key, SectorAlignedBufferPool bufferPool)
+        public static ConditionallyHoistedKey Create<TKey>(TKey key, SectorAlignedBufferPool bufferPool)
             where TKey : IKey
 #if NET9_0_OR_GREATER
             , allows ref struct

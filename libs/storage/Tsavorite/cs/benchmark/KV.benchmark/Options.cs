@@ -107,13 +107,14 @@ namespace Tsavorite.kvbench
             HelpText = "Device backend: native, randomaccess, filestream, null, localmemory, default.")]
         public string Device { get; set; }
 
-        [Option("device-throttle", Required = false, Default = 0,
-            HelpText = "Max in-flight IOs (device queue depth). 0 = device default (120 for Native; maps to " +
-                       "the LocalMemory SPSC ring otherwise). NOTE: the 120 default under-drives a fast NVMe — " +
-                       "set >=512 to saturate the device queue and reach its IOPS ceiling. Also size --num-keys " +
-                       "so the log spans enough of the device (a small LBA span engages fewer NAND channels and " +
-                       "caps IOPS below the device's large-span ceiling).")]
-        public int DeviceThrottle { get; set; }
+        [Option("device-throttle-limit", Required = false, Default = 0,
+            HelpText = "Aggregate max in-flight IOs (software backpressure). 0 = device default (4096 for Native; 120 for " +
+                       "the managed in-box devices; maps to the LocalMemory SPSC ring otherwise). The Native 4096 default " +
+                       "already saturates a fast NVMe queue; the managed 120 default under-drives one, so raise it (>=512) " +
+                       "to reach the IOPS ceiling on those devices. Also size --num-keys so the log spans enough of the " +
+                       "device (a small LBA span engages fewer NAND channels and caps IOPS below the device's large-span " +
+                       "ceiling). Capped at io-contexts * queue-depth.")]
+        public int DeviceThrottleLimit { get; set; }
 
         [Option("device-io-backend", Required = false, Default = "default",
             HelpText = "Linux native backend: libaio, uring, default (=libaio).")]
@@ -128,6 +129,38 @@ namespace Tsavorite.kvbench
                        "value up to the available submitter concurrency. 0 = default (1 for Native; " +
                        "Environment.ProcessorCount for LocalMemory).")]
         public int DeviceCompletionThreads { get; set; }
+
+        [Option("device-io-contexts", Required = false, Default = 0,
+            HelpText = "DeviceType.Native on Linux only: number of independent kernel io_contexts " +
+                       "(libaio) / io_uring rings the device creates, decoupled from the number of " +
+                       "drainer threads (--device-completion-threads). Submitters map to rings via " +
+                       "per-thread affinity, so setting this >= submitter concurrency makes io_submit " +
+                       "contention-free (no shared per-context aio ring/completion lock across unrelated " +
+                       "submitters) and spreads completion posting across more rings; the drainers each " +
+                       "range-drain a contiguous slice of the rings. 0 (default) is backend-specific: io_uring " +
+                       "uses a hardware-aware ring count (min(2*ProcessorCount, 64), floored at the drainer count), " +
+                       "while libaio uses one ring per drainer. Clamped up to --device-completion-threads.")]
+        public int DeviceIoContexts { get; set; }
+
+        [Option("device-queue-depth", Required = false, Default = 0,
+            HelpText = "DeviceType.Native on Linux only: per-ring kernel queue depth (io_uring SQ entries / " +
+                       "libaio io_context nr_events) for each of the --device-io-contexts rings. 0 = default " +
+                       "(4096). Cap 32768 (io_uring hard limit). For libaio, io-contexts * queue-depth is drawn " +
+                       "from the global fs.aio-max-nr budget (warned if exceeded; io_setup then fails if the budget is exhausted).")]
+        public int DeviceQueueDepth { get; set; }
+
+        [Option("device-uring-sqpoll", Required = false, Default = false,
+            HelpText = "DeviceType.Native + --device-io-backend uring only: enable io_uring SQPOLL " +
+                       "(IORING_SETUP_SQPOLL) so a kernel thread polls the submission queue and submissions " +
+                       "are syscall-free. Each ring gets its own poll thread (no IORING_SETUP_ATTACH_WQ) so " +
+                       "submission stays parallel across rings. Ignored for libaio. Off by default (opt-in).")]
+        public bool DeviceUringSqPoll { get; set; }
+
+        [Option("device-uring-sqpoll-idle-ms", Required = false, Default = 0,
+            HelpText = "io_uring SQPOLL poll-thread idle window in milliseconds (sq_thread_idle): how long the " +
+                       "kernel poll thread spins after the last submit before parking. 0 = native default (10s). " +
+                       "Only meaningful with --device-uring-sqpoll.")]
+        public int DeviceUringSqPollIdleMs { get; set; }
 
         [Option("device-inline-completion", Required = false, Default = false,
             HelpText = "DeviceType.LocalMemory only: complete IOs inline on the submitting thread (no " +

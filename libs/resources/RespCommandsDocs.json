@@ -6130,7 +6130,7 @@
   {
     "Command": "READWRITE",
     "Name": "READWRITE",
-    "Summary": "Enables read-write queries for a connection to a Reids Cluster replica node.",
+    "Summary": "Disables read queries for a connection to a Redis Cluster replica node.",
     "Group": "Cluster",
     "Complexity": "O(1)"
   },

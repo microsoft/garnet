@@ -5,8 +5,8 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -93,6 +93,11 @@ namespace Garnet.server
         internal const int MaxExplorationFactor = 1_000_000;
 
         /// <summary>
+        /// Beam width default for SearchXXX methods.
+        /// </summary>
+        internal const int DefaultBeamWidth = 4;
+
+        /// <summary>
         /// Ensures the VSIM distance output buffer has at least <paramref name="retrieveCount"/> * sizeof(float) bytes.
         /// Rents from <see cref="MemoryPool{T}"/> if the current buffer is too small.
         /// </summary>
@@ -173,7 +178,19 @@ namespace Garnet.server
 
         private readonly int dbId;
 
-        private ConcurrentDictionary<ulong, byte> recoveredIndexes;
+        /// <summary>
+        /// Context of each Vector Set index record found during recovery, mapped to the hash slot of the key
+        /// that owns it. <see cref="ReconcileRecoveredState"/> restores the reservation for each of these
+        /// contexts, and needs the hash slot recorded here because the record itself is not retained.
+        /// </summary>
+        private ConcurrentDictionary<ulong, ushort> recoveredIndexes;
+
+        /// <summary>
+        /// Newest context metadata recovered for each index into <c>contextMetadatas</c>. A snapshot holds
+        /// every version of a record written in the range it covers, so the same index is presented more than
+        /// once; entries are kept by <c>ContextMetadata.Version</c> and trimmed by
+        /// <see cref="ReconcileRecoveredState"/>.
+        /// </summary>
         private ConcurrentDictionary<int, ContextMetadata> recoveredMetadata;
 
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
@@ -185,7 +202,7 @@ namespace Garnet.server
             // Destination for copying the small graph "stub" records back into memory on disk read (see
             // VectorReadBatch.ReadCopyOptions): the read cache when it is enabled (keeps the writable main log
             // clean), otherwise the main-log tail (still memory-resident, but occupies writable log space).
-            StubReadCopyTo = serverOptions.EnableReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.MainLog;
+            stubReadCopyTo = serverOptions.EnableReadCache ? ReadCopyTo.ReadCache : ReadCopyTo.MainLog;
 
             // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}");
@@ -294,6 +311,14 @@ namespace Garnet.server
 
             ref var ctx = ref session.storageSession.vectorBasicContext;
 
+            // recoveredIndexes only holds the index records the store reported while ingesting a checkpoint
+            // snapshot, which covers a single range of the log - anything already flushed to the main log
+            // before the checkpoint is recovered without being reported. Liveness below is decided by
+            // absence, so completing the set from the recovered store is what keeps a live Vector Set from
+            // being mistaken for an abandoned context and having its element records deleted.
+            RecoveredIndexScanFunctions indexScan = new(this);
+            _ = session.storageSession.stringBasicContext.Session.IterateLookupSnapshot(ref indexScan);
+
             var needsUpdated = false;
 
             lock (this)
@@ -311,21 +336,57 @@ namespace Garnet.server
                 }
 
                 // Any ContextMetadatas we found need to be restored
-                if (!recoveredMetadata.IsEmpty)
+                //
+                // The array must also span every recovered index, because the reservation for a context is
+                // restored below through contextMetadatas[contextIndex] - the metadata record holding that
+                // context can be missing when the index record is not.
+                var maxIndex = -1;
+                foreach (var (index, metadata) in recoveredMetadata)
                 {
-                    var maxContext = recoveredMetadata.Keys.Max();
-                    contextMetadatas = new ContextMetadata[maxContext + 1];
+                    if (!metadata.IsEmpty && index > maxIndex)
+                    {
+                        maxIndex = index;
+                    }
+                }
+
+                foreach (var context in recoveredIndexes.Keys)
+                {
+                    var (contextIndex, _) = ContextMetadata.DecomposeContext(context);
+                    if (contextIndex > maxIndex)
+                    {
+                        maxIndex = contextIndex;
+                    }
+                }
+
+                if (maxIndex >= 0)
+                {
+                    var priorMetadatas = contextMetadatas;
+
+                    contextMetadatas = new ContextMetadata[maxIndex + 1];
 
                     for (var i = 0; i < contextMetadatas.Length; i++)
                     {
-                        if (!recoveredMetadata.TryGetValue(i, out contextMetadatas[i]))
+                        if (!recoveredMetadata.TryGetValue(i, out contextMetadatas[i]) || contextMetadatas[i].IsEmpty)
                         {
-                            contextMetadatas[i] = new();
+                            // Nothing was recovered for this index, so keep whatever is already in memory rather
+                            // than defaulting it. A cluster node with AOF enabled reconciles twice while starting
+                            // up - once from RecoverCheckpointAndAOFAsync and again from StoreWrapper - and the
+                            // first pass consumes recoveredMetadata, so the second has only the index records to
+                            // go on. Defaulting here would drop a reservation that has no index record instead of
+                            // marking it for cleanup below, leaving that context free to hand to the next Vector
+                            // Set while the data behind it is still present, and would reset the persisted
+                            // version so that later metadata writes are cancelled as stale.
+                            contextMetadatas[i] = i < priorMetadatas.Length ? priorMetadatas[i] : new();
                         }
                     }
                 }
 
                 recoveredMetadata.Clear();
+
+                // Rebuilding contextMetadatas invalidates any migration remapping built against the old array.
+                // An interrupted migration is treated as failed below - its context is marked for cleanup - so
+                // a surviving entry would steer the retried migration into a context being torn down.
+                ClearMigratedContextRemap();
 
                 // If we come up and contexts are marked for migration, that means the migration FAILED
                 // and we'd like those contexts back ASAP
@@ -348,9 +409,21 @@ namespace Garnet.server
                 }
 
                 // Any non-deleted records we recovered for contexts being deleted, we need to undo that
-                foreach (var (context, _) in recoveredIndexes)
+                foreach (var (context, hashSlot) in recoveredIndexes)
                 {
                     var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context);
+
+                    // The index record is written before the context metadata that reserves its context, so a
+                    // recovery boundary between the two leaves a live index record pointing at a free context.
+                    // Reserving it here keeps the context from being handed to a different Vector Set.
+                    if (!contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue))
+                    {
+                        contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, hashSlot);
+
+                        _ = dirtyContextMetadatas.Add(contextIndex);
+
+                        needsUpdated = true;
+                    }
 
                     if (contextMetadatas[contextIndex].IsCleaningUp(contextIndex != 0, contextValue))
                     {
@@ -408,6 +481,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Collects every live Vector Set index record in the store into <see cref="recoveredIndexes"/>.
+        /// </summary>
+        private sealed class RecoveredIndexScanFunctions : IScanIteratorFunctions
+        {
+            private readonly VectorManager manager;
+
+            internal RecoveredIndexScanFunctions(VectorManager manager)
+            {
+                this.manager = manager;
+            }
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+            public bool OnStart(long beginAddress, long endAddress) => true;
+            public void OnStop(bool completed, long numberOfRecords) { }
+
+            /// <inheritdoc/>
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
+            {
+                cursorRecordResult = CursorRecordResult.Skip;
+
+                if (logRecord.HasNamespace || logRecord.RecordType != RecordType || logRecord.ValueSpan.Length != IndexSize)
+                {
+                    return true;
+                }
+
+                ReadIndex(logRecord.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
+                manager.recoveredIndexes[context] = HashSlotUtils.HashSlot(logRecord.Key);
+
+                cursorRecordResult = CursorRecordResult.Accept;
+                return true;
+            }
+        }
+
+        /// <summary>
         /// Called during recovery for each Vector Set index key.
         /// </summary>
         public void RecoveredVectorSetIndexKey<TSourceLogRecord>(ref TSourceLogRecord record) where TSourceLogRecord : ISourceLogRecord
@@ -418,7 +526,10 @@ namespace Garnet.server
             }
 
             ReadIndex(record.ValueSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            recoveredIndexes[context] = 0;
+
+            // The hash slot is needed to restore the context reservation in ReconcileRecoveredState, which
+            // has only this map to work from - the record itself is not retained past this call
+            recoveredIndexes[context] = HashSlotUtils.HashSlot(record.Key);
         }
 
         /// <summary>
@@ -434,17 +545,19 @@ namespace Garnet.server
             var index = BinaryPrimitives.ReadInt32LittleEndian(record.Key);
             var metadata = MemoryMarshal.Cast<byte, ContextMetadata>(record.ValueSpan)[0];
 
-            // During recovery, we can trim off empty ContextMetadata
+            // A snapshot covers a range of the log, so it holds every version of a record written in that
+            // range - the same index is legitimately presented more than once, newest version last only if
+            // each update was copied to the tail. ContextMetadata.Version orders them, and only the newest
+            // describes the state to restore.
             //
-            // ReconcileRecoveredState will fill in any gaps this causes
-            if (metadata.IsEmpty)
+            // Empty entries are kept here and trimmed in ReconcileRecoveredState, so that a newest version
+            // which released its last context still supersedes the older non-empty versions.
+            lock (recoveredMetadata)
             {
-                return;
-            }
-
-            if (!recoveredMetadata.TryAdd(index, metadata))
-            {
-                throw new GarnetException($"Recovered multiple instances of the same ContextMetadata: {index}");
+                if (!recoveredMetadata.TryGetValue(index, out var existing) || metadata.Version >= existing.Version)
+                {
+                    recoveredMetadata[index] = metadata;
+                }
             }
         }
 
@@ -589,9 +702,6 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out _, out var indexPtr);
 
-            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
-            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
-
             if (providedReduceDims != 0 && providedReduceDims != reduceDims)
             {
                 errorMsg = "ERR Provided REDUCE does not match Vector Set definition"u8;
@@ -690,7 +800,7 @@ namespace Garnet.server
         /// <summary>
         /// Request deletion of a Vector Set given the VALUE of the index key.
         /// </summary>
-        internal void RequestDeletion(Span<byte> value)
+        internal void RequestDeletion(ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {
@@ -710,15 +820,10 @@ namespace Garnet.server
                 return;
             }
 
-            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            if (!requestCleanupTaskChannel.TryPublish((context, tcs)))
+            if (!requestCleanupTaskChannel.TryPublish(context))
             {
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
-
-            // Wait until the context is _marked_ for cleanup, but not the actual cleanup
-            AsyncUtils.BlockingWait(tcs.Task);
 
             // Tell DiskANN to clean itself up
             DropIndex(value);
@@ -732,8 +837,6 @@ namespace Garnet.server
         /// There's subtlety here because the DiskANN index might be in use (on the current or other threads)
         /// and we can't allow the index to be recreated until any requested drops are processed.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
         internal void RequestDropInMemoryIndex(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
@@ -820,9 +923,6 @@ namespace Garnet.server
             AssertHaveStorageSession();
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out _, out var indexPtr);
-
-            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
-            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 
@@ -921,12 +1021,29 @@ namespace Garnet.server
                             maxFilteringEffort,
                             outputIds,
                             outputDistances,
+                            DefaultBeamWidth,
                             out continuation
                         );
+
+                        if (found >= 0)
+                        {
+                            while (continuation != 0)
+                            {
+                                var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                                if (additionalResults < 0)
+                                {
+                                    found = additionalResults;
+                                    break;
+                                }
+
+                                found += additionalResults;
+                            }
+                        }
                     }
                     finally
                     {
-                        ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
+                        _ = ActiveThreadSession.scratchBufferBuilder.RewindScratchBuffer(bufferSlice);
 
                         unsafe
                         {
@@ -948,8 +1065,25 @@ namespace Garnet.server
                             maxFilteringEffort,
                             outputIds,
                             outputDistances,
+                            DefaultBeamWidth,
                             out continuation
                         );
+
+                    if (found >= 0)
+                    {
+                        while (continuation != 0)
+                        {
+                            var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                            if (additionalResults < 0)
+                            {
+                                found = additionalResults;
+                                break;
+                            }
+
+                            found += additionalResults;
+                        }
+                    }
                 }
             }
 
@@ -972,12 +1106,6 @@ namespace Garnet.server
                 EnsureFilterBitmapSize(ref filterBitmap, found);
 
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
-            }
-
-            if (continuation != 0)
-            {
-                // TODO: paged results!
-                throw new NotImplementedException();
             }
 
             outputDistances.Length = sizeof(float) * found;
@@ -1011,9 +1139,6 @@ namespace Garnet.server
             AssertHaveStorageSession();
 
             ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out _, out _, out var indexPtr);
-
-            // Size FullVector / NeighborList disk reads to this set's geometry (dimensions, M) for single-IO fetches.
-            SetActiveReadGeometry(dimensions, numLinks, quantType, reduceDims);
 
             var effectiveEF = Math.Max(searchExplorationFactor, count);
 
@@ -1092,8 +1217,25 @@ namespace Garnet.server
                         maxFilteringEffort,
                         outputIds,
                         outputDistances,
+                        DefaultBeamWidth,
                         out continuation
                     );
+
+                    if (found >= 0)
+                    {
+                        while (continuation != 0)
+                        {
+                            var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                            if (additionalResults < 0)
+                            {
+                                found = additionalResults;
+                                break;
+                            }
+
+                            found += additionalResults;
+                        }
+                    }
 
                 }
                 finally
@@ -1119,8 +1261,25 @@ namespace Garnet.server
                     maxFilteringEffort,
                     outputIds,
                     outputDistances,
+                    DefaultBeamWidth,
                     out continuation
-                    );
+                );
+
+                if (found >= 0)
+                {
+                    while (continuation != 0)
+                    {
+                        var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                        if (additionalResults < 0)
+                        {
+                            found = additionalResults;
+                            break;
+                        }
+
+                        found += additionalResults;
+                    }
+                }
             }
 
             if (found < 0)
@@ -1143,18 +1302,62 @@ namespace Garnet.server
                 _ = ApplyPostFilter(filter, found, outputAttributes.ReadOnlySpan, filterBitmap.Span, ActiveThreadSession.scratchBufferBuilder);
             }
 
-            if (continuation != 0)
-            {
-                // TODO: paged results!
-                throw new NotImplementedException();
-            }
-
             outputDistances.Length = sizeof(float) * found;
 
             // Default assumption is length prefixed
             outputIdFormat = VectorIdFormat.I32LengthPrefixed;
 
             return VectorManagerResult.OK;
+        }
+
+        /// <summary>
+        /// Continue a search that previously produced partial results.
+        /// 
+        /// All search_xxx methods continue in the same way, so this method is held in common.
+        /// 
+        /// Returns number of new results fetched, and sets <paramref name="continuation"/> to a non-0 value if additional calls are necessary.
+        /// </summary>
+        internal int ContinueSearch(ulong context, nint indexPtr, nint oldContinuation, int foundSoFar, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances, out nint continuation)
+        {
+            Debug.Assert(oldContinuation != 0, "Expected non-zero continuation");
+
+            // Only ids can grow, so double them each time
+            var newIdSpace = MemoryPool<byte>.Shared.Rent(outputIds.Span.Length * 2);
+            outputIds.ReadOnlySpan.CopyTo(newIdSpace.Memory.Span);
+
+            // TODO: Could remember this offset?  It's a relatively rare occurrence so maybe not worth optimizing
+            var writeIdsInto = newIdSpace.Memory.Span;
+            for (var i = 0; i < foundSoFar; i++)
+            {
+                var skip = BinaryPrimitives.ReadInt32LittleEndian(writeIdsInto);
+                writeIdsInto = writeIdsInto[(sizeof(int) + skip)..];
+            }
+
+            var writeDistancesInto = outputDistances.Span[(sizeof(float) * foundSoFar)..];
+            Debug.Assert(!writeDistancesInto.IsEmpty, "Expected space for remaining distances");
+
+            int count;
+            unsafe
+            {
+                // Guarantee these are pinned
+                fixed (byte* idPtr = writeIdsInto)
+                fixed (byte* distancePtr = writeDistancesInto)
+                {
+                    count = Service.ContinueSearch(context, indexPtr, oldContinuation, writeIdsInto, writeDistancesInto, out continuation);
+                }
+            }
+
+            // Error case, terminate 
+            if (count < 0)
+            {
+                Debug.Assert(continuation == 0, "Expected no additional continuations on error result");
+                return count;
+            }
+
+            // Update ids on success
+            outputIds.Memory?.Dispose();
+            outputIds = new(newIdSpace, newIdSpace.Memory.Length);
+            return count;
         }
 
         /// <summary>
@@ -1169,8 +1372,19 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, element, ref outputAttributes);
-            return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+
+            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
+            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes);
+
+            if (!foundInternalId)
+            {
+                internalIdBytes.Dispose();
+                return VectorManagerResult.MissingElement;
+            }
+
+            var foundAttribute = ReadSizeUnknown(context | DiskANNService.Attributes, internalIdBytes.ReadOnlySpan, ref outputAttributes);
+            return foundAttribute ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
         /// <summary>
@@ -1182,43 +1396,27 @@ namespace Garnet.server
         {
             var remainingIds = ids.ReadOnlySpan;
 
-            GCHandle idPin = default;
-            byte[] idWithNamespaceArr = null;
-
             var attributesNextIx = 0;
 
             Span<byte> attributeFull = stackalloc byte[32];
             var attributeMem = SpanByteAndMemory.FromPinnedSpan(attributeFull);
 
+            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            var internalIdMem = SpanByteAndMemory.FromPinnedSpan(internalId);
+
             try
             {
-                Span<byte> idWithNamespace = stackalloc byte[128];
-
                 // TODO: we could scatter/gather this like MGET - doesn't matter when everything is in memory,
                 //       but if anything is on disk it'd help perf
                 for (var i = 0; i < numIds; i++)
                 {
-                    var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
-                    if (idLen + sizeof(int) > remainingIds.Length)
+                    var externalIdLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                    if (externalIdLen + sizeof(int) > remainingIds.Length)
                     {
-                        throw new GarnetException($"Malformed ids, {idLen} + {sizeof(int)} > {remainingIds.Length}");
+                        throw new GarnetException($"Malformed ids, {externalIdLen} + {sizeof(int)} > {remainingIds.Length}");
                     }
 
-                    var id = remainingIds.Slice(sizeof(int), idLen);
-
-                    // Make sure we've got enough space to query the element
-                    if (id.Length + 1 > idWithNamespace.Length)
-                    {
-                        if (idWithNamespaceArr != null)
-                        {
-                            idPin.Free();
-                            ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
-                        }
-
-                        idWithNamespaceArr = ArrayPool<byte>.Shared.Rent(id.Length + 1);
-                        idPin = GCHandle.Alloc(idWithNamespaceArr, GCHandleType.Pinned);
-                        idWithNamespace = idWithNamespaceArr;
-                    }
+                    var externalId = remainingIds.Slice(sizeof(int), externalIdLen);
 
                     if (attributeMem.Memory != null)
                     {
@@ -1229,10 +1427,21 @@ namespace Garnet.server
                         attributeMem.Length = attributeMem.SpanByte.Length;
                     }
 
-                    var found = ReadSizeUnknown(context | DiskANNService.Attributes, forceAlignment: true, id, ref attributeMem);
+                    var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, externalId, ref internalIdMem);
+
+                    bool foundAttr;
+                    if (foundInternalId)
+                    {
+                        foundAttr = ReadSizeUnknown(context | DiskANNService.Attributes, internalIdMem.Span, ref attributeMem);
+                    }
+                    else
+                    {
+                        foundAttr = false;
+                        attributeMem.Length = 0;
+                    }
 
                     // Copy attribute into output buffer, length prefixed, resizing as necessary
-                    var neededSpace = 4 + (found ? attributeMem.Length : 0);
+                    var neededSpace = 4 + (foundAttr ? attributeMem.Length : 0);
 
                     var destSpan = attributes.Span[attributesNextIx..];
                     if (destSpan.Length < neededSpace)
@@ -1251,20 +1460,15 @@ namespace Garnet.server
 
                     attributesNextIx += neededSpace;
 
-                    remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                    remainingIds = remainingIds[(sizeof(int) + externalIdLen)..];
                 }
 
                 attributes.Length = attributesNextIx;
             }
             finally
             {
-                if (idWithNamespaceArr != null)
-                {
-                    idPin.Free();
-                    ArrayPool<byte>.Shared.Return(idWithNamespaceArr);
-                }
-
-                attributeMem.Memory?.Dispose();
+                attributeMem.Dispose();
+                internalIdMem.Dispose();
             }
         }
 
@@ -1296,7 +1500,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
                 {
                     return false;
                 }
@@ -1312,7 +1516,7 @@ namespace Garnet.server
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, forceAlignment: true, internalId, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
                 {
                     return false;
                 }
@@ -1376,7 +1580,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
                 {
                     norm = double.NaN;
                     range = null;
@@ -1404,7 +1608,7 @@ namespace Garnet.server
             // Get the RAW view - we're leaking DiskANN internal details here but that's _kind of_ the point
             while (true)
             {
-                if (ReadSizeUnknown(readContext, forceAlignment: true, internalId, ref quantizedValues))
+                if (ReadSizeUnknown(readContext, internalId, ref quantizedValues))
                 {
                     break;
                 }
@@ -1437,7 +1641,7 @@ namespace Garnet.server
 
             Span<byte> internalId = stackalloc byte[sizeof(int)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
-            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, forceAlignment: true, element, ref internalIdBytes);
+            var foundInternalId = ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes);
             if (foundInternalId)
             {
                 Debug.Assert(internalIdBytes.IsSpanByte, "Shouldn't have allocated for this op");
@@ -1445,6 +1649,235 @@ namespace Garnet.server
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Get up to <paramref name="count"/> random elements from a vector set.
+        /// </summary>
+        internal VectorManagerResult RandomMembers(ReadOnlySpan<byte> indexSpan, int count, bool allowDuplicates, ref SpanByteAndMemory ids, out int finalCount)
+        {
+            // Limit the number of times we'll try to get new random members
+            const int MaximumAttempts = 5;
+
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            GCHandle? idsPin = null;
+
+            var remainingCount = count;
+            var remainingIds = ids.Span;
+            var attempts = 0;
+
+            try
+            {
+                while (true)
+                {
+                    // Guarantee we'll read negative values while processing results
+                    remainingIds.Fill(255);
+
+                    if (!ids.IsSpanByte)
+                    {
+                        var getRes = MemoryMarshal.TryGetArray<byte>(ids.Memory.Memory, out var arrSeg);
+                        Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                        idsPin?.Free();
+                        idsPin = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    }
+                    else
+                    {
+                        idsPin = null;
+                    }
+
+                    if (!Service.RandomMembers(context, indexPtr, remainingCount, remainingIds))
+                    {
+                        logger?.LogError("RandomMembers failed for context {context}", context);
+                        finalCount = 0;
+                        return VectorManagerResult.BadParams;
+                    }
+
+                    // Handle Redis-isms by deduplicating if and stopping if needed
+                    ProcessResults(ids.Span, allowDuplicates, out var actualCount, out var validIdsLength);
+
+                    attempts++;
+
+                    if (actualCount == count)
+                    {
+                        // Got all the results we need, stop
+
+                        finalCount = actualCount;
+                        ids.Length = validIdsLength;
+                        break;
+                    }
+
+                    var newRemainingCount = count - actualCount;
+
+                    if (newRemainingCount == remainingCount || attempts == MaximumAttempts)
+                    {
+                        // No progress was made, give up and return what we have
+
+                        finalCount = actualCount;
+                        ids.Length = validIdsLength;
+                        break;
+                    }
+
+                    remainingCount = newRemainingCount;
+                    remainingIds = remainingIds[validIdsLength..];
+
+                    // Grow size of output buffer to hold more results
+                    if (remainingIds.Length < (remainingCount * MinimumSpacePerId))
+                    {
+                        idsPin?.Free();
+                        idsPin = null;
+
+                        var newIds = MemoryPool<byte>.Shared.Rent(ids.Length * 2);
+                        ids.Span.CopyTo(newIds.Memory.Span);
+
+                        ids.Memory?.Dispose();
+                        ids = new(newIds, newIds.Memory.Length);
+
+                        remainingIds = ids.Span;
+                        for (var i = 0; i < (count - remainingCount); i++)
+                        {
+                            var idLen = BinaryPrimitives.ReadInt32LittleEndian(remainingIds);
+                            if (idLen < 0)
+                            {
+                                break;
+                            }
+
+                            remainingIds = remainingIds[(sizeof(int) + idLen)..];
+                        }
+                    }
+                }
+
+                return VectorManagerResult.OK;
+            }
+            finally
+            {
+                idsPin?.Free();
+            }
+
+            // Scan over ids and count them - deduplicating if required
+            static void ProcessResults(Span<byte> candidates, bool allowDuplicates, out int actualCount, out int validCandidateLength)
+            {
+                if (allowDuplicates)
+                {
+                    var remaining = candidates;
+
+                    var count = 0;
+                    while (!remaining.IsEmpty)
+                    {
+                        var idLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
+                        if (idLen < 0)
+                        {
+                            break;
+                        }
+
+                        count++;
+                        remaining = remaining[(sizeof(int) + idLen)..];
+                    }
+
+                    actualCount = count;
+                    validCandidateLength = candidates.Length - remaining.Length;
+                }
+                else
+                {
+                    var dupeTracker = new HashSet<byte[]>(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+                    var dupeTrackerLookup = dupeTracker.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
+
+                    var remaining = candidates;
+
+                    var count = 0;
+                    while (!remaining.IsEmpty)
+                    {
+                        var idLen = BinaryPrimitives.ReadInt32LittleEndian(remaining);
+                        if (idLen < 0)
+                        {
+                            break;
+                        }
+
+                        var id = remaining.Slice(sizeof(int), idLen);
+                        byte[] idArr = null;
+                        var isDupe =
+#if NET9_0_OR_GREATER
+                                dupeTrackerLookup.Contains(id)
+#else
+                                dupeTracker.Contains(idArr ??= id.ToArray())
+#endif
+                                ;
+
+                        var afterId = remaining[(sizeof(int) + idLen)..];
+
+                        if (isDupe)
+                        {
+                            afterId.CopyTo(remaining);
+                            afterId[^(sizeof(int) + idLen)..].Fill(255);
+                        }
+                        else
+                        {
+                            idArr ??= id.ToArray();
+                            dupeTracker.Add(idArr);
+
+                            remaining = afterId;
+
+                            count++;
+                        }
+                    }
+
+                    actualCount = count;
+                    validCandidateLength = candidates.Length - remaining.Length;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Get the neighbors of a <paramref name="element"/> in a Vector Set, along with distances to each neighbor.
+        /// </summary>
+        internal VectorManagerResult GetNeighbors(ReadOnlySpan<byte> indexSpan, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputIds, ref SpanByteAndMemory outputDistances)
+        {
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out var numLinks, out _, out _, out var indexPtr);
+
+            if (outputDistances.Length < sizeof(float) * numLinks)
+            {
+                var neededBytes = (int)(sizeof(float) * numLinks);
+                outputDistances.EnsureHeapMemorySize(neededBytes);
+            }
+
+            var found = Service.SearchNeighbors(context, indexPtr, element, outputIds, outputDistances, out var continuation);
+
+            if (found < 0)
+            {
+                Debug.Assert(continuation == 0, "Shouldn't have more results after failure");
+
+                logger?.LogError("GetNeighbors failed with {res} for context {context}", found, context);
+
+                return VectorManagerResult.BadParams;
+            }
+
+            while (continuation != 0)
+            {
+                var additionalResults = ContinueSearch(context, indexPtr, continuation, found, ref outputIds, ref outputDistances, out continuation);
+
+                if (additionalResults < 0)
+                {
+                    Debug.Assert(continuation == 0, "Shouldn't have more results after failure");
+
+                    logger?.LogError("GetNeighbors failed in ContinueSearch with {additionalResults} for context {context}", additionalResults, context);
+
+                    found = additionalResults;
+                    break;
+                }
+
+                found += additionalResults;
+            }
+
+            if (found < 0)
+            {
+                return VectorManagerResult.BadParams;
+            }
+
+            outputDistances.Length = sizeof(float) * found;
+            return VectorManagerResult.OK;
         }
 
         [Conditional("DEBUG")]

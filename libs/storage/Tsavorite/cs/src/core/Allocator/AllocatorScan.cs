@@ -15,6 +15,9 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
+        /// <summary>Clear checkpoint serialization cached by heap objects in the specified in-memory range.</summary>
+        internal virtual void ClearSerializedObjectData(long beginAddress, long endAddress) { }
+
         /// <summary>
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
@@ -301,6 +304,23 @@ namespace Tsavorite.core
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
+
+            // NOTFOUND is set only when FindTag found no hash-index entry for this key's tag, which means no record for
+            // this key is reachable by any operation: the key's whole tag chain was elided (by a Delete, or by an RCU in
+            // InternalRMW/InternalUpsert, both of which SealAndInvalidate the source when CanElide holds) and it was not
+            // re-inserted. The record is still physically in the log, and the search above only asks "is there a *newer*
+            // version of this key?", so without this check it would correctly find nothing newer and push a dead record.
+            // Note this keys off the reachability of the *key*, not of this record: if the key was re-inserted -- possibly
+            // above maxAddress, as during slot migration -- the chain is non-empty, so we still push and the key is
+            // reported. That distinction is what makes this safe for point-in-time consumers (migration, streaming
+            // snapshot), which must never lose a key that is live outside the scanned range.
+            if (internalStatus == OperationStatus.NOTFOUND)
+            {
+                // Closed records only reach here when the iterator was created with includeClosedRecords, which
+                // ScanCursor does when maxAddress is bounded; otherwise SkipOnScan filters them out.
+                Debug.Assert(srcLogRecord.Info.Invalid, "Expected an invalid record if its key's HashBucket is empty");
+                return Status.CreateFound();
+            }
 
             if (needIO)
             {

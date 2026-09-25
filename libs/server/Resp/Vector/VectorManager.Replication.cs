@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -166,6 +167,113 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Maps a context chosen by a PRIMARY for an in-flight migration onto the context this node actually
+        /// stores that migrated Vector Set under.
+        /// 
+        /// Guarded by <c>lock (this)</c>, like the rest of the context metadata.
+        /// </summary>
+        private readonly Dictionary<ulong, ulong> migratedContextRemap = new();
+
+        /// <summary>
+        /// The local contexts already claimed as the target of a remapping in <see cref="migratedContextRemap"/>.
+        /// 
+        /// A claimed context is marked migrating, and a later incoming context whose own value happens to equal
+        /// that target would otherwise read that mark as its own interrupted migration and adopt the context
+        /// directly, leaving two migrated Vector Sets sharing one context.
+        /// 
+        /// Guarded by <c>lock (this)</c>, like the rest of the context metadata.
+        /// </summary>
+        private readonly HashSet<ulong> migratedContextTargets = [];
+
+        /// <summary>
+        /// Discard every in-flight migration remapping.
+        /// 
+        /// Callers must already hold <c>lock (this)</c>, which is what guards the map.
+        /// </summary>
+        private void ClearMigratedContextRemap()
+        {
+            Debug.Assert(Monitor.IsEntered(this), "Migration remap is guarded by lock (this)");
+
+            migratedContextRemap.Clear();
+            migratedContextTargets.Clear();
+        }
+
+        /// <summary>
+        /// Determine which context migrated data should be written to on this node.
+        /// 
+        /// Contexts are assigned independently by each node, so a context that is free on the PRIMARY which chose it
+        /// can still be occupied here - most commonly by a deleted Vector Set whose element data has not finished being
+        /// cleaned up.  Storing the migrated data there anyway would leave two Vector Sets sharing a context, corrupting
+        /// both, so in that case the migration is steered onto a context that is free locally.
+        /// 
+        /// The mapping is remembered so that every record belonging to a migration resolves identically, and is
+        /// discarded once the index key for that migration arrives.
+        /// </summary>
+        private ulong ResolveMigratedContext(StorageSession currentSession, ulong migratedContext)
+        {
+            ulong localContext;
+
+            lock (this)
+            {
+                if (migratedContextRemap.TryGetValue(migratedContext, out localContext))
+                {
+                    return localContext;
+                }
+
+                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(migratedContext);
+
+                // A context past the end of the local metadata has never been allocated on this node,
+                // so it cannot be adopted as-is
+                var contextKnownLocally = contextIndex < contextMetadatas.Length;
+
+                if (contextKnownLocally
+                    && !migratedContextTargets.Contains(migratedContext)
+                    && contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue))
+                {
+                    // Already reserved for a migration, which is how a migration that was interrupted and resumed looks
+                    migratedContextRemap[migratedContext] = migratedContext;
+                    _ = migratedContextTargets.Add(migratedContext);
+
+                    return migratedContext;
+                }
+
+                if (!contextKnownLocally || contextMetadatas[contextIndex].IsInUse(contextIndex != 0, contextValue))
+                {
+                    localContext = NextVectorSetContext(ushort.MaxValue);
+
+                    (contextIndex, contextValue) = ContextMetadata.DecomposeContext(localContext);
+                }
+                else
+                {
+                    localContext = migratedContext;
+
+                    contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, ushort.MaxValue);
+                }
+
+                contextMetadatas[contextIndex].MarkMigrating(contextIndex != 0, contextValue);
+
+                migratedContextRemap[migratedContext] = localContext;
+                _ = migratedContextTargets.Add(localContext);
+
+                _ = dirtyContextMetadatas.Add(contextIndex);
+            }
+
+            UpdateContextMetadata(ref currentSession.vectorBasicContext);
+
+            return localContext;
+        }
+
+        /// <summary>
+        /// For testing purposes, resolve a context the way an incoming migrated record would.
+        /// </summary>
+        public ulong ResolveMigratedContextForTest(ulong migratedContext)
+        {
+            using var session = (RespServerSession)getTempSession();
+
+            return ResolveMigratedContext(session.storageSession, migratedContext);
+        }
+
+        /// <summary>
         /// Vector Set adds are phrased as reads (once the index is created), so they require special handling.
         /// 
         /// Operations that are faked up by <see cref="ReplicateVectorSetAdd"/> running on the Primary get diverted here on a Replica.
@@ -194,28 +302,21 @@ namespace Garnet.server
                 ulong ns = BinaryPrimitives.ReadUInt32LittleEndian(elementNsBytes);
 
                 // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
-                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(ns & ~(ContextStep - 1));
+                var migratedContext = ns & ~(ContextStep - 1);
+                var localContext = ResolveMigratedContext(currentSession, migratedContext);
 
-                var needsUpdate = false;
-                lock (this)
+                scoped var localNamespaceBytes = elementNsBytes;
+
+                Span<byte> remappedNamespaceBytes = stackalloc byte[sizeof(uint)];
+                if (localContext != migratedContext)
                 {
-                    if (!contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue))
-                    {
-                        contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, ushort.MaxValue);
-                        contextMetadatas[contextIndex].MarkMigrating(contextIndex != 0, contextValue);
+                    // Preserve the sub-namespace within the block, only the block itself moves
+                    BinaryPrimitives.WriteUInt32LittleEndian(remappedNamespaceBytes, (uint)(localContext + (ns - migratedContext)));
 
-                        _ = dirtyContextMetadatas.Add(contextIndex);
-
-                        needsUpdate = true;
-                    }
+                    localNamespaceBytes = remappedNamespaceBytes;
                 }
 
-                if (needsUpdate)
-                {
-                    UpdateContextMetadata(ref currentSession.vectorBasicContext);
-                }
-
-                HandleMigratedElementKey(ref currentSession.stringBasicContext, ref currentSession.vectorBasicContext, elementNsBytes, elementKeyBytes, value);
+                HandleMigratedElementKey(ref currentSession.stringBasicContext, ref currentSession.vectorBasicContext, localNamespaceBytes, elementKeyBytes, value);
                 return;
             }
             else if (input.arg1 == MigrateIndexKeyLogArg)
@@ -230,36 +331,67 @@ namespace Garnet.server
                 // but if you a migrate an EMPTY Vector Set that is not necessarily true
                 //
                 // So force reservation now
-                var (contextIndex, contextValue) = ContextMetadata.DecomposeContext(context & ~(ContextStep - 1));
+                var migratedContext = context & ~(ContextStep - 1);
+                var localContext = ResolveMigratedContext(currentSession, migratedContext);
 
-                var needsUpdate = false;
-                lock (this)
+                scoped var localIndexValue = value.ReadOnlySpan;
+
+                Span<byte> remappedIndexValue = stackalloc byte[Index.Size];
+                if (localContext != migratedContext)
                 {
-                    if (!contextMetadatas[contextIndex].IsMigrating(contextIndex != 0, contextValue))
-                    {
-                        contextMetadatas[contextIndex].MarkInUse(contextIndex != 0, contextValue, ushort.MaxValue);
-                        contextMetadatas[contextIndex].MarkMigrating(contextIndex != 0, contextValue);
+                    // The index records its own context, so it has to be rewritten to match where the data landed
+                    localIndexValue.CopyTo(remappedIndexValue);
+                    SetContextForMigration(remappedIndexValue, localContext + (context - migratedContext));
 
-                        _ = dirtyContextMetadatas.Add(contextIndex);
-
-                        needsUpdate = true;
-                    }
-                }
-
-                if (needsUpdate)
-                {
-                    UpdateContextMetadata(ref currentSession.vectorBasicContext);
+                    localIndexValue = remappedIndexValue;
                 }
 
                 ActiveThreadSession = currentSession;
                 try
                 {
-                    HandleMigratedIndexKey(null, null, indexKey, value);
+                    HandleMigratedIndexKey(null, null, indexKey, localIndexValue);
                 }
                 finally
                 {
                     ActiveThreadSession = null;
                 }
+
+                // Element records for a migration are all transmitted, applied, and acknowledged before its index
+                // key is sent, so no further record can name this context until a later migration reserves it
+                lock (this)
+                {
+                    _ = migratedContextRemap.Remove(migratedContext);
+                }
+
+                return;
+            }
+            else if (input.arg1 == VectorManager.VADDSetFlagsArg)
+            {
+                // These are injected to update flags on a Vector Set
+                //
+                // Should be relatively rare, today they only happen on RENAMEs
+
+                // Flag updates need to wait for any VADDs to complete, in case they are modifying Vector Sets that are created due to a VADD
+                WaitForVectorOperationsToComplete();
+
+                var flag = MemoryMarshal.Cast<byte, VectorSetFlags>(input.parseState.GetArgSliceByRef(0))[0];
+
+                SessionParseState parse = default;
+                parse.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(key));
+
+                var readInput = new StringInput(RespCommand.VSIM, ref parse);
+
+                Span<byte> indexSpan = stackalloc byte[IndexSize];
+                using (ReadVectorIndex(currentSession, key, ref readInput, indexSpan, out var status))
+                {
+                    if (status != GarnetStatus.OK)
+                    {
+                        throw new GarnetException("Failed to apply flags to Vector Set, data loss is likely");
+                    }
+
+                    SetFlags(key, flag, ref currentSession.stringBasicContext);
+                }
+
                 return;
             }
 
@@ -588,16 +720,58 @@ namespace Garnet.server
                 // Dispose already takes pains to drain everything before disposing, so this is safe to ignore
             }
         }
-        // Helper to complete read/writes during vector set synthetic op goes async
-        private static void CompletePending<TContext>(ref Status status, ref VectorBasicContext context)
+
+        /// <summary>
+        /// During AOF replay we need to copy one Vector Set index into another, but we can't use the bytes stored in the log since
+        /// VADD replay will have produced different contexts and pointers.
+        /// 
+        /// So do a simple copy instead.
+        /// </summary>
+        internal unsafe void HandleVectorSetRenameCopy<TUnifiedContext>(StorageSession storageSession, ref TUnifiedContext unifiedContext, ReadOnlySpan<byte> oldVectorSet, ReadOnlySpan<byte> newVectorSet)
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-            var more = completedOutputs.Next();
-            Debug.Assert(more);
-            status = completedOutputs.Current.Status;
-            more = completedOutputs.Next();
-            Debug.Assert(!more);
-            completedOutputs.Dispose();
+            SessionParseState parseState = default;
+            parseState.InitializeWithArguments([PinnedSpanByte.FromPinnedSpan(oldVectorSet), PinnedSpanByte.FromPinnedSpan(newVectorSet)]);
+
+            UnifiedInput input = new(RespCommand.RENAME, ref parseState);
+            UnifiedOutput output = new();
+
+            var readStatus = unifiedContext.Read((FixedSpanByteKey)oldVectorSet, ref input, ref output);
+            if (readStatus.IsPending)
+            {
+                _ = unifiedContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                var more = completedOutputs.Next();
+                Debug.Assert(more);
+                readStatus = completedOutputs.Current.Status;
+                output = completedOutputs.Current.Output;
+                Debug.Assert(!completedOutputs.Next());
+                completedOutputs.Dispose();
+            }
+
+            if (!readStatus.Found)
+            {
+                throw new GarnetException("Should never fail to find original key during RENAME replay");
+            }
+
+            fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+            {
+                // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
+                var logRecord = new LogRecord(recordPtr, storageSession.functionsState.transientObjectIdMap);
+
+                var upsertStatus = unifiedContext.Upsert((FixedSpanByteKey)newVectorSet, ref input, in logRecord);
+
+                if (upsertStatus.IsPending)
+                {
+                    _ = unifiedContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    var more = completedOutputs.Next();
+                    Debug.Assert(more);
+                    upsertStatus = completedOutputs.Current.Status;
+                    Debug.Assert(!completedOutputs.Next());
+                    completedOutputs.Dispose();
+                }
+            }
+
+            output.Dispose();
         }
     }
 }

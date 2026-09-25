@@ -66,36 +66,18 @@ namespace Garnet.server
         internal static bool TryValidateBitPosOffsets(long startOffset, long endOffset, byte offsetType, bool hasStartOffset, bool hasEndOffset)
         {
             // BYTE mode uses byte index bounds; BIT mode uses bit index bounds.
-            var maxOffset = offsetType == 0x1
-                ? MaxOffsetForBitmapLength
-                : MaxBitmapPayloadBytes - 1L;
+            var maxLength = offsetType == 0x1
+                ? MaxOffsetForBitmapLength + 1
+                : MaxBitmapPayloadBytes;
+            var maxOffset = maxLength - 1;
 
-            if (hasStartOffset && (startOffset < -maxOffset || startOffset > maxOffset))
+            if (hasStartOffset && (startOffset < -maxLength || startOffset > maxOffset))
                 return true;
 
-            if (hasEndOffset && (endOffset < -maxOffset || endOffset > maxOffset))
+            if (hasEndOffset && (endOffset < -maxLength || endOffset > maxOffset))
                 return true;
 
             return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void NormalizeBitCountOffsets(ref long startOffset, ref long endOffset, byte offsetType)
-        {
-            // BYTE mode uses byte index bounds; BIT mode uses bit index bounds.
-            var maxOffset = offsetType == 0x1
-                ? MaxOffsetForBitmapLength
-                : MaxBitmapPayloadBytes - 1L;
-
-            if (startOffset < -maxOffset)
-                startOffset = -maxOffset;
-            else if (startOffset > maxOffset)
-                startOffset = maxOffset;
-
-            if (endOffset < -maxOffset)
-                endOffset = -maxOffset;
-            else if (endOffset > maxOffset)
-                endOffset = maxOffset;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -195,7 +177,7 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static long ProcessNegativeOffset(long offset, long valLen)
-            => valLen <= 0 ? 0 : (offset % valLen) + valLen;
+            => valLen <= 0 || offset <= -valLen ? 0 : valLen + offset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static byte reverse(byte n)

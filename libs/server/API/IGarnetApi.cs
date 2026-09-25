@@ -397,9 +397,9 @@ namespace Garnet.server
         /// <param name="dstKey">The distribution key for the sorted set.</param>
         /// <param name="srcKey">The sub-key for the sorted set.</param>
         /// <param name="input">The input object containing the elements to store.</param>
-        /// <param name="result">The result of the store operation.</param>
+        /// <param name="output">Receives the number of elements stored, or the error the range operation rejected the parameters with.</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
-        GarnetStatus SortedSetRangeStore(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, out int result);
+        GarnetStatus SortedSetRangeStore(PinnedSpanByte dstKey, PinnedSpanByte srcKey, ref ObjectInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Removes the specified member from the sorted set stored at key.
@@ -2142,9 +2142,9 @@ namespace Garnet.server
         /// <summary>
         /// For a given element, find all neighbors and (optionally) the distance to those neighbors.
         /// 
-        /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> (if <paramref name="withScores"/> is true) has a float for each of those elements.
+        /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> has a float for each of those elements.
         /// </summary>
-        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
+        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
 
         /// <summary>
         /// Fetch random elements from the given Vector Set.
@@ -2155,7 +2155,7 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names.
         /// </summary>
-        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults);
+        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount);
 
         /// <summary>
         /// Perform a similarity search given a vector and these parameters.

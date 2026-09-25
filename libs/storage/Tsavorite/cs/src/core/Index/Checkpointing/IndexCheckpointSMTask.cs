@@ -62,5 +62,20 @@ namespace Tsavorite.core
         public void GlobalAfterEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
         {
         }
+
+        /// <inheritdoc />
+        public void OnAbort(StateMachineDriver stateMachineDriver, Exception exception)
+        {
+            // Mirrors the Phase.REST handling above, which an aborted state machine never reaches. Leaving
+            // _indexCheckpoint set would make the PREPARE phase of every later checkpoint fail its IsDefault check,
+            // so one failed checkpoint would stop the store from ever checkpointing again.
+
+            // The flush issued at PREPARE writes to _indexCheckpoint.main_ht_device, and Reset disposes it. Aborting
+            // before WAIT_INDEX_CHECKPOINT means the driver never awaited that flush, so it has to be awaited here:
+            // disposing the device under an in-flight write fails it, and the completion would then be counted
+            // against the next checkpoint's flush state rather than this one's.
+            store.WaitForIndexCheckpointFlushCompletion();
+            store._indexCheckpoint.Reset();
+        }
     }
 }

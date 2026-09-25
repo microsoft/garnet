@@ -255,6 +255,12 @@ class ThreadPoolIoHandler {
     : threadpool_{ max_threads } {
   }
 
+  /// 5-arg overload accepted for cross-platform symmetry with UringIoHandler. Windows has no
+  /// io_uring submission-poll thread, so the SQPOLL parameters are ignored.
+  ThreadPoolIoHandler(size_t max_threads, int /*num_contexts*/, int /*max_events*/, bool /*sqpoll*/, int /*sq_thread_idle_ms*/)
+    : threadpool_{ max_threads } {
+  }
+
   /// Move constructor.
   ThreadPoolIoHandler(ThreadPoolIoHandler&& other)
     : threadpool_{ std::move(other.threadpool_) } {
@@ -325,6 +331,12 @@ class ThreadPoolIoHandler {
 
   inline static constexpr int num_contexts() {
       return 1; // single IOCP per-device; sharding not applicable
+  }
+
+  /// The Windows IOCP path completes on threadpool threads (IoCompletionCallback), so there is
+  /// no caller-affine ring to inline-drain; mirror TryComplete() and report nothing was reaped.
+  inline static constexpr bool TryCompleteMine() {
+      return false;
   }
 
  private:

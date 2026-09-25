@@ -220,14 +220,24 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion, arg2: (int)SortedSetRangeOpts.Store);
 
-            var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result);
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, ref output);
+
+            if (status == GarnetStatus.OK)
+            {
+                // The reply - the stored element count, or the error the range parameters were
+                // rejected with - has already been written into output by the storage layer.
+                if (!output.IsSpanByte)
+                    SendAndReset(output.Memory, output.Length);
+                else
+                    dcurr += output.Length;
+
+                return true;
+            }
 
             switch (status)
             {
-                case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(result, ref dcurr, dend))
-                        SendAndReset();
-                    break;
                 case GarnetStatus.WRONGTYPE:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
                         SendAndReset();
@@ -421,7 +431,7 @@ namespace Garnet.server
             }
 
             // Validate we have enough arguments (no of keys + (MIN or MAX))
-            if (parseState.Count < numKeys + 2)
+            if (parseState.Count - 2 < numKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -848,6 +858,11 @@ namespace Garnet.server
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };
+
+            // We reserve 2 bits of metadata (1 for "include count", 1 for "with scores") in
+            // ObjectInput.arg1, so cap count to what will fit in the remaining signed 30 bits.
+            paramCount = Math.Min(paramCount, int.MaxValue >> 2);
+
             var inputArg = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0);
             var input = new ObjectInput(header, inputArg, seed);
 
@@ -1053,7 +1068,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTER));
             }
 
-            if (parseState.Count < nKeys + 1)
+            if (parseState.Count - 1 < nKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -1176,7 +1191,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZINTERCARD));
             }
 
-            if (parseState.Count < nKeys + 1)
+            if (parseState.Count - 1 < nKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -1348,7 +1363,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNION));
             }
 
-            if (parseState.Count < nKeys + 1)
+            if (parseState.Count - 1 < nKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }
@@ -1478,7 +1493,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrAtLeastOneKey, nameof(RespCommand.ZUNIONSTORE));
             }
 
-            if (parseState.Count < nKeys + 2)
+            if (parseState.Count - 2 < nKeys)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_SYNTAX_ERROR);
             }

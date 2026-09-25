@@ -9,7 +9,13 @@ namespace Tsavorite.core
     /// Delegate for callback on IO completion
     /// </summary>
     /// <param name="errorCode">Numeric error code from the IO completion channel (0 on success).</param>
-    /// <param name="numBytes">Number of bytes transferred.</param>
+    /// <param name="numBytes">
+    /// Number of bytes transferred, or 0 if this <see cref="IDevice"/> implementation does not report one. Some
+    /// implementations report the requested length rather than the actual one, so a value equal to the requested
+    /// length does not prove a full transfer; a nonzero value below it does prove a short one. Do not treat 0 as a
+    /// short transfer, and do not rely on this to detect short reads on the hybrid log, where a short read is
+    /// legitimate and is retried.
+    /// </param>
     /// <param name="context">Caller-supplied context object.</param>
     /// <param name="ioException">
     /// The underlying exception behind a failed IO, when the device has one to report; otherwise <see langword="null"/>.
@@ -91,6 +97,20 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         bool TryComplete();
+
+        /// <summary>
+        /// Try to complete async IO completions for only the calling thread's affine completion
+        /// context/ring, rather than scanning all of them. Used by the inline submitter-thread
+        /// completion path to avoid redundant per-context work when many threads drain concurrently.
+        /// Devices that do not shard completions may simply fall back to <see cref="TryComplete"/>.
+        /// <para>
+        /// Provided as a default interface method delegating to <see cref="TryComplete"/> so that
+        /// existing external <see cref="IDevice"/> implementations continue to compile and behave
+        /// correctly without change; sharded devices (e.g. NativeStorageDevice) override it.
+        /// </para>
+        /// </summary>
+        /// <returns></returns>
+        bool TryCompleteMine() => TryComplete();
 
         /// <summary>
         /// Whether device should be throttled at this instant (i.e., caller should stop issuing new I/Os)

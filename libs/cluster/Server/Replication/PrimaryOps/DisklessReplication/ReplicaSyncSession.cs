@@ -83,6 +83,15 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Try to write one chunk of a chunked (<see cref="MigrationRecordSpanType.ChunkedLogRecord"/>) record.
+        /// </summary>
+        public bool TryWriteChunkedRecordSpan(ReadOnlySpan<byte> chunk, bool moreChunksFollow, out Task<string> task)
+        {
+            AsyncUtils.BlockingWait(WaitForFlushAsync());
+            return AofSyncDriver.TryWriteChunkedRecordSpan(chunk, moreChunksFollow, out task);
+        }
+
+        /// <summary>
         /// Send and reset iteration buffer
         /// </summary>
         /// <returns></returns>
