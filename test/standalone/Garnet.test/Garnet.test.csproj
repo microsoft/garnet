@@ -62,7 +62,6 @@
     <ProjectReference Include="..\..\..\libs\host\Garnet.host.csproj" />
     <ProjectReference Include="..\..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\src\devices\AzureStorageDevice\Tsavorite.devices.AzureStorageDevice.csproj" />
-    <ProjectReference Include="..\..\..\libs\storage\Tsavorite\cs\test\Tsavorite.test.csproj" />
     <ProjectReference Include="..\..\..\main\GarnetServer\GarnetServer.csproj" />
     <ProjectReference Include="..\..\..\modules\GarnetJSON\GarnetJSON.csproj" />
     <ProjectReference Include="..\..\..\modules\NoOpModule\NoOpModule.csproj" />
@@ -86,6 +85,7 @@
     <None Update="redis.conf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+	  <Compile Include="..\..\..\libs\storage\Tsavorite\cs\test\TestBase.cs" />
   </ItemGroup>
 
 	<!-- Define compilation symbol for test project -->
