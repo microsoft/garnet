@@ -45,7 +45,7 @@ namespace Garnet.client
         static readonly Memory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
         static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetClient"u8.ToArray()];
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
-        const int OutOfLineRecordSize = sizeof(long);
+        const int PayloadDescriptorSize = sizeof(long);
 
         readonly int sendPageSize;
         readonly int bufferSize;
@@ -1271,7 +1271,7 @@ namespace Garnet.client
                                 ThrowException(disposeException);
                             }
 
-                            (taskId, address) = networkWriter.TryAllocate(OutOfLineRecordSize, out var flushEvent);
+                            (taskId, address) = networkWriter.TryAllocate(PayloadDescriptorSize, out var flushEvent);
                             if (address >= 0)
                                 break;
 
@@ -1288,7 +1288,7 @@ namespace Garnet.client
 
                         tcs.nextTaskId = taskId;
 
-                        networkWriter.EnqueuePayloadBuffer(address, payload);
+                        networkWriter.EnqueuePayload(address, payload);
                         payloadRegistered = true;
                         unsafe
                         {
@@ -1402,7 +1402,7 @@ namespace Garnet.client
                             ThrowException(disposeException);
                         }
 
-                        (_, address) = networkWriter.TryAllocate(OutOfLineRecordSize, out var flushEvent, skipTaskIdIncrement: true);
+                        (_, address) = networkWriter.TryAllocate(PayloadDescriptorSize, out var flushEvent, skipTaskIdIncrement: true);
                         if (address >= 0)
                             break;
 
@@ -1417,7 +1417,7 @@ namespace Garnet.client
                         }
                     }
 
-                    networkWriter.EnqueuePayloadBuffer(address, payload);
+                    networkWriter.EnqueuePayload(address, payload);
                     payloadRegistered = true;
                     unsafe
                     {

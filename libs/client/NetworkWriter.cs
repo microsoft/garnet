@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -17,20 +16,20 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.client
 {
-    readonly struct Payload : IDisposable
+    struct Payload : IDisposable
     {
-        readonly PoolEntry entry;
+        internal PoolEntry Entry;
+        internal int Length;
 
-        internal byte[] Buffer => entry.entry;
-        internal int Length { get; }
+        internal byte[] Buffer => Entry.entry;
 
         internal Payload(PoolEntry entry, int length)
         {
-            this.entry = entry;
+            this.Entry = entry;
             this.Length = length;
         }
 
-        public void Dispose() => entry?.Dispose();
+        public void Dispose() => Entry?.Dispose();
     }
 
     [StructLayout(LayoutKind.Explicit)]
@@ -63,6 +62,10 @@ namespace Garnet.client
     /// </summary>
     internal sealed class NetworkWriter : IDisposable
     {
+        /// <summary>
+        /// Size of descriptor used for chunked send.
+        /// </summary>
+        const int PayloadDescriptorSize = sizeof(long);
         const long PageWrapDistance = 1L << (PageOffset.kPageBits - 1);
 
         public readonly LightEpoch epoch;
@@ -94,7 +97,9 @@ namespace Garnet.client
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetClientTcpNetworkHandler networkHandler;
         readonly bool useOutOfLineExecution;
-        readonly ConcurrentDictionary<long, Payload> outstandingPayloads;
+
+        // Each physical descriptor maps to one slot; the entry reference transfers ownership atomically.
+        readonly Payload[] pendingNetworkSendPayloads;
 
         /// <summary>
         /// Constructor
@@ -114,7 +119,10 @@ namespace Garnet.client
             this.logger = logger;
             this.useOutOfLineExecution = useOutOfLineExecution;
             if (useOutOfLineExecution)
-                this.outstandingPayloads = new();
+            {
+                var payloadSlotCount = BufferSize * sendPageSize / PayloadDescriptorSize;
+                this.pendingNetworkSendPayloads = new Payload[payloadSlotCount];
+            }
             this.LogPageSizeBits = Utility.NumBitsPreviousPowerOf2(sendPageSize);
             this.WrapDistance = PageWrapDistance << LogPageSizeBits;
 
@@ -131,12 +139,12 @@ namespace Garnet.client
         public void Dispose()
         {
             Volatile.Write(ref disposed, true);
-            if (outstandingPayloads != null)
+            if (pendingNetworkSendPayloads != null)
             {
-                foreach (var entry in outstandingPayloads)
+                for (var i = 0; i < pendingNetworkSendPayloads.Length; i++)
                 {
-                    if (outstandingPayloads.TryRemove(entry.Key, out var payload))
-                        payload.Dispose();
+                    var entry = Interlocked.Exchange(ref pendingNetworkSendPayloads[i].Entry, null);
+                    entry?.Dispose();
                 }
             }
             FlushEvent.Dispose();
@@ -160,19 +168,47 @@ namespace Garnet.client
             return new(entry, length);
         }
 
-        internal void EnqueuePayloadBuffer(long address, Payload payload)
+        internal void EnqueuePayload(long address, Payload payload)
         {
+            Debug.Assert(epoch.ThisInstanceProtected());
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
 
-            if (!outstandingPayloads.TryAdd(address, payload))
+            var slot = GetPayloadSlot(address);
+            // Ring reuse waits for flush to clear this slot and advance FlushedUntilAddress, so the new address maps to an empty slot.
+            if (Interlocked.CompareExchange(ref pendingNetworkSendPayloads[slot].Entry, payload.Entry, null) != null)
                 throw new InvalidOperationException($"An out-of-line payload is already registered at address {address}.");
 
-            if (Volatile.Read(ref disposed) && outstandingPayloads.TryRemove(address, out var removedPayload))
-                removedPayload.Dispose();
+            Volatile.Write(ref pendingNetworkSendPayloads[slot].Length, payload.Length);
+
+            if (Volatile.Read(ref disposed))
+            {
+                var entry = Interlocked.Exchange(ref pendingNetworkSendPayloads[slot].Entry, null);
+                entry?.Dispose();
+            }
         }
 
-        internal bool DequeuePayloadBuffer(long address, out Payload payload)
-            => outstandingPayloads.TryRemove(address, out payload);
+        internal bool DequeuePayload(long address, out Payload payload)
+        {
+            var slot = GetPayloadSlot(address);
+            var entry = Interlocked.Exchange(ref pendingNetworkSendPayloads[slot].Entry, null);
+            if (entry == null)
+            {
+                payload = default;
+                return false;
+            }
+
+            payload = new(entry, Volatile.Read(ref pendingNetworkSendPayloads[slot].Length));
+            Volatile.Write(ref pendingNetworkSendPayloads[slot].Length, 0);
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        int GetPayloadSlot(long address)
+        {
+            var pageIndex = (int)((address >> LogPageSizeBits) & (BufferSize - 1));
+            var offset = (int)(address & PageSizeMask);
+            return ((pageIndex * PageSize) + offset) / PayloadDescriptorSize;
+        }
 
         /// <summary>
         /// Get tail address
@@ -420,7 +456,6 @@ namespace Garnet.client
         public unsafe void AsyncFlushPayloads(long fromAddress, long untilAddress)
         {
             Debug.Assert(useOutOfLineExecution, "Out-of-line page flushing requires out-of-line mode.");
-            const int recordSize = sizeof(long);
             var startPage = fromAddress >> LogPageSizeBits;
             var endPage = untilAddress >> LogPageSizeBits;
             var count = new CountWrapper
@@ -445,13 +480,13 @@ namespace Garnet.client
                     page.lastOffset = 0;
                 }
 
-                if ((startOffset & (recordSize - 1)) != 0 || (realEndOffset & (recordSize - 1)) != 0)
+                if ((startOffset & (PayloadDescriptorSize - 1)) != 0 || (realEndOffset & (PayloadDescriptorSize - 1)) != 0)
                 {
-                    FailOnPayloadFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {recordSize}-byte records.");
-                    realEndOffset -= (realEndOffset - startOffset) & (recordSize - 1);
+                    FailOnPayloadFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {PayloadDescriptorSize}-byte records.");
+                    realEndOffset -= (realEndOffset - startOffset) & (PayloadDescriptorSize - 1);
                 }
 
-                for (var offset = startOffset; offset < realEndOffset; offset += recordSize)
+                for (var offset = startOffset; offset < realEndOffset; offset += PayloadDescriptorSize)
                 {
                     var address = (flushPage << LogPageSizeBits) | (uint)offset;
                     var key = *(long*)(page.pointer + offset);
@@ -459,12 +494,12 @@ namespace Garnet.client
                     if (key != address)
                     {
                         FailOnPayloadFlush(ref flushFailed, $"Out-of-line payload key {key} does not match its log address {address}.");
-                        if (DequeuePayloadBuffer(address, out var mismatchedPayload))
+                        if (DequeuePayload(address, out var mismatchedPayload))
                             mismatchedPayload.Dispose();
                         continue;
                     }
 
-                    if (!DequeuePayloadBuffer(key, out var payload))
+                    if (!DequeuePayload(key, out var payload))
                     {
                         FailOnPayloadFlush(ref flushFailed, $"No out-of-line payload is registered for address {address}.");
                         continue;
