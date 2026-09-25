@@ -38,6 +38,13 @@ namespace Garnet.networking
         readonly NetworkBufferBudget budget;
 
         /// <summary>
+        /// Configured base sizes, cached off <see cref="networkBufferSettings"/> for the same reason. Reaching
+        /// through the settings object instead puts a dependent load on every receive, which measures ~2% on
+        /// Network.BasicOperations.InlinePing.
+        /// </summary>
+        readonly int configuredReceiveBufferSize, configuredSendBufferSize;
+
+        /// <summary>
         /// Size for a new TLS plaintext send buffer. Send buffers never grow -- an oversized response is
         /// chunked through whatever buffer it was given -- so the size is safe to adapt, and must be: the pool
         /// measures a returned entry of this type against the send target, so an unadapted allocation would be
@@ -46,7 +53,7 @@ namespace Garnet.networking
         protected int BaseSendBufferSize
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => budget.ClampSendBufferSize(networkBufferSettings.sendBufferSize);
+            get => budget.ClampSendBufferSize(configuredSendBufferSize);
         }
 
         /// <summary>
@@ -63,7 +70,7 @@ namespace Garnet.networking
         protected int BaseReceiveBufferSize
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => budget.ClampReceiveBufferSize(networkBufferSettings.initialReceiveBufferSize);
+            get => budget.ClampReceiveBufferSize(configuredReceiveBufferSize);
         }
 
         /// <summary>
@@ -168,6 +175,8 @@ namespace Garnet.networking
             this.networkBufferSettings = networkBufferSettings;
             this.networkPool = networkPool;
             this.budget = networkPool.Budget;
+            this.configuredReceiveBufferSize = networkBufferSettings.initialReceiveBufferSize;
+            this.configuredSendBufferSize = networkBufferSettings.sendBufferSize;
 
             if (!useTLS)
             {
