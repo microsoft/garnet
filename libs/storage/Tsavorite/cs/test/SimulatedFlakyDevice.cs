@@ -572,10 +572,23 @@ namespace Tsavorite.test
     public class ThrowOnNthWriteDevice : StorageDeviceBase
     {
         private readonly IDevice underlying;
+        private readonly ConcurrentQueue<Action> deferred = new();
         private int writeCount;
 
         /// <summary>Number of writes to forward before the next submission throws.</summary>
         public int ThrowWritesAfter = int.MaxValue;
+
+        /// <summary>When set, the completion of the throwing write is invoked, reporting success, immediately before
+        /// the submit throws. Local devices behave this way when they complete inline and then propagate an exception
+        /// out of the same call.</summary>
+        public bool CompleteBeforeThrowing;
+
+        /// <summary>When set, the completion of every forwarded write is held until <see cref="CompleteDeferred"/>, so
+        /// the writes issued before the failing submission stay in flight across it.</summary>
+        public bool DeferWriteCompletions;
+
+        /// <summary>Number of forwarded writes whose completion is still being held.</summary>
+        public int DeferredCount => deferred.Count;
 
         public ThrowOnNthWriteDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
             => this.underlying = underlying;
@@ -603,9 +616,31 @@ namespace Tsavorite.test
             if (Interlocked.Increment(ref writeCount) > ThrowWritesAfter)
             {
                 _ = Interlocked.Decrement(ref writeCount);
+
+                // Report the write as having succeeded before failing the submit, so the caller sees its retirement
+                // bookkeeping run to completion and then an exception out of the same call.
+                if (CompleteBeforeThrowing)
+                    callback(0, numBytesToWrite, context, null);
                 throw new IOException("Simulated submission failure");
             }
-            underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+
+            if (!DeferWriteCompletions)
+            {
+                underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+                return;
+            }
+
+            void Held(uint errorCode, uint numBytes, object ctx, Exception ex)
+                => deferred.Enqueue(() => callback(errorCode, numBytes, ctx, ex));
+
+            underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, Held, context);
+        }
+
+        /// <summary>Invoke the write completions held back by <see cref="DeferWriteCompletions"/>.</summary>
+        public void CompleteDeferred()
+        {
+            while (deferred.TryDequeue(out var complete))
+                complete();
         }
 
         /// <inheritdoc/>
