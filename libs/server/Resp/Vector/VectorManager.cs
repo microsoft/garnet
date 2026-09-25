@@ -727,7 +727,7 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            bool insert;
+            DiskANNService.InsertResult insert;
             bool needsQuantization;
             using (var vectorData = PrepareVectorData(quantType, valueType, values, out errorMsg))
             {
@@ -761,7 +761,7 @@ namespace Garnet.server
                     );
             }
 
-            if (insert)
+            if (insert == DiskANNService.InsertResult.SuccessInsert)
             {
                 if (needsQuantization)
                 {
@@ -770,8 +770,14 @@ namespace Garnet.server
 
                 return VectorManagerResult.OK;
             }
+            else if (insert == DiskANNService.InsertResult.SuccessUpdate)
+            {
 
-            return VectorManagerResult.Duplicate;
+                return VectorManagerResult.Duplicate;
+            }
+
+            errorMsg = "ERR DiskANN result does not indicate success"u8;
+            return VectorManagerResult.BadParams;
         }
 
         /// <summary>

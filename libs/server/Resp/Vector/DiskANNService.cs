@@ -11,6 +11,13 @@ namespace Garnet.server
 {
     internal sealed unsafe class DiskANNService
     {
+        internal enum InsertResult
+        {
+            SuccessInsert,
+            SuccessUpdate,
+            Fail,
+        }
+
         // Term types.
         internal const byte FullVector = 0;
         internal const byte NeighborList = 1;
@@ -89,7 +96,7 @@ namespace Garnet.server
             NativeDiskANNMethods.drop_index(context, index);
         }
 
-        public bool Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<byte> vector, int vectorElementCount, ReadOnlySpan<byte> attributes, out bool needsQuantization)
+        public InsertResult Insert(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<byte> vector, int vectorElementCount, ReadOnlySpan<byte> attributes, out bool needsQuantization)
         {
             var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
             var id_len = id.Length;
@@ -103,19 +110,24 @@ namespace Garnet.server
             if (res == NativeDiskANNMethods.DiskANNInsertResult.Fail)
             {
                 needsQuantization = false;
-                return false;
+                return InsertResult.Fail;
             }
-            else if (res == NativeDiskANNMethods.DiskANNInsertResult.Success)
+            else if (res == NativeDiskANNMethods.DiskANNInsertResult.SuccessInsert)
             {
                 needsQuantization = false;
-                return true;
+                return InsertResult.SuccessInsert;
+            }
+            else if (res == NativeDiskANNMethods.DiskANNInsertResult.SuccessUpdate)
+            {
+                needsQuantization = false;
+                return InsertResult.SuccessInsert;
             }
             else
             {
                 Debug.Assert(res == NativeDiskANNMethods.DiskANNInsertResult.SuccessStartTraining, "Unexpected DiskANNInsertResult");
 
                 needsQuantization = true;
-                return true;
+                return InsertResult.SuccessInsert;
             }
         }
 
@@ -451,8 +463,9 @@ namespace Garnet.server
         public enum DiskANNInsertResult : byte
         {
             Fail = 0,
-            Success = 1,
+            SuccessInsert = 1,
             SuccessStartTraining = 2,
+            SuccessUpdate = 3,
         }
 
         const string DISKANN_GARNET = "diskann_garnet";
