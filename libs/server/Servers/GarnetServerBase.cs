@@ -50,6 +50,17 @@ namespace Garnet.server
         public bool Disposed { get; set; }
 
         /// <summary>
+        /// Backing field for <see cref="IsQuiescing"/>.
+        /// </summary>
+        int isQuiescing = 0;
+
+        /// <inheritdoc />
+        public bool IsQuiescing => isQuiescing != 0;
+
+        /// <inheritdoc />
+        public void BeginQuiesce() => Interlocked.Exchange(ref isQuiescing, 1);
+
+        /// <summary>
         /// Logger
         /// </summary>
         protected readonly ILogger logger;
@@ -153,6 +164,12 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public abstract void Start();
+
+        /// <inheritdoc />
+        public virtual void StopListening()
+        {
+            // Base implementation does nothing; derived classes should override
+        }
 
         /// <inheritdoc />
         public abstract void Close();
