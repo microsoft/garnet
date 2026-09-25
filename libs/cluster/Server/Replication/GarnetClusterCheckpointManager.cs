@@ -145,17 +145,17 @@ namespace Garnet.cluster
         {
             HybridLogRecoveryInfo hlri;
 
-            var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
+            using var device = deviceFactory.Get(checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             ReadInto(device, 0, out byte[] writePad, sizeof(int));
             var size = BitConverter.ToInt32(writePad, 0);
+            ThrowIfInvalidMetadataSize(size, checkpointNamingScheme.LogCheckpointMetadata(logToken));
 
             byte[] body;
             if (writePad.Length >= size + sizeof(int))
                 body = writePad;
             else
                 ReadInto(device, 0, out body, size + sizeof(int));
-            device.Dispose();
 
             body = body.AsSpan().Slice(sizeof(int), size).ToArray();
             hlri = ConvertMetadata(body);

@@ -446,14 +446,14 @@ namespace Tsavorite.test
             public TestableCheckpointManager(INamedDeviceFactoryCreator creator, ICheckpointNamingScheme scheme)
                 : base(creator, scheme) { }
 
-            public byte[] ReadMetadata(IDevice device, int size)
+            public byte[] ReadMetadata(IDevice device, int size, ulong address = 0)
             {
-                ReadInto(device, 0, out var buffer, size);
+                ReadInto(device, address, out var buffer, size);
                 return buffer;
             }
 
-            public void WriteMetadata(IDevice device, byte[] metadata)
-                => WriteInto(device, 0, metadata, metadata.Length);
+            public void WriteMetadata(IDevice device, byte[] metadata, ulong address = 0)
+                => WriteInto(device, address, metadata, metadata.Length);
         }
 
         [Test]
@@ -543,6 +543,241 @@ namespace Tsavorite.test
 
             var ex = Assert.Throws<TsavoriteException>(() => manager.GetCommitMetadata(1));
             StringAssert.Contains("truncated or corrupt", ex.Message);
+        }
+
+        private static readonly TimeSpan MetadataIoTimeout = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Runs <paramref name="operation"/> on its own thread, recording the exception it threw, if any, and the
+        /// sequence stamp at which it returned so its return can be ordered against its own IO completion.
+        /// </summary>
+        private static Thread StartMetadataOperation(GatedCompletionDevice gated, Action operation, Action<int> onReturn, Action<Exception> onFailure)
+            => new(() =>
+            {
+                try
+                {
+                    operation();
+                    onReturn(gated.NextSequence());
+                }
+                catch (Exception ex)
+                {
+                    onFailure(ex);
+                }
+            })
+            { IsBackground = true };
+
+        private static void JoinMetadataOperations(params Thread[] threads)
+        {
+            foreach (var thread in threads)
+                ClassicAssert.IsTrue(thread.Join(MetadataIoTimeout), "a metadata operation never completed; it is waiting for a completion that will not arrive");
+        }
+
+        /// <summary>
+        /// Blocks until the operation thread has parked, which once its IO has reached the gate can only be the wait on
+        /// its own completion. Establishes the order in which the threads entered that wait.
+        /// </summary>
+        private static void WaitUntilWaitingForCompletion(Thread thread)
+        {
+            var deadline = DateTime.UtcNow + MetadataIoTimeout;
+            var spinWait = new SpinWait();
+            while (!thread.ThreadState.HasFlag(ThreadState.WaitSleepJoin))
+            {
+                if (DateTime.UtcNow >= deadline)
+                    Assert.Fail("a metadata operation never reached its completion wait");
+                spinWait.SpinOnce();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void ConcurrentMetadataReadsDoNotConsumeEachOthersCompletions()
+        {
+            // Each metadata read must wait for its own completion. Sharing one completion signal across reads lets a
+            // read wake on another read's completion, copy a buffer the device has not filled yet, and return that
+            // buffer to the pool while its own read is still outstanding.
+            using var manager = new TestableCheckpointManager(
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+
+            var backing = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "metadata-concurrent-reads.dat"), deleteOnClose: true);
+            using var gated = new GatedCompletionDevice(backing);
+            gated.Initialize(1 << 20);
+
+            byte[] metadata = [1, 2, 3, 4];
+            manager.WriteMetadata(gated, metadata);
+
+            gated.Gate = true;
+
+            var results = new byte[2][];
+            var returnStamps = new int[2];
+            var failures = new Exception[2];
+            var threads = new Thread[2];
+            for (var i = 0; i < threads.Length; i++)
+            {
+                var index = i;
+                threads[index] = StartMetadataOperation(gated,
+                    () => results[index] = manager.ReadMetadata(gated, sizeof(int)),
+                    stamp => returnStamps[index] = stamp,
+                    ex => failures[index] = ex);
+            }
+
+            // Start the reads one at a time so each read's gate index matches its thread index. The first read must
+            // be parked in its wait before the second is issued.
+            threads[0].Start();
+            gated.WaitForPending(1, MetadataIoTimeout);
+            WaitUntilWaitingForCompletion(threads[0]);
+
+            // Hold the second reader inside the device call, after its read is captured but before it can reach its
+            // own wait. SemaphoreSlim does not specify which waiter a release wakes, so without this the shared
+            // semaphore could hand completion 1 to read 1 and leave the theft unobserved; with exactly one waiter
+            // there is no such choice to make.
+            gated.HoldCallersAfterCapture();
+            threads[1].Start();
+            gated.WaitForPending(2, MetadataIoTimeout);
+
+            // Deliver the second read's completion while only the first read is waiting. A shared completion signal
+            // releases the first read here, with its own IO not yet issued and its buffer still zeroed.
+            gated.Release(1);
+            gated.WaitForCompletion(1, MetadataIoTimeout);
+
+            gated.ReleaseHeldCallers();
+            gated.Release(0);
+
+            JoinMetadataOperations(threads);
+
+            for (var i = 0; i < threads.Length; i++)
+            {
+                ClassicAssert.IsNull(failures[i], $"read {i} failed: {failures[i]}");
+                CollectionAssert.AreEqual(metadata, results[i].AsSpan(0, metadata.Length).ToArray(),
+                    $"read {i} returned a buffer that its own read had not filled");
+                ClassicAssert.Greater(returnStamps[i], gated.CompletionStamp(i),
+                    $"read {i} returned before its own completion fired, so its pooled buffer was recycled while its read was still outstanding");
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void MetadataWriteDoesNotConsumeAConcurrentReadsCompletion()
+        {
+            // Reads and writes share the same completion machinery, so a write can wake on a read's completion and
+            // return its pooled buffer while the device is still reading from it. The pool zeroes a returned buffer,
+            // so the write then lands as zeros over valid metadata.
+            using var manager = new TestableCheckpointManager(
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+
+            var backing = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "metadata-read-write.dat"), deleteOnClose: true);
+            using var gated = new GatedCompletionDevice(backing);
+            gated.Initialize(1 << 20);
+
+            // The read and the write target different sectors so neither test expectation depends on which of the two
+            // reaches the device first.
+            var writeAddress = (ulong)gated.SectorSize;
+            byte[] seed = [9, 9, 9, 9];
+            byte[] written = [1, 2, 3, 4];
+            manager.WriteMetadata(gated, seed);
+
+            gated.Gate = true;
+
+            byte[] readResult = null;
+            var returnStamps = new int[2];
+            var failures = new Exception[2];
+
+            var writer = StartMetadataOperation(gated,
+                () => manager.WriteMetadata(gated, written, writeAddress),
+                stamp => returnStamps[0] = stamp,
+                ex => failures[0] = ex);
+            var reader = StartMetadataOperation(gated,
+                () => readResult = manager.ReadMetadata(gated, sizeof(int)),
+                stamp => returnStamps[1] = stamp,
+                ex => failures[1] = ex);
+
+            writer.Start();
+            gated.WaitForPending(1, MetadataIoTimeout);
+            WaitUntilWaitingForCompletion(writer);
+
+            // As in the concurrent-reads case, hold the reader after capture so the write is the only waiter when the
+            // read's completion arrives. Relying on the writer having waited first would depend on SemaphoreSlim's
+            // unspecified wake order.
+            gated.HoldCallersAfterCapture();
+            reader.Start();
+            gated.WaitForPending(2, MetadataIoTimeout);
+
+            // Deliver the read's completion while only the write is waiting.
+            gated.Release(1);
+            gated.WaitForCompletion(1, MetadataIoTimeout);
+
+            gated.ReleaseHeldCallers();
+            gated.Release(0);
+
+            JoinMetadataOperations(writer, reader);
+
+            ClassicAssert.IsNull(failures[0], $"the metadata write failed: {failures[0]}");
+            ClassicAssert.IsNull(failures[1], $"the metadata read failed: {failures[1]}");
+            ClassicAssert.Greater(returnStamps[0], gated.CompletionStamp(0),
+                "the metadata write returned before its own completion fired, so its pooled buffer was recycled while the device was still reading from it");
+            ClassicAssert.Greater(returnStamps[1], gated.CompletionStamp(1),
+                "the metadata read returned before its own completion fired");
+            CollectionAssert.AreEqual(seed, readResult.AsSpan(0, seed.Length).ToArray(),
+                "the metadata read returned a buffer that its own read had not filled");
+
+            gated.Gate = false;
+            var roundTripped = manager.ReadMetadata(gated, sizeof(int), writeAddress);
+            CollectionAssert.AreEqual(written, roundTripped.AsSpan(0, written.Length).ToArray(),
+                "the metadata write landed corrupted, so its buffer was recycled before the device finished with it");
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void MetadataOperationDoesNotConsumeAnotherOperationsError()
+        {
+            // A failing operation's error code belongs to that operation alone. Holding it on the manager lets a
+            // healthy read report a failure that happened to a different read, and lets one operation reset an error
+            // another operation has not observed yet.
+            using var manager = new TestableCheckpointManager(
+                new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: true),
+                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir));
+
+            var backing = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "metadata-error-isolation.dat"), deleteOnClose: true);
+            using var gated = new GatedCompletionDevice(backing);
+            gated.Initialize(1 << 20);
+
+            byte[] metadata = [1, 2, 3, 4];
+            manager.WriteMetadata(gated, metadata);
+
+            gated.Gate = true;
+
+            var results = new byte[2][];
+            var failures = new Exception[2];
+            var threads = new Thread[2];
+            for (var i = 0; i < threads.Length; i++)
+            {
+                var index = i;
+                threads[index] = StartMetadataOperation(gated,
+                    () => results[index] = manager.ReadMetadata(gated, sizeof(int)),
+                    _ => { },
+                    ex => failures[index] = ex);
+            }
+
+            threads[0].Start();
+            gated.WaitForPending(1, MetadataIoTimeout);
+            WaitUntilWaitingForCompletion(threads[0]);
+            threads[1].Start();
+            gated.WaitForPending(2, MetadataIoTimeout);
+            WaitUntilWaitingForCompletion(threads[1]);
+
+            // 22 is neither success nor the tolerated ERROR_HANDLE_EOF, so only the first read may report it.
+            gated.Release(0, errorCode: 22);
+            gated.WaitForCompletion(0, MetadataIoTimeout);
+            gated.Release(1);
+
+            JoinMetadataOperations(threads);
+
+            ClassicAssert.IsNotNull(failures[0], "the failed read did not report its own error");
+            StringAssert.Contains("22", failures[0].Message);
+            ClassicAssert.IsNull(failures[1], $"a healthy read reported another operation's error: {failures[1]}");
+            CollectionAssert.AreEqual(metadata, results[1].AsSpan(0, metadata.Length).ToArray(),
+                "the healthy read returned a buffer that its own read had not filled");
         }
     }
 }
