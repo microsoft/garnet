@@ -19,6 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\standalone\Garnet.test\TestUtils.cs" Link="TestUtils.cs" />
+    <Compile Include="..\..\standalone\Garnet.test\V7CheckpointFixture.cs" Link="V7CheckpointFixture.cs" />
     <Compile Include="..\..\standalone\Garnet.test\CredentialManager.cs" Link="CredentialManager.cs" />
     <Compile Include="..\..\standalone\Garnet.test\ServerCredential.cs" Link="ServerCredential.cs" />
     <Compile Include="..\..\standalone\Garnet.test\NUnitLoggerProvider.cs" Link="NUnitLoggerProvider.cs" />

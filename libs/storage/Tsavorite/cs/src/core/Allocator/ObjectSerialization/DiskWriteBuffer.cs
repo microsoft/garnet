@@ -97,6 +97,7 @@ namespace Tsavorite.core
             Debug.Assert(flushLength <= filePosition.RemainingSizeInSegment, $"flushLength ({flushLength}) cannot be greater than filePosition.RemainingSize ({filePosition.RemainingSizeInSegment})");
 
             var spanPtr = memory.GetValidPointer() + flushedUntilPosition;
+            pageWriteCallbackContext.MarkSnapshotWriteAttempted();
             device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, flushLength, callback, pageWriteCallbackContext);
             flushedUntilPosition = currentPosition;
 

@@ -19,7 +19,7 @@ namespace Tsavorite.core
         void AllocatePage(int pageIndex);
 
         /// <summary>Free the page at <paramref name="pageIndex"/></summary>
-        void FreePage(long pageIndex);
+        void FreePage(int pageIndex);
 
         /// <summary>Number of extra overflow pages allocated</summary>
         int OverflowPageCount { get; }
@@ -27,7 +27,7 @@ namespace Tsavorite.core
         /// <summary>Get the page number of a logical address, using the allocator-specific address interpretation.
         /// Main-store allocators mask off the read-cache bit (via <see cref="LogAddress"/>); TsavoriteLog has no read
         /// cache and uses the full address range.</summary>
-        long GetPageOfAddress(long logicalAddress, int logPageSizeBits);
+        int GetPageOfAddress(long logicalAddress, int logPageSizeBits);
     }
 
     /// <summary>
@@ -115,7 +115,7 @@ namespace Tsavorite.core
         ObjectIdMap TransientObjectIdMap { get; }
 
         /// <summary>Return the <see cref="ObjectIdMap"/> for a specific page number (not index)</summary>
-        ObjectIdMap GetPageObjectIdMap(long pageNumber);
+        ObjectIdMap GetPageObjectIdMap(int pageNumber);
 
         /// <summary>Dispose an in-memory log record</summary>
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);

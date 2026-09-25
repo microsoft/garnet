@@ -43,7 +43,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// If true, <see cref="OnDiskRead(ref LogRecord)"/> is called per record loaded from
-        /// disk into memory (recovery, delta log apply, pending reads, push scans).
+        /// disk into memory (recovery, pending reads, push scans).
         /// </summary>
         bool CallOnDiskRead => false;
 

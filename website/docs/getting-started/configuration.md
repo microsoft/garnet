@@ -104,6 +104,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **LogDir** | ```-l```<br/>```--logdir``` | ```string``` |  | Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Uses current directory if unspecified. |
 | **CheckpointDir** | ```-c```<br/>```--checkpointdir``` | ```string``` |  | Storage directory for checkpoints. Uses logdir if unspecified. |
 | **Recover** | ```-r```<br/>```--recover``` | ```bool``` |  | Recover from latest checkpoint and log, if present. |
+| **Upgrade** | ```--upgrade``` | ```bool``` |  | Up-convert a store written by an earlier release, then exit. The object log is rewritten in current format alongside the original, which is retained under a versioned name, and a fresh checkpoint is taken. Requires --recover and tiered storage; an enabled append-only file is replayed and folded into that checkpoint. Has no effect on a store with no object log or one already in the current format. |
 | **DisablePubSub** | ```--no-pubsub``` | ```bool``` |  | Disable pub/sub feature on server. |
 | **PubSubPageSize** | ```--pubsub-pagesize``` | ```string``` | Memory size | Page size of log used for pub/sub (rounds down to power of 2) |
 | **DisableObjects** | ```--no-obj``` | ```bool``` |  | Disable support for data structure objects. |
@@ -279,6 +280,42 @@ to recover, and the incomplete recovery is logged as an error.
 In cluster mode a primary refuses under the same conditions. A replica reports the same error but continues,
 because a full sync from its primary will reconcile it. Cluster startup never purges checkpoint artifacts
 when no valid checkpoint could be selected.
+
+---
+
+## Upgrading a store written by an earlier release
+
+An on-disk store keeps its object log in the format of the release that wrote it. A newer release can read it,
+but only by taking the older decode path, which prevents the object log from evolving. `--upgrade` converts the
+store once, off-line, so later releases read it natively.
+
+```bash
+garnet --upgrade --recover --storage-tier --logdir /var/lib/garnet
+```
+
+The process recovers the store, rewrites the main log in place, writes the object log in the current format to
+`Store/hlog_objs_upgrade`, takes a checkpoint, and exits without accepting connections. It then renames the
+original object log to `Store/hlog_objs_pre_upgrade_<timestamp>` and the converted one into its place. **Start the
+server normally afterwards; do not pass `--upgrade` again.**
+
+Notes:
+
+* `--recover` and tiered storage are required — there is nothing to convert without an existing checkpoint on disk.
+* Cluster mode may stay enabled. The run performs its own offline recovery rather than the role-dependent cluster
+  startup path, so it examines the node's store whether it is a primary or a replica — routing through cluster startup
+  would let a replica finish without reading its checkpoint at all. It never serves requests or establishes
+  replication, and it leaves the node's identity and slot assignment untouched; up-convert each node, then restart it
+  normally.
+* A multi-database store cannot be up-converted. All databases share one object log, so their conversions would
+  overwrite each other; the run fails before renaming anything and leaves the store untouched.
+* The append-only file may stay enabled. The run replays it as part of recovery and folds those records into the
+  checkpoint it takes, so nothing written after the last checkpoint is lost. Records already covered by that
+  checkpoint are skipped by later starts, as usual.
+* A store with no object log (`--no-obj`), or one already in the current format, is left untouched — such a run
+  takes no checkpoint and renames nothing; any later checkpoint is written in the current format regardless.
+* The original object log is retained, not deleted. Remove it once the upgraded store has started successfully.
+* The rename is journaled by `Store/hlog_objs.upgrade-marker`. If the process is interrupted mid-rename the marker
+  remains, an ordinary start refuses to open the store, and re-running `--upgrade` finishes the rename.
 
 ---
 

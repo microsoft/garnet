@@ -96,7 +96,7 @@ namespace Garnet.cluster
         public void CommitLogCheckpointSendFromPrimary(Guid logToken, byte[] checkpointMetadata)
         {
             var recoveryInfo = ConvertMetadata(checkpointMetadata);
-            CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArray());
+            CommitLogCheckpointMetadata(logToken, recoveryInfo.ToByteArrayPreservingVersion());
         }
 
         /// <summary>
@@ -159,7 +159,7 @@ namespace Garnet.cluster
 
             body = body.AsSpan().Slice(sizeof(int), size).ToArray();
             hlri = ConvertMetadata(body);
-            return hlri.ToByteArray();
+            return hlri.ToByteArrayPreservingVersion();
         }
 
         #endregion
