@@ -367,7 +367,7 @@ namespace Garnet.server
         /// RESP error returned to a client refused because the connection limit was reached.
         /// Matches the Redis wire text so existing client error handling applies unchanged.
         /// </summary>
-        static readonly byte[] MaxClientsReachedError = "-ERR max number of clients reached\r\n"u8.ToArray();
+        static ReadOnlySpan<byte> MaxClientsReachedError => "-ERR max number of clients reached\r\n"u8;
 
         /// <summary>
         /// Refuse a connection that exceeded the configured connection limit, telling the client

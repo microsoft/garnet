@@ -403,6 +403,69 @@ namespace Garnet.test
             ClassicAssert.AreEqual("*-1\r\n", reply, "watch must still abort the transaction after a shrink");
         }
 
+        /// <summary>
+        /// AOF replay drives transactions through a session that never reads from a socket, so it never
+        /// reaches the network batch boundary where the shrink checkpoint runs. Replayed procedures watch
+        /// keys while preparing, and every watched key is copied into the transaction scratch allocator, so
+        /// without a boundary of its own that allocator keeps the buffer one wide procedure grew for the
+        /// lifetime of a replica. <c>ReplayShrinkBoundary</c> is the boundary the replay path signals instead.
+        /// </summary>
+        [Test]
+        public void ReplayBoundaryReleasesTransactionScratchBufferWithoutABatchBoundary()
+        {
+            const int Cap = 16 * 1024;
+            const int Interval = Garnet.server.RespServerSession.SessionShrinkCheckInterval;
+
+            StartServer(scratchCap: "16k");
+            using var s = Connect();
+            SendAndDrain(s, Resp("PING"), 1);
+
+            var sessions = ActiveSessions();
+            ClassicAssert.AreEqual(1, sessions.Count, "expected exactly one live session");
+            var txnManager = sessions[0].txnManager;
+            ClassicAssert.IsNotNull(txnManager, "the session should hold a transaction manager");
+
+            var allocator = txnManager.txnScratchBufferAllocator;
+
+            // Grow past the cap the way a watched key does, then release it so nothing is outstanding.
+            _ = allocator.CreateArgSlice(new byte[Cap * 4]);
+            allocator.Reset();
+
+            var grown = allocator.TotalLength;
+            ClassicAssert.Greater(grown, Cap, "the allocator should have grown past its cap");
+
+            // Nothing may be released before the window elapses.
+            for (var i = 0; i < Interval - 1; i++)
+                txnManager.ReplayShrinkBoundary();
+            ClassicAssert.AreEqual(grown, allocator.TotalLength, "released before the checkpoint window elapsed");
+
+            // Release takes two checkpoints: the first records the capacity, the second sees it did not grow.
+            for (var i = 0; i < Interval * 2; i++)
+                txnManager.ReplayShrinkBoundary();
+
+            ClassicAssert.LessOrEqual(allocator.TotalLength, Cap,
+                "the transaction scratch allocator was never released without a network batch boundary");
+        }
+
+        /// <summary>
+        /// The live RESP sessions of the server under test. Reached by reflection because the listeners are
+        /// private to the host.
+        /// </summary>
+        List<Garnet.server.RespServerSession> ActiveSessions()
+        {
+            var field = typeof(GarnetServer).GetField("servers",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            ClassicAssert.IsNotNull(field, "GarnetServer should still hold its listeners in a 'servers' field");
+
+            var listeners = (Garnet.server.IGarnetServer[])field.GetValue(server);
+            var sessions = new List<Garnet.server.RespServerSession>();
+            foreach (var listener in listeners)
+                foreach (var consumer in ((Garnet.server.GarnetServerBase)listener).ActiveConsumers())
+                    if (consumer is Garnet.server.RespServerSession resp)
+                        sessions.Add(resp);
+            return sessions;
+        }
+
         static string ReadFully(Socket s, int expectedLines)
         {
             var sb = new StringBuilder();

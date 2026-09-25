@@ -110,6 +110,9 @@ namespace Garnet.server
         internal int txnStartHead;
         internal int operationCntTxn;
 
+        // Counts replay boundaries between scratch-allocator checkpoints; see ReplayShrinkBoundary.
+        int replayShrinkCountdown = RespServerSession.SessionShrinkCheckInterval;
+
         // Track whether transaction contains write operations
         internal bool PerformWrites;
 
@@ -215,6 +218,26 @@ namespace Garnet.server
         /// itself declines to shrink while anything is outstanding.
         /// </summary>
         internal void ScratchBufferShrinkCheckpoint() => txnScratchBufferAllocator.ShrinkCheckpoint();
+
+        /// <summary>
+        /// Reports a replay boundary from a caller that has no network batch boundary to hang the checkpoint
+        /// on, so the window is counted here instead of being re-implemented by each such caller.
+        /// </summary>
+        /// <remarks>
+        /// AOF replay reaches this manager through replayed transaction procedures: their prepare phase runs
+        /// against the watch API, and every watched key is copied into the transaction scratch allocator. The
+        /// replay session never enters the network batch boundary, so without this the buffer that one wide
+        /// procedure grew stays pinned for the lifetime of a replica. Safe to report while a transaction is in
+        /// flight -- the allocator shrinks only when nothing is outstanding.
+        /// </remarks>
+        internal void ReplayShrinkBoundary()
+        {
+            if (--replayShrinkCountdown > 0)
+                return;
+
+            replayShrinkCountdown = RespServerSession.SessionShrinkCheckInterval;
+            txnScratchBufferAllocator.ShrinkCheckpoint();
+        }
 
         internal void Reset(bool isRunning)
         {

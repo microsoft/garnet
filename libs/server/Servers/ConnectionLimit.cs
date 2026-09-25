@@ -26,9 +26,11 @@ namespace Garnet.server
 
         volatile int limit;
 
-        // Copy-on-write: listeners register during startup, before any accept can run, while
-        // IsWithinLimit reads on IOCP threads. Publishing a fresh array under a lock keeps readers
-        // lock-free without exposing a partially-built list.
+        // Copy-on-write. Readers on IOCP threads are kept lock-free by publishing an already-built
+        // array to a volatile field, not by the lock. Registration runs during startup, before any
+        // accept, so the lock is uncontended; it guards the read-modify-write against a caller that
+        // registers a listener later, because an array that lost one under-counts the population for
+        // the lifetime of the process.
         readonly object registrationLock = new();
         volatile IConnectionSource[] sources = [];
 
