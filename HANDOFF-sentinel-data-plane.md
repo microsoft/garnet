@@ -431,6 +431,87 @@ Important files there include:
 - `garnet_two_replica_receiver.nettrace`
 - `garnet_two_replica_commit_1000ms_primary.nettrace`
 
+### 8.1 Cross-system comparison under the same Sentinel control plane
+
+The numbers above use direct `REPLICAOF` and bypass Sentinel. A follow-up
+measurement drove the same workload through a stock `redis-sentinel-7.4.11`
+control plane with the same workload and host class, including Dragonfly as a
+third system. The comparison is not like-for-like in durability mode (see
+caveats below); its purpose is to give a directional read of where Garnet's
+data-plane cost sits between Redis and Dragonfly on this host class.
+
+| System | Replicas | Requests/s | avg latency | p99 | Primary CPU cores |
+|---|---:|---:|---:|---:|---:|
+| Redis 7.4.11 (`appendfsync no`) | 0 | 290,192 | 2.54 ms | 4.24 ms | 0.98 |
+| Redis 7.4.11 (`appendfsync no`) | 1 | 262,881 | 2.84 ms | 4.86 ms | 0.98 |
+| Redis 7.4.11 (`appendfsync no`) | 2 | 257,202 | 2.92 ms | 4.82 ms | 0.98 |
+| Dragonfly dev (`build-opt`, journal) | 0 | **697,350** | 0.88 ms | 2.69 ms | 2.74 |
+| Dragonfly dev (`build-opt`, journal) | 1 | **400,000** | 1.79 ms | 4.42 ms | 2.03 |
+| Dragonfly dev (`build-opt`, journal) | 2 | **294,118** | 2.54 ms | 6.24 ms | 1.57 |
+| **Garnet (default immediate commit)** | 0 | 133,941 | 5.85 ms | 27.65 ms | 4.25 |
+| **Garnet (default immediate commit)** | 1 | 85,121 | 9.30 ms | 45.50 ms | 3.80 |
+| **Garnet (default immediate commit)** | 2 | 60,503 | 13.08 ms | 80.19 ms | 3.40 |
+| **Garnet (`--aof-commit-freq 1000`)** | 0 | **374,813** | 2.04 ms | 5.93 ms | 4.12 |
+| **Garnet (`--aof-commit-freq 1000`)** | 1 | **268,817** | 2.97 ms | 10.83 ms | 3.21 |
+| **Garnet (`--aof-commit-freq 1000`)** | 2 | **201,045** | 3.97 ms | 11.89 ms | 2.85 |
+
+Method:
+
+- Same workload: `redis-benchmark -t set -n 500000 -c 50 -P 16 -d 256 -r 5000000 --csv`.
+- 3 fresh trials per (system, replica count); median reported.
+- Sentinel drives topology via `SENTINEL MONITOR` + replicas issued `REPLICAOF`.
+- Single 6-core / 15 GiB host, all processes contend.
+- Garnet uses `--aof` + `--sentinel-replication`. Dragonfly uses
+  `--dbfilename=""` (journal streaming, no AOF/RDB).
+- Replication drain watermark (SET watermark on primary, poll replicas until visible):
+  Garnet ~12 ms, Dragonfly ~8 ms, Redis ~4,500 ms (Redis was busy with full sync at
+  watermark time on the first trial, not a steady-state gap).
+
+Caveats (do not collapse these into a single ranking):
+
+- Garnet's standalone Sentinel mode mandates AOF (see Section 3). With
+  immediate commit the primary pays `TsavoriteLog.Commit` per op. Dragonfly
+  uses journal buffering with no per-op fsync; Redis was configured with
+  `appendfsync no` per Section 8. The Garnet-default column therefore pays
+  for synchronous durability the others do not.
+- Garnet's standalone primary is single-threaded for SET writes. Dragonfly's
+  default is `--proactor_threads=4 --num_shards=3` (12 shard threads).
+  Single-thread ingest alone explains a large fraction of the default-commit
+  gap.
+- All processes share 6 cores. Production isolation would change absolute
+  numbers but likely preserve ranking.
+
+Headline finding for the data plane specifically:
+
+- **With batched commit (`--aof-commit-freq 1000`), Garnet closes roughly
+  two-thirds of the default-commit gap.** The lift is 2.8–3.3× across all
+  replica counts (180–232%). p99 latency collapses from 27.7 ms → 5.9 ms at
+  N=0. Drain watermark is unchanged at ~12 ms regardless of commit policy,
+  which isolates the gap to primary ingest rather than replication delivery.
+- **The remaining ~30–46% gap to Dragonfly (post-commit-fix) is
+  architectural, not durability.** Candidate causes in order of likelihood:
+  single-thread primary for SET; AOF record-marshalling cost; Sentinel
+  handshake path. Drain-watermark parity argues against wire-format overhead.
+
+Implication for the roadmap (Section 10):
+
+- The "investigate AOF commit policy separately" item in Section 10 should be
+  elevated from a diagnostic to an explicit default-policy decision. The
+  numbers above are the concrete cost of the current default.
+- The remaining gap after a commit-policy change is the actual question
+  multi-thread primary would need to answer. It is not a wire-format question
+  and not a shared-hub question.
+- Drain-watermark parity with Dragonfly (8–12 ms) means the data plane
+  itself is healthy on this host class; the architectural lever, if any, is
+  on the primary ingest side.
+
+Full report (with TLDR, methodology, per-trial JSON, and CPU breakdowns):
+`~/Projects/perf-artifacts/dragonfly-vs-garnet-sentinel/reports/README.md`.
+Raw data:
+`~/Projects/perf-artifacts/dragonfly-vs-garnet-sentinel/sentinel_perf_results.json`
+and
+`~/Projects/perf-artifacts/dragonfly-vs-garnet-sentinel/sentinel_perf_garnet_1000ms_results.json`.
+
 ## 9. Commit sequence
 
 Core standalone data-plane commits:
