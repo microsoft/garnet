@@ -138,7 +138,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
 
-            var data = GenerateData(800);
+            var data = GenerateData(900);
             var key = $"largerthanmem_{quant}";
             LoadVectorSet(db, key, data, quant);
 
