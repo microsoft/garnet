@@ -103,15 +103,27 @@ namespace Garnet.server
                 // TCP Initialization & Port Reuse
                 listenSocket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-                // Set reuse BEFORE Bind to handle TIME_WAIT states.
-                listenSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                if (OperatingSystem.IsWindows())
+                {
+                    // Windows SO_REUSEADDR is permissive: it lets a socket bind an address and port that
+                    // another socket already holds, so two live servers would both bind successfully and
+                    // the OS would split incoming connections between them. SO_EXCLUSIVEADDRUSE is the
+                    // option that refuses the second bind, which is what makes a port conflict surface as
+                    // a bind failure rather than as two servers answering for one port.
+                    listenSocket.ExclusiveAddressUse = true;
+                }
+                else
+                {
+                    // Set reuse BEFORE Bind to handle TIME_WAIT states.
+                    listenSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
 
-                // On Unix, .NET's ReuseAddress sets both SO_REUSEADDR and SO_REUSEPORT.
-                // Keep address reuse for restarts, but do not let two live servers share a port.
-                if (OperatingSystem.IsLinux())
-                    listenSocket.SetRawSocketOption(1 /* SOL_SOCKET */, 15 /* SO_REUSEPORT */, BitConverter.GetBytes(0));
-                else if (OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD())
-                    listenSocket.SetRawSocketOption(0xffff /* SOL_SOCKET */, 0x0200 /* SO_REUSEPORT */, BitConverter.GetBytes(0));
+                    // On Unix, .NET's ReuseAddress sets both SO_REUSEADDR and SO_REUSEPORT.
+                    // Keep address reuse for restarts, but do not let two live servers share a port.
+                    if (OperatingSystem.IsLinux())
+                        listenSocket.SetRawSocketOption(1 /* SOL_SOCKET */, 15 /* SO_REUSEPORT */, BitConverter.GetBytes(0));
+                    else if (OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD())
+                        listenSocket.SetRawSocketOption(0xffff /* SOL_SOCKET */, 0x0200 /* SO_REUSEPORT */, BitConverter.GetBytes(0));
+                }
             }
 
             acceptEventArg = new SocketAsyncEventArgs();

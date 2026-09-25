@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Net;
 using System.Net.Sockets;
 using Garnet.server;
@@ -20,8 +19,6 @@ namespace Garnet.test
 
         static IPEndPoint GetEndPoint(bool ipv6)
         {
-            if (OperatingSystem.IsWindows())
-                Assert.Ignore("Tests Unix listener reuse semantics.");
             if (ipv6 && !Socket.OSSupportsIPv6)
                 Assert.Ignore("IPv6 is unavailable.");
 
