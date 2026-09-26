@@ -1,0 +1,28 @@
+{
+  "id": "azure/monitoring",
+  "title": "Monitoring Azure Cosmos DB Garnet Cache",
+  "description": "Azure Cosmos DB Garnet Cache provides comprehensive monitoring capabilities through Azure Monitor, enabling you to track performance, troubleshoot issues, and optimize your cache deployment.",
+  "source": "@site/docs/azure/monitoring.md",
+  "sourceDirName": "azure",
+  "slug": "/azure/monitoring",
+  "permalink": "/garnet/docs/azure/monitoring",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/azure/monitoring.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "monitoring",
+    "sidebar_label": "Monitoring",
+    "title": "Monitoring Azure Cosmos DB Garnet Cache"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Security",
+    "permalink": "/garnet/docs/azure/security"
+  },
+  "next": {
+    "title": "FAQ",
+    "permalink": "/garnet/docs/azure/faq"
+  }
+}

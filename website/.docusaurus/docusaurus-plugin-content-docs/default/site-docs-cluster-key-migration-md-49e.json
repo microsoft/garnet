@@ -1,0 +1,29 @@
+{
+  "id": "cluster/key-migration",
+  "title": "Key Migration",
+  "description": "Garnet cluster supports scale up/down operations as a way to mitigate demand variability or failovers.",
+  "source": "@site/docs/cluster/key-migration.md",
+  "sourceDirName": "cluster",
+  "slug": "/cluster/key-migration",
+  "permalink": "/garnet/docs/cluster/key-migration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/cluster/key-migration.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "key-migration",
+    "sidebar_label": "Key Migration",
+    "title": "Key Migration",
+    "slug": "key-migration"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Replication",
+    "permalink": "/garnet/docs/cluster/replication"
+  },
+  "next": {
+    "title": "Onboarding",
+    "permalink": "/garnet/docs/dev/onboarding"
+  }
+}

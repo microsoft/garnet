@@ -1,0 +1,28 @@
+{
+  "id": "extensions/overview",
+  "title": "Overview",
+  "description": "Garnet offers several ways to extend its core functionality:",
+  "source": "@site/docs/extensions/overview.md",
+  "sourceDirName": "extensions",
+  "slug": "/extensions/overview",
+  "permalink": "/garnet/docs/extensions/overview",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/extensions/overview.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "overview",
+    "sidebar_label": "Overview",
+    "title": "Overview"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "JSON Module",
+    "permalink": "/garnet/docs/commands/json"
+  },
+  "next": {
+    "title": "Raw Strings",
+    "permalink": "/garnet/docs/extensions/raw-strings"
+  }
+}

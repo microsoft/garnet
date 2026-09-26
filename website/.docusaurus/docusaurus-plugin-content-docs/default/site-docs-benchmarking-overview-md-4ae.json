@@ -1,0 +1,28 @@
+{
+  "id": "benchmarking/overview",
+  "title": "Overview of Benchmarking",
+  "description": "Client Tool",
+  "source": "@site/docs/benchmarking/overview.md",
+  "sourceDirName": "benchmarking",
+  "slug": "/benchmarking/overview",
+  "permalink": "/garnet/docs/benchmarking/overview",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/benchmarking/overview.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "overview",
+    "sidebar_label": "Overview",
+    "title": "Overview of Benchmarking"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Compaction",
+    "permalink": "/garnet/docs/getting-started/compaction"
+  },
+  "next": {
+    "title": "Results (Resp.bench)",
+    "permalink": "/garnet/docs/benchmarking/results-resp-bench"
+  }
+}
