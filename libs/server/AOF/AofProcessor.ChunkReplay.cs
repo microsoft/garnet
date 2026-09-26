@@ -188,8 +188,10 @@ namespace Garnet.server
         static void ObjectStoreUpsert<TObjectContext>(ChunkedAccumulator acc, TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            // Stream-deserialize the object value from its chunks (no contiguous copy).
+            // Stream-deserialize the object value from its chunks (no contiguous copy), then release the pooled chunk
+            // buffers: the object is materialized and the sequence is no longer referenced.
             var valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
+            acc.ReturnValueChunks();
             fixed (byte* keyPtr = acc.key)
             {
                 var key = (FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset);
@@ -272,6 +274,7 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
+            acc.ReturnValueChunks();
             fixed (byte* keyPtr = acc.key)
             {
                 var key = (FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset);

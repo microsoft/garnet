@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
+using Garnet.common;
 using Tsavorite.core;
 using Tsavorite.core.Allocator.ObjectSerialization;
 
@@ -45,8 +45,8 @@ namespace Garnet.server
         // Overflow value: deep copy of the store value bytes (the store value may change after the epoch is released).
         byte[] valueOverflow;
 
-        // Object value serialized as a list of owned chunks (>2 GB capable); filled via Consume.
-        readonly List<byte[]> objectValueChunks = [];
+        // Object value serialized into pooled chunk buffers (>2 GB capable); filled via Consume.
+        readonly PooledChunkList objectValueChunks = new();
         bool hasObjectValue;
 
         /// <summary>Length of the record's inline portion (in <see cref="UnifiedOutput.SpanByteAndMemory"/>); set by the writer.</summary>
@@ -58,7 +58,7 @@ namespace Garnet.server
             keyOverflow = default;
             hasKey = false;
             valueOverflow = null;
-            objectValueChunks.Clear();
+            objectValueChunks.Reset();
             hasObjectValue = false;
             InlineLength = 0;
         }
@@ -107,34 +107,27 @@ namespace Garnet.server
 
         /// <summary>True if the record has an object value.</summary>
         public bool HasObjectValue => hasObjectValue;
-        /// <summary>The serialized object value as a list of chunks (valid only when <see cref="HasObjectValue"/>).</summary>
-        public List<byte[]> ObjectValueChunks => objectValueChunks;
+        /// <summary>The serialized object value as pooled chunks (valid only when <see cref="HasObjectValue"/>, and until the
+        /// next <see cref="Reset"/>). Enumerate via <see cref="ChunkCount"/> and <see cref="GetChunk"/>.</summary>
+        public int ChunkCount => objectValueChunks.Count;
+
+        /// <summary>The serialized object value chunk at <paramref name="index"/>, bounded to its valid bytes.</summary>
+        public ReadOnlyMemory<byte> GetChunk(int index) => objectValueChunks.GetChunk(index);
 
         /// <summary>Total length of the overflow value or serialized object value (0 if the value is inline).</summary>
-        public long ValueLength
-        {
-            get
-            {
-                if (valueOverflow is not null)
-                    return valueOverflow.Length;
-                long len = 0;
-                foreach (var chunk in objectValueChunks)
-                    len += chunk.Length;
-                return len;
-            }
-        }
+        public long ValueLength => valueOverflow is not null ? valueOverflow.Length : objectValueChunks.TotalLength;
 
         /// <inheritdoc/>
         public int Consume<TContext>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TContext context)
         {
             // This consumer always consumes the whole buffer (returns first.Length + second.Length), so the serializer's ring
             // never wraps: each drain starts clean at offset 0 with all data contiguous in 'first'. Thus 'second' is always empty
-            // here (one owned chunk per drain). The second.ToArray() below is a release-mode safety net only.
+            // here. The second append below is a release-mode safety net only.
             Debug.Assert(second.IsEmpty, "MigrationChunkWriterAccumulator consumes the whole buffer each drain, so the wrapped 'second' span must be empty.");
             if (!first.IsEmpty)
-                objectValueChunks.Add(first.ToArray());
+                objectValueChunks.Append(first);
             if (!second.IsEmpty)
-                objectValueChunks.Add(second.ToArray());
+                objectValueChunks.Append(second);
             return first.Length + second.Length;
         }
 

@@ -49,9 +49,10 @@ namespace Garnet.server
         public byte[] value;
         /// <summary>Bytes of <see cref="value"/> filled so far.</summary>
         public int valueOffset;
-        /// <summary>Value chunks for streamed object values (length not known up front); wrapped as a <see cref="ReadOnlySequence{T}"/>
-        /// by <see cref="GetValueSequence"/> for streaming deserialize with no contiguous copy.</summary>
-        public List<byte[]> valueChunks;
+        /// <summary>Value chunks for streamed object values (length not known up front), accumulated into pooled buffers and
+        /// wrapped as a <see cref="ReadOnlySequence{T}"/> by <see cref="GetValueSequence"/> for streaming deserialize with no
+        /// contiguous copy. Released by <see cref="ReturnValueChunks"/> once the value has been deserialized.</summary>
+        public PooledChunkList valueChunks;
         /// <summary>Input buffer, pre-allocated to the header's full input length.</summary>
         public byte[] input;
         /// <summary>Bytes of <see cref="input"/> filled so far.</summary>
@@ -78,6 +79,10 @@ namespace Garnet.server
 
         /// <summary>Wrap the streamed object value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy).</summary>
         public ReadOnlySequence<byte> GetValueSequence() => ReadOnlySequenceBuilder.FromChunks(valueChunks);
+
+        /// <summary>Return the streamed object value's pooled buffers. Call once the value has been deserialized and the
+        /// sequence from <see cref="GetValueSequence"/> is no longer referenced.</summary>
+        public void ReturnValueChunks() => valueChunks?.Reset();
 
         /// <summary>Verify each component's accumulated length matches the chunk header's declared full length.</summary>
         public void Verify()
@@ -193,7 +198,7 @@ namespace Garnet.server
                 if (hasValue)
                 {
                     if (isObjectValue)
-                        acc.valueChunks = [];
+                        acc.valueChunks = new PooledChunkList();
                     else
                         acc.value = new byte[chunkHeader.overflowValueLength];
                 }
@@ -257,7 +262,7 @@ namespace Garnet.server
                     break;
                 case ChunkedAccumulator.Component.Value:
                     if (acc.isObjectValue)
-                        acc.valueChunks.Add(new ReadOnlySpan<byte>(src, dataLen).ToArray());
+                        acc.valueChunks.Append(new ReadOnlySpan<byte>(src, dataLen));
                     else
                         CopyInto(acc.value, ref acc.valueOffset, src, dataLen);
                     break;
