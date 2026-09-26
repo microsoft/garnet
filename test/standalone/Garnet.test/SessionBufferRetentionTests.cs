@@ -448,6 +448,52 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A replayed procedure also builds its arguments from the <em>session</em> scratch allocator, which
+        /// the replay path resets at the start of every procedure but never shrinks. A completed procedure
+        /// therefore leaves the allocator oversized with a non-zero offset, and a bare shrink checkpoint
+        /// declines in that state, so the buffer one wide procedure grew would stay pinned for the lifetime
+        /// of a replica. The replay boundary resets it first, exactly as the network batch boundary does.
+        /// </summary>
+        [Test]
+        public void ReplayBoundaryReleasesSessionScratchBufferWithoutABatchBoundary()
+        {
+            const int Cap = 16 * 1024;
+            const int Interval = Garnet.server.RespServerSession.SessionShrinkCheckInterval;
+
+            StartServer(scratchCap: "16k");
+            using var s = Connect();
+            SendAndDrain(s, Resp("PING"), 1);
+
+            var sessions = ActiveSessions();
+            ClassicAssert.AreEqual(1, sessions.Count, "expected exactly one live session");
+            var txnManager = sessions[0].txnManager;
+            ClassicAssert.IsNotNull(txnManager, "the session should hold a transaction manager");
+
+            var allocator = txnManager.scratchBufferAllocator;
+
+            // Grow past the cap the way a procedure argument does, and leave the offset non-zero, which is
+            // the state a completed procedure leaves behind: the allocator is reset when the next procedure
+            // starts, not when the previous one ends.
+            _ = allocator.CreateArgSlice(new byte[Cap * 4]);
+
+            var grown = allocator.TotalLength;
+            ClassicAssert.Greater(grown, Cap, "the allocator should have grown past its cap");
+            ClassicAssert.Greater(allocator.ScratchBufferOffset, 0, "a completed procedure leaves the offset non-zero");
+
+            // Nothing may be released before the window elapses.
+            for (var i = 0; i < Interval - 1; i++)
+                txnManager.ReplayShrinkBoundary();
+            ClassicAssert.AreEqual(grown, allocator.TotalLength, "released before the checkpoint window elapsed");
+
+            // Release takes two checkpoints: the first records the capacity, the second sees it did not grow.
+            for (var i = 0; i < Interval * 2; i++)
+                txnManager.ReplayShrinkBoundary();
+
+            ClassicAssert.LessOrEqual(allocator.TotalLength, Cap,
+                "the session scratch allocator was never released without a network batch boundary");
+        }
+
+        /// <summary>
         /// The live RESP sessions of the server under test. Reached by reflection because the listeners are
         /// private to the host.
         /// </summary>

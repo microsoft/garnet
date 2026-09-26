@@ -224,11 +224,17 @@ namespace Garnet.server
         /// on, so the window is counted here instead of being re-implemented by each such caller.
         /// </summary>
         /// <remarks>
-        /// AOF replay reaches this manager through replayed transaction procedures: their prepare phase runs
-        /// against the watch API, and every watched key is copied into the transaction scratch allocator. The
-        /// replay session never enters the network batch boundary, so without this the buffer that one wide
-        /// procedure grew stays pinned for the lifetime of a replica. Safe to report while a transaction is in
-        /// flight -- the allocator shrinks only when nothing is outstanding.
+        /// AOF replay reaches this manager through replayed transaction procedures, which grow both scratch
+        /// allocators: the prepare phase runs against the watch API, copying every watched key into the
+        /// transaction allocator, and the procedure itself builds arguments from the session allocator. The
+        /// replay session never enters the network batch boundary, so without this the buffers one wide
+        /// procedure grew stay pinned for the lifetime of a replica.
+        /// <para>
+        /// The transaction allocator is safe to checkpoint while a transaction is in flight, because it
+        /// shrinks only when nothing is outstanding. The session allocator has no such guard and is reset at
+        /// the start of every procedure rather than at this boundary, so it is quiescent only between
+        /// procedures: it is reset here, as the network batch boundary does, and only outside a transaction.
+        /// </para>
         /// </remarks>
         internal void ReplayShrinkBoundary()
         {
@@ -237,6 +243,14 @@ namespace Garnet.server
 
             replayShrinkCountdown = RespServerSession.SessionShrinkCheckInterval;
             txnScratchBufferAllocator.ShrinkCheckpoint();
+
+            // Between records nothing the previous one allocated is live, so the reset that makes the
+            // checkpoint effective is safe. A transaction still running owns live slices, so skip it.
+            if (state != TxnState.Running)
+            {
+                scratchBufferAllocator.Reset();
+                scratchBufferAllocator.ShrinkCheckpoint();
+            }
         }
 
         internal void Reset(bool isRunning)
