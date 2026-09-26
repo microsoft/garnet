@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Garnet.common;
+using Garnet.networking;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
@@ -276,6 +278,18 @@ namespace Garnet.server
         public bool LatencyMonitor = false;
 
         /// <summary>
+        /// Number of significant decimal digits of value resolution kept by the latency histograms.
+        /// Each histogram is sized by this value, so lowering it from 2 to 1 reduces latency-monitor
+        /// memory several-fold at the cost of coarser reported percentiles (10% rather than 1%).
+        /// </summary>
+        public int LatencyMonitorPrecision = DefaultLatencyMonitorPrecision;
+
+        /// <summary>
+        /// Default number of significant decimal digits kept by the latency histograms.
+        /// </summary>
+        public const int DefaultLatencyMonitorPrecision = 2;
+
+        /// <summary>
         /// Enable per-command usage statistics tracking (calls, failures, rejections).
         /// Exposed via INFO COMMANDSTATS.
         /// </summary>
@@ -342,9 +356,34 @@ namespace Garnet.server
         public int ThreadPoolMaxIOCompletionThreads = 0;
 
         /// <summary>
-        /// Maximum client connection limit
+        /// Default maximum number of simultaneous client connections, matching the Redis
+        /// <c>maxclients</c> default.
         /// </summary>
-        public int NetworkConnectionLimit = -1;
+        public const int DefaultNetworkConnectionLimit = 10000;
+
+        /// <summary>
+        /// Maximum number of simultaneous client connections across all listeners, or -1 for
+        /// unlimited. Settable at runtime through <c>CONFIG SET maxclients</c>.
+        ///
+        /// Every inbound connection counts, including replica and cluster gossip links, and at the
+        /// limit those are refused along with ordinary clients: Garnet accepts every connection on
+        /// the same listener and cannot tell the kinds apart at accept time. Redis also counts
+        /// cluster bus links against <c>maxclients</c>, but accepts them on a separate bus port
+        /// whose accept path applies no limit, so Redis refuses replica links and Garnet refuses
+        /// replica and gossip links alike. Size the limit to leave headroom for peer links, or a
+        /// cluster that reaches it cannot form new ones.
+        ///
+        /// Lowering the limit below the live population does not disconnect anyone. It is admission
+        /// control, evaluated once per accept, so the population drains naturally rather than being
+        /// culled. <c>CLIENT KILL</c> remains the way to shed established connections.
+        ///
+        /// The value is not clamped to the process file-descriptor limit. Redis lowers
+        /// <c>maxclients</c> at startup when <c>ulimit -n</c> cannot support it; Garnet does not,
+        /// because the accepting socket is what fails and it fails per connection rather than
+        /// silently reconfiguring the server out from under the operator. Set <c>ulimit -n</c> to
+        /// comfortably exceed this value.
+        /// </summary>
+        public int NetworkConnectionLimit = DefaultNetworkConnectionLimit;
 
         /// <summary>
         /// Instance of interface to create named device factories
@@ -368,6 +407,184 @@ namespace Garnet.server
         /// Throttle the maximum outstanding network sends per session
         /// </summary>
         public int NetworkSendThrottleMax = 8;
+
+        /// <summary>
+        /// Size of the per-connection network send buffer, and the initial size of the per-connection receive
+        /// buffer (rounds down to a power of 2). Every connection holds one of each, so this value multiplied by
+        /// the connection count is the floor of the server's pinned network memory. Lowering it trades a larger
+        /// number of smaller reads and writes for a smaller per-connection footprint.
+        /// <para>
+        /// The name is direction-agnostic because the value is, and it matches the pre-existing
+        /// <see cref="GarnetServerBase.NetworkBufferSize"/>. The direction-specific bounds around it are
+        /// <see cref="NetworkReceiveBufferMaxSize"/>, <see cref="NetworkReceiveBufferMinSize"/> and
+        /// <see cref="NetworkSendBufferMinSize"/>.
+        /// </para>
+        /// </summary>
+        public string NetworkBufferSize = null;
+
+        /// <summary>
+        /// Largest receive buffer size that the network buffer pool can recycle (rounds down to a power of 2).
+        /// A connection whose payload needs more than this still grows past it, but that oversized buffer is
+        /// allocated outside the pool and released as soon as the payload has been consumed.
+        /// </summary>
+        public string NetworkReceiveBufferMaxSize = null;
+
+        /// <summary>
+        /// Ceiling on the bytes that the shared network buffer pool retains on its idle free lists for reuse
+        /// across connections. This bounds pooled memory independently of the connection count. Not exposed on
+        /// the command line; the standalone server sets it from <c>Options.GetServerOptions()</c>, and leaving it
+        /// unset lets the pool derive its ceiling from the per-level entry bound.
+        /// </summary>
+        public string NetworkBufferPoolSize = null;
+
+        /// <summary>
+        /// Process-wide budget for the network buffers held by live connections, shared across all listeners.
+        /// While connections are few this is slack and every connection gets the full <see cref="NetworkBufferSize"/>;
+        /// once the budget divided by the live buffer count falls below that, the base size for new buffers adapts
+        /// down toward <see cref="NetworkReceiveBufferMinSize"/> so the total stays near the budget. Buffers still grow on
+        /// demand beyond the base size. Zero disables adaptation, restoring unbounded per-connection sizing.
+        /// </summary>
+        public string NetworkBufferMemoryBudget = null;
+
+        /// <summary>
+        /// Smallest base size a receive buffer may be adapted down to when the budget is under pressure.
+        /// </summary>
+        public string NetworkReceiveBufferMinSize = null;
+
+        /// <summary>
+        /// Smallest base size a send buffer may be adapted down to when the budget is under pressure. Higher than
+        /// <see cref="NetworkReceiveBufferMinSize"/> because an undersized send buffer pushes oversized responses onto a
+        /// pooled-rental path.
+        /// </summary>
+        public string NetworkSendBufferMinSize = null;
+
+        /// <summary>
+        /// Capacity that each per-session scratch buffer may retain indefinitely. These buffers grow to fit
+        /// the largest request a session has ever served and are pinned, so without a ceiling a single large
+        /// command permanently enlarges the session. Capacity above the ceiling is released at a periodic
+        /// checkpoint, and only when it did not grow since the previous checkpoint, so a session that keeps
+        /// needing the extra capacity reallocates at most once every few dozen batches.
+        /// Zero disables shrinking, restoring grow-forever behavior.
+        /// </summary>
+        public string SessionScratchBufferMaxRetainedSize = null;
+
+        /// <summary>
+        /// Resolve the per-session scratch buffer retention ceiling. Zero disables shrinking; unset falls
+        /// back to <see cref="DefaultSessionScratchBufferMaxRetainedSize"/>.
+        /// </summary>
+        public int GetSessionScratchBufferMaxRetainedSize()
+        {
+            if (string.IsNullOrEmpty(SessionScratchBufferMaxRetainedSize))
+                return DefaultSessionScratchBufferMaxRetainedSize;
+            var size = ParseSize(SessionScratchBufferMaxRetainedSize, out _);
+            if (size <= 0 || size >= int.MaxValue) return int.MaxValue;
+            return (int)size;
+        }
+
+        /// <summary>
+        /// Default ceiling on retained per-session scratch capacity. Chosen well above the size of ordinary
+        /// command arguments so that normal workloads never reach the shrink path at all.
+        /// </summary>
+        public const int DefaultSessionScratchBufferMaxRetainedSize = 64 * 1024;
+
+        /// <summary>
+        /// Argument capacity that each session's RESP parse state may retain indefinitely. The parse state
+        /// root buffer is sized by the argument count a client sends, so without a ceiling one very wide
+        /// command permanently enlarges the session. Capacity above the ceiling is released at a periodic
+        /// batch checkpoint. Zero disables shrinking.
+        /// </summary>
+        public int SessionParseStateMaxRetainedArgs = DefaultSessionParseStateMaxRetainedArgs;
+
+        /// <summary>
+        /// Resolve the per-session parse state retention ceiling, in arguments.
+        /// </summary>
+        public int GetSessionParseStateMaxRetainedArgs()
+            => SessionParseStateMaxRetainedArgs <= 0 ? int.MaxValue : SessionParseStateMaxRetainedArgs;
+
+        /// <summary>
+        /// Default retained argument capacity, set well above the arity of ordinary commands so that normal
+        /// workloads never reach the shrink path.
+        /// </summary>
+        public const int DefaultSessionParseStateMaxRetainedArgs = 1024;
+
+        /// <summary>
+        /// Resolve the configured network buffer settings, falling back to the built-in defaults.
+        /// </summary>
+        public NetworkBufferSettings GetNetworkBufferSettings()
+        {
+            var sendSize = PowerOf2SizeOrDefault(NetworkBufferSize, BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), nameof(NetworkBufferSize));
+            var maxReceiveSize = PowerOf2SizeOrDefault(NetworkReceiveBufferMaxSize, DefaultMaxReceiveBufferSize, nameof(NetworkReceiveBufferMaxSize));
+            // The pool requires the max receive size to be at least the base size, since it is the top size class.
+            if (maxReceiveSize < sendSize)
+            {
+                logger?.LogInformation("Warning: raising {max} to {name} ({size}), it cannot be smaller",
+                    nameof(NetworkReceiveBufferMaxSize), nameof(NetworkBufferSize), sendSize);
+                maxReceiveSize = sendSize;
+            }
+            // The pool must be able to recycle buffers all the way down to the adaptive floor, otherwise a
+            // buffer clamped below the configured size would fall outside every size class and be dropped
+            // instead of pooled. Only applies when the budget is enabled, so other pools keep their geometry.
+            var minAllocationSize = IsNetworkBufferBudgetEnabled() ? GetNetworkReceiveFloor() : 0;
+            return new NetworkBufferSettings(sendSize, sendSize, maxReceiveSize, minAllocationSize);
+        }
+
+        /// <summary>
+        /// Resolve the ceiling on idle bytes retained by the shared network buffer pool. Zero lets the pool
+        /// derive the ceiling from its per-level entry bound instead.
+        /// </summary>
+        public long GetNetworkBufferPoolSize()
+            => string.IsNullOrEmpty(NetworkBufferPoolSize) ? 0 : ParseSize(NetworkBufferPoolSize, out _);
+
+        /// <summary>
+        /// Build the process-wide network buffer budget. One instance is shared by every listener, so the
+        /// ceiling is genuinely process-wide rather than per-endpoint.
+        /// </summary>
+        public NetworkBufferBudget GetNetworkBufferBudget()
+        {
+            var budgetBytes = string.IsNullOrEmpty(NetworkBufferMemoryBudget) ? DefaultNetworkBufferMemoryBudget : ParseSize(NetworkBufferMemoryBudget, out _);
+            if (budgetBytes <= 0)
+                return NetworkBufferBudget.Disabled;
+
+            var settings = GetNetworkBufferSettings();
+            var ceiling = settings.initialReceiveBufferSize;
+            var receiveFloor = GetNetworkReceiveFloor();
+            var sendFloor = PowerOf2SizeOrDefault(NetworkSendBufferMinSize, DefaultNetworkSendBufferMinSize, nameof(NetworkSendBufferMinSize));
+
+            return new NetworkBufferBudget(budgetBytes, ceiling, receiveFloor, sendFloor);
+        }
+
+        /// <summary>
+        /// Smallest base size a receive buffer may be adapted down to. This is also the pool's smallest size
+        /// class, since a buffer below it could not be recycled.
+        /// </summary>
+        int GetNetworkReceiveFloor()
+            => PowerOf2SizeOrDefault(NetworkReceiveBufferMinSize, DefaultNetworkReceiveBufferMinSize, nameof(NetworkReceiveBufferMinSize));
+
+        /// <summary>
+        /// Whether the adaptive network buffer budget is enabled.
+        /// </summary>
+        bool IsNetworkBufferBudgetEnabled()
+            => (string.IsNullOrEmpty(NetworkBufferMemoryBudget) ? DefaultNetworkBufferMemoryBudget : ParseSize(NetworkBufferMemoryBudget, out _)) > 0;
+
+        const long DefaultNetworkBufferMemoryBudget = 1L << 30;
+        const int DefaultNetworkReceiveBufferMinSize = 1 << 14;
+        const int DefaultNetworkSendBufferMinSize = 1 << 16;
+
+        const int DefaultMaxReceiveBufferSize = 1 << 20;
+
+        int PowerOf2SizeOrDefault(string value, int defaultValue, string name)
+        {
+            if (string.IsNullOrEmpty(value)) return defaultValue;
+            var size = ParseSize(value, out _);
+            var adjusted = PreviousPowerOf2(size);
+            if (size != adjusted)
+                logger?.LogInformation("Warning: using lower {name} than specified (power of 2)", name);
+            if (adjusted < 1 << 10)
+                throw new GarnetException($"{name} must be at least 1k");
+            if (adjusted > int.MaxValue)
+                throw new GarnetException($"{name} must not exceed {int.MaxValue}");
+            return (int)adjusted;
+        }
 
         /// <summary>
         /// Whether to use scatter-gather IO for a run of contiguous GET operations - useful to saturate

@@ -25,8 +25,18 @@ namespace Garnet.server
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
         readonly NetworkBufferSettings networkBufferSettings;
+
+        /// <summary>
+        /// Process-wide budget for live connection buffers. Shared across all listeners so the ceiling is
+        /// genuinely process-wide rather than per-endpoint.
+        /// </summary>
+        readonly NetworkBufferBudget networkBufferBudget;
+
+        /// <summary>
+        /// Process-wide budget for live connection buffers.
+        /// </summary>
+        public NetworkBufferBudget NetworkBufferBudget => networkBufferBudget;
         readonly LimitedFixedBufferPool networkPool;
-        readonly int networkConnectionLimit;
         readonly string unixSocketPath;
         readonly UnixFileMode unixSocketPermission;
 
@@ -64,27 +74,43 @@ namespace Garnet.server
         /// <param name="networkBufferSize"></param>
         /// <param name="tlsOptions"></param>
         /// <param name="networkSendThrottleMax"></param>
-        /// <param name="networkConnectionLimit"></param>
+        /// <param name="connectionLimit">Process-wide connection admission control, shared across listeners. Null enforces no limit.</param>
         /// <param name="unixSocketPath"></param>
         /// <param name="unixSocketPermission"></param>
+        /// <param name="networkBufferSettings">Send/receive buffer sizing. Defaults to the built-in sizes when null.</param>
+        /// <param name="networkBufferPoolSize">Ceiling on idle bytes retained by the shared buffer pool. Zero uses the pool default.</param>
+        /// <param name="networkBufferBudget">Process-wide budget for live connection buffers, shared across listeners. Null disables adaptation.</param>
         /// <param name="logger"></param>
         public GarnetServerTcp(
             EndPoint endpoint,
             int networkBufferSize = default,
             IGarnetTlsOptions tlsOptions = null,
             int networkSendThrottleMax = 8,
-            int networkConnectionLimit = -1,
+            ConnectionLimit connectionLimit = null,
             string unixSocketPath = null,
             UnixFileMode unixSocketPermission = default,
+            NetworkBufferSettings networkBufferSettings = null,
+            long networkBufferPoolSize = 0,
+            NetworkBufferBudget networkBufferBudget = null,
             ILogger logger = null)
             : base(endpoint, networkBufferSize, logger)
         {
-            this.networkConnectionLimit = networkConnectionLimit;
+            // A listener given no shared limit gets its own, so it still honours CONFIG SET and so
+            // that no process-wide static accumulates references to every listener ever created.
+            ConnectionLimit = connectionLimit ?? new ConnectionLimit(ConnectionLimit.Unlimited);
+            ConnectionLimit.Register(this);
+
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
-            var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
-            this.networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
-            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.ServerNetwork, logger: logger);
+            if (networkBufferSettings == null)
+            {
+                var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
+                networkBufferSettings = new NetworkBufferSettings(serverBufferSize, serverBufferSize);
+            }
+            this.networkBufferSettings = networkBufferSettings;
+            this.networkBufferBudget = networkBufferBudget ?? NetworkBufferBudget.Disabled;
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: PoolOwnerType.ServerNetwork, maxPooledBytes: networkBufferPoolSize, budget: this.networkBufferBudget, logger: logger);
+            networkBufferSettings.Log(logger, "GarnetServerTcp");
             this.unixSocketPath = unixSocketPath;
             this.unixSocketPermission = unixSocketPermission;
 
@@ -238,7 +264,7 @@ namespace Garnet.server
             if (activeHandlerCount >= 0)
             {
                 var currentActiveHandlerCount = Interlocked.Increment(ref activeHandlerCount);
-                if (currentActiveHandlerCount > 0 && (networkConnectionLimit == -1 || currentActiveHandlerCount <= networkConnectionLimit))
+                if (currentActiveHandlerCount > 0 && ConnectionLimit.IsWithinLimit())
                 {
                     string remoteEndpointName = null;
                     try
@@ -312,7 +338,7 @@ namespace Garnet.server
                 else
                 {
                     _ = Interlocked.Decrement(ref activeHandlerCount);
-                    e.AcceptSocket.Dispose();
+                    RejectConnection(e.AcceptSocket);
                 }
             }
             return true;
@@ -335,6 +361,50 @@ namespace Garnet.server
                 logger?.LogError(ex, "Error calling Start on network handler");
                 handler.Dispose();
             }
+        }
+
+        /// <summary>
+        /// RESP error returned to a client refused because the connection limit was reached.
+        /// Matches the Redis wire text so existing client error handling applies unchanged.
+        /// </summary>
+        static ReadOnlySpan<byte> MaxClientsReachedError => "-ERR max number of clients reached\r\n"u8;
+
+        /// <summary>
+        /// Refuse a connection that exceeded the configured connection limit, telling the client
+        /// why before closing so the failure is diagnosable rather than an unexplained reset.
+        /// </summary>
+        /// <param name="socket">The accepted socket to refuse and dispose.</param>
+        void RejectConnection(Socket socket)
+        {
+            IncrementConnectionsRejected();
+
+            // Only plaintext clients can be told. Under TLS the peer has sent a ClientHello and is
+            // waiting for a ServerHello, so writing a RESP error would be a protocol violation and
+            // would surface as a handshake failure -- pointing the operator at certificates rather
+            // than at capacity. For TLS the rejected_connections metric is the whole remedy.
+            if (tlsOptions == null)
+            {
+                try
+                {
+                    // Best effort, and deliberately non-blocking: reaching the limit means the
+                    // server is already under connection pressure, so a blocking write here would
+                    // serialize refusals on the accept path and amplify the overload. The payload
+                    // is a few dozen bytes into an empty send buffer, so it fits in practice; if it
+                    // ever does not, dropping it is better than stalling the accept loop.
+                    socket.Blocking = false;
+                    _ = socket.Send(MaxClientsReachedError);
+                }
+                catch (SocketException ex)
+                {
+                    // Includes WouldBlock, and a peer that reset between accept and here.
+                    logger?.LogDebug("Could not send connection-limit error to client (SocketErrorCode: {errorCode})", ex.SocketErrorCode);
+                }
+                catch (ObjectDisposedException) { }
+            }
+
+            // Graceful close: no linger is configured anywhere, so the kernel flushes anything
+            // queued above before the FIN. An abortive close would discard the error.
+            socket.Dispose();
         }
 
         /// <summary>

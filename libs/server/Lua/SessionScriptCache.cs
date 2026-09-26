@@ -4,6 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Garnet.common;
 using Garnet.server.ACL;
@@ -25,8 +27,26 @@ namespace Garnet.server
         readonly StoreWrapper storeWrapper;
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly ILogger logger;
-        readonly Dictionary<ScriptHashKey, (LuaRunner Runner, LuaScriptHandle Handle)> scriptCache = [];
+        readonly Dictionary<ScriptHashKey, CacheEntry> scriptCache = [];
         readonly byte[] hash = new byte[SHA1Len / 2];
+
+        // Largest number of compiled scripts this session retains, or 0 for no limit.
+        readonly int scriptCacheSize;
+
+        // Monotonic recency stamp. Incremented on every cache hit and insert, so the entry
+        // holding the smallest value is the least recently used one.
+        long scriptCacheClock;
+
+        /// <summary>
+        /// One cached script: the session's compiled runner, the global handle it was compiled
+        /// from, and the recency stamp used to choose an eviction victim.
+        /// </summary>
+        struct CacheEntry
+        {
+            public LuaRunner Runner;
+            public LuaScriptHandle Handle;
+            public long LastUsed;
+        }
 
         readonly LuaMemoryManagementMode memoryManagementMode;
         readonly int? memoryLimitBytes;
@@ -57,7 +77,7 @@ namespace Garnet.server
             this.timeoutManager = timeoutManager;
             this.logger = logger;
 
-            scratchBufferNetworkSender = new ScratchBufferNetworkSender();
+            scratchBufferNetworkSender = new ScratchBufferNetworkSender(storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
             // Pass storeWrapper.subscribeBroker so Lua scripts can use publish-side Pub/Sub
             // commands (e.g. redis.call('PUBLISH', ...)) consistently with network sessions.
             // SUBSCRIBE/PSUBSCRIBE remain blocked by the NoScript bitmap.
@@ -68,6 +88,7 @@ namespace Garnet.server
             memoryLimitBytes = storeWrapper.serverOptions.LuaOptions.GetMemoryLimitBytes();
             logMode = storeWrapper.serverOptions.LuaOptions.LogMode;
             allowedFunctions = storeWrapper.serverOptions.LuaOptions.AllowedFunctions;
+            scriptCacheSize = storeWrapper.serverOptions.LuaOptions.ScriptCacheSize;
         }
 
         public void Dispose()
@@ -75,6 +96,23 @@ namespace Garnet.server
             Clear();
             scratchBufferNetworkSender.Dispose();
             processor.Dispose();
+        }
+
+        /// <summary>
+        /// Runs a shrink checkpoint on the script processor's scratch buffers.
+        /// </summary>
+        /// <remarks>
+        /// The processor is a <see cref="RespServerSession"/> that never reads from a network, so it has no
+        /// batch boundary of its own to drive the checkpoint from, and Lua resets its buffer many times
+        /// within a single script -- once per string while decoding JSON, for instance -- so those resets
+        /// cannot drive it either. The owning network session calls this from its own checkpoint, outside any
+        /// script execution. Both the buffer <c>redis.call</c> requests are built in and the one their replies
+        /// are written into are covered.
+        /// </remarks>
+        internal void ScratchBufferShrinkCheckpoint()
+        {
+            processor.scratchBufferBuilder.ResetAndCheckpointNow();
+            scratchBufferNetworkSender.ShrinkCheckpoint();
         }
 
         public void SetUserHandle(UserHandle userHandle)
@@ -139,14 +177,16 @@ namespace Garnet.server
         /// </summary>
         public bool TryGetFromDigest(ScriptHashKey digest, out LuaRunner scriptRunner, out LuaScriptHandle scriptHandle)
         {
-            if (!scriptCache.TryGetValue(digest, out var loadedTuple))
+            ref var entry = ref CollectionsMarshal.GetValueRefOrNullRef(scriptCache, digest);
+            if (Unsafe.IsNullRef(ref entry))
             {
                 scriptRunner = null;
                 scriptHandle = null;
                 return false;
             }
 
-            (scriptRunner, scriptHandle) = loadedTuple;
+            scriptRunner = entry.Runner;
+            scriptHandle = entry.Handle;
 
             // If the global cache has been invalidated, remove from the session cache
             if (scriptHandle.IsDisposed)
@@ -158,6 +198,9 @@ namespace Garnet.server
                 scriptHandle = null;
                 return false;
             }
+
+            // Mark as most recently used, so eviction prefers colder entries.
+            entry.LastUsed = ++scriptCacheClock;
 
             return true;
         }
@@ -253,7 +296,10 @@ namespace Garnet.server
                     digestOnHeap = storeKeyDigest;
 
                     luaScriptHandle ??= new(generatedBytecode.Data);
-                    scriptCache.Add(storeKeyDigest, (runner, luaScriptHandle));
+
+                    EvictIfAtCapacity();
+
+                    scriptCache.Add(storeKeyDigest, new CacheEntry { Runner = runner, Handle = luaScriptHandle, LastUsed = ++scriptCacheClock });
 
                     // On first script load, register for timeout notifications
                     //
@@ -284,16 +330,72 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Attempt to remove the script with the given hash from the cache.
+        /// Number of compiled scripts currently held. For tests.
         /// </summary>
-        internal void Remove(ScriptHashKey key)
+        internal int CachedScriptCount => scriptCache.Count;
+
+        /// <summary>
+        /// Whether the script with the given digest is currently held. For tests.
+        /// </summary>
+        internal bool ContainsDigest(ReadOnlySpan<byte> digest)
+        => scriptCache.ContainsKey(new ScriptHashKey(digest));
+
+        /// <summary>
+        /// Make room for one more entry when the cache is at its configured capacity, by evicting
+        /// the least recently used script.
+        /// </summary>
+        /// <remarks>
+        /// Safe against a running script: every command that inserts into this cache (EVAL, EVALSHA
+        /// and SCRIPT LOAD) is flagged NoScript, so no insert -- and therefore no eviction -- can be
+        /// reached from inside an executing script. Disposing a runner closes its Lua state, which
+        /// would corrupt the single-threaded allocator if it were still in use.
+        ///
+        /// Safe for correctness: this is a session-local cache in front of the global script cache,
+        /// so an EVALSHA that misses here recompiles from the global cache rather than failing. The
+        /// only cost of evicting too eagerly is that recompilation.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void EvictIfAtCapacity()
         {
-            if (scriptCache.Remove(key, out var loadedTuple))
+            if (scriptCacheSize <= 0 || scriptCache.Count < scriptCacheSize)
+            {
+                return;
+            }
+
+            var oldestStamp = long.MaxValue;
+            ScriptHashKey oldestKey = default;
+            var found = false;
+
+            foreach (var candidate in scriptCache)
+            {
+                if (candidate.Value.LastUsed < oldestStamp)
+                {
+                    oldestStamp = candidate.Value.LastUsed;
+                    oldestKey = candidate.Key;
+                    found = true;
+                }
+            }
+
+            if (found && scriptCache.Remove(oldestKey, out var evicted))
             {
                 // Intentionally NOT disposing the script handle
                 //
                 // Removing from a session cache does not invalidate the global cache
-                loadedTuple.Runner.Dispose();
+                evicted.Runner.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Attempt to remove the script with the given hash from the cache.
+        /// </summary>
+        internal void Remove(ScriptHashKey key)
+        {
+            if (scriptCache.Remove(key, out var entry))
+            {
+                // Intentionally NOT disposing the script handle
+                //
+                // Removing from a session cache does not invalidate the global cache
+                entry.Runner.Dispose();
             }
         }
 
@@ -310,12 +412,12 @@ namespace Garnet.server
             timeoutRegistration?.Dispose();
             timeoutRegistration = null;
 
-            foreach (var (runner, _) in scriptCache.Values)
+            foreach (var entry in scriptCache.Values)
             {
                 // Intentionally NOT disposing the script handles
                 //
                 // Removing from a session cache does not invalidate the global cache
-                runner.Dispose();
+                entry.Runner.Dispose();
             }
 
             scriptCache.Clear();

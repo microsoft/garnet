@@ -33,7 +33,11 @@ namespace HdrHistogram
     /// </remarks>
     public class LongHistogram : HistogramBase
     {
-        private readonly long[] _counts;
+        /// <summary>
+        /// Counts array, dropped by <see cref="Release"/> and <see cref="Return"/> on paths that do not
+        /// synchronise with recorders, so every reader must load it into a local exactly once.
+        /// </summary>
+        private long[] _counts;
         private long _totalCount;
 
         /// <summary>
@@ -101,10 +105,40 @@ namespace HdrHistogram
         }
 
         /// <summary>
+        /// Whether the counts array has been handed back to the pool, after which the histogram holds no
+        /// data and must not be read or recorded into.
+        /// </summary>
+        public bool IsReturned => _counts == null;
+
+        /// <summary>
         /// Return the histogram long array to the pool for recycling.
         /// </summary>
+        /// <remarks>
+        /// Only for a histogram the caller owns outright, such as a copy taken for reporting. Use
+        /// <see cref="Release"/> where a concurrent recorder may still hold the array.
+        /// </remarks>
         public void Return()
-            => ArrayPool<long>.Shared.Return(_counts);
+        {
+            var counts = _counts;
+            if (counts == null)
+                return;
+
+            // Dropped before the array goes back to the shared pool, so a record after this point
+            // throws here instead of silently writing into another session's histogram.
+            _counts = null;
+            ArrayPool<long>.Shared.Return(counts);
+        }
+
+        /// <summary>
+        /// Releases the counts array without handing it back to the shared pool.
+        /// </summary>
+        /// <remarks>
+        /// For a histogram whose recorder is not quiesced at release time, such as a client disposed while
+        /// its receive callback is still completing replies. Pooling the array there would let another
+        /// consumer rent it and receive that write. A recorder that reads the field after this point drops
+        /// its sample; one that read it before writes into an array nothing else can reach.
+        /// </remarks>
+        public void Release() => _counts = null;
 
         /// <summary>
         /// Gets the total number of recorded values.
@@ -133,6 +167,36 @@ namespace HdrHistogram
         }
 
         /// <summary>
+        /// Copies this histogram, reading the counts array exactly once.
+        /// </summary>
+        /// <param name="copy">The copy, or null once the array has been released.</param>
+        /// <returns>True if a copy was taken.</returns>
+        /// <remarks>
+        /// <see cref="Release"/> runs on a thread that does not synchronise with readers, so testing
+        /// <see cref="IsReturned"/> and then calling <see cref="Copy"/> reads the field twice and can
+        /// dereference an array dropped in between.
+        /// </remarks>
+        public bool TryCopy(out LongHistogram copy)
+        {
+            var counts = _counts;
+            if (counts is null)
+            {
+                copy = null;
+                return false;
+            }
+
+            copy = new LongHistogram(LowestTrackableValue, HighestTrackableValue, NumberOfSignificantValueDigits);
+            Array.Copy(counts, copy._counts, CountsArrayLength);
+
+            // Derive the total from the counts that were copied rather than reading the live one. A recorder
+            // that increments between the copy and that read would leave a total the copied counts cannot
+            // reach, and GetValueAtPercentile scales its target by the total and then walks the counts, so it
+            // would run off the end and throw.
+            copy.EstablishInternalTackingValues(CountsArrayLength);
+            return true;
+        }
+
+        /// <summary>
         /// Gets the number of recorded values at a given index.
         /// </summary>
         /// <param name="index">The index to get the count for</param>
@@ -158,7 +222,11 @@ namespace HdrHistogram
         /// <param name="index">The index to increment the count at.</param>
         protected override void IncrementCountAtIndex(int index)
         {
-            _counts[index]++;
+            var counts = _counts;
+            if (counts is null)
+                return;
+
+            counts[index]++;
             _totalCount++;
         }
 
@@ -169,7 +237,11 @@ namespace HdrHistogram
         /// <param name="addend">The amount to increment by.</param>
         protected override void AddToCountAtIndex(int index, long addend)
         {
-            _counts[index] += addend;
+            var counts = _counts;
+            if (counts is null)
+                return;
+
+            counts[index] += addend;
             _totalCount += addend;
         }
 
@@ -178,7 +250,9 @@ namespace HdrHistogram
         /// </summary>
         protected override void ClearCounts()
         {
-            Array.Clear(_counts, 0, _counts.Length);
+            var counts = _counts;
+            if (counts != null)
+                Array.Clear(counts, 0, counts.Length);
             _totalCount = 0;
         }
 
@@ -188,7 +262,10 @@ namespace HdrHistogram
         /// <param name="target">The array to write each count value into.</param>
         protected override void CopyCountsInto(long[] target)
         {
-            Array.Copy(_counts, target, Math.Min(_counts.Length, target.Length));
+            var counts = _counts;
+            if (counts == null)
+                return;
+            Array.Copy(counts, target, Math.Min(counts.Length, target.Length));
         }
     }
 }

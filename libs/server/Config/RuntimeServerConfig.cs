@@ -190,6 +190,12 @@ namespace Garnet.server
             Set(ServerConfigType.OBJECT_SCAN_COUNT_LIMIT, "object-scan-count-limit", ConfigKind.Int32, 0, int.MaxValue);
             Set(ServerConfigType.SG_GET, "sg-get", ConfigKind.Bool, 0, 1);
 
+            // Process-wide connection admission control. The listeners share one ConnectionLimit
+            // object, so the update action pushes straight into the live accept path -- no restart
+            // and no lifecycle task. -1 disables the limit.
+            Set(ServerConfigType.MAXCLIENTS, "maxclients", ConfigKind.Int32, -1, int.MaxValue,
+                updateAction: ApplyMaxClientsUpdate);
+
             // AOF size-limit enforcement frequency (seconds): the background checkpoint-enforcement task
             // re-reads this each iteration, so CONFIG SET takes effect on the running task.
             Set(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY, "aof-size-limit-enforce-frequency",
@@ -258,6 +264,7 @@ namespace Garnet.server
             values[(int)ServerConfigType.SLOWLOG_LOG_SLOWER_THAN] = o.SlowLogThreshold;
             values[(int)ServerConfigType.OBJECT_SCAN_COUNT_LIMIT] = o.ObjectScanCountLimit;
             values[(int)ServerConfigType.SG_GET] = o.EnableScatterGatherGet ? 1 : 0;
+            values[(int)ServerConfigType.MAXCLIENTS] = o.NetworkConnectionLimit;
             values[(int)ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY] = o.AofSizeLimitEnforceFrequencySecs;
             values[(int)ServerConfigType.AOF_COMMIT_FREQ] = o.CommitFrequencyMs;
             values[(int)ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ] = o.ExpiredObjectCollectionFrequencySecs;
@@ -488,6 +495,30 @@ namespace Garnet.server
         {
             error = null;
             config.owner?.ApplyAofSyncMaxLagBytes(newValue);
+            return true;
+        }
+
+        // Enacts a maxclients change by writing the new ceiling into the ConnectionLimit the
+        // listeners consult on every accept. Every listener shares one instance, so assigning
+        // through each of them is idempotent; iterating rather than taking the first keeps this
+        // correct even if a host ever gives its listeners separate limits.
+        //
+        // Lowering below the live population disconnects nobody: the accept path only refuses new
+        // connections, which is also how Redis treats a lowered maxclients.
+        static bool ApplyMaxClientsUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        {
+            error = null;
+
+            var servers = config.owner?.Servers;
+            if (servers == null)
+                return true;
+
+            foreach (var server in servers)
+            {
+                if (server is GarnetServerBase serverBase)
+                    serverBase.ConnectionLimit.Limit = (int)newValue;
+            }
+
             return true;
         }
 

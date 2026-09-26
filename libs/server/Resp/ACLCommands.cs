@@ -69,8 +69,7 @@ namespace Garnet.server
 
             foreach (var userHandle in userHandles)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(userHandle.Value.User.DescribeUser(), ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(userHandle.Value.User.DescribeUser());
             }
 
             return true;
@@ -98,8 +97,7 @@ namespace Garnet.server
 
             foreach (var user in users)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(user.Key, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(user.Key);
             }
 
             return true;
@@ -500,8 +498,7 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteAsciiBulkString("commands", ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteAsciiBulkString(user.GetEnabledCommandsDescription(), ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(user.GetEnabledCommandsDescription());
             }
 
             return true;

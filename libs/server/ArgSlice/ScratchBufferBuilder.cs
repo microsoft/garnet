@@ -51,11 +51,34 @@ namespace Garnet.server
         int outstandingSlices;
 #endif
 
+        /// <summary>
+        /// Capacity retained indefinitely. <see cref="int.MaxValue"/> disables shrinking.
+        /// </summary>
+        readonly int maxRetainedCapacity;
+
+        /// <summary>
+        /// Capacity observed at the previous checkpoint. A buffer that has not grown since then is not
+        /// earning its keep, which is the demand signal the policy acts on.
+        /// </summary>
+        int checkpointCapacity;
+
         /// <summary>Current offset in scratch buffer</summary>
         internal int ScratchBufferOffset => scratchBufferOffset;
 
-        public ScratchBufferBuilder()
+        /// <summary>Current capacity of the backing buffer.</summary>
+        internal int ScratchBufferCapacity => scratchBuffer?.Length ?? 0;
+
+        /// <summary>
+        /// Creates a <see cref="ScratchBufferBuilder"/>.
+        /// </summary>
+        /// <param name="maxRetainedCapacity">
+        /// Capacity retained indefinitely across resets. A buffer that grew beyond this to serve a large
+        /// request is released once the session stops needing it, so one large command does not permanently
+        /// enlarge the session. Defaults to <see cref="int.MaxValue"/>, i.e. grow forever.
+        /// </param>
+        public ScratchBufferBuilder(int maxRetainedCapacity = int.MaxValue)
         {
+            this.maxRetainedCapacity = maxRetainedCapacity <= 0 ? int.MaxValue : maxRetainedCapacity;
         }
 
         /// <summary>
@@ -67,6 +90,50 @@ namespace Garnet.server
 #if DEBUG
             outstandingSlices = 0;
 #endif
+        }
+
+        /// <summary>
+        /// Resets the buffer and runs a shrink checkpoint immediately, for a builder whose owning session has
+        /// no batch boundary of its own. Used for the Lua script processor's builder, which is driven from the
+        /// outer network session's checkpoint instead.
+        /// </summary>
+        internal void ResetAndCheckpointNow()
+        {
+            Reset();
+            ShrinkCheckpoint();
+        }
+
+        /// <summary>
+        /// Releases a buffer that has stayed above <see cref="maxRetainedCapacity"/> without growing since
+        /// the previous checkpoint.
+        /// </summary>
+        /// <remarks>
+        /// Cold by construction, and the caller owns the interval. Only a caller that runs once per batch may
+        /// drive this: several callers reset far more often -- notably the Lua interpreter, which resets per
+        /// string while decoding a JSON document -- and checkpointing from those would shrink a buffer the
+        /// very next element re-grows. The owning session counts the interval, so a session with several
+        /// capped buffers pays one countdown for all of them. A reset must already have invalidated every
+        /// outstanding slice.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal void ShrinkCheckpoint()
+        {
+            if (maxRetainedCapacity == int.MaxValue)
+                return;
+
+            var capacity = scratchBuffer?.Length ?? 0;
+            if (capacity > maxRetainedCapacity && capacity <= checkpointCapacity)
+            {
+                // Reallocate at the baseline rather than releasing outright: callers such as
+                // WriteArgument dereference scratchBufferHead without a null check, relying on the
+                // buffer having been established by an earlier call. Shrinking to a smaller live
+                // buffer keeps that invariant exactly as any expansion would.
+                scratchBuffer = GC.AllocateArray<byte>(maxRetainedCapacity, pinned: true);
+                scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(scratchBuffer));
+                capacity = maxRetainedCapacity;
+            }
+
+            checkpointCapacity = capacity;
         }
 
         /// <summary>
@@ -339,6 +406,17 @@ namespace Garnet.server
             scratchBufferOffset = (int)(ptr - scratchBufferHead);
         }
 
+        /// <summary>
+        /// Capacity a request for <paramref name="length"/> bytes occupies once rounded to a size class.
+        /// </summary>
+        /// <remarks>
+        /// Rounds to the power of two at or above the request, so a request for exactly a power of two is
+        /// served at that size rather than at twice it. Every caller that must strictly grow already asks
+        /// for one byte more than the current length, so exact rounding still grows them.
+        /// </remarks>
+        internal static int CapacityFor(int length)
+            => length < 64 ? 64 : (int)BitOperations.RoundUpToPowerOf2((uint)length);
+
         void ExpandScratchBufferIfNeeded(int newLength)
         {
             if (scratchBuffer == null || newLength > scratchBuffer.Length - scratchBufferOffset)
@@ -354,8 +432,7 @@ namespace Garnet.server
                 "Use ScratchBufferAllocator for slices that must remain valid across allocations, " +
                 "or use a single CreateArgSlice and partition the buffer manually.");
 #endif
-            if (newLength < 64) newLength = 64;
-            else newLength = (int)BitOperations.RoundUpToPowerOf2((uint)newLength + 1);
+            newLength = CapacityFor(newLength);
 
             var _scratchBuffer = GC.AllocateArray<byte>(newLength, true);
             var _scratchBufferHead = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_scratchBuffer));
