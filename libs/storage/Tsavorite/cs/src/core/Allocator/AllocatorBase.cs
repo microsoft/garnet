@@ -1342,7 +1342,10 @@ namespace Tsavorite.core
             }
 
             needSHA = false;
-            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
+
+            // If the resizer is not running (e.g. during recovery/AOF replay) nobody will act on the Signal() below, so waiting for it would
+            // livelock the allocation retry loop when we are over budget because of heap size. IssueShiftAddress evicts synchronously in that case.
+            if (logSizeTracker is null || !logSizeTracker.IsRunning || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
                 return false;
             logSizeTracker.Signal();
             return true;
