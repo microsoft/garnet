@@ -92,9 +92,14 @@ namespace Garnet.server
         internal const int MaxExplorationFactor = 1_000_000;
 
         /// <summary>
-        /// Beam width default for SearchXXX methods.
+        /// Default beam width for similarity searches.
         /// </summary>
         internal const int DefaultBeamWidth = 4;
+
+        /// <summary>
+        /// Maximum beam width for similarity searches.
+        /// </summary>
+        internal const int MaxBeamWidth = 256;
 
         /// <summary>
         /// Ensures the VSIM distance output buffer has at least <paramref name="retrieveCount"/> * sizeof(float) bytes.
@@ -886,6 +891,8 @@ namespace Garnet.server
             int count,
             float delta,
             int searchExplorationFactor,
+            int beamWidth,
+            int? rerankDepth,
             scoped ReadOnlySpan<byte> filter,
             int maxFilteringEffort,
             bool includeAttributes,
@@ -998,7 +1005,8 @@ namespace Garnet.server
                             maxFilteringEffort,
                             outputIds,
                             outputDistances,
-                            DefaultBeamWidth,
+                            beamWidth,
+                            rerankDepth,
                             out continuation
                         );
 
@@ -1042,7 +1050,8 @@ namespace Garnet.server
                             maxFilteringEffort,
                             outputIds,
                             outputDistances,
-                            DefaultBeamWidth,
+                            beamWidth,
+                            rerankDepth,
                             out continuation
                         );
 
@@ -1103,6 +1112,8 @@ namespace Garnet.server
             int count,
             float delta,
             int searchExplorationFactor,
+            int beamWidth,
+            int? rerankDepth,
             ReadOnlySpan<byte> filter,
             int maxFilteringEffort,
             bool includeAttributes,
@@ -1194,7 +1205,8 @@ namespace Garnet.server
                         maxFilteringEffort,
                         outputIds,
                         outputDistances,
-                        DefaultBeamWidth,
+                        beamWidth,
+                        rerankDepth,
                         out continuation
                     );
 
@@ -1238,7 +1250,8 @@ namespace Garnet.server
                     maxFilteringEffort,
                     outputIds,
                     outputDistances,
-                    DefaultBeamWidth,
+                    beamWidth,
+                    rerankDepth,
                     out continuation
                 );
 
@@ -1511,9 +1524,10 @@ namespace Garnet.server
                         MemoryMarshal.Cast<byte, float>(from).CopyTo(into);
                         break;
 
-                    // XNoQuant_I8 & XBin_I8 stores _signed_ bytes
+                    // Signed-byte quantizers store the original I8 vector.
                     case VectorQuantType.XNoQuant_I8:
                     case VectorQuantType.XBin_I8:
+                    case VectorQuantType.XSpherical2_I8:
                         for (var i = 0; i < from.Length; i++)
                         {
                             into[i] = (sbyte)from[i];

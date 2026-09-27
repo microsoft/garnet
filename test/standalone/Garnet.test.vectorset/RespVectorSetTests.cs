@@ -74,6 +74,12 @@ namespace Garnet.test
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
                 ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
             }
+
+            var beamWidthExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "XI8", new byte[] { 1, 2, 3 }, "XBEAMWIDTH", "0"]));
+            ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", beamWidthExc.Message);
+
+            var rerankExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "XI8", new byte[] { 1, 2, 3 }, "XRERANK", "0"]));
+            ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", rerankExc.Message);
         }
 
         [Test]
@@ -1260,6 +1266,236 @@ namespace Garnet.test
             // EF exceeding MaxExplorationFactor (1,000,000) must be rejected
             var exc4 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "3", "0.0", "0.0", "0.0", "EF", "2000000000"]));
             ClassicAssert.AreEqual("ERR EF must be an integer between 1 and 1000000", exc4.Message);
+        }
+
+        [Test]
+        public void VSIMBeamWidth()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["beamwidth", "XI8", new byte[] { 1, 2, 3 }, "nearest", "XNOQUANT_I8", "SETATTR", "{\"keep\":1}"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["beamwidth", "XI8", new byte[] { 6, 7, 8 }, "other", "XNOQUANT_I8", "SETATTR", "{\"keep\":0}"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["beamwidth", "XI8", new byte[] { 40, 50, 60 }, "far", "XNOQUANT_I8", "SETATTR", "{\"keep\":0}"]));
+
+            var defaultVector = (string[])db.Execute("VSIM", ["beamwidth", "XI8", new byte[] { 1, 2, 3 }, "COUNT", "1"]);
+            var defaultElement = (string[])db.Execute("VSIM", ["beamwidth", "ELE", "nearest", "COUNT", "1"]);
+            CollectionAssert.AreEqual(new[] { "nearest" }, defaultVector);
+            CollectionAssert.AreEqual(new[] { "nearest" }, defaultElement);
+
+            foreach (var beamWidth in new[] { 1, 4, 256 })
+            {
+                var value = beamWidth.ToString();
+                var vector = (string[])db.Execute("VSIM", ["beamwidth", "XI8", new byte[] { 1, 2, 3 }, "XBEAMWIDTH", value, "COUNT", "1"]);
+                var element = (string[])db.Execute("VSIM", ["beamwidth", "ELE", "nearest", "COUNT", "1", "XBEAMWIDTH", value]);
+                CollectionAssert.AreEqual(defaultVector, vector);
+                CollectionAssert.AreEqual(defaultElement, element);
+
+                var filteredVector = (string[])db.Execute("VSIM", ["beamwidth", "XI8", new byte[] { 1, 2, 3 }, "FILTER", ".keep == 1", "COUNT", "1", "XBEAMWIDTH", value]);
+                var filteredElement = (string[])db.Execute("VSIM", ["beamwidth", "ELE", "nearest", "XBEAMWIDTH", value, "FILTER", ".keep == 1", "COUNT", "1"]);
+                CollectionAssert.AreEqual(defaultVector, filteredVector);
+                CollectionAssert.AreEqual(defaultElement, filteredElement);
+            }
+        }
+
+        [Test]
+        public void VSIMBeamWidthErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase(0);
+
+            foreach (var invalid in new[] { "0", "-1", "257", "abc", "2147483648" })
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["beamwidth", "XI8", new byte[] { 1, 2, 3 }, "XBEAMWIDTH", invalid]));
+                ClassicAssert.AreEqual("ERR XBEAMWIDTH must be an integer between 1 and 256", exc.Message, invalid);
+            }
+
+            var duplicate = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["beamwidth", "ELE", "nearest", "XBEAMWIDTH", "1", "xbeamwidth", "4"]));
+            ClassicAssert.AreEqual("XBEAMWIDTH specified multiple times", duplicate.Message);
+
+            var missing = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["beamwidth", "ELE", "nearest", "XBEAMWIDTH"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'VSIM' command", missing.Message);
+        }
+
+        [Test]
+        public void VSIMRerankDepth()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["rerank", "XI8", new byte[] { 1, 2, 3 }, "nearest", "Q8", "SETATTR", "{\"keep\":1}"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["rerank", "XI8", new byte[] { 6, 7, 8 }, "other", "SETATTR", "{\"keep\":0}"]));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["rerank", "XI8", new byte[] { 40, 50, 60 }, "far", "SETATTR", "{\"keep\":0}"]));
+
+            var defaultVector = (string[])db.Execute("VSIM", ["rerank", "XI8", new byte[] { 1, 2, 3 }, "COUNT", "1", "EF", "10"]);
+            var defaultElement = (string[])db.Execute("VSIM", ["rerank", "ELE", "nearest", "COUNT", "1", "EF", "10"]);
+            CollectionAssert.AreEqual(new[] { "nearest" }, defaultVector);
+            CollectionAssert.AreEqual(new[] { "nearest" }, defaultElement);
+
+            if (Environment.GetEnvironmentVariable("GARNET_TEST_RERANK_NATIVE") == "1")
+            {
+                ClassicAssert.IsTrue(NativeDiskANNMethods.SupportsRerankDepth, "Expected a rerank-capable native library");
+            }
+
+            if (!NativeDiskANNMethods.SupportsRerankDepth)
+            {
+                var unavailable = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["rerank", "ELE", "nearest", "COUNT", "1", "EF", "10", "XRERANK", "2"]));
+                ClassicAssert.AreEqual("ERR XRERANK requires a native diskann-garnet library with rerank support", unavailable.Message);
+                return;
+            }
+
+            foreach (var depth in new[] { 1, 2, 10 })
+            {
+                var value = depth.ToString();
+                var vector = (string[])db.Execute("VSIM", ["rerank", "XI8", new byte[] { 1, 2, 3 }, "XBEAMWIDTH", "8", "EF", "10", "XRERANK", value, "COUNT", "1"]);
+                var element = (string[])db.Execute("VSIM", ["rerank", "ELE", "nearest", "COUNT", "1", "EF", "10", "XRERANK", value]);
+                CollectionAssert.AreEqual(defaultVector, vector);
+                CollectionAssert.AreEqual(defaultElement, element);
+
+                var filteredVector = (string[])db.Execute("VSIM", ["rerank", "XI8", new byte[] { 1, 2, 3 }, "FILTER", ".keep == 1", "COUNT", "1", "EF", "10", "XRERANK", value]);
+                var filteredElement = (string[])db.Execute("VSIM", ["rerank", "ELE", "nearest", "XRERANK", value, "EF", "10", "FILTER", ".keep == 1", "COUNT", "1"]);
+                CollectionAssert.AreEqual(defaultVector, filteredVector);
+                CollectionAssert.AreEqual(defaultElement, filteredElement);
+            }
+
+            var defaultTopTwo = (string[])db.Execute("VSIM", ["rerank", "XI8", new byte[] { 1, 2, 3 }, "COUNT", "2", "EF", "10"]);
+            var cappedTopTwo = (string[])db.Execute("VSIM", ["rerank", "XI8", new byte[] { 1, 2, 3 }, "COUNT", "2", "EF", "10", "XRERANK", "2"]);
+            ClassicAssert.AreEqual(2, cappedTopTwo.Length);
+            CollectionAssert.AreEqual(defaultTopTwo, cappedTopTwo);
+        }
+
+        [Test]
+        public void VSIMRerankDepthErrors()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase(0);
+
+            foreach (var invalid in new[] { "0", "-1", "1000001", "abc", "2147483648" })
+            {
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["rerank", "ELE", "nearest", "COUNT", "1", "XRERANK", invalid]));
+                ClassicAssert.AreEqual("ERR XRERANK must be an integer between 1 and 1000000", exc.Message, invalid);
+            }
+
+            var tooFew = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["rerank", "ELE", "nearest", "XRERANK", "1", "COUNT", "2"]));
+            ClassicAssert.AreEqual("ERR XRERANK must be between COUNT and EF", tooFew.Message);
+
+            var tooMany = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["rerank", "ELE", "nearest", "EF", "5", "COUNT", "1", "XRERANK", "6"]));
+            ClassicAssert.AreEqual("ERR XRERANK must be between COUNT and EF", tooMany.Message);
+
+            var duplicate = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["rerank", "ELE", "nearest", "XRERANK", "10", "xrerank", "20"]));
+            ClassicAssert.AreEqual("XRERANK specified multiple times", duplicate.Message);
+
+            var missing = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["rerank", "ELE", "nearest", "XRERANK"]));
+            ClassicAssert.AreEqual("ERR wrong number of arguments for 'VSIM' command", missing.Message);
+        }
+
+        [Test]
+        [CancelAfter(60_000)]
+        public async Task SphericalTwoBitI8RetainsFullVectors(CancellationToken cancellation)
+        {
+            const string key = nameof(SphericalTwoBitI8RetainsFullVectors);
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase(0);
+            var vector = new byte[256];
+            new Random(42).NextBytes(vector);
+            var element = new byte[sizeof(int)];
+
+            if (Environment.GetEnvironmentVariable("GARNET_TEST_SQ2_NATIVE") == "1")
+                ClassicAssert.IsTrue(NativeDiskANNMethods.SupportsSpherical2I8, "Expected a spherical 2-bit native library");
+
+            if (!NativeDiskANNMethods.SupportsSpherical2I8)
+            {
+                var error = ClassicAssert.Throws<RedisServerException>(() =>
+                    db.Execute("VADD", [key, "XI8", vector, element, "XSPHERICAL2_I8"]));
+                ClassicAssert.AreEqual("ERR XSPHERICAL2_I8 requires a native diskann-garnet library with spherical 2-bit support", error.Message);
+                return;
+            }
+
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            var tableBuilds = vectorManager.QuantizationRequestsProcessed;
+            var backfills = vectorManager.QuantizationBackfillsProcessed;
+            for (var i = 0; i < 1_100; i++)
+            {
+                new Random(i + 42).NextBytes(vector);
+                BinaryPrimitives.WriteInt32LittleEndian(element, i);
+                ClassicAssert.AreEqual(1, (int)await db.ExecuteAsync("VADD",
+                    [key, "XI8", vector, element, "XSPHERICAL2_I8", "EF", "300", "M", "20", "XDISTANCE_METRIC", "L2"]).ConfigureAwait(false));
+            }
+
+            while (vectorManager.QuantizationRequestsProcessed < tableBuilds + 1
+                || vectorManager.QuantizationBackfillsProcessed < backfills + Environment.ProcessorCount)
+                await Task.Delay(100, cancellation).ConfigureAwait(false);
+
+            var info = (RedisValue[])db.Execute("VINFO", [key]);
+            ClassicAssert.AreEqual("xspherical2_i8", (string)info[1]);
+            ClassicAssert.AreEqual("256", (string)info[5]);
+            ClassicAssert.AreEqual("300", (string)info[9]);
+            ClassicAssert.AreEqual("20", (string)info[11]);
+            ClassicAssert.AreEqual("1100", (string)info[13]);
+
+            BinaryPrimitives.WriteInt32LittleEndian(element, 1099);
+            var raw = (byte[][])db.Execute("VEMB", [key, element, "RAW"]);
+            ClassicAssert.AreEqual("spherical2", Encoding.ASCII.GetString(raw[0]));
+            ClassicAssert.AreEqual(70, raw[1].Length);
+
+            var full = (string[])db.Execute("VEMB", [key, element]);
+            ClassicAssert.AreEqual(vector.Length, full.Length);
+            for (var i = 0; i < vector.Length; i++)
+                ClassicAssert.AreEqual((sbyte)vector[i], float.Parse(full[i]));
+
+            var results = (RedisValue[])db.Execute("VSIM",
+                [key, "XI8", vector, "COUNT", "10", "EF", "100", "XBEAMWIDTH", "1"]);
+            ClassicAssert.IsNotEmpty(results);
+            if (NativeDiskANNMethods.SupportsRerankDepth)
+            {
+                var reranked = (RedisValue[])db.Execute("VSIM",
+                    [key, "XI8", vector, "COUNT", "10", "EF", "100", "XBEAMWIDTH", "1", "XRERANK", "20"]);
+                ClassicAssert.IsNotEmpty(reranked);
+            }
+        }
+
+        [Test]
+        public async Task SphericalTwoBitI8Recovers()
+        {
+            if (!NativeDiskANNMethods.SupportsSpherical2I8)
+                Assert.Ignore("Requires a native diskann-garnet library with spherical 2-bit support");
+
+            const string key = nameof(SphericalTwoBitI8Recovers);
+            var vector = new byte[256];
+            new Random(2026).NextBytes(vector);
+            var element = new byte[sizeof(int)];
+            BinaryPrimitives.WriteInt32LittleEndian(element, 42);
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual(1, (int)db.Execute("VADD",
+                    [key, "XI8", vector, element, "XSPHERICAL2_I8", "EF", "300", "M", "20", "XDISTANCE_METRIC", "L2"]));
+#pragma warning disable CS0618 // Checkpoint through the Redis-compatible admin API.
+                redis.GetServers()[0].Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+                ClassicAssert.IsTrue(await server.Store.WaitForCommitAsync().ConfigureAwait(false));
+            }
+
+            server.Dispose(deleteDir: false);
+            server = CreateGarnetServer(tryRecover: true);
+            server.Start();
+
+            using var recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var recoveredDb = recovered.GetDatabase(0);
+            var info = (RedisValue[])recoveredDb.Execute("VINFO", [key]);
+            ClassicAssert.AreEqual("xspherical2_i8", (string)info[1]);
+            ClassicAssert.AreEqual("1", (string)info[13]);
+
+            var full = (string[])recoveredDb.Execute("VEMB", [key, element]);
+            ClassicAssert.AreEqual(vector.Length, full.Length);
+            for (var i = 0; i < vector.Length; i++)
+                ClassicAssert.AreEqual((sbyte)vector[i], float.Parse(full[i]));
+
+            var found = (byte[][])recoveredDb.Execute("VSIM",
+                [key, "XI8", vector, "COUNT", "1", "EF", "100", "XBEAMWIDTH", "1"]);
+            ClassicAssert.AreEqual(1, found.Length);
+            CollectionAssert.AreEqual(element, found[0]);
         }
 
         private static byte[] SeedMoviesForAdvancedFiltering(IDatabase db)

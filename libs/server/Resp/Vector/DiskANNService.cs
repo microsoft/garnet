@@ -49,6 +49,11 @@ namespace Garnet.server
             out bool quantizationRequested
         )
         {
+            if (quantType == VectorQuantType.XSpherical2_I8 && !NativeDiskANNMethods.SupportsSpherical2I8)
+            {
+                throw new InvalidOperationException("XSPHERICAL2_I8 requires a native diskann-garnet library with spherical 2-bit support");
+            }
+
 #if DEBUG
             System.Threading.Interlocked.Increment(ref CreateIndexCalls);
 #endif
@@ -147,6 +152,7 @@ namespace Garnet.server
             SpanByteAndMemory outputIds,
             SpanByteAndMemory outputDistances,
             int beamWidth,
+            int? rerankDepth,
             out nint continuation
         )
         {
@@ -198,21 +204,22 @@ namespace Garnet.server
                 ref var continuationRef = ref continuation;
                 var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
 
+                if (rerankDepth.HasValue)
+                {
+                    return NativeDiskANNMethods.search_vector_rerank(
+                        context, index, (nint)vector_data, (nuint)vectorElementCount, delta,
+                        searchExplorationFactor, (nint)filter_data, (nuint)filter_len,
+                        (nuint)maxFilteringEffort, (nint)output_ids, (nuint)output_ids_len,
+                        (nint)output_distances, (nuint)output_distances_len, (uint)beamWidth,
+                        continuationAddr, (uint)rerankDepth.Value
+                    );
+                }
+
                 return NativeDiskANNMethods.search_vector(
-                    context,
-                    index,
-                    (nint)vector_data,
-                    (nuint)vectorElementCount,
-                    delta,
-                    searchExplorationFactor,
-                    (nint)filter_data,
-                    (nuint)filter_len,
-                    (nuint)maxFilteringEffort,
-                    (nint)output_ids,
-                    (nuint)output_ids_len,
-                    (nint)output_distances,
-                    (nuint)output_distances_len,
-                    (uint)beamWidth,
+                    context, index, (nint)vector_data, (nuint)vectorElementCount, delta,
+                    searchExplorationFactor, (nint)filter_data, (nuint)filter_len,
+                    (nuint)maxFilteringEffort, (nint)output_ids, (nuint)output_ids_len,
+                    (nint)output_distances, (nuint)output_distances_len, (uint)beamWidth,
                     continuationAddr
                 );
             }
@@ -234,6 +241,7 @@ namespace Garnet.server
             SpanByteAndMemory outputIds,
             SpanByteAndMemory outputDistances,
             int beamWidth,
+            int? rerankDepth,
             out nint continuation
         )
         {
@@ -286,21 +294,22 @@ namespace Garnet.server
                 ref var continuationRef = ref continuation;
                 var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
 
+                if (rerankDepth.HasValue)
+                {
+                    return NativeDiskANNMethods.search_element_rerank(
+                        context, index, (nint)id_data, (nuint)id_len, delta,
+                        (uint)searchExplorationFactor, (nint)filter_data, (nuint)filter_len,
+                        (nuint)maxFilteringEffort, (nint)output_ids, (nuint)output_ids_len,
+                        (nint)output_distances, (nuint)output_distances_len, (uint)beamWidth,
+                        continuationAddr, (uint)rerankDepth.Value
+                    );
+                }
+
                 return NativeDiskANNMethods.search_element(
-                    context,
-                    index,
-                    (nint)id_data,
-                    (nuint)id_len,
-                    delta,
-                    (uint)searchExplorationFactor,
-                    (nint)filter_data,
-                    (nuint)filter_len,
-                    (nuint)maxFilteringEffort,
-                    (nint)output_ids,
-                    (nuint)output_ids_len,
-                    (nint)output_distances,
-                    (nuint)output_distances_len,
-                    (uint)beamWidth,
+                    context, index, (nint)id_data, (nuint)id_len, delta,
+                    (uint)searchExplorationFactor, (nint)filter_data, (nuint)filter_len,
+                    (nuint)maxFilteringEffort, (nint)output_ids, (nuint)output_ids_len,
+                    (nint)output_distances, (nuint)output_distances_len, (uint)beamWidth,
                     continuationAddr
                 );
             }
@@ -457,6 +466,35 @@ namespace Garnet.server
 
         const string DISKANN_GARNET = "diskann_garnet";
 
+        internal static bool SupportsRerankDepth { get; } = HasExports("search_vector_rerank", "search_element_rerank");
+
+        internal static bool SupportsSpherical2I8 { get; } = HasExports("supports_xspherical2_i8");
+
+        private static bool HasExports(params string[] names)
+        {
+            if (!NativeLibrary.TryLoad(DISKANN_GARNET, typeof(NativeDiskANNMethods).Assembly, null, out var library))
+            {
+                return false;
+            }
+
+            try
+            {
+                foreach (var name in names)
+                {
+                    if (!NativeLibrary.TryGetExport(library, name, out _))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            finally
+            {
+                NativeLibrary.Free(library);
+            }
+        }
+
         [LibraryImport(DISKANN_GARNET)]
         public static partial nint create_index(
             ulong context,
@@ -531,6 +569,26 @@ namespace Garnet.server
         );
 
         [LibraryImport(DISKANN_GARNET)]
+        public static partial int search_vector_rerank(
+            ulong context,
+            nint index,
+            nint vector_data,
+            nuint vector_len,
+            float delta,
+            int search_exploration_factor,
+            nint filter_data,
+            nuint filter_len,
+            nuint max_filtering_effort,
+            nint output_ids,
+            nuint output_ids_len,
+            nint output_distances,
+            nuint output_distances_len,
+            uint beam_width,
+            nint continuation,
+            uint rerank_depth
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
         public static partial int search_element(
             ulong context,
             nint index,
@@ -547,6 +605,26 @@ namespace Garnet.server
             nuint output_distances_len,
             uint beam_width,
             nint continuation
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial int search_element_rerank(
+            ulong context,
+            nint index,
+            nint id_data,
+            nuint id_len,
+            float delta,
+            uint search_exploration_factor,
+            nint filter_data,
+            nuint filter_len,
+            nuint max_filtering_effort,
+            nint output_ids,
+            nuint output_ids_len,
+            nint output_distances,
+            nuint output_distances_len,
+            uint beam_width,
+            nint continuation,
+            uint rerank_depth
         );
 
         [LibraryImport(DISKANN_GARNET)]

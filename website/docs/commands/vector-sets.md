@@ -118,8 +118,9 @@ Insert a vector with the given element ID into a Vector Set, creating the index 
 #### Syntax
 
 ```bash
-VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
-         [CAS] [NOQUANT | XPREQ8] [EF n] [SETATTR attr] [M n]
+VADD key [REDUCE dim] (FP32 vector | XU8 vector | XI8 vector | VALUES n v1 ... vN) element
+         [CAS] [NOQUANT | BIN | Q8 | XNOQUANT_U8 | XNOQUANT_I8 | XBIN_U8 | XBIN_I8 | XSPHERICAL2_I8]
+         [EF n] [SETATTR attr] [M n]
          [XDISTANCE_METRIC L2 | COSINE | IP | XCOSINE_NORMALIZED]
 ```
 
@@ -138,7 +139,7 @@ VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
 |--------|---------|-------------|
 | `REDUCE dim` | _disabled_ | Project the input vector down to `dim` dimensions. `dim` must be ≤ the input dimensions. Not allowed with `XPREQ8`. Only honored on the first `VADD` (when the index is created). |
 | `CAS` | _off_ | Accepted for parser compatibility with Redis; currently a no-op. |
-| `NOQUANT` \| `BIN` \| `Q8` \| `XNOQUANT_U8` \| `XNOQUANT_I8` \| `XBIN_I8` \| `XBIN_U8` | `Q8` | Quantization (see [Quantization](#quantization)). |
+| `NOQUANT` \| `BIN` \| `Q8` \| `XNOQUANT_U8` \| `XNOQUANT_I8` \| `XBIN_I8` \| `XBIN_U8` \| `XSPHERICAL2_I8` | `Q8` | Quantization (see [Quantization](#quantization)). |
 | `EF n` | `200` | Build-time exploration factor (DiskANN `R` candidate-list size). Must be in `[1, 1000000]`. |
 | `SETATTR attr` | _none_ | Attach an arbitrary byte string to the element (typically a JSON object). Retrieve later with `VGETATTR` or via `WITHATTRIBS` on `VSIM`. |
 | `M n` | `16` | DiskANN max out-degree per node. Must be in `[4, 4096]`. |
@@ -159,6 +160,9 @@ VADD movies VALUES 3 0.12 0.34 0.56 inception \
 
 # Insert a uint8 vector with the XPREQ8 pseudo-quantizer
 VADD photos XB8 <128-byte blob> photo:42 XPREQ8
+
+# Preserve a 256-dimensional signed-int8 vector for reranking; use a 2-bit search code
+VADD embeddings XI8 <256-byte signed-int8 blob> item:42 XSPHERICAL2_I8 EF 300 M 20
 ```
 
 #### Resp Reply
@@ -187,7 +191,7 @@ Array of 14 elements — 7 alternating field-name / value pairs:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `quant-type` | simple string | One of `f32`, `bin`, `q8`, `xpreq8` |
+| `quant-type` | simple string | One of `f32`, `bin`, `q8`, `xnoquant_u8`, `xnoquant_i8`, `xbin_u8`, `xbin_i8`, `xspherical2_i8` |
 | `distance-metric` | simple string | One of `l2`, `cosine`, `inner-product`, `cosine-normalized` |
 | `input-vector-dimensions` | integer (bulk string) | Dimensions of the input vector |
 | `reduced-dimensions` | integer (bulk string) | Dimensions stored in the index (after `REDUCE`); same as `input-vector-dimensions` if no projection |
@@ -319,7 +323,9 @@ Array of bulk strings, one per dimension. Returns an empty array if the element 
 ```
 
 :::note
-The `RAW` form (`VEMB key element RAW`) is parsed but not yet implemented — invoking it currently throws.
+`VEMB key element RAW` returns the internal encoded representation along with its type and norm.
+For `XSPHERICAL2_I8`, the type is `spherical2` and the encoded data is 70 bytes at 256 dimensions.
+The stored full vector remains signed int8; the raw quantized encoding is an internal format.
 :::
 
 ---
@@ -354,9 +360,9 @@ Find the nearest neighbors of a query vector or an existing element.
 #### Syntax
 
 ```bash
-VSIM key (ELE element | FP32 vector | XB8 vector | VALUES n v1 ... vN)
+VSIM key (ELE element | FP32 vector | XU8 vector | XI8 vector | VALUES n v1 ... vN)
          [WITHSCORES] [WITHATTRIBS]
-         [COUNT n] [EPSILON delta] [EF n]
+         [COUNT n] [EPSILON delta] [EF n] [XBEAMWIDTH n] [XRERANK n]
          [FILTER expr] [FILTER-EF n]
          [TRUTH] [NOTHREAD]
 ```
@@ -367,7 +373,8 @@ VSIM key (ELE element | FP32 vector | XB8 vector | VALUES n v1 ... vN)
 |------|-------------|
 | `ELE element` | Use the vector already stored under `element` as the query. |
 | `FP32 <bytes>` | Raw little-endian `float32` query blob. |
-| `XB8 <bytes>` | Raw `uint8` query blob. |
+| `XU8 <bytes>` | Raw `uint8` query blob (`XB8` is an alias). |
+| `XI8 <bytes>` | Raw `int8` query blob. |
 | `VALUES n v1 ... vN` | `n` textual floats. |
 
 The query's effective dimension must match the index's `input-vector-dimensions`.
@@ -381,10 +388,17 @@ The query's effective dimension must match the index's `input-vector-dimensions`
 | `COUNT n` | `10` | Maximum number of results to return. Must be in `[0, 100000000]`. |
 | `EPSILON delta` | `2.0` | DiskANN `L_search` epsilon — controls how aggressively the graph is explored beyond the current best. |
 | `EF n` | `100` | Search-time exploration factor (`L_search` candidate-list size). Must be in `[1, 1000000]`. |
+| `XBEAMWIDTH n` | `4` | Garnet-specific number of frontier nodes expanded per search hop. Neighbor lists within a beam are currently read sequentially. Must be an integer in `[1, 256]`. Applies to both vector and element queries, with or without a filter. |
+| `XRERANK n` | _all candidates_ | Cap the number of approximate candidates whose full-precision vectors are read and reranked, after graph exploration. Must be a positive integer between `COUNT` (default `10`) and `EF` (default `100`), inclusive. Applies to quantized vector and element queries, including filtered queries; has no effect on unquantized searches. Requires a native `diskann-garnet` library with the rerank-aware search exports. |
 | `FILTER expr` | _none_ | Filter results by an attribute expression (see [Filter Expressions](#filter-expressions)). |
 | `FILTER-EF n` | `16` | Scale factor for adaptive inline filter search. Must be in `[4, 256]`. This controls how high the EF will scale based on selectivity. |
 | `TRUTH` | _off_ | Accepted for compatibility; exact / brute-force search is not yet wired up. |
 | `NOTHREAD` | _off_ | Accepted for compatibility; currently ignored (search always runs on the calling thread). |
+
+For quantized indexes, lower `XRERANK` reduces full-vector storage reads independently of `EF`
+(graph exploration) and `XBEAMWIDTH` (frontier nodes per hop), but can lower recall. Omitting
+`XRERANK` preserves full reranking. With a filter, the cap applies to the candidates that
+survive inline filtering, even if adaptive filter search expands beyond `EF`.
 
 #### Resp Reply
 
@@ -417,6 +431,9 @@ VSIM movies VALUES 3 0.10 0.20 0.30 WITHATTRIBS
 # Filtered search: only movies from after 1950, with both scores and attributes
 VSIM movies VALUES 3 0.0 0.0 0.0 \
      FILTER ".year > 1950" COUNT 5 WITHSCORES WITHATTRIBS
+
+# Explore 100 candidates but fetch at most 20 full-precision vectors (10 results)
+VSIM movies ELE dune COUNT 10 EF 100 XBEAMWIDTH 8 XRERANK 20
 ```
 
 ---
@@ -492,6 +509,7 @@ The active quantizer determines how vectors are stored internally and which inpu
 | `XNOQUANT_I8` | ✅ Supported | Garnet extension: stores input as `int8` bytes with no further quantization. Incompatible with `REDUCE`. |
 | `XBIN_U8` | ✅ Supported | Garnet extension: stores input `uint8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
 | `XBIN_I8` | ✅ Supported | Garnet extension: stores input `int8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
+| `XSPHERICAL2_I8` | ✅ Supported with a matching native library | Garnet extension: retains signed `int8` full vectors and uses 2-bit spherical quantization for graph search. Incompatible with `REDUCE`. The native `diskann-garnet` library must export `supports_xspherical2_i8`; the stock 5.0.3 library does not. |
 
 If no quantizer is specified on the first `VADD`, the default is `Q8`.  Matching input format and storage format improves performance by removing a conversion step in `VADD`.
 
