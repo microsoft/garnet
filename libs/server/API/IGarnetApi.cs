@@ -2142,9 +2142,9 @@ namespace Garnet.server
         /// <summary>
         /// For a given element, find all neighbors and (optionally) the distance to those neighbors.
         /// 
-        /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> (if <paramref name="withScores"/> is true) has a float for each of those elements.
+        /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> has a float for each of those elements.
         /// </summary>
-        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, bool withScores, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
+        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
 
         /// <summary>
         /// Fetch random elements from the given Vector Set.
@@ -2155,7 +2155,7 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names.
         /// </summary>
-        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults);
+        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount);
 
         /// <summary>
         /// Perform a similarity search given a vector and these parameters.
