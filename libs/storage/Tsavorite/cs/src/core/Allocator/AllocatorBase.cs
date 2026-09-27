@@ -1255,8 +1255,10 @@ namespace Tsavorite.core
 
             // First check whether we need to shift HeadAddress. If we have a logSizeTracker that's over budget then we have already issued
             // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
+            // When the background resizer is not running (e.g. during recovery/AOF replay, before it is started post-recovery) it will not issue that shift, and
+            // NeedToWaitForClose does not wait on it either, so we must request the MaxAllocatedPageCount-based shift here as we do when there is no logSizeTracker.
             var desiredHeadAddress = HeadAddress;
-            if (logSizeTracker is null || !logSizeTracker.IsOverBudget)
+            if (logSizeTracker is null || !logSizeTracker.IsOverBudget || !logSizeTracker.IsRunning)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
@@ -1344,7 +1346,8 @@ namespace Tsavorite.core
             needSHA = false;
 
             // If the resizer is not running (e.g. during recovery/AOF replay) nobody will act on the Signal() below, so waiting for it would
-            // livelock the allocation retry loop when we are over budget because of heap size. IssueShiftAddress evicts synchronously in that case.
+            // livelock the allocation retry loop when we are over budget because of heap size. NeedToShiftAddress and IssueShiftAddress
+            // still enforce MaxAllocatedPageCount synchronously in that case.
             if (logSizeTracker is null || !logSizeTracker.IsRunning || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
                 return false;
             logSizeTracker.Signal();
