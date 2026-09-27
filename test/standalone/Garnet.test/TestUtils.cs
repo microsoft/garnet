@@ -170,24 +170,38 @@ namespace Garnet.test
             if (result.Outcome.Status != TestStatus.Failed)
                 return;
 
-            var message = result.Message ?? string.Empty;
-            if (!message.Contains("Could not bind", StringComparison.Ordinal))
-                return;
+            var report = BuildPortConflictReport(result.Message);
+            if (report is not null)
+                TestContext.Progress.WriteLine(report);
+        }
+
+        /// <summary>
+        /// Builds the port-allocation context for a failed test, or returns null when the failure was not a
+        /// bind failure. Separated from <see cref="ReportPortConflictIfBindFailed"/> so the decision and the
+        /// wording can be asserted without having to make a real test fail.
+        /// </summary>
+        /// <param name="failureMessage">The failed test's message.</param>
+        /// <returns>The report to emit, or null when this failure is unrelated to binding.</returns>
+        internal static string BuildPortConflictReport(string failureMessage)
+        {
+            // Matches the message GarnetServerTcp produces. That string is authored in this repository rather
+            // than supplied by the platform, so it is neither locale-dependent nor liable to drift.
+            if (failureMessage is null || !failureMessage.Contains("Could not bind", StringComparison.Ordinal))
+                return null;
 
             var reserved = testPort == 0
                 ? "This host reserved no ports, so the bind used an endpoint the test supplied directly."
                 : $"This host reserved ports {testPort}-{testPort + StandalonePortCount - 1}, which were leased " +
                   $"and probed free at startup.";
 
-            TestContext.Progress.WriteLine(
-                $"A Garnet test server failed to bind. {reserved} Reserved ports lie below " +
+            return $"A Garnet test server failed to bind. {reserved} Reserved ports lie below " +
                 $"{TestPortAllocator.UniverseBase + TestPortAllocator.UniverseSize}, beneath every supported " +
                 $"platform's ephemeral range, so the operating system cannot have assigned one to an outbound " +
                 $"connection, and the lease excludes every other Garnet test host. A conflict here is therefore " +
                 $"software outside this suite taking the port mid-run, not a defect in Garnet or in this test. " +
                 $"Identify the occupant by port with 'Get-NetTCPConnection -LocalPort <port>' on Windows or " +
                 $"'ss -ltnp' on Linux, stop it by process id rather than by name, and set " +
-                $"{TestPortAllocator.PinnedBaseEnvVar} to pin a known-free base port if it recurs.");
+                $"{TestPortAllocator.PinnedBaseEnvVar} to pin a known-free base port if it recurs.";
         }
 
         /// <summary>

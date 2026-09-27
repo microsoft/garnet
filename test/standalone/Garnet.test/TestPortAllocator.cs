@@ -258,7 +258,55 @@ namespace Garnet.test
         /// developer's machine. The one arrangement it would not cover is containers that share a network
         /// namespace but not a temp directory, where ports collide but leases cannot see each other.
         /// </summary>
-        private static string LeaseDirectory => Path.Combine(Path.GetTempPath(), "garnet-test-ports");
+        private static string LeaseDirectory
+            => leaseDirectoryOverride ?? Path.Combine(Path.GetTempPath(), "garnet-test-ports");
+
+        /// <summary>
+        /// Redirects leases to a private directory. Exists so tests can exhaust or contend for every block
+        /// without touching the leases real test hosts depend on: holding all of them in the shared directory
+        /// would make concurrent runs in other checkouts fail to start.
+        /// </summary>
+        private static string leaseDirectoryOverride;
+
+        /// <summary>
+        /// Runs an action with leases redirected to <paramref name="directory"/>, and with the record of blocks
+        /// already held by this process cleared so the action sees a pristine allocator. Both are restored
+        /// afterwards, including on failure.
+        /// </summary>
+        /// <param name="directory">Private directory to lease from.</param>
+        /// <param name="action">Action to run against the redirected allocator.</param>
+        internal static void WithIsolatedLeases(string directory, Action action)
+        {
+            lock (reservationLock)
+            {
+                var previousDirectory = leaseDirectoryOverride;
+                var previousBlocks = new int[reservedBlocks.Count];
+                reservedBlocks.CopyTo(previousBlocks);
+
+                leaseDirectoryOverride = directory;
+                reservedBlocks.Clear();
+
+                try
+                {
+                    action();
+                }
+                finally
+                {
+                    leaseDirectoryOverride = previousDirectory;
+                    reservedBlocks.Clear();
+                    foreach (var block in previousBlocks)
+                        _ = reservedBlocks.Add(block);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Opens a block's lease exclusively, standing in for another test host holding it. Returns null when
+        /// the block is already taken.
+        /// </summary>
+        /// <param name="block">Block index.</param>
+        /// <returns>The held lease, or null.</returns>
+        internal static FileStream HoldLeaseForTest(int block) => TryAcquireLease(block, "test-holder");
 
         /// <summary>
         /// Takes the lease on a block, or returns null when another live test host holds it. The lock is the
