@@ -151,12 +151,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Size of the reusable circular buffer a streamed object value is serialized through. Fixed (rather than sized per
-        /// object) so each thread allocates it once and reuses it, and deliberately below the 85,000-byte large-object-heap
-        /// threshold so a large value can never put a per-write buffer on the LOH. It only bounds how many value bytes are held
-        /// at once: a value larger than this is simply drained into more chunk records.
+        /// Size of the reusable circular buffer a streamed object value is serialized through, and therefore the amount of
+        /// value data a single chunk record can carry: a chunk record is allocated per drain, so the ring size bounds the
+        /// record size just as <see cref="ChunkWriteState.maxContent"/> does, and the effective bound is the smaller of the
+        /// two. <see cref="IStreamBuffer.BufferSize"/> is the same buffer size the object-log streaming path uses for this
+        /// job. The ring is rented from the log's <see cref="SectorAlignedBufferPool"/>, which is not GC-heap memory, so its
+        /// size carries no large-object-heap cost and a cached serializer holds no buffer between writes.
+        /// <para>
+        /// Keep this at or above <see cref="MinPartialAllocSize"/>: page-tail packing only splits an allocation when both
+        /// halves reach that size, so a smaller ring would silently stop records from filling a page tail.
+        /// </para>
         /// </summary>
-        internal const int ChunkedObjectRingBufferSize = 64 * 1024;
+        internal const int ChunkedObjectRingBufferSize = IStreamBuffer.BufferSize;
 
         /// <summary>Per-thread cache of the reusable <see cref="ChunkWriteState"/>. A chunked write is synchronous and
         /// non-reentrant on the writing thread, so one cached instance per thread suffices; renting takes it out of the cache, so
@@ -193,7 +199,7 @@ namespace Tsavorite.core
         {
             var serializer = CachedChunkSerializer<TInput>.instance;
             if (serializer is null)
-                return new ChunkedObjectSerializer<ChunkWriteState, TInput>(ChunkedObjectRingBufferSize);
+                return new ChunkedObjectSerializer<ChunkWriteState, TInput>(ChunkedObjectRingBufferSize, poolRing: true);
             CachedChunkSerializer<TInput>.instance = null;
             return serializer;
         }
@@ -229,7 +235,7 @@ namespace Tsavorite.core
             state.hasValue = true;   // an object record always has a (streamed) value component
             state.hasInput = writeInput;
             state.epochAccessor = epochAccessor;
-            serializer.SetRecord(in key, ref input, this, objectSerializer, value);
+            serializer.SetRecord(in key, ref input, this, objectSerializer, value, BufferPool);
             epoch.Resume();
             BeginInflightEnqueue();
             try

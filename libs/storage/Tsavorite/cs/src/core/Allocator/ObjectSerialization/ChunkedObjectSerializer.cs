@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 
 namespace Tsavorite.core.Allocator.ObjectSerialization
@@ -27,7 +28,7 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
     /// </para>
     /// </remarks>
     /// <typeparam name="TContext">Caller state threaded through <c>Drain</c> to the consumer (e.g. the write-side chunk state).</typeparam>
-    public class ChunkedObjectSerializer<TContext>
+    public unsafe class ChunkedObjectSerializer<TContext>
     {
         IObjectSerializer<IHeapObject> serializer;
         IHeapObject valueObject;
@@ -38,8 +39,18 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         /// <summary>Caller state passed through to the consumer on every drain; set for the duration of <see cref="Serialize"/>.</summary>
         protected TContext context;
 
+        /// <summary>The ring's backing store on the manual (network) path, owned for the instance's lifetime. Null when the ring
+        /// is pooled.</summary>
+        readonly byte[] managedBuffer;
+        /// <summary>The ring's backing store on the pooled path, rented for the duration of one write and returned by
+        /// <see cref="ClearWriteTarget"/>. Null between writes and on the managed path.</summary>
+        SectorAlignedMemory pooledBuffer;
+        /// <summary>Length of the ring. A pooled buffer may be larger than this (the pool rounds up to a size class); the ring
+        /// uses exactly this many bytes either way.</summary>
+        readonly int bufferLength;
+
         /// <summary>The circular buffer holding serialized value bytes not yet consumed.</summary>
-        readonly byte[] buffer;
+        Span<byte> Ring => managedBuffer is not null ? managedBuffer.AsSpan(0, bufferLength) : new Span<byte>(pooledBuffer.aligned_pointer, bufferLength);
         /// <summary>Next position to fill (write into).</summary>
         int head;
         /// <summary>Next position to consume (drain from).</summary>
@@ -67,21 +78,84 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
 
         /// <summary>
         /// Create a reusable chunk writer whose consumer, object serializer, and value object are bound per write by
-        /// <see cref="SetObjectWriteTarget"/> and released by <see cref="ClearWriteTarget"/>. The ring buffer is allocated once
-        /// here and reused for every write.
+        /// <see cref="SetObjectWriteTarget"/> and released by <see cref="ClearWriteTarget"/>, over a managed ring owned for
+        /// this instance's lifetime.
         /// </summary>
         protected ChunkedObjectSerializer(int bufferSize)
+            : this(bufferSize, poolRing: false)
         {
-            this.buffer = new byte[bufferSize];
+        }
+
+        /// <summary>
+        /// Create a reusable chunk writer as above, choosing how the ring is backed.
+        /// </summary>
+        /// <remarks>
+        /// The choice follows the instance's lifetime, which in turn follows which of the two drive modes it uses:
+        /// <list type="table">
+        ///   <listheader>
+        ///     <term></term>
+        ///     <description><c>poolRing: true</c> (AOF write path) / <c>poolRing: false</c> (network path)</description>
+        ///   </listheader>
+        ///   <item>
+        ///     <term>Mode</term>
+        ///     <description>object, via <see cref="SetObjectWriteTarget"/> / manual, via <see cref="BeginSerialize"/></description>
+        ///   </item>
+        ///   <item>
+        ///     <term>Lifetime</term>
+        ///     <description>thread-static cache, indefinite / bounded by one migration or snapshot send</description>
+        ///   </item>
+        ///   <item>
+        ///     <term>Duty cycle</term>
+        ///     <description>idle between writes / in near-continuous use</description>
+        ///   </item>
+        ///   <item>
+        ///     <term>Ring size</term>
+        ///     <description>a pool-friendly constant / caller-chosen and arbitrary</description>
+        ///   </item>
+        ///   <item>
+        ///     <term>Pool available</term>
+        ///     <description>yes, the log's buffer pool / no, there is no log</description>
+        ///   </item>
+        /// </list>
+        /// An indefinitely cached instance would otherwise pin its ring to one thread for the process's life even while idle,
+        /// so it rents per write; an instance that lives for one operation and uses the ring throughout would gain nothing
+        /// from renting and its size need not be a pool size class.
+        /// <para>
+        /// Structurally the pool arrives <em>per write</em> through <see cref="SetObjectWriteTarget"/>, reachable only from
+        /// the object mode, so the manual mode has nowhere to receive one and must own its ring. <c>poolRing: true</c> is
+        /// therefore valid only for object-mode instances; <see cref="BeginSerialize"/> asserts this.
+        /// </para>
+        /// </remarks>
+        /// <param name="bufferSize">The ring length (the max value bytes held at once).</param>
+        /// <param name="poolRing">When true the ring is rented per write from the pool passed to
+        /// <see cref="SetObjectWriteTarget"/>, so a cached instance holds no large buffer between writes and the memory is
+        /// reused across threads via the pool's depot. When false this instance owns a managed ring for its lifetime.</param>
+        protected ChunkedObjectSerializer(int bufferSize, bool poolRing)
+        {
+            bufferLength = bufferSize;
+            if (!poolRing)
+                managedBuffer = new byte[bufferSize];
         }
 
         /// <summary>Bind this (reused) serializer to one streamed write and reset the ring. Paired with
-        /// <see cref="ClearWriteTarget"/>, which drops the references again.</summary>
-        protected void SetObjectWriteTarget(IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject)
+        /// <see cref="ClearWriteTarget"/>, which drops the references again and returns a pooled ring.</summary>
+        /// <param name="bufferPool">Pool to rent the ring from; required when this instance was created with
+        /// <c>poolRing: true</c> and ignored otherwise. It is passed per write rather than held, because a cached instance is
+        /// keyed only by thread and input type and so may be reused across logs with different pools.</param>
+        protected void SetObjectWriteTarget(IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, SectorAlignedBufferPool bufferPool)
         {
             this.consumer = consumer;
             this.serializer = serializer;
             this.valueObject = valueObject;
+
+            if (managedBuffer is null)
+            {
+                // clearOnReturn is false because the ring is always written before it is read (only the `count` bytes written
+                // since the last drain are ever exposed), so a previous rental's bytes cannot be observed; clearing would zero
+                // the whole buffer on every write.
+                pooledBuffer?.Return();
+                pooledBuffer = bufferPool.Get(bufferLength, clearOnReturn: false);
+            }
 
             // Reset the ring explicitly rather than relying on the previous write's FlushFinal, so a write that failed partway
             // through cannot leave stale bytes for the next one.
@@ -89,19 +163,28 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         }
 
         /// <summary>Drop the references taken by <see cref="SetObjectWriteTarget"/> so a cached serializer does not root the
-        /// value object, consumer, or caller context between writes.</summary>
+        /// value object, consumer, or caller context between writes, and return a pooled ring to its pool.</summary>
         protected virtual void ClearWriteTarget()
         {
             consumer = null;
             serializer = null;
             valueObject = null;
             context = default;
+
+            if (pooledBuffer is not null)
+            {
+                pooledBuffer.Return();
+                pooledBuffer = null;
+            }
         }
 
         /// <summary>Set the context for a manual chunked write (see the network-path constructor); follow with
         /// <see cref="WriteBytes"/> / <see cref="GetStream"/> and finish with <see cref="EndSerialize"/>.</summary>
         public void BeginSerialize(TContext context)
         {
+            // The manual mode has no per-write binding call, so there is nowhere to hand it a pool: it must own its ring.
+            // Only the object mode (SetObjectWriteTarget, reached via SetRecord) can rent one.
+            Debug.Assert(managedBuffer is not null, "A pooled ring cannot be used for a manual chunked write; construct with poolRing: false.");
             this.context = context;
             firstDrainPending = true;
         }
@@ -150,21 +233,21 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         {
             while (src.Length > 0)
             {
-                if (count == buffer.Length)
+                if (count == bufferLength)
                 {
                     DrainOnce(isComplete: false);
                     // If the consumer could not free any space, we cannot make progress.
-                    if (count == buffer.Length)
+                    if (count == bufferLength)
                         throw new TsavoriteException("Chunk consumer did not consume any bytes on a full buffer");
                 }
 
                 // Fill contiguously from head to the buffer end (or as much as fits/remains), then wrap on the next iteration.
-                var free = buffer.Length - count;
-                var toEnd = buffer.Length - head;
+                var free = bufferLength - count;
+                var toEnd = bufferLength - head;
                 var toCopy = Math.Min(src.Length, Math.Min(free, toEnd));
-                src.Slice(0, toCopy).CopyTo(buffer.AsSpan(head));
+                src.Slice(0, toCopy).CopyTo(Ring.Slice(head));
                 head += toCopy;
-                if (head == buffer.Length)
+                if (head == bufferLength)
                     head = 0;
                 count += toCopy;
                 src = src.Slice(toCopy);
@@ -175,10 +258,11 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         // drain them, advancing tail by however many the consumer took.
         void DrainOnce(bool isComplete)
         {
-            var firstLen = Math.Min(count, buffer.Length - tail);
-            var first = new ReadOnlySpan<byte>(buffer, tail, firstLen);
+            var ring = Ring;
+            var firstLen = Math.Min(count, bufferLength - tail);
+            ReadOnlySpan<byte> first = ring.Slice(tail, firstLen);
             var secondLen = count - firstLen;
-            var second = secondLen > 0 ? new ReadOnlySpan<byte>(buffer, 0, secondLen) : default;
+            ReadOnlySpan<byte> second = secondLen > 0 ? ring.Slice(0, secondLen) : default;
 
             var isStart = firstDrainPending;
             firstDrainPending = false;
@@ -187,8 +271,8 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
                 throw new TsavoriteException($"Chunk consumer returned invalid consumed count {consumed} for {count} bytes");
 
             tail += consumed;
-            if (tail >= buffer.Length)
-                tail -= buffer.Length;
+            if (tail >= bufferLength)
+                tail -= bufferLength;
             count -= consumed;
         }
 
@@ -266,12 +350,21 @@ namespace Tsavorite.core.Allocator.ObjectSerialization
         {
         }
 
+        /// <summary>Create a reusable serializer as above, choosing how the ring is backed.</summary>
+        /// <param name="bufferSize">Size of the circular buffer (the max value bytes held at once).</param>
+        /// <param name="poolRing">When true the ring is rented per write from the pool passed to <see cref="SetRecord"/>.</param>
+        public ChunkedObjectSerializer(int bufferSize, bool poolRing)
+            : base(bufferSize, poolRing)
+        {
+        }
+
         /// <summary>Bind this serializer to one record's key, input, consumer, object serializer, and value object.</summary>
-        public void SetRecord(in ConditionallyHoistedKey key, ref TInput input, IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject)
+        /// <param name="bufferPool">Pool to rent the ring from when this instance pools its ring; ignored otherwise.</param>
+        public void SetRecord(in ConditionallyHoistedKey key, ref TInput input, IChunkedObjectSerializerConsumer consumer, IObjectSerializer<IHeapObject> serializer, IHeapObject valueObject, SectorAlignedBufferPool bufferPool = null)
         {
             this.key = key;
             this.input = input;
-            SetObjectWriteTarget(consumer, serializer, valueObject);
+            SetObjectWriteTarget(consumer, serializer, valueObject, bufferPool);
         }
 
         /// <summary>Release the bound record so a cached serializer does not root the key's hoisted memory, the input's pointers,
