@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Net.Sockets;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 
@@ -34,8 +35,14 @@ namespace Garnet.test
             using var second = new GarnetServerTcp(endpoint);
             first.Start();
 
-            var exception = Assert.Throws<SocketException>(() => second.Start());
-            Assert.That(exception.SocketErrorCode, Is.EqualTo(SocketError.AddressAlreadyInUse));
+            var exception = Assert.Throws<GarnetException>(() => second.Start());
+            Assert.That(exception.InnerException, Is.TypeOf<SocketException>());
+            Assert.That(((SocketException)exception.InnerException).SocketErrorCode,
+                Is.EqualTo(SocketError.AddressAlreadyInUse));
+
+            // The endpoint has to appear in the message: a bind failure that names no port leaves the reader
+            // unable to tell a port conflict from any other startup fault.
+            Assert.That(exception.Message, Does.Contain(endpoint.Port.ToString()));
         }
 
         [TestCase(false)]

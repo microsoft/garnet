@@ -158,7 +158,15 @@ namespace Garnet.server
         /// </summary>
         public override void Start()
         {
-            listenSocket.Bind(EndPoint);
+            try
+            {
+                listenSocket.Bind(EndPoint);
+            }
+            catch (SocketException e)
+            {
+                throw new GarnetException(DescribeBindFailure(e), e);
+            }
+
             if (EndPoint is UnixDomainSocketEndPoint && unixSocketPermission != default && !OperatingSystem.IsWindows())
             {
                 File.SetUnixFileMode(unixSocketPath, unixSocketPermission);
@@ -167,6 +175,34 @@ namespace Garnet.server
             listenSocket.Listen(512);
             if (!listenSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
+        }
+
+        /// <summary>
+        /// Explains a failed bind in terms of the endpoint and the operating system's reason for refusing it.
+        /// The raw <see cref="SocketException"/> names neither, and the two common causes call for opposite
+        /// responses: a port already serving something has to be freed, while a refused port is usually one the
+        /// platform has reserved and has to be avoided.
+        /// </summary>
+        /// <param name="exception">The failure reported by <see cref="Socket.Bind"/>.</param>
+        /// <returns>A message naming the endpoint and the likely cause.</returns>
+        private string DescribeBindFailure(SocketException exception)
+        {
+            var cause = exception.SocketErrorCode switch
+            {
+                SocketError.AddressAlreadyInUse =>
+                    "Another process is already listening there. Identify it with " +
+                    "'Get-NetTCPConnection -LocalPort <port>' on Windows or 'ss -ltnp' on Linux, and stop it by " +
+                    "process id.",
+                SocketError.AccessDenied =>
+                    "The operating system refused the port. On Windows this is usually a range excluded by " +
+                    "Hyper-V, WSL, or Docker, which 'netsh int ipv4 show excludedportrange tcp' lists; on Linux " +
+                    "a port below 1024 requires elevated privilege.",
+                SocketError.AddressNotAvailable =>
+                    "The address is not present on this machine, so nothing can bind it.",
+                _ => "See the inner exception for the operating system error.",
+            };
+
+            return $"Could not bind {EndPoint} ({exception.SocketErrorCode}). {cause}";
         }
 
         private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
