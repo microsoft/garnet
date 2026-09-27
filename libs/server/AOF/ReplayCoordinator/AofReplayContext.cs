@@ -18,7 +18,7 @@ namespace Garnet.server
         public readonly Dictionary<int, TransactionGroup> activeTxns = [];
 
         /// <summary>Accumulates chunked-record fragments (keyed by objectId) until a logical record is complete.</summary>
-        public readonly AofChunkedRecordReader chunkedReader;
+        public readonly AofChunkedRecordReader chunkedReader = new();
 
         internal readonly RespServerSession respServerSession;
 
@@ -46,13 +46,9 @@ namespace Garnet.server
         /// <summary>
         /// AOF replay context constructor
         /// </summary>
-        /// <param name="respServerSession">Session used to apply replayed operations.</param>
-        /// <param name="objectSerializer">Serializer used to deserialize chunked object values; null disables streaming.</param>
-        /// <param name="streamLimiter">Caps concurrent streaming deserializations across all sublogs; null disables streaming.</param>
-        public AofReplayContext(RespServerSession respServerSession, GarnetObjectSerializer objectSerializer = null, StreamingObjectValueDeserializerLimiter streamLimiter = null)
+        public AofReplayContext(RespServerSession respServerSession)
         {
             this.respServerSession = respServerSession;
-            chunkedReader = new AofChunkedRecordReader(objectSerializer, streamLimiter);
             parseState.Initialize();
             customProcInput.parseState = parseState;
             objectOutputBuffer = GC.AllocateArray<byte>(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), pinned: true);
@@ -60,9 +56,6 @@ namespace Garnet.server
 
         public void Dispose()
         {
-            // Abort any partially-accumulated chunked records so an in-flight streaming worker is torn down and a
-            // materialized value that never reached the store is disposed.
-            chunkedReader.AbortInProgress();
             var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
             foreach (var dbSession in databaseSessionsSnapshot)
             {

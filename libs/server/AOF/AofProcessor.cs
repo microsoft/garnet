@@ -222,29 +222,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Cap on object values being deserialized concurrently while their chunks arrive. Each holds a dedicated worker
-        /// thread for the value's lifetime; beyond the cap, values are accumulated as bytes instead. Settable so a test can
-        /// drive the fallback path deterministically.
-        /// </summary>
-        internal static int MaxConcurrentStreamingObjectValues = 4;
-
-        /// <summary>Serializer used to deserialize chunked object values.</summary>
-        internal GarnetObjectSerializer ObjectSerializer => storeWrapper.GarnetObjectSerializer;
-
-        /// <summary>
-        /// Whether a chunked object value arriving now may be deserialized as it arrives rather than accumulated.
-        /// </summary>
-        /// <remarks>
-        /// Streaming produces a materialized object instead of the serialized bytes, which is only wanted for a record that
-        /// will be dispatched immediately. A record buffered for a transaction or the fuzzy region would then hold the
-        /// materialized form for the whole deferral — larger than the bytes it replaces for a collection — and would have to
-        /// be disposed on every discard path. Both are gated here rather than per record, conservatively: if any transaction
-        /// is open on this sublog, or the sublog is inside a fuzzy region, nothing is streamed.
-        /// </remarks>
-        static bool CanStreamObjectValue(AofReplayContext replayContext, bool canStream)
-            => canStream && replayContext.activeTxns.Count == 0 && !replayContext.inFuzzyRegion;
-
-        /// <summary>
         /// Process AOF record internal
         /// NOTE: This method is shared between recover replay and replication replay
         /// </summary>
@@ -254,10 +231,7 @@ namespace Garnet.server
         /// <param name="asReplica"></param>
         /// <param name="isCheckpointStart"></param>
         /// <param name="logAddressSequenceNumber"></param>
-        /// <param name="canStream">Whether this call may block to feed a streaming object-value deserializer. Pass true only
-        /// when the calling thread holds no epoch and is not the thread that must service the data source feeding the record
-        /// (see <see cref="CanStreamObjectValue"/>). Defaults to false so every caller opts in explicitly.</param>
-        public void ProcessAofRecordInternal(int virtualSublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart, long logAddressSequenceNumber = 0, bool canStream = false)
+        public void ProcessAofRecordInternal(int virtualSublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart, long logAddressSequenceNumber = 0)
         {
             var header = *(AofHeader*)ptr;
 
@@ -273,7 +247,7 @@ namespace Garnet.server
             // (no contiguous record image is materialized).
             if (header.IsChunked)
             {
-                if (replayContext.chunkedReader.ReadChunk(ptr, length, out var acc, CanStreamObjectValue(replayContext, canStream)))
+                if (replayContext.chunkedReader.ReadChunk(ptr, length, out var acc))
                     ProcessAofRecordInternal(virtualSublogIdx, acc, asReplica, logAddressSequenceNumber);
                 return;
             }

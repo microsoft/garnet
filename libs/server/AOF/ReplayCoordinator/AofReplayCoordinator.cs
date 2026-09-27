@@ -79,11 +79,8 @@ namespace Garnet.server
             internal static AofReplayContext[] InitializeReplayContext(int AofVirtualSublogCount, AofProcessor aofProcessor)
             {
                 var virtualSublogReplayContext = new AofReplayContext[AofVirtualSublogCount];
-                // One limiter shared by every sublog: the cap bounds worker threads process-wide, and sublogs replay in
-                // parallel, so a per-sublog cap would multiply by the sublog count.
-                var streamLimiter = new StreamingObjectValueDeserializerLimiter(AofProcessor.MaxConcurrentStreamingObjectValues);
                 for (var i = 0; i < virtualSublogReplayContext.Length; i++)
-                    virtualSublogReplayContext[i] = new(aofProcessor.ObtainServerSession(), aofProcessor.ObjectSerializer, streamLimiter);
+                    virtualSublogReplayContext[i] = new(aofProcessor.ObtainServerSession());
                 return virtualSublogReplayContext;
             }
 

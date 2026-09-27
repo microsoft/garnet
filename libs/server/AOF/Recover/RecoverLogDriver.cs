@@ -107,10 +107,7 @@ namespace Garnet.server
                         Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
                         if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, logAddressSequenceNumber, out var sequenceNumber))
                         {
-                            // canStream only when not epoch-protected: the bulk-consume path runs the consumer under the log
-                            // epoch when the record is resident in the in-memory log buffer, and blocking there would stall
-                            // log truncation and page shifting.
-                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _, logAddressSequenceNumber, canStream: !isProtected);
+                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _, logAddressSequenceNumber);
                         }
                         else
                         {

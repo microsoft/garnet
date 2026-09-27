@@ -122,8 +122,7 @@ namespace Garnet.server
                             prefixConsistencyBoundaryReached = true;
                             break;
                         }
-                        // canStream only when not epoch-protected; see RecoverLogDriver.Consume.
-                        aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out _, logAddressSequenceNumber, canStream: !isProtected);
+                        aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out _, logAddressSequenceNumber);
                         maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
                     }
                     entryLength += TsavoriteLog.UnsafeAlign(payloadLength);

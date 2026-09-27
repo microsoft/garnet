@@ -66,7 +66,10 @@ namespace Garnet.cluster
         OverflowByteArray valueOverflow;
         int valueLength, valueFilled;
 
-        // Object value: accumulated into pooled buffers (length not known up front; may exceed 2 GB).
+        // Object value: accumulated into pooled buffers (length not known up front; may exceed 2 GB). Accumulated rather than
+        // deserialized as chunks arrive: deserialization is synchronous, so streaming would need a second thread fed by this
+        // one, and chunks of a record span multiple network commands — the feeding thread is the same one that must read the
+        // remaining chunks off the socket, so blocking it to hand off a chunk would deadlock the connection.
         readonly PooledChunkList objectValueChunks = new();
         long objectValueLength;
 

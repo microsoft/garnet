@@ -45,7 +45,8 @@ namespace Garnet.server
         // Overflow value: deep copy of the store value bytes (the store value may change after the epoch is released).
         byte[] valueOverflow;
 
-        // Object value serialized into pooled chunk buffers (>2 GB capable); filled via Consume.
+        // Object value serialized into pooled chunk buffers (>2 GB capable); filled via Consume. This is the send side, so
+        // there is no deserializer to stream into: the record's pieces are assembled and written to the network from here.
         readonly PooledChunkList objectValueChunks = new();
         bool hasObjectValue;
 
