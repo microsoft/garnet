@@ -4,49 +4,57 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using Tsavorite.core;
 
 namespace Garnet.common
 {
     /// <summary>
-    /// Accumulates a byte stream of unknown total length into pooled fixed-size buffers, exposed as a
+    /// Accumulates a byte stream of unknown total length into pooled buffers, exposed as a
     /// <see cref="ReadOnlySequence{T}"/> so the combined data may exceed 2 GB (the max length of a single <c>byte[]</c>).
     /// Used by the chunked-record paths that receive or build a serialized object value whose length is not known up front.
     /// </summary>
     /// <remarks>
     /// Incoming spans are <b>packed</b> into uniform buffers rather than each becoming its own array: the arriving segment
-    /// sizes are dictated by transport framing, so per-segment arrays would be odd-sized (defeating pooling) and, at the
-    /// sizes involved, would land on the large-object heap and be promoted while the whole payload is retained.
-    /// <see cref="DefaultBufferSize"/> is deliberately below the 85,000-byte LOH threshold and within the size classes
-    /// <see cref="ArrayPool{T}.Shared"/> pools, so accumulating an arbitrarily large value allocates nothing at steady state.
+    /// sizes are dictated by transport framing, so per-segment arrays would be odd-sized, defeating pooling, and at the sizes
+    /// involved would be allocated and promoted while the whole payload is retained.
     /// <para>
-    /// Buffers are returned by <see cref="Reset"/> / <see cref="Dispose"/>. A missed return is not a correctness problem
-    /// (the array is simply garbage-collected instead of reused), but returning a buffer that is still referenced would be,
-    /// so callers must reset only once the sequence is no longer in use.
+    /// Buffers come from a <see cref="SectorAlignedBufferPool"/>, whose blocks are pinned arrays that the pool reuses, so a
+    /// large buffer size costs no repeated large-object-heap allocation. <see cref="DefaultBufferSize"/> is therefore chosen
+    /// for segment count rather than to dodge an allocation threshold: it matches the size the object-log streaming path uses,
+    /// and keeps the sequence to one segment per few megabytes instead of per few tens of kilobytes.
+    /// </para>
+    /// <para>
+    /// Buffers are returned by <see cref="Reset"/> / <see cref="Dispose"/>. A missed return is not a correctness problem (the
+    /// buffer is reclaimed with its pool rather than reused), but returning one that is still referenced would be, so callers
+    /// must reset only once the sequence is no longer in use.
     /// </para>
     /// </remarks>
     public sealed class PooledChunkList : IDisposable
     {
-        /// <summary>Size of each pooled buffer: under the 85,000-byte large-object-heap threshold and within the
-        /// <see cref="ArrayPool{T}.Shared"/> size classes.</summary>
-        public const int DefaultBufferSize = 64 * 1024;
+        /// <summary>Size of each pooled buffer. See the remarks on <see cref="PooledChunkList"/> for why this is large.</summary>
+        public const int DefaultBufferSize = 4 * 1024 * 1024;
+
+        /// <summary>Pool shared by every chunk accumulation, so AOF replay and cluster migration reuse the same blocks.
+        /// These buffers never reach a device, so the sector size only has to be a legal alignment.</summary>
+        static readonly SectorAlignedBufferPool SharedPool = new(1, 512);
 
         readonly int bufferSize;
-        readonly ArrayPool<byte> pool;
-        readonly List<byte[]> buffers = [];
+        readonly SectorAlignedBufferPool pool;
+        readonly List<SectorAlignedMemory> buffers = [];
 
         /// <summary>Bytes filled in the last buffer; every earlier buffer is full to <see cref="bufferSize"/>.</summary>
         int lastFilled;
         long totalLength;
 
-        /// <summary>Create a chunk list over <see cref="ArrayPool{T}.Shared"/>.</summary>
+        /// <summary>Create a chunk list.</summary>
+        /// <param name="pool">Pool to rent buffers from; defaults to the shared chunk-accumulation pool.</param>
         /// <param name="bufferSize">Size of each pooled buffer; defaults to <see cref="DefaultBufferSize"/>.</param>
-        /// <param name="pool">Pool to rent from; defaults to <see cref="ArrayPool{T}.Shared"/>.</param>
-        public PooledChunkList(int bufferSize = DefaultBufferSize, ArrayPool<byte> pool = null)
+        public PooledChunkList(SectorAlignedBufferPool pool = null, int bufferSize = DefaultBufferSize)
         {
             if (bufferSize <= 0)
                 throw new ArgumentOutOfRangeException(nameof(bufferSize));
+            this.pool = pool ?? SharedPool;
             this.bufferSize = bufferSize;
-            this.pool = pool ?? ArrayPool<byte>.Shared;
         }
 
         /// <summary>Total bytes accumulated.</summary>
@@ -60,23 +68,25 @@ namespace Garnet.common
 
         /// <summary>The chunk at <paramref name="index"/>, bounded to its valid bytes (only the last chunk is partial).</summary>
         public ReadOnlyMemory<byte> GetChunk(int index)
-            => buffers[index].AsMemory(0, index == buffers.Count - 1 ? lastFilled : bufferSize);
+            => buffers[index].AsReadOnlyMemory(0, index == buffers.Count - 1 ? lastFilled : bufferSize);
 
         /// <summary>Append bytes, spilling into additional pooled buffers as needed.</summary>
-        public void Append(ReadOnlySpan<byte> data)
+        public unsafe void Append(ReadOnlySpan<byte> data)
         {
             while (!data.IsEmpty)
             {
                 if (buffers.Count == 0 || lastFilled == bufferSize)
                 {
-                    buffers.Add(pool.Rent(bufferSize));
+                    // clearOnReturn is false because a chunk is always written before it is read (only the bytes appended
+                    // since the last reset are ever exposed), so a previous rental's contents cannot be observed.
+                    buffers.Add(pool.Get(bufferSize, clearOnReturn: false));
                     lastFilled = 0;
                 }
 
-                // Rent may return a larger array than requested; cap at bufferSize so chunk lengths stay uniform and
+                // The pool may return a larger block than requested; cap at bufferSize so chunk lengths stay uniform and
                 // GetChunk can derive every non-final chunk's length without tracking it per buffer.
                 var toCopy = Math.Min(data.Length, bufferSize - lastFilled);
-                data.Slice(0, toCopy).CopyTo(buffers[^1].AsSpan(lastFilled));
+                data.Slice(0, toCopy).CopyTo(new Span<byte>(buffers[^1].aligned_pointer + lastFilled, toCopy));
                 lastFilled += toCopy;
                 totalLength += toCopy;
                 data = data.Slice(toCopy);
@@ -91,7 +101,7 @@ namespace Garnet.common
         public void Reset()
         {
             foreach (var buffer in buffers)
-                pool.Return(buffer);
+                buffer.Return();
             buffers.Clear();
             lastFilled = 0;
             totalLength = 0;

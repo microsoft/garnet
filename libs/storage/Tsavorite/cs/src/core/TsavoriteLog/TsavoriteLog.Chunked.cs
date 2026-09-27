@@ -155,8 +155,9 @@ namespace Tsavorite.core
         /// value data a single chunk record can carry: a chunk record is allocated per drain, so the ring size bounds the
         /// record size just as <see cref="ChunkWriteState.maxContent"/> does, and the effective bound is the smaller of the
         /// two. <see cref="IStreamBuffer.BufferSize"/> is the same buffer size the object-log streaming path uses for this
-        /// job. The ring is rented from the log's <see cref="SectorAlignedBufferPool"/>, which is not GC-heap memory, so its
-        /// size carries no large-object-heap cost and a cached serializer holds no buffer between writes.
+        /// job. The ring is rented from the log's <see cref="SectorAlignedBufferPool"/>, whose blocks are pinned arrays the
+        /// pool reuses, so a large ring costs no repeated large-object-heap allocation and a cached serializer holds no
+        /// buffer between writes.
         /// <para>
         /// Keep this at or above <see cref="MinPartialAllocSize"/>: page-tail packing only splits an allocation when both
         /// halves reach that size, so a smaller ring would silently stop records from filling a page tail.
