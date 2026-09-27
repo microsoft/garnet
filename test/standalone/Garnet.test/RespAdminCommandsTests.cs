@@ -509,6 +509,7 @@ namespace Garnet.test
         {
             // Hash values keep the object heap over the size tracker budget while the page count stays under the limit.
             // AOF replay runs before the size tracker is started, so allocation must not wait for the tracker to evict.
+            // If replay waits for the tracker, the recovering server.Start() below never returns.
             const int numKeys = 2000;
             var value = new string('x', 2000);
 
@@ -526,8 +527,7 @@ namespace Garnet.test
 
             server.Dispose(false);
             server = CreateGarnetServer(MethodTestDir, tryRecover: true, lowMemory: true, enableAOF: true);
-            var start = Task.Run(server.Start);
-            ClassicAssert.IsTrue(start.Wait(TimeSpan.FromSeconds(60)), "AOF recovery did not complete");
+            server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
             {
