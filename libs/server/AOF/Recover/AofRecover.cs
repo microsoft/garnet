@@ -100,7 +100,7 @@ namespace Garnet.server
                 unsafe
                 {
                     fixed (byte* ptr = entry.Memory.Span)
-                        ProcessAofRecordInternal(physicalSublogIdx, ptr, length, asReplica: false, out _);
+                        ProcessAofRecordInternal(physicalSublogIdx, ptr, length, asReplica: false, out _, canStream: true);
                     entry.Dispose();
                 }
 

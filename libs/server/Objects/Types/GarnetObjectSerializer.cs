@@ -62,6 +62,18 @@ namespace Garnet.server
             return DeserializeInternal(binaryReader);
         }
 
+        /// <summary>Thread-safe streaming deserialize over a <see cref="Stream"/>.</summary>
+        /// <remarks>The <see cref="BinaryReader"/> is local to the call rather than the instance field the
+        /// <c>BeginDeserialize</c>/<c>Deserialize</c> pair uses, so concurrent deserializations on one serializer instance
+        /// cannot clobber each other's reader state.</remarks>
+        /// <param name="stream">The serialized object bytes; read forward-only.</param>
+        /// <returns>The deserialized object.</returns>
+        public IGarnetObject Deserialize(Stream stream)
+        {
+            using var binaryReader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+            return DeserializeInternal(binaryReader);
+        }
+
         private IGarnetObject DeserializeInternal(BinaryReader binaryReader)
         {
             var firstByte = binaryReader.ReadByte();

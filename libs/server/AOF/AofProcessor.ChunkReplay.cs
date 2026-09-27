@@ -69,7 +69,13 @@ namespace Garnet.server
             // StoreRMW can queue VADDs onto different threads; everything else must wait for those to complete first.
             // Skip (1) entries from a prior checkpoint; buffer (2) future entries in the fuzzy region.
             if (!BeginReplayOp(replayContext, acc.opType, ShouldSkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, acc, asReplica), out var bufferPtr, out var bufferLength))
+            {
+                // Not dispatched (skipped, or buffered for the fuzzy region). A value deserialized while its chunks arrived
+                // would otherwise never reach the store, so release it here; a buffered record keeps its accumulated bytes.
+                if (acc.valueIsMaterialized)
+                    acc.DisposeValue();
                 return false;
+            }
 
             switch (acc.opType)
             {
@@ -188,16 +194,24 @@ namespace Garnet.server
         static void ObjectStoreUpsert<TObjectContext>(ChunkedAccumulator acc, TObjectContext objectContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            // Stream-deserialize the object value from its chunks (no contiguous copy), then release the pooled chunk
-            // buffers: the object is materialized and the sequence is no longer referenced.
-            var valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
-            acc.ReturnValueChunks();
+            // Take the value the streaming worker deserialized while its chunks arrived, or deserialize the accumulated
+            // bytes and release their pooled buffers.
+            IGarnetObject valueObject;
+            if (acc.valueIsMaterialized)
+                valueObject = acc.valueObject;
+            else
+            {
+                valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
+                acc.ReturnValueChunks();
+            }
             fixed (byte* keyPtr = acc.key)
             {
                 var key = (FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset);
                 var output = ObjectOutput.FromPinnedPointer(outputPtr, outputLength);
                 var upsertOptions = new UpsertOptions() { KeyHash = acc.keyHash };
                 _ = objectContext.Upsert(key, valueObject, ref upsertOptions);
+                // The store owns the object now, so this accumulator must not dispose it.
+                acc.ReleaseValueOwnership();
                 if (!output.SpanByteAndMemory.IsSpanByte)
                     output.SpanByteAndMemory.Dispose();
             }
@@ -273,14 +287,22 @@ namespace Garnet.server
         static void UnifiedStoreObjectUpsert<TUnifiedContext>(ChunkedAccumulator acc, TUnifiedContext unifiedContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
-            acc.ReturnValueChunks();
+            IGarnetObject valueObject;
+            if (acc.valueIsMaterialized)
+                valueObject = acc.valueObject;
+            else
+            {
+                valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
+                acc.ReturnValueChunks();
+            }
             fixed (byte* keyPtr = acc.key)
             {
                 var key = (FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset);
                 var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
                 var upsertOptions = new UpsertOptions() { KeyHash = acc.keyHash };
                 _ = unifiedContext.Upsert(key, valueObject, ref upsertOptions);
+                // The store owns the object now, so this accumulator must not dispose it.
+                acc.ReleaseValueOwnership();
                 if (!output.SpanByteAndMemory.IsSpanByte)
                     output.SpanByteAndMemory.Dispose();
             }

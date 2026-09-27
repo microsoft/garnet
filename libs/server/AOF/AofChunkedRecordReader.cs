@@ -77,12 +77,68 @@ namespace Garnet.server
         /// <summary>The reassembled serialized input bytes. Only valid when <see cref="hasInput"/>.</summary>
         public ReadOnlySpan<byte> InputSpan => new(input, 0, inputOffset);
 
-        /// <summary>Wrap the streamed object value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy).</summary>
+        /// <summary>Wrap the streamed object value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy). Only valid
+        /// when the value was accumulated rather than streamed (see <see cref="valueIsMaterialized"/>).</summary>
         public ReadOnlySequence<byte> GetValueSequence() => ReadOnlySequenceBuilder.FromChunks(valueChunks);
 
         /// <summary>Return the streamed object value's pooled buffers. Call once the value has been deserialized and the
         /// sequence from <see cref="GetValueSequence"/> is no longer referenced.</summary>
         public void ReturnValueChunks() => valueChunks?.Reset();
+
+        /// <summary>The object value deserialized while its chunks arrived, when <see cref="valueIsMaterialized"/>. Ownership
+        /// passes to the store on a successful upsert; until then this accumulator owns it (see <see cref="DisposeValue"/>).</summary>
+        public IGarnetObject valueObject;
+
+        /// <summary>True when <see cref="valueObject"/> holds the deserialized value, so no byte sequence exists. A separate
+        /// flag rather than a null check on <see cref="valueObject"/>, because a deserialized value may legitimately be null
+        /// (<c>GarnetObjectType.Null</c>).</summary>
+        public bool valueIsMaterialized;
+
+        /// <summary>The in-flight streaming deserializer, while the value is still arriving.</summary>
+        internal StreamingObjectValueDeserializer valueStream;
+
+        /// <summary>Signal that the value component is complete and take the deserialized object from the streaming worker.
+        /// A no-op when the value was accumulated rather than streamed.</summary>
+        public void CompleteValueStream()
+        {
+            var stream = valueStream;
+            if (stream is null)
+                return;
+            valueStream = null;
+            try
+            {
+                valueObject = stream.Complete();
+                valueIsMaterialized = true;
+            }
+            finally
+            {
+                stream.Dispose();
+            }
+        }
+
+        /// <summary>Dispose a materialized value that never reached the store, and abort any in-flight stream. Safe to call
+        /// more than once; clears the value so a published object is never disposed twice.</summary>
+        public void DisposeValue()
+        {
+            var stream = valueStream;
+            valueStream = null;
+            stream?.Dispose();
+
+            var obj = valueObject;
+            valueObject = null;
+            valueIsMaterialized = false;
+            (obj as IDisposable)?.Dispose();
+
+            ReturnValueChunks();
+        }
+
+        /// <summary>Relinquish ownership of a materialized value once the store has taken it, so later cleanup does not
+        /// dispose an object the store now owns.</summary>
+        public void ReleaseValueOwnership()
+        {
+            valueObject = null;
+            valueIsMaterialized = false;
+        }
 
         /// <summary>Verify each component's accumulated length matches the chunk header's declared full length.</summary>
         public void Verify()
@@ -127,12 +183,33 @@ namespace Garnet.server
     /// <remarks>
     /// The full length of each overflow/span component (key, span value, input) is known up front and stored in the chunk
     /// header, so the reader allocates ONE buffer per such component (on the first chunk) and copies the chunks directly into
-    /// it. Streamed object values (whose length is not known up front) are accumulated as a chunk list. The completed
+    /// it. Streamed object values (whose length is not known up front) are either deserialized as their chunks arrive (when
+    /// <c>canStream</c> allows it and a slot is free) or accumulated into pooled buffers. The completed
     /// accumulator is dispatched directly (no contiguous record image).
     /// </remarks>
     internal sealed unsafe class AofChunkedRecordReader
     {
         readonly Dictionary<ulong, ChunkedAccumulator> inProgress = [];
+        readonly GarnetObjectSerializer objectSerializer;
+        readonly StreamingObjectValueDeserializerLimiter streamLimiter;
+
+        internal AofChunkedRecordReader(GarnetObjectSerializer objectSerializer, StreamingObjectValueDeserializerLimiter streamLimiter)
+        {
+            this.objectSerializer = objectSerializer;
+            this.streamLimiter = streamLimiter;
+        }
+
+        /// <summary>Abort every partially-accumulated record, disposing any materialized value and aborting any in-flight
+        /// stream. Called when replay ends or fails with records still in progress, which means a truncated log.</summary>
+        internal void AbortInProgress()
+        {
+            foreach (var pending in inProgress.Values)
+                pending.DisposeValue();
+            inProgress.Clear();
+        }
+
+        /// <summary>Number of records still awaiting chunks; non-zero at the end of a clean replay means a truncated log.</summary>
+        internal int InProgressCount => inProgress.Count;
 
         /// <summary>
         /// Accumulate a chunk record (<paramref name="ptr"/> points at the chunk header, <paramref name="length"/> is the entry
@@ -141,7 +218,13 @@ namespace Garnet.server
         /// when the logical record is complete, with <paramref name="acc"/> set to the verified accumulator whose ownership
         /// passes to the caller (it is removed from the in-progress map); otherwise false with <paramref name="acc"/> null.
         /// </summary>
-        internal bool ReadChunk(byte* ptr, int length, out ChunkedAccumulator acc)
+        /// <param name="ptr">Pointer to the chunk header.</param>
+        /// <param name="length">Entry content length.</param>
+        /// <param name="acc">The completed accumulator, when this chunk completes the record.</param>
+        /// <param name="canStream">Whether this call may block to feed a streaming deserializer. False when the caller holds
+        /// the log epoch, or is driven by a data source that the blocked thread itself must service (replication replay), in
+        /// which case the value is accumulated instead.</param>
+        internal bool ReadChunk(byte* ptr, int length, out ChunkedAccumulator acc, bool canStream = false)
         {
             var header = *(AofHeader*)ptr;
             var headerType = header.HeaderType;
@@ -194,11 +277,23 @@ namespace Garnet.server
                     acc.storeVersion = bh.storeVersion;
                 }
 
-                // Pre-size span value / input; accumulate streamed object values (length unknown up front).
+                // Pre-size span value / input; an object value's length is not known up front, so it is either deserialized
+                // as it arrives (streaming) or accumulated into pooled buffers.
                 if (hasValue)
                 {
                     if (isObjectValue)
-                        acc.valueChunks = new PooledChunkList();
+                    {
+                        // Streaming is only offered when the caller can afford to block (see canStream) and a slot is free.
+                        // Admission is non-blocking by design: waiting here would stall the very thread that feeds the
+                        // in-flight values, so a full pool simply falls through to accumulation.
+                        if (canStream && objectSerializer is not null && streamLimiter is not null && streamLimiter.TryAcquire())
+                            acc.valueStream = new StreamingObjectValueDeserializer(objectSerializer, streamLimiter);
+                        else
+                        {
+                            acc.valueChunks = new PooledChunkList();
+                            _ = System.Threading.Interlocked.Increment(ref StreamingObjectValueDeserializer.TotalAccumulated);
+                        }
+                    }
                     else
                         acc.value = new byte[chunkHeader.overflowValueLength];
                 }
@@ -236,7 +331,14 @@ namespace Garnet.server
                     AppendChunk(acc, payload + off, dataLen);
                 off += dataLen;
                 if (!more)
+                {
+                    // The value's final segment clears the continue-flag, which is the only signal that the (length-unknown)
+                    // object value is complete. Drive it here rather than from AppendChunk, because a final segment may be
+                    // empty and so never reaches AppendChunk.
+                    if (acc.currentComponent == ChunkedAccumulator.Component.Value)
+                        acc.CompleteValueStream();
                     _ = acc.NextComponent();
+                }
             }
 
             if (!acc.isComplete)
@@ -262,7 +364,12 @@ namespace Garnet.server
                     break;
                 case ChunkedAccumulator.Component.Value:
                     if (acc.isObjectValue)
-                        acc.valueChunks.Append(new ReadOnlySpan<byte>(src, dataLen));
+                    {
+                        if (acc.valueStream is not null)
+                            acc.valueStream.Append(new ReadOnlySpan<byte>(src, dataLen));
+                        else
+                            acc.valueChunks.Append(new ReadOnlySpan<byte>(src, dataLen));
+                    }
                     else
                         CopyInto(acc.value, ref acc.valueOffset, src, dataLen);
                     break;

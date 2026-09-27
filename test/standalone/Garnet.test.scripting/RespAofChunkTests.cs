@@ -4,7 +4,9 @@
 using System;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -171,6 +173,108 @@ namespace Garnet.test
                 var map = recovered.ToDictionary(e => (string)e.Name, e => (string)e.Value);
                 foreach (var e in entries)
                     ClassicAssert.AreEqual((string)e.Value, map[(string)e.Name]);
+            }
+        }
+
+        /// <summary>
+        /// Whole-object AOF upserts are produced by RENAME, which wraps itself in an internal transaction
+        /// (<c>UnifiedStoreOps.RENAME</c> calls <c>txnManager.Run(true)</c>). Replay therefore sees an open transaction when
+        /// the object's chunks arrive, and streaming deliberately does not engage: the record will be buffered until the
+        /// transaction commits, and buffering the materialized object costs more than the serialized bytes it would replace.
+        /// This pins that behavior — the value must take the byte path and still recover intact.
+        /// </summary>
+        [Test]
+        public async Task AofObjectValueStreamingIsGatedByTransactionTest()
+        {
+            const string key1 = "streamhash1";
+            const string key2 = "streamhash2";
+            var entries = Enumerable.Range(0, 128)
+                .Select(i => new HashEntry("field-" + i, MakeValue(16 * 1024)))
+                .ToArray();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                foreach (var e in entries)
+                    db.HashSet(key1, e.Name, e.Value);
+                ClassicAssert.IsTrue(db.KeyRename(key1, key2));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+
+            StreamingObjectValueDeserializer.ResetCounters();
+            RestartForRecovery();
+
+            ClassicAssert.AreEqual(0, Volatile.Read(ref StreamingObjectValueDeserializer.TotalStreamed),
+                "a rename's object value is replayed inside a transaction, so it must not be stream-deserialized");
+            ClassicAssert.Greater(Volatile.Read(ref StreamingObjectValueDeserializer.TotalAccumulated), 0,
+                "the object value should have been accumulated as bytes");
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var recovered = db.HashGetAll(key2);
+                ClassicAssert.AreEqual(entries.Length, recovered.Length);
+                var map = recovered.ToDictionary(e => (string)e.Name, e => (string)e.Value);
+                foreach (var e in entries)
+                    ClassicAssert.AreEqual((string)e.Value, map[(string)e.Name]);
+            }
+        }
+
+        /// <summary>
+        /// Every chunked object value must be accounted for as either stream-deserialized or accumulated, with the
+        /// concurrency cap lowered so admission has to refuse. Admission must never block: a replay thread waiting for a
+        /// slot could not reach the chunks that would release one.
+        /// </summary>
+        [Test]
+        public async Task AofObjectValueStreamFallbackWhenSlotsExhaustedTest()
+        {
+            const int writers = 6;
+            var entries = Enumerable.Range(0, 64)
+                .Select(i => new HashEntry("field-" + i, MakeValue(16 * 1024)))
+                .ToArray();
+
+            // Concurrent writers interleave their chunk records in the log, so replay sees several values in flight at once.
+            var tasks = Enumerable.Range(0, writers).Select(w => Task.Run(() =>
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+                foreach (var e in entries)
+                    db.HashSet($"fallback-src-{w}", e.Name, e.Value);
+                ClassicAssert.IsTrue(db.KeyRename($"fallback-src-{w}", $"fallback-dst-{w}"));
+            })).ToArray();
+            await Task.WhenAll(tasks);
+
+            _ = await server.Store.CommitAOFAsync(default);
+
+            var savedCap = AofProcessor.MaxConcurrentStreamingObjectValues;
+            try
+            {
+                AofProcessor.MaxConcurrentStreamingObjectValues = 1;
+                StreamingObjectValueDeserializer.ResetCounters();
+                RestartForRecovery();
+            }
+            finally
+            {
+                AofProcessor.MaxConcurrentStreamingObjectValues = savedCap;
+            }
+
+            var streamed = Volatile.Read(ref StreamingObjectValueDeserializer.TotalStreamed);
+            var accumulated = Volatile.Read(ref StreamingObjectValueDeserializer.TotalAccumulated);
+            ClassicAssert.AreEqual(writers, streamed + accumulated,
+                "every object value should be accounted for as either streamed or accumulated");
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                for (var w = 0; w < writers; w++)
+                {
+                    var recovered = db.HashGetAll($"fallback-dst-{w}");
+                    ClassicAssert.AreEqual(entries.Length, recovered.Length, $"writer {w}");
+                    var map = recovered.ToDictionary(e => (string)e.Name, e => (string)e.Value);
+                    foreach (var e in entries)
+                        ClassicAssert.AreEqual((string)e.Value, map[(string)e.Name], $"writer {w} field {e.Name}");
+                }
             }
         }
 
