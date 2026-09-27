@@ -124,9 +124,17 @@ TsavoriteLog.MinPartialAllocSize`), the operation is written as a **run of chunk
 
 The write-side objects — the `ChunkWriteState` and, for object values, the `ChunkedObjectSerializer` with its ring buffer
 and stream — are cached per thread and rebound per record, so a chunked write allocates nothing on the steady-state path.
-The ring is a fixed `TsavoriteLog.ChunkedObjectRingBufferSize` (64 KB, deliberately under the large-object-heap threshold)
-rather than being sized from the value: it only bounds how many value bytes are held at once, so a larger value is simply
-drained into more chunk entries.
+The ring is rented per write from the log's `SectorAlignedBufferPool` and sized to
+`TsavoriteLog.ChunkedObjectRingBufferSize` (`IStreamBuffer.BufferSize`, 4 MB) rather than from the value. Two things follow
+from that size, so it is not free to change:
+
+- Because a chunk entry is allocated per drain, the ring also bounds how much **value data one entry carries** — a smaller
+  ring does not merely hold fewer bytes at once, it multiplies the number of entries written.
+- It sits at or above `MinPartialAllocSize`, which page-tail packing requires: an allocation is only split across a page
+  boundary when *both* halves reach that size, so a ring below 1 MB would silently stop chunk entries filling a page tail.
+
+Pool blocks are pinned arrays that the pool reuses, so the size costs no repeated large-object-heap allocation, and
+renting per write means a cached serializer holds no buffer (and roots no value object) between writes.
 
 ### 5.1 Chunk headers
 
@@ -145,7 +153,7 @@ off  0            4            8            12                   20             
 
 - `overflowKeyLength` / `overflowValueLength` / `inputLength` — the **full** length of each component, known up front, so
   the reader pre-allocates one buffer per component. `overflowValueLength` is left **0** for a streamed object value
-  (its length is not known up front; the reader accumulates it as a chunk list instead).
+  (its length is not known up front; the reader accumulates it into pooled buffers instead).
 - `objectId` — the identifier that groups a record's chunks: the **logicalAddress of the record's first chunk**, written
   identically on every chunk. It is the only field patched per-chunk at write time.
 - `keyHash` — `GarnetLog.HASH(key)`, identical on every chunk; used to route all of a record's chunks to the same replay
@@ -178,9 +186,21 @@ prefix (i32):
 - A length prefix is written **whole or not at all**: if fewer than `sizeof(int)` bytes remain in the entry, the prefix
   is deferred to the start of the next chunk entry — a prefix is **never split** across an entry boundary, on both the
   write (`WriteOneRecord`) and read side.
-- A span (overflow) value is copied into its pre-sized buffer; a streamed **object** value is accumulated as a list of
-  buffers and exposed as a `ReadOnlySequence<byte>` (`ChunkedAccumulator.GetValueSequence`) for streaming deserialize
-  with no giant contiguous copy — this is what lets an object value exceed 2 GB.
+- A span (overflow) value is copied into its pre-sized buffer; a streamed **object** value is accumulated into a
+  `PooledChunkList` and exposed as a `ReadOnlySequence<byte>` (`ChunkedAccumulator.GetValueSequence`) for streaming
+  deserialize with no giant contiguous copy — this is what lets an object value exceed 2 GB. The list packs arriving
+  segments into uniform pooled buffers, so transport framing does not dictate the allocation shape.
+
+**Why the value is accumulated and not deserialized as it arrives.** Accumulating means the serialized bytes are held
+alongside the materialized object, and deserializing incrementally would avoid that — but it cannot be applied to the
+records that would benefit. Whole-object upserts come from `RENAME`, which wraps itself in an internal transaction, so
+replay is inside a transaction when the chunks arrive and the record is *buffered until commit* rather than dispatched;
+a buffered record holds its value in whichever form it was accumulated, and for a collection the materialized object is
+several times the size of the bytes. Deserialization is also synchronous, so incremental deserialization needs a second
+thread fed by the replay thread, which cannot block where that thread holds the log epoch (the bulk-consume path runs
+the consumer under it for entries resident in the log buffer) or is itself the thread that must deliver the remaining
+chunks (replication replay, fed from the network). Between them these exclude every path a chunked object value
+currently arrives on.
 
 ### 5.3 A large object across chunk entries
 
@@ -263,7 +283,7 @@ sub-items are terse notes.
   - *`AofProcessor.cs`; per scanned entry*
   - `AofChunkedRecordReader.ReadChunk(ptr, length, out acc)` → `AppendChunk(...)`
     - *accumulate this entry's segments into the record's `ChunkedAccumulator`; true once every component has arrived*
-    - *populates `ChunkedAccumulator.key` / `.value` (span value) / `.input`; an **object value**'s chunks append to `.valueChunks` (`List<byte[]>`)*
+    - *populates `ChunkedAccumulator.key` / `.value` (span value) / `.input`; an **object value**'s chunks append to `.valueChunks` (`PooledChunkList`)*
   - `ProcessAofRecordInternal(acc)` → `ReplayOp(acc)`
     - *`AofProcessor.ChunkReplay.cs`; record complete → dispatch by opType*
     - `stringContext.Upsert(key, input, value)`
