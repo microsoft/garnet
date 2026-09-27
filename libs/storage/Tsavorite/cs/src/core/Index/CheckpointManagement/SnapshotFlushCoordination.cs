@@ -84,6 +84,9 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>Whether Snapshot coordination is currently installed. Checkpoint cleanup paths must leave this false.</summary>
+        internal bool HasSnapshotFlushCoordination => Volatile.Read(ref snapshotFlushCoordination) is not null;
+
         /// <summary>
         /// Close and remove <paramref name="coordination"/> if it is installed. A null value is a no-op so callers do
         /// not need to duplicate null checks on cleanup paths.

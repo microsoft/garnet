@@ -138,6 +138,11 @@ namespace Tsavorite.core
             // fails it, and its completion would then be counted against the next checkpoint's flush state.
             TsavoriteBase.WaitForCheckpointFlush(store._hybridLogCheckpoint.flushedTask);
 
+            // Remove the allocator's install before disposing. Dispose() closes the coordination and then discards the
+            // reference, so clearing afterward would find nothing to clear and leave the allocator holding a closed
+            // object until the next PREPARE overwrites it. FoldOver installs no coordination, so this is a no-op there.
+            store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+
             // Releases any snapshot devices and flush buffers already created, and clears the checkpoint so the next
             // one can run. Matches the cleanup CompleteCheckpointAsync performs when it observes a failed checkpoint.
             store._hybridLogCheckpoint.Dispose();
