@@ -114,9 +114,8 @@ namespace Garnet.client
         readonly long wrapDistance;
         readonly int maxChunkSizeBytes;
 
-        PageOffset TailPageOffset;
+        PageOffset tailPageOffset;
         long flushedUntilAddress, readOnlyAddress;
-
         int ongoingAggressiveShiftReadOnly;
 
         // Injected transport primitive and the failure callback, supplied at construction.
@@ -243,44 +242,7 @@ namespace Garnet.client
             completionFreed.Dispose();
         }
 
-        /// <summary>
-        /// Register (store and publish) a request payload at the descriptor address, making it eligible for
-        /// flushing. Publication writes the descriptor's self-key into page memory; the producing thread must
-        /// hold the epoch, so the flusher (which validates key == address only after the epoch barrier) never
-        /// observes a partially-written slot.
-        /// </summary>
-        /// <param name="address"></param>
-        /// <param name="payload"></param>
-        internal unsafe void RegisterRequest(long address, TRequest payload)
-        {
-            Debug.Assert(epoch.ThisInstanceProtected());
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
-            var slot = ComputeSlot(address);
-            requests[slot] = payload;
-            // Publish request to the consumer
-            var ptr = (long*)GetPhysicalAddress(address);
-            *ptr = address;
-
-            // If Dispose swept this slot before publication, its reclaim pass has already run and will not
-            // revisit the slot. Re-check and reclaim here via the same atomic claim so the just-published
-            // payload cannot leak.
-            if (Volatile.Read(ref disposed) && TryClaimRequestDescriptor(address, ptr, out _, out var reclaimed))
-                reclaimed.Dispose();
-        }
-
-        /// <summary>
-        /// Register (store and publish) a completion for the given ticket. The release-fenced marker write
-        /// happens after the completion store, so the barrier-less reply reader that observes the marker also
-        /// observes a fully-written completion.
-        /// </summary>
-        /// <param name="ticket"></param>
-        /// <param name="completion"></param>
-        internal void RegisterCompletion(int ticket, TCompletion completion)
-        {
-            var slot = ticket & completionMask;
-            completionLane[slot].completion = completion;
-            Volatile.Write(ref completionLane[slot].published, (long)ticket + 1);
-        }
+        #region Utilities
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         int ComputeSlot(long address)
@@ -295,7 +257,7 @@ namespace Garnet.client
         /// </summary>
         public long GetTailAddress()
         {
-            var local = TailPageOffset;
+            var local = tailPageOffset;
             if (local.Offset >= ringPageSizeBytes)
             {
                 local.Page = (local.Page + 1) & (int)PageOffset.kPageMask;
@@ -308,7 +270,7 @@ namespace Garnet.client
         private long TryAllocateInternal(int size, out int taskId, bool expectsResponse)
         {
             PageOffset localTailPageOffset = default;
-            localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
+            localTailPageOffset.PageAndOffset = tailPageOffset.PageAndOffset;
 
             // Necessary to check because threads keep retrying and we do not
             // want to overflow offset more than once per thread
@@ -323,8 +285,8 @@ namespace Garnet.client
             // A single atomic advances the request address (page/offset) and, for response-expecting
             // claims, the completion ticket (taskId) — this is what guarantees the send/completion pairing.
             localTailPageOffset.PageAndOffset = expectsResponse
-                ? Interlocked.Add(ref TailPageOffset.PageAndOffset, size + (1L << PageOffset.kTaskOffset))
-                : Interlocked.Add(ref TailPageOffset.PageAndOffset, size);
+                ? Interlocked.Add(ref tailPageOffset.PageAndOffset, size + (1L << PageOffset.kTaskOffset))
+                : Interlocked.Add(ref tailPageOffset.PageAndOffset, size);
 
             taskId = localTailPageOffset.PrevTaskId;
             var page = localTailPageOffset.Page;
@@ -358,13 +320,13 @@ namespace Garnet.client
                     // completion ticket is not consumed twice across the retry.
                     localTailPageOffset.TaskId = taskId;
                     localTailPageOffset.Offset = ringPageSizeBytes;
-                    Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
+                    Interlocked.Exchange(ref tailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
                     return -1; // RETRY_LATER
                 }
 
                 localTailPageOffset.Page = pageIndex;
                 localTailPageOffset.Offset = size;
-                TailPageOffset = localTailPageOffset;
+                tailPageOffset = localTailPageOffset;
                 page++;
                 offset = 0;
             }
@@ -433,6 +395,10 @@ namespace Garnet.client
             return bufferPages[pageIndex].pointer + offset;
         }
 
+        #endregion
+
+        #region Request Implementation
+
         /// <summary>
         /// Atomically claim the descriptor published at <paramref name="address"/> by zeroing its self-key,
         /// arbitrating single ownership across the three teardown/flush paths that race for it: the flusher
@@ -459,6 +425,52 @@ namespace Garnet.client
         }
 
         /// <summary>
+        /// Register (store and publish) a request payload at the descriptor address, making it eligible for
+        /// flushing. Publication writes the descriptor's self-key into page memory; the producing thread must
+        /// hold the epoch, so the flusher (which validates key == address only after the epoch barrier) never
+        /// observes a partially-written slot.
+        /// </summary>
+        /// <param name="address"></param>
+        /// <param name="payload"></param>
+        internal unsafe void RegisterRequest(long address, TRequest payload)
+        {
+            Debug.Assert(epoch.ThisInstanceProtected());
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
+            var slot = ComputeSlot(address);
+            requests[slot] = payload;
+            // Publish request to the consumer
+            var ptr = (long*)GetPhysicalAddress(address);
+            *ptr = address;
+
+            // If Dispose swept this slot before publication, its reclaim pass has already run and will not
+            // revisit the slot. Re-check and reclaim here via the same atomic claim so the just-published
+            // payload cannot leak.
+            if (Volatile.Read(ref disposed) && TryClaimRequestDescriptor(address, ptr, out _, out var reclaimed))
+                reclaimed.Dispose();
+        }
+
+        #endregion
+
+        #region Completion Implementation
+
+        /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
+        internal int CompletionTail => tailPageOffset.TaskId;
+
+        /// <summary>
+        /// Register (store and publish) a completion for the given ticket. The release-fenced marker write
+        /// happens after the completion store, so the barrier-less reply reader that observes the marker also
+        /// observes a fully-written completion.
+        /// </summary>
+        /// <param name="ticket"></param>
+        /// <param name="completion"></param>
+        internal void RegisterCompletion(int ticket, TCompletion completion)
+        {
+            var slot = ticket & completionMask;
+            completionLane[slot].completion = completion;
+            Volatile.Write(ref completionLane[slot].published, (long)ticket + 1);
+        }
+
+        /// <summary>
         /// Atomically claim a published completion for single delivery. Arbitrates between the receive-side
         /// teardown drain and a producer whose request failed to publish after its completion was registered:
         /// both may target the same ticket concurrently. CAS-es the publication marker from its live value to a
@@ -482,14 +494,9 @@ namespace Garnet.client
             return false;
         }
 
-        #region Completion lane
-
-        /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
-        internal int CompletionTail => TailPageOffset.TaskId;
-
         bool CompletionHasRoom()
         {
-            var outstanding = (TailPageOffset.TaskId - (int)(Volatile.Read(ref completionUntil) & PageOffset.kTaskMask)) & (int)PageOffset.kTaskMask;
+            var outstanding = (tailPageOffset.TaskId - (int)(Volatile.Read(ref completionUntil) & PageOffset.kTaskMask)) & (int)PageOffset.kTaskMask;
             return outstanding < completionCapacity;
         }
 
@@ -639,6 +646,8 @@ namespace Garnet.client
                 logger?.LogError("{Message}", message);
                 onFlushError(new InvalidOperationException(message));
             }
+
+            long GetOffsetInPage(long address) => address & pageSizeMask;
         }
 
         /// <inheritdoc />
@@ -658,31 +667,10 @@ namespace Garnet.client
             catch when (disposed) { }
         }
 
-        long GetOffsetInPage(long address) => address & pageSizeMask;
-
         public void DoAggressiveShiftReadOnly()
         {
             if (ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref ongoingAggressiveShiftReadOnly, 1, 0) == 0)
                 AggressiveShiftReadOnlyRunner(false);
-        }
-
-        void EpochProtectAggressiveShiftReadOnlyRunner()
-        {
-            try
-            {
-                epoch.Resume();
-                AggressiveShiftReadOnlyRunner(false);
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
-        }
-
-        bool ToShift()
-        {
-            var tailAddress = GetTailAddress();
-            return tailAddress > readOnlyAddress || (readOnlyAddress - tailAddress > wrapDistance);
         }
 
         void AggressiveShiftReadOnlyRunner(bool recurse)
@@ -693,7 +681,7 @@ namespace Garnet.client
                 {
                     if (recurse)
                     {
-                        Task.Run(EpochProtectAggressiveShiftReadOnlyRunner);
+                        _ = Task.Run(EpochProtectAggressiveShiftReadOnlyRunner);
                         return;
                     }
                     else
@@ -703,17 +691,36 @@ namespace Garnet.client
                 }
                 ongoingAggressiveShiftReadOnly = 0;
             } while (ToShift() && ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref ongoingAggressiveShiftReadOnly, 1, 0) == 0);
-        }
 
-        bool AggressiveFlushShiftReadOnlyBump()
-        {
-            var newReadOnlyAddress = GetTailAddress();
-            if (Utility.MonotonicUpdate(ref readOnlyAddress, newReadOnlyAddress, wrapDistance, out long oldReadOnlyAddress))
+            bool ToShift()
             {
-                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(oldReadOnlyAddress, newReadOnlyAddress));
-                return true;
+                var tailAddress = GetTailAddress();
+                return tailAddress > readOnlyAddress || (readOnlyAddress - tailAddress > wrapDistance);
             }
-            return false;
+
+            bool AggressiveFlushShiftReadOnlyBump()
+            {
+                var newReadOnlyAddress = GetTailAddress();
+                if (Utility.MonotonicUpdate(ref readOnlyAddress, newReadOnlyAddress, wrapDistance, out long oldReadOnlyAddress))
+                {
+                    epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(oldReadOnlyAddress, newReadOnlyAddress));
+                    return true;
+                }
+                return false;
+            }
+
+            void EpochProtectAggressiveShiftReadOnlyRunner()
+            {
+                try
+                {
+                    epoch.Resume();
+                    AggressiveShiftReadOnlyRunner(false);
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
+            }
         }
     }
 }
