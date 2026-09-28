@@ -104,7 +104,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             return $"{runState}; TargetSize: [{TargetSize}, hi: {highTargetSize}, lo: {lowTargetSize}]; TotalSize: [{TotalSize}, Heap: {heapSize.Total}];"
-                 + $" isOver: [{IsOverBudget}, canEvict {IsBeyondSizeLimitAndCanEvict}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
+                 + $" isOver: [{IsOverBudget}, canEvict {IsBeyondSizeLimitAndCanEvict()}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
         }
 
         /// <summary>Returns the memory budget we have remaining</summary>
