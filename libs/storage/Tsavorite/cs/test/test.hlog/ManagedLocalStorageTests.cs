@@ -3,7 +3,6 @@
 
 using System.IO;
 using System.Threading;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;

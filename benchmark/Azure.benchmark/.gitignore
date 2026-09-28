@@ -1,0 +1,29 @@
+# Generated files (compiled from bicep build).
+# These are `az bicep build` / ARM outputs and must never be tracked — the
+# .bicep source is the single source of truth. Hand-authored parameter files
+# (e.g. 01-resources/network/network-parameters.json) and
+# 02-platform/tools/manifest.json are NOT generated and remain tracked.
+02-platform/vmss.json
+01-resources/storage/storage.json
+01-resources/security/keyvault.json
+01-resources/network/network.json
+
+# Generated + personalized VMSS parameters (subscription IDs, resource IDs,
+# region). Written by 01-resources/deploy-common-resources.ps1; never commit.
+02-platform/vmss-parameters.json
+
+# Per-user SSH key manifest — seeded from the tracked manifest.template.json on
+# first run and edited with your own key names; never commit personal values.
+01-resources/security/manifest.json
+
+# Machine-local VMSS peer inventory
+.peer-cache/
+
+# Benchmark results
+03-workload/results/
+
+# SSH public keys
+01-resources/security/*.pub
+
+# Locally generated TLS certificate material
+01-resources/security/tls/

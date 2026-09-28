@@ -389,7 +389,8 @@ To update the version and make a new release, increment the `VersionPrefix` in `
 
 ### PR Protocol
 
-1. Create a GitHub Issue (Enhancement / Bug / Task)
-2. Branch naming: `<username>/branch-name`
-3. Include unit tests (see Test Structure above)
-4. Link PR to the issue in the development section
+1. Do not create an issue unless asked to do so. If such a request is made, create the issue with a clear and complete but concise description, assign it to the current user, and link the PR to the issue in the development section. Once an Issue has been created, do not update it until the PR is opened unless asked; when the PR is opened, update the Issue (again, completely but concisely) with any necessary changes.
+   a. Similarly, do not create a PR until asked. A PR may be created without an underlying Issue; the PR must completely and concisely state the problem. Once a PR has been created, update its description (again, completely but concisely) on subsequent commits with any necessary changes.
+2. It is acceptable and encouraged to consolidate smaller changes into a single larger PR for reviewer convenience and reducing bookkeeping and process, as long as the PR description clearly outlines the different fixes or improvements being made in the work.
+3. Branch naming: `<username>/branch-name`
+4. Include unit tests (see Test Structure above)

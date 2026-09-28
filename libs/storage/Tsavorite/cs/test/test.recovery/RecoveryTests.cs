@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -335,7 +334,10 @@ namespace Tsavorite.test.recovery.sumstore
             readAction(store);
             if (smallSector)
             {
-                _ = Assert.ThrowsAsync<TsavoriteException>(async () => await Checkpoint(store).ConfigureAwait(false));
+                // CatchAsync, not ThrowsAsync: the mismatched sector size can be reported either by the device
+                // rejecting the submit or by a flush completion, and the latter arrives wrapped as the derived
+                // TsavoriteIOException with the rejection as its inner exception.
+                _ = Assert.CatchAsync<TsavoriteException>(async () => await Checkpoint(store).ConfigureAwait(false));
                 Assert.Pass("Verified expected exception on mismatched sector sizes; the test cannot continue, so exiting early with success");
             }
             else

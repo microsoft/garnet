@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Garnet.test;
 using NUnit.Framework;
 using static Tsavorite.test.TestUtils;
 

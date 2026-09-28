@@ -5,7 +5,6 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Threading;
-using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.core.Utility;
