@@ -99,20 +99,20 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Runs a shrink checkpoint on the script processor's scratch buffers.
+        /// Trims the script processor's scratch buffers.
         /// </summary>
         /// <remarks>
         /// The processor is a <see cref="RespServerSession"/> that never reads from a network, so it has no
-        /// batch boundary of its own to drive the checkpoint from, and Lua resets its buffer many times
+        /// batch boundary of its own to drive the trim from, and Lua resets its buffer many times
         /// within a single script -- once per string while decoding JSON, for instance -- so those resets
-        /// cannot drive it either. The owning network session calls this from its own checkpoint, outside any
+        /// cannot drive it either. The owning network session calls this from its own trim, outside any
         /// script execution. Both the buffer <c>redis.call</c> requests are built in and the one their replies
         /// are written into are covered.
         /// </remarks>
-        internal void ScratchBufferShrinkCheckpoint()
+        internal void TrimScratchBuffer()
         {
-            processor.scratchBufferBuilder.ResetAndCheckpointNow();
-            scratchBufferNetworkSender.ShrinkCheckpoint();
+            processor.scratchBufferBuilder.ResetAndTrimNow();
+            scratchBufferNetworkSender.Trim();
         }
 
         public void SetUserHandle(UserHandle userHandle)

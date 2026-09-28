@@ -16,27 +16,27 @@ namespace Garnet.test
     /// permanently enlarges every session that saw it, so memory tracks session count rather than
     /// working set.
     ///
-    /// The policy is a periodic checkpoint rather than per-batch demand tracking: the reset path runs
+    /// The policy is a periodic trim rather than per-batch demand tracking: the reset path runs
     /// on every batch and is hot enough that reading the buffer state there is measurable, so demand is
-    /// inferred from whether the buffer grew between two checkpoints. A buffer that is needed on every
+    /// inferred from whether the buffer grew between two trims. A buffer that is needed on every
     /// batch is therefore released at most once per two intervals rather than never.
     /// </summary>
     [TestFixture]
     public class SessionBufferShrinkTests : TestBase
     {
         const int MaxRetained = 64 * 1024;
-        const int Interval = RespServerSession.SessionShrinkCheckInterval;
+        const int Interval = RespServerSession.SessionTrimInterval;
 
         /// <summary>
-        /// Batches remaining before the next checkpoint, mirroring the session's own countdown.
+        /// Batches remaining before the next trim, mirroring the session's own countdown.
         /// </summary>
         int countdown;
 
         /// <summary>
         /// Drives one batch boundary exactly as <c>RespServerSession.TryConsumeMessages</c> does: reset
-        /// unconditionally, and checkpoint once per <see cref="Interval"/> batches. The session owns the
+        /// unconditionally, and trim once per <see cref="Interval"/> batches. The session owns the
         /// interval so that one countdown covers every capped buffer it holds, which is why this mirror
-        /// rather than the builder itself decides when to checkpoint.
+        /// rather than the builder itself decides when to trim.
         /// </summary>
         void BatchBoundary(ScratchBufferBuilder builder)
         {
@@ -44,7 +44,7 @@ namespace Garnet.test
             if (--countdown <= 0)
             {
                 countdown = Interval;
-                builder.ShrinkCheckpoint();
+                builder.Trim();
             }
         }
 
@@ -91,11 +91,11 @@ namespace Garnet.test
 
         /// <summary>
         /// A session that genuinely needs a large scratch buffer on every batch must not pay a pinned
-        /// reallocation per batch. The checkpoint design permits bounded churn, so this pins the bound
+        /// reallocation per batch. The trim design permits bounded churn, so this pins the bound
         /// rather than asserting zero: without it the ratchet-free policy would be free to thrash.
         /// </summary>
         [Test]
-        public unsafe void ScratchBufferBuilderChurnsAtMostOncePerCheckpointUnderSustainedLargeUse()
+        public unsafe void ScratchBufferBuilderChurnsAtMostOncePerTrimUnderSustainedLargeUse()
         {
             var builder = new ScratchBufferBuilder(MaxRetained);
             var big = new byte[256 * 1024];
@@ -118,18 +118,18 @@ namespace Garnet.test
 
             // One release per two intervals is the design maximum; allow the boundary case.
             ClassicAssert.LessOrEqual(shrinks, Batches / (2 * Interval) + 1,
-                "buffer churned more often than one release per two checkpoint intervals");
+                "buffer churned more often than one release per two trim intervals");
         }
 
         /// <summary>
-        /// The checkpoint interval is counted in batches, so only the session's batch boundary may advance
+        /// The trim interval is counted in batches, so only the session's batch boundary may advance
         /// it. Plain <see cref="ScratchBufferBuilder.Reset"/> is called far more often -- the Lua
         /// interpreter resets once per string while decoding a JSON document, and once per response through
-        /// <c>ScratchBufferNetworkSender</c> -- and driving the countdown from those would fire checkpoints
+        /// <c>ScratchBufferNetworkSender</c> -- and driving the countdown from those would fire trims
         /// many times inside a single command, releasing a buffer the very next element re-grows.
         /// </summary>
         [Test]
-        public unsafe void NonBatchResetsDoNotAdvanceTheShrinkCheckpoint()
+        public unsafe void NonBatchResetsDoNotAdvanceTheTrimInterval()
         {
             var builder = new ScratchBufferBuilder(MaxRetained);
             var big = new byte[256 * 1024];
@@ -140,7 +140,7 @@ namespace Garnet.test
             var grown = builder.ScratchBufferCapacity;
             ClassicAssert.GreaterOrEqual(grown, big.Length);
 
-            // Far more resets than two checkpoint intervals, none of them at a batch boundary.
+            // Far more resets than two trim intervals, none of them at a batch boundary.
             for (var i = 0; i < Interval * 8; i++)
             {
                 builder.Reset();
@@ -279,7 +279,7 @@ namespace Garnet.test
         /// The Lua script cache's dummy network sender owns a second scratch buffer, which the RESP fallback
         /// path for <c>redis.call</c> writes replies into. It was built uncapped, so one large reply on that
         /// path pinned it for the life of the connection. The sender has no batch boundary of its own, so the
-        /// owning session drives its checkpoint; this pins that the cap is plumbed and releases.
+        /// owning session drives its trim; this pins that the cap is plumbed and releases.
         /// </summary>
         [Test]
         public unsafe void LuaReplySenderReleasesABufferGrownPastItsCap()
@@ -303,23 +303,23 @@ namespace Garnet.test
             var grown = sender.ScratchBufferCapacityForTests;
             ClassicAssert.Greater(grown, Cap, "the probe did not grow the reply buffer past the cap");
 
-            // Reclaim takes up to two checkpoints: the first records the new high, the second observes no
+            // Reclaim takes up to two trims: the first records the new high, the second observes no
             // growth since and releases. The floor is one response window exactly -- a cap below that is
             // undone by the first subsequent redis.call, and a cap above it retains pinned memory nobody
             // asked for, so assert the value rather than merely that it fell.
-            sender.ShrinkCheckpoint();
-            sender.ShrinkCheckpoint();
+            sender.Trim();
+            sender.Trim();
 
             var window = ScratchBufferBuilder.CapacityFor(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()));
             var afterShrink = sender.ScratchBufferCapacityForTests;
             ClassicAssert.AreEqual(window, afterShrink,
                 $"the reply buffer settled at {afterShrink} bytes rather than the {window} byte response window");
             ClassicAssert.Less(afterShrink, grown,
-                $"the reply buffer stayed at {afterShrink} bytes after two checkpoints");
+                $"the reply buffer stayed at {afterShrink} bytes after two trims");
 
             // The cap must survive the next use. A response window is requested at the full server buffer
             // size on every call, so a cap below one window is undone by the first subsequent redis.call --
-            // the buffer is released at the checkpoint and immediately reallocated larger than it started.
+            // the buffer is released at the trim and immediately reallocated larger than it started.
             sender.EnterAndGetResponseObject(out var h, out var t);
             _ = sender.SendResponse(0, 8);
 
@@ -335,10 +335,10 @@ namespace Garnet.test
         /// <see cref="ScratchBufferAllocator.Reset"/> runs several times per batch -- twice per transaction
         /// procedure, once at the batch boundary, and once for every extension that calls
         /// <c>ResetScratchBuffer</c>. Releasing there reallocates a pinned array for a session that needs
-        /// the capacity every batch, so only the periodic checkpoint may release.
+        /// the capacity every batch, so only the periodic trim may release.
         /// </summary>
         [Test]
-        public void AllocatorReleasesAnOversizedBufferAtACheckpointRatherThanAtEveryReset()
+        public void AllocatorReleasesAnOversizedBufferAtATrimRatherThanAtEveryReset()
         {
             var allocator = new ScratchBufferAllocator(maxInitialCapacity: MaxRetained);
 
@@ -352,13 +352,13 @@ namespace Garnet.test
             ClassicAssert.AreEqual(grown, allocator.TotalLength,
                 $"{Interval * 4} resets released the buffer, so a session needing it every batch churns a pinned array");
 
-            // Reclaim takes two checkpoints: the first records the new high, the second observes no growth
+            // Reclaim takes two trims: the first records the new high, the second observes no growth
             // since and releases.
-            allocator.ShrinkCheckpoint();
-            allocator.ShrinkCheckpoint();
+            allocator.Trim();
+            allocator.Trim();
 
             ClassicAssert.AreEqual(0, allocator.TotalLength,
-                $"the buffer stayed at {allocator.TotalLength} bytes after two checkpoints");
+                $"the buffer stayed at {allocator.TotalLength} bytes after two trims");
         }
 
         /// <summary>
@@ -375,13 +375,13 @@ namespace Garnet.test
             _ = allocator.CreateArgSlice(new byte[MaxRetained * 2]);
             var grown = allocator.TotalLength;
             allocator.Reset();
-            allocator.ShrinkCheckpoint();
+            allocator.Trim();
 
             _ = allocator.CreateArgSlice(new byte[64]);
             ClassicAssert.AreNotEqual(0, allocator.ScratchBufferOffset, "the slice was not allocated");
 
             for (var i = 0; i < 4; i++)
-                allocator.ShrinkCheckpoint();
+                allocator.Trim();
 
             ClassicAssert.AreEqual(grown, allocator.TotalLength,
                 "the buffer backing an outstanding slice was released, so the slice points at freed memory");

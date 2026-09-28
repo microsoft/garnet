@@ -41,7 +41,7 @@ namespace Garnet.test
 
             // Re-wind last slice created - new offset is 0
             // Popping back to the 8 byte buffer releases the 128 byte one; the buffer that remains is
-            // retained whatever the capacity max, which only ShrinkCheckpoint acts on
+            // retained whatever the capacity max, which only Trim acts on
             ClassicAssert.IsTrue(sam.RewindScratchBuffer(ref as1));
             ClassicAssert.AreEqual(0, sam.ScratchBufferOffset);
             ClassicAssert.AreEqual(8, sam.TotalLength);
@@ -72,10 +72,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, sam.ScratchBufferOffset);
             ClassicAssert.AreEqual(8192, sam.TotalLength);
 
-            // A buffer above the capacity max is released at a checkpoint rather than at reset or rewind.
+            // A buffer above the capacity max is released at a trim rather than at reset or rewind.
             // Two are needed: the first records the capacity, the second sees it has not grown since.
-            sam.ShrinkCheckpoint();
-            sam.ShrinkCheckpoint();
+            sam.Trim();
+            sam.Trim();
             var expectedTotalSize = maxInitialCapacity switch
             {
                 < 8192 => 0,

@@ -28,7 +28,7 @@ namespace Garnet.server
         /// Create a new dummy network sender with a simple in-memory buffer
         /// </summary>
         /// <param name="maxRetainedCapacity">
-        /// Capacity above which the response buffer is released at a shrink checkpoint. Unbounded by default;
+        /// Capacity above which the response buffer is released at a trim. Unbounded by default;
         /// the Lua session passes the configured session scratch cap, since a script that reads one large
         /// value would otherwise pin the reply buffer for the life of the connection.
         /// </param>
@@ -38,7 +38,7 @@ namespace Garnet.server
             serverBufferSize = BufferSizeUtils.ServerBufferSize(maxSizeSettings);
 
             // Every response window is re-requested at the full server buffer size, so a cap below what one
-            // window occupies cannot bind: the checkpoint would release the buffer and the next redis.call
+            // window occupies cannot bind: the trim would release the buffer and the next redis.call
             // would immediately reallocate it, churning a pinned array for no saving. Floor the cap at one
             // window so it releases only the genuinely oversized replies it was added for.
             scratchBufferBuilder = new(Math.Max(maxRetainedCapacity, ScratchBufferBuilder.CapacityFor(serverBufferSize)));
@@ -53,8 +53,8 @@ namespace Garnet.server
         /// <summary>
         /// Reset the response buffer and release it if it has stayed above the retention cap.
         /// </summary>
-        internal void ShrinkCheckpoint()
-            => scratchBufferBuilder.ResetAndCheckpointNow();
+        internal void Trim()
+            => scratchBufferBuilder.ResetAndTrimNow();
 
         /// <summary>Current capacity of the reply buffer.</summary>
         internal int ScratchBufferCapacityForTests => scratchBufferBuilder.ScratchBufferCapacity;

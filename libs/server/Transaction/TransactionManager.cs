@@ -110,9 +110,6 @@ namespace Garnet.server
         internal int txnStartHead;
         internal int operationCntTxn;
 
-        // Counts replay boundaries between scratch-allocator checkpoints; see ReplayShrinkBoundary.
-        int replayShrinkCountdown = RespServerSession.SessionShrinkCheckInterval;
-
         // Track whether transaction contains write operations
         internal bool PerformWrites;
 
@@ -217,11 +214,11 @@ namespace Garnet.server
         /// Driven from the session's batch boundary; WATCHed key slices span batches, so the allocator
         /// itself declines to shrink while anything is outstanding.
         /// </summary>
-        internal void ScratchBufferShrinkCheckpoint() => txnScratchBufferAllocator.ShrinkCheckpoint();
+        internal void TrimScratchBuffer() => txnScratchBufferAllocator.Trim();
 
         /// <summary>
-        /// Reports a replay boundary from a caller that has no network batch boundary to hang the checkpoint
-        /// on, so the window is counted here instead of being re-implemented by each such caller.
+        /// Releases both scratch allocators on the AOF replay path. The caller counts the interval, so this
+        /// trims every time it is called.
         /// </summary>
         /// <remarks>
         /// AOF replay reaches this manager through replayed transaction procedures, which grow both scratch
@@ -230,26 +227,22 @@ namespace Garnet.server
         /// replay session never enters the network batch boundary, so without this the buffers one wide
         /// procedure grew stay pinned for the lifetime of a replica.
         /// <para>
-        /// The transaction allocator is safe to checkpoint while a transaction is in flight, because it
+        /// The transaction allocator is safe to trim while a transaction is in flight, because it
         /// shrinks only when nothing is outstanding. The session allocator has no such guard and is reset at
-        /// the start of every procedure rather than at this boundary, so it is quiescent only between
+        /// the start of every procedure rather than at the end, so it is quiescent only between
         /// procedures: it is reset here, as the network batch boundary does, and only outside a transaction.
         /// </para>
         /// </remarks>
-        internal void ReplayShrinkBoundary()
+        internal void TrimReplayBuffers()
         {
-            if (--replayShrinkCountdown > 0)
-                return;
-
-            replayShrinkCountdown = RespServerSession.SessionShrinkCheckInterval;
-            txnScratchBufferAllocator.ShrinkCheckpoint();
+            txnScratchBufferAllocator.Trim();
 
             // Between records nothing the previous one allocated is live, so the reset that makes the
-            // checkpoint effective is safe. A transaction still running owns live slices, so skip it.
+            // trim effective is safe. A transaction still running owns live slices, so skip it.
             if (state != TxnState.Running)
             {
                 scratchBufferAllocator.Reset();
-                scratchBufferAllocator.ShrinkCheckpoint();
+                scratchBufferAllocator.Trim();
             }
         }
 

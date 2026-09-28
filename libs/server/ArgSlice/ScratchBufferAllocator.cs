@@ -75,7 +75,7 @@ namespace Garnet.server
 
         readonly SimpleStack<ScratchBuffer> previousScratchBuffers = new();
 
-        // Max size of a buffer retained across a shrink checkpoint
+        // Max size of a buffer retained across a trim
         readonly int maxInitialCapacity;
 
         // Min size that can be allocated for a single buffer
@@ -87,8 +87,8 @@ namespace Garnet.server
         // Total offset of buffers in the stack
         int totalLength;
 
-        // Capacity observed at the previous shrink checkpoint
-        int checkpointCapacity;
+        // Capacity observed at the previous trim
+        int capacityAtLastTrim;
 
         /// <summary>
         /// Combined offset across all managed scratch buffers; capture it as a savepoint and pass it to
@@ -105,7 +105,7 @@ namespace Garnet.server
         /// Creates an instance of <see cref="ScratchBufferAllocator"/>
         /// </summary>
         /// <param name="minSizeBuffer">Min size that can be allocated for a single buffer (Default: 64)</param>
-        /// <param name="maxInitialCapacity">Max size of a buffer retained across a <see cref="ShrinkCheckpoint"/> (Default: no limit)</param>
+        /// <param name="maxInitialCapacity">Max size of a buffer retained across a <see cref="Trim"/> (Default: no limit)</param>
         public ScratchBufferAllocator(int minSizeBuffer = 64, int maxInitialCapacity = int.MaxValue)
         {
             this.minSizeBuffer = minSizeBuffer;
@@ -125,7 +125,7 @@ namespace Garnet.server
 
             // Pop and discard any previous buffers. Growth always allocates strictly larger than the
             // buffer it displaces, so the current buffer is the largest and is the one worth keeping.
-            // Releasing an over-sized one is left to ShrinkCheckpoint, which runs on a coarser interval
+            // Releasing an over-sized one is left to Trim, which runs on a coarser interval
             // than this method and so does not churn a session that needs the capacity every batch.
             while (previousScratchBuffers.Count > 0)
             {
@@ -140,7 +140,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Releases a buffer that is above <see cref="maxInitialCapacity"/> and has not grown since the
-        /// previous checkpoint, so a session enlarged by one unusually large argument does not keep the
+        /// previous trim, so a session enlarged by one unusually large argument does not keep the
         /// pinned array for its lifetime.
         /// </summary>
         /// <remarks>
@@ -150,7 +150,7 @@ namespace Garnet.server
         /// array for a session that needs the capacity every batch.
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void ShrinkCheckpoint()
+        internal void Trim()
         {
             if (maxInitialCapacity == int.MaxValue)
                 return;
@@ -158,8 +158,8 @@ namespace Garnet.server
             var capacity = currScratchBuffer.IsDefault ? 0 : currScratchBuffer.Length;
 
             // Nothing outstanding is required as well as the size test: a transaction allocator holding
-            // WATCHed keys stays live across batches, and its slices must survive the checkpoint.
-            if (capacity > maxInitialCapacity && capacity <= checkpointCapacity &&
+            // WATCHed keys stays live across batches, and its slices must survive the trim.
+            if (capacity > maxInitialCapacity && capacity <= capacityAtLastTrim &&
                 previousScratchBuffers.Count == 0 && ScratchBufferOffset == 0)
             {
                 totalLength -= capacity;
@@ -167,7 +167,7 @@ namespace Garnet.server
                 capacity = 0;
             }
 
-            checkpointCapacity = capacity;
+            capacityAtLastTrim = capacity;
         }
 
         /// <summary>

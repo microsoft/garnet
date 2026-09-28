@@ -462,7 +462,7 @@ namespace Garnet.server
         /// Capacity that each per-session scratch buffer may retain indefinitely. These buffers grow to fit
         /// the largest request a session has ever served and are pinned, so without a ceiling a single large
         /// command permanently enlarges the session. Capacity above the ceiling is released at a periodic
-        /// checkpoint, and only when it did not grow since the previous checkpoint, so a session that keeps
+        /// trim, and only when it did not grow since the previous trim, so a session that keeps
         /// needing the extra capacity reallocates at most once every few dozen batches.
         /// Zero disables shrinking, restoring grow-forever behavior.
         /// </summary>
@@ -491,7 +491,7 @@ namespace Garnet.server
         /// Argument capacity that each session's RESP parse state may retain indefinitely. The parse state
         /// root buffer is sized by the argument count a client sends, so without a ceiling one very wide
         /// command permanently enlarges the session. Capacity above the ceiling is released at a periodic
-        /// batch checkpoint. Zero disables shrinking.
+        /// trim on the batch boundary. Zero disables shrinking.
         /// </summary>
         public int SessionParseStateMaxRetainedArgs = DefaultSessionParseStateMaxRetainedArgs;
 

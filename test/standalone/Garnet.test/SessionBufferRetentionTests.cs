@@ -28,9 +28,9 @@ namespace Garnet.test
         const int WideCommandArgs = 20_000;
 
         // Comfortably past the shrink hysteresis so the release path is actually reached.
-        // Two checkpoint intervals plus margin: a buffer is released at the first checkpoint that observes
+        // Two trim intervals plus margin: a buffer is released at the first trim that observes
         // no growth since the previous one, so reclaim takes up to two intervals.
-        const int SmallRounds = Garnet.server.RespServerSession.SessionShrinkCheckInterval * 3;
+        const int SmallRounds = Garnet.server.RespServerSession.SessionTrimInterval * 3;
 
         GarnetServer server;
 
@@ -182,7 +182,7 @@ namespace Garnet.test
         /// <summary>
         /// The Lua interpreter writes into the scratch buffer of the script cache's <em>inner</em>
         /// <c>RespServerSession</c>, not the network session's. That inner session never reads from a socket,
-        /// so it has no batch boundary of its own and its checkpoint has to be driven from the outer session's.
+        /// so it has no batch boundary of its own and its trim has to be driven from the outer session's.
         /// Without that wiring, one <c>cjson.encode</c> of a large value permanently enlarges every session
         /// that ran a script, which is the same ratchet the cap exists to stop -- just one object further in.
         /// </summary>
@@ -226,7 +226,7 @@ namespace Garnet.test
         /// two arms run against successive server instances in one process, so whichever runs second also
         /// measures its predecessor's residue -- swapping them moves each figure by about 130 KB per session
         /// and flips the sign of the difference; and releasing the buffer at every reset rather than at the
-        /// checkpoint, which is the churn a memory assertion here would be claiming to catch, moves it by
+        /// trim, which is the churn a memory assertion here would be claiming to catch, moves it by
         /// less than that, because churn leaves garbage that the forced collection reclaims rather than
         /// retention. An assertion over this figure would pass against both implementations.
         /// </remarks>
@@ -405,16 +405,17 @@ namespace Garnet.test
 
         /// <summary>
         /// AOF replay drives transactions through a session that never reads from a socket, so it never
-        /// reaches the network batch boundary where the shrink checkpoint runs. Replayed procedures watch
+        /// reaches the network batch boundary where the trim runs. Replayed procedures watch
         /// keys while preparing, and every watched key is copied into the transaction scratch allocator, so
         /// without a boundary of its own that allocator keeps the buffer one wide procedure grew for the
-        /// lifetime of a replica. <c>ReplayShrinkBoundary</c> is the boundary the replay path signals instead.
+        /// lifetime of a replica. The replay record counter drives <c>TrimReplayBuffers</c> instead.
         /// </summary>
         [Test]
         public void ReplayBoundaryReleasesTransactionScratchBufferWithoutABatchBoundary()
         {
             const int Cap = 16 * 1024;
-            const int Interval = Garnet.server.RespServerSession.SessionShrinkCheckInterval;
+            const int Interval = Garnet.server.RespServerSession.SessionTrimInterval;
+            var countdown = Interval;
 
             StartServer(scratchCap: "16k");
             using var s = Connect();
@@ -436,12 +437,12 @@ namespace Garnet.test
 
             // Nothing may be released before the window elapses.
             for (var i = 0; i < Interval - 1; i++)
-                txnManager.ReplayShrinkBoundary();
-            ClassicAssert.AreEqual(grown, allocator.TotalLength, "released before the checkpoint window elapsed");
+                ReplayOneRecord(txnManager, ref countdown);
+            ClassicAssert.AreEqual(grown, allocator.TotalLength, "released before the trim window elapsed");
 
-            // Release takes two checkpoints: the first records the capacity, the second sees it did not grow.
+            // Release takes two trims: the first records the capacity, the second sees it did not grow.
             for (var i = 0; i < Interval * 2; i++)
-                txnManager.ReplayShrinkBoundary();
+                ReplayOneRecord(txnManager, ref countdown);
 
             ClassicAssert.LessOrEqual(allocator.TotalLength, Cap,
                 "the transaction scratch allocator was never released without a network batch boundary");
@@ -450,7 +451,7 @@ namespace Garnet.test
         /// <summary>
         /// A replayed procedure also builds its arguments from the <em>session</em> scratch allocator, which
         /// the replay path resets at the start of every procedure but never shrinks. A completed procedure
-        /// therefore leaves the allocator oversized with a non-zero offset, and a bare shrink checkpoint
+        /// therefore leaves the allocator oversized with a non-zero offset, and a bare trim
         /// declines in that state, so the buffer one wide procedure grew would stay pinned for the lifetime
         /// of a replica. The replay boundary resets it first, exactly as the network batch boundary does.
         /// </summary>
@@ -458,7 +459,8 @@ namespace Garnet.test
         public void ReplayBoundaryReleasesSessionScratchBufferWithoutABatchBoundary()
         {
             const int Cap = 16 * 1024;
-            const int Interval = Garnet.server.RespServerSession.SessionShrinkCheckInterval;
+            const int Interval = Garnet.server.RespServerSession.SessionTrimInterval;
+            var countdown = Interval;
 
             StartServer(scratchCap: "16k");
             using var s = Connect();
@@ -482,15 +484,28 @@ namespace Garnet.test
 
             // Nothing may be released before the window elapses.
             for (var i = 0; i < Interval - 1; i++)
-                txnManager.ReplayShrinkBoundary();
-            ClassicAssert.AreEqual(grown, allocator.TotalLength, "released before the checkpoint window elapsed");
+                ReplayOneRecord(txnManager, ref countdown);
+            ClassicAssert.AreEqual(grown, allocator.TotalLength, "released before the trim window elapsed");
 
-            // Release takes two checkpoints: the first records the capacity, the second sees it did not grow.
+            // Release takes two trims: the first records the capacity, the second sees it did not grow.
             for (var i = 0; i < Interval * 2; i++)
-                txnManager.ReplayShrinkBoundary();
+                ReplayOneRecord(txnManager, ref countdown);
 
             ClassicAssert.LessOrEqual(allocator.TotalLength, Cap,
                 "the session scratch allocator was never released without a network batch boundary");
+        }
+
+        /// <summary>
+        /// Replays one record the way <c>AofProcessor</c> does: the caller owns the interval, and the
+        /// manager trims only when it elapses.
+        /// </summary>
+        static void ReplayOneRecord(Garnet.server.TransactionManager txnManager, ref int countdown)
+        {
+            if (--countdown > 0)
+                return;
+
+            countdown = Garnet.server.RespServerSession.SessionTrimInterval;
+            txnManager.TrimReplayBuffers();
         }
 
         /// <summary>

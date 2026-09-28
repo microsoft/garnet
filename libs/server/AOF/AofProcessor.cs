@@ -243,9 +243,15 @@ namespace Garnet.server
             var replayContext = aofReplayCoordinator.GetReplayContext(virtualSublogIdx);
             isCheckpointStart = false;
 
-            // Replay has no network batch boundary, so the transaction scratch allocator is checkpointed
-            // from here. Replayed procedures watch keys while preparing, which allocates from it.
-            replayContext.respServerSession.txnManager?.ReplayShrinkBoundary();
+            // Replay has no network batch boundary, so the scratch allocators are trimmed here instead, once
+            // every SessionTrimInterval records. Replayed procedures watch keys while preparing, which
+            // allocates. The countdown is checked here, as the batch boundary does, so that the method it
+            // guards means "trim now" on both paths.
+            if (--replayContext.trimCountdown <= 0)
+            {
+                replayContext.trimCountdown = RespServerSession.SessionTrimInterval;
+                replayContext.respServerSession.txnManager?.TrimReplayBuffers();
+            }
 
             // Chunked record: accumulate this chunk. Once the logical record is complete, dispatch the accumulator directly
             // (no contiguous record image is materialized).

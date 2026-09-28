@@ -57,10 +57,10 @@ namespace Garnet.server
         readonly int maxRetainedCapacity;
 
         /// <summary>
-        /// Capacity observed at the previous checkpoint. A buffer that has not grown since then is not
+        /// Capacity observed at the previous trim. A buffer that has not grown since then is not
         /// earning its keep, which is the demand signal the policy acts on.
         /// </summary>
-        int checkpointCapacity;
+        int capacityAtLastTrim;
 
         /// <summary>Current offset in scratch buffer</summary>
         internal int ScratchBufferOffset => scratchBufferOffset;
@@ -93,36 +93,36 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Resets the buffer and runs a shrink checkpoint immediately, for a builder whose owning session has
+        /// Resets the buffer and trims immediately, for a builder whose owning session has
         /// no batch boundary of its own. Used for the Lua script processor's builder, which is driven from the
-        /// outer network session's checkpoint instead.
+        /// outer network session's trim instead.
         /// </summary>
-        internal void ResetAndCheckpointNow()
+        internal void ResetAndTrimNow()
         {
             Reset();
-            ShrinkCheckpoint();
+            Trim();
         }
 
         /// <summary>
         /// Releases a buffer that has stayed above <see cref="maxRetainedCapacity"/> without growing since
-        /// the previous checkpoint.
+        /// the previous trim.
         /// </summary>
         /// <remarks>
         /// Cold by construction, and the caller owns the interval. Only a caller that runs once per batch may
         /// drive this: several callers reset far more often -- notably the Lua interpreter, which resets per
-        /// string while decoding a JSON document -- and checkpointing from those would shrink a buffer the
+        /// string while decoding a JSON document -- and trimming from those would shrink a buffer the
         /// very next element re-grows. The owning session counts the interval, so a session with several
         /// capped buffers pays one countdown for all of them. A reset must already have invalidated every
         /// outstanding slice.
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void ShrinkCheckpoint()
+        internal void Trim()
         {
             if (maxRetainedCapacity == int.MaxValue)
                 return;
 
             var capacity = scratchBuffer?.Length ?? 0;
-            if (capacity > maxRetainedCapacity && capacity <= checkpointCapacity)
+            if (capacity > maxRetainedCapacity && capacity <= capacityAtLastTrim)
             {
                 // Reallocate at the baseline rather than releasing outright: callers such as
                 // WriteArgument dereference scratchBufferHead without a null check, relying on the
@@ -133,7 +133,7 @@ namespace Garnet.server
                 capacity = maxRetainedCapacity;
             }
 
-            checkpointCapacity = capacity;
+            capacityAtLastTrim = capacity;
         }
 
         /// <summary>
