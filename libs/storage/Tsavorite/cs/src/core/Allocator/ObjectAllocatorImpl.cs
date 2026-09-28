@@ -49,6 +49,31 @@ namespace Tsavorite.core
             => Volatile.Read(ref LastIssuedFlushedUntilAddress);
 
         /// <summary>
+        /// Whether <paramref name="logicalAddress"/> is in a read-only flush that is committed but not yet durable, and whose
+        /// record image therefore must not be mutated.
+        /// </summary>
+        /// <remarks>
+        /// This allocator resolves objectIds against the live <see cref="ObjectIdMap"/>, stamps ObjectLogPosition and size hints
+        /// into the live record, and writes the live page to the device with the epoch suspended. Releasing a record's heap in
+        /// that window can persist a Valid record whose ObjectLogPosition refers to a freed - or recycled, hence unrelated -
+        /// object. Such a record keeps its heap until the flush has captured it, and is released at eviction instead.
+        /// <para>
+        /// The upper bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.SafeReadOnlyAddress"/>, not
+        /// <see cref="LastIssuedFlushedUntilAddress"/>: <see cref="OnPagesMarkedReadOnly"/> advances SafeReadOnlyAddress first and
+        /// only then publishes LastIssued and issues the flush, so a thread that already sees an address as immutable can still
+        /// see LastIssued below it. SafeReadOnlyAddress is where a flush of the address becomes committed, so it is the first
+        /// bound that cannot be observed too late.
+        /// </para>
+        /// <para>
+        /// The lower bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.FlushedUntilAddress"/>: below it the
+        /// record's bytes are already durable and the flush that wrote them has released it.
+        /// </para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal override bool IsFrozenForFlush(long logicalAddress)
+            => logicalAddress < SafeReadOnlyAddress && logicalAddress >= FlushedUntilAddress;
+
+        /// <summary>
         /// Dynamically extended Flush end address, used by <see cref="OnPagesMarkedReadOnlyWorker"/>
         /// </summary>
         long OngoingFlushedUntilAddress;
@@ -1059,12 +1084,13 @@ namespace Tsavorite.core
                                     }
                                     else
                                     {
-                                        // A still-Valid record must keep its overflow heap: the paths that free an overflow key or value
-                                        // (OnDispose with Elided or RevivificationFreeList) are preceded by SealAndInvalidate, and the Deleted path
-                                        // runs only in the mutable region, which SafeReadOnlyAddress excludes from this flush range. A Valid record
-                                        // CAN lose an object value, because a CopyUpdate source clear disposes it without invalidating the record.
-                                        Debug.Assert(!logRecord.Info.Valid || (!logRecord.DataHeader.KeyIsOverflow && !logRecord.DataHeader.ValueIsOverflow),
-                                            "A Valid record lost its captured overflow heap during object-log flush; expected the live record to be Invalid (elided).");
+                                        // A still-Valid record must keep its heap. The paths that free an overflow key or value
+                                        // (OnDispose with Elided or RevivificationFreeList) are preceded by SealAndInvalidate, and the Deleted
+                                        // path -- whether in the mutable region or applied to a CopyUpdate-superseded source -- is declined for
+                                        // this flush range by IsFrozenForFlush, which defers the release to eviction. So a lost capture means
+                                        // the live record is Invalid (elided).
+                                        Debug.Assert(!logRecord.Info.Valid,
+                                            "A Valid record lost its captured heap during object-log flush; expected the live record to be Invalid (elided).");
                                     }
                                 }
                                 else

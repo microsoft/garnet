@@ -201,6 +201,13 @@ namespace Tsavorite.core
         public long FlushedUntilAddress;
 
         /// <summary>
+        /// Whether <paramref name="logicalAddress"/> is in a read-only flush that is committed but not yet durable, and whose
+        /// record image therefore must not be mutated. False for allocators that flush from a private page copy.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal virtual bool IsFrozenForFlush(long logicalAddress) => false;
+
+        /// <summary>
         /// The highest address that has been closed by <see cref="OnPagesClosed"/>. It will catch up to <see cref="SafeHeadAddress"/>
         /// when a region is closed.
         /// </summary>

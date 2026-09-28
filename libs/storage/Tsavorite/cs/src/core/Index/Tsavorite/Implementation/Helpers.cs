@@ -78,7 +78,7 @@ namespace Tsavorite.core
 
         // Can only elide the record if it is the tail of the tag chain (i.e. is the record in the hash bucket entry) and its
         // PreviousAddress does not point to a valid record. Otherwise an earlier record for this key could be reachable again.
-        // Also, it cannot be elided if it is frozen due to checkpointing.
+        // Also, it cannot be elided if it is frozen by a checkpoint or an in-flight flush.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
@@ -90,16 +90,20 @@ namespace Tsavorite.core
         }
 
         // If the record is in a checkpoint range, it must not be modified. If it is in the fuzzy region, it can only be modified
-        // if it is a new record.
+        // if it is a new record. A record whose flush is committed but not yet durable is frozen for the same reason: an allocator
+        // that flushes from the live page is reading the record image, so releasing its heap or rewriting its layout would persist
+        // a torn or dangling record. Such a record is released at eviction instead.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
-            return sessionFunctions.Ctx.IsInV1
+            if (sessionFunctions.Ctx.IsInV1
                         && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress // In checkpoint range
-                            || !srcRecordInfo.IsInNewVersion);                                                  // In fuzzy region and an old version
+                            || !srcRecordInfo.IsInNewVersion))                                                  // In fuzzy region and an old version
+                return true;
+            return hlogBase.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -108,14 +112,14 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Dispose the resources of an in-memory source record that a newly-CAS'd record has just superseded, unless an
-        /// ongoing checkpoint has frozen it.
+        /// ongoing checkpoint or an in-flight flush has frozen it.
         /// </summary>
         /// <remarks>
         /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
-        /// free list for reuse by another record. The snapshot flush reads object ids from its page copy but resolves them
-        /// against the live map, so disposing a frozen record lets the flush serialize a freed - or recycled, and therefore
-        /// unrelated - object in its place. A frozen record must keep its value until the checkpoint has captured it; the
-        /// value is then accounted for and released when the page is evicted.
+        /// free list for reuse by another record. A frozen record must keep its value until the flush that is reading it has
+        /// captured it; the value is then accounted for and released when the page is evicted. Two flushes read a record the
+        /// caller has already superseded: the snapshot flush reads object ids from its page copy but resolves them against the
+        /// live map, and the object allocator's read-only flush serializes and writes the live page directly.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,

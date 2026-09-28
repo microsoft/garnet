@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
@@ -339,6 +340,7 @@ namespace Tsavorite.test
 
         private TsavoriteKV<ObjTrackingStoreFunctions, ObjTrackingAllocator> store;
         private IDevice log, objlog;
+        private GatedCompletionDevice gatedLog;
         private ObjDisposeTracker tracker;
 
         [SetUp]
@@ -347,11 +349,16 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjDeleteDisposeTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjDeleteDisposeTests.obj.log"), deleteOnClose: true);
+
+            // Only the frozen-flush test needs to hold a flush in flight; everywhere else the gate would just add indirection.
+            if (TestContext.CurrentContext.Test.MethodName.Contains("FrozenForFlush"))
+                gatedLog = new GatedCompletionDevice(log);
+
             tracker = new ObjDisposeTracker();
             store = new(new()
             {
                 IndexSize = 1L << 13,
-                LogDevice = log,
+                LogDevice = (IDevice)gatedLog ?? log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
@@ -366,6 +373,8 @@ namespace Tsavorite.test
         {
             store?.Dispose();
             store = null;
+            gatedLog?.Dispose();
+            gatedLog = null;
             log?.Dispose();
             log = null;
             objlog?.Dispose();
@@ -415,6 +424,39 @@ namespace Tsavorite.test
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             for (int i = 0; i < n; i++) _ = s.BasicContext.Delete(new TestObjectKey { key = i });
             ClassicAssert.AreEqual(n, tracker.DisposeRecordDeletedCount, $"OnDispose(Deleted) should be called exactly {n} times");
+        }
+
+        /// <summary>
+        /// Disposing a superseded source frees its value object and returns its ObjectIdMap slot for reuse. The object allocator
+        /// flushes from the live page, so doing that while the record's flush is issued but not yet durable can persist a Valid
+        /// record whose ObjectLogPosition refers to a freed - or recycled, hence unrelated - object. Disposal must be deferred to
+        /// eviction for the duration of that window.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDisposeDeferredWhileFrozenForFlushTest()
+        {
+            var recordAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+
+            // Hold the flush's device write so SafeReadOnlyAddress passes the record while FlushedUntilAddress stays behind it.
+            gatedLog.Gate = true;
+            store.hlogBase.ShiftReadOnlyAddressWithWait(store.Log.TailAddress, wait: false);
+            gatedLog.WaitForPending(1, TimeSpan.FromSeconds(30));
+            tracker.Reset();
+
+            Assert.That(store.hlogBase.SafeReadOnlyAddress, Is.GreaterThan(recordAddress), "record should be immutable");
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.LessThanOrEqualTo(recordAddress), "record's flush should still be in flight");
+            Assert.That(store.hlogBase.IsFrozenForFlush(recordAddress), Is.True);
+
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
+                _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
+
+            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) must be deferred while the record's flush is in flight");
+
+            // Let the flush complete so teardown does not block on it.
+            gatedLog.Release(0);
+            gatedLog.WaitForCompletion(0, TimeSpan.FromSeconds(30));
         }
 
         #endregion
