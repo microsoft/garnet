@@ -70,7 +70,7 @@ namespace Tsavorite.core
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal override bool IsFrozenForFlush(long logicalAddress)
+        internal bool IsFrozenForFlush(long logicalAddress)
             => logicalAddress < SafeReadOnlyAddress && logicalAddress >= FlushedUntilAddress;
 
         /// <summary>
@@ -994,6 +994,16 @@ namespace Tsavorite.core
             // Recovery and Snapshot enter without epoch protection. Snapshot ordering prevents FlushedUntilAddress, and
             // therefore HeadAddress, from reaching the active page. ReadOnly enters protected from the epoch callback that
             // marked the range immutable; release that hold during serialization and IO, then restore it before returning.
+            //
+            // Suspending is necessary because object serialization and the device write below can block on IO, and an epoch held
+            // across IO stalls reclamation process-wide: queued drain-list actions cannot fire, and every thread waiting on a
+            // BumpCurrentEpoch barrier waits behind this one.
+            //
+            // Suspending is safe because this page's residency does not depend on holding the epoch. Eviction is capped at
+            // FlushedUntilAddress, which cannot advance past this page until this flush's own completion callback records the
+            // page as flushed, so HeadAddress cannot reach the page while the write is in flight. The out-of-line heap the
+            // records point to is kept alive by the per-record capture below, which roots the byte[]/object independently of the
+            // epoch. TrySuspend reports whether it actually released a hold, so only ReadOnly Resumes in the finally.
             var protectEpochWhenDone = epoch.TrySuspend();
 
             // Overflow Keys and Values are written to, and Object values are serialized to, this Stream, if we have flushBuffers.

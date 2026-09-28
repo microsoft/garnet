@@ -142,6 +142,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool IsFrozenForFlush(long logicalAddress) => _this.IsFrozenForFlush(logicalAddress);
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.OnDisposeDiskRecord(ref logRecord, disposeReason);
 
         /// <inheritdoc/>

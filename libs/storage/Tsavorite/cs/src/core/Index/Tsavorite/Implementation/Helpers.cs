@@ -103,7 +103,7 @@ namespace Tsavorite.core
                         && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress // In checkpoint range
                             || !srcRecordInfo.IsInNewVersion))                                                  // In fuzzy region and an old version
                 return true;
-            return hlogBase.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
+            return hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

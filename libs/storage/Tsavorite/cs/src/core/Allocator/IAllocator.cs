@@ -120,6 +120,19 @@ namespace Tsavorite.core
         /// <summary>Dispose an in-memory log record</summary>
         void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason);
 
+        /// <summary>
+        /// Whether <paramref name="logicalAddress"/> is in a flush that is committed but not yet durable, so the record's
+        /// image must not be mutated or its heap released.
+        /// </summary>
+        /// <remarks>
+        /// Declared here rather than as an <c>AllocatorBase</c> virtual because callers reach it through the
+        /// <c>TAllocator</c> struct type constraint, which the JIT devirtualizes and inlines; a virtual call would not be.
+        /// This is on the operation hot path -- <c>IsFrozen</c> reaches it from <c>CanElide</c>, <c>TryRevivifyInChain</c>
+        /// and <c>OnDisposeSupersededSource</c>, so it runs per RMW/Upsert/Delete that finds an in-memory source, not
+        /// once per flushed page.
+        /// </remarks>
+        bool IsFrozenForFlush(long logicalAddress);
+
         /// <summary>Dispose an on-disk / transient log record. Invokes the store's
         /// <see cref="IStoreFunctions.OnDisposeDiskRecord"/> trigger; the caller should then call
         /// <see cref="DiskLogRecord.Dispose"/> to release the record buffer.</summary>

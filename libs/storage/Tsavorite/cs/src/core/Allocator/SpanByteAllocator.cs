@@ -139,6 +139,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => _this.OnDispose(ref logRecord, disposeReason);
 
+        /// <summary>
+        /// Always false: this allocator's records have no heap fields and no object log, so disposal neither frees an
+        /// <see cref="ObjectIdMap"/> slot nor leaves an ObjectLogPosition referring to freed bytes. Flushing writes the
+        /// live page, but it only DMAs the record image; it never reads a record to resolve or re-serialize anything.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool IsFrozenForFlush(long logicalAddress) => false;
+
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason) => _this.OnDisposeDiskRecord(ref logRecord, disposeReason);

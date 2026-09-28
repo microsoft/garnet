@@ -447,7 +447,7 @@ namespace Tsavorite.test
 
             Assert.That(store.hlogBase.SafeReadOnlyAddress, Is.GreaterThan(recordAddress), "record should be immutable");
             Assert.That(store.hlogBase.FlushedUntilAddress, Is.LessThanOrEqualTo(recordAddress), "record's flush should still be in flight");
-            Assert.That(store.hlogBase.IsFrozenForFlush(recordAddress), Is.True);
+            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.True);
 
             using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
                 _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
