@@ -70,7 +70,7 @@ namespace Garnet.client
     /// <para>
     /// The response (receiver) side is intentionally left minimal for now: the completion lane provides
     /// storage, publication and accounting hooks (<see cref="CompletionTail"/>,
-    /// <see cref="TryReadCompletion"/>, <see cref="AdvanceReplied"/>), but the reply reader that drains it
+    /// <see cref="TryReadCompletion"/>, <see cref="AdvanceCompletion"/>), but the reply reader that drains it
     /// is implemented separately. Until a reader advances <c>repliedUntil</c>, response-expecting claims
     /// are bounded by the completion-lane capacity; fire-and-forget claims never touch the lane.
     /// </para>
@@ -109,15 +109,15 @@ namespace Garnet.client
 
         readonly RingPage[] bufferPages;
         readonly ILogger logger;
-        readonly int ringPageCount, PageSizeBits, PageSizeMask;
+        readonly int ringPageCount, pageSizeBits, pageSizeMask;
         internal readonly int ringPageSizeBytes;
         readonly long wrapDistance;
         readonly int maxChunkSizeBytes;
 
         PageOffset TailPageOffset;
-        long FlushedUntilAddress, ReadOnlyAddress;
+        long flushedUntilAddress, readOnlyAddress;
 
-        int _ongoingAggressiveShiftReadOnly;
+        int ongoingAggressiveShiftReadOnly;
 
         // Injected transport primitive and the failure callback, supplied at construction.
         readonly ProcessPayload operateOnPayload;
@@ -141,7 +141,7 @@ namespace Garnet.client
         // (ticket & completionMask).
         readonly CompletionSlot[] completionLane;
         readonly int completionCapacity, completionMask;
-        long repliedUntil;
+        long completionUntil;
 
         // Cache-line-isolated completion slot. Padded to 64 bytes so two producers publishing adjacent head
         // tickets do not share a line. NOTE: the completion lane is single-consumer FIFO, so the reader trails
@@ -208,9 +208,9 @@ namespace Garnet.client
             var ringSlotCount = this.ringPageCount * ringPageSizeBytes / RingDescriptorSize;
             this.requests = new TRequest[ringSlotCount];
 
-            this.PageSizeBits = Utility.NumBitsPreviousPowerOf2(ringPageSizeBytes);
-            this.wrapDistance = PageWrapDistance << PageSizeBits;
-            PageSizeMask = ringPageSizeBytes - 1;
+            this.pageSizeBits = Utility.NumBitsPreviousPowerOf2(ringPageSizeBytes);
+            this.wrapDistance = PageWrapDistance << pageSizeBits;
+            pageSizeMask = ringPageSizeBytes - 1;
 
             bufferPages = new RingPage[this.ringPageCount];
             for (var i = 0; i < this.ringPageCount; i++)
@@ -233,8 +233,8 @@ namespace Garnet.client
                 var basePtr = bufferPages[page].pointer;
                 for (var offset = 0; offset < ringPageSizeBytes; offset += RingDescriptorSize)
                 {
-                    var address = ((long)page << PageSizeBits) | (uint)offset;
-                    if (TryClaimDescriptor(address, (long*)(basePtr + offset), out _, out var payload))
+                    var address = ((long)page << pageSizeBits) | (uint)offset;
+                    if (TryClaimRequestDescriptor(address, (long*)(basePtr + offset), out _, out var payload))
                         payload.Dispose();
                 }
             }
@@ -264,7 +264,7 @@ namespace Garnet.client
             // If Dispose swept this slot before publication, its reclaim pass has already run and will not
             // revisit the slot. Re-check and reclaim here via the same atomic claim so the just-published
             // payload cannot leak.
-            if (Volatile.Read(ref disposed) && TryClaimDescriptor(address, ptr, out _, out var reclaimed))
+            if (Volatile.Read(ref disposed) && TryClaimRequestDescriptor(address, ptr, out _, out var reclaimed))
                 reclaimed.Dispose();
         }
 
@@ -285,8 +285,8 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         int ComputeSlot(long address)
         {
-            var pageIndex = (int)((address >> PageSizeBits) & (ringPageCount - 1));
-            var offset = (int)(address & PageSizeMask);
+            var pageIndex = (int)((address >> pageSizeBits) & (ringPageCount - 1));
+            var offset = (int)(address & pageSizeMask);
             return ((pageIndex * ringPageSizeBytes) + offset) / RingDescriptorSize;
         }
 
@@ -301,7 +301,7 @@ namespace Garnet.client
                 local.Page = (local.Page + 1) & (int)PageOffset.kPageMask;
                 local.Offset = 0;
             }
-            return (((long)local.Page) << PageSizeBits) | (uint)local.Offset;
+            return (((long)local.Page) << pageSizeBits) | (uint)local.Offset;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -370,12 +370,12 @@ namespace Garnet.client
             }
             #endregion
 
-            return (((long)page) << PageSizeBits) | ((long)offset);
+            return (((long)page) << pageSizeBits) | ((long)offset);
 
             // Request-lane back-pressure: page reuse waits for the ring's own flush to catch up.
             bool NeedToWait(int page)
             {
-                var limit = (ringPageCount + (int)(FlushedUntilAddress >> PageSizeBits)) & (int)PageOffset.kPageMask;
+                var limit = (ringPageCount + (int)(flushedUntilAddress >> pageSizeBits)) & (int)PageOffset.kPageMask;
                 return page >= limit && (page - limit < PageWrapDistance);
             }
         }
@@ -428,22 +428,22 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         long GetPhysicalAddress(long logicalAddress)
         {
-            var offset = (int)(logicalAddress & ((1L << PageSizeBits) - 1));
-            var pageIndex = (int)((logicalAddress >> PageSizeBits) & (ringPageCount - 1));
+            var offset = (int)(logicalAddress & ((1L << pageSizeBits) - 1));
+            var pageIndex = (int)((logicalAddress >> pageSizeBits) & (ringPageCount - 1));
             return bufferPages[pageIndex].pointer + offset;
         }
 
         /// <summary>
         /// Atomically claim the descriptor published at <paramref name="address"/> by zeroing its self-key,
         /// arbitrating single ownership across the three teardown/flush paths that race for it: the flusher
-        /// (<see cref="AsyncFlushPayloads"/>), <see cref="Dispose"/>, and the <see cref="RegisterRequest"/>
+        /// (<see cref="AsyncFlushRequests"/>), <see cref="Dispose"/>, and the <see cref="RegisterRequest"/>
         /// post-publish recheck. Exactly one caller observes a non-zero key and takes the payload; the losers
         /// see key == 0 and skip. On success, clears the slot, hands back its payload, and outputs the claimed
         /// self-key so callers can validate key == address. Returns false when the slot was empty or already
         /// claimed by another path.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe bool TryClaimDescriptor(long address, long* keyPtr, out long key, out TRequest payload)
+        unsafe bool TryClaimRequestDescriptor(long address, long* keyPtr, out long key, out TRequest payload)
         {
             key = Interlocked.Exchange(ref *keyPtr, 0L);
             if (key == 0)
@@ -458,6 +458,30 @@ namespace Garnet.client
             return true;
         }
 
+        /// <summary>
+        /// Atomically claim a published completion for single delivery. Arbitrates between the receive-side
+        /// teardown drain and a producer whose request failed to publish after its completion was registered:
+        /// both may target the same ticket concurrently. CAS-es the publication marker from its live value to a
+        /// negative sentinel, so exactly one caller observes the live marker and takes the completion; any later
+        /// <see cref="TryReadCompletion"/> then reports not-published. This runs only on the disposal slow path,
+        /// so the extra interlocked op is off the request/reply hot path. Returns false if the completion was
+        /// not published or was already claimed.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryClaimCompletionTicket(int ticket, out TCompletion completion)
+        {
+            var slot = ticket & completionMask;
+            var expected = (long)ticket + 1;
+            if (Volatile.Read(ref completionLane[slot].published) == expected &&
+                Interlocked.CompareExchange(ref completionLane[slot].published, -expected, expected) == expected)
+            {
+                completion = completionLane[slot].completion;
+                return true;
+            }
+            completion = default;
+            return false;
+        }
+
         #region Completion lane
 
         /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
@@ -465,7 +489,7 @@ namespace Garnet.client
 
         bool CompletionHasRoom()
         {
-            var outstanding = (TailPageOffset.TaskId - (int)(Volatile.Read(ref repliedUntil) & PageOffset.kTaskMask)) & (int)PageOffset.kTaskMask;
+            var outstanding = (TailPageOffset.TaskId - (int)(Volatile.Read(ref completionUntil) & PageOffset.kTaskMask)) & (int)PageOffset.kTaskMask;
             return outstanding < completionCapacity;
         }
 
@@ -486,43 +510,20 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Atomically claim a published completion for single delivery. Arbitrates between the receive-side
-        /// teardown drain and a producer whose request failed to publish after its completion was registered:
-        /// both may target the same ticket concurrently. CAS-es the publication marker from its live value to a
-        /// negative sentinel, so exactly one caller observes the live marker and takes the completion; any later
-        /// <see cref="TryReadCompletion"/> then reports not-published. This runs only on the disposal slow path,
-        /// so the extra interlocked op is off the request/reply hot path. Returns false if the completion was
-        /// not published or was already claimed.
-        /// </summary>
-        internal bool TryClaimCompletion(int ticket, out TCompletion completion)
-        {
-            var slot = ticket & completionMask;
-            var expected = (long)ticket + 1;
-            if (Volatile.Read(ref completionLane[slot].published) == expected &&
-                Interlocked.CompareExchange(ref completionLane[slot].published, -expected, expected) == expected)
-            {
-                completion = completionLane[slot].completion;
-                return true;
-            }
-            completion = default;
-            return false;
-        }
-
-        /// <summary>
         /// Reader-side: advance the reply watermark, freeing completion slots for reuse and waking any
         /// producer blocked on completion-lane back-pressure.
         /// </summary>
-        internal void AdvanceReplied(int consumedCount)
+        internal void AdvanceCompletion(int consumedCount)
         {
             if (consumedCount <= 0) return;
-            Volatile.Write(ref repliedUntil, Volatile.Read(ref repliedUntil) + consumedCount);
+            Volatile.Write(ref completionUntil, Volatile.Read(ref completionUntil) + consumedCount);
             completionFreed.Set();
         }
 
         #endregion
 
         void OnPagesMarkedReadOnly(long oldReadOnlyAddress, long newReadOnlyAddress)
-            => AsyncFlushPayloads(oldReadOnlyAddress, newReadOnlyAddress);
+            => AsyncFlushRequests(oldReadOnlyAddress, newReadOnlyAddress);
 
         /// <summary>
         /// Flush an address range of request descriptors to the network. Only the request buffer is sent;
@@ -530,10 +531,10 @@ namespace Garnet.client
         /// </summary>
         /// <param name="fromAddress"></param>
         /// <param name="untilAddress"></param>
-        unsafe void AsyncFlushPayloads(long fromAddress, long untilAddress)
+        unsafe void AsyncFlushRequests(long fromAddress, long untilAddress)
         {
-            var startPage = fromAddress >> PageSizeBits;
-            var endPage = untilAddress >> PageSizeBits;
+            var startPage = fromAddress >> pageSizeBits;
+            var endPage = untilAddress >> pageSizeBits;
             var count = new CountWrapper
             {
                 count = 1,
@@ -544,7 +545,7 @@ namespace Garnet.client
             var flushPage = startPage;
             while (true)
             {
-                long startOffset = 0, endOffset = 1L << PageSizeBits;
+                long startOffset = 0, endOffset = 1L << pageSizeBits;
                 if (flushPage == startPage) startOffset = GetOffsetInPage(fromAddress);
                 if (flushPage == endPage) endOffset = GetOffsetInPage(untilAddress);
 
@@ -564,11 +565,11 @@ namespace Garnet.client
 
                 for (var offset = startOffset; offset < realEndOffset; offset += RingDescriptorSize)
                 {
-                    var address = (flushPage << PageSizeBits) | (uint)offset;
+                    var address = (flushPage << pageSizeBits) | (uint)offset;
                     var ptr = page.pointer + offset;
 
                     // Claim the descriptor by atomically zeroing its self-key, arbitrating with teardown.
-                    if (!TryClaimDescriptor(address, (long*)ptr, out var key, out var payload))
+                    if (!TryClaimRequestDescriptor(address, (long*)ptr, out var key, out var payload))
                         continue; // Taken by Dispose.
 
                     if (key != address)
@@ -648,7 +649,7 @@ namespace Garnet.client
                 if (Interlocked.Decrement(ref count.count) == 0)
                 {
                     var endAddress = count.untilAddress;
-                    _ = Utility.MonotonicUpdate(ref FlushedUntilAddress, endAddress, wrapDistance, out _);
+                    _ = Utility.MonotonicUpdate(ref flushedUntilAddress, endAddress, wrapDistance, out _);
                     // The request lane is now free up to endAddress; wake producers waiting on request back-pressure.
                     requestFreed.Set();
                     AggressiveShiftReadOnlyRunner(true);
@@ -657,11 +658,11 @@ namespace Garnet.client
             catch when (disposed) { }
         }
 
-        long GetOffsetInPage(long address) => address & PageSizeMask;
+        long GetOffsetInPage(long address) => address & pageSizeMask;
 
         public void DoAggressiveShiftReadOnly()
         {
-            if (_ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref _ongoingAggressiveShiftReadOnly, 1, 0) == 0)
+            if (ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref ongoingAggressiveShiftReadOnly, 1, 0) == 0)
                 AggressiveShiftReadOnlyRunner(false);
         }
 
@@ -681,7 +682,7 @@ namespace Garnet.client
         bool ToShift()
         {
             var tailAddress = GetTailAddress();
-            return tailAddress > ReadOnlyAddress || (ReadOnlyAddress - tailAddress > wrapDistance);
+            return tailAddress > readOnlyAddress || (readOnlyAddress - tailAddress > wrapDistance);
         }
 
         void AggressiveShiftReadOnlyRunner(bool recurse)
@@ -700,14 +701,14 @@ namespace Garnet.client
                         if (AggressiveFlushShiftReadOnlyBump()) return;
                     }
                 }
-                _ongoingAggressiveShiftReadOnly = 0;
-            } while (ToShift() && _ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref _ongoingAggressiveShiftReadOnly, 1, 0) == 0);
+                ongoingAggressiveShiftReadOnly = 0;
+            } while (ToShift() && ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref ongoingAggressiveShiftReadOnly, 1, 0) == 0);
         }
 
         bool AggressiveFlushShiftReadOnlyBump()
         {
             var newReadOnlyAddress = GetTailAddress();
-            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, wrapDistance, out long oldReadOnlyAddress))
+            if (Utility.MonotonicUpdate(ref readOnlyAddress, newReadOnlyAddress, wrapDistance, out long oldReadOnlyAddress))
             {
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(oldReadOnlyAddress, newReadOnlyAddress));
                 return true;

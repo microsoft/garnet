@@ -28,8 +28,6 @@ namespace Garnet.client
     /// </summary>
     internal sealed class LightNetworkWriter : IDisposable
     {
-        const int PayloadDescriptorSize = sizeof(long);
-
         readonly DuplexBackpressureRing<LightRequest, TcsWrapper> ring;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
@@ -42,6 +40,9 @@ namespace Garnet.client
         /// Shared epoch protecting the ring's page allocator and flush machinery.
         /// </summary>
         public LightEpoch epoch => ring.epoch;
+
+        /// <summary>Number of completion tickets issued so far (task-space).</summary>
+        public int CompletionTail => ring.CompletionTail;
 
         /// <summary>
         /// Constructor
@@ -112,24 +113,27 @@ namespace Garnet.client
             => ring.TryAllocate(size, expectsResponse, out waitEvent);
 
         /// <summary>Register (store and publish) a request payload at the descriptor address.</summary>
-        public void RegisterRequest(long address, LightRequest payload) => ring.RegisterRequest(address, payload);
+        public void RegisterRequest(long address, LightRequest payload)
+            => ring.RegisterRequest(address, payload);
 
         /// <summary>Register (store and publish) a completion for the given ticket.</summary>
-        public void RegisterCompletion(int ticket, TcsWrapper completion) => ring.RegisterCompletion(ticket, completion);
+        public void RegisterCompletion(int ticket, TcsWrapper completion)
+            => ring.RegisterCompletion(ticket, completion);
 
         /// <summary>Nudge the read-only shift so enqueued descriptors are flushed promptly.</summary>
-        public void DoAggressiveShiftReadOnly() => ring.DoAggressiveShiftReadOnly();
-
-        /// <summary>Number of completion tickets issued so far (task-space).</summary>
-        public int CompletionTail => ring.CompletionTail;
+        public void DoAggressiveShiftReadOnly()
+            => ring.DoAggressiveShiftReadOnly();
 
         /// <summary>Reader-side: try to read a published completion for the given ticket.</summary>
-        public bool TryReadCompletion(int ticket, out TcsWrapper completion) => ring.TryReadCompletion(ticket, out completion);
+        public bool TryReadCompletion(int ticket, out TcsWrapper completion)
+            => ring.TryReadCompletion(ticket, out completion);
 
         /// <summary>Atomically claim a published completion for single delivery (teardown/fault path).</summary>
-        public bool TryClaimCompletion(int ticket, out TcsWrapper completion) => ring.TryClaimCompletion(ticket, out completion);
+        public bool TryClaimCompletionTicket(int ticket, out TcsWrapper completion)
+            => ring.TryClaimCompletionTicket(ticket, out completion);
 
         /// <summary>Reader-side: advance the reply watermark, freeing completion slots.</summary>
-        public void AdvanceReplied(int consumedCount) => ring.AdvanceReplied(consumedCount);
+        public void AdvanceReplied(int consumedCount)
+            => ring.AdvanceCompletion(consumedCount);
     }
 }

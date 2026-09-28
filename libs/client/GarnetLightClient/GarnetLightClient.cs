@@ -708,14 +708,14 @@ namespace Garnet.client
 
         /// <summary>
         /// Fault the completion for <paramref name="taskId"/> with the teardown outcome, without advancing the
-        /// reply watermark. Wins the single-delivery claim (<see cref="LightNetworkWriter.TryClaimCompletion"/>)
+        /// reply watermark. Wins the single-delivery claim (<see cref="LightNetworkWriter.TryClaimCompletionTicket"/>)
         /// first, so a completion targeted by both the receive-side drain (<see cref="DisposeOffset"/>) and the
         /// producer whose request failed to publish is faulted exactly once — safe for both the async and
         /// callback types. No-op if the completion was not published or was already claimed by the other path.
         /// </summary>
         private void FaultCompletion(int taskId)
         {
-            if (!networkWriter.TryClaimCompletion(taskId, out var tcs))
+            if (!networkWriter.TryClaimCompletionTicket(taskId, out var tcs))
                 return;
 
             switch (tcs.taskType)
