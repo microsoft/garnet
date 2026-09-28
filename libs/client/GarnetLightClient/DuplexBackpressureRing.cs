@@ -13,6 +13,35 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.client
 {
     /// <summary>
+    /// Payload framing of a request-lane descriptor, carried in the most-significant byte (bits [56..63])
+    /// of the 8-byte descriptor word. The low 56 bits carry the per-kind metadata: the request's log
+    /// address for <see cref="OutOfLine"/> records, or the in-page payload length for <see cref="Inline"/>
+    /// records.
+    /// </summary>
+    internal enum RequestKind : byte
+    {
+        /// <summary>
+        /// The descriptor references request bytes held in a separately rented pool buffer (via the request
+        /// side-table). The low 56 bits hold the descriptor's log address; this is byte-identical to a raw
+        /// address word, so an out-of-line descriptor is indistinguishable on the wire from the pre-tag
+        /// format.
+        /// </summary>
+        OutOfLine = 0x00,
+
+        /// <summary>
+        /// The descriptor is immediately followed, in the same page, by the request bytes. The low 56 bits
+        /// hold the payload length; no pool buffer or side-table entry is used.
+        /// </summary>
+        Inline = 0x01,
+
+        /// <summary>
+        /// Empty/claimed slot. Matches the <c>0xFF</c> page fill and the <c>-1</c> reset value used when a
+        /// descriptor is claimed, so an unpublished or already-claimed slot always decodes to this kind.
+        /// </summary>
+        Uninitialized = 0xFF,
+    }
+
+    /// <summary>
     /// A request-lane request stored in a <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>.
     /// The ring transfers ownership of the underlying buffer to the sender (flusher), which disposes
     /// it once the bytes have been handed to the network.
@@ -108,6 +137,35 @@ namespace Garnet.client
         /// </summary>
         const int RingDescriptorSize = sizeof(long);
         const long PageWrapDistance = 1L << (PageOffset.kPageBits - 1);
+
+        // Descriptor-word codec. The most-significant byte (bits [56..63]) carries the payload kind tag
+        // (<see cref="RequestPayloadKind"/>); the low 56 bits carry the per-kind metadata (the log address
+        // for out-of-line records, the in-page payload length for inline records). The tag rides the same
+        // atomic word as the metadata, so tagging adds neither an extra atomic nor extra space.
+        const int kTagShift = 56;
+        const long kPayloadMetaMask = (1L << kTagShift) - 1;
+
+        // Bytes an inline record reserves ahead of its payload for the descriptor word.
+        const int kInlineHeaderSize = 8;
+
+        // Empty/claimed sentinel: MSByte = Uninitialized (0xFF), low bits all set. Equals the 0xFF page fill
+        // and the value written when a slot is claimed, so an unpublished or claimed slot decodes to
+        // Uninitialized (never a valid OutOfLine or Inline record).
+        const long UninitializedDescriptor = -1L;
+
+        /// <summary>Pack a payload kind and its 56-bit metadata into a descriptor word.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static long EncodeDescriptor(RequestKind kind, long meta)
+            => ((long)(byte)kind << kTagShift) | (meta & kPayloadMetaMask);
+
+        /// <summary>Extract the payload kind from a descriptor word.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static RequestKind DecodeKind(long word)
+            => (RequestKind)(byte)((ulong)word >> kTagShift);
+
+        /// <summary>Extract the 56-bit metadata (log address or payload length) from a descriptor word.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static long DecodeMeta(long word) => word & kPayloadMetaMask;
 
         public readonly LightEpoch epoch;
 
@@ -214,6 +272,12 @@ namespace Garnet.client
             this.pageSizeBits = Utility.NumBitsPreviousPowerOf2(ringPageSizeBytes);
             this.wrapDistance = PageWrapDistance << pageSizeBits;
             pageSizeMask = ringPageSizeBytes - 1;
+
+            // A descriptor's low 56 bits must hold the full log address, so the page-index bits plus the
+            // in-page offset bits must fit below the tag byte. This bounds how the descriptor codec can
+            // coexist with the address layout for any configured page size.
+            Debug.Assert(PageOffset.kPageBits + pageSizeBits <= kTagShift,
+                "Descriptor address space must leave the most-significant byte free for the payload kind tag.");
 
             bufferPages = new RingPage[this.ringPageCount];
             for (var i = 0; i < this.ringPageCount; i++)
@@ -409,24 +473,28 @@ namespace Garnet.client
         /// for it: the flusher (<see cref="AsyncFlushRequests"/>), <see cref="Dispose"/>, and the
         /// <see cref="RegisterRequest"/> post-publish recheck. Exactly one caller observes a published key and
         /// takes the request; the losers see the empty sentinel and skip. On success, clears the slot, hands
-        /// back its request, and outputs the claimed self-key so callers can validate key == address. Returns
-        /// false when the slot was empty or already claimed by another path.
+        /// back its request, and outputs the descriptor's decoded metadata (the log address for out-of-line
+        /// records) so callers can validate key == address. Returns false when the slot was empty or already
+        /// claimed by another path.
         /// <para>
-        /// The empty sentinel is -1 (see <see cref="RingPage"/> initialization), never a valid address, so a
-        /// descriptor at address 0 (the first allocation, and every ring wrap back to page 0 / offset 0) is
-        /// stored verbatim and stays distinguishable from an empty slot.
+        /// A claim resets the word to <see cref="UninitializedDescriptor"/> (MSByte = Uninitialized), which
+        /// equals the <c>0xFF</c> page fill (see <see cref="RingPage"/> initialization). A published record
+        /// carries a non-Uninitialized tag, so it stays distinguishable from an empty or claimed slot even at
+        /// address 0 (the first allocation, and every ring wrap back to page 0 / offset 0).
         /// </para>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         unsafe bool TryClaimRequestDescriptor(long address, long* keyPtr, out long key, out TRequest request)
         {
-            key = Interlocked.Exchange(ref *keyPtr, -1L);
-            if (key == -1)
+            var word = Interlocked.Exchange(ref *keyPtr, UninitializedDescriptor);
+            if (DecodeKind(word) == RequestKind.Uninitialized)
             {
+                key = default;
                 request = default;
                 return false;
             }
 
+            key = DecodeMeta(word);
             var slot = ComputeSlot(address);
             request = requests[slot];
             requests[slot] = default;
@@ -439,8 +507,9 @@ namespace Garnet.client
         /// hold the epoch, so the flusher (which validates key == address only after the epoch barrier) never
         /// observes a partially-written slot.
         /// <para>
-        /// The address is stored verbatim; the empty/claimed sentinel is -1 (see
-        /// <see cref="TryClaimRequestDescriptor"/>), so address 0 does not collide with it.
+        /// The word is tagged <see cref="RequestKind.OutOfLine"/> with the log address in its low 56
+        /// bits; since that tag is <c>0x00</c> the published word is byte-identical to the raw address and can
+        /// never collide with the <see cref="UninitializedDescriptor"/> empty sentinel.
         /// </para>
         /// </summary>
         /// <param name="address"></param>
@@ -451,9 +520,10 @@ namespace Garnet.client
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
             var slot = ComputeSlot(address);
             requests[slot] = request;
-            // Publish request to the consumer.
+            // Publish request to the consumer. Tagged OutOfLine, so the low 56 bits hold the log address and
+            // the word is byte-identical to a raw address (OutOfLine == 0x00).
             var ptr = (long*)GetPhysicalAddress(address);
-            *ptr = address;
+            *ptr = EncodeDescriptor(RequestKind.OutOfLine, address);
 
             // If Dispose swept this slot before publication, its reclaim pass has already run and will not
             // revisit the slot. Re-check and reclaim here via the same atomic claim so the just-published
