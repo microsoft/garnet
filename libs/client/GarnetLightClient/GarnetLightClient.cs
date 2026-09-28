@@ -475,54 +475,36 @@ namespace Garnet.client
 
             await InputGateAsync(token).ConfigureAwait(false);
 
-            // Inline path: when the whole command fits in a single ring page, serialize it straight into page
-            // memory and skip the pooled buffer. The choice is automatic and driven solely by totalLength.
-            if (networkWriter.CanInline(totalLength))
+            // The choice between an inline record (serialized straight into the ring page, no pooled buffer) and
+            // an out-of-line record (an 8-byte descriptor in the page plus a separately rented payload buffer) is
+            // automatic and driven solely by whether the whole command fits in a single ring page. The decision
+            // depends only on totalLength versus fixed page geometry, not on the current page fill, so it is
+            // loop-invariant and made once here rather than re-evaluated per allocation attempt.
+            var inline = networkWriter.CanInline(totalLength);
+            var recordSize = inline ? networkWriter.InlineRecordSize(totalLength) : PayloadDescriptorSize;
+
+            // Out-of-line rents its payload buffer and serializes into it up front, outside the epoch. Inline
+            // rents nothing and defers serialization until it owns a page slot (written under the epoch below).
+            var payload = inline ? default : networkWriter.RentPayloadBuffer(totalLength);
+            var payloadRegistered = false;
+
+            try
             {
-                try
+                if (!inline)
                 {
-                    networkWriter.epoch.Resume();
-
-                    int taskId;
-                    long address;
-                    while (true)
+                    unsafe
                     {
-                        token.ThrowIfCancellationRequested();
-                        if (!IsConnected)
+                        fixed (byte* payloadPtr = payload.Buffer)
+                            SerializeCommand(payloadPtr, payloadPtr + payload.Length);
+
+                        // Serialize the command's RESP bytes into the span [curr, end). Shared by both paths so the wire
+                        // format lives in one place; the caller supplies either page memory (inline) or the rented buffer.
+                        void SerializeCommand(byte* curr, byte* end)
                         {
-                            Dispose();
-                            ThrowException(disposeException);
-                        }
-
-                        (taskId, address) = networkWriter.TryAllocate(networkWriter.InlineRecordSize(totalLength), expectsResponse: true, out var flushEvent);
-                        if (address >= 0)
-                            break;
-
-                        try
-                        {
-                            networkWriter.epoch.Suspend();
-                            await flushEvent.WaitAsync(token).ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            networkWriter.epoch.Resume();
-                        }
-                    }
-
-                    // Register the completion before the request becomes flushable, mirroring the out-of-line path.
-                    networkWriter.RegisterCompletion(taskId, tcs);
-
-                    try
-                    {
-                        unsafe
-                        {
-                            var curr = networkWriter.ReserveInlineRecord(address, totalLength);
-                            var end = curr + totalLength;
-
                             if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
                                 !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end))
                             {
-                                throw new InvalidOperationException("Unable to serialize the inline command into its reserved page slot.");
+                                throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
                             }
 
                             if (isArray)
@@ -530,73 +512,13 @@ namespace Garnet.client
                                 foreach (var arg in args)
                                 {
                                     if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end))
-                                        throw new InvalidOperationException("Unable to serialize the inline command into its reserved page slot.");
+                                        throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
                                 }
                             }
 
                             if (curr != end)
-                                throw new InvalidOperationException("The serialized inline command did not fill its reserved page slot.");
+                                throw new InvalidOperationException("The serialized command did not fill its reserved slot.");
                         }
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        // Reserve throws only while the ring is being disposed, before the record can be sent.
-                        // The completion was already registered, so win its single-delivery claim and fault it
-                        // here (a no-op if teardown already claimed it) so the caller can never hang.
-                        CompletionOnFault(taskId);
-                        throw;
-                    }
-
-                    // Publication of the inline header may have raced a concurrent teardown: the completion is
-                    // already registered but the send will never happen, and the receive-side drain may have
-                    // passed this ticket before RegisterCompletion became visible. Fault it here (single-claim,
-                    // a no-op if the drain already faulted it) before throwing so the caller can never hang.
-                    if (Disposed)
-                    {
-                        CompletionOnFault(taskId);
-                        ThrowException(disposeException);
-                    }
-
-                    networkWriter.epoch.ProtectAndDrain();
-                    networkWriter.DoAggressiveShiftReadOnly();
-                }
-                finally
-                {
-                    networkWriter.epoch.Suspend();
-                }
-
-                return;
-            }
-
-            var payload = networkWriter.RentPayloadBuffer(totalLength);
-            var payloadRegistered = false;
-
-            try
-            {
-                unsafe
-                {
-                    fixed (byte* payloadPtr = payload.Buffer)
-                    {
-                        var curr = payloadPtr;
-                        var end = payloadPtr + payload.Length;
-
-                        if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
-                            !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end))
-                        {
-                            throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
-                        }
-
-                        if (isArray)
-                        {
-                            foreach (var arg in args)
-                            {
-                                if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end))
-                                    throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
-                            }
-                        }
-
-                        if (curr != end)
-                            throw new InvalidOperationException("The serialized out-of-line command did not fill its reserved buffer.");
                     }
                 }
 
@@ -611,13 +533,16 @@ namespace Garnet.client
                         token.ThrowIfCancellationRequested();
                         if (!IsConnected)
                         {
-                            payload.Dispose();
-                            payload = default;
+                            if (!inline)
+                            {
+                                payload.Dispose();
+                                payload = default;
+                            }
                             Dispose();
                             ThrowException(disposeException);
                         }
 
-                        (taskId, address) = networkWriter.TryAllocate(PayloadDescriptorSize, expectsResponse: true, out var flushEvent);
+                        (taskId, address) = networkWriter.TryAllocate(recordSize, expectsResponse: true, out var flushEvent);
                         if (address >= 0)
                             break;
 
@@ -633,32 +558,48 @@ namespace Garnet.client
                     }
 
                     // Register the completion in its own reply-gated lane, keyed by the ticket the combined
-                    // allocator handed out alongside the request address, before the request so the completion
-                    // is visible to the reply reader by the time any reply can arrive.
+                    // allocator handed out alongside the request address, before the request becomes flushable so
+                    // the completion is visible to the reply reader by the time any reply can arrive.
                     networkWriter.RegisterCompletion(taskId, tcs);
 
                     try
                     {
-                        networkWriter.RegisterRequest(address, payload);
+                        if (inline)
+                        {
+                            // Serialize straight into page memory. The epoch acquired above is held continuously
+                            // across the reserve and this write (no Suspend/await between the successful allocate
+                            // and here), which is what keeps the early-published inline header safe: a concurrent
+                            // flush cannot read this record until this producer drains at ProtectAndDrain below.
+                            // Do not introduce an await between the reserve and the completed payload write.
+                            unsafe
+                            {
+                                var curr = networkWriter.ReserveInlineRecord(address, totalLength);
+                                SerializeCommand(curr, curr + totalLength);
+                            }
+                        }
+                        else
+                        {
+                            networkWriter.RegisterRequest(address, payload);
+                        }
                     }
                     catch (ObjectDisposedException)
                     {
-                        // RegisterRequest throws only when the ring is being disposed, and only before it
-                        // publishes the descriptor: the request is therefore never sent. The completion was
-                        // already registered above, so the teardown drain may have raced past its slot before
-                        // the publication marker became visible, leaving the caller's completion stranded.
-                        // Win the single-delivery claim and fault it here so it can never hang; if the drain
-                        // already claimed it, this is a no-op. Lane accounting (tcsOffset/repliedUntil) is owned
-                        // by the receive side (ProcessReplies / DisposeMessageConsumer); do not advance it here.
+                        // The reserve/register throws only while the ring is being disposed, and only before the
+                        // record can be sent. The completion was already registered above, so the teardown drain
+                        // may have raced past its slot before the publication marker became visible, leaving the
+                        // caller's completion stranded. Win the single-delivery claim and fault it here so it can
+                        // never hang; if the drain already claimed it, this is a no-op. Lane accounting
+                        // (tcsOffset/repliedUntil) is owned by the receive side (ProcessReplies /
+                        // DisposeMessageConsumer); do not advance it here.
                         CompletionOnFault(taskId);
                         throw;
                     }
                     payloadRegistered = true;
 
-                    // Publication of the descriptor may have raced a concurrent teardown: the completion is
-                    // already registered but the send will never happen, and the receive-side drain may have
-                    // passed this ticket before RegisterCompletion became visible. Fault it here (single-claim,
-                    // a no-op if the drain already faulted it) before throwing so the caller can never hang.
+                    // Publication of the record may have raced a concurrent teardown: the completion is already
+                    // registered but the send will never happen, and the receive-side drain may have passed this
+                    // ticket before RegisterCompletion became visible. Fault it here (single-claim, a no-op if the
+                    // drain already faulted it) before throwing so the caller can never hang.
                     if (Disposed)
                     {
                         CompletionOnFault(taskId);
@@ -675,7 +616,9 @@ namespace Garnet.client
             }
             finally
             {
-                if (!payloadRegistered)
+                // Inline owns no pooled buffer (payload is default); only an unregistered out-of-line buffer needs
+                // returning. A registered payload is owned by the ring and freed on flush.
+                if (!inline && !payloadRegistered)
                     payload.Dispose();
             }
         }

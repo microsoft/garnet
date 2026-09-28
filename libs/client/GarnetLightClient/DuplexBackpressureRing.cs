@@ -593,6 +593,17 @@ namespace Garnet.client
         /// payload region instead of misreading it; the memory barrier orders that header ahead of the payload
         /// writes. Inline records own no side-table entry — their bytes live in the page and are freed on flush
         /// like any other record — so no post-publish reclaim is needed.
+        /// <para>
+        /// Flush-safety of this early header publish rests entirely on the epoch: the flusher
+        /// (<see cref="AsyncFlushRequests"/>) runs only as the drain-list action queued by
+        /// <see cref="LightEpoch.BumpCurrentEpoch(System.Action)"/> when read-only shifts (see
+        /// <c>AggressiveFlushShiftReadOnlyBump</c>), so it cannot read this record until every producer that
+        /// held the epoch at shift time has drained. Unlike out-of-line records — whose payload lives in a pool
+        /// buffer written in full before the descriptor is published — inline has no data-ordering backstop, so
+        /// <b>the caller MUST hold the epoch continuously from the tail-advancing <see cref="TryAllocate"/>
+        /// through the completed payload write</b> (no <c>Suspend</c>, no <c>await</c> in between). Releasing
+        /// the epoch mid-write would let a concurrent flush observe this header with an unwritten payload.
+        /// </para>
         /// </summary>
         /// <param name="address">Descriptor address returned by <see cref="TryAllocate"/> for an
         /// <see cref="InlineRecordSize"/>-sized allocation.</param>
