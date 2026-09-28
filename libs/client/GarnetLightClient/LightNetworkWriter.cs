@@ -126,6 +126,9 @@ namespace Garnet.client
         /// <summary>Reader-side: try to read a published completion for the given ticket.</summary>
         public bool TryReadCompletion(int ticket, out TcsWrapper completion) => ring.TryReadCompletion(ticket, out completion);
 
+        /// <summary>Atomically claim a published completion for single delivery (teardown/fault path).</summary>
+        public bool TryClaimCompletion(int ticket, out TcsWrapper completion) => ring.TryClaimCompletion(ticket, out completion);
+
         /// <summary>Reader-side: advance the reply watermark, freeing completion slots.</summary>
         public void AdvanceReplied(int consumedCount) => ring.AdvanceReplied(consumedCount);
     }

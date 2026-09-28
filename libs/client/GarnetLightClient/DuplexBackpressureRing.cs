@@ -432,6 +432,29 @@ namespace Garnet.client
         }
 
         /// <summary>
+        /// Atomically claim a published completion for single delivery. Arbitrates between the receive-side
+        /// teardown drain and a producer whose request failed to publish after its completion was registered:
+        /// both may target the same ticket concurrently. CAS-es the publication marker from its live value to a
+        /// negative sentinel, so exactly one caller observes the live marker and takes the completion; any later
+        /// <see cref="TryReadCompletion"/> then reports not-published. This runs only on the disposal slow path,
+        /// so the extra interlocked op is off the request/reply hot path. Returns false if the completion was
+        /// not published or was already claimed.
+        /// </summary>
+        internal bool TryClaimCompletion(int ticket, out TCompletion completion)
+        {
+            var slot = ticket & completionMask;
+            var expected = (long)ticket + 1;
+            if (Volatile.Read(ref completionPublished[slot]) == expected &&
+                Interlocked.CompareExchange(ref completionPublished[slot], -expected, expected) == expected)
+            {
+                completion = completions[slot];
+                return true;
+            }
+            completion = default;
+            return false;
+        }
+
+        /// <summary>
         /// Reader-side: advance the reply watermark, freeing completion slots for reuse and waking any
         /// producer blocked on completion-lane back-pressure.
         /// </summary>
@@ -570,7 +593,7 @@ namespace Garnet.client
             {
                 if (Interlocked.Decrement(ref count.count) == 0)
                 {
-                    long endAddress = count.untilAddress;
+                    var endAddress = count.untilAddress;
                     Utility.MonotonicUpdate(ref FlushedUntilAddress, endAddress, WrapDistance, out _);
                     // The request lane is now free up to endAddress; wake producers waiting on request back-pressure.
                     requestFreed.Set();

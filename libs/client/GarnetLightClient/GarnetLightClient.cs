@@ -543,7 +543,22 @@ namespace Garnet.client
                     // is visible to the reply reader by the time any reply can arrive.
                     networkWriter.RegisterCompletion(taskId, tcs);
 
-                    networkWriter.RegisterRequest(address, payload);
+                    try
+                    {
+                        networkWriter.RegisterRequest(address, payload);
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // RegisterRequest throws only when the ring is being disposed, and only before it
+                        // publishes the descriptor: the request is therefore never sent. The completion was
+                        // already registered above, so the teardown drain may have raced past its slot before
+                        // the publication marker became visible, leaving the caller's completion stranded.
+                        // Win the single-delivery claim and fault it here so it can never hang; if the drain
+                        // already claimed it, this is a no-op. Lane accounting (tcsOffset/repliedUntil) is owned
+                        // by the receive side (ProcessReplies / DisposeMessageConsumer); do not advance it here.
+                        FaultCompletion(taskId);
+                        throw;
+                    }
                     payloadRegistered = true;
 
                     if (Disposed)
@@ -570,9 +585,9 @@ namespace Garnet.client
         void InternalExecuteChunkedNoResponse(Memory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
             const int arraySize = 4;
-            int totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
+            var totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
 
-            int length = subop.Length;
+            var length = subop.Length;
             totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
             length = param1.Length;
             totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
@@ -588,8 +603,8 @@ namespace Garnet.client
                 {
                     fixed (byte* payloadPtr = payload.Buffer)
                     {
-                        byte* curr = payloadPtr;
-                        byte* end = payloadPtr + payload.Length;
+                        var curr = payloadPtr;
+                        var end = payloadPtr + payload.Length;
 
                         if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
                             !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end) ||
@@ -677,7 +692,7 @@ namespace Garnet.client
         /// <inheritdoc />
         public void DisposeMessageConsumer(INetworkHandler session)
         {
-            int c = tcsOffset;
+            var c = tcsOffset;
             while (networkWriter != null && c != networkWriter.CompletionTail)
             {
                 DisposeOffset(c);
@@ -687,11 +702,21 @@ namespace Garnet.client
 
         private void DisposeOffset(int taskId)
         {
-            if (!networkWriter.TryReadCompletion(taskId, out var tcs))
-            {
-                ConsumeTcsOffset();
+            FaultCompletion(taskId);
+            ConsumeTcsOffset();
+        }
+
+        /// <summary>
+        /// Fault the completion for <paramref name="taskId"/> with the teardown outcome, without advancing the
+        /// reply watermark. Wins the single-delivery claim (<see cref="LightNetworkWriter.TryClaimCompletion"/>)
+        /// first, so a completion targeted by both the receive-side drain (<see cref="DisposeOffset"/>) and the
+        /// producer whose request failed to publish is faulted exactly once — safe for both the async and
+        /// callback types. No-op if the completion was not published or was already claimed by the other path.
+        /// </summary>
+        private void FaultCompletion(int taskId)
+        {
+            if (!networkWriter.TryClaimCompletion(taskId, out var tcs))
                 return;
-            }
 
             switch (tcs.taskType)
             {
@@ -728,7 +753,6 @@ namespace Garnet.client
                 case TaskType.None:
                     break;
             }
-            ConsumeTcsOffset();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
