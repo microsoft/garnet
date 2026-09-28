@@ -2391,6 +2391,55 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("{\"foo\":\"bar\"}", getRes);
         }
 
+        [Test]
+        public async Task VectorSetMigrationPreservesExpirationAsync()
+        {
+            const string Key = nameof(VectorSetMigrationPreservesExpirationAsync);
+            const string Element = Key + "_Element";
+
+            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 2, replicaCount: 0, useTLS: false).ConfigureAwait(false);
+
+            await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
+
+            var hashSlot = connection.HashSlot(Key);
+            var initialNode = connection.GetServers().Single(x => x.EndPoint.Equals(connection.GetServers().First().ClusterConfiguration.GetBySlot(hashSlot).EndPoint));
+            var finalNode = connection.GetServers().Single(x => !x.EndPoint.Equals(initialNode.EndPoint));
+
+            // Check expiration on initial node
+            {
+                var res0 = await initialNode.ExecuteAsync(database: 0, "VADD", [Key, "VALUES", "3", "1.0", "2.0", "3.0", Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.AreEqual(1, (int)res0);
+
+                var res1 = await initialNode.ExecuteAsync(database: 0, "EXPIRE", [Key, "1"], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.AreEqual(1, (int)res1);
+
+                var res2 = await initialNode.ExecuteAsync(database: 0, "EXISTS", [Key], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.AreEqual(1, (int)res2);
+
+                await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+
+                // Expired
+                var res3 = await initialNode.ExecuteAsync(database: 0, "EXISTS", [Key], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.AreEqual(0, (int)res3);
+            }
+
+            // Migrate slots after setting expiration
+            {
+                var res0 = await initialNode.ExecuteAsync(database: 0, "VADD", [Key, "VALUES", "3", "1.0", "2.0", "3.0", Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.AreEqual(1, (int)res0);
+
+                var res1 = await initialNode.ExecuteAsync(database: 0, "EXPIRE", [Key, "60"], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.AreEqual(1, (int)res1);
+
+                context.clusterTestUtils.MigrateSlots((IPEndPoint)initialNode.EndPoint, (IPEndPoint)finalNode.EndPoint, [hashSlot]);
+                context.clusterTestUtils.WaitForMigrationCleanup((IPEndPoint)initialNode.EndPoint);
+
+                // Check that TTL survived migration
+                var res2 = await finalNode.ExecuteAsync(database: 0, "TTL", [Key], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                ClassicAssert.IsTrue((int)res2 > 0);
+            }
+        }
+
         private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
         {
             context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
