@@ -14,9 +14,11 @@ namespace Garnet.client
         readonly LongHistogram latency;
 
         /// <summary>
-        /// Get client latency histogram
+        /// Get client latency histogram. Null once the client has been disposed and the histogram has
+        /// released its counts array.
         /// </summary>
-        public LongHistogram CopyLatencyHistogram => (LongHistogram)(latency?.Copy());
+        public LongHistogram CopyLatencyHistogram
+            => latency is not null && latency.TryCopy(out var copy) ? copy : null;
 
         /// <summary>
         /// Reset internal latency histogram if enabled
@@ -42,7 +44,7 @@ namespace Garnet.client
 
             MetricsItem[] percentiles =
             [
-                new("calls", latency.TotalCount.ToString()),
+                new("calls", histogram.TotalCount.ToString()),
                 new("min", _min),
                 new("5th", _5),
                 new("50th", _50),
@@ -69,8 +71,9 @@ namespace Garnet.client
         /// </summary>
         public void DumpLatencyHistToConsole(bool withHeader)
         {
-            if (latency == null || latency.TotalCount == 0) return;
+            if (latency == null || latency.IsReturned || latency.TotalCount == 0) return;
             var percentiles = GetLatencyMetrics();
+            if (percentiles.Length == 0) return;
             if (withHeader)
             {
                 for (int i = 1; i < percentiles.Length; i++)
