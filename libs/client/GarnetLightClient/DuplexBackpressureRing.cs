@@ -707,6 +707,7 @@ namespace Garnet.client
                 untilAddress = untilAddress
             };
             var flushFailed = false;
+            var disposedBail = false;
 
             var flushPage = startPage;
             while (true)
@@ -731,6 +732,17 @@ namespace Garnet.client
 
                 for (var offset = startOffset; offset < realEndOffset;)
                 {
+                    // Once disposed there is no live connection to send on, and Dispose independently walks
+                    // every page (from offset 0, with the same variable stride) to reclaim any record we have
+                    // not yet claimed. Bail before claiming the next record so those fall to Dispose; records
+                    // we already claimed in earlier iterations were sent or disposed above. Records past the
+                    // taken bit are skipped by Dispose, so we must not claim one here and then abandon it.
+                    if (Volatile.Read(ref disposed))
+                    {
+                        disposedBail = true;
+                        break;
+                    }
+
                     var address = (flushPage << pageSizeBits) | (uint)offset;
                     var ptr = page.pointer + offset;
 
@@ -765,7 +777,7 @@ namespace Garnet.client
                     offset += recordSize;
                 }
 
-                if (flushPage == endPage) break;
+                if (disposedBail || flushPage == endPage) break;
                 flushPage = (flushPage + 1) & PageOffset.kPageMask;
             }
 

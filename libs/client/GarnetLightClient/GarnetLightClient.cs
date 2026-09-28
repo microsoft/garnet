@@ -543,12 +543,19 @@ namespace Garnet.client
                         // Reserve throws only while the ring is being disposed, before the record can be sent.
                         // The completion was already registered, so win its single-delivery claim and fault it
                         // here (a no-op if teardown already claimed it) so the caller can never hang.
-                        FaultCompletion(taskId);
+                        CompletionOnFault(taskId);
                         throw;
                     }
 
+                    // Publication of the inline header may have raced a concurrent teardown: the completion is
+                    // already registered but the send will never happen, and the receive-side drain may have
+                    // passed this ticket before RegisterCompletion became visible. Fault it here (single-claim,
+                    // a no-op if the drain already faulted it) before throwing so the caller can never hang.
                     if (Disposed)
+                    {
+                        CompletionOnFault(taskId);
                         ThrowException(disposeException);
+                    }
 
                     networkWriter.epoch.ProtectAndDrain();
                     networkWriter.DoAggressiveShiftReadOnly();
@@ -643,13 +650,20 @@ namespace Garnet.client
                         // Win the single-delivery claim and fault it here so it can never hang; if the drain
                         // already claimed it, this is a no-op. Lane accounting (tcsOffset/repliedUntil) is owned
                         // by the receive side (ProcessReplies / DisposeMessageConsumer); do not advance it here.
-                        FaultCompletion(taskId);
+                        CompletionOnFault(taskId);
                         throw;
                     }
                     payloadRegistered = true;
 
+                    // Publication of the descriptor may have raced a concurrent teardown: the completion is
+                    // already registered but the send will never happen, and the receive-side drain may have
+                    // passed this ticket before RegisterCompletion became visible. Fault it here (single-claim,
+                    // a no-op if the drain already faulted it) before throwing so the caller can never hang.
                     if (Disposed)
+                    {
+                        CompletionOnFault(taskId);
                         ThrowException(disposeException);
+                    }
 
                     networkWriter.epoch.ProtectAndDrain();
                     networkWriter.DoAggressiveShiftReadOnly();
@@ -789,7 +803,7 @@ namespace Garnet.client
 
         private void DisposeOffset(int taskId)
         {
-            FaultCompletion(taskId);
+            CompletionOnFault(taskId);
             ConsumeTcsOffset();
         }
 
@@ -800,7 +814,7 @@ namespace Garnet.client
         /// producer whose request failed to publish is faulted exactly once — safe for both the async and
         /// callback types. No-op if the completion was not published or was already claimed by the other path.
         /// </summary>
-        private void FaultCompletion(int taskId)
+        private void CompletionOnFault(int taskId)
         {
             if (!networkWriter.TryClaimCompletionTicket(taskId, out var tcs))
                 return;
