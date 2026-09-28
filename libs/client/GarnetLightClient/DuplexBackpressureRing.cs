@@ -5,12 +5,31 @@ using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.client
 {
+    /// <summary>
+    /// A request-lane payload stored in a <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>.
+    /// The ring transfers ownership of the underlying buffer to the sender (flusher), which disposes
+    /// it once the bytes have been handed to the network.
+    /// </summary>
+    internal interface IRequest : IDisposable
+    {
+        /// <summary>
+        /// Backing buffer holding the serialized request bytes.
+        /// </summary>
+        byte[] Buffer { get; }
+
+        /// <summary>
+        /// Number of valid bytes in <see cref="Buffer"/>.
+        /// </summary>
+        int Length { get; }
+    }
+
     /// <summary>
     /// Transmit one chunk of a request payload over the wire. <paramref name="context"/> is the ring-owned
     /// flush-completion token that MUST be handed back to
@@ -57,22 +76,43 @@ namespace Garnet.client
     /// </para>
     /// </summary>
     internal sealed class DuplexBackpressureRing<TRequest, TCompletion> : IDisposable, IFlushCompletionSink
-        where TRequest : struct, IPayload
+        where TRequest : struct, IRequest
     {
+        /// <summary>
+        /// A single fixed-size page in the <see cref="LightNetworkWriter"/> circular buffer.
+        /// The page stores fixed-size out-of-line payload descriptors (self-referential log
+        /// addresses), not payload bytes; the payload bytes live in separately rented buffers.
+        /// </summary>
+        unsafe struct RingPage
+        {
+            public readonly byte[] value;
+            public readonly long pointer;
+            public FullPageStatus PageStatusIndicator;
+            public long lastOffset;
+
+            public RingPage(int pageSize)
+            {
+                value = GC.AllocateArray<byte>(pageSize, true);
+                pointer = (long)Unsafe.AsPointer(ref value[0]);
+                PageStatusIndicator = default;
+                lastOffset = 0;
+            }
+        }
+
         /// <summary>
         /// Size of the fixed descriptor written per out-of-line request.
         /// </summary>
-        const int PayloadDescriptorSize = sizeof(long);
+        const int RingDescriptorSize = sizeof(long);
         const long PageWrapDistance = 1L << (PageOffset.kPageBits - 1);
 
         public readonly LightEpoch epoch;
 
-        readonly LightPage[] values;
+        readonly RingPage[] bufferPages;
         readonly ILogger logger;
-        readonly int BufferSize, LogPageSizeBits, PageSizeMask;
-        internal readonly int PageSize;
-        readonly long WrapDistance;
-        readonly int sendBufferSize;
+        readonly int ringPageCount, PageSizeBits, PageSizeMask;
+        internal readonly int ringPageSizeBytes;
+        readonly long wrapDistance;
+        readonly int maxChunkSizeBytes;
 
         PageOffset TailPageOffset;
         long FlushedUntilAddress, ReadOnlyAddress;
@@ -80,7 +120,7 @@ namespace Garnet.client
         int _ongoingAggressiveShiftReadOnly;
 
         // Injected transport primitive and the failure callback, supplied at construction.
-        readonly ProcessPayload processPayload;
+        readonly ProcessPayload operateOnPayload;
         readonly Action<Exception> onFlushError;
 
         bool disposed;
@@ -94,14 +134,27 @@ namespace Garnet.client
         // Request side-table: each physical descriptor maps to one request payload. Publication happens-before
         // is established by the self-key written into page memory under the epoch barrier; ownership transfer at
         // flush/teardown is arbitrated by atomically zeroing that key.
-        readonly TRequest[] requestSlots;
+        readonly TRequest[] requests;
 
-        // Completion lane. Slots are indexed by (ticket & completionMask); a companion marker array carries the
-        // release fence and lets a barrier-less reader detect a fully-published completion.
-        readonly TCompletion[] completions;
-        readonly long[] completionPublished;
+        // Completion lane. Each slot co-locates the release-fenced guard word with its completion so the reply
+        // reader's matched read (guard, then completion) hits one cache line instead of two. Indexed by
+        // (ticket & completionMask).
+        readonly CompletionSlot[] completionLane;
         readonly int completionCapacity, completionMask;
         long repliedUntil;
+
+        // Cache-line-isolated completion slot. Padded to 64 bytes so two producers publishing adjacent head
+        // tickets do not share a line. NOTE: the completion lane is single-consumer FIFO, so the reader trails
+        // the producers by the pipeline depth and never shares a line with them; the padding therefore only
+        // guards concurrent producer-vs-producer writes at the head. Drop the Size to pack the lane if that
+        // contention is negligible — the single-line delivery read is preserved either way.
+        [StructLayout(LayoutKind.Sequential, Size = 64)]
+        struct CompletionSlot
+        {
+            // 0 = empty, ticket+1 = published, -(ticket+1) = claimed. The only field mutated with Volatile/Interlocked.
+            public long published;
+            public TCompletion completion;
+        }
 
         /// <summary>
         /// Create a duplex back-pressured ring over a single connection.
@@ -114,30 +167,30 @@ namespace Garnet.client
         /// hands the flush token back to the ring via its <see cref="IFlushCompletionSink"/>.
         /// </para>
         /// </summary>
-        /// <param name="sendPageSize">Size in bytes of each descriptor page; rounds down to a power of two and
+        /// <param name="ringPageSizeBytes">Size in bytes of each descriptor page; rounds down to a power of two and
         /// bounds how many requests can be queued before page reuse waits for an earlier flush.</param>
-        /// <param name="bufferSize">Number of circular pages backing the request lane. Must not exceed
+        /// <param name="ringPageCount">Number of circular pages backing the request lane. Must not exceed
         /// <see cref="PageOffset.kPageMask"/>.</param>
         /// <param name="completionCapacity">Maximum number of outstanding response-expecting requests; rounds
         /// up to a power of two and bounds the completion lane before producers back-pressure on replies.</param>
-        /// <param name="sendBufferSize">Size of a single network send buffer; caps the per-send chunk length.</param>
+        /// <param name="maxChunkSizeBytes">Size of a single network send buffer; caps the per-send chunk length.</param>
         /// <param name="processPayload">Transport callback used to flush one request chunk to the network.</param>
         /// <param name="onFlushError">Invoked when a flush send fails, or with a payload-validation failure
         /// whose reason has already been logged (exception may be null in that case).</param>
         /// <param name="epoch">Shared epoch protecting the page allocator and flush machinery.</param>
         /// <param name="logger">Logger instance.</param>
         public DuplexBackpressureRing(
-            int sendPageSize,
-            int bufferSize,
+            int ringPageSizeBytes,
+            int ringPageCount,
             int completionCapacity,
-            int sendBufferSize,
+            int maxChunkSizeBytes,
             ProcessPayload processPayload,
             Action<Exception> onFlushError,
             LightEpoch epoch,
             ILogger logger = null)
         {
-            this.BufferSize = bufferSize;
-            if (BufferSize > PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(bufferSize));
+            this.ringPageCount = ringPageCount;
+            if (this.ringPageCount > PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
 
             ArgumentNullException.ThrowIfNull(processPayload);
             ArgumentNullException.ThrowIfNull(onFlushError);
@@ -146,27 +199,26 @@ namespace Garnet.client
             completionFreed.Initialize();
 
             this.epoch = epoch;
-            this.PageSize = sendPageSize;
-            this.sendBufferSize = sendBufferSize;
-            this.processPayload = processPayload;
+            this.ringPageSizeBytes = ringPageSizeBytes;
+            this.maxChunkSizeBytes = maxChunkSizeBytes;
+            this.operateOnPayload = processPayload;
             this.onFlushError = onFlushError;
             this.logger = logger;
 
-            var payloadSlotCount = BufferSize * sendPageSize / PayloadDescriptorSize;
-            this.requestSlots = new TRequest[payloadSlotCount];
+            var ringSlotCount = this.ringPageCount * ringPageSizeBytes / RingDescriptorSize;
+            this.requests = new TRequest[ringSlotCount];
 
-            this.LogPageSizeBits = Utility.NumBitsPreviousPowerOf2(sendPageSize);
-            this.WrapDistance = PageWrapDistance << LogPageSizeBits;
-            PageSizeMask = sendPageSize - 1;
+            this.PageSizeBits = Utility.NumBitsPreviousPowerOf2(ringPageSizeBytes);
+            this.wrapDistance = PageWrapDistance << PageSizeBits;
+            PageSizeMask = ringPageSizeBytes - 1;
 
-            values = new LightPage[BufferSize];
-            for (var i = 0; i < BufferSize; i++)
-                values[i] = new LightPage(this.PageSize);
+            bufferPages = new RingPage[this.ringPageCount];
+            for (var i = 0; i < this.ringPageCount; i++)
+                bufferPages[i] = new RingPage(this.ringPageSizeBytes);
 
             this.completionCapacity = (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, completionCapacity));
             this.completionMask = this.completionCapacity - 1;
-            this.completions = new TCompletion[this.completionCapacity];
-            this.completionPublished = new long[this.completionCapacity];
+            this.completionLane = new CompletionSlot[this.completionCapacity];
         }
 
         /// <inheritdoc />
@@ -176,12 +228,12 @@ namespace Garnet.client
 
             // Reclaim any request buffers still outstanding, arbitrating with an in-flight flush by
             // atomically zeroing each descriptor key before taking the slot.
-            for (var page = 0; page < BufferSize; page++)
+            for (var page = 0; page < ringPageCount; page++)
             {
-                var basePtr = values[page].pointer;
-                for (var offset = 0; offset < PageSize; offset += PayloadDescriptorSize)
+                var basePtr = bufferPages[page].pointer;
+                for (var offset = 0; offset < ringPageSizeBytes; offset += RingDescriptorSize)
                 {
-                    var address = ((long)page << LogPageSizeBits) | (uint)offset;
+                    var address = ((long)page << PageSizeBits) | (uint)offset;
                     if (TryClaimDescriptor(address, (long*)(basePtr + offset), out _, out var payload))
                         payload.Dispose();
                 }
@@ -203,8 +255,8 @@ namespace Garnet.client
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
-            var slot = GetPayloadSlot(address);
-            requestSlots[slot] = payload;
+            var slot = ComputeSlot(address);
+            requests[slot] = payload;
             // Publish request to the consumer
             var ptr = (long*)GetPhysicalAddress(address);
             *ptr = address;
@@ -225,16 +277,17 @@ namespace Garnet.client
         /// <param name="completion"></param>
         internal void RegisterCompletion(int ticket, TCompletion completion)
         {
-            completions[ticket & completionMask] = completion;
-            Volatile.Write(ref completionPublished[ticket & completionMask], (long)ticket + 1);
+            var slot = ticket & completionMask;
+            completionLane[slot].completion = completion;
+            Volatile.Write(ref completionLane[slot].published, (long)ticket + 1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int GetPayloadSlot(long address)
+        int ComputeSlot(long address)
         {
-            var pageIndex = (int)((address >> LogPageSizeBits) & (BufferSize - 1));
+            var pageIndex = (int)((address >> PageSizeBits) & (ringPageCount - 1));
             var offset = (int)(address & PageSizeMask);
-            return ((pageIndex * PageSize) + offset) / PayloadDescriptorSize;
+            return ((pageIndex * ringPageSizeBytes) + offset) / RingDescriptorSize;
         }
 
         /// <summary>
@@ -243,12 +296,12 @@ namespace Garnet.client
         public long GetTailAddress()
         {
             var local = TailPageOffset;
-            if (local.Offset >= PageSize)
+            if (local.Offset >= ringPageSizeBytes)
             {
                 local.Page = (local.Page + 1) & (int)PageOffset.kPageMask;
                 local.Offset = 0;
             }
-            return (((long)local.Page) << LogPageSizeBits) | (uint)local.Offset;
+            return (((long)local.Page) << PageSizeBits) | (uint)local.Offset;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -259,7 +312,7 @@ namespace Garnet.client
 
             // Necessary to check because threads keep retrying and we do not
             // want to overflow offset more than once per thread
-            if (localTailPageOffset.Offset > PageSize)
+            if (localTailPageOffset.Offset > ringPageSizeBytes)
             {
                 taskId = 0;
                 if (NeedToWait(localTailPageOffset.Page + 1))
@@ -278,22 +331,22 @@ namespace Garnet.client
             var offset = localTailPageOffset.Offset - size;
 
             #region HANDLE PAGE OVERFLOW
-            if (localTailPageOffset.Offset > PageSize)
+            if (localTailPageOffset.Offset > ringPageSizeBytes)
             {
                 var pageIndex = (localTailPageOffset.Page + 1) & (int)PageOffset.kPageMask;
 
                 // Non-responsible overflow threads back off
-                if (offset > PageSize)
+                if (offset > ringPageSizeBytes)
                 {
                     if (NeedToWait(pageIndex))
                         return -1; // RETRY_LATER
                     return -2; // RETRY_NOW
                 }
 
-                if (offset < PageSize)
+                if (offset < ringPageSizeBytes)
                 {
-                    Debug.Assert(values[page % BufferSize].lastOffset == 0);
-                    values[page % BufferSize].lastOffset = offset;
+                    Debug.Assert(bufferPages[page % ringPageCount].lastOffset == 0);
+                    bufferPages[page % ringPageCount].lastOffset = offset;
                 }
 
                 // Responsible overflow thread tries to shift address
@@ -304,7 +357,7 @@ namespace Garnet.client
                     // Reset to end of page so that next attempt can retry, restoring the taskId so the
                     // completion ticket is not consumed twice across the retry.
                     localTailPageOffset.TaskId = taskId;
-                    localTailPageOffset.Offset = PageSize;
+                    localTailPageOffset.Offset = ringPageSizeBytes;
                     Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
                     return -1; // RETRY_LATER
                 }
@@ -317,12 +370,12 @@ namespace Garnet.client
             }
             #endregion
 
-            return (((long)page) << LogPageSizeBits) | ((long)offset);
+            return (((long)page) << PageSizeBits) | ((long)offset);
 
             // Request-lane back-pressure: page reuse waits for the ring's own flush to catch up.
             bool NeedToWait(int page)
             {
-                var limit = (BufferSize + (int)(FlushedUntilAddress >> LogPageSizeBits)) & (int)PageOffset.kPageMask;
+                var limit = (ringPageCount + (int)(FlushedUntilAddress >> PageSizeBits)) & (int)PageOffset.kPageMask;
                 return page >= limit && (page - limit < PageWrapDistance);
             }
         }
@@ -375,9 +428,9 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         long GetPhysicalAddress(long logicalAddress)
         {
-            var offset = (int)(logicalAddress & ((1L << LogPageSizeBits) - 1));
-            var pageIndex = (int)((logicalAddress >> LogPageSizeBits) & (BufferSize - 1));
-            return values[pageIndex].pointer + offset;
+            var offset = (int)(logicalAddress & ((1L << PageSizeBits) - 1));
+            var pageIndex = (int)((logicalAddress >> PageSizeBits) & (ringPageCount - 1));
+            return bufferPages[pageIndex].pointer + offset;
         }
 
         /// <summary>
@@ -399,9 +452,9 @@ namespace Garnet.client
                 return false;
             }
 
-            var slot = GetPayloadSlot(address);
-            payload = requestSlots[slot];
-            requestSlots[slot] = default;
+            var slot = ComputeSlot(address);
+            payload = requests[slot];
+            requests[slot] = default;
             return true;
         }
 
@@ -422,9 +475,10 @@ namespace Garnet.client
         /// </summary>
         internal bool TryReadCompletion(int ticket, out TCompletion completion)
         {
-            if (Volatile.Read(ref completionPublished[ticket & completionMask]) == (long)ticket + 1)
+            var slot = ticket & completionMask;
+            if (Volatile.Read(ref completionLane[slot].published) == (long)ticket + 1)
             {
-                completion = completions[ticket & completionMask];
+                completion = completionLane[slot].completion;
                 return true;
             }
             completion = default;
@@ -444,10 +498,10 @@ namespace Garnet.client
         {
             var slot = ticket & completionMask;
             var expected = (long)ticket + 1;
-            if (Volatile.Read(ref completionPublished[slot]) == expected &&
-                Interlocked.CompareExchange(ref completionPublished[slot], -expected, expected) == expected)
+            if (Volatile.Read(ref completionLane[slot].published) == expected &&
+                Interlocked.CompareExchange(ref completionLane[slot].published, -expected, expected) == expected)
             {
-                completion = completions[slot];
+                completion = completionLane[slot].completion;
                 return true;
             }
             completion = default;
@@ -478,8 +532,8 @@ namespace Garnet.client
         /// <param name="untilAddress"></param>
         unsafe void AsyncFlushPayloads(long fromAddress, long untilAddress)
         {
-            var startPage = fromAddress >> LogPageSizeBits;
-            var endPage = untilAddress >> LogPageSizeBits;
+            var startPage = fromAddress >> PageSizeBits;
+            var endPage = untilAddress >> PageSizeBits;
             var count = new CountWrapper
             {
                 count = 1,
@@ -490,27 +544,27 @@ namespace Garnet.client
             var flushPage = startPage;
             while (true)
             {
-                long startOffset = 0, endOffset = 1L << LogPageSizeBits;
+                long startOffset = 0, endOffset = 1L << PageSizeBits;
                 if (flushPage == startPage) startOffset = GetOffsetInPage(fromAddress);
                 if (flushPage == endPage) endOffset = GetOffsetInPage(untilAddress);
 
                 var realEndOffset = endOffset;
-                ref var page = ref values[flushPage % BufferSize];
+                ref var page = ref bufferPages[flushPage % ringPageCount];
                 if (page.lastOffset > 0 && endOffset > page.lastOffset)
                 {
                     realEndOffset = page.lastOffset;
                     page.lastOffset = 0;
                 }
 
-                if ((startOffset & (PayloadDescriptorSize - 1)) != 0 || (realEndOffset & (PayloadDescriptorSize - 1)) != 0)
+                if ((startOffset & (RingDescriptorSize - 1)) != 0 || (realEndOffset & (RingDescriptorSize - 1)) != 0)
                 {
-                    FailOnPayloadFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {PayloadDescriptorSize}-byte records.");
-                    realEndOffset -= (realEndOffset - startOffset) & (PayloadDescriptorSize - 1);
+                    FailOnPayloadFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {RingDescriptorSize}-byte records.");
+                    realEndOffset -= (realEndOffset - startOffset) & (RingDescriptorSize - 1);
                 }
 
-                for (var offset = startOffset; offset < realEndOffset; offset += PayloadDescriptorSize)
+                for (var offset = startOffset; offset < realEndOffset; offset += RingDescriptorSize)
                 {
-                    var address = (flushPage << LogPageSizeBits) | (uint)offset;
+                    var address = (flushPage << PageSizeBits) | (uint)offset;
                     var ptr = page.pointer + offset;
 
                     // Claim the descriptor by atomically zeroing its self-key, arbitrating with teardown.
@@ -530,7 +584,7 @@ namespace Garnet.client
                         continue;
                     }
 
-                    ProcessPayloadChunks(ref payload, count, ref flushFailed);
+                    ProcessRequestChunks(ref payload, count, ref flushFailed);
                 }
 
                 if (flushPage == endPage) break;
@@ -539,9 +593,9 @@ namespace Garnet.client
 
             CompleteFlush(count);
 
-            void ProcessPayloadChunks(ref TRequest payload, CountWrapper count, ref bool flushFailed)
+            void ProcessRequestChunks(ref TRequest payload, CountWrapper count, ref bool flushFailed)
             {
-                var chunkSize = Math.Max(1, sendBufferSize);
+                var chunkSize = Math.Max(1, maxChunkSizeBytes);
                 var chunkCount = ((payload.Length - 1) / chunkSize) + 1;
                 var result = new LightPayloadAsyncFlushResult<TRequest>
                 {
@@ -558,7 +612,7 @@ namespace Garnet.client
                     for (var offset = 0; offset < payload.Length; offset += chunkSize)
                     {
                         var length = Math.Min(chunkSize, payload.Length - offset);
-                        processPayload(payload.Buffer, offset, length, result);
+                        operateOnPayload(payload.Buffer, offset, length, result);
                         dispatchedChunks++;
                     }
                 }
@@ -594,7 +648,7 @@ namespace Garnet.client
                 if (Interlocked.Decrement(ref count.count) == 0)
                 {
                     var endAddress = count.untilAddress;
-                    Utility.MonotonicUpdate(ref FlushedUntilAddress, endAddress, WrapDistance, out _);
+                    _ = Utility.MonotonicUpdate(ref FlushedUntilAddress, endAddress, wrapDistance, out _);
                     // The request lane is now free up to endAddress; wake producers waiting on request back-pressure.
                     requestFreed.Set();
                     AggressiveShiftReadOnlyRunner(true);
@@ -627,7 +681,7 @@ namespace Garnet.client
         bool ToShift()
         {
             var tailAddress = GetTailAddress();
-            return tailAddress > ReadOnlyAddress || (ReadOnlyAddress - tailAddress > WrapDistance);
+            return tailAddress > ReadOnlyAddress || (ReadOnlyAddress - tailAddress > wrapDistance);
         }
 
         void AggressiveShiftReadOnlyRunner(bool recurse)
@@ -653,7 +707,7 @@ namespace Garnet.client
         bool AggressiveFlushShiftReadOnlyBump()
         {
             var newReadOnlyAddress = GetTailAddress();
-            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, WrapDistance, out long oldReadOnlyAddress))
+            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, wrapDistance, out long oldReadOnlyAddress))
             {
                 epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(oldReadOnlyAddress, newReadOnlyAddress));
                 return true;

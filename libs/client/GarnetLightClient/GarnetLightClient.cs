@@ -24,7 +24,7 @@ namespace Garnet.client
     /// <para>
     /// Unlike <see cref="GarnetClient"/>, this client does not maintain a separate task-id space or a
     /// producer-side serialization gate. The response completion travels with the payload
-    /// (<see cref="LightPayload"/>); the single-threaded flusher registers each completion in address
+    /// (<see cref="LightRequest"/>); the single-threaded flusher registers each completion in address
     /// order right before the payload is sent, and replies are matched in that same order.
     /// </para>
     /// </summary>

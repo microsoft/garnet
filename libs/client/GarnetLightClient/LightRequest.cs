@@ -15,7 +15,7 @@ namespace Garnet.client
     /// the completion ticket that the combined allocator hands out alongside the request address.
     /// The request lane is freed on flush (send), independently of when the reply arrives.
     /// </summary>
-    struct LightPayload : IPayload
+    struct LightRequest : IRequest
     {
         /// <summary>
         /// Rented buffer holding the serialized command bytes.
@@ -30,7 +30,7 @@ namespace Garnet.client
         /// <inheritdoc />
         public int Length => length;
 
-        internal LightPayload(PoolEntry entry, int length)
+        internal LightRequest(PoolEntry entry, int length)
         {
             this.Entry = entry;
             this.length = length;
@@ -56,7 +56,7 @@ namespace Garnet.client
     /// Out-of-line payload async flush result for the request lane of
     /// <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>.
     /// </summary>
-    sealed class LightPayloadAsyncFlushResult<TRequest> where TRequest : struct, IPayload
+    sealed class LightPayloadAsyncFlushResult<TRequest> where TRequest : struct, IRequest
     {
         public CountWrapper count;
         public TRequest payload;

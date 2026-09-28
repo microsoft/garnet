@@ -15,7 +15,7 @@ namespace Garnet.client
     /// Concurrent network writer for out-of-line (chunked) payloads only.
     /// <para>
     /// This is a thin, network-owning shell over a <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>
-    /// specialized to <see cref="LightPayload"/> requests and <see cref="TcsWrapper"/> completions. It owns
+    /// specialized to <see cref="LightRequest"/> requests and <see cref="TcsWrapper"/> completions. It owns
     /// the socket, the <see cref="GarnetLightClientTcpNetworkHandler"/> and the send buffer pool, and forwards
     /// all ring bookkeeping (allocation, request enqueue, flush, and the completion lane) to the ring.
     /// </para>
@@ -30,7 +30,7 @@ namespace Garnet.client
     {
         const int PayloadDescriptorSize = sizeof(long);
 
-        readonly DuplexBackpressureRing<LightPayload, TcsWrapper> ring;
+        readonly DuplexBackpressureRing<LightRequest, TcsWrapper> ring;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetLightClientTcpNetworkHandler networkHandler;
@@ -57,7 +57,7 @@ namespace Garnet.client
             // ring<->handler cycle: build the handler first, then construct the fully-wired ring.
             var handler = new GarnetLightClientTcpNetworkHandler(
                 serverHook,
-                LightPayloadAsyncFlushResult<LightPayload>.CompleteChunk,
+                LightPayloadAsyncFlushResult<LightRequest>.CompleteChunk,
                 socket,
                 networkBufferSettings,
                 networkPool,
@@ -68,7 +68,7 @@ namespace Garnet.client
             this.networkHandler = networkHandler = handler;
             var networkSender = handler.GetNetworkSender();
 
-            this.ring = new DuplexBackpressureRing<LightPayload, TcsWrapper>(
+            this.ring = new DuplexBackpressureRing<LightRequest, TcsWrapper>(
                 sendPageSize,
                 pageBufferCount,
                 completionCapacity,
@@ -88,7 +88,7 @@ namespace Garnet.client
             networkPool?.Dispose();
         }
 
-        internal LightPayload RentPayloadBuffer(int length)
+        internal LightRequest RentPayloadBuffer(int length)
         {
             var allocationSize = length;
             if (length <= networkPool.MaxAllocationSize)
@@ -112,7 +112,7 @@ namespace Garnet.client
             => ring.TryAllocate(size, expectsResponse, out waitEvent);
 
         /// <summary>Register (store and publish) a request payload at the descriptor address.</summary>
-        public void RegisterRequest(long address, LightPayload payload) => ring.RegisterRequest(address, payload);
+        public void RegisterRequest(long address, LightRequest payload) => ring.RegisterRequest(address, payload);
 
         /// <summary>Register (store and publish) a completion for the given ticket.</summary>
         public void RegisterCompletion(int ticket, TcsWrapper completion) => ring.RegisterCompletion(ticket, completion);
