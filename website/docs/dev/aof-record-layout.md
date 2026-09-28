@@ -20,10 +20,11 @@ DELETE, a transaction marker, …) is appended as one or more **AOF entries**.
 
 - A small operation is written as a **single, non-chunked entry** ([§3](#3-non-chunked-aof-headers)–[§4](#4-non-chunked-entry-body)).
 - An operation whose **key + value + input** together exceed `TsavoriteLog.MinPartialAllocSize` is written as a
-  **chunked record**: a run of AOF entries that the reader reassembles (`GarnetLog.IsChunkable`) ([§5](#5-chunked-aof-records)).
+  **chunked record**: a run of AOF entries that the reader reassembles (`GarnetLog.IsChunkable`) ([§6](#6-chunked-aof-records)).
 
 Chunking lets a value that is larger than an AOF page — even larger than 2 GB — be written and replayed without ever
-materializing the whole serialized value contiguously.
+materializing the whole serialized value contiguously. The same chunked-record machinery is reused by cluster migration
+and diskless replication; [§5](#5-chunk-management-at-a-glance) maps all of those paths before the byte-level detail.
 
 > The AOF stores an **operation image** (`opType` + key + value/input), which is *not* the same as the serialized
 > `DiskLogRecord` image shipped by cluster migration / replication. For that format see the companion doc,
@@ -38,7 +39,7 @@ Every AOF entry — chunked or not — is a single `TsavoriteLog` entry:
 ```
 +------------------------------+------------------------+-----------------------------+
 | entry-length prefix          |  AOF header (variant)  |  body                       |
-| (TsavoriteLog headerSize)    |  §3 / §5               |  §4 / §5                    |
+| (TsavoriteLog headerSize)    |  §3 / §6               |  §4 / §6                    |
 +------------------------------+------------------------+-----------------------------+
 ```
 
@@ -116,7 +117,59 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 
 ---
 
-## 5. Chunked AOF records
+## 5. Chunk management at a glance
+
+Chunking appears in three subsystems — the AOF (write and replay), cluster migration (send and receive), and diskless
+replication (send only) — plus disk-based replication, which is listed because it is routinely assumed to use this
+machinery and does not. They share two building blocks: a **ring** that bounds how much serialized data is held while
+producing, and an **accumulator** that collects arriving pieces until a record is complete. Each path combines them
+differently, and two use only one of the two.
+
+| Path | Producer side | Carrier | Consumer side |
+|---|---|---|---|
+| **AOF write** | object value streamed through a 4 MB ring, rented per write from the log's `SectorAlignedBufferPool`; one AOF entry per drain. A span value needs no ring — it is handed over whole. | AOF entries in the log | — |
+| **AOF replay** | — | AOF entries read by the scan iterator | `ChunkedAccumulator`: key / span value / input into buffers pre-sized from the chunk header; object value into a `PooledChunkList`, then deserialized from a `ReadOnlySequence` |
+| **Migration send** | object value serialized **in-epoch** through a 4 MB ring owned by the accumulator, draining into a `PooledChunkList` | one `LogRecord` if the record fits a send buffer, else `ChunkedLogRecord` chunks | — |
+| **Migration receive** | — | network commands (a record's chunks may span several) | `ChunkedRecordReassembler`: inline portion into a contiguous buffer, overflow key/value into a pre-sized `OverflowByteArray`, object value into a `PooledChunkList` |
+| **Diskless replication send** | object value streamed **in-epoch** through a ring sized just under the send buffer — **no accumulator**; each drain goes straight to the network | replication stream | replica replays as AOF |
+| **Disk-based replication** | *not record chunking at all* — see below | checkpoint file byte ranges | replica writes files to disk, recovers, then replays AOF |
+
+The two buffer roles are easy to confuse because both are "pooled chunk memory", but they answer to different
+constraints:
+
+| | Ring (producer) | Accumulator (consumer) |
+|---|---|---|
+| Holds | serialized bytes not yet drained | pieces already received |
+| Size governs | how much value data one carrier chunk holds — so it sets the **number of chunks emitted** | how many segments the resulting `ReadOnlySequence` has |
+| Affects the wire/log format | **yes** | no |
+| Lower bound | `MinPartialAllocSize`, or page-tail packing stops working (AOF only) | none |
+
+**Why migration accumulates but diskless replication does not.** Both must serialize while holding the store epoch,
+because a migrating or replicating key is not locked and its value may be updated concurrently. The difference is how
+they send. Replication sends **synchronously** (`BlockingWait`), so it can stream each drained chunk to the network
+without ever leaving the epoch, and never materializes an object value whole. Migration sends **asynchronously**, and
+the store epoch must not be held across an `await` — so it snapshots the record's pieces in-epoch into the accumulator
+and assembles and sends them out of epoch.
+
+**Diskless vs disk-based replication.** Only *diskless* replication uses the machinery in this document. It iterates
+the live store and streams records, so it needs the chunked-record format for values too large to send whole.
+*Disk-based* replication does something categorically different: the primary takes a checkpoint to disk and ships byte
+ranges of the resulting **files** (`CheckpointFileType.STORE_HLOG`, `STORE_SNAPSHOT`, …) via `FileDataSource`, which
+batches through a `SectorAlignedBufferPool`. Those batches are file offsets, not records — there are no chunk headers,
+no component ordering, and no reassembly of a logical record. The replica writes the files, recovers from them, and
+only then replays the AOF, at which point the AOF replay row above applies.
+
+**Why an arriving object value is accumulated rather than deserialized as it arrives** — on both AOF replay and
+migration receive — is covered in [§6.2](#62-chunk-entry-body-packed-component-segments); the short version is that the
+records that would benefit are exactly the ones it cannot be applied to.
+
+The rest of this document details the **AOF** rows. For the migration and replication rows — the `DiskLogRecord` image,
+which component goes where on the wire, and a per-path accounting of copies — see the companion doc,
+[Migration / Replication record layout](./migration-replication-record-layout.md).
+
+---
+
+## 6. Chunked AOF records
 
 When `GarnetLog.IsChunkable(key, value, input)` is true (`key.TotalSize + value.TotalSize + inputSerializedLength >
 TsavoriteLog.MinPartialAllocSize`), the operation is written as a **run of chunk entries** by `EnqueueSpanChunked`
@@ -136,7 +189,7 @@ from that size, so it is not free to change:
 Pool blocks are pinned arrays that the pool reuses, so the size costs no repeated large-object-heap allocation, and
 renting per write means a cached serializer holds no buffer (and roots no value object) between writes.
 
-### 5.1 Chunk headers
+### 6.1 Chunk headers
 
 Each chunk entry uses a chunked header: a normal header immediately followed by an `AofChunkHeader`.
 
@@ -166,7 +219,7 @@ Chunked header variants:
 | `AofBasicChunkHeader` | 44 B | `AofHeader` (16) + `AofChunkHeader` (28) |
 | `AofShardedChunkHeader` | 52 B | `AofShardedHeader` (24) + `AofChunkHeader` (28) |
 
-### 5.2 Chunk entry body: packed component segments
+### 6.2 Chunk entry body: packed component segments
 
 The components are written in the fixed order **Key → Value → Input**, **packed**: a single chunk entry holds one
 `[i32 prefix][data]` **segment** per component that (partly) fits, in order — so key + value + input can share an entry.
@@ -202,7 +255,7 @@ the consumer under it for entries resident in the log buffer) or is itself the t
 chunks (replication replay, fed from the network). Between them these exclude every path a chunked object value
 currently arrives on.
 
-### 5.3 A large object across chunk entries
+### 6.3 A large object across chunk entries
 
 ```
  logical record (opType = ObjectStoreUpsert, key K, object value V, |V| >> page)
@@ -221,7 +274,7 @@ currently arrives on.
  the value's continuation flag stays set until the object serializer's final (isComplete) drain.
 ```
 
-### 5.4 Write and replay flow
+### 6.4 Write and replay flow
 
 ```mermaid
 flowchart TB
@@ -259,7 +312,7 @@ sequenceDiagram
 
 ---
 
-## 6. Call sequence (code paths)
+## 7. Call sequence (code paths)
 
 The AOF logs an **operation** (opType + key + value/input); a chunkable op is split across entries on write and
 reassembled on replay. Indentation = call depth; a multi-step flow may sit on one line (`a → b → c`), and *italic*
