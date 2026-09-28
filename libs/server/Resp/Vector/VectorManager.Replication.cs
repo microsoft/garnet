@@ -280,8 +280,8 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetAddReplication(
             StorageSession currentSession,
-            Func<RespServerSession> obtainServerSession, 
-            ReadOnlySpan<byte> key, 
+            Func<RespServerSession> obtainServerSession,
+            ReadOnlySpan<byte> key,
             ref StringInput input
         )
         {
