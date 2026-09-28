@@ -58,7 +58,7 @@ namespace Garnet.client
             // ring<->handler cycle: build the handler first, then construct the fully-wired ring.
             var handler = new GarnetLightClientTcpNetworkHandler(
                 serverHook,
-                LightPayloadAsyncFlushResult<LightRequest>.CompleteChunk,
+                LightRequestAsyncFlushResult<LightRequest>.CompleteChunk,
                 socket,
                 networkBufferSettings,
                 networkPool,

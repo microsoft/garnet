@@ -42,7 +42,7 @@ namespace Garnet.client
 
     /// <summary>
     /// Sink that finalizes a completed request-lane flush. Carried by
-    /// <see cref="LightPayloadAsyncFlushResult{TRequest}"/> so the (static) network flush completion
+    /// <see cref="LightRequestAsyncFlushResult{TRequest}"/> so the (static) network flush completion
     /// callback can route back to the owning ring instance without the network handler holding a ring
     /// reference at construction time.
     /// </summary>
@@ -56,10 +56,10 @@ namespace Garnet.client
     /// Out-of-line payload async flush result for the request lane of
     /// <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>.
     /// </summary>
-    sealed class LightPayloadAsyncFlushResult<TRequest> where TRequest : struct, IRequest
+    sealed class LightRequestAsyncFlushResult<TRequest> where TRequest : struct, IRequest
     {
         public CountWrapper count;
-        public TRequest payload;
+        public TRequest request;
         public int remainingChunks;
         public IFlushCompletionSink sink;
 
@@ -69,16 +69,16 @@ namespace Garnet.client
         /// to the owning ring through its <see cref="IFlushCompletionSink"/>. Static so the network handler
         /// can be wired with a plain method group and holds no ring reference at construction time.
         /// </summary>
-        /// <param name="context">The <see cref="LightPayloadAsyncFlushResult{TRequest}"/> handed to the send.</param>
+        /// <param name="context">The <see cref="LightRequestAsyncFlushResult{TRequest}"/> handed to the send.</param>
         public static void CompleteChunk(object context)
         {
             switch (context)
             {
-                case LightPayloadAsyncFlushResult<TRequest> result:
+                case LightRequestAsyncFlushResult<TRequest> result:
                     if (Interlocked.Decrement(ref result.remainingChunks) == 0)
                     {
                         // The request buffer is done; any completion lives in the completion lane until its reply.
-                        result.payload.Dispose();
+                        result.request.Dispose();
                         result.sink.CompleteFlush(result.count);
                     }
                     break;

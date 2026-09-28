@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.client
 {
     /// <summary>
-    /// A request-lane payload stored in a <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>.
+    /// A request-lane request stored in a <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>.
     /// The ring transfers ownership of the underlying buffer to the sender (flusher), which disposes
     /// it once the bytes have been handed to the network.
     /// </summary>
@@ -31,13 +31,13 @@ namespace Garnet.client
     }
 
     /// <summary>
-    /// Transmit one chunk of a request payload over the wire. <paramref name="context"/> is the ring-owned
+    /// Transmit one chunk of a request request over the wire. <paramref name="context"/> is the ring-owned
     /// flush-completion token that MUST be handed back to
-    /// <see cref="LightPayloadAsyncFlushResult{TRequest}.CompleteChunk"/> once the
+    /// <see cref="LightRequestAsyncFlushResult{TRequest}.CompleteChunk"/> once the
     /// asynchronous send completes. This is the ring's only transport dependency; the chunking and the
     /// flush-completion accounting are owned by the ring.
     /// </summary>
-    internal delegate void ProcessPayload(byte[] buffer, int offset, int length, object context);
+    internal delegate void ProcessRequest(byte[] buffer, int offset, int length, object context);
 
     /// <summary>
     /// A duplex, back-pressured ring for out-of-line (chunked) request/response traffic over a single
@@ -63,7 +63,7 @@ namespace Garnet.client
     /// can break that ordering, which is what lets the reply reader match replies to completions by a
     /// plain monotonic counter.
     /// <para>
-    /// This type is network-transport agnostic apart from an injected <see cref="ProcessPayload"/>
+    /// This type is network-transport agnostic apart from an injected <see cref="ProcessRequest"/>
     /// (supplied at construction). The <see cref="LightNetworkWriter"/>
     /// is a thin shell that owns the socket/handler and buffer pool and delegates to this ring.
     /// </para>
@@ -80,8 +80,8 @@ namespace Garnet.client
     {
         /// <summary>
         /// A single fixed-size page in the <see cref="LightNetworkWriter"/> circular buffer.
-        /// The page stores fixed-size out-of-line payload descriptors (self-referential log
-        /// addresses), not payload bytes; the payload bytes live in separately rented buffers.
+        /// The page stores fixed-size out-of-line request descriptors (self-referential log
+        /// addresses), not request bytes; the request bytes live in separately rented buffers.
         /// </summary>
         unsafe struct RingPage
         {
@@ -93,6 +93,10 @@ namespace Garnet.client
             public RingPage(int pageSize)
             {
                 value = GC.AllocateArray<byte>(pageSize, true);
+                // Descriptor slots start empty. The empty sentinel is -1 (not 0) so that a descriptor at
+                // address 0 (the first allocation, and every wrap back to page 0 / offset 0) is stored
+                // verbatim and remains distinguishable from an unpublished/claimed slot.
+                value.AsSpan().Fill(0xFF);
                 pointer = (long)Unsafe.AsPointer(ref value[0]);
                 PageStatusIndicator = default;
                 lastOffset = 0;
@@ -119,7 +123,7 @@ namespace Garnet.client
         int ongoingAggressiveShiftReadOnly;
 
         // Injected transport primitive and the failure callback, supplied at construction.
-        readonly ProcessPayload operateOnPayload;
+        readonly ProcessRequest operateOnRequest;
         readonly Action<Exception> onFlushError;
 
         bool disposed;
@@ -130,7 +134,7 @@ namespace Garnet.client
         // Completion lane freed on reply (receiver); producers block on this when too many replies are outstanding.
         CompletionEvent completionFreed;
 
-        // Request side-table: each physical descriptor maps to one request payload. Publication happens-before
+        // Request side-table: each physical descriptor maps to one request. Publication happens-before
         // is established by the self-key written into page memory under the epoch barrier; ownership transfer at
         // flush/teardown is arbitrated by atomically zeroing that key.
         readonly TRequest[] requests;
@@ -161,8 +165,8 @@ namespace Garnet.client
         /// The ring owns one combined address allocator whose atomic advance covers both the request lane
         /// (a circular buffer of fixed-size descriptors, freed on flush) and the completion lane (reply
         /// tickets, freed on reply), so a producer's (address, ticket) pair is always mutually ordered. The
-        /// caller injects the transport: <paramref name="processPayload"/> transmits one chunk, and the
-        /// static network flush-completion callback (<see cref="LightPayloadAsyncFlushResult{TRequest}.CompleteChunk"/>)
+        /// caller injects the transport: <paramref name="operateOnRequest"/> transmits one chunk, and the
+        /// static network flush-completion callback (<see cref="LightRequestAsyncFlushResult{TRequest}.CompleteChunk"/>)
         /// hands the flush token back to the ring via its <see cref="IFlushCompletionSink"/>.
         /// </para>
         /// </summary>
@@ -173,8 +177,8 @@ namespace Garnet.client
         /// <param name="completionCapacity">Maximum number of outstanding response-expecting requests; rounds
         /// up to a power of two and bounds the completion lane before producers back-pressure on replies.</param>
         /// <param name="maxChunkSizeBytes">Size of a single network send buffer; caps the per-send chunk length.</param>
-        /// <param name="processPayload">Transport callback used to flush one request chunk to the network.</param>
-        /// <param name="onFlushError">Invoked when a flush send fails, or with a payload-validation failure
+        /// <param name="operateOnRequest">Transport callback used to flush one request chunk to the network.</param>
+        /// <param name="onFlushError">Invoked when a flush send fails, or with a request-validation failure
         /// whose reason has already been logged (exception may be null in that case).</param>
         /// <param name="epoch">Shared epoch protecting the page allocator and flush machinery.</param>
         /// <param name="logger">Logger instance.</param>
@@ -183,7 +187,7 @@ namespace Garnet.client
             int ringPageCount,
             int completionCapacity,
             int maxChunkSizeBytes,
-            ProcessPayload processPayload,
+            ProcessRequest operateOnRequest,
             Action<Exception> onFlushError,
             LightEpoch epoch,
             ILogger logger = null)
@@ -191,7 +195,7 @@ namespace Garnet.client
             this.ringPageCount = ringPageCount;
             if (this.ringPageCount > PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
 
-            ArgumentNullException.ThrowIfNull(processPayload);
+            ArgumentNullException.ThrowIfNull(operateOnRequest);
             ArgumentNullException.ThrowIfNull(onFlushError);
 
             requestFreed.Initialize();
@@ -200,7 +204,7 @@ namespace Garnet.client
             this.epoch = epoch;
             this.ringPageSizeBytes = ringPageSizeBytes;
             this.maxChunkSizeBytes = maxChunkSizeBytes;
-            this.operateOnPayload = processPayload;
+            this.operateOnRequest = operateOnRequest;
             this.onFlushError = onFlushError;
             this.logger = logger;
 
@@ -233,8 +237,8 @@ namespace Garnet.client
                 for (var offset = 0; offset < ringPageSizeBytes; offset += RingDescriptorSize)
                 {
                     var address = ((long)page << pageSizeBits) | (uint)offset;
-                    if (TryClaimRequestDescriptor(address, (long*)(basePtr + offset), out _, out var payload))
-                        payload.Dispose();
+                    if (TryClaimRequestDescriptor(address, (long*)(basePtr + offset), out _, out var request))
+                        request.Dispose();
                 }
             }
 
@@ -400,51 +404,60 @@ namespace Garnet.client
         #region Request Implementation
 
         /// <summary>
-        /// Atomically claim the descriptor published at <paramref name="address"/> by zeroing its self-key,
-        /// arbitrating single ownership across the three teardown/flush paths that race for it: the flusher
-        /// (<see cref="AsyncFlushRequests"/>), <see cref="Dispose"/>, and the <see cref="RegisterRequest"/>
-        /// post-publish recheck. Exactly one caller observes a non-zero key and takes the payload; the losers
-        /// see key == 0 and skip. On success, clears the slot, hands back its payload, and outputs the claimed
-        /// self-key so callers can validate key == address. Returns false when the slot was empty or already
-        /// claimed by another path.
+        /// Atomically claim the descriptor published at <paramref name="address"/> by resetting its self-key
+        /// to the empty sentinel, arbitrating single ownership across the three teardown/flush paths that race
+        /// for it: the flusher (<see cref="AsyncFlushRequests"/>), <see cref="Dispose"/>, and the
+        /// <see cref="RegisterRequest"/> post-publish recheck. Exactly one caller observes a published key and
+        /// takes the request; the losers see the empty sentinel and skip. On success, clears the slot, hands
+        /// back its request, and outputs the claimed self-key so callers can validate key == address. Returns
+        /// false when the slot was empty or already claimed by another path.
+        /// <para>
+        /// The empty sentinel is -1 (see <see cref="RingPage"/> initialization), never a valid address, so a
+        /// descriptor at address 0 (the first allocation, and every ring wrap back to page 0 / offset 0) is
+        /// stored verbatim and stays distinguishable from an empty slot.
+        /// </para>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe bool TryClaimRequestDescriptor(long address, long* keyPtr, out long key, out TRequest payload)
+        unsafe bool TryClaimRequestDescriptor(long address, long* keyPtr, out long key, out TRequest request)
         {
-            key = Interlocked.Exchange(ref *keyPtr, 0L);
-            if (key == 0)
+            key = Interlocked.Exchange(ref *keyPtr, -1L);
+            if (key == -1)
             {
-                payload = default;
+                request = default;
                 return false;
             }
 
             var slot = ComputeSlot(address);
-            payload = requests[slot];
+            request = requests[slot];
             requests[slot] = default;
             return true;
         }
 
         /// <summary>
-        /// Register (store and publish) a request payload at the descriptor address, making it eligible for
+        /// Register (store and publish) a request request at the descriptor address, making it eligible for
         /// flushing. Publication writes the descriptor's self-key into page memory; the producing thread must
         /// hold the epoch, so the flusher (which validates key == address only after the epoch barrier) never
         /// observes a partially-written slot.
+        /// <para>
+        /// The address is stored verbatim; the empty/claimed sentinel is -1 (see
+        /// <see cref="TryClaimRequestDescriptor"/>), so address 0 does not collide with it.
+        /// </para>
         /// </summary>
         /// <param name="address"></param>
-        /// <param name="payload"></param>
-        internal unsafe void RegisterRequest(long address, TRequest payload)
+        /// <param name="request"></param>
+        internal unsafe void RegisterRequest(long address, TRequest request)
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
             var slot = ComputeSlot(address);
-            requests[slot] = payload;
-            // Publish request to the consumer
+            requests[slot] = request;
+            // Publish request to the consumer.
             var ptr = (long*)GetPhysicalAddress(address);
             *ptr = address;
 
             // If Dispose swept this slot before publication, its reclaim pass has already run and will not
             // revisit the slot. Re-check and reclaim here via the same atomic claim so the just-published
-            // payload cannot leak.
+            // request cannot leak.
             if (Volatile.Read(ref disposed) && TryClaimRequestDescriptor(address, ptr, out _, out var reclaimed))
                 reclaimed.Dispose();
         }
@@ -566,7 +579,7 @@ namespace Garnet.client
 
                 if ((startOffset & (RingDescriptorSize - 1)) != 0 || (realEndOffset & (RingDescriptorSize - 1)) != 0)
                 {
-                    FailOnPayloadFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {RingDescriptorSize}-byte records.");
+                    FailOnRequestFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {RingDescriptorSize}-byte records.");
                     realEndOffset -= (realEndOffset - startOffset) & (RingDescriptorSize - 1);
                 }
 
@@ -576,23 +589,23 @@ namespace Garnet.client
                     var ptr = page.pointer + offset;
 
                     // Claim the descriptor by atomically zeroing its self-key, arbitrating with teardown.
-                    if (!TryClaimRequestDescriptor(address, (long*)ptr, out var key, out var payload))
+                    if (!TryClaimRequestDescriptor(address, (long*)ptr, out var key, out var request))
                         continue; // Taken by Dispose.
 
                     if (key != address)
                     {
-                        FailOnPayloadFlush(ref flushFailed, $"Out-of-line payload key {key} does not match its log address {address}.");
-                        payload.Dispose();
+                        FailOnRequestFlush(ref flushFailed, $"Out-of-line request key {key} does not match its log address {address}.");
+                        request.Dispose();
                         continue;
                     }
 
                     if (flushFailed)
                     {
-                        payload.Dispose();
+                        request.Dispose();
                         continue;
                     }
 
-                    ProcessRequestChunks(ref payload, count, ref flushFailed);
+                    ProcessRequestChunks(ref request, count, ref flushFailed);
                 }
 
                 if (flushPage == endPage) break;
@@ -601,14 +614,14 @@ namespace Garnet.client
 
             CompleteFlush(count);
 
-            void ProcessRequestChunks(ref TRequest payload, CountWrapper count, ref bool flushFailed)
+            void ProcessRequestChunks(ref TRequest request, CountWrapper count, ref bool flushFailed)
             {
                 var chunkSize = Math.Max(1, maxChunkSizeBytes);
-                var chunkCount = ((payload.Length - 1) / chunkSize) + 1;
-                var result = new LightPayloadAsyncFlushResult<TRequest>
+                var chunkCount = ((request.Length - 1) / chunkSize) + 1;
+                var result = new LightRequestAsyncFlushResult<TRequest>
                 {
                     count = count,
-                    payload = payload,
+                    request = request,
                     remainingChunks = chunkCount,
                     sink = this
                 };
@@ -617,27 +630,27 @@ namespace Garnet.client
                 var dispatchedChunks = 0;
                 try
                 {
-                    for (var offset = 0; offset < payload.Length; offset += chunkSize)
+                    for (var offset = 0; offset < request.Length; offset += chunkSize)
                     {
-                        var length = Math.Min(chunkSize, payload.Length - offset);
-                        operateOnPayload(payload.Buffer, offset, length, result);
+                        var length = Math.Min(chunkSize, request.Length - offset);
+                        operateOnRequest(request.Buffer, offset, length, result);
                         dispatchedChunks++;
                     }
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "Exception sending an out-of-line payload");
+                    logger?.LogError(ex, "Exception sending an out-of-line request");
                     flushFailed = true;
                     onFlushError(ex);
 
                     // Undispatched chunks will never get a network completion, so account for them here via
                     // the same completion routine the network callback uses.
                     for (var i = dispatchedChunks; i < chunkCount; i++)
-                        LightPayloadAsyncFlushResult<TRequest>.CompleteChunk(result);
+                        LightRequestAsyncFlushResult<TRequest>.CompleteChunk(result);
                 }
             }
 
-            void FailOnPayloadFlush(ref bool flushFailed, string message)
+            void FailOnRequestFlush(ref bool flushFailed, string message)
             {
                 if (flushFailed)
                     return;
