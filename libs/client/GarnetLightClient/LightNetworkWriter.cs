@@ -116,6 +116,22 @@ namespace Garnet.client
         public void RegisterRequest(long address, LightRequest payload)
             => ring.RegisterRequest(address, payload);
 
+        /// <summary>True when a command of <paramref name="payloadLength"/> bytes fits inline in one page.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool CanInline(int payloadLength) => ring.CanInline(payloadLength);
+
+        /// <summary>Ring bytes an inline command of <paramref name="payloadLength"/> reserves.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public int InlineRecordSize(int payloadLength) => DuplexBackpressureRing<LightRequest, TcsWrapper>.InlineRecordSize(payloadLength);
+
+        /// <summary>
+        /// Reserve an inline record and return a pointer to write its payload directly into page memory,
+        /// skipping the pooled buffer. The caller must hold the epoch and fill exactly
+        /// <paramref name="payloadLength"/> bytes.
+        /// </summary>
+        public unsafe byte* ReserveInlineRecord(long address, int payloadLength)
+            => ring.ReserveInlineRecord(address, payloadLength);
+
         /// <summary>Register (store and publish) a completion for the given ticket.</summary>
         public void RegisterCompletion(int ticket, TcsWrapper completion)
             => ring.RegisterCompletion(ticket, completion);

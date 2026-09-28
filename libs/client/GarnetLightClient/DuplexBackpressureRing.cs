@@ -158,14 +158,30 @@ namespace Garnet.client
         static long EncodeDescriptor(RequestKind kind, long meta)
             => ((long)(byte)kind << kTagShift) | (meta & kPayloadMetaMask);
 
-        /// <summary>Extract the payload kind from a descriptor word.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static RequestKind DecodeKind(long word)
-            => (RequestKind)(byte)((ulong)word >> kTagShift);
-
         /// <summary>Extract the 56-bit metadata (log address or payload length) from a descriptor word.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static long DecodeMeta(long word) => word & kPayloadMetaMask;
+
+        // Claiming a record sets this bit (the sign bit == the top bit of the tag byte) while preserving the
+        // low 56 bits, so a claimed record still yields its record size to any concurrent walker. The
+        // Uninitialized tag (0xFF) also has this bit set, so an empty slot is always tested first.
+        const long kTakenBit = 1L << 63;
+
+        // Records are laid out on an 8-byte grid so descriptor words stay naturally aligned.
+        const int kRecordAlignment = 8;
+
+        /// <summary>Bytes an inline record occupies in a page: the 8-byte header plus its payload, rounded up
+        /// to the record grid.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int InlineRecordSize(int payloadLength)
+            => (kInlineHeaderSize + payloadLength + (kRecordAlignment - 1)) & ~(kRecordAlignment - 1);
+
+        /// <summary>Largest command payload that can be written inline into a single page.</summary>
+        internal int MaxInlinePayloadSize => ringPageSizeBytes - kInlineHeaderSize;
+
+        /// <summary>True when a command of <paramref name="payloadLength"/> bytes fits inline in one page.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool CanInline(int payloadLength) => (uint)payloadLength <= (uint)MaxInlinePayloadSize;
 
         public readonly LightEpoch epoch;
 
@@ -293,16 +309,21 @@ namespace Garnet.client
         {
             Volatile.Write(ref disposed, true);
 
-            // Reclaim any request buffers still outstanding, arbitrating with an in-flight flush by
-            // atomically zeroing each descriptor key before taking the slot.
+            // Reclaim any out-of-line request buffers still outstanding by walking each page with the same
+            // variable-stride claim the flusher uses, so inline payload bytes are skipped (by their recorded
+            // size) instead of being misread as descriptors. Inline records own no pooled buffer, so claiming
+            // one only prevents a concurrent flush from sending it. Records already flushed carry the taken
+            // bit and are skipped while still yielding their stride.
             for (var page = 0; page < ringPageCount; page++)
             {
                 var basePtr = bufferPages[page].pointer;
-                for (var offset = 0; offset < ringPageSizeBytes; offset += RingDescriptorSize)
+                for (var offset = 0; offset < ringPageSizeBytes;)
                 {
                     var address = ((long)page << pageSizeBits) | (uint)offset;
-                    if (TryClaimRequestDescriptor(address, (long*)(basePtr + offset), out _, out var request))
+                    if (TryClaimRecord(address, (long*)(basePtr + offset), out var kind, out var recordSize, out _, out _, out var request) &&
+                        kind == RequestKind.OutOfLine)
                         request.Dispose();
+                    offset += recordSize;
                 }
             }
 
@@ -468,36 +489,66 @@ namespace Garnet.client
         #region Request Implementation
 
         /// <summary>
-        /// Atomically claim the descriptor published at <paramref name="address"/> by resetting its self-key
-        /// to the empty sentinel, arbitrating single ownership across the three teardown/flush paths that race
-        /// for it: the flusher (<see cref="AsyncFlushRequests"/>), <see cref="Dispose"/>, and the
-        /// <see cref="RegisterRequest"/> post-publish recheck. Exactly one caller observes a published key and
-        /// takes the request; the losers see the empty sentinel and skip. On success, clears the slot, hands
-        /// back its request, and outputs the descriptor's decoded metadata (the log address for out-of-line
-        /// records) so callers can validate key == address. Returns false when the slot was empty or already
-        /// claimed by another path.
+        /// Peek a record's framing and, when it is live, atomically claim it by setting the taken bit while
+        /// preserving its metadata, arbitrating single ownership across the flusher
+        /// (<see cref="AsyncFlushRequests"/>), <see cref="Dispose"/>, and the <see cref="RegisterRequest"/>
+        /// post-publish recheck. Always outputs <paramref name="recordSize"/> — the stride to the next record —
+        /// even when the slot is empty or already claimed, so a concurrent walker never loses its place. For an
+        /// out-of-line record it also hands back the side-table request and its decoded log address in
+        /// <paramref name="key"/> so callers can validate key == address; inline records carry no side-table
+        /// entry (their payload lives in the page). Returns true only for the caller that transitions the
+        /// record from live to claimed.
         /// <para>
-        /// A claim resets the word to <see cref="UninitializedDescriptor"/> (MSByte = Uninitialized), which
-        /// equals the <c>0xFF</c> page fill (see <see cref="RingPage"/> initialization). A published record
-        /// carries a non-Uninitialized tag, so it stays distinguishable from an empty or claimed slot even at
-        /// address 0 (the first allocation, and every ring wrap back to page 0 / offset 0).
+        /// Because the claim only sets the taken bit (never erasing the length), an inline record still yields
+        /// its size after being claimed. An empty/Uninitialized slot (the <c>0xFF</c> page fill, or an
+        /// allocated-but-unpublished 8-byte out-of-line descriptor) strides by one descriptor; an inline
+        /// reservation always writes its header before its payload, so an empty header never hides inline
+        /// payload bytes.
         /// </para>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe bool TryClaimRequestDescriptor(long address, long* keyPtr, out long key, out TRequest request)
+        unsafe bool TryClaimRecord(long address, long* recPtr, out RequestKind kind, out int recordSize, out int payloadLength, out long key, out TRequest request)
         {
-            var word = Interlocked.Exchange(ref *keyPtr, UninitializedDescriptor);
-            if (DecodeKind(word) == RequestKind.Uninitialized)
+            request = default;
+            payloadLength = 0;
+            var word = Volatile.Read(ref *recPtr);
+            var tag = (byte)((ulong)word >> kTagShift);
+
+            if (tag == (byte)RequestKind.Uninitialized)
             {
+                kind = RequestKind.Uninitialized;
+                recordSize = RingDescriptorSize;
                 key = default;
-                request = default;
                 return false;
             }
 
             key = DecodeMeta(word);
-            var slot = ComputeSlot(address);
-            request = requests[slot];
-            requests[slot] = default;
+            if ((tag & (byte)RequestKind.Inline) != 0)
+            {
+                kind = RequestKind.Inline;
+                payloadLength = (int)key;
+                recordSize = InlineRecordSize(payloadLength);
+            }
+            else
+            {
+                kind = RequestKind.OutOfLine;
+                recordSize = RingDescriptorSize;
+            }
+
+            // Already claimed by another walker; the record size was still recovered above.
+            if ((word & kTakenBit) != 0)
+                return false;
+
+            // Win the record by flipping it to claimed while preserving its metadata.
+            if (Interlocked.CompareExchange(ref *recPtr, word | kTakenBit, word) != word)
+                return false;
+
+            if (kind == RequestKind.OutOfLine)
+            {
+                var slot = ComputeSlot(address);
+                request = requests[slot];
+                requests[slot] = default;
+            }
             return true;
         }
 
@@ -528,8 +579,33 @@ namespace Garnet.client
             // If Dispose swept this slot before publication, its reclaim pass has already run and will not
             // revisit the slot. Re-check and reclaim here via the same atomic claim so the just-published
             // request cannot leak.
-            if (Volatile.Read(ref disposed) && TryClaimRequestDescriptor(address, ptr, out _, out var reclaimed))
+            if (Volatile.Read(ref disposed) &&
+                TryClaimRecord(address, ptr, out var kind, out _, out _, out _, out var reclaimed) &&
+                kind == RequestKind.OutOfLine)
                 reclaimed.Dispose();
+        }
+
+        /// <summary>
+        /// Reserve an inline record at <paramref name="address"/> and return a pointer to write its payload
+        /// bytes directly into page memory, skipping the pooled buffer entirely. The producing thread must
+        /// hold the epoch. The descriptor header (kind + payload length) is written <b>before</b> the caller
+        /// fills the payload, so any concurrent teardown walk recovers this record's size and strides over the
+        /// payload region instead of misreading it; the memory barrier orders that header ahead of the payload
+        /// writes. Inline records own no side-table entry — their bytes live in the page and are freed on flush
+        /// like any other record — so no post-publish reclaim is needed.
+        /// </summary>
+        /// <param name="address">Descriptor address returned by <see cref="TryAllocate"/> for an
+        /// <see cref="InlineRecordSize"/>-sized allocation.</param>
+        /// <param name="payloadLength">Number of payload bytes the caller will write.</param>
+        /// <returns>Pointer to the first payload byte (immediately after the 8-byte header).</returns>
+        internal unsafe byte* ReserveInlineRecord(long address, int payloadLength)
+        {
+            Debug.Assert(epoch.ThisInstanceProtected());
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
+            var basePtr = GetPhysicalAddress(address);
+            Volatile.Write(ref *(long*)basePtr, EncodeDescriptor(RequestKind.Inline, payloadLength));
+            Interlocked.MemoryBarrier();
+            return (byte*)(basePtr + kInlineHeaderSize);
         }
 
         #endregion
@@ -653,29 +729,40 @@ namespace Garnet.client
                     realEndOffset -= (realEndOffset - startOffset) & (RingDescriptorSize - 1);
                 }
 
-                for (var offset = startOffset; offset < realEndOffset; offset += RingDescriptorSize)
+                for (var offset = startOffset; offset < realEndOffset;)
                 {
                     var address = (flushPage << pageSizeBits) | (uint)offset;
                     var ptr = page.pointer + offset;
 
-                    // Claim the descriptor by atomically zeroing its self-key, arbitrating with teardown.
-                    if (!TryClaimRequestDescriptor(address, (long*)ptr, out var key, out var request))
-                        continue; // Taken by Dispose.
+                    // Claim the record, recovering its stride whether or not we win the claim.
+                    var won = TryClaimRecord(address, (long*)ptr, out var kind, out var recordSize, out var payloadLength, out var key, out var request);
+                    if (!won)
+                    {
+                        offset += recordSize; // Empty slot or taken by teardown.
+                        continue;
+                    }
 
-                    if (key != address)
+                    if (kind == RequestKind.OutOfLine && key != address)
                     {
                         FailOnRequestFlush(ref flushFailed, $"Out-of-line request key {key} does not match its log address {address}.");
                         request.Dispose();
+                        offset += recordSize;
                         continue;
                     }
 
                     if (flushFailed)
                     {
                         request.Dispose();
+                        offset += recordSize;
                         continue;
                     }
 
-                    ProcessRequestChunks(ref request, count, ref flushFailed);
+                    if (kind == RequestKind.OutOfLine)
+                        ProcessRequestChunks(request.Buffer, 0, request.Length, request, count, ref flushFailed);
+                    else if (payloadLength > 0)
+                        ProcessRequestChunks(page.value, (int)(offset + kInlineHeaderSize), payloadLength, default, count, ref flushFailed);
+
+                    offset += recordSize;
                 }
 
                 if (flushPage == endPage) break;
@@ -684,10 +771,10 @@ namespace Garnet.client
 
             CompleteFlush(count);
 
-            void ProcessRequestChunks(ref TRequest request, CountWrapper count, ref bool flushFailed)
+            void ProcessRequestChunks(byte[] buffer, int baseOffset, int length, TRequest request, CountWrapper count, ref bool flushFailed)
             {
                 var chunkSize = Math.Max(1, maxChunkSizeBytes);
-                var chunkCount = ((request.Length - 1) / chunkSize) + 1;
+                var chunkCount = ((length - 1) / chunkSize) + 1;
                 var result = new LightRequestAsyncFlushResult<TRequest>
                 {
                     count = count,
@@ -700,16 +787,16 @@ namespace Garnet.client
                 var dispatchedChunks = 0;
                 try
                 {
-                    for (var offset = 0; offset < request.Length; offset += chunkSize)
+                    for (var offset = 0; offset < length; offset += chunkSize)
                     {
-                        var length = Math.Min(chunkSize, request.Length - offset);
-                        operateOnRequest(request.Buffer, offset, length, result);
+                        var chunkLength = Math.Min(chunkSize, length - offset);
+                        operateOnRequest(buffer, baseOffset + offset, chunkLength, result);
                         dispatchedChunks++;
                     }
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "Exception sending an out-of-line request");
+                    logger?.LogError(ex, "Exception sending a request");
                     flushFailed = true;
                     onFlushError(ex);
 

@@ -474,6 +474,93 @@ namespace Garnet.client
             }
 
             await InputGateAsync(token).ConfigureAwait(false);
+
+            // Inline path: when the whole command fits in a single ring page, serialize it straight into page
+            // memory and skip the pooled buffer. The choice is automatic and driven solely by totalLength.
+            if (networkWriter.CanInline(totalLength))
+            {
+                try
+                {
+                    networkWriter.epoch.Resume();
+
+                    int taskId;
+                    long address;
+                    while (true)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (!IsConnected)
+                        {
+                            Dispose();
+                            ThrowException(disposeException);
+                        }
+
+                        (taskId, address) = networkWriter.TryAllocate(networkWriter.InlineRecordSize(totalLength), expectsResponse: true, out var flushEvent);
+                        if (address >= 0)
+                            break;
+
+                        try
+                        {
+                            networkWriter.epoch.Suspend();
+                            await flushEvent.WaitAsync(token).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            networkWriter.epoch.Resume();
+                        }
+                    }
+
+                    // Register the completion before the request becomes flushable, mirroring the out-of-line path.
+                    networkWriter.RegisterCompletion(taskId, tcs);
+
+                    try
+                    {
+                        unsafe
+                        {
+                            var curr = networkWriter.ReserveInlineRecord(address, totalLength);
+                            var end = curr + totalLength;
+
+                            if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
+                                !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end))
+                            {
+                                throw new InvalidOperationException("Unable to serialize the inline command into its reserved page slot.");
+                            }
+
+                            if (isArray)
+                            {
+                                foreach (var arg in args)
+                                {
+                                    if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end))
+                                        throw new InvalidOperationException("Unable to serialize the inline command into its reserved page slot.");
+                                }
+                            }
+
+                            if (curr != end)
+                                throw new InvalidOperationException("The serialized inline command did not fill its reserved page slot.");
+                        }
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Reserve throws only while the ring is being disposed, before the record can be sent.
+                        // The completion was already registered, so win its single-delivery claim and fault it
+                        // here (a no-op if teardown already claimed it) so the caller can never hang.
+                        FaultCompletion(taskId);
+                        throw;
+                    }
+
+                    if (Disposed)
+                        ThrowException(disposeException);
+
+                    networkWriter.epoch.ProtectAndDrain();
+                    networkWriter.DoAggressiveShiftReadOnly();
+                }
+                finally
+                {
+                    networkWriter.epoch.Suspend();
+                }
+
+                return;
+            }
+
             var payload = networkWriter.RentPayloadBuffer(totalLength);
             var payloadRegistered = false;
 
