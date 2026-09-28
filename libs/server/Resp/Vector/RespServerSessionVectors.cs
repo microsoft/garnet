@@ -1892,10 +1892,24 @@ namespace Garnet.server
             }
             else
             {
-                var resp = res == GarnetStatus.OK ? 1 : 0;
-
-                while (!RespWriteUtils.TryWriteInt32(resp, ref dcurr, dend))
-                    SendAndReset();
+                if (respProtocolVersion == 3)
+                {
+                    if (res == GarnetStatus.OK)
+                    {
+                        while (!RespWriteUtils.TryWriteTrue(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteFalse(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                }
+                else
+                {
+                    while (!RespWriteUtils.TryWriteInt32(res == GarnetStatus.OK ? 1 : 0, ref dcurr, dend))
+                        SendAndReset();
+                }
             }
 
             return true;

@@ -285,7 +285,8 @@ VREM key element
 
 #### Resp Reply
 
-Integer reply: `:1` if the element was removed, `:0` if it was not present (or the key does not exist).
+RESP2: integer `:1` if the element was removed, `:0` if it was not present (or the key does not exist).
+RESP3: boolean `true` / `false`.
 
 ```bash
 > VREM movies inception
@@ -401,9 +402,8 @@ Scores are returned as bulk strings (decimal text). When `WITHATTRIBS` is set an
 slot is an empty bulk string. The result is in similarity order (closest first). Results may be fewer than `COUNT`
 if the candidate set is smaller.
 
-:::note
-`VSIM` currently only supports RESP2. Calling it in a RESP3 session is not yet implemented.
-:::
+In RESP3, the result is an array of element ids when no `WITH*` flags are set. Otherwise it is a map
+from element ids to scores (RESP3 doubles), attributes, or `[score, attribute]` arrays when both flags are set.
 
 #### Examples
 
