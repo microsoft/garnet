@@ -2392,51 +2392,93 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task VectorSetMigrationPreservesExpirationAsync()
+        [CancelAfter(30_000)]
+        public async Task VectorSetMigrationPreservesExpirationAsync(CancellationToken cancellation)
         {
             const string Key = nameof(VectorSetMigrationPreservesExpirationAsync);
             const string Element = Key + "_Element";
 
-            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 2, replicaCount: 0, useTLS: false).ConfigureAwait(false);
+            // Cluster with multiple primaries and a replica for each primary
+            _ = await SimpleSetupClusterAsync(DefaultMultiPrimaryShards, primaryCount: DefaultMultiPrimaryShards / 2, replicaCount: 1, useTLS: false).ConfigureAwait(false);
 
             await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
 
             var hashSlot = connection.HashSlot(Key);
-            var initialNode = connection.GetServers().Single(x => x.EndPoint.Equals(connection.GetServers().First().ClusterConfiguration.GetBySlot(hashSlot).EndPoint));
-            var finalNode = connection.GetServers().Single(x => !x.EndPoint.Equals(initialNode.EndPoint));
+
+            var initialPrimaryId = connection.GetServers()[0].ClusterConfiguration.GetBySlot(Key).NodeId;
+            var initialPrimary = connection.GetServers().Single(x => !x.IsReplica && initialPrimaryId.Equals(x.ClusterConfiguration.Nodes.Single(static n => n.IsMyself).NodeId));
+
+            var finalPrimary = connection.GetServers().Single(x => !x.IsReplica && !initialPrimaryId.Equals(x.ClusterConfiguration.Nodes.Single(static n => n.IsMyself).NodeId));
+            var finalPrimaryId = finalPrimary.ClusterConfiguration.Nodes.Single(static n => n.IsMyself).NodeId;
+            var finalPrimaryIndex = context.endpoints.IndexOf(finalPrimary.EndPoint);
+
+            var finalReplicaNode = finalPrimary.ClusterConfiguration.Nodes.Single(n => n.ParentNodeId != null && n.ParentNodeId.Equals(finalPrimaryId));
+            var finalReplica = connection.GetServers().Single(x => x.IsReplica && x.EndPoint.Equals(finalReplicaNode.EndPoint));
+            var finalReplicaIndex = context.endpoints.IndexOf(finalReplica.EndPoint);
 
             // Check expiration on initial node
             {
-                var res0 = await initialNode.ExecuteAsync(database: 0, "VADD", [Key, "VALUES", "3", "1.0", "2.0", "3.0", Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                var res0 = await initialPrimary.ExecuteAsync(database: 0, "VADD", [Key, "VALUES", "3", "1.0", "2.0", "3.0", Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, (int)res0);
 
-                var res1 = await initialNode.ExecuteAsync(database: 0, "EXPIRE", [Key, "1"], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                var res1 = await initialPrimary.ExecuteAsync(database: 0, "EXPIRE", [Key, "1"], flags: CommandFlags.NoRedirect | CommandFlags.DemandMaster).ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, (int)res1);
 
-                var res2 = await initialNode.ExecuteAsync(database: 0, "EXISTS", [Key], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                var res2 = await initialPrimary.ExecuteAsync(database: 0, "EXISTS", [Key], flags: CommandFlags.NoRedirect | CommandFlags.DemandMaster).ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, (int)res2);
 
-                await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(3), cancellation).ConfigureAwait(false);
 
                 // Expired
-                var res3 = await initialNode.ExecuteAsync(database: 0, "EXISTS", [Key], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                var res3 = await initialPrimary.ExecuteAsync(database: 0, "EXISTS", [Key], flags: CommandFlags.NoRedirect | CommandFlags.DemandMaster).ConfigureAwait(false);
                 ClassicAssert.AreEqual(0, (int)res3);
             }
 
             // Migrate slots after setting expiration
             {
-                var res0 = await initialNode.ExecuteAsync(database: 0, "VADD", [Key, "VALUES", "3", "1.0", "2.0", "3.0", Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                var res0 = await initialPrimary.ExecuteAsync(database: 0, "VADD", [Key, "VALUES", "3", "1.0", "2.0", "3.0", Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, (int)res0);
 
-                var res1 = await initialNode.ExecuteAsync(database: 0, "EXPIRE", [Key, "60"], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                var res1 = await initialPrimary.ExecuteAsync(database: 0, "EXPIRE", [Key, "60"], flags: CommandFlags.NoRedirect | CommandFlags.DemandMaster).ConfigureAwait(false);
                 ClassicAssert.AreEqual(1, (int)res1);
 
-                context.clusterTestUtils.MigrateSlots((IPEndPoint)initialNode.EndPoint, (IPEndPoint)finalNode.EndPoint, [hashSlot]);
-                context.clusterTestUtils.WaitForMigrationCleanup((IPEndPoint)initialNode.EndPoint);
+                // Migrate slot containing Vector Set
+                context.clusterTestUtils.MigrateSlots((IPEndPoint)initialPrimary.EndPoint, (IPEndPoint)finalPrimary.EndPoint, [hashSlot]);
+                context.clusterTestUtils.WaitForMigrationCleanup((IPEndPoint)initialPrimary.EndPoint, cancellation);
 
-                // Check that TTL survived migration
-                var res2 = await finalNode.ExecuteAsync(database: 0, "TTL", [Key], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+                while (true)
+                {
+                    var countUpdated = 0;
+                    foreach (var server in connection.GetServers())
+                    {
+                        var curSlots = server.ClusterSlots();
+                        if (curSlots.Assignments.Count(c => hashSlot >= c.Slots.From && hashSlot <= c.Slots.To && c.Primary.NodeId == finalPrimaryId) == 1)
+                        {
+                            countUpdated++;
+                        }
+                    }
+
+                    if (countUpdated == connection.GetServers().Length)
+                    {
+                        break;
+                    }
+
+                    ClusterTestUtils.BackOff(cancellationToken: cancellation, msg: "Waiting for migrated slot to move to new primary");
+                }
+
+                // Check that TTL survived migration on the primary
+                var res2 = await finalPrimary.ExecuteAsync(database: 0, "TTL", [Key], flags: CommandFlags.NoRedirect | CommandFlags.DemandMaster).ConfigureAwait(false);
                 ClassicAssert.IsTrue((int)res2 > 0);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(finalPrimaryIndex, finalReplicaIndex, cancellation: cancellation);
+
+                // Check that TTL made it to the replica
+                var res3 = await finalReplica.ExecuteAsync("READONLY").ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", (string)res3);
+
+                var res4 = await finalReplica.ExecuteAsync(database: 0, "TTL", [Key], flags: CommandFlags.NoRedirect | CommandFlags.DemandReplica).ConfigureAwait(false);
+                ClassicAssert.IsTrue((int)res4 > 0);
+                ClassicAssert.IsTrue((int)res4 <= (int)res2);
             }
         }
 

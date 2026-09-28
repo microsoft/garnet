@@ -134,7 +134,7 @@ namespace Garnet.cluster
                         var serializeBufferArr = ArrayPool<byte>.Shared.Rent(128);
                         try
                         {
-                            foreach (var (key, value) in vectorSets)
+                            foreach (var (key, (value, expiration)) in vectorSets)
                             {
                                 // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
                                 // namespaces for element data
@@ -151,7 +151,7 @@ namespace Garnet.cluster
                                     serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
                                 }
 
-                                VectorManager.SerializeMigratedIndexKey(serializeBufferArr, key, value);
+                                VectorManager.SerializeMigratedIndexKey(serializeBufferArr, key, value, expiration);
 
                                 if (gcs.NeedsInitialization)
                                     gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);

@@ -280,7 +280,10 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetAddReplication(
             StorageSession currentSession,
-            Func<RespServerSession> obtainServerSession, ReadOnlySpan<byte> key, ref StringInput input)
+            Func<RespServerSession> obtainServerSession, 
+            ReadOnlySpan<byte> key, 
+            ref StringInput input
+        )
         {
             if (input.arg1 == MigrateElementKeyLogArg)
             {
@@ -325,7 +328,8 @@ namespace Garnet.server
 
                 var indexKey = input.parseState.GetArgSliceByRef(0);
                 var value = input.parseState.GetArgSliceByRef(1);
-                var context = MemoryMarshal.Cast<byte, ulong>(input.parseState.GetArgSliceByRef(2).Span)[0];
+                var expirationTicks = MemoryMarshal.Cast<byte, long>(input.parseState.GetArgSliceByRef(2).Span)[0];
+                var context = MemoryMarshal.Cast<byte, ulong>(input.parseState.GetArgSliceByRef(3).Span)[0];
 
                 // Most of the time a replica will have seen an element moving before now
                 // but if you a migrate an EMPTY Vector Set that is not necessarily true
@@ -349,7 +353,8 @@ namespace Garnet.server
                 ActiveThreadSession = currentSession;
                 try
                 {
-                    HandleMigratedIndexKey(null, null, indexKey, localIndexValue);
+                    DateTime? expiration = expirationTicks == 0 ? null : new DateTime(expirationTicks, DateTimeKind.Utc);
+                    HandleMigratedIndexKey(null, null, indexKey, localIndexValue, expiration);
                 }
                 finally
                 {
