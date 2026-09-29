@@ -56,9 +56,10 @@ namespace Tsavorite.test.Objects
     /// <summary>
     /// The allocation path must never wait on an eviction that cannot happen. <see cref="LogSizeTracker"/> backpressure is
     /// relieved only by its background resizer, which is not running before it is started (checkpoint recovery runs the log
-    /// without it) or once it has been stopped for shutdown. If the heap alone is over budget while the page count is still
-    /// below <c>MaxAllocatedPageCount</c>, the page-turn path used to signal the absent resizer and return RETRY_NOW forever,
-    /// so the allocating thread spun at low CPU and never completed. Regression for issue #2174.
+    /// without it), while it is started but not yet dispatched by the thread pool, or once it has been stopped for shutdown.
+    /// If the heap alone is over budget while the page count is still below <c>MaxAllocatedPageCount</c>, the page-turn path
+    /// used to signal the absent resizer and return RETRY_NOW forever, so the allocating thread spun at low CPU and never
+    /// completed. Regression for issue #2174.
     /// </summary>
     [TestFixture]
     internal class LogSizeTrackerAllocationTests : TestBase
