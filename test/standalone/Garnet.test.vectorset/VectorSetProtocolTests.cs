@@ -8,12 +8,16 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [TestFixture]
+    [TestFixture(RedisProtocol.Resp2)]
+    [TestFixture(RedisProtocol.Resp3)]
     public class VectorSetProtocolTests : TestBase
     {
         private enum SearchFields { Ids, Scores, Attributes, ScoresAndAttributes }
 
+        private readonly RedisProtocol protocol;
         private GarnetServer server;
+
+        public VectorSetProtocolTests(RedisProtocol protocol) => this.protocol = protocol;
 
         [SetUp]
         public void Setup()
@@ -30,9 +34,8 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VADD(RedisProtocol protocol)
+        [Test]
+        public void VADD()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -44,9 +47,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VCARD(RedisProtocol protocol)
+        [Test]
+        public void VCARD()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -57,9 +59,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VDIM(RedisProtocol protocol)
+        [Test]
+        public void VDIM()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -71,9 +72,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VEMB(RedisProtocol protocol)
+        [Test]
+        public void VEMB()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -102,9 +102,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VEMBRawQ8(RedisProtocol protocol)
+        [Test]
+        public void VEMBRawQ8()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -118,9 +117,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VGETATTR(RedisProtocol protocol)
+        [Test]
+        public void VGETATTR()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -144,9 +142,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VINFO(RedisProtocol protocol)
+        [Test]
+        public void VINFO()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -161,9 +158,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VISMEMBER(RedisProtocol protocol)
+        [Test]
+        public void VISMEMBER()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -175,9 +171,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VLINKS(RedisProtocol protocol)
+        [Test]
+        public void VLINKS()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -223,9 +218,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VRANDMEMBER(RedisProtocol protocol)
+        [Test]
+        public void VRANDMEMBER()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -250,9 +244,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VREM(RedisProtocol protocol)
+        [Test]
+        public void VREM()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -264,9 +257,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VSETATTR(RedisProtocol protocol)
+        [Test]
+        public void VSETATTR()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -279,9 +271,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VSIM(RedisProtocol protocol)
+        [Test]
+        public void VSIM()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -302,9 +293,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VSIMFilteredComplexReplies(RedisProtocol protocol)
+        [Test]
+        public void VSIMFilteredComplexReplies()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -322,9 +312,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void VSIMMissingAttribute(RedisProtocol protocol)
+        [Test]
+        public void VSIMMissingAttribute()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
@@ -336,9 +325,8 @@ namespace Garnet.test
             AssertConnectionAlive(db);
         }
 
-        [TestCase(RedisProtocol.Resp2)]
-        [TestCase(RedisProtocol.Resp3)]
-        public void WrongType(RedisProtocol protocol)
+        [Test]
+        public void WrongType()
         {
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
