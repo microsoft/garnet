@@ -291,18 +291,41 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    // Note: CompletionEvent functions as an AutoResetEvent, so any signals that arrive between 
-                    // these calls to WaitAsync will be lost. ResizeIfNeeded retries as long as we are over budget, 
-                    // but there is still a chance we'll miss a growth+signal between that check and the next WaitAsync.
-                    // The timeout mitigates this but it would be better to find an awaitable ManualResetEvent.
-                    await resizeTaskEvent.WaitAsync(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), cancellationToken).ConfigureAwait(false);
+                    // Capture the event generation BEFORE resizing, and wait on the capture. Set() retires the current
+                    // generation and installs a fresh, unsignaled one, so a signal raised while we are resizing (rather
+                    // than parked in WaitAsync) releases the generation captured here and the wait below returns at once.
+                    // Re-reading the field after resizing would instead pick up the fresh generation and sleep out the
+                    // full timeout, having missed the signal. This is the same capture-before-check discipline every
+                    // flushEvent caller uses, and the reason CompletionEvent is a struct.
+                    // The capture must be taken afresh each iteration: Set() releases int.MaxValue permits on the
+                    // generation it retires, so a capture that has already been consumed never blocks again.
+                    var localResizeTaskEvent = resizeTaskEvent;
+
                     if (runState == (int)RunState.Running)
-                        ResizeIfNeeded(cancellationToken);
+                    {
+                        // Contain resize failures so they cannot skip the wait below; otherwise a persistently failing
+                        // resize would spin this loop with no delay between attempts.
+                        try
+                        {
+                            ResizeIfNeeded(cancellationToken);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception e)
+                        {
+                            logger?.LogWarning(e, "Exception when attempting to perform memory resizing.");
+                        }
+                    }
+
                     if (runState != (int)RunState.Running)
                     {
                         OnStopped();
                         return;
                     }
+
+                    await localResizeTaskEvent.WaitAsync(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -312,7 +335,7 @@ namespace Tsavorite.core
                 }
                 catch (Exception e)
                 {
-                    logger?.LogWarning(e, "Exception when attempting to perform memory resizing.");
+                    logger?.LogWarning(e, "Exception while waiting to perform memory resizing.");
                 }
             }
         }
