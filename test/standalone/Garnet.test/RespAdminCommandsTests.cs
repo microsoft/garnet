@@ -505,6 +505,46 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SeAofRecoverObjectsOverHeapBudgetTest()
+        {
+            // Hash values keep the object heap over the size tracker budget while the page count stays under the limit.
+            // AOF replay runs before the size tracker is started, so allocation must not wait for the tracker to evict.
+            // If replay waits for the tracker, the recovering server.Start() below never returns, so bound the wait to
+            // report a named test failure instead of hanging the whole test run.
+            const int numKeys = 2000;
+            var value = new string('x', 2000);
+
+            server.Dispose();
+            server = CreateGarnetServer(MethodTestDir, lowMemory: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (int i = 0; i < numKeys; i++)
+                    db.HashSet($"SeAofRecoverHashKey{i:0000}", "field", value);
+                db.Execute("COMMITAOF");
+            }
+
+            server.Dispose(false);
+
+            // Assign `server` only once Start returns: on a regression the recovering server is wedged in replay, and
+            // letting TearDown dispose it would block the whole run on the same stuck allocation.
+            var recovered = CreateGarnetServer(MethodTestDir, tryRecover: true, lowMemory: true, enableAOF: true);
+            var start = Task.Run(recovered.Start);
+            ClassicAssert.IsTrue(start.Wait(TimeSpan.FromSeconds(60)), "AOF recovery did not complete");
+            start.GetAwaiter().GetResult();     // surface any exception
+            server = recovered;
+
+            using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (int i = 0; i < numKeys; i++)
+                    ClassicAssert.AreEqual(value, db.HashGet($"SeAofRecoverHashKey{i:0000}", "field").ToString(), $"Key SeAofRecoverHashKey{i:0000}");
+            }
+        }
+
+        [Test]
         public void SeAofRecoverTest()
         {
             server.Dispose(false);

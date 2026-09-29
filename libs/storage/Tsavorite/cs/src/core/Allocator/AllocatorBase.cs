@@ -1255,10 +1255,11 @@ namespace Tsavorite.core
 
             // First check whether we need to shift HeadAddress. If we have a logSizeTracker that's over budget then we have already issued
             // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
-            // When the background resizer is not running (e.g. before it is started, or after it has been stopped for shutdown), we cannot defer eviction to it, so we
-            // must still evict based on MaxAllocatedPageCount; otherwise the page count would grow past the cap unchecked.
+            // When the background resizer is not running (before it is started, or after it has been stopped for shutdown) it will not issue that shift, and
+            // NeedToWaitForClose does not wait on it either, so we must request the MaxAllocatedPageCount-based shift here as we do when there is no logSizeTracker;
+            // otherwise the page count would grow past the cap unchecked.
             var desiredHeadAddress = HeadAddress;
-            if (logSizeTracker is null || !logSizeTracker.IsOverBudget || !logSizeTracker.IsRunning)
+            if (logSizeTracker is null || !logSizeTracker.IsRunning || !logSizeTracker.IsOverBudget)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
@@ -1295,7 +1296,7 @@ namespace Tsavorite.core
             // When the background resizer is not running (e.g. before it is started, or after it has been stopped for shutdown), we cannot defer eviction to it, so we
             // evict synchronously here based on MaxAllocatedPageCount; otherwise the allocation retry loop would livelock waiting for a page close that never happens.
             var desiredHeadAddress = HeadAddress;
-            if (needSHA || logSizeTracker is null || !logSizeTracker.IsOverBudget || !logSizeTracker.IsRunning)
+            if (needSHA || logSizeTracker is null || !logSizeTracker.IsRunning || !logSizeTracker.IsOverBudget)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
@@ -1344,15 +1345,13 @@ namespace Tsavorite.core
             }
 
             needSHA = false;
-            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
-                return false;
 
-            // Only the background resizer relieves size-tracker backpressure; IssueShiftAddress evicts solely against
-            // MaxAllocatedPageCount. If the resizer is not running (before it is started, or after it has been stopped for
-            // shutdown) and it is the heap rather than the page count that is over budget, HeadAddress would never advance
-            // and the caller would spin on RETRY_NOW forever. Fall through instead and let NeedToShiftAddress and
-            // IssueShiftAddress evict synchronously, as they do when there is no size tracker at all.
-            if (!logSizeTracker.IsRunning)
+            // If the resizer is not running (before it is started, or after it has been stopped for shutdown) nobody will act on the Signal() below,
+            // so waiting for it would livelock the allocation retry loop when we are over budget because of heap size rather than page count.
+            // NeedToShiftAddress and IssueShiftAddress still enforce MaxAllocatedPageCount synchronously in that case, as they do when there is no
+            // size tracker at all. Test IsRunning before IsBeyondSizeLimitAndCanEvict: that method reads HeadAddress and TailAddress, which Recovery
+            // has not set up yet, so the short-circuit keeps it off the recovery path.
+            if (logSizeTracker is null || !logSizeTracker.IsRunning || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
                 return false;
 
             logSizeTracker.Signal();
