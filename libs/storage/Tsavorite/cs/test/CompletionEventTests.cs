@@ -16,7 +16,7 @@ namespace Tsavorite.test
     /// allocator and in TsavoriteLog does exactly that.
     /// </summary>
     [TestFixture]
-    internal class CompletionEventTests
+    internal class CompletionEventTests : TestBase
     {
         static readonly TimeSpan ShortWait = TimeSpan.FromMilliseconds(250);
 
