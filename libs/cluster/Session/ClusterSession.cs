@@ -126,6 +126,11 @@ namespace Garnet.cluster
             {
                 dcurr = this.dcurr;
                 dend = this.dend;
+
+                // this.parseState is a copy of the caller's struct, so it holds its own reference to the
+                // session's pinned root buffer. Left populated it survives the owning session's shrink and
+                // keeps whatever the widest cluster command ever saw alive for the life of the connection.
+                this.parseState = default;
             }
         }
 
@@ -139,6 +144,12 @@ namespace Garnet.cluster
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
             }
+            else
+            {
+                // The buffer is already empty, so retrying the write cannot make progress and the
+                // caller's retry loop would spin forever. The message does not fit the response buffer.
+                GarnetException.Throw("Failed to write to response buffer", LogLevel.Critical);
+            }
         }
 
         unsafe void SendAndReset(ref byte* dcurr, ref byte* dend)
@@ -150,6 +161,11 @@ namespace Garnet.cluster
                 networkSender.GetResponseObject();
                 dcurr = networkSender.GetResponseObjectHead();
                 dend = networkSender.GetResponseObjectTail();
+            }
+            else
+            {
+                // See SendAndReset() above: an empty buffer means the retry loop cannot progress.
+                GarnetException.Throw("Failed to write to response buffer", LogLevel.Critical);
             }
         }
 

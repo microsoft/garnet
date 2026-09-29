@@ -1207,8 +1207,7 @@ namespace Garnet.server
                         continue;
                     }
 
-                    while (!RespWriteUtils.TryWriteBulkString(elementData, ref self.dcurr, self.dend))
-                        self.SendAndReset();
+                    self.WriteBulkString(elementData);
 
                     if (withScores)
                     {
@@ -1229,8 +1228,7 @@ namespace Garnet.server
                         var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
                         remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
 
-                        while (!RespWriteUtils.TryWriteBulkString(attr, ref self.dcurr, self.dend))
-                            self.SendAndReset();
+                        self.WriteBulkString(attr);
                     }
                     else if (!remaininingAttributes.IsEmpty)
                     {
