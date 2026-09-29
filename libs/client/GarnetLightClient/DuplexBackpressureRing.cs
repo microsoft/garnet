@@ -453,7 +453,7 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int taskId, long address) TryAllocate(int size, bool expectsCompletion, out CompletionEvent waitEvent)
         {
-            const int kFlushSpinCount = 10;
+            const int flushSpinCount = 10;
             var spins = 0;
             var completionReserved = false;
             while (true)
@@ -477,7 +477,7 @@ namespace Garnet.client
                     return (taskId, logicalAddress);
                 if (logicalAddress == -1)
                 {
-                    if (spins++ < kFlushSpinCount)
+                    if (spins++ < flushSpinCount)
                     {
                         Thread.Yield();
                         continue;

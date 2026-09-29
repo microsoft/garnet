@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +15,7 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     /// <summary>
-    /// Tests for <see cref="GarnetLightClient"/>, the single-connection out-of-line client intended for
+    /// Tests for <see cref="GarnetLightClient"/>, the single-connection client intended for
     /// multi-threaded producers (cluster gossip and pub/sub forwarding). Mirrors the structure of
     /// <see cref="GarnetClientTests"/> while exercising the light client's RESP, GOSSIP and pub/sub surface.
     /// </summary>
@@ -231,6 +232,40 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, received);
             ClassicAssert.IsTrue(messages.TryTake(out var delivered, TimeSpan.FromSeconds(5)));
             ClassicAssert.AreEqual("breaking", delivered);
+        }
+
+        [TestCase(16, TestName = "NoResponseInlinePreservesCompletionAlignment")]
+        [TestCase(512, TestName = "NoResponseOutOfLinePreservesCompletionAlignment")]
+        public async Task NoResponsePreservesCompletionAlignment(int messageLength)
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            server.Start();
+
+            using var subscriber = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var messages = new BlockingCollection<string>();
+            await subscriber.GetSubscriber().SubscribeAsync(RedisChannel.Literal("no-response-news"),
+                (_, message) => messages.Add(message)).ConfigureAwait(false);
+
+            using var db = TestUtils.GetGarnetLightClient(sendPageSize: 256, bufferSize: 256);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var channel = Encoding.ASCII.GetBytes("no-response-news");
+            var sent = new HashSet<string>();
+            string delivered = null;
+            for (var attempt = 0; attempt < 10 && delivered == null; attempt++)
+            {
+                var message = $"{attempt:D2}-{new string('x', messageLength)}";
+                sent.Add(message);
+                db.ClusterPublishNoResponse(channel, Encoding.ASCII.GetBytes(message));
+
+                // PING is ordered after the no-response command, so PONG confirms both that the publish was
+                // processed and that it did not consume or misalign a completion ticket.
+                ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+                if (messages.TryTake(out var candidate, TimeSpan.FromMilliseconds(100)) && sent.Contains(candidate))
+                    delivered = candidate;
+            }
+
+            ClassicAssert.IsNotNull(delivered, "No fire-and-forget publish reached the subscriber.");
         }
 
         [Test]
