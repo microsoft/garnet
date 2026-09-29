@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Threading;
 using Garnet.cluster;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -304,6 +305,70 @@ namespace Garnet.test.cluster
             receiver = ClusterConfig.FromByteArray(receiver.Merge(legacyOwner, []).ToByteArray());
             Assert.That(receiver.GetWorkerAddressFromNodeId(workers[1].Nodeid), Is.EqualTo(("127.0.0.1", 7004)));
             Assert.That(receiver.GetWorkerFromNodeId(workers[1].Nodeid).ConfigEpoch, Is.EqualTo(workers[1].ConfigEpoch));
+        }
+
+        [Test]
+        [Category("CLUSTER-CONFIG")]
+        public void ClusterConfigReconnectsChangedPeerEndpointTest()
+        {
+            context.CreateInstances(2);
+            context.CreateConnection();
+            context.clusterTestUtils.Meet(0, 1, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(0, 1, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0, context.logger);
+
+            using var ownerClient = TestUtils.GetGarnetClient(context.endpoints[1]);
+            ownerClient.Connect();
+            using var ownerResponse = ownerClient.GossipAsync(Array.Empty<byte>()).GetAwaiter().GetResult();
+            var ownerConfig = ClusterConfig.FromByteArray(ownerResponse.Span.ToArray());
+            var owner = ownerConfig.GetWorkerFromNodeId(ownerConfig.LocalNodeId);
+            var originalPeerAddress = owner.PeerAddress;
+            var originalPeerPort = owner.PeerPort;
+
+            var replacementEndpoint = new IPEndPoint(IPAddress.Loopback, context.endpoints[1].ToIPEndPoint().Port + 20);
+            var replacementServer = context.CreateInstance(replacementEndpoint);
+            try
+            {
+                replacementServer.Start();
+                using var sourceIdentityClient = TestUtils.GetGarnetClient(context.endpoints[0]);
+                sourceIdentityClient.Connect();
+                using var sourceIdentityResponse = sourceIdentityClient.GossipAsync(Array.Empty<byte>()).GetAwaiter().GetResult();
+                var sourceIdentity = ClusterConfig.FromByteArray(sourceIdentityResponse.Span.ToArray());
+
+                using var replacementSeedClient = TestUtils.GetGarnetClient(replacementEndpoint);
+                replacementSeedClient.Connect();
+                using var seedResponse = replacementSeedClient.GossipWithMeetAsync(sourceIdentity.ToByteArray(1)).GetAwaiter().GetResult();
+
+                EndPointCollection replacementEndpoints = [replacementEndpoint];
+                using var replacementClient = ConnectionMultiplexer.Connect(TestUtils.GetConfig(replacementEndpoints, allowAdmin: true));
+                var replacementRedisServer = replacementClient.GetServer(replacementEndpoint);
+                var baselineClients = ConnectedClients();
+
+                owner.ClusterAddress = replacementEndpoint.Address.ToString();
+                owner.ClusterPort = replacementEndpoint.Port;
+                var endpointUpdate = new ClusterConfig(new HashSlot[ClusterConfig.MAX_HASH_SLOT_VALUE], [default, owner]);
+
+                using var updater = TestUtils.GetGarnetClient(context.endpoints[0]);
+                updater.Connect();
+                using var updateResponse = updater.GossipAsync(endpointUpdate.ToByteArray(2)).GetAwaiter().GetResult();
+                using var observedResponse = updater.GossipAsync(Array.Empty<byte>()).GetAwaiter().GetResult();
+                var observedConfig = ClusterConfig.FromByteArray(observedResponse.Span.ToArray());
+                Assert.That(observedConfig.GetWorkerAddressFromNodeId(owner.Nodeid),
+                    Is.EqualTo((replacementEndpoint.Address.ToString(), replacementEndpoint.Port)));
+                Assert.That(SpinWait.SpinUntil(() => ConnectedClients() > baselineClients, TimeSpan.FromSeconds(10)), Is.True);
+
+                owner.ClusterAddress = originalPeerAddress;
+                owner.ClusterPort = originalPeerPort;
+                endpointUpdate = new ClusterConfig(new HashSlot[ClusterConfig.MAX_HASH_SLOT_VALUE], [default, owner]);
+                using var restoreResponse = updater.GossipAsync(endpointUpdate.ToByteArray(2)).GetAwaiter().GetResult();
+                Assert.That(SpinWait.SpinUntil(() => ConnectedClients() == baselineClients, TimeSpan.FromSeconds(10)), Is.True);
+
+                int ConnectedClients() => replacementRedisServer.ClientList().Length;
+            }
+            finally
+            {
+                replacementServer.Dispose();
+            }
         }
 
         [Test]
