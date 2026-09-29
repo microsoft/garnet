@@ -40,6 +40,7 @@ namespace Garnet.server
         public void Dispose()
         {
             SpanByteAndMemory.Dispose();
+            Accumulator?.Dispose();
         }
     }
 }

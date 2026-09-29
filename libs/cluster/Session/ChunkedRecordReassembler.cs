@@ -30,7 +30,7 @@ namespace Garnet.cluster
     /// <see cref="DiskLogRecord.CompleteDeserializeChunkedRecord"/> (out-of-line components) or <see cref="DiskLogRecord.Deserialize"/>
     /// (a fully-inline record).
     /// </remarks>
-    internal sealed class ChunkedRecordReassembler
+    internal sealed class ChunkedRecordReassembler : IDisposable
     {
         // The component the router is currently consuming bytes for.
         enum Phase
@@ -284,5 +284,9 @@ namespace Garnet.cluster
             objectValueLength = 0;
             prefixFilled = 0;
         }
+
+        /// <summary>Release the pooled chunk buffers of a record left partially reassembled (a connection torn down or a
+        /// protocol error mid-record), which <see cref="Reset"/> would otherwise only reclaim on the next completed record.</summary>
+        public void Dispose() => Reset();
     }
 }

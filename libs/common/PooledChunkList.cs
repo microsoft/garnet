@@ -24,9 +24,11 @@ namespace Garnet.common
     /// and keeps the sequence to one segment per few megabytes instead of per few tens of kilobytes.
     /// </para>
     /// <para>
-    /// Buffers are returned by <see cref="Reset"/> / <see cref="Dispose"/>. A missed return is not a correctness problem (the
-    /// buffer is reclaimed with its pool rather than reused), but returning one that is still referenced would be, so callers
-    /// must reset only once the sequence is no longer in use.
+    /// Buffers are returned by <see cref="Reset"/> / <see cref="Dispose"/>, so every path that discards an accumulation —
+    /// including error and teardown paths — must reach one of them. A pool buffer reserves its share of the pool's cacheable
+    /// budget when it is allocated and releases it only when it is returned, so a rental dropped to the GC does not merely go
+    /// unreused: it permanently consumes that budget, and enough of them leave the pool unable to cache at all. Returning a
+    /// buffer that is still referenced would be worse still, so callers must reset only once the sequence is no longer in use.
     /// </para>
     /// </remarks>
     public sealed class PooledChunkList : IDisposable

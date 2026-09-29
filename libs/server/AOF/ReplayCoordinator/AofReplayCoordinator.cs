@@ -102,10 +102,10 @@ namespace Garnet.server
             internal int FuzzyRegionBufferCount(int sublogIdx) => aofReplayContext[sublogIdx].fuzzyRegionOps.Count;
 
             /// <summary>
-            /// Clear fuzzy region buffer
+            /// Clear fuzzy region buffer, returning the pooled chunk buffers of any chunked operation it still holds.
             /// </summary>
             /// <param name="sublogIdx"></param>
-            internal void ClearFuzzyRegionBuffer(int sublogIdx) => aofReplayContext[sublogIdx].fuzzyRegionOps.Clear();
+            internal void ClearFuzzyRegionBuffer(int sublogIdx) => aofReplayContext[sublogIdx].ClearFuzzyRegionBuffer();
 
             /// <summary>
             /// Add single operation to fuzzy region buffer

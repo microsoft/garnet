@@ -68,43 +68,60 @@ namespace Garnet.server
         {
             // StoreRMW can queue VADDs onto different threads; everything else must wait for those to complete first.
             // Skip (1) entries from a prior checkpoint; buffer (2) future entries in the fuzzy region.
-            if (!BeginReplayOp(replayContext, acc.opType, ShouldSkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, acc, asReplica), out var bufferPtr, out var bufferLength))
-                return false;
-
-            switch (acc.opType)
+            var skip = ShouldSkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, acc, asReplica, out var buffered);
+            if (!BeginReplayOp(replayContext, acc.opType, skip, out var bufferPtr, out var bufferLength))
             {
-                case AofEntryType.StoreUpsert:
-                    StoreUpsert(acc, stringContext, ref replayContext.parseState);
-                    break;
-                case AofEntryType.StoreRMW:
-                    StoreRMW(acc, stringContext, ref replayContext.parseState);
-                    break;
-                case AofEntryType.StoreDelete:
-                    StoreDelete(acc, stringContext);
-                    break;
-                case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(acc, objectContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
-                    break;
-                case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(acc, objectContext, ref replayContext.parseState, bufferPtr, bufferLength);
-                    break;
-                case AofEntryType.ObjectStoreDelete:
-                    ObjectStoreDelete(acc, objectContext);
-                    break;
-                case AofEntryType.UnifiedStoreStringUpsert:
-                    UnifiedStoreStringUpsert(acc, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
-                    break;
-                case AofEntryType.UnifiedStoreRMW:
-                    UnifiedStoreRMW(acc, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
-                    break;
-                case AofEntryType.UnifiedStoreObjectUpsert:
-                    UnifiedStoreObjectUpsert(acc, unifiedContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
-                    break;
-                case AofEntryType.UnifiedStoreDelete:
-                    UnifiedStoreDelete(acc, unifiedContext);
-                    break;
-                default:
-                    throw new GarnetException($"Unexpected chunked op type: {acc.opType}");
+                // The record is discarded here, so release its pooled chunk buffers — unless it was buffered for later
+                // replay, in which case that buffer holds the only reference to them.
+                if (!buffered)
+                    acc.ReturnValueChunks();
+                return false;
+            }
+
+            try
+            {
+                switch (acc.opType)
+                {
+                    case AofEntryType.StoreUpsert:
+                        StoreUpsert(acc, stringContext, ref replayContext.parseState);
+                        break;
+                    case AofEntryType.StoreRMW:
+                        StoreRMW(acc, stringContext, ref replayContext.parseState);
+                        break;
+                    case AofEntryType.StoreDelete:
+                        StoreDelete(acc, stringContext);
+                        break;
+                    case AofEntryType.ObjectStoreUpsert:
+                        ObjectStoreUpsert(acc, objectContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
+                        break;
+                    case AofEntryType.ObjectStoreRMW:
+                        ObjectStoreRMW(acc, objectContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                        break;
+                    case AofEntryType.ObjectStoreDelete:
+                        ObjectStoreDelete(acc, objectContext);
+                        break;
+                    case AofEntryType.UnifiedStoreStringUpsert:
+                        UnifiedStoreStringUpsert(acc, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                        break;
+                    case AofEntryType.UnifiedStoreRMW:
+                        UnifiedStoreRMW(acc, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                        break;
+                    case AofEntryType.UnifiedStoreObjectUpsert:
+                        UnifiedStoreObjectUpsert(acc, unifiedContext, storeWrapper.GarnetObjectSerializer, bufferPtr, bufferLength);
+                        break;
+                    case AofEntryType.UnifiedStoreDelete:
+                        UnifiedStoreDelete(acc, unifiedContext);
+                        break;
+                    default:
+                        throw new GarnetException($"Unexpected chunked op type: {acc.opType}");
+                }
+            }
+            finally
+            {
+                // Dispatch consumes the accumulator, so its pooled chunk buffers are released here whether or not the op
+                // threw. The object upserts release them earlier (as soon as the value is materialized); returning an
+                // already-returned list is a no-op.
+                acc.ReturnValueChunks();
             }
             return true;
         }
@@ -116,23 +133,23 @@ namespace Garnet.server
         /// <param name="inFuzzyRegion"></param>
         /// <param name="acc"></param>
         /// <param name="asReplica"></param>
+        /// <param name="buffered">True if the record was buffered for later replay (so the caller must not release it).</param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        bool ShouldSkipRecord(int sublogIdx, bool inFuzzyRegion, ChunkedAccumulator acc, bool asReplica)
+        bool ShouldSkipRecord(int sublogIdx, bool inFuzzyRegion, ChunkedAccumulator acc, bool asReplica, out bool buffered)
         {
-            return (asReplica && inFuzzyRegion) // Buffer logic only for AOF version > 1
-                ? BufferNewVersionRecord()
-                : acc.storeVersion < storeWrapper.store.CurrentVersion;
+            buffered = false;
 
-            bool BufferNewVersionRecord()
-            {
-                if (acc.storeVersion > storeWrapper.store.CurrentVersion)
-                {
-                    aofReplayCoordinator.AddFuzzyRegionOperation(sublogIdx, acc);
-                    return true;
-                }
+            // Buffer logic only for AOF version > 1
+            if (!(asReplica && inFuzzyRegion))
+                return acc.storeVersion < storeWrapper.store.CurrentVersion;
+
+            if (acc.storeVersion <= storeWrapper.store.CurrentVersion)
                 return false;
-            }
+
+            aofReplayCoordinator.AddFuzzyRegionOperation(sublogIdx, acc);
+            buffered = true;
+            return true;
         }
 
         static void StoreUpsert<TStringContext>(ChunkedAccumulator acc, TStringContext stringContext, ref SessionParseState parseState)
@@ -189,9 +206,17 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Stream-deserialize the object value from its chunks (no contiguous copy), then release the pooled chunk
-            // buffers: the object is materialized and the sequence is no longer referenced.
-            var valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
-            acc.ReturnValueChunks();
+            // buffers: the object is materialized and the sequence is no longer referenced. The finally covers a corrupt
+            // or incompatible serialized object, which throws out of Deserialize.
+            IGarnetObject valueObject;
+            try
+            {
+                valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
+            }
+            finally
+            {
+                acc.ReturnValueChunks();
+            }
             fixed (byte* keyPtr = acc.key)
             {
                 var key = (FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset);
@@ -273,8 +298,15 @@ namespace Garnet.server
         static void UnifiedStoreObjectUpsert<TUnifiedContext>(ChunkedAccumulator acc, TUnifiedContext unifiedContext, GarnetObjectSerializer garnetObjectSerializer, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
-            acc.ReturnValueChunks();
+            IGarnetObject valueObject;
+            try
+            {
+                valueObject = garnetObjectSerializer.Deserialize(acc.GetValueSequence());
+            }
+            finally
+            {
+                acc.ReturnValueChunks();
+            }
             fixed (byte* keyPtr = acc.key)
             {
                 var key = (FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset);

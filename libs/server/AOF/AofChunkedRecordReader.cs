@@ -81,7 +81,8 @@ namespace Garnet.server
         public ReadOnlySequence<byte> GetValueSequence() => valueChunks.AsSequence();
 
         /// <summary>Return the streamed object value's pooled buffers. Call once the value has been deserialized and the
-        /// sequence from <see cref="GetValueSequence"/> is no longer referenced.</summary>
+        /// sequence from <see cref="GetValueSequence"/> is no longer referenced. Idempotent, so it is safe to call on every
+        /// path that discards the accumulator.</summary>
         public void ReturnValueChunks() => valueChunks?.Reset();
 
         /// <summary>Verify each component's accumulated length matches the chunk header's declared full length.</summary>
@@ -260,6 +261,18 @@ namespace Garnet.server
             _ = inProgress.Remove(objectId);
             acc.Verify();
             return true;
+        }
+
+        /// <summary>
+        /// Discard every partially-accumulated record, returning its pooled chunk buffers. Called when replay ends: a
+        /// truncated AOF tail (the normal outcome of a crash) leaves the last record's chunks in <see cref="inProgress"/>,
+        /// and those rentals would otherwise never be returned to the shared pool.
+        /// </summary>
+        internal void DiscardInProgress()
+        {
+            foreach (var acc in inProgress.Values)
+                acc.ReturnValueChunks();
+            inProgress.Clear();
         }
 
         // Copy a chunk's bytes into the current component's pre-sized buffer (or accumulate for a streamed object value).

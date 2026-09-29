@@ -56,6 +56,18 @@ namespace Garnet.server
 
         public void Dispose()
         {
+            // Release the pooled chunk buffers held by anything replay did not consume: partially-accumulated records (a
+            // truncated AOF tail is the normal outcome of a crash) and any operation still buffered. These rentals are
+            // otherwise never returned, and a rental that is never returned permanently consumes the pool's cacheable
+            // budget rather than merely going unreused.
+            chunkedReader.DiscardInProgress();
+            ClearFuzzyRegionBuffer();
+            while (txnGroupBuffer.Count > 0)
+                txnGroupBuffer.Dequeue().Clear();
+            foreach (var txn in activeTxns.Values)
+                txn.Clear();
+            activeTxns.Clear();
+
             var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
             foreach (var dbSession in databaseSessionsSnapshot)
             {
@@ -64,6 +76,16 @@ namespace Garnet.server
             }
             respServerSession?.Dispose();
             output.MemoryOwner?.Dispose();
+        }
+
+        /// <summary>
+        /// Discard the fuzzy-region buffer, returning the pooled chunk buffers of any chunked operation it holds.
+        /// </summary>
+        public void ClearFuzzyRegionBuffer()
+        {
+            foreach (var op in fuzzyRegionOps)
+                op.Chunk?.ReturnValueChunks();
+            fuzzyRegionOps.Clear();
         }
 
         /// <summary>

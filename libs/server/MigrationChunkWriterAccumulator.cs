@@ -27,7 +27,7 @@ namespace Garnet.server
     ///     <c>byte[]</c>), filled via <see cref="IChunkedObjectSerializerConsumer"/>.</item>
     /// </list>
     /// </remarks>
-    public sealed class MigrationChunkWriterAccumulator : IChunkedObjectSerializerConsumer
+    public sealed class MigrationChunkWriterAccumulator : IChunkedObjectSerializerConsumer, IDisposable
     {
         /// <summary>Serializer ring-buffer size used to stream an object value into <see cref="objectValueChunks"/>; each drained
         /// run becomes one owned chunk.</summary>
@@ -63,6 +63,11 @@ namespace Garnet.server
             hasObjectValue = false;
             InlineLength = 0;
         }
+
+        /// <summary>Release the pooled chunk buffers of the last captured record. <see cref="Reset"/> only runs when another
+        /// record is captured, so the final record of a migration — and the in-flight record of one that fails mid-send —
+        /// would otherwise never return its rentals.</summary>
+        public void Dispose() => Reset();
 
         /// <summary>True when the record is fully inline (no overflow key, no overflow/object value): the whole record is in
         /// <see cref="UnifiedOutput.SpanByteAndMemory"/> and there is nothing to send from here.</summary>

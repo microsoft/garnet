@@ -130,7 +130,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    output.SpanByteAndMemory.Dispose();
+                    output.Dispose();
                     vectorOutput.SpanByteAndMemory.Dispose();
                 }
 
@@ -171,7 +171,7 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    output.SpanByteAndMemory.Dispose();
+                    output.Dispose();
                 }
                 return true;
             }

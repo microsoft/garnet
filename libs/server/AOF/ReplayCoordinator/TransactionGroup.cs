@@ -35,8 +35,15 @@ namespace Garnet.server
         internal List<ReplayOperation> Operations = [];
 
         /// <summary>
-        /// Clear the underlying buffer that holds the individual transaction operations.
+        /// Discard the buffered operations, returning the pooled chunk buffers held by any chunked operation among them.
+        /// Callers must not clear a group they still intend to replay. Returning a chunked operation's buffers twice is a
+        /// no-op, so clearing a group whose operations have already been dispatched is safe.
         /// </summary>
-        public void Clear() => Operations.Clear();
+        public void Clear()
+        {
+            foreach (var op in Operations)
+                op.Chunk?.ReturnValueChunks();
+            Operations.Clear();
+        }
     }
 }
