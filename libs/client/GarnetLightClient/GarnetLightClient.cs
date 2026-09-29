@@ -488,6 +488,29 @@ namespace Garnet.client
             var payload = inline ? default : networkWriter.RentPayloadBuffer(totalLength);
             var payloadRegistered = false;
 
+            // Serialize the command's RESP bytes into the span [curr, end). Shared by both paths so the wire
+            // format lives in one place; the caller supplies either page memory (inline) or the rented buffer.
+            unsafe void SerializeCommand(byte* curr, byte* end)
+            {
+                if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
+                    !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end))
+                {
+                    throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
+                }
+
+                if (isArray)
+                {
+                    foreach (var arg in args)
+                    {
+                        if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end))
+                            throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
+                    }
+                }
+
+                if (curr != end)
+                    throw new InvalidOperationException("The serialized command did not fill its reserved slot.");
+            }
+
             try
             {
                 if (!inline)
@@ -496,29 +519,6 @@ namespace Garnet.client
                     {
                         fixed (byte* payloadPtr = payload.Buffer)
                             SerializeCommand(payloadPtr, payloadPtr + payload.Length);
-
-                        // Serialize the command's RESP bytes into the span [curr, end). Shared by both paths so the wire
-                        // format lives in one place; the caller supplies either page memory (inline) or the rented buffer.
-                        void SerializeCommand(byte* curr, byte* end)
-                        {
-                            if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
-                                !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end))
-                            {
-                                throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
-                            }
-
-                            if (isArray)
-                            {
-                                foreach (var arg in args)
-                                {
-                                    if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end))
-                                        throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
-                                }
-                            }
-
-                            if (curr != end)
-                                throw new InvalidOperationException("The serialized command did not fill its reserved slot.");
-                        }
                     }
                 }
 

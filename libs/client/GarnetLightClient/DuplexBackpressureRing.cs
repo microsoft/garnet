@@ -323,6 +323,15 @@ namespace Garnet.client
                     if (TryClaimRecord(address, (long*)(basePtr + offset), out var kind, out var recordSize, out _, out _, out var request) &&
                         kind == RequestKind.OutOfLine)
                         request.Dispose();
+
+                    // A reused (wrapped) page can hold stale bytes past the current generation's records: a
+                    // smaller record overwriting a larger one leaves the older record's payload tail, which may
+                    // decode as a bogus inline header whose stride is non-positive or overruns the page. Such
+                    // garbage only ever follows the last live record on the page (live records are contiguous
+                    // from offset 0), so once the stride would leave the page there is nothing left to reclaim
+                    // here — stop rather than dereference past the page bounds.
+                    if (recordSize <= 0 || offset + recordSize > ringPageSizeBytes)
+                        break;
                     offset += recordSize;
                 }
             }

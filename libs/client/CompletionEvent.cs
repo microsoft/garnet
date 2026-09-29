@@ -40,9 +40,36 @@ namespace Garnet.client
 
         internal bool IsDefault() => this.semaphore is null;
 
-        internal void Wait(CancellationToken token = default) => this.semaphore.Wait(token);
+        internal void Wait(CancellationToken token = default)
+        {
+            // A disposed event (null after Dispose, or disposed between the read and the wait) reports as
+            // signaled: teardown must never block a waiter, and every caller re-checks its state after waking.
+            var s = this.semaphore;
+            if (s is null)
+                return;
+            try
+            {
+                s.Wait(token);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
 
-        internal Task WaitAsync(CancellationToken token = default) => this.semaphore.WaitAsync(token);
+        internal Task WaitAsync(CancellationToken token = default)
+        {
+            var s = this.semaphore;
+            if (s is null)
+                return Task.CompletedTask;
+            try
+            {
+                return s.WaitAsync(token);
+            }
+            catch (ObjectDisposedException)
+            {
+                return Task.CompletedTask;
+            }
+        }
 
         /// <inheritdoc/>
         public void Dispose()
