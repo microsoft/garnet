@@ -428,34 +428,6 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Get estimated number of outstanding tasks.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int PipelineLength()
-        {
-            var _tcsOffset = tcsOffset & (int)PageOffset.kTaskMask;
-            var _nextTaskId = networkWriter.CompletionTail & (int)PageOffset.kTaskMask;
-
-            return _nextTaskId >= _tcsOffset ?
-                _nextTaskId - _tcsOffset :
-                _nextTaskId + ((int)PageOffset.kTaskMask - _tcsOffset);
-        }
-
-        async ValueTask InputGateAsync(CancellationToken token = default)
-        {
-            int delayMs = 0;
-            while (true)
-            {
-                if (PipelineLength() < maxOutstandingTasks)
-                    break;
-                await Task.Delay(delayMs, token).ConfigureAwait(false);
-                if (delayMs == 0) delayMs = 1;
-                else delayMs *= 2;
-                if (delayMs > 4096) delayMs = 4096;
-            }
-        }
-
-        /// <summary>
         /// Issue an out-of-line command whose response completes the provided <paramref name="tcs"/>.
         /// </summary>
         async ValueTask InternalExecuteChunkedAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
@@ -472,8 +444,6 @@ namespace Garnet.client
                     totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
                 }
             }
-
-            await InputGateAsync(token).ConfigureAwait(false);
 
             // The choice between an inline record (serialized straight into the ring page, no pooled buffer) and
             // an out-of-line record (an 8-byte descriptor in the page plus a separately rented payload buffer) is

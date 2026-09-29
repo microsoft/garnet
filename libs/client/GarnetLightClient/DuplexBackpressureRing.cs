@@ -142,11 +142,11 @@ namespace Garnet.client
         // (<see cref="RequestPayloadKind"/>); the low 56 bits carry the per-kind metadata (the log address
         // for out-of-line records, the in-page payload length for inline records). The tag rides the same
         // atomic word as the metadata, so tagging adds neither an extra atomic nor extra space.
-        const int kTagShift = 56;
-        const long kPayloadMetaMask = (1L << kTagShift) - 1;
+        const int TagShift = 56;
+        const long PayloadMetaMask = (1L << TagShift) - 1;
 
         // Bytes an inline record reserves ahead of its payload for the descriptor word.
-        const int kInlineHeaderSize = 8;
+        const int InlineHeaderSize = 8;
 
         // Empty/claimed sentinel: MSByte = Uninitialized (0xFF), low bits all set. Equals the 0xFF page fill
         // and the value written when a slot is claimed, so an unpublished or claimed slot decodes to
@@ -156,28 +156,28 @@ namespace Garnet.client
         /// <summary>Pack a payload kind and its 56-bit metadata into a descriptor word.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static long EncodeDescriptor(RequestKind kind, long meta)
-            => ((long)(byte)kind << kTagShift) | (meta & kPayloadMetaMask);
+            => ((long)(byte)kind << TagShift) | (meta & PayloadMetaMask);
 
         /// <summary>Extract the 56-bit metadata (log address or payload length) from a descriptor word.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static long DecodeMeta(long word) => word & kPayloadMetaMask;
+        static long DecodeMeta(long word) => word & PayloadMetaMask;
 
         // Claiming a record sets this bit (the sign bit == the top bit of the tag byte) while preserving the
         // low 56 bits, so a claimed record still yields its record size to any concurrent walker. The
         // Uninitialized tag (0xFF) also has this bit set, so an empty slot is always tested first.
-        const long kTakenBit = 1L << 63;
+        const long TakenBit = 1L << 63;
 
         // Records are laid out on an 8-byte grid so descriptor words stay naturally aligned.
-        const int kRecordAlignment = 8;
+        const int RecordAlignment = 8;
 
         /// <summary>Bytes an inline record occupies in a page: the 8-byte header plus its payload, rounded up
         /// to the record grid.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int InlineRecordSize(int payloadLength)
-            => (kInlineHeaderSize + payloadLength + (kRecordAlignment - 1)) & ~(kRecordAlignment - 1);
+            => (InlineHeaderSize + payloadLength + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
 
         /// <summary>Largest command payload that can be written inline into a single page.</summary>
-        internal int MaxInlinePayloadSize => ringPageSizeBytes - kInlineHeaderSize;
+        internal int MaxInlinePayloadSize => ringPageSizeBytes - InlineHeaderSize;
 
         /// <summary>True when a command of <paramref name="payloadLength"/> bytes fits inline in one page.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -208,6 +208,9 @@ namespace Garnet.client
         // Completion lane freed on reply (receiver); producers block on this when too many replies are outstanding.
         CompletionEvent completionFreed;
 
+        /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
+        internal int CompletionTail => tailPageOffset.TaskId;
+
         // Request side-table: each physical descriptor maps to one request. Publication happens-before
         // is established by the self-key written into page memory under the epoch barrier; ownership transfer at
         // flush/teardown is arbitrated by atomically zeroing that key.
@@ -219,6 +222,7 @@ namespace Garnet.client
         readonly CompletionSlot[] completionLane;
         readonly int completionCapacity, completionMask;
         long completionUntil;
+        int completionReservations;
 
         // Cache-line-isolated completion slot. Padded to 64 bytes so two producers publishing adjacent head
         // tickets do not share a line. NOTE: the completion lane is single-consumer FIFO, so the reader trails
@@ -292,7 +296,7 @@ namespace Garnet.client
             // A descriptor's low 56 bits must hold the full log address, so the page-index bits plus the
             // in-page offset bits must fit below the tag byte. This bounds how the descriptor codec can
             // coexist with the address layout for any configured page size.
-            Debug.Assert(PageOffset.kPageBits + pageSizeBits <= kTagShift,
+            Debug.Assert(PageOffset.kPageBits + pageSizeBits <= TagShift,
                 "Descriptor address space must leave the most-significant byte free for the payload kind tag.");
 
             bufferPages = new RingPage[this.ringPageCount];
@@ -320,7 +324,7 @@ namespace Garnet.client
                 for (var offset = 0; offset < ringPageSizeBytes;)
                 {
                     var address = ((long)page << pageSizeBits) | (uint)offset;
-                    if (TryClaimRecord(address, (long*)(basePtr + offset), out var kind, out var recordSize, out _, out _, out var request) &&
+                    if (TryClaimRequest(address, (long*)(basePtr + offset), out var kind, out var recordSize, out _, out _, out var request) &&
                         kind == RequestKind.OutOfLine)
                         request.Dispose();
 
@@ -447,24 +451,27 @@ namespace Garnet.client
         /// The RETRY_NOW spin (epoch drain) is handled internally.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int taskId, long address) TryAllocate(int size, bool expectsResponse, out CompletionEvent waitEvent)
+        public (int taskId, long address) TryAllocate(int size, bool expectsCompletion, out CompletionEvent waitEvent)
         {
             const int kFlushSpinCount = 10;
             var spins = 0;
+            var completionReserved = false;
             while (true)
             {
                 Debug.Assert(epoch.ThisInstanceProtected());
 
-                // Completion-lane back-pressure is checked first so a full completion lane never forces us
-                // to consume (and then unwind) a completion ticket.
-                if (expectsResponse && !CompletionHasRoom())
+                // Reserve completion capacity before issuing the paired ticket. Capture the event first so a
+                // concurrent release either wakes this snapshot or makes the reservation succeed.
+                if (expectsCompletion && !completionReserved)
                 {
                     waitEvent = completionFreed;
-                    return (0, -1);
+                    if (!TryReserveCompletion())
+                        return (0, -1);
+                    completionReserved = true;
                 }
 
                 waitEvent = requestFreed;
-                var logicalAddress = TryAllocateInternal(size, out var taskId, expectsResponse);
+                var logicalAddress = TryAllocateInternal(size, out var taskId, expectsCompletion);
 
                 if (logicalAddress >= 0)
                     return (taskId, logicalAddress);
@@ -475,6 +482,8 @@ namespace Garnet.client
                         Thread.Yield();
                         continue;
                     }
+                    if (completionReserved)
+                        ReleaseCompletions(1);
                     return (taskId, logicalAddress);
                 }
                 epoch.ProtectAndDrain();
@@ -516,12 +525,12 @@ namespace Garnet.client
         /// </para>
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe bool TryClaimRecord(long address, long* recPtr, out RequestKind kind, out int recordSize, out int payloadLength, out long key, out TRequest request)
+        unsafe bool TryClaimRequest(long address, long* recPtr, out RequestKind kind, out int recordSize, out int payloadLength, out long key, out TRequest request)
         {
             request = default;
             payloadLength = 0;
             var word = Volatile.Read(ref *recPtr);
-            var tag = (byte)((ulong)word >> kTagShift);
+            var tag = (byte)((ulong)word >> TagShift);
 
             if (tag == (byte)RequestKind.Uninitialized)
             {
@@ -545,11 +554,11 @@ namespace Garnet.client
             }
 
             // Already claimed by another walker; the record size was still recovered above.
-            if ((word & kTakenBit) != 0)
+            if ((word & TakenBit) != 0)
                 return false;
 
             // Win the record by flipping it to claimed while preserving its metadata.
-            if (Interlocked.CompareExchange(ref *recPtr, word | kTakenBit, word) != word)
+            if (Interlocked.CompareExchange(ref *recPtr, word | TakenBit, word) != word)
                 return false;
 
             if (kind == RequestKind.OutOfLine)
@@ -589,7 +598,7 @@ namespace Garnet.client
             // revisit the slot. Re-check and reclaim here via the same atomic claim so the just-published
             // request cannot leak.
             if (Volatile.Read(ref disposed) &&
-                TryClaimRecord(address, ptr, out var kind, out _, out _, out _, out var reclaimed) &&
+                TryClaimRequest(address, ptr, out var kind, out _, out _, out _, out var reclaimed) &&
                 kind == RequestKind.OutOfLine)
                 reclaimed.Dispose();
         }
@@ -625,15 +634,12 @@ namespace Garnet.client
             var basePtr = GetPhysicalAddress(address);
             Volatile.Write(ref *(long*)basePtr, EncodeDescriptor(RequestKind.Inline, payloadLength));
             Interlocked.MemoryBarrier();
-            return (byte*)(basePtr + kInlineHeaderSize);
+            return (byte*)(basePtr + InlineHeaderSize);
         }
 
         #endregion
 
         #region Completion Implementation
-
-        /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
-        internal int CompletionTail => tailPageOffset.TaskId;
 
         /// <summary>
         /// Register (store and publish) a completion for the given ticket. The release-fenced marker write
@@ -673,10 +679,19 @@ namespace Garnet.client
             return false;
         }
 
-        bool CompletionHasRoom()
+        bool TryReserveCompletion()
         {
-            var outstanding = (tailPageOffset.TaskId - (int)(Volatile.Read(ref completionUntil) & PageOffset.kTaskMask)) & (int)PageOffset.kTaskMask;
-            return outstanding < completionCapacity;
+            if (Interlocked.Increment(ref completionReservations) <= completionCapacity)
+                return true;
+
+            _ = Interlocked.Decrement(ref completionReservations);
+            return false;
+        }
+
+        void ReleaseCompletions(int count)
+        {
+            _ = Interlocked.Add(ref completionReservations, -count);
+            completionFreed.Set();
         }
 
         /// <summary>
@@ -703,7 +718,7 @@ namespace Garnet.client
         {
             if (consumedCount <= 0) return;
             Volatile.Write(ref completionUntil, Volatile.Read(ref completionUntil) + consumedCount);
-            completionFreed.Set();
+            ReleaseCompletions(consumedCount);
         }
 
         #endregion
@@ -767,7 +782,7 @@ namespace Garnet.client
                     var ptr = page.pointer + offset;
 
                     // Claim the record, recovering its stride whether or not we win the claim.
-                    var won = TryClaimRecord(address, (long*)ptr, out var kind, out var recordSize, out var payloadLength, out var key, out var request);
+                    var won = TryClaimRequest(address, (long*)ptr, out var kind, out var recordSize, out var payloadLength, out var key, out var request);
                     if (!won)
                     {
                         offset += recordSize; // Empty slot or taken by teardown.
@@ -792,7 +807,7 @@ namespace Garnet.client
                     if (kind == RequestKind.OutOfLine)
                         ProcessRequestChunks(request.Buffer, 0, request.Length, request, count, ref flushFailed);
                     else if (payloadLength > 0)
-                        ProcessRequestChunks(page.value, (int)(offset + kInlineHeaderSize), payloadLength, default, count, ref flushFailed);
+                        ProcessRequestChunks(page.value, (int)(offset + InlineHeaderSize), payloadLength, default, count, ref flushFailed);
 
                     offset += recordSize;
                 }

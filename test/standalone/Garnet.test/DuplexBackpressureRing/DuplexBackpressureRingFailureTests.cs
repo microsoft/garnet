@@ -44,7 +44,7 @@ namespace Garnet.test
                 {
                     // Out-of-line payloads (larger than one page) so every record owns a pooled buffer whose
                     // exactly-once disposal we can verify.
-                    await h.EnqueueAsync(RingPayload.Create(i + 1, 600), expectsResponse: false, cts.Token).ConfigureAwait(false);
+                    await h.EnqueueAsync(RingPayload.Create(i + 1, 600), expectCompletion: false, cts.Token).ConfigureAwait(false);
                 }
 
                 await h.PumpUntilAsync(() => h.FlushErrors.Count > 0, HangTimeout, cts.Token).ConfigureAwait(false);
@@ -84,7 +84,7 @@ namespace Garnet.test
                             var size = RingPayload.HeaderSize + rng.Next(0, 800);
                             try
                             {
-                                await h.EnqueueAsync(RingPayload.Create(id, size), expectsResponse: false, producerCts.Token).ConfigureAwait(false);
+                                await h.EnqueueAsync(RingPayload.Create(id, size), expectCompletion: false, producerCts.Token).ConfigureAwait(false);
                             }
                             catch (ObjectDisposedException)
                             {

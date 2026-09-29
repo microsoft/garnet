@@ -58,6 +58,10 @@ namespace Garnet.test
     {
         internal const int HeaderSize = 16; // id(8) + length(4) + crc(4)
 
+        /// <summary>
+        /// Create a self-describing payload formatted as [id:8][length:4][checksum:4][id-derived body],
+        /// allowing the reassembled bytes to be identified and validated without retaining the original buffer.
+        /// </summary>
         internal static byte[] Create(long id, int length)
         {
             if (length < HeaderSize) length = HeaderSize;
@@ -194,7 +198,7 @@ namespace Garnet.test
         /// Enqueue one payload, replicating the client's ring dance: hold the epoch across allocate, register
         /// (inline reserve or out-of-line publish) and drain; wait on the request lane under back-pressure.
         /// </summary>
-        internal async Task EnqueueAsync(byte[] payload, bool expectsResponse, CancellationToken token)
+        internal async Task EnqueueAsync(byte[] payload, bool expectCompletion, CancellationToken token)
         {
             var totalLength = payload.Length;
             var inline = Ring.CanInline(totalLength);
@@ -208,7 +212,7 @@ namespace Garnet.test
                 while (true)
                 {
                     token.ThrowIfCancellationRequested();
-                    (taskId, address) = Ring.TryAllocate(size, expectsResponse, out var flushEvent);
+                    (taskId, address) = Ring.TryAllocate(size, expectCompletion, out var flushEvent);
                     if (address >= 0)
                         break;
 
@@ -223,7 +227,7 @@ namespace Garnet.test
                     }
                 }
 
-                if (expectsResponse)
+                if (expectCompletion)
                     Ring.RegisterCompletion(taskId, taskId);
 
                 if (inline)

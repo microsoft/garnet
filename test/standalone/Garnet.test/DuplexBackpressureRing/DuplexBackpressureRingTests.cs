@@ -55,7 +55,7 @@ namespace Garnet.test
             {
                 long id = i + 1;
                 expectedIds.Add(id);
-                await h.EnqueueAsync(RingPayload.Create(id, sizes[i]), expectsResponse: false, cts.Token).ConfigureAwait(false);
+                await h.EnqueueAsync(RingPayload.Create(id, sizes[i]), expectCompletion: false, cts.Token).ConfigureAwait(false);
             }
 
             await h.DrainUntilAsync(expectedIds.Count, DrainTimeout, cts.Token).ConfigureAwait(false);
@@ -92,7 +92,7 @@ namespace Garnet.test
                     {
                         var id = ((long)(producer + 1) * 1_000_000) + i;
                         var size = RingPayload.HeaderSize + rng.Next(0, 1024);
-                        await h.EnqueueAsync(RingPayload.Create(id, size), expectsResponse: false, cts.Token).ConfigureAwait(false);
+                        await h.EnqueueAsync(RingPayload.Create(id, size), expectCompletion: false, cts.Token).ConfigureAwait(false);
                     }
                 }, cts.Token);
             }
@@ -148,7 +148,7 @@ namespace Garnet.test
                     {
                         var id = ((long)(producer + 1) * 1_000_000) + i;
                         var size = RingPayload.HeaderSize + rng.Next(0, 700);
-                        await h.EnqueueAsync(RingPayload.Create(id, size), expectsResponse: true, cts.Token).ConfigureAwait(false);
+                        await h.EnqueueAsync(RingPayload.Create(id, size), expectCompletion: true, cts.Token).ConfigureAwait(false);
                     }
                 }, cts.Token);
             }
@@ -191,7 +191,7 @@ namespace Garnet.test
                 {
                     for (var i = 0; i < count; i++)
                     {
-                        var (_, address) = h.Ring.TryAllocate(sizeof(long), expectsResponse: false, out _);
+                        var (_, address) = h.Ring.TryAllocate(sizeof(long), expectsCompletion: false, out _);
                         ClassicAssert.GreaterOrEqual(address, 0);
 
                         // Publish only even slots; odd slots stay at the 0xFF page fill (Uninitialized), which the

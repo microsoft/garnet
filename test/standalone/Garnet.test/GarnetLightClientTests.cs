@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using NUnit.Framework;
@@ -22,6 +23,7 @@ namespace Garnet.test
     {
         static readonly byte[] SET = Encoding.ASCII.GetBytes("$3\r\nSET\r\n");
         static readonly byte[] GET = Encoding.ASCII.GetBytes("$3\r\nGET\r\n");
+        static readonly byte[] ECHO = Encoding.ASCII.GetBytes("$4\r\nECHO\r\n");
         static readonly byte[] INCR = Encoding.ASCII.GetBytes("$4\r\nINCR\r\n");
         static readonly byte[] INCRBY = Encoding.ASCII.GetBytes("$6\r\nINCRBY\r\n");
 
@@ -128,6 +130,49 @@ namespace Garnet.test
             // GET returns the value as a bulk string; ExecuteForLongResultAsync parses that as an integer.
             var final = await db.ExecuteForLongResultAsync(GET, ["shared"]).ConfigureAwait(false);
             ClassicAssert.AreEqual(producers * perProducer, final);
+        }
+
+        [Test]
+        public async Task CompletionBackpressureStressTest([Values] bool useTLS)
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
+            server.Start();
+
+            const int completionCapacity = 8;
+            using var db = TestUtils.GetGarnetLightClient(
+                useTLS: useTLS,
+                sendPageSize: 256,
+                bufferSize: 256,
+                maxOutstandingTasks: completionCapacity);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            const int producers = 8;
+            const int perProducer = 200;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var producerTasks = new Task[producers];
+
+            for (var p = 0; p < producers; p++)
+            {
+                var producer = p;
+                producerTasks[p] = Task.Run(async () =>
+                {
+                    var pending = new Task<string>[perProducer];
+                    var expected = new string[perProducer];
+
+                    for (var i = 0; i < perProducer; i++)
+                    {
+                        var value = $"{producer}:{i}:{new string((char)('a' + producer), i % 384)}";
+                        expected[i] = value;
+                        pending[i] = db.ExecuteForStringResultWithCancellationAsync(ECHO, [value], cts.Token);
+                    }
+
+                    var actual = await Task.WhenAll(pending).ConfigureAwait(false);
+                    for (var i = 0; i < perProducer; i++)
+                        ClassicAssert.AreEqual(expected[i], actual[i], $"Completion mismatch for producer {producer}, request {i}.");
+                }, cts.Token);
+            }
+
+            await Task.WhenAll(producerTasks).ConfigureAwait(false);
         }
 
         [Test]
