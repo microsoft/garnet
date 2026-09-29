@@ -54,9 +54,11 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// This allocator resolves objectIds against the live <see cref="ObjectIdMap"/>, stamps ObjectLogPosition and size hints
-        /// into the live record, and writes the live page to the device with the epoch suspended. Releasing a record's heap in
-        /// that window can persist a Valid record whose ObjectLogPosition refers to a freed - or recycled, hence unrelated -
-        /// object. Such a record keeps its heap until the flush has captured it, and is released at eviction instead.
+        /// into the live record, and writes the live page to the device with the epoch suspended. Disposal in that window
+        /// corrupts the image two ways: releasing the heap can persist a Valid record whose ObjectLogPosition refers to a freed -
+        /// or recycled, hence unrelated - object, and <see cref="LogRecord.ClearOptionals"/> zeroes the ObjectLogPosition field
+        /// this flush just stamped. Such a record keeps its heap and metadata until the flush has captured it, and is released at
+        /// eviction instead.
         /// <para>
         /// The upper bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.SafeReadOnlyAddress"/>, not
         /// <see cref="LastIssuedFlushedUntilAddress"/>: <see cref="OnPagesMarkedReadOnly"/> advances SafeReadOnlyAddress first and
