@@ -93,9 +93,38 @@ namespace Garnet.common
             }
         }
 
-        /// <summary>Wrap the accumulated bytes as one <see cref="ReadOnlySequence{T}"/> (no data copy). The sequence is
-        /// valid until the next <see cref="Append"/>, <see cref="Reset"/>, or <see cref="Dispose"/>.</summary>
-        public ReadOnlySequence<byte> AsSequence() => ReadOnlySequenceBuilder.FromChunks(this);
+        /// <summary>Wrap the accumulated bytes as one <see cref="ReadOnlySequence{T}"/> (no data copy), so the payload may
+        /// exceed 2 GB and be consumed as a stream (see <see cref="ReadOnlySequenceStream"/>). The sequence is valid until
+        /// the next <see cref="Append"/>, <see cref="Reset"/>, or <see cref="Dispose"/>.</summary>
+        public ReadOnlySequence<byte> AsSequence()
+        {
+            if (buffers.Count == 0)
+                return ReadOnlySequence<byte>.Empty;
+            // Common case: a single chunk holds the whole payload — wrap it directly, with no ChunkSegment allocation.
+            if (buffers.Count == 1)
+                return new ReadOnlySequence<byte>(GetChunk(0));
+
+            ChunkSegment first = null, last = null;
+            for (var i = 0; i < buffers.Count; i++)
+            {
+                last = new ChunkSegment(GetChunk(i), last);
+                first ??= last;
+            }
+            return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
+        }
+
+        sealed class ChunkSegment : ReadOnlySequenceSegment<byte>
+        {
+            public ChunkSegment(ReadOnlyMemory<byte> memory, ChunkSegment previous)
+            {
+                Memory = memory;
+                if (previous is not null)
+                {
+                    previous.Next = this;
+                    RunningIndex = previous.RunningIndex + previous.Memory.Length;
+                }
+            }
+        }
 
         /// <summary>Return every pooled buffer and clear. Call only once the sequence and chunks are no longer referenced.</summary>
         public void Reset()

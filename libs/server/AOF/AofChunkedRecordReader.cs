@@ -78,7 +78,7 @@ namespace Garnet.server
         public ReadOnlySpan<byte> InputSpan => new(input, 0, inputOffset);
 
         /// <summary>Wrap the streamed object value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy).</summary>
-        public ReadOnlySequence<byte> GetValueSequence() => ReadOnlySequenceBuilder.FromChunks(valueChunks);
+        public ReadOnlySequence<byte> GetValueSequence() => valueChunks.AsSequence();
 
         /// <summary>Return the streamed object value's pooled buffers. Call once the value has been deserialized and the
         /// sequence from <see cref="GetValueSequence"/> is no longer referenced.</summary>
