@@ -848,6 +848,41 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Whether recovery must skip <paramref name="logRecord"/> because the flush wrote no object-log bytes for it.
+        /// </summary>
+        /// <remarks>
+        /// The flush skips a record whose out-of-line capture failed (see the page-write loop below), writing its inline image
+        /// but no object bytes; recovery must not then read object-log bytes that belong to a different record. The position word
+        /// cannot carry that signal, because object-log address 0 is the legitimate position of the first record in the address
+        /// space, so the skip is inferred from both read extents being zero.
+        /// <para>
+        /// This is an inference, not a stamped flag: a zero-length out-of-line component carrying the exact-size flag decodes to a
+        /// zero extent and reads back as skipped. <see cref="AssertStampedRecordIsDistinguishableFromSkipped"/> asserts on the
+        /// writer side that no record the flush actually stamps can collide. Both recovery passes must apply the identical test,
+        /// so they share this one.
+        /// </para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool RecordWasSkippedByFlush(in LogRecord logRecord, int checkpointVersion)
+        {
+            _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
+            return keyLength == 0 && valueLength == 0;
+        }
+
+        /// <summary>
+        /// Assert that a record the flush has just stamped cannot be mistaken by recovery for one the flush skipped.
+        /// See <see cref="RecordWasSkippedByFlush"/> for the inference this protects.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void AssertStampedRecordIsDistinguishableFromSkipped(in LogRecord logRecord, int checkpointVersion)
+        {
+            _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
+            Debug.Assert(keyLength != 0 || valueLength != 0,
+                "A record the flush stamped decodes to zero key and value read extents, which recovery reads as 'flush wrote no object bytes'"
+                + " and skips, silently dropping the value. Expected a zero-length out-of-line component to be impossible here.");
+        }
+
         protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
             => WriteAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
 
@@ -1089,6 +1124,13 @@ namespace Tsavorite.core
                                         var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                         logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow,
                                             logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
+
+                                        // Recovery distinguishes a record this flush wrote object bytes for from one it skipped by testing whether
+                                        // both of the read extents this stamping produces are zero (see DeserializeObjectsOnPage). That inference is
+                                        // only valid while a stamped record always yields a nonzero extent, so assert it at the point that makes it
+                                        // true. A zero-length out-of-line component carrying the exact-size flag would decode to zero and be read
+                                        // back as skipped, silently dropping the value.
+                                        AssertStampedRecordIsDistinguishableFromSkipped(in logRecord, asyncResult.checkpointVersion);
 
                                         // Only a record that actually wrote to the object log clears this; a skipped record advances no writer
                                         // position, so the next record with objects still verifies its start position against objectLogTail.
@@ -1514,10 +1556,8 @@ namespace Tsavorite.core
                         logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion),
                         objectLogTail.SegmentSizeBits);
 
-                    // A Valid record can lose its object value before the flush captures it, because a CopyUpdate source clear disposes the
-                    // object without invalidating the record. The flush writes that record's inline image but no object-log bytes, so there is
-                    // nothing to read back; the superseding record later in the log carries the value. Zero component lengths identify that
-                    // record: the position word cannot, because address 0 is the legitimate position of the first record in the address space.
+                    // Skip a record the flush wrote no object-log bytes for; see RecordWasSkippedByFlush. The lengths are needed below
+                    // regardless, so test them here rather than re-decoding through the helper.
                     if (keyLength == 0 && valueLength == 0)
                     {
                         continue;
@@ -1559,9 +1599,8 @@ namespace Tsavorite.core
 
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
-                        // Skip the records the flush skipped; see the first pass for why a Valid record can have no object-log bytes.
-                        _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var skipKeyLength, out var skipValueLength, checkpointVersion);
-                        if (skipKeyLength == 0 && skipValueLength == 0)
+                        // Skip the records the flush skipped; see RecordWasSkippedByFlush.
+                        if (RecordWasSkippedByFlush(in logRecord, checkpointVersion))
                             continue;
 
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits, checkpointVersion);
