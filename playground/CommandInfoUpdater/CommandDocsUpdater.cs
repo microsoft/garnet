@@ -168,7 +168,8 @@ namespace CommandInfoUpdater
                 EndPoints = new EndPointCollection(new List<EndPoint>
                 {
                     new IPEndPoint(respServerHost, respServerPort)
-                })
+                }),
+                Protocol = RedisProtocol.Resp2, // RespCommandDocsParser.TryReadFromResp assumes RESP2
             };
 
             using var redis = ConnectionMultiplexer.Connect(configOptions);
