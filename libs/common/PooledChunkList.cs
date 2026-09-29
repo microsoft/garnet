@@ -128,11 +128,20 @@ namespace Garnet.common
             }
         }
 
-        /// <summary>Return every pooled buffer and clear. Call only once the sequence and chunks are no longer referenced.</summary>
+        /// <summary>Return every pooled buffer and clear. Call only once the sequence and chunks are no longer referenced.
+        /// Idempotent: resetting an already-reset list is a no-op, so the paths that discard an accumulation may overlap.</summary>
         public void Reset()
         {
-            foreach (var buffer in buffers)
-                buffer.Return();
+            // Drop the reference to each buffer before handing it back, so no buffer can be returned twice even if this
+            // list is reset again while the loop is in progress. A double return would push one block onto a pool free
+            // list twice, and the lists are singly linked through the block itself, so the chain would be corrupted and
+            // two renters would later be handed the same memory.
+            for (var i = 0; i < buffers.Count; i++)
+            {
+                var buffer = buffers[i];
+                buffers[i] = null;
+                buffer?.Return();
+            }
             buffers.Clear();
             lastFilled = 0;
             totalLength = 0;

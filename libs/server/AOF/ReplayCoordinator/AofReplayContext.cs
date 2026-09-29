@@ -59,13 +59,15 @@ namespace Garnet.server
             // Release the pooled chunk buffers held by anything replay did not consume: partially-accumulated records (a
             // truncated AOF tail is the normal outcome of a crash) and any operation still buffered. These rentals are
             // otherwise never returned, and a rental that is never returned permanently consumes the pool's cacheable
-            // budget rather than merely going unreused.
+            // budget rather than merely going unreused. Nothing here is replayed after this point, so all of it is
+            // discarded. A group is removed from activeTxns when it is enqueued to txnGroupBuffer, so the two hold
+            // disjoint sets and no group is discarded twice.
             chunkedReader.DiscardInProgress();
-            ClearFuzzyRegionBuffer();
+            DiscardFuzzyRegionBuffer();
             while (txnGroupBuffer.Count > 0)
-                txnGroupBuffer.Dequeue().Clear();
+                txnGroupBuffer.Dequeue().Discard();
             foreach (var txn in activeTxns.Values)
-                txn.Clear();
+                txn.Discard();
             activeTxns.Clear();
 
             var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
@@ -79,9 +81,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Discard the fuzzy-region buffer, returning the pooled chunk buffers of any chunked operation it holds.
+        /// Discard the fuzzy-region buffer, returning the pooled chunk buffers of any chunked operation it holds. Only for
+        /// a buffer that will not be replayed: either it has just been replayed (returning a chunked operation's buffers a
+        /// second time is a no-op, since the operation released them as it was dispatched) or replay is tearing down.
         /// </summary>
-        public void ClearFuzzyRegionBuffer()
+        public void DiscardFuzzyRegionBuffer()
         {
             foreach (var op in fuzzyRegionOps)
                 op.Chunk?.ReturnValueChunks();

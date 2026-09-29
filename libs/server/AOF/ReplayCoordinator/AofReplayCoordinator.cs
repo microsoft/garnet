@@ -102,10 +102,10 @@ namespace Garnet.server
             internal int FuzzyRegionBufferCount(int sublogIdx) => aofReplayContext[sublogIdx].fuzzyRegionOps.Count;
 
             /// <summary>
-            /// Clear fuzzy region buffer, returning the pooled chunk buffers of any chunked operation it still holds.
+            /// Discard the fuzzy region buffer, returning the pooled chunk buffers of any chunked operation it holds.
             /// </summary>
             /// <param name="sublogIdx"></param>
-            internal void ClearFuzzyRegionBuffer(int sublogIdx) => aofReplayContext[sublogIdx].ClearFuzzyRegionBuffer();
+            internal void ClearFuzzyRegionBuffer(int sublogIdx) => aofReplayContext[sublogIdx].DiscardFuzzyRegionBuffer();
 
             /// <summary>
             /// Add single operation to fuzzy region buffer
@@ -173,9 +173,12 @@ namespace Garnet.server
                             break;
                     }
 
+                    // Discard, rather than merely drop, the group's operations: a chunked one holds pooled buffers that
+                    // are returned to the pool here. A committed group's operations have already been dispatched, which
+                    // returns those buffers, and returning an already-returned chunk list is a no-op.
                     void ClearSessionTxn()
                     {
-                        aofReplayContext[virtualSublogIdx].activeTxns[header.sessionID].Clear();
+                        aofReplayContext[virtualSublogIdx].activeTxns[header.sessionID].Discard();
                         _ = aofReplayContext[virtualSublogIdx].activeTxns.Remove(header.sessionID);
                     }
 
