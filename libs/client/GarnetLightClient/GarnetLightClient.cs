@@ -19,8 +19,8 @@ namespace Garnet.client
 {
     /// <summary>
     /// A lightweight Garnet client that makes a single network connection to a server and supports
-    /// only out-of-line (chunked) payloads. It is intended for producers that fan out from multiple
-    /// threads (for example cluster gossip and pub/sub forwarding).
+    /// inline and out-of-line payloads. It is intended for producers that fan out from multiple threads
+    /// (for example cluster gossip and pub/sub forwarding).
     /// <para>
     /// Unlike <see cref="GarnetClient"/>, this client does not maintain a separate task-id space or a
     /// producer-side serialization gate. The response completion travels with the payload
@@ -428,9 +428,9 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Issue an out-of-line command whose response completes the provided <paramref name="tcs"/>.
+        /// Issue a command whose response completes the provided <paramref name="tcs"/>.
         /// </summary>
-        async ValueTask InternalExecuteChunkedAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
             var isArray = args != null;
             var arraySize = checked(1 + (isArray ? args.Count : 0));
@@ -594,9 +594,9 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Issue an out-of-line command for execution without expecting a response.
+        /// Issue a command for execution without expecting a response.
         /// </summary>
-        void InternalExecuteChunkedNoResponse(Memory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
+        void InternalExecuteNoResponse(Memory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
             const int arraySize = 4;
             var totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
@@ -608,29 +608,35 @@ namespace Garnet.client
             length = param2.Length;
             totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
 
-            var payload = networkWriter.RentPayloadBuffer(totalLength);
+            var inline = networkWriter.CanInline(totalLength);
+            var recordSize = inline ? networkWriter.InlineRecordSize(totalLength) : PayloadDescriptorSize;
+            var payload = inline ? default : networkWriter.RentPayloadBuffer(totalLength);
             var payloadRegistered = false;
+
+            static unsafe void SerializeCommand(byte* curr, byte* end, int arraySize, ReadOnlySpan<byte> respOp,
+                ReadOnlySpan<byte> subop, ReadOnlySpan<byte> param1, ReadOnlySpan<byte> param2)
+            {
+                if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
+                    !RespWriteUtils.TryWriteDirect(respOp, ref curr, end) ||
+                    !RespWriteUtils.TryWriteBulkString(subop, ref curr, end) ||
+                    !RespWriteUtils.TryWriteBulkString(param1, ref curr, end) ||
+                    !RespWriteUtils.TryWriteBulkString(param2, ref curr, end))
+                {
+                    throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
+                }
+
+                if (curr != end)
+                    throw new InvalidOperationException("The serialized command did not fill its reserved slot.");
+            }
 
             try
             {
-                unsafe
+                if (!inline)
                 {
-                    fixed (byte* payloadPtr = payload.Buffer)
+                    unsafe
                     {
-                        var curr = payloadPtr;
-                        var end = payloadPtr + payload.Length;
-
-                        if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
-                            !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(subop, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(param1, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(param2, ref curr, end))
-                        {
-                            throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
-                        }
-
-                        if (curr != end)
-                            throw new InvalidOperationException("The serialized out-of-line command did not fill its reserved buffer.");
+                        fixed (byte* payloadPtr = payload.Buffer)
+                            SerializeCommand(payloadPtr, payloadPtr + payload.Length, arraySize, respOp.Span, subop, param1, param2);
                     }
                 }
 
@@ -644,13 +650,16 @@ namespace Garnet.client
                         token.ThrowIfCancellationRequested();
                         if (!IsConnected)
                         {
-                            payload.Dispose();
-                            payload = default;
+                            if (!inline)
+                            {
+                                payload.Dispose();
+                                payload = default;
+                            }
                             Dispose();
                             ThrowException(disposeException);
                         }
 
-                        (_, address) = networkWriter.TryAllocate(PayloadDescriptorSize, expectsResponse: false, out var flushEvent);
+                        (_, address) = networkWriter.TryAllocate(recordSize, expectsResponse: false, out var flushEvent);
                         if (address >= 0)
                             break;
 
@@ -668,7 +677,18 @@ namespace Garnet.client
                     // Fire-and-forget: no completion ticket is consumed and nothing is registered in the
                     // completion lane. A reply arriving for one of these is a protocol violation the reply
                     // reader is expected to assert on.
-                    networkWriter.RegisterRequest(address, payload);
+                    if (inline)
+                    {
+                        unsafe
+                        {
+                            var curr = networkWriter.ReserveInlineRecord(address, totalLength);
+                            SerializeCommand(curr, curr + totalLength, arraySize, respOp.Span, subop, param1, param2);
+                        }
+                    }
+                    else
+                    {
+                        networkWriter.RegisterRequest(address, payload);
+                    }
                     payloadRegistered = true;
 
                     if (Disposed)
@@ -684,7 +704,7 @@ namespace Garnet.client
             }
             finally
             {
-                if (!payloadRegistered)
+                if (!inline && !payloadRegistered)
                     payload.Dispose();
             }
         }

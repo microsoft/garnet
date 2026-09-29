@@ -21,7 +21,7 @@ namespace Garnet.client
         public Task<string> ExecuteForStringResultAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.StringAsync, stringTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously) };
-            _ = InternalExecuteChunkedAsync(tcs, respOp, args);
+            _ = InternalExecuteAsync(tcs, respOp, args);
             return tcs.stringTcs.Task;
         }
 
@@ -48,12 +48,12 @@ namespace Garnet.client
             {
                 using (token.Register(TokenRegistrationStringCallback, tcs.stringTcs))
                 {
-                    _ = InternalExecuteChunkedAsync(tcs, respOp, args, token);
+                    _ = InternalExecuteAsync(tcs, respOp, args, token);
                     return await tcs.stringTcs.Task.ConfigureAwait(false);
                 }
             }
 
-            _ = InternalExecuteChunkedAsync(tcs, respOp, args, token);
+            _ = InternalExecuteAsync(tcs, respOp, args, token);
             return await tcs.stringTcs.Task.ConfigureAwait(false);
         }
 
@@ -76,7 +76,7 @@ namespace Garnet.client
         public Task<MemoryResult<byte>> ExecuteForMemoryResultAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.MemoryByteAsync, memoryByteTcs = new TaskCompletionSource<MemoryResult<byte>>(TaskCreationOptions.RunContinuationsAsynchronously) };
-            _ = InternalExecuteChunkedAsync(tcs, respOp, args);
+            _ = InternalExecuteAsync(tcs, respOp, args);
             return tcs.memoryByteTcs.Task;
         }
 
@@ -104,12 +104,12 @@ namespace Garnet.client
             {
                 using (token.Register(TokenRegistrationMemoryByteCallback, tcs.memoryByteTcs))
                 {
-                    _ = InternalExecuteChunkedAsync(tcs, respOp, args, token);
+                    _ = InternalExecuteAsync(tcs, respOp, args, token);
                     return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
                 }
             }
 
-            _ = InternalExecuteChunkedAsync(tcs, respOp, args, token);
+            _ = InternalExecuteAsync(tcs, respOp, args, token);
             return await tcs.memoryByteTcs.Task.ConfigureAwait(false);
         }
 
@@ -133,7 +133,7 @@ namespace Garnet.client
         public Task<long> ExecuteForLongResultAsync(Memory<byte> respOp, ICollection<Memory<byte>> args = null)
         {
             var tcs = new TcsWrapper { taskType = TaskType.LongAsync, longTcs = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously) };
-            _ = InternalExecuteChunkedAsync(tcs, respOp, args);
+            _ = InternalExecuteAsync(tcs, respOp, args);
             return tcs.longTcs.Task;
         }
 
@@ -160,12 +160,12 @@ namespace Garnet.client
             {
                 using (token.Register(TokenRegistrationLongCallback, tcs.longTcs))
                 {
-                    _ = InternalExecuteChunkedAsync(tcs, respOp, args, token);
+                    _ = InternalExecuteAsync(tcs, respOp, args, token);
                     return await tcs.longTcs.Task.ConfigureAwait(false);
                 }
             }
 
-            _ = InternalExecuteChunkedAsync(tcs, respOp, args, token);
+            _ = InternalExecuteAsync(tcs, respOp, args, token);
             return await tcs.longTcs.Task.ConfigureAwait(false);
         }
 
@@ -180,7 +180,7 @@ namespace Garnet.client
             => ExecuteForLongResultWithCancellationAsync(respOp, ToMemoryArgs(args), token);
 
         /// <summary>
-        /// Execute a fixed four-token out-of-line command without expecting a response (fire-and-forget).
+        /// Execute a fixed four-token command without expecting a response (fire-and-forget).
         /// Intended for producer-only traffic such as pub/sub message forwarding; the command must not
         /// produce a reply or the reply reader will fault the connection.
         /// </summary>
@@ -190,7 +190,7 @@ namespace Garnet.client
         /// <param name="param3">Third argument</param>
         /// <param name="token">Cancellation token</param>
         public void ExecuteNoResponse(Memory<byte> op, ReadOnlySpan<byte> param1, Span<byte> param2, Span<byte> param3, CancellationToken token = default)
-            => InternalExecuteChunkedNoResponse(op, param1, param2, param3, token);
+            => InternalExecuteNoResponse(op, param1, param2, param3, token);
 
         static Memory<byte>[] ToMemoryArgs(ICollection<string> args)
         {

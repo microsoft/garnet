@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.client
 {
     /// <summary>
-    /// Concurrent network writer for out-of-line (chunked) payloads only.
+    /// Concurrent network writer for inline and out-of-line payloads.
     /// <para>
     /// This is a thin, network-owning shell over a <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>
     /// specialized to <see cref="LightRequest"/> requests and <see cref="TcsWrapper"/> completions. It owns
