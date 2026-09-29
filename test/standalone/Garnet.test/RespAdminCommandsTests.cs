@@ -546,6 +546,16 @@ namespace Garnet.test
                 for (int i = 0; i < numKeys; i++)
                     ClassicAssert.AreEqual(value, db.HashGet($"SeAofRecoverHashKey{i:0000}", "field").ToString(), $"Key SeAofRecoverHashKey{i:0000}");
             }
+
+            // Replay must also be budget-managed, not merely non-hanging. The allocator's page-cap fallback alone lets
+            // replay finish while holding roughly five times the heap (measured ~600 KB vs ~120 KB here), so assert on
+            // the heap replay actually held. Sampling after startup cannot show this: the resizer keeps trimming once
+            // the server is up, so both converge to the same floor. The bound is well clear of both figures, since the
+            // point is to catch replay running unmanaged rather than to pin an exact size.
+            var replayHeapBytes = server.Provider.StoreWrapper.AofReplayEndHeapSizeBytes;
+            ClassicAssert.Greater(replayHeapBytes, 0, "AOF replay should have been sampled");
+            ClassicAssert.Less(replayHeapBytes, 300_000,
+                $"AOF replay held {replayHeapBytes} bytes of object heap; replay is not being memory-budget-managed");
         }
 
         [Test]

@@ -493,6 +493,16 @@ namespace Garnet.server
             => databaseManager.VerifyRecoveryIsComplete(canBeRepairedBySync);
 
         /// <summary>
+        /// Main-log heap size sampled at the end of AOF replay, or -1 if no replay has run.
+        /// </summary>
+        /// <remarks>
+        /// Replay is memory-budget-managed (see <see cref="ReplayAOF"/>), and this records how much heap it actually held.
+        /// Sampling after startup cannot show that: the resizer keeps trimming once the server is up, so an unmanaged replay
+        /// and a managed one converge to the same floor despite very different peaks.
+        /// </remarks>
+        public long AofReplayEndHeapSizeBytes { get; private set; } = -1;
+
+        /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
         public AofAddress ReplayAOF(AofAddress untilAddress)
@@ -502,7 +512,9 @@ namespace Garnet.server
             // size trackers can be started. Starting is idempotent; Start() calls this again for the non-recovery path.
             StartSizeTrackers();
 
-            return databaseManager.ReplayAOF(untilAddress);
+            var replayedUntil = databaseManager.ReplayAOF(untilAddress);
+            AofReplayEndHeapSizeBytes = store.Log.HeapSizeBytes;
+            return replayedUntil;
         }
 
         /// <summary>

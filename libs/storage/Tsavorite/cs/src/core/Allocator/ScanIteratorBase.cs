@@ -394,8 +394,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Wait for a load previously claimed on <paramref name="frame"/> to finish, before this thread's claim reuses
-        /// the frame's buffer.
+        /// Prepare <paramref name="frame"/> for reuse by this thread's claim: wait for any load previously claimed on it
+        /// to finish, and renew its cancellation source if a failed load left that cancelled.
         /// </summary>
         /// <param name="frame">The frame whose buffer is about to be reused.</param>
         /// <param name="priorClaim">The <see cref="nextLoadedPages"/> value this thread's claim replaced, or a negative
@@ -409,29 +409,39 @@ namespace Tsavorite.core
         /// </remarks>
         private void WaitForPriorFrameLoad(long frame, long priorClaim)
         {
-            if (priorClaim < 0)
-                return;
-
-            while (loadedPages[frame] < priorClaim)
-                epoch?.ProtectAndDrain();
-
-            var completionEvent = loadCompletionEvents[frame];
-            if (completionEvent is null || completionEvent.IsSet)
-                return;
-
-            try
+            if (priorClaim >= 0)
             {
-                epoch?.Suspend();
-                _ = completionEvent.Wait(Timeout.Infinite, loadCTSs[frame].Token);
+                while (loadedPages[frame] < priorClaim)
+                    epoch?.ProtectAndDrain();
+
+                var completionEvent = loadCompletionEvents[frame];
+                if (completionEvent is not null && !completionEvent.IsSet)
+                {
+                    try
+                    {
+                        epoch?.Suspend();
+                        _ = completionEvent.Wait(Timeout.Infinite, loadCTSs[frame].Token);
+                    }
+                    catch (Exception e)
+                    {
+                        logger?.LogWarning(e, "Prior page load did not complete successfully before its frame was reused. Frame: {frame}", frame);
+                    }
+                    finally
+                    {
+                        epoch?.Resume();
+                    }
+                }
             }
-            catch (Exception e)
-            {
-                logger?.LogWarning(e, "Prior page load did not complete successfully before its frame was reused. Frame: {frame}", frame);
-            }
-            finally
-            {
-                epoch?.Resume();
-            }
+
+            // A failed load cancels the frame's token without replacing it, and only WaitForFrameLoad's failure path
+            // installs a fresh one -- which a frame re-claimed without first being awaited as currentFrame never reaches.
+            // Issuing the replacement read under the cancelled token would make the next WaitForFrameLoad throw at once:
+            // it would skip a page that is genuinely being read, and signal the frame reusable while that read is still
+            // writing into its buffer, which is the concurrent-reads-into-one-buffer hazard this method exists to prevent.
+            // Renew it here, where the frame is prepared for reuse. The old source is left for Dispose rather than
+            // disposed now, since a token handed to an in-flight wait may still reference it.
+            if (loadCTSs[frame] is { IsCancellationRequested: true })
+                loadCTSs[frame] = new CancellationTokenSource();
         }
 
         /// <summary>

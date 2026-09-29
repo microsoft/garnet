@@ -57,9 +57,21 @@ namespace Tsavorite.test
             /// <summary>When set, issuing the page read throws, as a device that fails before the read is submitted does.</summary>
             public Exception ThrowOnRead;
 
+            /// <summary>When set alongside <see cref="ThrowOnRead"/>, only this page's read throws.</summary>
+            public long? ThrowOnReadPage;
+
+            /// <summary>The cancellation source handed to each page read, by page.</summary>
+            private readonly ConcurrentDictionary<long, CancellationTokenSource> readCtsByPage = new();
+
+            public CancellationTokenSource ReadCtsForPage(long readPage)
+                => readCtsByPage.TryGetValue(readPage, out var cts) ? cts : null;
+
             /// <summary>When set, a page read is reported as still in flight until <see cref="CompleteRead"/> is called
             /// for it, as a real device does between submission and its completion callback.</summary>
             public bool HoldCompletions;
+
+            /// <summary>The cancellation source handed to the most recent page read.</summary>
+            public CancellationTokenSource LastReadCts { get; private set; }
 
             public StubScanIterator(LightEpoch epoch, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering)
                 : base(beginAddress: 0, endAddress: long.MaxValue, scanBufferingMode,
@@ -119,7 +131,11 @@ namespace Tsavorite.test
             internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context,
                     ref CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             {
-                if (ThrowOnRead is not null)
+                LastReadCts = cts;
+                if (cts is not null)
+                    readCtsByPage[readPage] = cts;
+
+                if (ThrowOnRead is not null && (ThrowOnReadPage is null || ThrowOnReadPage.Value == readPage))
                 {
                     _ = Interlocked.Increment(ref readCallCount);
                     throw ThrowOnRead;
@@ -536,6 +552,56 @@ namespace Tsavorite.test
                     _ = first?.Join(TestTimeout);
                     _ = second?.Join(TestTimeout);
                     epoch.Resume();
+                    DrainAndDispose(epoch, iterator);
+                }
+            });
+        }
+
+        /// <summary>
+        /// A read-ahead that fails cancels its frame's token without replacing it, and only <c>WaitForFrameLoad</c>'s
+        /// failure path installs a fresh one -- which a frame re-claimed without first being awaited as currentFrame
+        /// never reaches. The replacement read must not inherit that cancelled token: the next wait on the frame would
+        /// throw at once, skipping a page that is genuinely being read and signalling the frame reusable while that read
+        /// is still writing into its buffer.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ReclaimAfterFailedReadAheadRenewsTheFrameToken()
+        {
+            RunBounded(() =>
+            {
+                var epoch = new LightEpoch();
+                var iterator = new StubScanIterator(epoch, DiskScanBufferingMode.DoublePageBuffering);
+                ClassicAssert.AreEqual(2, iterator.FrameSize, "this test covers read-ahead");
+
+                epoch.Resume();
+                try
+                {
+                    // Claim pages 0 and 1 into frames 0 and 1, failing only page 1's read-ahead. That cancels frame 1's
+                    // token, leaves its completion event unset, and is never observed by a WaitForFrameLoad, because
+                    // only frame 0 is awaited here.
+                    iterator.ThrowOnRead = new InvalidOperationException("read-ahead failed");
+                    iterator.ThrowOnReadPage = 1;
+                    _ = iterator.ClaimFrameAndIssueRead(0);
+
+                    var failedCts = iterator.ReadCtsForPage(1);
+                    ClassicAssert.IsNotNull(failedCts, "page 1's read should have been issued");
+                    ClassicAssert.IsTrue(failedCts.IsCancellationRequested,
+                        "a failed read-ahead should leave its frame's token cancelled");
+
+                    // Page 5 maps back to frame 1 and re-claims it, never having gone through WaitForFrameLoad there.
+                    iterator.ThrowOnRead = null;
+                    iterator.ThrowOnReadPage = null;
+                    _ = iterator.ClaimFrameAndIssueRead(5);
+
+                    var reclaimCts = iterator.ReadCtsForPage(5);
+                    ClassicAssert.IsNotNull(reclaimCts, "page 5's read should have been issued into the re-claimed frame");
+                    ClassicAssert.IsFalse(reclaimCts.IsCancellationRequested,
+                        "the replacement read must not be issued under the cancelled token left by the failed read-ahead");
+                }
+                finally
+                {
+                    iterator.CompleteAllReads();
                     DrainAndDispose(epoch, iterator);
                 }
             });
