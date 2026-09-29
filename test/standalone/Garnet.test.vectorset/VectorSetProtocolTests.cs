@@ -151,24 +151,9 @@ namespace Garnet.test
             using var redis = Connect(protocol);
             var db = redis.GetDatabase();
 
-            Add(db, "vectors", "first");
+            db.Execute("VADD", ["vectors", "REDUCE", "2", "VALUES", "3", "1", "0", "0", "first", "NOQUANT", "EF", "41", "M", "7"]);
             var info = db.Execute("VINFO", "vectors");
-            AssertType(info, protocol, ResultType.Array, ResultType.Map);
-            if (protocol == RedisProtocol.Resp3)
-            {
-                var fields = info.ToDictionary();
-                ClassicAssert.AreEqual(7, fields.Count);
-                ClassicAssert.AreEqual(ResultType.Integer, fields["size"].Resp3Type);
-                ClassicAssert.AreEqual(1, (int)fields["size"]);
-            }
-            else
-            {
-                var fields = (RedisResult[])info;
-                ClassicAssert.AreEqual(14, fields.Length);
-                ClassicAssert.AreEqual("size", (string)fields[12]);
-                AssertType(fields[13], protocol, ResultType.Integer, ResultType.Integer);
-                ClassicAssert.AreEqual(1, (int)fields[13]);
-            }
+            AssertVInfoIntegerFields(info, protocol, ("input-vector-dimensions", 3), ("reduced-dimensions", 2), ("build-exploration-factor", 41), ("num-links", 7), ("size", 1));
 
             var missing = db.Execute("VINFO", "missing");
             ClassicAssert.IsTrue(missing.IsNull);
@@ -475,6 +460,32 @@ namespace Garnet.test
 
         private static void AssertType(RedisResult result, RedisProtocol protocol, ResultType resp2, ResultType resp3)
             => ClassicAssert.AreEqual(protocol == RedisProtocol.Resp2 ? resp2 : resp3, protocol == RedisProtocol.Resp2 ? result.Resp2Type : result.Resp3Type);
+
+        private static void AssertVInfoIntegerFields(RedisResult info, RedisProtocol protocol, params (string Field, long Value)[] expected)
+        {
+            AssertType(info, protocol, ResultType.Array, ResultType.Map);
+            var fields = new Dictionary<string, RedisResult>();
+            if (protocol == RedisProtocol.Resp3)
+            {
+                foreach (var (key, value) in info.ToDictionary())
+                    fields.Add((string)key, value);
+            }
+            else
+            {
+                var values = (RedisResult[])info;
+                ClassicAssert.AreEqual(14, values.Length);
+                for (var i = 0; i < values.Length; i += 2)
+                    fields.Add((string)values[i], values[i + 1]);
+            }
+
+            ClassicAssert.AreEqual(7, fields.Count);
+            foreach (var (field, value) in expected)
+            {
+                var result = fields[field];
+                AssertType(result, protocol, ResultType.Integer, ResultType.Integer);
+                ClassicAssert.AreEqual(value, (long)result, field);
+            }
+        }
 
         private static void AssertInteger(RedisResult result, RedisProtocol protocol, int value)
         {
