@@ -494,8 +494,7 @@ namespace Garnet.server
                             SendAndReset();
 
                         // Write key
-                        while (!RespWriteUtils.TryWriteBulkString(poppedKey.ReadOnlySpan, ref dcurr, dend))
-                            SendAndReset();
+                        WriteBulkString(poppedKey.ReadOnlySpan);
 
                         // Write array of member-score pairs
                         while (!RespWriteUtils.TryWriteArrayLength(pairs.Length, ref dcurr, dend))
@@ -505,8 +504,7 @@ namespace Garnet.server
                         {
                             while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                                 SendAndReset();
-                            while (!RespWriteUtils.TryWriteBulkString(member.ReadOnlySpan, ref dcurr, dend))
-                                SendAndReset();
+                            WriteBulkString(member.ReadOnlySpan);
 
                             if (respProtocolVersion >= 3)
                             {
@@ -514,8 +512,7 @@ namespace Garnet.server
                             }
                             else
                             {
-                                while (!RespWriteUtils.TryWriteBulkString(score.ReadOnlySpan, ref dcurr, dend))
-                                    SendAndReset();
+                                WriteBulkString(score.ReadOnlySpan);
                             }
                         }
                     }
@@ -980,8 +977,7 @@ namespace Garnet.server
                                     while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                                         SendAndReset();
 
-                                while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
-                                    SendAndReset();
+                                WriteBulkString(element);
 
                                 if (includeWithScores)
                                 {
@@ -1153,8 +1149,7 @@ namespace Garnet.server
                                 SendAndReset();
                         }
 
-                        while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
-                            SendAndReset();
+                        WriteBulkString(element);
 
                         if (includeWithScores)
                         {
@@ -1454,8 +1449,7 @@ namespace Garnet.server
                                 SendAndReset();
                         }
 
-                        while (!RespWriteUtils.TryWriteBulkString(element, ref dcurr, dend))
-                            SendAndReset();
+                        WriteBulkString(element);
 
                         if (includeWithScores)
                         {
@@ -1610,11 +1604,9 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteArrayLength(3, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(result.Key, ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(result.Key);
 
-                while (!RespWriteUtils.TryWriteBulkString(result.Item, ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(result.Item);
 
                 WriteDoubleNumeric(result.Score);
             }
@@ -1719,8 +1711,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                 SendAndReset();
 
-            while (!RespWriteUtils.TryWriteBulkString(result.Key, ref dcurr, dend))
-                SendAndReset();
+            WriteBulkString(result.Key);
 
             while (!RespWriteUtils.TryWriteArrayLength(result.Items.Length, ref dcurr, dend))
                 SendAndReset();
@@ -1729,8 +1720,7 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.TryWriteBulkString(result.Items[i], ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(result.Items[i]);
                 WriteDoubleNumeric(result.Scores[i]);
             }
 

@@ -118,8 +118,7 @@ namespace Garnet.cluster
                 SendAndReset();
             foreach (var replica in banlist)
             {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(replica, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiLargeRespString(replica);
             }
 
             return true;
@@ -381,8 +380,7 @@ namespace Garnet.cluster
                 while (!RespWriteUtils.TryWriteArrayLength(keyCountRet, ref dcurr, dend))
                     SendAndReset();
                 for (var i = 0; i < keyCountRet; i++)
-                    while (!RespWriteUtils.TryWriteBulkString(keys[i], ref dcurr, dend))
-                        SendAndReset();
+                    WriteLargeBulkString(keys[i]);
             }
 
             return true;
@@ -621,8 +619,7 @@ namespace Garnet.cluster
             }
             var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
             var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo(preferredType);
-            while (!RespWriteUtils.TryWriteAsciiDirect(slotsInfo, ref dcurr, dend))
-                SendAndReset();
+            WriteLargeAsciiDirectString(slotsInfo);
 
             return true;
         }
