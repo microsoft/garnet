@@ -507,9 +507,11 @@ namespace Garnet.test
         [Test]
         public void SeAofRecoverObjectsOverHeapBudgetTest()
         {
-            // Hash values keep the object heap over the size tracker budget while the page count stays under the limit.
-            // AOF replay runs before the size tracker is started, so allocation must not wait for the tracker to evict.
-            // If replay waits for the tracker, the recovering server.Start() below never returns, so bound the wait to
+            // Hash values keep the object heap far over the size tracker budget while the page count stays under the limit.
+            // Recovering that AOF must stay within the budget and must never block on an eviction that cannot happen:
+            // ReplayAOF starts the size trackers so replay is budget-managed, and the allocator's page-turn path does not
+            // wait on a size tracker whose resizer is not running (checkpoint recovery, which precedes replay, is in that
+            // state). If either side regresses, the recovering server.Start() below never returns, so bound the wait to
             // report a named test failure instead of hanging the whole test run.
             const int numKeys = 2000;
             var value = new string('x', 2000);

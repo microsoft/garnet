@@ -77,7 +77,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Indicates whether the background resizer task is currently running (started and not yet stop-requested/stopped).
         /// Callers on the allocation path use this to decide whether they must evict synchronously themselves (when the
-        /// resizer is not running, e.g. during recovery/AOF replay) instead of deferring eviction to the resizer.
+        /// resizer is not running, such as before it is started or after it has been stopped for shutdown) instead of
+        /// deferring eviction to the resizer, which would never act on the request.
         /// </summary>
         public bool IsRunning => runState == (int)RunState.Running;
 
