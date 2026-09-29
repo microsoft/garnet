@@ -532,9 +532,15 @@ namespace Garnet.test
 
             // Assign `server` only once Start returns: on a regression the recovering server is wedged in replay, and
             // letting TearDown dispose it would block the whole run on the same stuck allocation.
+            //
+            // The bound only has to separate "completes" from "never completes": the regression is a livelock, so it
+            // never finishes at any bound. Recovery itself takes well under a second here, but while it is over budget
+            // it defers eviction to the size tracker's resizer, so it cannot finish before the thread pool dispatches
+            // that task. The bound is therefore generous rather than tight, so a starved pool reports a slow recovery
+            // rather than a spurious failure.
             var recovered = CreateGarnetServer(MethodTestDir, tryRecover: true, lowMemory: true, enableAOF: true);
             var start = Task.Run(recovered.Start);
-            ClassicAssert.IsTrue(start.Wait(TimeSpan.FromSeconds(60)), "AOF recovery did not complete");
+            ClassicAssert.IsTrue(start.Wait(TimeSpan.FromMinutes(5)), "AOF recovery did not complete");
             start.GetAwaiter().GetResult();     // surface any exception
             server = recovered;
 
