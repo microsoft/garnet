@@ -62,7 +62,7 @@ namespace Garnet.server
             // budget rather than merely going unreused. Nothing here is replayed after this point, so all of it is
             // discarded. A group is removed from activeTxns when it is enqueued to txnGroupBuffer, so the two hold
             // disjoint sets and no group is discarded twice.
-            chunkedReader.DiscardInProgress();
+            chunkedReader.DiscardInProgressAccumulations();
             DiscardFuzzyRegionBuffer();
             while (txnGroupBuffer.Count > 0)
                 txnGroupBuffer.Dequeue().Discard();

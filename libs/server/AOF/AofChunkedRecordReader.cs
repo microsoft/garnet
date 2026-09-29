@@ -268,7 +268,7 @@ namespace Garnet.server
         /// truncated AOF tail (the normal outcome of a crash) leaves the last record's chunks in <see cref="inProgress"/>,
         /// and those rentals would otherwise never be returned to the shared pool.
         /// </summary>
-        internal void DiscardInProgress()
+        internal void DiscardInProgressAccumulations()
         {
             foreach (var acc in inProgress.Values)
                 acc.ReturnValueChunks();

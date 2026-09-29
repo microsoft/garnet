@@ -66,20 +66,19 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            // StoreRMW can queue VADDs onto different threads; everything else must wait for those to complete first.
-            // Skip (1) entries from a prior checkpoint; buffer (2) future entries in the fuzzy region.
-            var skip = ShouldSkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, acc, asReplica, out var buffered);
-            if (!BeginReplayOp(replayContext, acc.opType, skip, out var bufferPtr, out var bufferLength))
-            {
-                // The record is discarded here, so release its pooled chunk buffers — unless it was buffered for later
-                // replay, in which case that buffer holds the only reference to them.
-                if (!buffered)
-                    acc.ReturnValueChunks();
-                return false;
-            }
-
+            // Set by ShouldSkipRecord when it hands the record to the fuzzy-region buffer for later replay. That buffer
+            // then holds the only reference to the accumulator's pooled chunk buffers, so this record must NOT release
+            // them; every other exit from this method must. Declared outside the try so the finally sees it even if
+            // ShouldSkipRecord throws, in which case it retains its initial value and the record is released.
+            var isBuffered = false;
             try
             {
+                // StoreRMW can queue VADDs onto different threads; everything else must wait for those to complete first.
+                // Skip (1) entries from a prior checkpoint; buffer (2) future entries in the fuzzy region.
+                var skip = ShouldSkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, acc, asReplica, out isBuffered);
+                if (!BeginReplayOp(replayContext, acc.opType, skip, out var bufferPtr, out var bufferLength))
+                    return false;
+
                 switch (acc.opType)
                 {
                     case AofEntryType.StoreUpsert:
@@ -118,27 +117,35 @@ namespace Garnet.server
             }
             finally
             {
-                // Dispatch consumes the accumulator, so its pooled chunk buffers are released here whether or not the op
-                // threw. The object upserts release them earlier (as soon as the value is materialized); returning an
-                // already-returned list is a no-op.
-                acc.ReturnValueChunks();
+                // Every exit but the buffered one consumes the accumulator, so its pooled chunk buffers are released
+                // here: dispatched (whether or not the op threw), skipped as a prior-checkpoint version, or abandoned
+                // because the preamble threw. The object upserts release them earlier, as soon as the value is
+                // materialized; returning an already-returned list is a no-op.
+                if (!isBuffered)
+                    acc.ReturnValueChunks();
             }
             return true;
         }
 
         /// <summary>
-        /// On recovery apply records with header.version greater than CurrentVersion.
+        /// Decide what replay should do with a chunked record: dispatch it, skip it, or buffer it for later replay.
+        /// Returns true for BOTH of the cases in which the caller must not dispatch — the record belongs to a prior
+        /// checkpoint version and is dropped, or it is a new-version record inside the fuzzy region, which is
+        /// <b>buffered</b> here (see <paramref name="isBuffered"/>) and replayed at the end of the region. The two are
+        /// distinguished only by <paramref name="isBuffered"/>, and they differ in ownership: a dropped record is the
+        /// caller's to release, a buffered one now belongs to the fuzzy-region buffer.
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="inFuzzyRegion"></param>
         /// <param name="acc"></param>
         /// <param name="asReplica"></param>
-        /// <param name="buffered">True if the record was buffered for later replay (so the caller must not release it).</param>
-        /// <returns></returns>
+        /// <param name="isBuffered">True if the record was added to the fuzzy-region buffer for later replay, which takes
+        /// ownership of it; the caller must then neither dispatch nor release it.</param>
+        /// <returns>True if the caller must not dispatch this record now.</returns>
         /// <exception cref="GarnetException"></exception>
-        bool ShouldSkipRecord(int sublogIdx, bool inFuzzyRegion, ChunkedAccumulator acc, bool asReplica, out bool buffered)
+        bool ShouldSkipRecord(int sublogIdx, bool inFuzzyRegion, ChunkedAccumulator acc, bool asReplica, out bool isBuffered)
         {
-            buffered = false;
+            isBuffered = false;
 
             // Buffer logic only for AOF version > 1
             if (!(asReplica && inFuzzyRegion))
@@ -148,7 +155,7 @@ namespace Garnet.server
                 return false;
 
             aofReplayCoordinator.AddFuzzyRegionOperation(sublogIdx, acc);
-            buffered = true;
+            isBuffered = true;
             return true;
         }
 
