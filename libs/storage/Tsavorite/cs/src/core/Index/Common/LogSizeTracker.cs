@@ -75,12 +75,31 @@ namespace Tsavorite.core
         public bool IsStopped => runState == (int)RunState.Stopped;
 
         /// <summary>
-        /// Indicates whether the background resizer task is currently running (started and not yet stop-requested/stopped).
-        /// Callers on the allocation path use this to decide whether they must evict synchronously themselves (when the
-        /// resizer is not running, such as before it is started or after it has been stopped for shutdown) instead of
-        /// deferring eviction to the resizer, which would never act on the request.
+        /// Set by <see cref="ResizerTask"/> once its body is actually executing. <see cref="Start"/> publishes
+        /// <see cref="RunState.Running"/> and then queues the body with <c>Task.Run</c>, so between those two points the
+        /// resizer is nominally running but cannot act on anything; under thread-pool starvation that window is unbounded.
         /// </summary>
-        public bool IsRunning => runState == (int)RunState.Running;
+        /// <remarks>
+        /// <see cref="RunState.Running"/> must keep being published synchronously in <see cref="Start"/> rather than moved
+        /// here: <see cref="Stop"/> hands off by CAS-ing Running to StopRequested, so if the state were still NotStarted at
+        /// that point the CAS would fail, <see cref="Stop"/> would return without signalling or waiting, and the body would
+        /// then start against an allocator that has already torn down its epoch and buffer pool.
+        /// </remarks>
+        volatile bool resizerDispatched;
+
+        /// <summary>
+        /// Indicates whether the background resizer task is currently running: started, actually dispatched, and not yet
+        /// stop-requested/stopped. Callers on the allocation path use this to decide whether they must evict synchronously
+        /// themselves (when the resizer is not running, such as before it is started or after it has been stopped for
+        /// shutdown) instead of deferring eviction to the resizer, which would never act on the request.
+        /// </summary>
+        /// <remarks>
+        /// This requires <see cref="resizerDispatched"/> rather than <see cref="RunState.Running"/> alone. Deferring to a
+        /// resizer that the thread pool has not dispatched yet stalls the allocation retry loop for as long as dispatch
+        /// takes, which a starved pool makes unbounded; treating that window as "not running" costs nothing when the pool
+        /// is healthy and falls back to the same synchronous page-cap eviction used when there is no size tracker at all.
+        /// </remarks>
+        public bool IsRunning => runState == (int)RunState.Running && resizerDispatched;
 
         /// <summary>
         /// Callback for when we have trimmed memory, such as by shifting headAddress to close records and/or evicting pages.
@@ -264,6 +283,10 @@ namespace Tsavorite.core
         /// </summary>
         async Task ResizerTask(CancellationToken cancellationToken)
         {
+            // Publish that the body is executing, so IsRunning stops reporting a resizer the thread pool has not dispatched
+            // yet. Until this point the allocation path evicts synchronously rather than waiting on a signal we cannot act on.
+            resizerDispatched = true;
+
             while (true)
             {
                 try
