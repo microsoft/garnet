@@ -2461,6 +2461,25 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Prepare a frame's page-load completion event for a new read, reusing the frame's existing event rather than
+        /// allocating one per page.
+        /// </summary>
+        /// <remarks>
+        /// Reuse is safe because a frame is only re-read once its previous load has completed: the scanning thread
+        /// awaits the current frame in <c>WaitForFrameLoad</c> and any read-ahead frame in <c>WaitForPriorFrameLoad</c>
+        /// before re-claiming it, so no completion callback still references the event when it is reset. This keeps one
+        /// event, and so at most one lazily-created kernel wait handle, per frame for the iterator's lifetime; the scan
+        /// iterator's Dispose releases them.
+        /// </remarks>
+        private protected static void PrepareFrameLoadCompletionEvent(ref CountdownEvent completed)
+        {
+            if (completed is null)
+                completed = new CountdownEvent(1);
+            else
+                completed.Reset();
+        }
+
+        /// <summary>
         /// Read pages from specified device
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2470,13 +2489,13 @@ namespace Tsavorite.core
                                         DeviceIOCompletionCallback callback,
                                         TContext context,
                                         BlittableFrame frame,
-                                        out CountdownEvent completed,
+                                        ref CountdownEvent completed,
                                         long devicePageOffset = 0,
                                         IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
         {
             var usedDevice = device ?? this.device;
 
-            completed = new CountdownEvent(1);
+            PrepareFrameLoadCompletionEvent(ref completed);
 
             int pageIndex = (int)(readPage % frame.frameSize);
             if (!frame.IsAllocated(pageIndex))
