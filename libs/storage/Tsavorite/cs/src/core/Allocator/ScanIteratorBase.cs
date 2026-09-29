@@ -440,7 +440,7 @@ namespace Tsavorite.core
             // writing into its buffer, which is the concurrent-reads-into-one-buffer hazard this method exists to prevent.
             // Renew it here, where the frame is prepared for reuse. The old source is left for Dispose rather than
             // disposed now, since a token handed to an in-flight wait may still reference it.
-            if (loadCTSs[frame] is { IsCancellationRequested: true })
+            if (loadCTSs[frame].IsCancellationRequested)
                 loadCTSs[frame] = new CancellationTokenSource();
         }
 
