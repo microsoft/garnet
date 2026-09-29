@@ -12,9 +12,9 @@ namespace Garnet.server
 
         public readonly LongHistogram latency;
 
-        public LatencyMetricsEntry()
+        public LatencyMetricsEntry(int significantDigits)
         {
-            latency = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, 2);
+            latency = new LongHistogram(HISTOGRAM_LOWER_BOUND, HISTOGRAM_UPPER_BOUND, significantDigits);
         }
 
         public void Return()

@@ -183,6 +183,18 @@ namespace Garnet.common
         void ReturnBuffer(GarnetSaeaBuffer buffer)
         {
             Debug.Assert(buffer != null);
+
+            // While the budget is binding, a buffer larger than the adapted send size must not go back on the
+            // per-connection stack: it would be handed straight back out and the connection would never
+            // converge on the smaller size. Dispose it so the pool decides, and the next acquire allocates at
+            // the adapted size. Unpressured this is inert, since nothing is larger than the target.
+            var budget = networkPool.Budget;
+            if (budget.IsUnderPressure && buffer.buffer.entry.Length > budget.TargetSendBufferSize)
+            {
+                buffer.Dispose();
+                return;
+            }
+
             if (!saeaStack.TryPush(buffer))
                 buffer.Dispose();
         }

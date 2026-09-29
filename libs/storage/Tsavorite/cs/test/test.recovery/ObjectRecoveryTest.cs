@@ -4,7 +4,6 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using Tsavorite.test.recovery.sumstore;

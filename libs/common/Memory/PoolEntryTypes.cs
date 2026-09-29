@@ -32,8 +32,11 @@ namespace Garnet.common
         /// <summary>Send buffer for async socket operations (GarnetSaeaBuffer).</summary>
         SaeaSendBuffer = 7,
 
+        /// <summary>Shrunk transport receive buffer for TLS (NetworkHandler).</summary>
+        ShrinkTransportReceiveBuffer = 8,
+
         /// <summary>Out-of-line command payload (NetworkWriter).</summary>
-        OutOfLinePayload = 8,
+        OutOfLinePayload = 9,
     }
 
     /// <summary>

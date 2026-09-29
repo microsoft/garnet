@@ -49,6 +49,18 @@ namespace Garnet.server
 
         SingleWriterMultiReaderLock rwLock = new();
 
+        /// <summary>
+        /// Significant decimal digits of value resolution kept by the latency histograms.
+        /// </summary>
+        public int LatencyPrecision { get; }
+
+        /// <summary>
+        /// Consecutive monitor windows a session must record nothing in before its histograms for that
+        /// latency type are released. Hysteresis, so a connection sending occasional traffic that straddles
+        /// a window boundary does not repeatedly release and re-allocate.
+        /// </summary>
+        internal const int QuiescedWindowsBeforeRelease = 4;
+
         public GarnetServerMonitor(StoreWrapper storeWrapper, GarnetServerOptions opts, IGarnetServer[] servers, ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
@@ -56,6 +68,7 @@ namespace Garnet.server
             this.servers = servers;
             this.logger = logger;
             monitorSamplingFrequency = TimeSpan.FromSeconds(opts.MetricsSamplingFrequency);
+            LatencyPrecision = opts.LatencyMonitorPrecision;
             monitor_iterations = 0;
 
             instant_input_net_bytes = 0;
@@ -95,7 +108,7 @@ namespace Garnet.server
                 if (currSessionMetrics != null) globalMetrics.historySessionMetrics.Add(currSessionMetrics);
                 if (currLatencyMetrics != null) globalMetrics.globalLatencyMetrics.Merge(currLatencyMetrics);
                 if (currCommandStats != null) globalMetrics.historyCommandStats?.Add(currCommandStats);
-                currLatencyMetrics?.Return();
+                currLatencyMetrics?.Release();
             }
             finally { rwLock.WriteUnlock(); }
         }
@@ -153,16 +166,23 @@ namespace Garnet.server
                 // Accumulate latency metrics if latency monitor is enabled
                 if (opts.LatencyMonitor)
                 {
+                    var latencyMetrics = session.GetLatencyMetrics();
                     rwLock.WriteLock();
                     try
                     {
                         // Add accumulated latency metrics for this iteration
-                        globalMetrics.globalLatencyMetrics.Merge(session.GetLatencyMetrics());
+                        globalMetrics.globalLatencyMetrics.Merge(latencyMetrics);
                     }
                     finally
                     {
                         rwLock.WriteUnlock();
                     }
+
+                    // Released after the merge, so the window being released has already been accounted
+                    // for globally. A quiesced session gains nothing by holding them: the histograms are
+                    // cleared every window regardless, so retaining them buys no future work and costs a
+                    // full counts-array clear per window.
+                    latencyMetrics?.ReclaimQuiescedHistograms(QuiescedWindowsBeforeRelease);
                 }
             }
 
@@ -204,6 +224,7 @@ namespace Garnet.server
 
                     garnetServer.ResetConnectionsReceived();
                     garnetServer.ResetConnectionsDiposed();
+                    garnetServer.ResetConnectionsRejected();
                 }
 
                 storeWrapper.clusterProvider?.ResetGossipStats();
@@ -283,6 +304,7 @@ namespace Garnet.server
                     var total_connections_received = 0L;
                     var total_connections_disposed = 0L;
                     var total_connections_active = 0L;
+                    var rejected_connections = 0L;
 
                     // Reset stats accumulator in preparation for scanning and accumulating current iteration stas
                     ResetAndAddGlobalHistory();
@@ -294,6 +316,7 @@ namespace Garnet.server
                         total_connections_received += garnetServer.TotalConnectionsReceived;
                         total_connections_disposed += garnetServer.TotalConnectionsDisposed;
                         total_connections_active += garnetServer.get_conn_active();
+                        rejected_connections += garnetServer.TotalConnectionsRejected;
 
                         // Accumulate stats for the specified for this iteration
                         AddCurrentServerStats(server);
@@ -303,6 +326,7 @@ namespace Garnet.server
                     globalMetrics.total_connections_received = total_connections_received;
                     globalMetrics.total_connections_disposed = total_connections_disposed;
                     globalMetrics.total_connections_active = total_connections_active;
+                    globalMetrics.rejected_connections = rejected_connections;
 
                     // Cleanup if INFO RESET has been issued
                     CleanupGlobalStats();
