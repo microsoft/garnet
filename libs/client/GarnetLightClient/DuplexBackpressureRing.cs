@@ -60,7 +60,7 @@ namespace Garnet.client
     }
 
     /// <summary>
-    /// Transmit one chunk of a request request over the wire. <paramref name="context"/> is the ring-owned
+    /// Transmit one chunk of a request over the wire. <paramref name="context"/> is the ring-owned
     /// flush-completion token that MUST be handed back to
     /// <see cref="LightRequestAsyncFlushResult{TRequest}.CompleteChunk"/> once the
     /// asynchronous send completes. This is the ring's only transport dependency; the chunking and the
@@ -69,13 +69,13 @@ namespace Garnet.client
     internal delegate void ProcessRequest(byte[] buffer, int offset, int length, object context);
 
     /// <summary>
-    /// A duplex, back-pressured ring for out-of-line (chunked) request/response traffic over a single
+    /// A duplex, back-pressured ring for inline and out-of-line request/response traffic over a single
     /// connection. It owns ONE combined address allocator (<see cref="PageOffset"/>) that advances two
     /// logically distinct lanes in a single atomic step:
     /// <list type="bullet">
     /// <item><description>
-    /// The <b>request lane</b> — a circular page buffer of fixed-size, self-referential descriptors. Its
-    /// bytes are flushed to the network and the descriptor slot is freed on flush (send), tracked by
+    /// The <b>request lane</b> — a circular page buffer of request descriptors and inline payloads. Its
+    /// records are flushed to the network and freed on flush (send), tracked by
     /// <c>FlushedUntilAddress</c>. Back-pressure here is local and autonomous (it only waits for the
     /// producer's own flush to catch up).
     /// </description></item>
@@ -104,13 +104,12 @@ namespace Garnet.client
     /// are bounded by the completion-lane capacity; fire-and-forget claims never touch the lane.
     /// </para>
     /// </summary>
-    internal sealed class DuplexBackpressureRing<TRequest, TCompletion> : IDisposable, IFlushCompletionSink
+    internal sealed class DuplexBackpressureRing<TRequest, TCompletion> : IDisposable, IFlushCompletionSink, IOutOfLinePayloadBudget
         where TRequest : struct, IRequest
     {
         /// <summary>
         /// A single fixed-size page in the <see cref="LightNetworkWriter"/> circular buffer.
-        /// The page stores fixed-size out-of-line request descriptors (self-referential log
-        /// addresses), not request bytes; the request bytes live in separately rented buffers.
+        /// The page stores out-of-line request descriptors and complete inline request records.
         /// </summary>
         unsafe struct RingPage
         {
@@ -208,6 +207,13 @@ namespace Garnet.client
         // Completion lane freed on reply (receiver); producers block on this when too many replies are outstanding.
         CompletionEvent completionFreed;
 
+        // Out-of-line payload bytes are reserved before pool rent and before either ring lane is allocated.
+        // The reservation is released only when the payload's final owner disposes it.
+        readonly long maxOutOfLineBytesBudget;
+        long outOfLinePayloadBytes;
+        long peakOutOfLinePayloadBytes;
+        CompletionEvent outOfLinePayloadBudgetFreed;
+
         /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
         internal int CompletionTail => tailPageOffset.TaskId;
 
@@ -254,6 +260,8 @@ namespace Garnet.client
         /// <see cref="PageOffset.kPageMask"/>.</param>
         /// <param name="completionCapacity">Maximum number of outstanding response-expecting requests; rounds
         /// up to a power of two and bounds the completion lane before producers back-pressure on replies.</param>
+        /// <param name="maxOutOfLineBytesBudget">Maximum checked-out bytes across out-of-line request payloads.
+        /// Zero means unlimited.</param>
         /// <param name="maxChunkSizeBytes">Size of a single network send buffer; caps the per-send chunk length.</param>
         /// <param name="operateOnRequest">Transport callback used to flush one request chunk to the network.</param>
         /// <param name="onFlushError">Invoked when a flush send fails, or with a request-validation failure
@@ -264,6 +272,7 @@ namespace Garnet.client
             int ringPageSizeBytes,
             int ringPageCount,
             int completionCapacity,
+            long maxOutOfLineBytesBudget,
             int maxChunkSizeBytes,
             ProcessRequest operateOnRequest,
             Action<Exception> onFlushError,
@@ -272,16 +281,19 @@ namespace Garnet.client
         {
             this.ringPageCount = ringPageCount;
             if (this.ringPageCount > PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
+            if (maxOutOfLineBytesBudget < 0) throw new ArgumentOutOfRangeException(nameof(maxOutOfLineBytesBudget));
 
             ArgumentNullException.ThrowIfNull(operateOnRequest);
             ArgumentNullException.ThrowIfNull(onFlushError);
 
             requestFreed.Initialize();
             completionFreed.Initialize();
+            outOfLinePayloadBudgetFreed.Initialize();
 
             this.epoch = epoch;
             this.ringPageSizeBytes = ringPageSizeBytes;
             this.maxChunkSizeBytes = maxChunkSizeBytes;
+            this.maxOutOfLineBytesBudget = maxOutOfLineBytesBudget;
             this.operateOnRequest = operateOnRequest;
             this.onFlushError = onFlushError;
             this.logger = logger;
@@ -342,6 +354,7 @@ namespace Garnet.client
 
             requestFreed.Dispose();
             completionFreed.Dispose();
+            outOfLinePayloadBudgetFreed.Dispose();
         }
 
         #region Utilities
@@ -505,6 +518,75 @@ namespace Garnet.client
         #endregion
 
         #region Request Implementation
+
+        /// <summary>
+        /// Maximum checked-out bytes permitted for out-of-line payloads. Zero means unlimited.
+        /// </summary>
+        internal long MaxOutOfLineBytesBudget => maxOutOfLineBytesBudget;
+
+        /// <summary>
+        /// Currently reserved out-of-line payload bytes.
+        /// </summary>
+        internal long OutOfLinePayloadBytes => Interlocked.Read(ref outOfLinePayloadBytes);
+
+        /// <summary>
+        /// Highest observed out-of-line payload reservation.
+        /// </summary>
+        internal long PeakOutOfLinePayloadBytes => Interlocked.Read(ref peakOutOfLinePayloadBytes);
+
+        /// <summary>
+        /// Try to reserve bytes before renting an out-of-line payload buffer.
+        /// </summary>
+        internal bool TryReserveOutOfLinePayloadBytes(int bytes, out CompletionEvent waitEvent)
+        {
+            Debug.Assert(bytes > 0);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
+            waitEvent = outOfLinePayloadBudgetFreed;
+
+            if (maxOutOfLineBytesBudget == 0)
+                return true;
+            if (bytes > maxOutOfLineBytesBudget)
+                return false;
+
+            while (true)
+            {
+                var current = Volatile.Read(ref outOfLinePayloadBytes);
+                if (current > maxOutOfLineBytesBudget - bytes)
+                    return false;
+
+                var next = current + bytes;
+                if (Interlocked.CompareExchange(ref outOfLinePayloadBytes, next, current) != current)
+                    continue;
+
+                UpdatePeakOutOfLinePayloadBytes(next);
+                return true;
+            }
+        }
+
+        /// <inheritdoc />
+        public void ReleaseOutOfLinePayloadBytes(int bytes)
+        {
+            if (maxOutOfLineBytesBudget == 0)
+                return;
+
+            Debug.Assert(bytes > 0);
+            var remaining = Interlocked.Add(ref outOfLinePayloadBytes, -bytes);
+            Debug.Assert(remaining >= 0);
+            if (!Volatile.Read(ref disposed))
+                outOfLinePayloadBudgetFreed.Set();
+        }
+
+        void UpdatePeakOutOfLinePayloadBytes(long value)
+        {
+            var peak = Volatile.Read(ref peakOutOfLinePayloadBytes);
+            while (value > peak)
+            {
+                var observed = Interlocked.CompareExchange(ref peakOutOfLinePayloadBytes, value, peak);
+                if (observed == peak)
+                    return;
+                peak = observed;
+            }
+        }
 
         /// <summary>
         /// Peek a record's framing and, when it is live, atomically claim it by setting the taken bit while

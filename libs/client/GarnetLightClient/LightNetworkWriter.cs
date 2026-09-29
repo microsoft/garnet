@@ -47,11 +47,12 @@ namespace Garnet.client
         /// <summary>
         /// Constructor
         /// </summary>
-        public LightNetworkWriter(GarnetLightClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetLightClientTcpNetworkHandler networkHandler, int sendPageSize, int pageBufferCount, int completionCapacity, int networkSendThrottleMax, LightEpoch epoch, PoolOwnerType ownerType, ILogger logger = null)
+        public LightNetworkWriter(GarnetLightClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetLightClientTcpNetworkHandler networkHandler, int sendPageSize, int pageBufferCount, int completionCapacity, long maxOutOfLineBytesBudget, int networkSendThrottleMax, LightEpoch epoch, PoolOwnerType ownerType, ILogger logger = null)
         {
             this.logger = logger;
             this.networkBufferSettings = new NetworkBufferSettings(messageBufferSize, messageBufferSize);
-            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
+            this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger,
+                maxPooledBytes: maxOutOfLineBytesBudget);
 
             // The flush-completion callback is a static routine on the flush result and recovers its ring via
             // the result's sink, so the handler needs no ring instance at construction. That removes the
@@ -73,6 +74,7 @@ namespace Garnet.client
                 sendPageSize,
                 pageBufferCount,
                 completionCapacity,
+                maxOutOfLineBytesBudget,
                 networkBufferSettings.sendBufferSize,
                 networkSender.SendResponse,
                 _ => handler.Dispose(),
@@ -89,7 +91,7 @@ namespace Garnet.client
             networkPool?.Dispose();
         }
 
-        internal LightRequest RentPayloadBuffer(int length)
+        internal int GetPayloadAllocationSize(int length)
         {
             var allocationSize = length;
             if (length <= networkPool.MaxAllocationSize)
@@ -100,10 +102,39 @@ namespace Garnet.client
                     allocationSize = (int)roundedSize;
             }
 
-            var entry = networkPool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
-            ObjectDisposedException.ThrowIf(entry is null, this);
-            return new(entry, length);
+            return allocationSize;
         }
+
+        internal bool IsOutOfLinePayloadWithinBudget(int allocationSize)
+            => ring.MaxOutOfLineBytesBudget == 0 || allocationSize <= ring.MaxOutOfLineBytesBudget;
+
+        internal long MaxOutOfLineBytesBudget => ring.MaxOutOfLineBytesBudget;
+
+        internal bool TryRentPayloadBuffer(int length, int allocationSize, out LightRequest request, out CompletionEvent waitEvent)
+        {
+            request = default;
+            if (!ring.TryReserveOutOfLinePayloadBytes(allocationSize, out waitEvent))
+                return false;
+
+            try
+            {
+                var entry = networkPool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
+                ObjectDisposedException.ThrowIf(entry is null, this);
+                request = new LightRequest(entry, length, allocationSize, ring);
+                return true;
+            }
+            catch
+            {
+                ring.ReleaseOutOfLinePayloadBytes(allocationSize);
+                throw;
+            }
+        }
+
+        internal long OutOfLinePayloadBytes => ring.OutOfLinePayloadBytes;
+
+        internal long PeakOutOfLinePayloadBytes => ring.PeakOutOfLinePayloadBytes;
+
+        internal long PooledBufferBytes => networkPool.PooledBytes;
 
         /// <summary>
         /// Claim a request address and (for response-expecting claims) a completion ticket.

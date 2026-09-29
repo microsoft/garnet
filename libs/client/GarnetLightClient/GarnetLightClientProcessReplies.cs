@@ -226,8 +226,8 @@ namespace Garnet.client
         /// <summary>
         /// Process a batch of received bytes, matching each RESP reply to its outstanding completion in
         /// monotonic ticket order. Completions live in the ring's reply-gated completion lane; the flusher
-        /// registers each one in address order immediately before sending its request, so replies arrive in
-        /// exactly the ticket order this reader consumes them. Returns the number of fully consumed bytes;
+        /// publishes each completion before publishing its request, so replies arrive in exactly the ticket
+        /// order this reader consumes them. Returns the number of fully consumed bytes;
         /// a partial trailing reply leaves <c>readHead</c> short so the caller retains the remainder.
         /// </summary>
         unsafe int ProcessReplies(byte* recvBufferPtr, int bytesRead)
@@ -244,8 +244,8 @@ namespace Garnet.client
                 if (tcsOffset == networkWriter.CompletionTail)
                     ThrowException(new InvalidOperationException("Received a reply while no response was outstanding; fire-and-forget out-of-line commands must not produce a response."));
 
-                // The completion for this reply may not be published yet: the flusher registers it in address
-                // order just before sending the request, so a reply can momentarily precede its visibility.
+                // The completion for this reply may not be published yet if its producer is still between the
+                // paired ticket allocation and completion publication.
                 if (!networkWriter.TryReadCompletion(tcsOffset, out var tcs))
                 {
                     Thread.Yield();

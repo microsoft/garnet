@@ -89,8 +89,9 @@ namespace Garnet.common
         /// <param name="maxEntriesPerLevel"></param>
         /// <param name="ownerType"></param>
         /// <param name="logger"></param>
+        /// <param name="maxPooledBytes">Maximum bytes retained on idle free lists; zero keeps the per-level limit only.</param>
         /// <returns></returns>
-        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, ILogger logger = null)
+        public LimitedFixedBufferPool CreateBufferPool(int maxEntriesPerLevel = 16, PoolOwnerType ownerType = PoolOwnerType.Unknown, ILogger logger = null, long maxPooledBytes = 0)
         {
             var minSize = Math.Min(Math.Min(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
             var maxSize = Math.Max(Math.Max(sendBufferSize, initialReceiveBufferSize), maxReceiveBufferSize);
@@ -98,7 +99,8 @@ namespace Garnet.common
             var levels = LimitedFixedBufferPool.GetLevel(minSize, maxSize) + 1;
             Debug.Assert(levels >= 0);
             levels = Math.Max(4, levels);
-            return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger, ownerType: ownerType);
+            return new LimitedFixedBufferPool(minSize, maxEntriesPerLevel: maxEntriesPerLevel, numLevels: levels, logger: logger,
+                ownerType: ownerType, maxPooledBytes: maxPooledBytes);
         }
 
         public void Log(ILogger logger, string category)

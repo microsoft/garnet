@@ -23,6 +23,8 @@ namespace Garnet.common
     {
         readonly PoolLevel[] pool;
         readonly int numLevels, minAllocationSize, maxEntriesPerLevel;
+        readonly long maxPooledBytes;
+        long pooledBytes;
         /// <summary>
         /// This is the maximum allocated buffer size that the instance can support based on the number of pool levels.
         /// </summary>
@@ -43,6 +45,11 @@ namespace Garnet.common
         /// Maximum allocation size retained by this pool.
         /// </summary>
         public int MaxAllocationSize => maxAllocationSize;
+
+        /// <summary>
+        /// Bytes currently retained on the idle free lists.
+        /// </summary>
+        public long PooledBytes => Interlocked.Read(ref pooledBytes);
 
         /// <summary>
         /// Total outstanding allocation references
@@ -69,13 +76,21 @@ namespace Garnet.common
         /// <summary>
         /// Constructor
         /// </summary>
-        public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, PoolOwnerType ownerType = PoolOwnerType.Unknown, ILogger logger = null)
+        /// <param name="minAllocationSize">Smallest retained size class.</param>
+        /// <param name="maxEntriesPerLevel">Maximum retained entries in each size class.</param>
+        /// <param name="numLevels">Number of power-of-two size classes.</param>
+        /// <param name="ownerType">Pool owner used for diagnostics.</param>
+        /// <param name="logger">Logger instance.</param>
+        /// <param name="maxPooledBytes">Maximum bytes retained across all idle size classes; zero keeps only
+        /// the per-level entry limit.</param>
+        public LimitedFixedBufferPool(int minAllocationSize, int maxEntriesPerLevel = 16, int numLevels = 4, PoolOwnerType ownerType = PoolOwnerType.Unknown, ILogger logger = null, long maxPooledBytes = 0)
         {
             this.minAllocationSize = minAllocationSize;
             this.maxAllocationSize = minAllocationSize << (numLevels - 1);
             this.maxEntriesPerLevel = maxEntriesPerLevel;
             this.numLevels = numLevels;
             this.logger = logger;
+            this.maxPooledBytes = maxPooledBytes > 0 ? maxPooledBytes : long.MaxValue;
             this.ownerByte = (int)ownerType << 8;
             pool = new PoolLevel[numLevels];
         }
@@ -119,17 +134,34 @@ namespace Garnet.common
             {
                 if (pool[level] != null)
                 {
-                    if (Interlocked.Increment(ref pool[level].size) <= maxEntriesPerLevel)
+                    var length = buffer.entry.Length;
+                    var pooledBytesReserved = TryReservePooledBytes(length);
+                    if (pooledBytesReserved && Interlocked.Increment(ref pool[level].size) <= maxEntriesPerLevel)
                     {
                         Array.Clear(buffer.entry, 0, buffer.entry.Length);
                         pool[level].items.Enqueue(buffer);
                     }
-                    else
+                    else if (pooledBytesReserved)
+                    {
                         Interlocked.Decrement(ref pool[level].size);
+                        _ = Interlocked.Add(ref pooledBytes, -length);
+                    }
                 }
             }
             Debug.Assert(totalReferences > 0, $"Return with {totalReferences}");
             Interlocked.Decrement(ref totalReferences);
+        }
+
+        bool TryReservePooledBytes(int length)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref pooledBytes);
+                if (current > maxPooledBytes - length)
+                    return false;
+                if (Interlocked.CompareExchange(ref pooledBytes, current + length, current) == current)
+                    return true;
+            }
         }
 
         /// <summary>
@@ -163,6 +195,7 @@ namespace Garnet.common
                 if (pool[level].items.TryDequeue(out var page))
                 {
                     Interlocked.Decrement(ref pool[level].size);
+                    _ = Interlocked.Add(ref pooledBytes, -page.entry.Length);
                     page.Reuse();
                     page.source = source;
 #if DEBUG
@@ -192,8 +225,11 @@ namespace Garnet.common
             {
                 if (pool[i] == null) continue;
                 // Keep trying Dequeuing until no items left to free
-                while (pool[i].items.TryDequeue(out var _))
+                while (pool[i].items.TryDequeue(out var entry))
+                {
                     Interlocked.Decrement(ref pool[i].size);
+                    _ = Interlocked.Add(ref pooledBytes, -entry.entry.Length);
+                }
             }
         }
 
@@ -239,7 +275,10 @@ namespace Garnet.common
                 while (pool[i].size > 0)
                 {
                     while (pool[i].items.TryDequeue(out var result))
+                    {
                         Interlocked.Decrement(ref pool[i].size);
+                        _ = Interlocked.Add(ref pooledBytes, -result.entry.Length);
+                    }
                     Thread.Yield();
                 }
                 pool[i] = null;
@@ -257,6 +296,7 @@ namespace Garnet.common
                 $"maxEntriesPerLevel={maxEntriesPerLevel}," +
                 $"minAllocationSize={Format.MemoryBytes(minAllocationSize)}," +
                 $"maxAllocationSize={Format.MemoryBytes(maxAllocationSize)}," +
+                $"pooledBytes={Format.MemoryBytes(PooledBytes)}," +
                 $"totalOutOfBoundAllocations={totalOutOfBoundAllocations}";
 
             var bufferStats = "";

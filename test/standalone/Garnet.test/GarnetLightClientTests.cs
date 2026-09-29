@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -177,6 +178,129 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task OutOfLinePayloadBudgetBoundsConcurrentRequests()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            const int budget = 512;
+            using var db = TestUtils.GetGarnetLightClient(
+                sendPageSize: 256,
+                bufferSize: 256,
+                maxOutOfLineBytesBudget: budget);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var requests = new Task<string>[64];
+            var expected = new string[requests.Length];
+            for (var i = 0; i < requests.Length; i++)
+            {
+                expected[i] = $"{i:D2}-{new string('x', 300)}";
+                requests[i] = db.ExecuteForStringResultAsync(ECHO, [expected[i]]);
+            }
+
+            var actual = await Task.WhenAll(requests).ConfigureAwait(false);
+            CollectionAssert.AreEqual(expected, actual);
+            ClassicAssert.AreEqual(budget, db.PeakOutOfLinePayloadBytes);
+            ClassicAssert.AreEqual(0, db.OutOfLinePayloadBytes);
+            ClassicAssert.LessOrEqual(db.PooledBufferBytes, budget);
+        }
+
+        [Test]
+        public async Task OversizedOutOfLineResponseFailsWithoutDisposingClient()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using var db = TestUtils.GetGarnetLightClient(
+                sendPageSize: 256,
+                bufferSize: 256,
+                maxOutOfLineBytesBudget: 256);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await db.ExecuteForStringResultAsync(ECHO, [new string('x', 300)]).ConfigureAwait(false));
+            StringAssert.Contains("512 bytes exceeds the configured maximum of 256 bytes", exception.Message);
+
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, db.OutOfLinePayloadBytes);
+        }
+
+        [Test]
+        public async Task OutOfLinePayloadBudgetSurvivesReconnect()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            const int budget = 512;
+            using var db = TestUtils.GetGarnetLightClient(
+                sendPageSize: 256,
+                bufferSize: 256,
+                maxOutOfLineBytesBudget: budget);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var value = new string('x', 300);
+            ClassicAssert.AreEqual(value, await db.ExecuteForStringResultAsync(ECHO, [value]).ConfigureAwait(false));
+
+            await db.ReconnectAsync().ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(value, await db.ExecuteForStringResultAsync(ECHO, [value]).ConfigureAwait(false));
+            ClassicAssert.AreEqual(budget, db.PeakOutOfLinePayloadBytes);
+            ClassicAssert.AreEqual(0, db.OutOfLinePayloadBytes);
+        }
+
+        [Test]
+        public async Task InlineRequestBypassesOutOfLinePayloadBudget()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using var db = TestUtils.GetGarnetLightClient(
+                sendPageSize: 256,
+                bufferSize: 256,
+                maxOutOfLineBytesBudget: 1);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, db.PeakOutOfLinePayloadBytes);
+        }
+
+        [Test]
+        public void BufferPoolIdleByteCapDropsExcessEntries()
+        {
+            using var pool = new LimitedFixedBufferPool(
+                minAllocationSize: 64,
+                maxEntriesPerLevel: 16,
+                numLevels: 4,
+                maxPooledBytes: 192);
+
+            var small = pool.Get(64);
+            var medium = pool.Get(128);
+            var large = pool.Get(256);
+            small.Dispose();
+            medium.Dispose();
+            large.Dispose();
+
+            ClassicAssert.AreEqual(192, pool.PooledBytes);
+
+            var reused = pool.Get(128);
+            ClassicAssert.AreEqual(64, pool.PooledBytes);
+            reused.Dispose();
+            ClassicAssert.AreEqual(192, pool.PooledBytes);
+
+            pool.Purge();
+            ClassicAssert.AreEqual(0, pool.PooledBytes);
+
+            Parallel.For(0, 10_000, i =>
+            {
+                var size = 64 << (i % 3);
+                pool.Get(size).Dispose();
+            });
+            ClassicAssert.LessOrEqual(pool.PooledBytes, 192);
+            pool.Purge();
+            ClassicAssert.AreEqual(0, pool.PooledBytes);
+        }
+
+        [Test]
         public async Task ChunkedLargePayloadTest()
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
@@ -266,6 +390,63 @@ namespace Garnet.test
             }
 
             ClassicAssert.IsNotNull(delivered, "No fire-and-forget publish reached the subscriber.");
+        }
+
+        [Test]
+        public async Task OversizedNoResponseFailsWithoutDisposingClient()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            server.Start();
+
+            using var db = TestUtils.GetGarnetLightClient(
+                sendPageSize: 256,
+                bufferSize: 256,
+                maxOutOfLineBytesBudget: 256);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var exception = Assert.Throws<InvalidOperationException>(() =>
+                db.ClusterPublishNoResponse("channel"u8.ToArray(), new byte[300]));
+            StringAssert.Contains("512 bytes exceeds the configured maximum of 256 bytes", exception.Message);
+
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+            ClassicAssert.AreEqual(0, db.OutOfLinePayloadBytes);
+        }
+
+        [Test]
+        public async Task OutOfLineNoResponseRequestsObservePayloadBudget()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            server.Start();
+
+            const int budget = 512;
+            using var db = TestUtils.GetGarnetLightClient(
+                sendPageSize: 256,
+                bufferSize: 256,
+                maxOutOfLineBytesBudget: budget);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var channel = "channel"u8.ToArray();
+            var producers = new Task[8];
+            for (var producer = 0; producer < producers.Length; producer++)
+            {
+                var producerId = producer;
+                producers[producer] = Task.Run(() =>
+                {
+                    for (var i = 0; i < 100; i++)
+                    {
+                        var message = Encoding.ASCII.GetBytes($"{producerId:D2}:{i:D3}:{new string('x', 300)}");
+                        db.ClusterPublishNoResponse(channel, message);
+                    }
+                });
+            }
+
+            await Task.WhenAll(producers).ConfigureAwait(false);
+
+            // Every no-response request was published before this PING allocation. PONG therefore proves all
+            // prior requests crossed the budget gate and preserved stream/completion alignment.
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+            ClassicAssert.AreEqual(budget, db.PeakOutOfLinePayloadBytes);
+            ClassicAssert.AreEqual(0, db.OutOfLinePayloadBytes);
         }
 
         [Test]

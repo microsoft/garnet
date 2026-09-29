@@ -23,9 +23,8 @@ namespace Garnet.client
     /// (for example cluster gossip and pub/sub forwarding).
     /// <para>
     /// Unlike <see cref="GarnetClient"/>, this client does not maintain a separate task-id space or a
-    /// producer-side serialization gate. The response completion travels with the payload
-    /// (<see cref="LightRequest"/>); the single-threaded flusher registers each completion in address
-    /// order right before the payload is sent, and replies are matched in that same order.
+    /// producer-side serialization gate. Request allocation assigns response completions monotonically
+    /// ordered tickets in a separate reply-gated lane, and replies are matched in that same order.
     /// </para>
     /// </summary>
     public sealed partial class GarnetLightClient : IServerHook, IMessageConsumer, IDisposable
@@ -42,6 +41,7 @@ namespace Garnet.client
         readonly int sendPageSize;
         readonly int bufferSize;
         readonly int maxOutstandingTasks;
+        readonly long maxOutOfLineBytesBudget;
         readonly LightEpoch epoch;
         readonly bool isEpochOwned;
         LightNetworkWriter networkWriter;
@@ -89,6 +89,12 @@ namespace Garnet.client
         /// </summary>
         public int SendPageSize => sendPageSize;
 
+        internal long OutOfLinePayloadBytes => networkWriter?.OutOfLinePayloadBytes ?? 0;
+
+        internal long PeakOutOfLinePayloadBytes => networkWriter?.PeakOutOfLinePayloadBytes ?? 0;
+
+        internal long PooledBufferBytes => networkWriter?.PooledBufferBytes ?? 0;
+
         /// <summary>
         /// Create client instance
         /// </summary>
@@ -106,6 +112,7 @@ namespace Garnet.client
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="epoch">Shared epoch instance for thread protection; if null, a new instance is created and owned by this client</param>
         /// <param name="logger">Logger instance</param>
+        /// <param name="maxOutOfLineBytesBudget">Maximum checked-out bytes for out-of-line request payloads; zero means unlimited</param>
         public GarnetLightClient(
             EndPoint endpoint,
             SslClientAuthenticationOptions tlsOptions = null,
@@ -120,7 +127,8 @@ namespace Garnet.client
             bool useTimeoutChecker = true,
             int networkSendThrottleMax = 8,
             LightEpoch epoch = null,
-            ILogger logger = null)
+            ILogger logger = null,
+            long maxOutOfLineBytesBudget = 0)
         {
             EndPoint = endpoint;
             this.sendPageSize = (int)Utility.PreviousPowerOf2(sendPageSize);
@@ -134,8 +142,11 @@ namespace Garnet.client
 
             if (maxOutstandingTasks != (int)Utility.PreviousPowerOf2(maxOutstandingTasks))
                 ThrowException(new Exception($"Maximum outstanding tasks should be a power of two, up to {PageOffset.kTaskMask + 1}"));
+            if (maxOutOfLineBytesBudget < 0)
+                throw new ArgumentOutOfRangeException(nameof(maxOutOfLineBytesBudget));
 
             this.maxOutstandingTasks = maxOutstandingTasks;
+            this.maxOutOfLineBytesBudget = maxOutOfLineBytesBudget;
             this.sslOptions = tlsOptions;
             this.disposed = 0;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
@@ -167,7 +178,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocket();
-            networkWriter = new LightNetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, PageBufferCount, maxOutstandingTasks, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
+            networkWriter = new LightNetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, PageBufferCount, maxOutstandingTasks, maxOutOfLineBytesBudget, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
             networkHandler.Start(sslOptions, EndPoint.ToString(), token);
 
             if (timeoutMilliseconds > 0)
@@ -182,7 +193,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
-            networkWriter = new LightNetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, PageBufferCount, maxOutstandingTasks, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
+            networkWriter = new LightNetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, PageBufferCount, maxOutstandingTasks, maxOutOfLineBytesBudget, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
@@ -263,6 +274,7 @@ namespace Garnet.client
             {
                 socket?.Dispose();
                 networkWriter?.Dispose();
+                tcsOffset = 0;
             }
             catch { }
             await ConnectAsync(token).ConfigureAwait(false);
@@ -455,7 +467,14 @@ namespace Garnet.client
 
             // Out-of-line rents its payload buffer and serializes into it up front, outside the epoch. Inline
             // rents nothing and defers serialization until it owns a page slot (written under the epoch below).
-            var payload = inline ? default : networkWriter.RentPayloadBuffer(totalLength);
+            var allocationSize = inline ? 0 : networkWriter.GetPayloadAllocationSize(totalLength);
+            if (!inline && !networkWriter.IsOutOfLinePayloadWithinBudget(allocationSize))
+            {
+                CompleteOnFailure(tcs, CreateOutOfLinePayloadBudgetException(allocationSize));
+                return;
+            }
+
+            LightRequest payload = default;
             var payloadRegistered = false;
 
             // Serialize the command's RESP bytes into the span [curr, end). Shared by both paths so the wire
@@ -485,10 +504,31 @@ namespace Garnet.client
             {
                 if (!inline)
                 {
-                    unsafe
+                    try
                     {
-                        fixed (byte* payloadPtr = payload.Buffer)
-                            SerializeCommand(payloadPtr, payloadPtr + payload.Length);
+                        while (!networkWriter.TryRentPayloadBuffer(totalLength, allocationSize, out payload, out var budgetFreed))
+                        {
+                            token.ThrowIfCancellationRequested();
+                            if (!IsConnected)
+                            {
+                                Dispose();
+                                CompleteOnFailure(tcs, disposeException);
+                                return;
+                            }
+
+                            await budgetFreed.WaitAsync(token).ConfigureAwait(false);
+                        }
+
+                        unsafe
+                        {
+                            fixed (byte* payloadPtr = payload.Buffer)
+                                SerializeCommand(payloadPtr, payloadPtr + payload.Length);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        CompleteOnFailure(tcs, ex);
+                        return;
                     }
                 }
 
@@ -610,7 +650,11 @@ namespace Garnet.client
 
             var inline = networkWriter.CanInline(totalLength);
             var recordSize = inline ? networkWriter.InlineRecordSize(totalLength) : PayloadDescriptorSize;
-            var payload = inline ? default : networkWriter.RentPayloadBuffer(totalLength);
+            var allocationSize = inline ? 0 : networkWriter.GetPayloadAllocationSize(totalLength);
+            if (!inline && !networkWriter.IsOutOfLinePayloadWithinBudget(allocationSize))
+                throw CreateOutOfLinePayloadBudgetException(allocationSize);
+
+            LightRequest payload = default;
             var payloadRegistered = false;
 
             static unsafe void SerializeCommand(byte* curr, byte* end, int arraySize, ReadOnlySpan<byte> respOp,
@@ -633,6 +677,18 @@ namespace Garnet.client
             {
                 if (!inline)
                 {
+                    while (!networkWriter.TryRentPayloadBuffer(totalLength, allocationSize, out payload, out var budgetFreed))
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (!IsConnected)
+                        {
+                            Dispose();
+                            ThrowException(disposeException);
+                        }
+
+                        budgetFreed.Wait(token);
+                    }
+
                     unsafe
                     {
                         fixed (byte* payloadPtr = payload.Buffer)
@@ -709,6 +765,61 @@ namespace Garnet.client
             }
         }
 
+        InvalidOperationException CreateOutOfLinePayloadBudgetException(int allocationSize)
+            => new($"Out-of-line payload allocation of {allocationSize} bytes exceeds the configured maximum of {networkWriter.MaxOutOfLineBytesBudget} bytes.");
+
+        static void CompleteOnFailure(TcsWrapper tcs, Exception exception)
+        {
+            switch (tcs.taskType)
+            {
+                case TaskType.StringCallback:
+                    tcs.stringCallback?.Invoke(-1, null);
+                    break;
+                case TaskType.MemoryByteCallback:
+                    tcs.memoryByteCallback?.Invoke(-1, default);
+                    break;
+                case TaskType.StringAsync:
+                    if (exception is OperationCanceledException stringCanceled)
+                        tcs.stringTcs?.TrySetCanceled(stringCanceled.CancellationToken);
+                    else
+                        tcs.stringTcs?.TrySetException(exception);
+                    break;
+                case TaskType.StringArrayAsync:
+                    if (exception is OperationCanceledException stringArrayCanceled)
+                        tcs.stringArrayTcs?.TrySetCanceled(stringArrayCanceled.CancellationToken);
+                    else
+                        tcs.stringArrayTcs?.TrySetException(exception);
+                    break;
+                case TaskType.MemoryByteAsync:
+                    if (exception is OperationCanceledException memoryCanceled)
+                        tcs.memoryByteTcs?.TrySetCanceled(memoryCanceled.CancellationToken);
+                    else
+                        tcs.memoryByteTcs?.TrySetException(exception);
+                    break;
+                case TaskType.MemoryByteArrayAsync:
+                    if (exception is OperationCanceledException memoryArrayCanceled)
+                        tcs.memoryByteArrayTcs?.TrySetCanceled(memoryArrayCanceled.CancellationToken);
+                    else
+                        tcs.memoryByteArrayTcs?.TrySetException(exception);
+                    break;
+                case TaskType.StringArrayCallback:
+                    tcs.stringArrayCallback?.Invoke(-1, default, default);
+                    break;
+                case TaskType.MemoryByteArrayCallback:
+                    tcs.memoryByteArrayCallback?.Invoke(-1, default, default);
+                    break;
+                case TaskType.LongAsync:
+                    tcs.longTcs?.TrySetException(exception);
+                    break;
+                case TaskType.LongCallback:
+                    tcs.longCallback?.Invoke(-1, default, null);
+                    break;
+                case TaskType.None:
+                default:
+                    break;
+            }
+        }
+
         static void ThrowException(Exception e) => throw e;
 
         /// <summary>
@@ -751,42 +862,7 @@ namespace Garnet.client
         {
             if (!networkWriter.TryClaimCompletionTicket(taskId, out var tcs))
                 return;
-
-            switch (tcs.taskType)
-            {
-                case TaskType.StringCallback:
-                    tcs.stringCallback?.Invoke(-1, null);
-                    break;
-                case TaskType.MemoryByteCallback:
-                    tcs.memoryByteCallback?.Invoke(-1, default);
-                    break;
-                case TaskType.StringAsync:
-                    tcs.stringTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.StringArrayAsync:
-                    tcs.stringArrayTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.MemoryByteAsync:
-                    tcs.memoryByteTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.MemoryByteArrayAsync:
-                    tcs.memoryByteArrayTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.StringArrayCallback:
-                    tcs.stringArrayCallback?.Invoke(-1, default, default);
-                    break;
-                case TaskType.MemoryByteArrayCallback:
-                    tcs.memoryByteArrayCallback?.Invoke(-1, default, default);
-                    break;
-                case TaskType.LongAsync:
-                    tcs.longTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.LongCallback:
-                    tcs.longCallback?.Invoke(-1, default, null);
-                    break;
-                case TaskType.None:
-                    break;
-            }
+            CompleteOnFailure(tcs, disposeException);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

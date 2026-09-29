@@ -26,13 +26,18 @@ namespace Garnet.test
         readonly int length;
         readonly long id;
         readonly ConcurrentDictionary<long, int> disposeCounts;
+        readonly int reservedBytes;
+        readonly IOutOfLinePayloadBudget budget;
 
-        internal TestRequest(byte[] buffer, int length, long id, ConcurrentDictionary<long, int> disposeCounts)
+        internal TestRequest(byte[] buffer, int length, long id, ConcurrentDictionary<long, int> disposeCounts,
+            int reservedBytes = 0, IOutOfLinePayloadBudget budget = null)
         {
             this.buffer = buffer;
             this.length = length;
             this.id = id;
             this.disposeCounts = disposeCounts;
+            this.reservedBytes = reservedBytes;
+            this.budget = budget;
         }
 
         /// <inheritdoc />
@@ -44,8 +49,15 @@ namespace Garnet.test
         /// <inheritdoc />
         public void Dispose()
         {
-            if (disposeCounts != null)
-                disposeCounts.AddOrUpdate(id, 1, (_, c) => c + 1);
+            try
+            {
+                if (disposeCounts != null)
+                    disposeCounts.AddOrUpdate(id, 1, (_, c) => c + 1);
+            }
+            finally
+            {
+                budget?.ReleaseOutOfLinePayloadBytes(reservedBytes);
+            }
         }
     }
 
@@ -130,20 +142,25 @@ namespace Garnet.test
         long nextRequestId;
 
         readonly ConcurrentQueue<Exception> flushErrors = new();
+        readonly ConcurrentQueue<object> deferredCompletions = new();
         volatile Func<int, bool> failPredicate;
+        volatile bool deferCompletions;
         int sendCallIndex;
 
-        internal RingTestHarness(int pageSize, int pageCount, int completionCapacity, int maxChunkSize)
+        internal RingTestHarness(int pageSize, int pageCount, int completionCapacity, int maxChunkSize, long maxOutOfLineBytesBudget = 0)
         {
             epoch = new LightEpoch();
             Ring = new DuplexBackpressureRing<TestRequest, int>(
-                pageSize, pageCount, completionCapacity, maxChunkSize, Send, OnFlushError, epoch);
+                pageSize, pageCount, completionCapacity, maxOutOfLineBytesBudget, maxChunkSize, Send, OnFlushError, epoch);
         }
 
         internal int CompletedCount => Volatile.Read(ref completedCount);
         internal IReadOnlyCollection<byte[]> Completed => completed;
         internal IReadOnlyCollection<Exception> FlushErrors => flushErrors;
         internal int MaxInlinePayloadSize => Ring.MaxInlinePayloadSize;
+        internal long OutOfLinePayloadBytes => Ring.OutOfLinePayloadBytes;
+        internal long PeakOutOfLinePayloadBytes => Ring.PeakOutOfLinePayloadBytes;
+        internal int DeferredCompletionCount => deferredCompletions.Count;
 
         /// <summary>Number of completion tickets the ring has issued so far (response-expecting claims).</summary>
         internal int CompletionTail => Ring.CompletionTail;
@@ -159,6 +176,21 @@ namespace Garnet.test
 
         /// <summary>Inject a send failure whenever the predicate (called with a monotonic send-call index) is true.</summary>
         internal void SetFailurePredicate(Func<int, bool> predicate) => failPredicate = predicate;
+
+        internal void DeferCompletions() => deferCompletions = true;
+
+        internal bool CompleteOneDeferredChunk()
+        {
+            if (!deferredCompletions.TryDequeue(out var context))
+                return false;
+            CompleteSend(context);
+            return true;
+        }
+
+        internal bool TryReserveOutOfLinePayloadBytes(int bytes, out CompletionEvent waitEvent)
+            => Ring.TryReserveOutOfLinePayloadBytes(bytes, out waitEvent);
+
+        internal long TailAddress => Ring.GetTailAddress();
 
         void OnFlushError(Exception ex) => flushErrors.Enqueue(ex ?? new InvalidOperationException("flush error with null exception"));
 
@@ -178,6 +210,14 @@ namespace Garnet.test
                     acc.Add(buffer[offset + i]);
             }
 
+            if (deferCompletions)
+                deferredCompletions.Enqueue(context);
+            else
+                CompleteSend(context);
+        }
+
+        void CompleteSend(object context)
+        {
             var result = (LightRequestAsyncFlushResult<TestRequest>)context;
             LightRequestAsyncFlushResult<TestRequest>.CompleteChunk(context);
 
@@ -185,12 +225,14 @@ namespace Garnet.test
             // a context's chunks are sequential, exactly the last-chunk sender observes zero and finalizes.
             if (Volatile.Read(ref result.remainingChunks) == 0)
             {
-                reassembly.TryRemove(context, out _);
-                byte[] payload;
-                lock (acc)
-                    payload = acc.ToArray();
-                completed.Add(payload);
-                Interlocked.Increment(ref completedCount);
+                if (reassembly.TryRemove(context, out var acc))
+                {
+                    byte[] payload;
+                    lock (acc)
+                        payload = acc.ToArray();
+                    completed.Add(payload);
+                    Interlocked.Increment(ref completedCount);
+                }
             }
         }
 
@@ -203,6 +245,31 @@ namespace Garnet.test
             var totalLength = payload.Length;
             var inline = Ring.CanInline(totalLength);
             var size = inline ? DuplexBackpressureRing<TestRequest, int>.InlineRecordSize(totalLength) : DescriptorSize;
+            TestRequest outOfLineRequest = default;
+            var outOfLineRequestCreated = false;
+            var outOfLineRequestRegistered = false;
+
+            if (!inline)
+            {
+                while (!Ring.TryReserveOutOfLinePayloadBytes(totalLength, out var budgetFreed))
+                {
+                    token.ThrowIfCancellationRequested();
+                    await budgetFreed.WaitAsync(token).ConfigureAwait(false);
+                }
+
+                var id = Interlocked.Increment(ref nextRequestId);
+                createdOutOfLineIds[id] = 0;
+                try
+                {
+                    outOfLineRequest = new TestRequest((byte[])payload.Clone(), totalLength, id, disposeCounts, totalLength, Ring);
+                }
+                catch
+                {
+                    Ring.ReleaseOutOfLinePayloadBytes(totalLength);
+                    throw;
+                }
+                outOfLineRequestCreated = true;
+            }
 
             epoch.Resume();
             try
@@ -240,22 +307,8 @@ namespace Garnet.test
                 }
                 else
                 {
-                    var id = Interlocked.Increment(ref nextRequestId);
-                    createdOutOfLineIds[id] = 0;
-                    var req = new TestRequest((byte[])payload.Clone(), totalLength, id, disposeCounts);
-                    var registered = false;
-                    try
-                    {
-                        Ring.RegisterRequest(address, req);
-                        registered = true;
-                    }
-                    finally
-                    {
-                        // If publication threw (teardown), the ring never took ownership — dispose it here so
-                        // the exactly-once accounting still holds.
-                        if (!registered)
-                            req.Dispose();
-                    }
+                    Ring.RegisterRequest(address, outOfLineRequest);
+                    outOfLineRequestRegistered = true;
                 }
 
                 epoch.ProtectAndDrain();
@@ -264,6 +317,10 @@ namespace Garnet.test
             finally
             {
                 epoch.Suspend();
+                // If publication threw (teardown), the ring never took ownership — dispose it here so
+                // the exactly-once accounting and budget reservation are both released.
+                if (outOfLineRequestCreated && !outOfLineRequestRegistered)
+                    outOfLineRequest.Dispose();
             }
         }
 
