@@ -19,6 +19,7 @@ namespace Garnet.server
         /// <summary>
         /// Version map for watch validation
         /// </summary>
+        /// <remarks>Keyed by key hash alone; hash collisions are acceptable by design.</remarks>
         readonly WatchVersionMap versionMap;
 
         readonly int initialSliceBufferSize;
@@ -54,6 +55,10 @@ namespace Garnet.server
             watchScratchBufferAllocator.Reset();
         }
 
+        /// <summary>
+        /// Stop watching a key. Matches on the full key bytes, not the hash, and soft-deletes the entry by clearing
+        /// <see cref="WatchedKeySlice.isWatched"/>.
+        /// </summary>
         public bool RemoveWatch(PinnedSpanByte key)
         {
             for (var i = 0; i < sliceCount; i++)
@@ -67,6 +72,14 @@ namespace Garnet.server
             return false;
         }
 
+        /// <summary>
+        /// Start watching a key: copy its bytes into this container's allocator and record the current version of its
+        /// hash slot.
+        /// </summary>
+        /// <remarks>
+        /// The hash is the only identity carried into <see cref="versionMap"/>; hash collisions are acceptable by
+        /// design, see <see cref="WatchedKeySlice.hash"/>. The copied bytes serve locking and slot verification.
+        /// </remarks>
         public void AddWatch(PinnedSpanByte key)
         {
             if (sliceCount >= sliceBufferSize)
@@ -92,7 +105,11 @@ namespace Garnet.server
         /// <summary>
         /// Validate record version to validate that records are unmodified
         /// </summary>
-        /// <returns></returns>
+        /// <returns>True if every watched key's version slot still holds the value read at WATCH; false otherwise.</returns>
+        /// <remarks>
+        /// Compares by hash alone, so a write to a different key sharing a version slot fails this check and aborts the
+        /// transaction. Hash collisions are acceptable by design; see <see cref="WatchedKeySlice.hash"/>.
+        /// </remarks>
         public bool ValidateWatchVersion()
         {
             for (var i = 0; i < sliceCount; i++)
@@ -105,6 +122,9 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Add each still-watched key to the transaction's lock set, using the copied key bytes rather than the hash.
+        /// </summary>
         public bool SaveKeysToLock(TransactionManager txnManager)
         {
             for (var i = 0; i < sliceCount; i++)
@@ -118,6 +138,10 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Add every watched key to the transaction's key list for cluster slot verification, using the copied key
+        /// bytes rather than the hash.
+        /// </summary>
         public bool SaveKeysToKeyList(TransactionManager txnManager)
         {
             for (var i = 0; i < sliceCount; i++)
