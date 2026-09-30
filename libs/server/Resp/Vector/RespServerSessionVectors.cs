@@ -1874,7 +1874,7 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Invalid VectorDistanceMetricType: {distanceMetricType}"),
             };
 
-            WriteMapLength(importPending? 7 : 8);
+            WriteMapLength(importPending ? 7 : 8);
             WriteSimpleString("quant-type"u8);
             WriteSimpleString(quantTypeSpan);
             WriteSimpleString("distance-metric"u8);
