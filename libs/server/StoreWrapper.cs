@@ -431,6 +431,9 @@ namespace Garnet.server
             return databaseManager.TakeCheckpointAsync(background, dbId, token, logger);
         }
 
+        internal Task<CheckpointStatus> TakeScheduledCheckpointAsync(CancellationToken token = default, ILogger logger = null)
+            => databaseManager.TakeScheduledCheckpointAsync(token, logger);
+
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
         /// </summary>
@@ -722,7 +725,7 @@ namespace Garnet.server
                         (clusterProvider?.IsReplica() ?? false) || !AnyDatabaseDirty())
                         continue;
 
-                    var status = await TakeCheckpointAsync(false, dbId: -1, token: token, logger: logger).ConfigureAwait(false);
+                    var status = await TakeScheduledCheckpointAsync(token, logger).ConfigureAwait(false);
                     if (status != CheckpointStatus.Success)
                     {
                         if (status == CheckpointStatus.AlreadyInProgress)

@@ -41,6 +41,10 @@ namespace Garnet.server
         public abstract Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
+        public virtual Task<CheckpointStatus> TakeScheduledCheckpointAsync(CancellationToken token = default, ILogger logger = null)
+            => TakeCheckpointAsync(false, token: token, logger: logger);
+
+        /// <inheritdoc/>
         public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
 
         /// <inheritdoc/>

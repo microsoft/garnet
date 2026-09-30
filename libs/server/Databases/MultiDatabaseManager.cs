@@ -162,6 +162,13 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public override Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
+            => TakeCheckpointAsync(background, dbId, token, logger, requireAllDatabases: false);
+
+        /// <inheritdoc/>
+        public override Task<CheckpointStatus> TakeScheduledCheckpointAsync(CancellationToken token = default, ILogger logger = null)
+            => TakeCheckpointAsync(false, -1, token, logger, requireAllDatabases: true);
+
+        Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId, CancellationToken token, ILogger logger, bool requireAllDatabases)
         {
             // Acquire databasesContentLock (read) so a concurrent swap-db can't move GarnetDatabase
             // wrappers out from under us mid-checkpoint (which would mis-attribute LASTSAVE to the
@@ -202,6 +209,17 @@ namespace Garnet.server
                         var id = activeDbIdsMapSnapshot[i];
                         if (TryPauseCheckpoints(id))
                             pausedDbIds[pausedCount++] = id;
+                        else if (requireAllDatabases)
+                        {
+                            for (var j = 0; j < pausedCount; j++)
+                                ResumeCheckpoints(pausedDbIds[j]);
+
+                            if (multiDbLockHeld)
+                                multiDbCheckpointingLock.WriteUnlock();
+
+                            databasesContentLock.ReadUnlock();
+                            return Task.FromResult(CheckpointStatus.AlreadyInProgress);
+                        }
                         else
                             logger?.LogWarning("Checkpoint skipped database {dbId}: another checkpoint is in progress", id);
                     }

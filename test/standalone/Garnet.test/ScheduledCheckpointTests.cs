@@ -193,6 +193,58 @@ namespace Garnet.test
             Assert.That((long)db1.Execute("LASTSAVE", 1), Is.GreaterThan(0));
         }
 
+        [TestCase(0)]
+        [TestCase(1)]
+        [TestCase(2)]
+        public async Task ScheduledCheckpointSkipsAllDatabasesWhenOneIsBusyAsync(int busyDbId)
+        {
+            StartServer(int.MaxValue);
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var store = server.Provider.StoreWrapper;
+            for (var id = 0; id < 3; id++)
+                redis.GetDatabase(id).StringSet("key", "value");
+
+            Assert.That(await store.TakeScheduledCheckpointAsync().ConfigureAwait(false), Is.EqualTo(CheckpointStatus.Success));
+            var databases = store.GetDatabasesSnapshot();
+            var lastSaveTimes = Array.ConvertAll(databases, db => db.LastSaveTime);
+            redis.GetDatabase(busyDbId).StringSet("key", "updated");
+            Assert.That(store.TryPauseCheckpoints(busyDbId), Is.True);
+            try
+            {
+                Assert.That(await store.TakeScheduledCheckpointAsync().ConfigureAwait(false), Is.EqualTo(CheckpointStatus.AlreadyInProgress));
+                for (var i = 0; i < databases.Length; i++)
+                {
+                    Assert.That(databases[i].LastSaveTime, Is.EqualTo(lastSaveTimes[i]));
+                    Assert.That(databases[i].CheckpointDirtyState.IsDirty, Is.EqualTo(databases[i].Id == busyDbId));
+                    if (databases[i].Id == busyDbId)
+                        continue;
+
+                    Assert.That(store.TryPauseCheckpoints(databases[i].Id), Is.True, "Skipped attempts must release acquired locks");
+                    store.ResumeCheckpoints(databases[i].Id);
+                }
+
+                Assert.That(await store.TakeCheckpointAsync(false).ConfigureAwait(false), Is.EqualTo(CheckpointStatus.AlreadyInProgress));
+                for (var i = 0; i < databases.Length; i++)
+                {
+                    if (databases[i].Id == busyDbId)
+                        Assert.That(databases[i].LastSaveTime, Is.EqualTo(lastSaveTimes[i]));
+                    else
+                        Assert.That(databases[i].LastSaveTime, Is.GreaterThan(lastSaveTimes[i]), "Manual saves still checkpoint available databases");
+                }
+            }
+            finally
+            {
+                store.ResumeCheckpoints(busyDbId);
+            }
+
+            Assert.That(await store.TakeScheduledCheckpointAsync().ConfigureAwait(false), Is.EqualTo(CheckpointStatus.Success));
+            for (var i = 0; i < databases.Length; i++)
+            {
+                Assert.That(databases[i].LastSaveTime, Is.GreaterThan(lastSaveTimes[i]));
+                Assert.That(databases[i].CheckpointDirtyState.IsDirty, Is.False);
+            }
+        }
+
         [Test]
         public void FailedScheduledCheckpointRetries()
         {
