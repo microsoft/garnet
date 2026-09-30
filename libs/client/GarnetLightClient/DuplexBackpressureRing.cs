@@ -104,7 +104,7 @@ namespace Garnet.client
     /// are bounded by the completion-lane capacity; fire-and-forget claims never touch the lane.
     /// </para>
     /// </summary>
-    internal sealed class DuplexBackpressureRing<TRequest, TCompletion> : IDisposable, IFlushCompletionSink, IOutOfLinePayloadBudget
+    internal sealed class DuplexBackpressureRing<TRequest, TCompletion> : IDisposable, IFlushCompletionSink
         where TRequest : struct, IRequest
     {
         /// <summary>
@@ -207,13 +207,6 @@ namespace Garnet.client
         // Completion lane freed on reply (receiver); producers block on this when too many replies are outstanding.
         CompletionEvent completionFreed;
 
-        // Out-of-line payload bytes are reserved before pool rent and before either ring lane is allocated.
-        // The reservation is released only when the payload's final owner disposes it.
-        readonly long maxOutOfLineBytesBudget;
-        long outOfLinePayloadBytes;
-        long peakOutOfLinePayloadBytes;
-        CompletionEvent outOfLinePayloadBudgetFreed;
-
         /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
         internal int CompletionTail => tailPageOffset.TaskId;
 
@@ -260,8 +253,6 @@ namespace Garnet.client
         /// <see cref="PageOffset.kPageMask"/>.</param>
         /// <param name="completionCapacity">Maximum number of outstanding response-expecting requests; rounds
         /// up to a power of two and bounds the completion lane before producers back-pressure on replies.</param>
-        /// <param name="maxOutOfLineBytesBudget">Maximum checked-out bytes across out-of-line request payloads.
-        /// Zero means unlimited.</param>
         /// <param name="maxChunkSizeBytes">Size of a single network send buffer; caps the per-send chunk length.</param>
         /// <param name="operateOnRequest">Transport callback used to flush one request chunk to the network.</param>
         /// <param name="onFlushError">Invoked when a flush send fails, or with a request-validation failure
@@ -272,7 +263,6 @@ namespace Garnet.client
             int ringPageSizeBytes,
             int ringPageCount,
             int completionCapacity,
-            long maxOutOfLineBytesBudget,
             int maxChunkSizeBytes,
             ProcessRequest operateOnRequest,
             Action<Exception> onFlushError,
@@ -281,19 +271,16 @@ namespace Garnet.client
         {
             this.ringPageCount = ringPageCount;
             if (this.ringPageCount > PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
-            if (maxOutOfLineBytesBudget < 0) throw new ArgumentOutOfRangeException(nameof(maxOutOfLineBytesBudget));
 
             ArgumentNullException.ThrowIfNull(operateOnRequest);
             ArgumentNullException.ThrowIfNull(onFlushError);
 
             requestFreed.Initialize();
             completionFreed.Initialize();
-            outOfLinePayloadBudgetFreed.Initialize();
 
             this.epoch = epoch;
             this.ringPageSizeBytes = ringPageSizeBytes;
             this.maxChunkSizeBytes = maxChunkSizeBytes;
-            this.maxOutOfLineBytesBudget = maxOutOfLineBytesBudget;
             this.operateOnRequest = operateOnRequest;
             this.onFlushError = onFlushError;
             this.logger = logger;
@@ -354,7 +341,6 @@ namespace Garnet.client
 
             requestFreed.Dispose();
             completionFreed.Dispose();
-            outOfLinePayloadBudgetFreed.Dispose();
         }
 
         #region Utilities
@@ -518,75 +504,6 @@ namespace Garnet.client
         #endregion
 
         #region Request Implementation
-
-        /// <summary>
-        /// Maximum checked-out bytes permitted for out-of-line payloads. Zero means unlimited.
-        /// </summary>
-        internal long MaxOutOfLineBytesBudget => maxOutOfLineBytesBudget;
-
-        /// <summary>
-        /// Currently reserved out-of-line payload bytes.
-        /// </summary>
-        internal long OutOfLinePayloadBytes => Interlocked.Read(ref outOfLinePayloadBytes);
-
-        /// <summary>
-        /// Highest observed out-of-line payload reservation.
-        /// </summary>
-        internal long PeakOutOfLinePayloadBytes => Interlocked.Read(ref peakOutOfLinePayloadBytes);
-
-        /// <summary>
-        /// Try to reserve bytes before renting an out-of-line payload buffer.
-        /// </summary>
-        internal bool TryReserveOutOfLinePayloadBytes(int bytes, out CompletionEvent waitEvent)
-        {
-            Debug.Assert(bytes > 0);
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
-            waitEvent = outOfLinePayloadBudgetFreed;
-
-            if (maxOutOfLineBytesBudget == 0)
-                return true;
-            if (bytes > maxOutOfLineBytesBudget)
-                return false;
-
-            while (true)
-            {
-                var current = Volatile.Read(ref outOfLinePayloadBytes);
-                if (current > maxOutOfLineBytesBudget - bytes)
-                    return false;
-
-                var next = current + bytes;
-                if (Interlocked.CompareExchange(ref outOfLinePayloadBytes, next, current) != current)
-                    continue;
-
-                UpdatePeakOutOfLinePayloadBytes(next);
-                return true;
-            }
-        }
-
-        /// <inheritdoc />
-        public void ReleaseOutOfLinePayloadBytes(int bytes)
-        {
-            if (maxOutOfLineBytesBudget == 0)
-                return;
-
-            Debug.Assert(bytes > 0);
-            var remaining = Interlocked.Add(ref outOfLinePayloadBytes, -bytes);
-            Debug.Assert(remaining >= 0);
-            if (!Volatile.Read(ref disposed))
-                outOfLinePayloadBudgetFreed.Set();
-        }
-
-        void UpdatePeakOutOfLinePayloadBytes(long value)
-        {
-            var peak = Volatile.Read(ref peakOutOfLinePayloadBytes);
-            while (value > peak)
-            {
-                var observed = Interlocked.CompareExchange(ref peakOutOfLinePayloadBytes, value, peak);
-                if (observed == peak)
-                    return;
-                peak = observed;
-            }
-        }
 
         /// <summary>
         /// Peek a record's framing and, when it is live, atomically claim it by setting the taken bit while

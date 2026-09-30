@@ -1589,7 +1589,7 @@ namespace Garnet.test
         }
 
         public static GarnetLightClient GetGarnetLightClient(EndPoint endpoint = null, bool useTLS = false, client.LightEpoch epoch = null,
-            int sendPageSize = 1 << 21, int bufferSize = 1 << 17, int maxOutstandingTasks = 1 << 19, long maxOutOfLineBytesBudget = 0)
+            int sendPageSize = 1 << 21, int bufferSize = 1 << 17, int maxOutstandingTasks = 1 << 19)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -1603,7 +1603,7 @@ namespace Garnet.test
                 };
             }
             return new GarnetLightClient(endpoint ?? EndPoint, sslOptions, sendPageSize: sendPageSize, bufferSize: bufferSize,
-                maxOutstandingTasks: maxOutstandingTasks, maxOutOfLineBytesBudget: maxOutOfLineBytesBudget, epoch: epoch);
+                maxOutstandingTasks: maxOutstandingTasks, epoch: epoch);
         }
 
         public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)

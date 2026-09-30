@@ -32,8 +32,7 @@ namespace Garnet.test
         [Test]
         public async Task SendThrows_ReportsErrorNoHangNoLeak()
         {
-            var h = new RingTestHarness(pageSize: 256, pageCount: 4, completionCapacity: 32, maxChunkSize: 128,
-                maxOutOfLineBytesBudget: 600);
+            var h = new RingTestHarness(pageSize: 256, pageCount: 4, completionCapacity: 32, maxChunkSize: 128);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             try
             {
@@ -59,15 +58,13 @@ namespace Garnet.test
             // After teardown, every out-of-line buffer was disposed exactly once — whether it was sent, dropped on
             // the failed flush, or reclaimed by the disposal walk.
             h.AssertNoBufferLeaks();
-            ClassicAssert.AreEqual(0, h.OutOfLinePayloadBytes);
         }
 
         /// <summary>1c — disposing the ring while producers are mid-flight must not hang, AV, or leak.</summary>
         [Test]
         public async Task DisposeMidFlight_NoHangNoLeak([Values(2, 6)] int producers)
         {
-            var h = new RingTestHarness(pageSize: 256, pageCount: 4, completionCapacity: 32, maxChunkSize: 64,
-                maxOutOfLineBytesBudget: 1200);
+            var h = new RingTestHarness(pageSize: 256, pageCount: 4, completionCapacity: 32, maxChunkSize: 64);
             using var producerCts = new CancellationTokenSource();
             using var guardCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
@@ -121,35 +118,6 @@ namespace Garnet.test
             }
 
             h.AssertNoBufferLeaks();
-            ClassicAssert.AreEqual(0, h.OutOfLinePayloadBytes);
-        }
-
-        [Test]
-        public async Task DisposeWakesOutOfLineBudgetWaiter()
-        {
-            var h = new RingTestHarness(
-                pageSize: 256,
-                pageCount: 2,
-                completionCapacity: 4,
-                maxChunkSize: 128,
-                maxOutOfLineBytesBudget: 600);
-            try
-            {
-                ClassicAssert.IsTrue(h.TryReserveOutOfLinePayloadBytes(600, out _));
-                var waiter = h.EnqueueAsync(RingPayload.Create(1, 600), expectCompletion: false, CancellationToken.None);
-                await Task.Delay(50).ConfigureAwait(false);
-                ClassicAssert.IsFalse(waiter.IsCompleted);
-
-                h.Ring.Dispose();
-                Assert.ThrowsAsync<ObjectDisposedException>(async () => await waiter.ConfigureAwait(false));
-
-                h.Ring.ReleaseOutOfLinePayloadBytes(600);
-                ClassicAssert.AreEqual(0, h.OutOfLinePayloadBytes);
-            }
-            finally
-            {
-                h.Dispose();
-            }
         }
 
         /// <summary>1c — a published completion is delivered to exactly one racing claimant; later reads see nothing.</summary>

@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using NUnit.Framework;
-using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
@@ -54,28 +53,23 @@ namespace Garnet.test
                 var perProducer = rng.Next(50, 300);
                 var expectsResponse = rng.Next(0, 2) == 0;
                 var injectFailure = rng.Next(0, 5) == 0;       // ~20% of rounds fault the transport
-                var maxPayloadSize = RingPayload.HeaderSize + (pageSizeBytes * 2);
-                var maxOutOfLineBytesBudget = rng.Next(0, 3) == 0
-                    ? 0
-                    : (long)maxPayloadSize * rng.Next(1, 4);
 
                 await RunRoundAsync(seed, round, pageSizeBytes, pageCount, completionCapacity, maxChunkSize,
-                    producers, perProducer, expectsResponse, injectFailure, maxOutOfLineBytesBudget).ConfigureAwait(false);
+                    producers, perProducer, expectsResponse, injectFailure).ConfigureAwait(false);
             }
 
             TestContext.Progress.WriteLine($"Ring soak complete: {round} rounds in {sw.Elapsed}.");
         }
 
         static async Task RunRoundAsync(int seed, int round, int pageSizeBytes, int pageCount, int completionCapacity,
-            int maxChunkSize, int producers, int perProducer, bool expectsResponse, bool injectFailure,
-            long maxOutOfLineBytesBudget)
+            int maxChunkSize, int producers, int perProducer, bool expectsResponse, bool injectFailure)
         {
             var total = producers * perProducer;
             var label = $"seed={seed} round={round} page={pageSizeBytes}x{pageCount} cap={completionCapacity} " +
                         $"chunk={maxChunkSize} producers={producers} perProducer={perProducer} resp={expectsResponse} " +
-                        $"fail={injectFailure} budget={maxOutOfLineBytesBudget}";
+                        $"fail={injectFailure}";
 
-            var h = new RingTestHarness(pageSizeBytes, pageCount, completionCapacity, maxChunkSize, maxOutOfLineBytesBudget);
+            var h = new RingTestHarness(pageSizeBytes, pageCount, completionCapacity, maxChunkSize);
             using var producerCts = new CancellationTokenSource();
             using var guardCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             var readerDone = new CancellationTokenSource();
@@ -167,9 +161,6 @@ namespace Garnet.test
             }
 
             h.AssertNoBufferLeaks();
-            if (maxOutOfLineBytesBudget > 0)
-                ClassicAssert.LessOrEqual(h.PeakOutOfLinePayloadBytes, maxOutOfLineBytesBudget, label);
-            ClassicAssert.AreEqual(0, h.OutOfLinePayloadBytes, label);
         }
 
         static int EnvInt(string name, int fallback)

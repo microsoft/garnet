@@ -8,17 +8,6 @@ using Garnet.common;
 namespace Garnet.client
 {
     /// <summary>
-    /// Releases bytes reserved against an out-of-line payload budget.
-    /// </summary>
-    internal interface IOutOfLinePayloadBudget
-    {
-        /// <summary>
-        /// Release a prior reservation.
-        /// </summary>
-        void ReleaseOutOfLinePayloadBytes(int bytes);
-    }
-
-    /// <summary>
     /// A request-lane payload for the <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>
     /// (and its <see cref="LightNetworkWriter"/> realization). It is a pure request descriptor: it
     /// carries only the rented buffer and its length. The response completion no longer travels with
@@ -34,8 +23,6 @@ namespace Garnet.client
         internal PoolEntry Entry;
 
         int length;
-        readonly int reservedBytes;
-        readonly IOutOfLinePayloadBudget budget;
 
         /// <inheritdoc />
         public byte[] Buffer => Entry.entry;
@@ -43,12 +30,10 @@ namespace Garnet.client
         /// <inheritdoc />
         public int Length => length;
 
-        internal LightRequest(PoolEntry entry, int length, int reservedBytes, IOutOfLinePayloadBudget budget)
+        internal LightRequest(PoolEntry entry, int length)
         {
             this.Entry = entry;
             this.length = length;
-            this.reservedBytes = reservedBytes;
-            this.budget = budget;
         }
 
         /// <inheritdoc />
@@ -57,14 +42,7 @@ namespace Garnet.client
             if (Entry == null)
                 return;
 
-            try
-            {
-                Entry.Dispose();
-            }
-            finally
-            {
-                budget?.ReleaseOutOfLinePayloadBytes(reservedBytes);
-            }
+            Entry.Dispose();
         }
     }
 
