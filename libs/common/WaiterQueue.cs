@@ -54,6 +54,11 @@ namespace Garnet.common
         public const int DefaultSpinCount = 10;
 
         /// <summary>
+        /// Default maximum number of ring-enqueue spin iterations.
+        /// </summary>
+        public const int DefaultMaxEnqueueSpinCount = 10;
+
+        /// <summary>
         /// Default maximum number of waiter nodes retained for reuse.
         /// </summary>
         public const int DefaultMaxPooledWaiters = 128;
@@ -79,13 +84,13 @@ namespace Garnet.common
             int registrationState;
 
             internal TRequest requestResource;
-            internal LightBoundedFifoQueue<Waiter>.EntryHandle queueHandle;
+            internal LightBoundedFifoQueue<Waiter>.QueueEntryHandle queueHandle;
 
             internal void Prepare(WaiterQueue<TRequest> owner, in TRequest requestResource)
             {
                 this.owner = owner;
                 this.requestResource = requestResource;
-                this.queueHandle = default;
+                this.queueHandle = LightBoundedFifoQueue<Waiter>.QueueEntryHandle.Invalid;
                 signal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 remainingOwners = 2;
                 registrationState = 0;
@@ -126,7 +131,7 @@ namespace Garnet.common
                 owner = null;
                 requestResource = default;
                 signal = null;
-                queueHandle = default;
+                queueHandle = LightBoundedFifoQueue<Waiter>.QueueEntryHandle.Invalid;
             }
 
             internal void Recycle()
@@ -168,16 +173,19 @@ namespace Garnet.common
         /// <param name="ringPageSize">Number of waiter slots in each ring page. Must be a power of two.</param>
         /// <param name="ringPageCount">Number of pages in the waiter ring. Must be a power of two.</param>
         /// <param name="spinCount">Lock-free spin iterations before enqueueing and parking.</param>
+        /// <param name="maxEnqueueSpinCount">Maximum spin iterations while reserving a bounded FIFO slot.</param>
         /// <param name="maxPooledWaiters">Maximum waiter nodes retained for reuse.</param>
         public WaiterQueue(
             IResourceTracker<TRequest> tracker,
             int ringPageSize = DefaultRingPageSize,
             int ringPageCount = DefaultRingPageCount,
             int spinCount = DefaultSpinCount,
+            int maxEnqueueSpinCount = DefaultMaxEnqueueSpinCount,
             int maxPooledWaiters = DefaultMaxPooledWaiters)
         {
             ArgumentNullException.ThrowIfNull(tracker);
             ArgumentOutOfRangeException.ThrowIfNegative(spinCount);
+            ArgumentOutOfRangeException.ThrowIfNegative(maxEnqueueSpinCount);
             ArgumentOutOfRangeException.ThrowIfNegative(maxPooledWaiters);
 
             this.tracker = tracker;
@@ -185,6 +193,7 @@ namespace Garnet.common
             this.waiterQueue = new LightBoundedFifoQueue<Waiter>(
                 ringPageSize,
                 ringPageCount,
+                maxEnqueueSpinCount,
                 itemFactory: static () => new Waiter(),
                 maxPooledItems: maxPooledWaiters);
         }
@@ -194,7 +203,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="requestResource">Resource request.</param>
         /// <param name="token">Token used to cancel the wait.</param>
-        /// <returns>A task whose result is false when the waiter log has no free slot; otherwise true after admission.</returns>
+        /// <returns>A task whose result is false when bounded waiter-slot reservation fails; otherwise true after admission.</returns>
         public ValueTask<bool> AdmitAsync(in TRequest requestResource, CancellationToken token = default)
         {
             tracker.Validate(requestResource);
@@ -217,7 +226,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="requestResource">Resource request.</param>
         /// <param name="token">Token used to cancel the wait.</param>
-        /// <returns>False when the waiter log has no free slot; otherwise true after admission.</returns>
+        /// <returns>False when bounded waiter-slot reservation fails; otherwise true after admission.</returns>
         public bool Admit(in TRequest requestResource, CancellationToken token = default)
         {
             tracker.Validate(requestResource);

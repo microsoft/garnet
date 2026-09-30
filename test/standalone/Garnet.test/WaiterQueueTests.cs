@@ -104,6 +104,14 @@ namespace Garnet.test
         public void TearDown() => TestUtils.OnTearDown();
 
         [Test]
+        public void ConstructorRejectsNegativeEnqueueSpinLimit()
+        {
+            var tracker = new ResourceTracker(1);
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                _ = new WaiterQueue<ResourceRequest>(tracker, maxEnqueueSpinCount: -1));
+        }
+
+        [Test]
         public async Task NewArrivalCanReserveWithoutInspectingBacklog()
         {
             var tracker = new ResourceTracker(4);

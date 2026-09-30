@@ -2,6 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
+using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -22,9 +25,46 @@ namespace Garnet.test
         public void TearDown() => TestUtils.OnTearDown();
 
         [Test]
+        public void RingBufferIndexerMapsLogicalAddressesAcrossWrap()
+        {
+            var buffer = new RingBoundedBuffer<long>(pageSize: 2, pageCount: 2);
+
+            for (var address = 0L; address < buffer.Capacity; address++)
+                buffer[address] = address;
+
+            for (var address = 0L; address < buffer.Capacity; address++)
+                ClassicAssert.AreEqual(address, buffer[address]);
+
+            buffer[buffer.Capacity] = 4;
+            ClassicAssert.AreEqual(4, buffer[0]);
+        }
+
+        [Test]
+        public void QueueRejectsNegativeSpinLimit()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                _ = new LightBoundedFifoQueue<string>(pageSize: 1, pageCount: 1, maxSpinCount: -1));
+        }
+
+        [Test]
+        public void FailedOperationsReturnInvalidHandle()
+        {
+            using var queue = new LightBoundedFifoQueue<string>(pageSize: 1, pageCount: 1, maxSpinCount: 0);
+
+            ClassicAssert.IsFalse(queue.TryPeek(out var emptyHandle, out _));
+            ClassicAssert.IsFalse(emptyHandle.IsValid);
+            ClassicAssert.AreEqual(-1, emptyHandle.Address);
+
+            ClassicAssert.IsTrue(queue.TryEnqueue("value", out _));
+            ClassicAssert.IsFalse(queue.TryEnqueue("full", out var fullHandle));
+            ClassicAssert.IsFalse(fullHandle.IsValid);
+            ClassicAssert.AreEqual(-1, fullHandle.Address);
+        }
+
+        [Test]
         public void QueuePreservesOrderAcrossWrapAndReportsCapacity()
         {
-            using var queue = new LightBoundedFifoQueue<string>(pageSize: 2, pageCount: 2);
+            using var queue = new LightBoundedFifoQueue<string>(pageSize: 2, pageCount: 2, maxSpinCount: 10);
 
             ClassicAssert.IsTrue(queue.TryEnqueue("a", out _));
             ClassicAssert.IsTrue(queue.TryEnqueue("b", out _));
@@ -52,9 +92,32 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ConcurrentEnqueueReservesEachBoundedAddressOnce()
+        {
+            const int capacity = 64;
+            using var queue = new LightBoundedFifoQueue<string>(pageSize: 8, pageCount: 8, maxSpinCount: 10);
+            var addresses = new ConcurrentDictionary<long, byte>();
+            var accepted = 0;
+
+            Parallel.For(0, capacity * 8, i =>
+            {
+                if (!queue.TryEnqueue(i.ToString(), out var handle))
+                    return;
+
+                ClassicAssert.IsTrue(addresses.TryAdd(handle.Address, 0));
+                Interlocked.Increment(ref accepted);
+            });
+
+            ClassicAssert.AreEqual(capacity, accepted);
+            ClassicAssert.AreEqual(capacity, addresses.Count);
+            ClassicAssert.AreEqual(capacity, queue.Count);
+            ClassicAssert.IsFalse(queue.TryEnqueue("full", out _));
+        }
+
+        [Test]
         public void RemovedEntryBecomesOrderedTombstone()
         {
-            using var queue = new LightBoundedFifoQueue<string>(pageSize: 2, pageCount: 2);
+            using var queue = new LightBoundedFifoQueue<string>(pageSize: 2, pageCount: 2, maxSpinCount: 10);
 
             ClassicAssert.IsTrue(queue.TryEnqueue("a", out var first));
             ClassicAssert.IsTrue(queue.TryEnqueue("b", out var removed));
@@ -75,7 +138,7 @@ namespace Garnet.test
         [Test]
         public void CompleteAddingRetainsPublishedItems()
         {
-            using var queue = new LightBoundedFifoQueue<string>(pageSize: 1, pageCount: 2);
+            using var queue = new LightBoundedFifoQueue<string>(pageSize: 1, pageCount: 2, maxSpinCount: 10);
             ClassicAssert.IsTrue(queue.TryEnqueue("value", out var handle));
 
             queue.CompleteAdding();
@@ -91,6 +154,7 @@ namespace Garnet.test
             var queue = new LightBoundedFifoQueue<PooledItem>(
                 pageSize: 1,
                 pageCount: 1,
+                maxSpinCount: 10,
                 itemFactory: static () => new PooledItem(),
                 itemDisposer: static item => item.Dispose(),
                 maxPooledItems: 1);

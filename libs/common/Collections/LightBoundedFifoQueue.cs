@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Numerics;
 using System.Threading;
 
 namespace Garnet.common
@@ -13,7 +12,7 @@ namespace Garnet.common
     /// <typeparam name="T">Queue item type.</typeparam>
     internal sealed class LightBoundedFifoQueue<T> : IDisposable where T : class
     {
-        enum SlotState
+        enum SlotState : byte
         {
             Empty,
             Published,
@@ -24,46 +23,34 @@ namespace Garnet.common
         {
             internal T item;
             internal long address;
-            internal int state;
-        }
-
-        struct RingPage
-        {
-            internal readonly QueueSlot[] slots;
-
-            internal RingPage(int pageSize)
-            {
-                slots = new QueueSlot[pageSize];
-            }
+            internal byte slotState;
         }
 
         /// <summary>
         /// Identifies one logical queue entry across physical slot reuse.
         /// </summary>
-        internal readonly struct EntryHandle
+        internal readonly struct QueueEntryHandle
         {
-            readonly long addressPlusOne;
+            internal static readonly QueueEntryHandle Invalid = new(-1);
 
-            internal long Address => addressPlusOne - 1;
-            internal bool IsValid => addressPlusOne != 0;
+            internal long Address { get; }
+            internal bool IsValid => Address >= 0;
 
-            internal EntryHandle(long address)
+            internal QueueEntryHandle(long address)
             {
-                addressPlusOne = address + 1;
+                Address = address;
             }
         }
 
-        readonly RingPage[] bufferPages;
-        readonly int pageSizeBits;
-        readonly int pageSizeMask;
+        readonly RingBoundedBuffer<QueueSlot> buffer;
         readonly int capacity;
+        readonly int maxSpinCount;
         readonly Func<T> itemFactory;
         readonly Action<T> itemDisposer;
         readonly T[] itemPool;
 
         long headAddress;
         long tailAddress;
-        int occupiedCount;
         int itemCount;
         int activePublishers;
         int addingCompleted;
@@ -86,34 +73,29 @@ namespace Garnet.common
         /// </summary>
         /// <param name="pageSize">Number of entries per page. Must be a power of two.</param>
         /// <param name="pageCount">Number of pages. Must be a power of two.</param>
+        /// <param name="maxSpinCount">Maximum spin iterations after the initial bounded-tail reservation attempt.</param>
         /// <param name="itemFactory">Optional factory used by <see cref="Rent"/>.</param>
         /// <param name="itemDisposer">Optional callback for items rejected by or remaining in the pool during disposal.</param>
         /// <param name="maxPooledItems">Maximum items retained for reuse.</param>
         internal LightBoundedFifoQueue(
             int pageSize,
             int pageCount,
+            int maxSpinCount,
             Func<T> itemFactory = null,
             Action<T> itemDisposer = null,
             int maxPooledItems = 0)
         {
-            if (pageSize <= 0 || !BitOperations.IsPow2((uint)pageSize))
-                throw new ArgumentOutOfRangeException(nameof(pageSize), "Page size must be a positive power of two.");
-            if (pageCount <= 0 || !BitOperations.IsPow2((uint)pageCount))
-                throw new ArgumentOutOfRangeException(nameof(pageCount), "Page count must be a positive power of two.");
+            ArgumentOutOfRangeException.ThrowIfNegative(maxSpinCount);
             ArgumentOutOfRangeException.ThrowIfNegative(maxPooledItems);
             if (maxPooledItems > 0 && itemFactory == null)
                 throw new ArgumentNullException(nameof(itemFactory));
 
-            pageSizeBits = BitOperations.Log2((uint)pageSize);
-            pageSizeMask = pageSize - 1;
-            capacity = checked(pageSize * pageCount);
+            buffer = new RingBoundedBuffer<QueueSlot>(pageSize, pageCount);
+            capacity = buffer.Capacity;
+            this.maxSpinCount = maxSpinCount;
             this.itemFactory = itemFactory;
             this.itemDisposer = itemDisposer;
             itemPool = new T[maxPooledItems];
-
-            bufferPages = new RingPage[pageCount];
-            for (var i = 0; i < bufferPages.Length; i++)
-                bufferPages[i] = new RingPage(pageSize);
         }
 
         /// <summary>
@@ -180,8 +162,8 @@ namespace Garnet.common
         /// </summary>
         /// <param name="item">Item to append.</param>
         /// <param name="handle">Handle identifying the published entry.</param>
-        /// <returns>False when the queue has no free slot.</returns>
-        internal bool TryEnqueue(T item, out EntryHandle handle)
+        /// <returns>False when bounded slot reservation does not succeed within the configured spin limit.</returns>
+        internal bool TryEnqueue(T item, out QueueEntryHandle handle)
         {
             ArgumentNullException.ThrowIfNull(item);
 
@@ -190,20 +172,33 @@ namespace Garnet.common
             {
                 ObjectDisposedException.ThrowIf(Volatile.Read(ref addingCompleted) != 0, this);
 
-                if (Interlocked.Increment(ref occupiedCount) > capacity)
+                long address;
+                var spinner = new SpinWait();
+                while (true)
                 {
-                    Interlocked.Decrement(ref occupiedCount);
-                    handle = default;
-                    return false;
+                    var tail = Volatile.Read(ref tailAddress);
+                    if (tail - Volatile.Read(ref headAddress) < capacity &&
+                        Interlocked.CompareExchange(ref tailAddress, tail + 1, tail) == tail)
+                    {
+                        address = tail;
+                        break;
+                    }
+
+                    if (spinner.Count >= maxSpinCount)
+                    {
+                        handle = QueueEntryHandle.Invalid;
+                        return false;
+                    }
+
+                    spinner.SpinOnce();
                 }
 
-                var address = Interlocked.Increment(ref tailAddress) - 1;
-                ref var slot = ref GetSlot(address);
+                ref var slot = ref buffer[address];
                 slot.item = item;
                 slot.address = address;
                 Interlocked.Increment(ref itemCount);
-                Volatile.Write(ref slot.state, (int)SlotState.Published);
-                handle = new EntryHandle(address);
+                Volatile.Write(ref slot.slotState, (byte)SlotState.Published);
+                handle = new QueueEntryHandle(address);
                 return true;
             }
             finally
@@ -219,27 +214,32 @@ namespace Garnet.common
         /// <param name="item">Published head item.</param>
         /// <returns>False when the queue is empty or its logical head has not yet been published.</returns>
         /// <remarks>This method must be called by a serialized consumer.</remarks>
-        internal bool TryPeek(out EntryHandle handle, out T item)
+        internal bool TryPeek(out QueueEntryHandle handle, out T item)
         {
             while (headAddress != Volatile.Read(ref tailAddress))
             {
-                ref var slot = ref GetSlot(headAddress);
-                var state = Volatile.Read(ref slot.state);
-                if (state == (int)SlotState.Empty)
+                ref var slot = ref buffer[headAddress];
+                var state = Volatile.Read(ref slot.slotState);
+                if (state == (byte)SlotState.Empty)
                     break;
 
-                if (state == (int)SlotState.Removed)
+                if (state == (byte)SlotState.Removed)
                 {
                     AdvanceHead();
                     continue;
                 }
 
-                handle = new EntryHandle(headAddress);
-                item = slot.item;
+                if (Volatile.Read(ref slot.address) != headAddress)
+                    break;
+
+                handle = new QueueEntryHandle(headAddress);
+                item = Volatile.Read(ref slot.item);
+                if (item == null)
+                    break;
                 return true;
             }
 
-            handle = default;
+            handle = QueueEntryHandle.Invalid;
             item = default;
             return false;
         }
@@ -251,7 +251,7 @@ namespace Garnet.common
         /// <param name="item">Removed item.</param>
         /// <returns>True when the matching head was removed.</returns>
         /// <remarks>This method must be called by the same serialized consumer as <see cref="TryPeek"/>.</remarks>
-        internal bool TryDequeue(EntryHandle handle, out T item)
+        internal bool TryDequeue(QueueEntryHandle handle, out T item)
         {
             if (!handle.IsValid || headAddress != handle.Address)
             {
@@ -259,10 +259,9 @@ namespace Garnet.common
                 return false;
             }
 
-            ref var slot = ref GetSlot(handle.Address);
-            if (Volatile.Read(ref slot.state) != (int)SlotState.Published ||
-                Volatile.Read(ref slot.address) != handle.Address ||
-                Interlocked.CompareExchange(ref slot.state, (int)SlotState.Empty, (int)SlotState.Published) != (int)SlotState.Published)
+            ref var slot = ref buffer[handle.Address];
+            if (Volatile.Read(ref slot.slotState) != (byte)SlotState.Published ||
+                Interlocked.CompareExchange(ref slot.address, ~handle.Address, handle.Address) != handle.Address)
             {
                 item = default;
                 return false;
@@ -280,7 +279,7 @@ namespace Garnet.common
         /// <param name="handle">Handle returned by <see cref="TryEnqueue"/>.</param>
         /// <param name="item">Removed item.</param>
         /// <returns>True when the matching published entry was marked as removed.</returns>
-        internal bool TryRemove(EntryHandle handle, out T item)
+        internal bool TryRemove(QueueEntryHandle handle, out T item)
         {
             if (!handle.IsValid)
             {
@@ -288,16 +287,16 @@ namespace Garnet.common
                 return false;
             }
 
-            ref var slot = ref GetSlot(handle.Address);
-            if (Volatile.Read(ref slot.state) != (int)SlotState.Published ||
-                Volatile.Read(ref slot.address) != handle.Address ||
-                Interlocked.CompareExchange(ref slot.state, (int)SlotState.Removed, (int)SlotState.Published) != (int)SlotState.Published)
+            ref var slot = ref buffer[handle.Address];
+            if (Volatile.Read(ref slot.slotState) != (byte)SlotState.Published ||
+                Interlocked.CompareExchange(ref slot.address, ~handle.Address, handle.Address) != handle.Address)
             {
                 item = default;
                 return false;
             }
 
             item = slot.item;
+            Volatile.Write(ref slot.slotState, (byte)SlotState.Removed);
             Interlocked.Decrement(ref itemCount);
             return true;
         }
@@ -315,15 +314,9 @@ namespace Garnet.common
                 spinner.SpinOnce();
         }
 
-        ref QueueSlot GetSlot(long address)
-        {
-            var pageIndex = (int)((address >> pageSizeBits) & (bufferPages.Length - 1));
-            return ref bufferPages[pageIndex].slots[(int)(address & pageSizeMask)];
-        }
-
         void AdvanceHead()
         {
-            ref var slot = ref GetSlot(headAddress);
+            ref var slot = ref buffer[headAddress];
             ClearAndAdvanceHead(ref slot);
         }
 
@@ -331,7 +324,6 @@ namespace Garnet.common
         {
             slot = default;
             Volatile.Write(ref headAddress, headAddress + 1);
-            Interlocked.Decrement(ref occupiedCount);
         }
 
         /// <inheritdoc />
