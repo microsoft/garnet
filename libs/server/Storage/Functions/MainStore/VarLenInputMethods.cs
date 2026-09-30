@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -192,6 +193,7 @@ namespace Garnet.server
                 case RespCommand.VADD:
                     fieldInfo.ValueSize = VectorManager.IndexSizeBytes;
                     fieldInfo.RecordType = VectorManager.RecordType;
+                    fieldInfo.HasExpiration = input.parseState.Count >= 13 && MemoryMarshal.Read<long>(input.parseState.GetArgSliceByRef(12).Span) != 0;
                     return fieldInfo;
 
                 default:

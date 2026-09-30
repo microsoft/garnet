@@ -1469,7 +1469,10 @@ namespace Garnet.server
                         var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
                         remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
 
-                        self.WriteBulkString(attr);
+                        if (attr.IsEmpty)
+                            self.WriteNull();
+                        else
+                            self.WriteBulkString(attr);
                     }
                     else if (!remaininingAttributes.IsEmpty)
                     {
@@ -1871,26 +1874,27 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Invalid VectorDistanceMetricType: {distanceMetricType}"),
             };
 
-            WriteArrayLength(importPending ? 14 : 16);
+            WriteMapLength(importPending? 7 : 8);
             WriteSimpleString("quant-type"u8);
             WriteSimpleString(quantTypeSpan);
             WriteSimpleString("distance-metric"u8);
             WriteSimpleString(distanceMetricTypeSpan);
             WriteSimpleString("input-vector-dimensions"u8);
-            WriteInt32AsBulkString((int)vectorDimensions);
+            WriteInt32((int)vectorDimensions);
             WriteSimpleString("reduced-dimensions"u8);
-            WriteInt32AsBulkString((int)reducedDimensions);
+            WriteInt32((int)reducedDimensions);
             WriteSimpleString("build-exploration-factor"u8);
-            WriteInt32AsBulkString((int)buildExplorationFactor);
+            WriteInt32((int)buildExplorationFactor);
             WriteSimpleString("num-links"u8);
-            WriteInt32AsBulkString((int)numLinks);
+            WriteInt32((int)numLinks);
             if (!importPending)
             {
                 WriteSimpleString("size"u8);
-                WriteInt64AsBulkString(size);
+                WriteInt64(size);
             }
             WriteSimpleString("import-pending"u8);
             WriteInt32AsBulkString(importPending ? 1 : 0);
+
             return true;
         }
 
@@ -2185,10 +2189,7 @@ namespace Garnet.server
             }
             else
             {
-                var resp = res == GarnetStatus.OK ? 1 : 0;
-
-                while (!RespWriteUtils.TryWriteInt32(resp, ref dcurr, dend))
-                    SendAndReset();
+                WriteBoolean(res == GarnetStatus.OK);
             }
 
             return true;
