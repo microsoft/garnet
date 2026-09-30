@@ -44,6 +44,12 @@ namespace Garnet.server
         public bool inFuzzyRegion = false;
 
         /// <summary>
+        /// Replayed records remaining before the next scratch-allocator trim. Replay has no network batch
+        /// boundary, so the interval is counted here, mirroring the session's own countdown.
+        /// </summary>
+        internal int trimCountdown = RespServerSession.SessionTrimInterval;
+
+        /// <summary>
         /// AOF replay context constructor
         /// </summary>
         public AofReplayContext(RespServerSession respServerSession)

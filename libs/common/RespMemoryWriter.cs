@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Tsavorite.core;
 
 namespace Garnet.common
@@ -24,6 +25,20 @@ namespace Garnet.common
         MemoryHandle ptrHandle;
         ref SpanByteAndMemory output;
         public readonly bool resp3;
+
+        static long totalOutputRentals;
+
+        /// <summary>
+        /// Process-wide count of pooled buffers rented because a response outgrew the buffer it was
+        /// being written into. A response that fits its initial buffer rents nothing, so this counts
+        /// response-size overflow directly rather than leaving it to be inferred.
+        /// <para>
+        /// Deliberately not routed through <c>GarnetServerMonitor</c>'s sampled global metrics: those
+        /// read as zero whenever no monitor is configured, which would make this instrument silently
+        /// vacuous in exactly the default configuration it is most useful in.
+        /// </para>
+        /// </summary>
+        public static long TotalOutputRentals => Volatile.Read(ref totalOutputRentals);
 
         public RespMemoryWriter(byte respVersion, ref SpanByteAndMemory output)
         {
@@ -523,6 +538,7 @@ namespace Garnet.common
             if (length <= 0)
                 throw new GarnetException($"Exceeded maximum response size of ({Array.MaxLength:N0}) bytes", disposeSession: false);
 
+            _ = Interlocked.Increment(ref totalOutputRentals);
             var newMem = MemoryPool<byte>.Shared.Rent(length);
             var newPtrHandle = newMem.Memory.Pin();
             var newPtr = (byte*)newPtrHandle.Pointer;
