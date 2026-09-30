@@ -18,27 +18,20 @@ namespace Tsavorite.test.recovery
     using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordTriggers>;
 
     /// <summary>
-    /// Supplies a fixed slot-to-logical-database mapping, standing in for a host that relabels its
-    /// databases (Garnet's SWAPDB).
+    /// Supplies a fixed slot-to-logical-database mapping through the checkpoint manager's provider,
+    /// standing in for a host that relabels its databases. Overriding the provider setter is what
+    /// Garnet's checkpoint manager does in production; the base class ignores it.
     /// </summary>
-    public class CheckpointManagerWithDatabaseMapping : DeviceLogCommitCheckpointManager
+    public sealed class CheckpointManagerWithDatabaseMapping : DeviceLogCommitCheckpointManager
     {
-        private readonly int[] mapping;
-        private readonly long epoch;
-
         public CheckpointManagerWithDatabaseMapping(int[] mapping, long epoch, INamedDeviceFactoryCreator deviceFactoryCreator,
             ICheckpointNamingScheme checkpointNamingScheme, ILogger logger = null)
             : base(deviceFactoryCreator, checkpointNamingScheme, removeOutdated: false, logger: logger)
-        {
-            this.mapping = mapping;
-            this.epoch = epoch;
-        }
+            => SetDatabaseMappingProvider(() => (mapping, epoch));
 
-        public override int[] GetDatabaseMapping(out long swapEpoch)
-        {
-            swapEpoch = epoch;
-            return mapping;
-        }
+        /// <inheritdoc />
+        public override void SetDatabaseMappingProvider(Func<(int[] Mapping, long Epoch)> provider)
+            => databaseMappingProvider = provider;
     }
 
     /// <summary>
@@ -176,8 +169,8 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// The mapping and epoch round-trip through the metadata serializer, and the checksum stays
-        /// valid whether or not a mapping is present - they are host-supplied and sit outside it.
+        /// The mapping and epoch round-trip through the metadata serializer, and the checksum covers
+        /// them, so a payload with a mapping verifies exactly as one without.
         /// </summary>
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
@@ -221,7 +214,7 @@ namespace Tsavorite.test.recovery
             written.finalLogicalAddress = 1024;
 
             HybridLogRecoveryInfo read = new();
-            using var reader = new StreamReader(new MemoryStream(Downlevel(written.ToByteArray())));
+            using var reader = new StreamReader(new MemoryStream(written.ToByteArray(HybridLogRecoveryInfo.MinRecoverableCheckpointVersion)));
             read.Initialize(reader);
 
             ClassicAssert.AreEqual(HybridLogRecoveryInfo.MinRecoverableCheckpointVersion, read.hybridLogRecoveryVersion);
@@ -251,6 +244,51 @@ namespace Tsavorite.test.recovery
             _ = Assert.Throws<TsavoriteException>(() => read.Initialize(reader));
         }
 
+        /// <summary>
+        /// The mapping, epoch and cookie are covered by the checksum, so a payload whose mapping has been
+        /// altered in place - reordered, lengthened, or given a different epoch - is rejected rather than
+        /// silently recovered under the wrong database identities.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public void TamperedHostSuppliedFieldsAreRejected([Values("reorder", "truncate", "epoch", "cookie")] string tamper)
+        {
+            HybridLogRecoveryInfo written = new();
+            written.Initialize(Guid.NewGuid(), _version: 5);
+            written.beginAddress = 64;
+            written.finalLogicalAddress = 1024;
+            written.cookie = [1, 2, 3];
+            written.databaseMapping = [2, 0, 1];
+            written.swapEpoch = 11;
+
+            var lines = SplitPayload(written.ToByteArray());
+
+            // Layout of the trailing host-supplied fields: cookie length, cookie bytes, mapping length,
+            // mapping entries, swap epoch.
+            var mappingStart = lines.Count - 1 - written.databaseMapping.Length;
+            switch (tamper)
+            {
+                case "reorder":
+                    (lines[mappingStart], lines[mappingStart + 1]) = (lines[mappingStart + 1], lines[mappingStart]);
+                    break;
+                case "truncate":
+                    lines[mappingStart - 1] = "2";
+                    lines.RemoveAt(mappingStart);
+                    break;
+                case "epoch":
+                    lines[^1] = "12";
+                    break;
+                case "cookie":
+                    lines[mappingStart - 2] = "9";
+                    break;
+            }
+
+            HybridLogRecoveryInfo read = new();
+            using var reader = new StreamReader(new MemoryStream(JoinPayload(lines)));
+            var ex = Assert.Throws<TsavoriteException>(() => read.Initialize(reader));
+            ClassicAssert.AreEqual("Invalid checksum for checkpoint", ex.Message);
+        }
+
         private static List<string> SplitPayload(byte[] payload)
         {
             var lines = Encoding.UTF8.GetString(payload).Split(Environment.NewLine).ToList();
@@ -263,22 +301,5 @@ namespace Tsavorite.test.recovery
 
         private static byte[] JoinPayload(List<string> lines)
             => Encoding.UTF8.GetBytes(string.Concat(lines.Select(l => l + Environment.NewLine)));
-
-        /// <summary>
-        /// Rewrites a payload that carries no mapping as a downlevel one: stamp the older version and
-        /// drop the two trailing lines that version does not have. With no mapping those lines are
-        /// exactly the mapping length and the swap epoch, so no parsing or searching is needed.
-        /// </summary>
-        private static byte[] Downlevel(byte[] payload)
-        {
-            var lines = SplitPayload(payload);
-            ClassicAssert.AreEqual(HybridLogRecoveryInfo.CheckpointVersion.ToString(), lines[0]);
-            ClassicAssert.AreEqual("0", lines[^2], "Expected a zero-length mapping");
-            ClassicAssert.AreEqual("0", lines[^1], "Expected a zero swap epoch");
-
-            lines[0] = HybridLogRecoveryInfo.MinRecoverableCheckpointVersion.ToString();
-            lines.RemoveRange(lines.Count - 2, 2);
-            return JoinPayload(lines);
-        }
     }
 }

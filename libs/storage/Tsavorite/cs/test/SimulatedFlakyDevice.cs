@@ -29,6 +29,8 @@ namespace Tsavorite.test
         public byte[] GetCookie() => throw new NotSupportedException();
         /// <inheritdoc/>
         public int[] GetDatabaseMapping(out long swapEpoch) => throw new NotSupportedException();
+
+        public void SetDatabaseMappingProvider(Func<(int[] Mapping, long Epoch)> provider) => throw new NotSupportedException();
         /// <inheritdoc/>
         public void InitializeIndexCheckpoint(Guid indexToken) => throw new NotSupportedException();
         /// <inheritdoc/>

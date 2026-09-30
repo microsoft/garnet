@@ -53,6 +53,16 @@ namespace Tsavorite.core
         int[] GetDatabaseMapping(out long swapEpoch);
 
         /// <summary>
+        /// Supply the source that <see cref="GetDatabaseMapping"/> reads. The provider is queried at
+        /// checkpoint time rather than pushed on each relabelling, so a checkpoint always records the
+        /// mapping in force when it ran. Hosts that do not relabel their databases never set one, and
+        /// implementations that cannot record a mapping may ignore it.
+        /// </summary>
+        /// <param name="provider">Returns the slot to logical database id mapping and the swap epoch
+        /// it belongs to, or null to record the identity mapping</param>
+        void SetDatabaseMappingProvider(Func<(int[] Mapping, long Epoch)> provider);
+
+        /// <summary>
         /// Initialize index checkpoint
         /// </summary>
         /// <param name="indexToken"></param>

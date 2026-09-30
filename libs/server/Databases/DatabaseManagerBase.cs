@@ -172,7 +172,15 @@ namespace Garnet.server
             var storeVersion = await db.Store.RecoverAsync().ConfigureAwait(false);
             Logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
 
-            db.CheckpointRecovery = new CheckpointRecoveryOutcome { StoreVersion = storeVersion };
+            // The mapping and swap epoch come back as a by-product of the recovery that just read the
+            // checkpoint metadata, so no caller needs to re-read it to find out how the store was labelled.
+            db.CheckpointRecovery = new CheckpointRecoveryOutcome
+            {
+                StoreVersion = storeVersion,
+                DatabaseMapping = db.Store.RecoveredDatabaseMapping,
+                SwapEpoch = db.Store.RecoveredSwapEpoch,
+                CheckpointVersion = db.Store.RecoveredCheckpointVersion
+            };
 
             if (storeVersion > 0)
                 db.LastSaveTime = DateTimeOffset.UtcNow;

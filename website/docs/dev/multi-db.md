@@ -89,7 +89,9 @@ When `CheckpointDir` is not specified it defaults to `LogDir`, so a single `Stor
 
 Every name above is a logical device name; the device layer appends a segment index, so `hlog` is stored as `hlog.0`, `hlog.1`, … and `info.dat` as `info.dat.0`.
 
-All of a database's file names are fixed when its store is created. [SWAPDB](../commands/server.md#swapdb) exchanges the logical index of two databases but does not move their files, so it is not durable: recovery reconstructs each database's index from the directory names and undoes the swap.
+All of a database's file names are fixed when its store is created, so a file name records a **storage slot**, not a logical database index. The two are equal until [SWAPDB](../commands/server.md#swapdb) exchanges the logical indexes of two databases, which relabels them without moving any files. Each checkpoint records the slot-to-index mapping in force when it ran, along with a swap epoch identifying it, so recovery restores the relabelling rather than undoing it.
+
+A swap performed *after* the last checkpoint is not in that checkpoint, and so is not restored; those databases recover under the indexes they had when the checkpoint was taken.
 
 :::caution
 Databases did not always have their own log devices. A store checkpointed by an earlier release wrote every database into one shared `Store/hlog` and `Store/hlog_objs` pair, whose contents cannot be attributed to a single database (see [issue #2152](https://github.com/microsoft/garnet/issues/2152)). Recovering such a store reports the condition and cannot recover any records that databases other than the default had tiered to storage.
@@ -99,4 +101,6 @@ The default database is not exempt. It keeps the unsuffixed file names, so recov
 
 ## Checkpointing, AOF & Recovery
 
-Upon recovery, Garnet will extract the indexes of the saved databases from the aforementioned directory name pattern and recover any saved data matching the database index.
+Upon recovery, Garnet extracts the storage slots of the saved databases from the aforementioned directory name pattern, and recovers the data saved under each slot. It then applies the slot-to-index mapping carried by the recovered checkpoints, taking the one belonging to the highest swap epoch, so each database comes back under the logical index it had when that checkpoint was taken.
+
+The mapping is applied whole or not at all. If it is not a valid permutation of the configured index range — for example because `MaxDatabases` was lowered since it was written — it is rejected, the condition is logged, and each database recovers under the index matching its storage slot. That discards a swap, but never loses data or attributes a store to the wrong index. A mapping naming a slot whose directory no longer exists is not an error: that index simply goes unused, and is logged.

@@ -135,6 +135,37 @@ namespace Garnet.server
 
             // Once everything is setup, initialize the VectorManager
             defaultDatabase.VectorManager.Initialize();
+
+            ReportIgnoredDatabaseMapping();
+        }
+
+        /// <summary>
+        /// Reports a recovered database mapping that this manager cannot act on. A mapping is recorded only
+        /// when a swap had relabelled a database, and honoring it means placing a store under an id that
+        /// differs from its storage slot, which only the multi-database manager can do. Recovery normally
+        /// selects that manager when a mapping is present, so this is reached only when multiple databases
+        /// are disabled outright; the store still recovers, but as database 0. Say so rather than let the
+        /// relabelling disappear silently.
+        /// </summary>
+        private void ReportIgnoredDatabaseMapping()
+        {
+            // Recovery already read the metadata and recorded the mapping, so nothing is re-read here.
+            var mapping = defaultDatabase.CheckpointRecovery.DatabaseMapping;
+            if (mapping == null)
+                return;
+
+            for (var storageSlot = 0; storageSlot < mapping.Length; storageSlot++)
+            {
+                if (mapping[storageSlot] == storageSlot)
+                    continue;
+
+                Logger?.LogError(
+                    "The recovered checkpoint records a database mapping (storage slot {storageSlot} was database {dbId}), " +
+                    "but this server does not allow multiple databases and has recovered it as database 0. " +
+                    "Restart with multiple databases enabled for the recorded mapping to be applied.",
+                    storageSlot, mapping[storageSlot]);
+                return;
+            }
         }
 
         /// <inheritdoc/>

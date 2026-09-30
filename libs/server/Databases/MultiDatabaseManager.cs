@@ -45,10 +45,23 @@ namespace Garnet.server
         // True if StartObjectSizeTrackers was previously called
         bool sizeTrackersStarted;
 
+        // Monotonic counter identifying how recent the storage-slot to logical-database mapping is.
+        // Recorded with every checkpoint; on recovery it resumes from the highest value read back, so
+        // a swap made after a restart still outranks the mapping persisted before it.
+        long swapEpoch;
+
+        // Storage slots found under the checkpoint directory when this manager was chosen over the
+        // single-database one. Null when the manager was created by other means, in which case recovery
+        // scans for itself.
+        readonly int[] recoveredStorageSlots;
+
         public MultiDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate,
-            StoreWrapper storeWrapper, bool createDefaultDatabase = true) : base(createDatabaseDelegate, storeWrapper)
+            StoreWrapper storeWrapper, bool createDefaultDatabase = true, int[] recoveredStorageSlots = null)
+            : base(createDatabaseDelegate, storeWrapper)
         {
             Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(MultiDatabaseManager));
+
+            this.recoveredStorageSlots = recoveredStorageSlots;
 
             var maxDatabases = storeWrapper.serverOptions.MaxDatabases;
 
@@ -88,23 +101,28 @@ namespace Garnet.server
                 throw new GarnetException(
                     $"Unexpected call to {nameof(MultiDatabaseManager)}.{nameof(RecoverCheckpointAsync)} with {nameof(replicaRecover)} == true.");
 
-            var checkpointParentDir = StoreWrapper.serverOptions.StoreCheckpointBaseDirectory;
-            var checkpointDirBaseName = GarnetServerOptions.GetCheckpointDirectoryName(0);
+            // The factory scanned the checkpoint directories to decide this manager was needed, so reuse what
+            // it found; only a manager created by other means has to scan here.
+            var storageSlots = recoveredStorageSlots;
+            if (storageSlots == null)
+            {
+                var checkpointParentDir = StoreWrapper.serverOptions.StoreCheckpointBaseDirectory;
+                var checkpointDirBaseName = GarnetServerOptions.GetCheckpointDirectoryName(0);
 
-            int[] dbIdsToRecover;
-            try
-            {
-                if (!TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName, out dbIdsToRecover))
+                try
+                {
+                    if (!TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName, out storageSlots))
+                        return;
+                }
+                catch (Exception ex)
+                {
+                    Logger?.LogError(ex,
+                        "Error during recovery of database ids; checkpointParentDir = {checkpointParentDir}; checkpointDirBaseName = {checkpointDirBaseName}",
+                        checkpointParentDir, checkpointDirBaseName);
+                    if (StoreWrapper.serverOptions.FailOnRecoveryError)
+                        throw;
                     return;
-            }
-            catch (Exception ex)
-            {
-                Logger?.LogError(ex,
-                    "Error during recovery of database ids; checkpointParentDir = {checkpointParentDir}; checkpointDirBaseName = {checkpointDirBaseName}",
-                    checkpointParentDir, checkpointDirBaseName);
-                if (StoreWrapper.serverOptions.FailOnRecoveryError)
-                    throw;
-                return;
+                }
             }
 
             long storeVersion = 0, objectStoreVersion = 0;
@@ -112,19 +130,37 @@ namespace Garnet.server
             // Sample the log segments before any database is created, so a store opening its own log
             // device cannot be mistaken for a log the previous run actually wrote.
             var hybridLogSegments = ListHybridLogSegments();
-            var multiDatabaseStore = dbIdsToRecover.Any(id => id != 0);
+            var multiDatabaseStore = storageSlots.Any(slot => slot != 0);
 
-            foreach (var dbId in dbIdsToRecover)
+            // The directory names give the storage slots; which logical database each slot held is recorded
+            // in the checkpoints themselves, because a swap relabels a database without moving its files.
+            // Recovery reads that metadata anyway, so the mapping is collected as it goes rather than in a
+            // pass of its own. Every database records the whole mapping, so the highest swap epoch seen is
+            // authoritative on its own - which matters because databases are checkpointed individually and
+            // can therefore disagree.
+            int[] persistedMapping = null;
+            long persistedSwapEpoch = 0;
+
+            // Recover each store under the index of its own storage slot, then relabel once at the end.
+            // Recovering directly under the mapped id cannot work: the default database already
+            // occupies index 0 bound to slot 0 before any checkpoint can be read, and a permutation
+            // can cycle, so an id a store needs may still be held by the store that is about to vacate it.
+            foreach (var storageSlot in storageSlots)
             {
-                var db = TryGetOrAddDatabase(dbId, out var success, out _);
+                var db = TryGetOrAddDatabase(storageSlot, out var success, out _);
                 if (!success)
-                    throw new GarnetException($"Failed to retrieve or create database for checkpoint recovery (DB ID = {dbId}).");
-
-                ReportLogLayoutIsPriorToIndividualHLogs(db, hybridLogSegments, multiDatabaseStore);
+                    throw new GarnetException($"Failed to retrieve or create database for checkpoint recovery (storage slot = {storageSlot}).");
 
                 try
                 {
                     storeVersion = await RecoverDatabaseCheckpointAsync(db).ConfigureAwait(false);
+
+                    var outcome = db.CheckpointRecovery;
+                    if (outcome.DatabaseMapping?.Length > 0 && (persistedMapping == null || outcome.SwapEpoch > persistedSwapEpoch))
+                    {
+                        persistedMapping = outcome.DatabaseMapping;
+                        persistedSwapEpoch = outcome.SwapEpoch;
+                    }
                 }
                 catch (TsavoriteNoHybridLogException ex)
                 {
@@ -149,7 +185,7 @@ namespace Garnet.server
                     {
                         Logger?.LogError(ex,
                             "Unable to read any of the {candidateTokenCount} HybridLog checkpoint token(s) found on disk (DB ID: {id}); storeVersion = {storeVersion}",
-                            ex.CandidateTokenCount, dbId, storeVersion);
+                            ex.CandidateTokenCount, storageSlot, storeVersion);
                     }
                 }
                 catch (Exception ex)
@@ -162,9 +198,84 @@ namespace Garnet.server
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
                         throw;
                 }
+                finally
+                {
+                    // Reported after recovery because it reads the recovered checkpoint's format version, and in a
+                    // finally so a database that failed to recover - the case this most needs to explain - still
+                    // reports.
+                    VerifyMultiDBLogLayout(db, hybridLogSegments, multiDatabaseStore);
+                }
 
                 // Once everything is setup, initialize the VectorManager
                 db.VectorManager.Initialize();
+            }
+
+            ApplyDatabaseMapping(storageSlots, ResolveLogicalDatabaseIds(storageSlots, persistedMapping, persistedSwapEpoch));
+        }
+
+        /// <summary>
+        /// Relabel recovered databases so each carries the logical id it had when the mapping was
+        /// recorded, leaving every store bound to the slot that names its files. This is the same
+        /// relabelling a swap performs at runtime, applied once after all stores are in place.
+        /// </summary>
+        /// <param name="storageSlots">Storage slots recovered, in the order they were recovered</param>
+        /// <param name="logicalIds">Logical database id for each entry of <paramref name="storageSlots"/></param>
+        private void ApplyDatabaseMapping(int[] storageSlots, int[] logicalIds)
+        {
+            // ResolveLogicalDatabaseIds returns storageSlots itself when the mapping is the identity.
+            if (ReferenceEquals(storageSlots, logicalIds))
+                return;
+
+            var enableAof = StoreWrapper.serverOptions.EnableAOF;
+
+            databases.mapLock.WriteLock();
+            try
+            {
+                var databaseMapSnapshot = databases.Map;
+
+                // Detach every store from its slot index before placing any of them: the mapping is a
+                // permutation, so an index being vacated may be the one another store moves into.
+                // Indexed by position in storageSlots, parallel to logicalIds - not by database id, which is
+                // exactly what is about to change.
+                var recoveredBySlotIndex = new GarnetDatabase[storageSlots.Length];
+                for (var i = 0; i < storageSlots.Length; i++)
+                    recoveredBySlotIndex[i] = databaseMapSnapshot[storageSlots[i]];
+                for (var i = 0; i < storageSlots.Length; i++)
+                    databaseMapSnapshot[storageSlots[i]] = null;
+
+                for (var i = 0; i < storageSlots.Length; i++)
+                {
+                    var db = recoveredBySlotIndex[i];
+                    if (db == null)
+                        continue;
+
+                    // GarnetDatabase.Id is get-only and must equal the index the database sits at, so a
+                    // database whose id changes needs a new wrapper around the same store. The wrapper is
+                    // cheap - it shares the store, AOF and VectorManager - and only the recovered databases
+                    // are candidates, so there is nothing already carrying the target id to reuse instead.
+                    var relabeled = db.Id == logicalIds[i]
+                        ? db
+                        : new GarnetDatabase(logicalIds[i], db, enableAof, copyLastSaveData: true);
+
+                    if (!databases.TrySetValueUnsafe(logicalIds[i], ref relabeled, noExpansion: false))
+                        throw new GarnetException($"Failed to place recovered storage slot {storageSlots[i]} under database ID {logicalIds[i]}.");
+
+                    AttachDatabaseMappingProvider(relabeled);
+                }
+            }
+            finally
+            {
+                databases.mapLock.WriteUnlock();
+            }
+
+            // activeDbIds holds logical ids, which have just changed; rewrite the entries in place.
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var slotIdx = Array.IndexOf(storageSlots, activeDbIdsMapSnapshot[i]);
+                if (slotIdx >= 0)
+                    activeDbIdsMapSnapshot[i] = logicalIds[slotIdx];
             }
         }
 
@@ -216,15 +327,21 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Report a checkpoint written before databases had their own log devices, when all of them
-        /// shared one log file whose contents cannot be attributed to a single database.
-        /// Recovery still proceeds: a database whose records never left memory is recoverable from its
-        /// snapshot alone, so this is reported rather than treated as fatal.
+        /// Verify the on-disk log layout for a database being recovered, reporting anything that limits
+        /// what it can recover. Two conditions are reported, and either may fire for a given database:
+        /// <list type="bullet">
+        /// <item><description>The checkpoint predates databases having their own log devices, when all of
+        /// them shared one log file whose contents cannot be attributed to a single database.</description></item>
+        /// <item><description>No hybrid log segment exists for the database's storage slot, so records it
+        /// tiered to storage are not on disk to be read back.</description></item>
+        /// </list>
+        /// Recovery still proceeds in both cases: a database whose records never left memory is recoverable
+        /// from its snapshot alone, so these are reported rather than treated as fatal.
         /// </summary>
         /// <param name="db">Database being recovered</param>
         /// <param name="segments">File names under the store directory, or null if unavailable</param>
         /// <param name="multiDatabaseStore">Whether more than one database is being recovered</param>
-        private void ReportLogLayoutIsPriorToIndividualHLogs(GarnetDatabase db, HashSet<string> segments, bool multiDatabaseStore)
+        private void VerifyMultiDBLogLayout(GarnetDatabase db, HashSet<string> segments, bool multiDatabaseStore)
         {
             if (segments == null)
                 return;
@@ -268,36 +385,119 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Whether the latest readable checkpoint for a database was written by a build that gave each
+        /// Map each storage slot found on disk to the logical database id it last held.
+        ///
+        /// <para>The slots themselves can only come from the directory names: reading a checkpoint
+        /// requires knowing which checkpoint directory to open, so the scan is what discovers the
+        /// stores. What the scan cannot know is the <em>label</em> each store carried, because a swap
+        /// relabels a database without moving its files. That is what the persisted mapping supplies.</para>
+        ///
+        /// <para>Falls back to slot == logical id when no mapping is recorded, which covers both a
+        /// store written before the mapping existed and one whose databases were never swapped.</para>
+        /// </summary>
+        /// <param name="storageSlots">Storage slots discovered on disk</param>
+        /// <param name="mapping">Highest-epoch mapping of storage slot to logical database id recovered
+        /// from the checkpoints, or null if none recorded one</param>
+        /// <param name="epoch">Swap epoch <paramref name="mapping"/> belongs to</param>
+        /// <returns>Logical database id for each entry of <paramref name="storageSlots"/>, or
+        /// <paramref name="storageSlots"/> itself when the mapping is the identity or unusable</returns>
+        private int[] ResolveLogicalDatabaseIds(int[] storageSlots, int[] mapping, long epoch)
+        {
+            if (mapping == null)
+                return storageSlots;
+
+            if (!TryApplyDatabaseMapping(storageSlots, mapping, out var logicalIds))
+            {
+                Logger?.LogError(
+                    "Ignoring the database mapping recorded at swap epoch {epoch} and recovering each database under the id matching its storage slot. " +
+                    "Any database swap performed before the last checkpoint is not restored, but no data is lost or misattributed.",
+                    epoch);
+                return storageSlots;
+            }
+
+            // Resume from the persisted epoch so a swap made after this recovery outranks the mapping
+            // that was just read back.
+            swapEpoch = epoch;
+
+            for (var i = 0; i < storageSlots.Length; i++)
+            {
+                if (storageSlots[i] != logicalIds[i])
+                    Logger?.LogInformation("Recovering storage slot {slot} as database {dbId}, per the mapping recorded at swap epoch {epoch}",
+                        storageSlots[i], logicalIds[i], epoch);
+            }
+
+            return logicalIds;
+        }
+
+        /// <summary>
+        /// Turn a persisted mapping into a logical database id per storage slot, rejecting it whole if
+        /// it cannot be trusted. A mapping is never applied partially: doing so can leave two databases
+        /// claiming the same logical id, which is worse than ignoring a stale swap.
+        /// </summary>
+        /// <param name="storageSlots">Storage slots discovered on disk</param>
+        /// <param name="mapping">Mapping of storage slot to logical database id</param>
+        /// <param name="logicalIds">Logical database id for each entry of <paramref name="storageSlots"/></param>
+        /// <returns>True if the mapping is usable</returns>
+        private bool TryApplyDatabaseMapping(int[] storageSlots, int[] mapping, out int[] logicalIds)
+        {
+            var maxDatabases = StoreWrapper.serverOptions.MaxDatabases;
+            logicalIds = new int[storageSlots.Length];
+            var assigned = new HashSet<int>();
+
+            for (var i = 0; i < storageSlots.Length; i++)
+            {
+                var storageSlot = storageSlots[i];
+
+                // A slot the mapping does not cover keeps its own id: it was created after the
+                // checkpoint that recorded the mapping.
+                var dbId = storageSlot >= 0 && storageSlot < mapping.Length ? mapping[storageSlot] : storageSlot;
+
+                if (dbId < 0 || dbId >= maxDatabases)
+                {
+                    // Also catches MaxDatabases having been lowered since the mapping was written.
+                    Logger?.LogError(
+                        "Database mapping assigns storage slot {storageSlot} to database {dbId}, which is outside the configured range of 0 to {maxDatabases}",
+                        storageSlot, dbId, maxDatabases - 1);
+                    return false;
+                }
+
+                if (!assigned.Add(dbId))
+                {
+                    Logger?.LogError(
+                        "Database mapping assigns database {dbId} to more than one storage slot, so it is not a valid permutation", dbId);
+                    return false;
+                }
+
+                logicalIds[i] = dbId;
+            }
+
+            // A mapping entry naming a slot with no directory is not an error: that database's files
+            // were removed while others were kept. Its id simply goes unused, and it is worth saying so.
+            for (var storageSlot = 0; storageSlot < mapping.Length; storageSlot++)
+            {
+                if (mapping[storageSlot] != storageSlot && Array.IndexOf(storageSlots, storageSlot) < 0)
+                    Logger?.LogWarning(
+                        "Database mapping refers to storage slot {storageSlot} as database {dbId}, but no checkpoint directory for that slot exists; it will not be recovered",
+                        storageSlot, mapping[storageSlot]);
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Whether the checkpoint this database recovered from was written by a build that gave each
         /// database its own log devices. Checkpoints at
         /// <see cref="HybridLogRecoveryInfo.MinRecoverableCheckpointVersion"/> predate that change.
         /// </summary>
         /// <param name="db">Database being recovered</param>
-        private bool WasCheckpointedWithPerDatabaseLogs(GarnetDatabase db)
+        private static bool WasCheckpointedWithPerDatabaseLogs(GarnetDatabase db)
         {
-            var checkpointManager = db.Store.CheckpointManager;
-            foreach (var token in checkpointManager.GetLogCheckpointTokens())
-            {
-                try
-                {
-                    var metadata = checkpointManager.GetLogCheckpointMetadata(token);
-                    if (metadata == null)
-                        continue;
+            // Recovery already read the metadata and recorded its format version, so nothing is re-read here.
+            var checkpointVersion = db.CheckpointRecovery.CheckpointVersion;
 
-                    HybridLogRecoveryInfo recoveryInfo = new();
-                    using var reader = new StreamReader(new MemoryStream(metadata));
-                    recoveryInfo.Initialize(reader);
-
-                    return recoveryInfo.hybridLogRecoveryVersion > HybridLogRecoveryInfo.MinRecoverableCheckpointVersion;
-                }
-                catch (Exception ex)
-                {
-                    Logger?.LogDebug(ex, "Could not read checkpoint metadata {token} for database {dbId}", token, db.Id);
-                }
-            }
-
-            // No readable checkpoint metadata: assume the current layout so nothing misleading is reported.
-            return true;
+            // No checkpoint was recovered, so there is no earlier layout to report; assume the current one
+            // rather than say something misleading.
+            return checkpointVersion == 0 || checkpointVersion > HybridLogRecoveryInfo.MinRecoverableCheckpointVersion;
         }
 
         /// <inheritdoc/>
@@ -861,6 +1061,12 @@ namespace Garnet.server
                 databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
                 databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
 
+                // The swapped wrappers are new instances, so re-point their checkpoint managers, and
+                // advance the epoch so checkpoints taken from here on outrank any persisted earlier.
+                swapEpoch++;
+                AttachDatabaseMappingProvider(databaseMapSnapshot[dbId1]);
+                AttachDatabaseMappingProvider(databaseMapSnapshot[dbId2]);
+
                 var activeSessions = 0;
                 foreach (var server in StoreWrapper.Servers)
                 {
@@ -930,7 +1136,8 @@ namespace Garnet.server
                     return databasesMapSnapshot[dbId];
                 }
 
-                // Create the database and use TrySetValueUnsafe to add it to the map
+                // Create the database and use TrySetValueUnsafe to add it to the map. A newly created
+                // database binds to the slot matching its id; only recovery relabels that pairing.
                 var db = CreateDatabaseDelegate(dbId);
                 if (!databases.TrySetValueUnsafe(dbId, ref db, false))
                     return default;
@@ -950,6 +1157,59 @@ namespace Garnet.server
             databasesMapSnapshot = databases.Map;
             return databasesMapSnapshot[dbId];
         }
+
+        /// <summary>
+        /// Build the current storage-slot to logical-database mapping, as
+        /// <c>mapping[storageSlot] = logicalDatabaseId</c>. Returns null while the mapping is still the
+        /// identity, so a server whose databases were never swapped records nothing and its checkpoints
+        /// stay byte-identical to those of a build without this feature.
+        /// </summary>
+        private int[] GetCurrentDatabaseMapping()
+        {
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+            var databaseMapSnapshot = databases.Map;
+
+            var maxSlot = -1;
+            var isIdentity = true;
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var db = databaseMapSnapshot[activeDbIdsMapSnapshot[i]];
+                if (db == null)
+                    continue;
+
+                if (db.StorageSlot > maxSlot)
+                    maxSlot = db.StorageSlot;
+                if (db.StorageSlot != db.Id)
+                    isIdentity = false;
+            }
+
+            if (isIdentity || maxSlot < 0)
+                return null;
+
+            // Slots with no live database keep their own index, so an unmapped slot recovered later
+            // still lands on itself rather than on 0.
+            var mapping = new int[maxSlot + 1];
+            for (var slot = 0; slot < mapping.Length; slot++)
+                mapping[slot] = slot;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var db = databaseMapSnapshot[activeDbIdsMapSnapshot[i]];
+                if (db != null)
+                    mapping[db.StorageSlot] = db.Id;
+            }
+
+            return mapping;
+        }
+
+        /// <summary>
+        /// Point a database's checkpoint manager at the live mapping, so each checkpoint records the
+        /// mapping in force when it ran rather than one pushed at swap time.
+        /// </summary>
+        /// <param name="db">Database whose checkpoint manager should report the mapping</param>
+        private void AttachDatabaseMappingProvider(GarnetDatabase db)
+            => db?.Store?.CheckpointManager?.SetDatabaseMappingProvider(() => (GetCurrentDatabaseMapping(), swapEpoch));
 
         /// <inheritdoc/>
         public override bool TryPauseCheckpoints(int dbId)
@@ -1061,31 +1321,37 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Retrieves saved database IDs from parent checkpoint / AOF path
+        /// Retrieves saved storage slots from parent checkpoint / AOF path
         /// e.g. if path contains directories: baseName, baseName_1, baseName_2, baseName_10
-        /// DB IDs 0,1,2,10 will be returned
+        /// slots 0,1,2,10 will be returned
         /// </summary>
+        /// <remarks>
+        /// The directory names identify the storage slots, not necessarily the logical database ids:
+        /// a swap relabels a database without moving its files. Callers that need logical ids resolve
+        /// them from the mapping persisted in the checkpoints; see
+        /// <see cref="ResolveLogicalDatabaseIds"/>.
+        /// </remarks>
         /// <param name="path">Parent path</param>
         /// <param name="baseName">Base name of directories containing database-specific checkpoints / AOFs</param>
-        /// <param name="dbIds">DB IDs extracted from parent path</param>
+        /// <param name="storageSlots">Storage slots extracted from parent path</param>
         /// <returns>True if successful</returns>
-        internal static bool TryGetSavedDatabaseIds(string path, string baseName, out int[] dbIds)
+        internal static bool TryGetSavedDatabaseIds(string path, string baseName, out int[] storageSlots)
         {
-            dbIds = default;
+            storageSlots = default;
             if (!Directory.Exists(path)) return false;
 
             var dirs = Directory.GetDirectories(path, $"{baseName}*", SearchOption.TopDirectoryOnly);
-            dbIds = new int[dirs.Length];
+            storageSlots = new int[dirs.Length];
             for (var i = 0; i < dirs.Length; i++)
             {
                 var dirName = new DirectoryInfo(dirs[i]).Name;
                 var sepIdx = dirName.IndexOf('_');
-                var dbId = 0;
+                var storageSlot = 0;
 
-                if (sepIdx != -1 && !int.TryParse(dirName.AsSpan(sepIdx + 1), out dbId))
+                if (sepIdx != -1 && !int.TryParse(dirName.AsSpan(sepIdx + 1), out storageSlot))
                     continue;
 
-                dbIds[i] = dbId;
+                storageSlots[i] = storageSlot;
             }
 
             return true;
@@ -1116,6 +1382,8 @@ namespace Garnet.server
             var db = databases.Map[dbId];
             if (sizeTrackersStarted)
                 db.SizeTracker?.Start(StoreWrapper.ctsCommit.Token);
+
+            AttachDatabaseMappingProvider(db);
 
             activeDbIds.TryGetNextId(out var nextIdx);
             activeDbIds.TrySetValue(nextIdx, db.Id);

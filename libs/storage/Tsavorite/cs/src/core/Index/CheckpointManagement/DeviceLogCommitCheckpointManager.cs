@@ -44,6 +44,12 @@ namespace Tsavorite.core
         private SectorAlignedBufferPool bufferPool;
 
         /// <summary>
+        /// Source for <see cref="GetDatabaseMapping"/>. Stays null unless a subclass overrides
+        /// <see cref="SetDatabaseMappingProvider"/> to accept one.
+        /// </summary>
+        protected Func<(int[] Mapping, long Epoch)> databaseMappingProvider;
+
+        /// <summary>
         /// Track historical commits for automatic purging
         /// </summary>
         private readonly Guid[] indexTokenHistory, logTokenHistory;
@@ -202,10 +208,22 @@ namespace Tsavorite.core
         public virtual byte[] GetCookie() => null;
 
         /// <inheritdoc />
-        public virtual int[] GetDatabaseMapping(out long swapEpoch)
+        /// <remarks>Ignored here: a checkpoint manager whose host does not relabel databases records no
+        /// mapping. Subclasses opt in by overriding this to assign <see cref="databaseMappingProvider"/>.</remarks>
+        public virtual void SetDatabaseMappingProvider(Func<(int[] Mapping, long Epoch)> provider) { }
+
+        /// <inheritdoc />
+        public int[] GetDatabaseMapping(out long swapEpoch)
         {
-            swapEpoch = 0;
-            return null;
+            if (databaseMappingProvider is null)
+            {
+                swapEpoch = 0;
+                return null;
+            }
+
+            var (mapping, epoch) = databaseMappingProvider();
+            swapEpoch = epoch;
+            return mapping;
         }
 
         /// <inheritdoc />

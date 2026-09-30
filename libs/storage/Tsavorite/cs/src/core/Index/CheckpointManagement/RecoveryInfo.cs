@@ -237,7 +237,7 @@ namespace Tsavorite.core
                 swapEpoch = long.Parse(value);
             }
 
-            if (checksum != Checksum())
+            if (checksum != Checksum(cversion))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
 
             Deserialized = true;
@@ -274,14 +274,22 @@ namespace Tsavorite.core
         /// <summary>
         /// Write info to byte array
         /// </summary>
-        public readonly byte[] ToByteArray()
+        public readonly byte[] ToByteArray() => ToByteArray(CheckpointVersion);
+
+        /// <summary>
+        /// Write info to a byte array at a given checkpoint version. Production always writes
+        /// <see cref="CheckpointVersion"/>; writing at <see cref="MinRecoverableCheckpointVersion"/> omits the
+        /// fields that version does not carry, and is how tests produce the payload an older build would have
+        /// written.
+        /// </summary>
+        internal readonly byte[] ToByteArray(int cversion)
         {
             using (MemoryStream ms = new())
             {
                 using (StreamWriter writer = new(ms))
                 {
-                    writer.WriteLine(CheckpointVersion); // checkpoint version
-                    writer.WriteLine(Checksum());
+                    writer.WriteLine(cversion); // checkpoint version
+                    writer.WriteLine(Checksum(cversion));
 
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
@@ -310,27 +318,69 @@ namespace Tsavorite.core
                             writer.WriteLine(cookie[i]);
                     }
 
-                    // Write the database mapping. Like the cookie, this is host-supplied and sits
-                    // outside Checksum(). A reader at MinRecoverableCheckpointVersion stops before
+                    // Write the database mapping. A reader at MinRecoverableCheckpointVersion stops before
                     // these fields, so an older build sees a well-formed payload ending at the cookie.
-                    var mappingLength = databaseMapping == null ? 0 : databaseMapping.Length;
-                    writer.WriteLine(mappingLength);
-                    for (var i = 0; i < mappingLength; i++)
-                        writer.WriteLine(databaseMapping[i]);
+                    if (cversion > MinRecoverableCheckpointVersion)
+                    {
+                        var mappingLength = databaseMapping == null ? 0 : databaseMapping.Length;
+                        writer.WriteLine(mappingLength);
+                        for (var i = 0; i < mappingLength; i++)
+                            writer.WriteLine(databaseMapping[i]);
 
-                    writer.WriteLine(swapEpoch);
+                        writer.WriteLine(swapEpoch);
+                    }
                 }
                 return ms.ToArray();
             }
         }
 
-        private readonly long Checksum()
+        private readonly long Checksum(int cversion)
         {
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress
+            var checksum = long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress
                 ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word;
+
+            // The host-supplied fields joined the checksum after MinRecoverableCheckpointVersion, so a
+            // checkpoint at that version must be checksummed without them or it will not verify.
+            if (cversion > MinRecoverableCheckpointVersion)
+                checksum ^= HostSuppliedFieldsChecksum();
+
+            return checksum;
+        }
+
+        /// <summary>
+        /// Checksum of the host-supplied fields. These are sequences rather than scalars, so they are
+        /// folded (FNV-1a) rather than xored: xor alone would let two entries swapping places, or a
+        /// repeated value being added twice, leave the checksum unchanged. A null sequence folds as an
+        /// empty one, matching the serializer, which writes both as a zero length and reads both back as
+        /// null.
+        /// </summary>
+        private readonly long HostSuppliedFieldsChecksum()
+        {
+            const long FnvOffsetBasis = unchecked((long)14695981039346656037);
+            const long FnvPrime = 1099511628211;
+
+            var hash = FnvOffsetBasis;
+
+            static long Fold(long hash, long value) => unchecked((hash ^ value) * FnvPrime);
+
+            hash = Fold(hash, cookie?.Length ?? 0);
+            if (cookie != null)
+            {
+                foreach (var b in cookie)
+                    hash = Fold(hash, b);
+            }
+
+            hash = Fold(hash, databaseMapping?.Length ?? 0);
+            if (databaseMapping != null)
+            {
+                foreach (var id in databaseMapping)
+                    hash = Fold(hash, id);
+            }
+
+            return Fold(hash, swapEpoch);
         }
 
         /// <summary>
