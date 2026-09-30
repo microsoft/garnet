@@ -99,6 +99,12 @@ namespace Garnet.server
         public Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
 
         /// <summary>
+        /// Take a scheduled checkpoint, skipping the attempt if any database is already checkpointing.
+        /// </summary>
+        internal Task<CheckpointStatus> TakeScheduledCheckpointAsync(CancellationToken token = default, ILogger logger = null)
+            => TakeCheckpointAsync(false, token: token, logger: logger);
+
+        /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
         /// </summary>
         /// <param name="entryTime">Time offset</param>
