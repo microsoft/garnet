@@ -25,13 +25,12 @@ namespace Garnet.common
         }
 
         readonly RingBoundedBuffer<QueueSlot> buffer;
+        readonly ActiveWorkerMonitor publisherMonitor = new();
         readonly int capacity;
         readonly int maxSpinCount;
 
         long headAddress;
         long tailAddress;
-        int activePublishers;
-        int addingCompleted;
         int disposed;
 
         /// <summary>
@@ -77,12 +76,10 @@ namespace Garnet.common
         internal bool TryEnqueue(T item)
         {
             ArgumentNullException.ThrowIfNull(item);
+            ObjectDisposedException.ThrowIf(!publisherMonitor.TryEnter(), this);
 
-            Interlocked.Increment(ref activePublishers);
             try
             {
-                ObjectDisposedException.ThrowIf(Volatile.Read(ref addingCompleted) != 0, this);
-
                 long address;
                 var spinner = new SpinWait();
                 while (true)
@@ -108,7 +105,7 @@ namespace Garnet.common
             }
             finally
             {
-                Interlocked.Decrement(ref activePublishers);
+                _ = publisherMonitor.Exit();
             }
         }
 
@@ -164,14 +161,7 @@ namespace Garnet.common
         /// Prevents new producers and waits for producers that already entered publication to finish.
         /// Existing entries remain available to the consumer.
         /// </summary>
-        internal void CompleteAdding()
-        {
-            Interlocked.Exchange(ref addingCompleted, 1);
-
-            var spinner = new SpinWait();
-            while (Volatile.Read(ref activePublishers) != 0)
-                spinner.SpinOnce();
-        }
+        internal void CompleteAdding() => publisherMonitor.Dispose();
 
         void ClearAndAdvanceHead(ref QueueSlot slot)
         {

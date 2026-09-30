@@ -281,9 +281,7 @@ namespace Garnet.common
                 return false;
 
             Drain();
-#pragma warning disable VSTHRD002 // The synchronous admission contract blocks until the waiter signal is set.
-            return waitTask.GetAwaiter().GetResult();
-#pragma warning restore VSTHRD002
+            return AsyncUtils.BlockingWait(waitTask);
         }
 
         bool TryReserveFast(in TRequest requestResource, CancellationToken token)

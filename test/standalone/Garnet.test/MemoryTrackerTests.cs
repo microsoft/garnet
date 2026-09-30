@@ -131,6 +131,40 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CancelingHeadOfFullQueueReclaimsWrappedSlot()
+        {
+            var tracker = new MemoryTracker(1);
+            using var queue = new WaiterQueue<int>(
+                tracker,
+                ringPageSize: 2,
+                ringPageCount: 1,
+                spinCount: 0);
+            using var cts = new CancellationTokenSource();
+            ClassicAssert.IsTrue(queue.Admit(1));
+
+            var canceled = queue.AdmitAsync(1, cts.Token).AsTask();
+            var second = queue.AdmitAsync(1).AsTask();
+            ClassicAssert.IsFalse(await queue.AdmitAsync(1).ConfigureAwait(false));
+
+            cts.Cancel();
+            Assert.ThrowsAsync<OperationCanceledException>(async () => await canceled.ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, tracker.InUseBytes);
+
+            var wrapped = queue.AdmitAsync(1).AsTask();
+            ClassicAssert.IsFalse(wrapped.IsCompleted);
+
+            queue.Release(1);
+            ClassicAssert.IsTrue(await second.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+            ClassicAssert.IsFalse(wrapped.IsCompleted);
+
+            queue.Release(1);
+            ClassicAssert.IsTrue(await wrapped.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+            queue.Release(1);
+
+            ClassicAssert.AreEqual(0, tracker.InUseBytes);
+        }
+
+        [Test]
         public async Task FullWaiterQueueReturnsFalse()
         {
             var tracker = new MemoryTracker(1);

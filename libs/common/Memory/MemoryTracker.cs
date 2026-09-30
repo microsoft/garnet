@@ -51,8 +51,7 @@ namespace Garnet.common
 
         void IResourceTracker<int>.Validate(in int requestResource)
         {
-            if (requestResource <= 0)
-                throw new ArgumentOutOfRangeException(nameof(requestResource));
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(requestResource);
 
             if (capacityBytes != 0 && requestResource > capacityBytes)
             {
