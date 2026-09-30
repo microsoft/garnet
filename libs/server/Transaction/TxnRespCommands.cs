@@ -29,8 +29,6 @@ namespace Garnet.server
             txnManager.txnStartHead = readHead;
             txnManager.state = TxnState.Started;
             txnManager.operationCntTxn = 0;
-            // Track receive buffer ptr for key pointer adjustment at EXEC time
-            txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -64,7 +62,7 @@ namespace Garnet.server
 
                 if (clusterSession != null)
                 {
-                    txnManager.GetSlotVerificationInput(recvBufferPtr, SessionAsking, out var clusterSlotVerificationInput);
+                    txnManager.GetSlotVerificationInput(SessionAsking, out var clusterSlotVerificationInput);
 
                     if (txnManager.txnKeysParseState.Count > 0 &&
                         clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))
@@ -186,12 +184,6 @@ namespace Garnet.server
 
                 txnManager.Abort();
                 return true;
-            }
-
-            if (clusterSession != null && recvBufferPtr != txnManager.saveKeyRecvBufferPtr)
-            {
-                txnManager.CopyExistingKeysToScratchBuffer();
-                txnManager.saveKeyRecvBufferPtr = recvBufferPtr;
             }
 
             txnManager.LockKeys(commandInfo, isSubCommand);
