@@ -116,7 +116,7 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion);
+                var operateSuccessful = OperateForUpdate((IGarnetObject)logRecord.ValueObject, ref input, ref output, ref rmwInfo);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -201,7 +201,7 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                value.Operate(ref input, ref output, functionsState.respProtocolVersion);
+                OperateForUpdate(value, ref input, ref output, ref rmwInfo);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -221,6 +221,7 @@ namespace Garnet.server
                 if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
                 {
                     output.OutputFlags |= ObjectOutputFlags.WrongType;
+                    rmwInfo.SuppressOnMutate = true;
                     return true;
                 }
 
@@ -242,6 +243,16 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
+        }
+
+        bool OperateForUpdate(IGarnetObject value, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
+        {
+            var isCollection = (input.header.type == GarnetObjectType.Hash && input.header.HashOp == HashOperation.HCOLLECT) ||
+                (input.header.type == GarnetObjectType.SortedSet && input.header.SortedSetOp == SortedSetOperation.ZCOLLECT);
+            var succeeded = value.Operate(ref input, ref output, functionsState.respProtocolVersion);
+            if (output.HasWrongType || (isCollection && output.result1 == 0 && !output.HasRemoveKey))
+                rmwInfo.SuppressOnMutate = true;
+            return succeeded;
         }
 
 

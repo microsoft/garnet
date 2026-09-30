@@ -65,6 +65,12 @@ namespace Tsavorite.core
         /// <inheritdoc cref="IRecordTriggers.CallOnTruncate"/>
         bool CallOnTruncate { get; }
 
+        /// <inheritdoc cref="IRecordTriggers.CallOnMutate"/>
+        bool CallOnMutate => false;
+
+        /// <inheritdoc cref="IRecordTriggers.OnMutate"/>
+        void OnMutate() { }
+
         /// <inheritdoc cref="IRecordTriggers.OnDispose"/>
         void OnDispose(ref LogRecord logRecord, DisposeReason reason);
 
