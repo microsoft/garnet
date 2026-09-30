@@ -189,7 +189,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VADD, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadOrCreateVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadOrCreateVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -222,7 +222,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VREM, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -259,7 +259,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VSETATTR, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status))
+            using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
