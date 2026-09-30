@@ -64,8 +64,6 @@ namespace Garnet.server
             // disjoint sets and no group is discarded twice.
             chunkedReader.DiscardInProgressAccumulations();
             DiscardFuzzyRegionBuffer();
-            while (txnGroupBuffer.Count > 0)
-                txnGroupBuffer.Dequeue().Discard();
             foreach (var txn in activeTxns.Values)
                 txn.Discard();
             activeTxns.Clear();
@@ -83,13 +81,22 @@ namespace Garnet.server
         /// <summary>
         /// Discard the fuzzy-region buffer, returning the pooled chunk buffers of any chunked operation it holds. Only for
         /// a buffer that will not be replayed: either it has just been replayed (returning a chunked operation's buffers a
-        /// second time is a no-op, since the operation released them as it was dispatched) or replay is tearing down.
+        /// second time is a no-op, since the operation released them as it was dispatched) or replay is tearing down or
+        /// abandoning the region.
         /// </summary>
+        /// <remarks>
+        /// The buffered transaction groups go with the operations, because a group is only reachable through the commit
+        /// marker recorded alongside it: dropping the markers while leaving the groups queued would put the two out of
+        /// step, and the next region's markers would dequeue the wrong groups.
+        /// </remarks>
         public void DiscardFuzzyRegionBuffer()
         {
             foreach (var op in fuzzyRegionOps)
                 op.Chunk?.ReturnValueChunks();
             fuzzyRegionOps.Clear();
+
+            while (txnGroupBuffer.Count > 0)
+                txnGroupBuffer.Dequeue().Discard();
         }
 
         /// <summary>
@@ -105,12 +112,15 @@ namespace Garnet.server
         /// <summary>
         /// Add transaction group to fuzzy region buffer
         /// </summary>
-        /// <param name="group"></param>
-        /// <param name="commitMarker"></param>
-        public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker)
+        /// <param name="group">The transaction group, whose ownership passes to this buffer.</param>
+        /// <param name="commitMarker">The TxnCommit record bytes, which mark where in the buffered stream the group
+        /// is replayed.</param>
+        /// <param name="commitSequenceNumber">Log address sequence number of the commit record, needed for the
+        /// multi-log commit barrier when the group is eventually replayed.</param>
+        public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker, long commitSequenceNumber = 0)
         {
             // Add commit marker operation
-            fuzzyRegionOps.Add(new ReplayOperation(commitMarker.ToArray()));
+            fuzzyRegionOps.Add(new ReplayOperation(commitMarker.ToArray(), commitSequenceNumber));
             // Enqueue transaction group
             txnGroupBuffer.Enqueue(group);
         }

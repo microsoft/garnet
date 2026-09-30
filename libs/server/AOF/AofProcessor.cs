@@ -393,9 +393,6 @@ namespace Garnet.server
                 case AofEntryType.StoredProcedure:
                     aofReplayCoordinator.ReplayStoredProc(virtualSublogIdx, header.procedureId, ptr, logAddressSequenceNumber);
                     break;
-                case AofEntryType.TxnCommit:
-                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(virtualSublogIdx, ptr, asReplica, logAddressSequenceNumber);
-                    break;
                 default:
                     _ = ReplayOpDispatch(
                         virtualSublogIdx,
