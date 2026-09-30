@@ -15,59 +15,70 @@ namespace Garnet.test
     {
         readonly record struct ResourceRequest(int Units);
 
-        sealed class ResourceTracker(int capacity) : IResourceTracker<ResourceRequest>
+        readonly struct ResourceTracker : IResourceTracker<ResourceRequest>
         {
-            int blocked;
-            int inUse;
-            int peakInUse;
-            int reservationAttempts;
-            int pauseNextReservation;
-            ManualResetEventSlim reservationPaused;
-            ManualResetEventSlim resumeReservation;
+            sealed class TrackerState(int capacity)
+            {
+                internal readonly int capacity = capacity;
+                internal int blocked;
+                internal int inUse;
+                internal int peakInUse;
+                internal int reservationAttempts;
+                internal int pauseNextReservation;
+                internal ManualResetEventSlim reservationPaused;
+                internal ManualResetEventSlim resumeReservation;
+            }
+
+            readonly TrackerState state;
+
+            internal ResourceTracker(int capacity)
+            {
+                state = new TrackerState(capacity);
+            }
 
             internal bool Blocked
             {
-                get => Volatile.Read(ref blocked) != 0;
-                set => Volatile.Write(ref blocked, value ? 1 : 0);
+                get => Volatile.Read(ref state.blocked) != 0;
+                set => Volatile.Write(ref state.blocked, value ? 1 : 0);
             }
 
-            internal int InUse => Volatile.Read(ref inUse);
-            internal int PeakInUse => Volatile.Read(ref peakInUse);
-            internal int ReservationAttempts => Volatile.Read(ref reservationAttempts);
+            internal int InUse => Volatile.Read(ref state.inUse);
+            internal int PeakInUse => Volatile.Read(ref state.peakInUse);
+            internal int ReservationAttempts => Volatile.Read(ref state.reservationAttempts);
 
             internal void PauseNextReservation(ManualResetEventSlim paused, ManualResetEventSlim resume)
             {
-                reservationPaused = paused;
-                resumeReservation = resume;
-                Volatile.Write(ref pauseNextReservation, 1);
+                state.reservationPaused = paused;
+                state.resumeReservation = resume;
+                Volatile.Write(ref state.pauseNextReservation, 1);
             }
 
             public void Validate(in ResourceRequest requestResource)
             {
                 if (requestResource.Units <= 0)
                     throw new ArgumentOutOfRangeException(nameof(requestResource));
-                if (requestResource.Units > capacity)
+                if (requestResource.Units > state.capacity)
                     throw new InvalidOperationException("Request exceeds capacity.");
             }
 
             public bool TryReserve(in ResourceRequest requestResource)
             {
-                Interlocked.Increment(ref reservationAttempts);
-                if (Interlocked.Exchange(ref pauseNextReservation, 0) != 0)
+                Interlocked.Increment(ref state.reservationAttempts);
+                if (Interlocked.Exchange(ref state.pauseNextReservation, 0) != 0)
                 {
-                    reservationPaused.Set();
-                    resumeReservation.Wait();
+                    state.reservationPaused.Set();
+                    state.resumeReservation.Wait();
                     return false;
                 }
 
                 while (true)
                 {
-                    var current = Volatile.Read(ref inUse);
-                    if (Blocked || current > capacity - requestResource.Units)
+                    var current = Volatile.Read(ref state.inUse);
+                    if (Blocked || current > state.capacity - requestResource.Units)
                         return false;
 
                     var next = current + requestResource.Units;
-                    if (Interlocked.CompareExchange(ref inUse, next, current) != current)
+                    if (Interlocked.CompareExchange(ref state.inUse, next, current) != current)
                         continue;
 
                     UpdatePeak(next);
@@ -79,20 +90,20 @@ namespace Garnet.test
             {
                 while (true)
                 {
-                    var current = Volatile.Read(ref inUse);
+                    var current = Volatile.Read(ref state.inUse);
                     if (requestResource.Units > current)
                         throw new InvalidOperationException("Release exceeds active usage.");
-                    if (Interlocked.CompareExchange(ref inUse, current - requestResource.Units, current) == current)
+                    if (Interlocked.CompareExchange(ref state.inUse, current - requestResource.Units, current) == current)
                         return;
                 }
             }
 
             void UpdatePeak(int value)
             {
-                var current = Volatile.Read(ref peakInUse);
+                var current = Volatile.Read(ref state.peakInUse);
                 while (value > current)
                 {
-                    var observed = Interlocked.CompareExchange(ref peakInUse, value, current);
+                    var observed = Interlocked.CompareExchange(ref state.peakInUse, value, current);
                     if (observed == current)
                         return;
                     current = observed;
@@ -108,14 +119,14 @@ namespace Garnet.test
         {
             var tracker = new ResourceTracker(1);
             Assert.Throws<ArgumentOutOfRangeException>(() =>
-                _ = new WaiterQueue<ResourceRequest>(tracker, maxEnqueueSpinCount: -1));
+                _ = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, maxEnqueueSpinCount: -1));
         }
 
         [Test]
         public async Task NewArrivalCanReserveWithoutInspectingBacklog()
         {
             var tracker = new ResourceTracker(4);
-            using var queue = new WaiterQueue<ResourceRequest>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
             var four = new ResourceRequest(4);
             var one = new ResourceRequest(1);
             queue.Admit(four);
@@ -139,7 +150,7 @@ namespace Garnet.test
         public async Task ExternalDrainAdmitsNewlyAvailableResource()
         {
             var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceRequest>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
             var request = new ResourceRequest(1);
 
             var waiter = queue.AdmitAsync(request).AsTask();
@@ -158,7 +169,7 @@ namespace Garnet.test
         {
             const int spinCount = 4;
             var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceRequest>(tracker, spinCount: spinCount);
+            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: spinCount);
             var request = new ResourceRequest(1);
 
             var waiter = queue.AdmitAsync(request).AsTask();
@@ -178,7 +189,7 @@ namespace Garnet.test
         {
             const int waiterCount = 160;
             var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceRequest>(tracker, ringPageCount: 8, spinCount: 0);
+            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, ringPageCount: 8, spinCount: 0);
             var request = new ResourceRequest(1);
             var waiters = new Task[waiterCount];
 
@@ -212,7 +223,7 @@ namespace Garnet.test
         public async Task ConcurrentDrainAfterFailedReservationIsNotLost()
         {
             var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceRequest>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
             using var reservationPaused = new ManualResetEventSlim();
             using var resumeReservation = new ManualResetEventSlim();
             var request = new ResourceRequest(1);
@@ -235,7 +246,7 @@ namespace Garnet.test
         public async Task FullWaiterLogReturnsFalse()
         {
             var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceRequest>(tracker, ringPageSize: 1, ringPageCount: 1, spinCount: 0);
+            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, ringPageSize: 1, ringPageCount: 1, spinCount: 0);
             var request = new ResourceRequest(1);
 
             var first = queue.AdmitAsync(request).AsTask();
@@ -254,7 +265,7 @@ namespace Garnet.test
         public async Task CancelingHeadRequestsAnotherDrain()
         {
             var tracker = new ResourceTracker(2);
-            using var queue = new WaiterQueue<ResourceRequest>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
             using var cts = new CancellationTokenSource();
             var two = new ResourceRequest(2);
             var one = new ResourceRequest(1);
@@ -275,7 +286,7 @@ namespace Garnet.test
         public async Task CancelingMiddlePreservesSurvivorOrder()
         {
             var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceRequest>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
             using var cts = new CancellationTokenSource();
             var request = new ResourceRequest(1);
 
@@ -303,7 +314,7 @@ namespace Garnet.test
         public void DisposeWakesParkedWaiters()
         {
             var tracker = new ResourceTracker(1);
-            var queue = new WaiterQueue<ResourceRequest>(tracker, spinCount: 0);
+            var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
             var request = new ResourceRequest(1);
             queue.Admit(request);
             var waiter = queue.AdmitAsync(request).AsTask();

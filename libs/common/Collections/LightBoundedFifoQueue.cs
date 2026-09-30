@@ -68,6 +68,18 @@ namespace Garnet.common
             this.maxSpinCount = maxSpinCount;
         }
 
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+                return;
+
+            CompleteAdding();
+            while (TryDequeue(out _))
+            {
+            }
+        }
+
         /// <summary>
         /// Attempts to append an item.
         /// </summary>
@@ -155,6 +167,12 @@ namespace Garnet.common
             item = slot.item;
             ClearAndAdvanceHead(ref slot);
             return true;
+
+            void ClearAndAdvanceHead(ref QueueSlot slot)
+            {
+                slot = default;
+                Volatile.Write(ref headAddress, headAddress + 1);
+            }
         }
 
         /// <summary>
@@ -162,23 +180,5 @@ namespace Garnet.common
         /// Existing entries remain available to the consumer.
         /// </summary>
         internal void CompleteAdding() => publisherMonitor.Dispose();
-
-        void ClearAndAdvanceHead(ref QueueSlot slot)
-        {
-            slot = default;
-            Volatile.Write(ref headAddress, headAddress + 1);
-        }
-
-        /// <inheritdoc />
-        public void Dispose()
-        {
-            if (Interlocked.Exchange(ref disposed, 1) != 0)
-                return;
-
-            CompleteAdding();
-            while (TryDequeue(out _))
-            {
-            }
-        }
     }
 }

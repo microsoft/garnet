@@ -20,7 +20,7 @@ namespace Garnet.test
         public async Task WaiterQueueUsesTrackerForAsyncAdmission()
         {
             var tracker = new MemoryTracker(64);
-            using var queue = new WaiterQueue<int>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<MemoryTracker, int>(tracker, spinCount: 0);
             ClassicAssert.IsTrue(queue.Admit(64));
 
             var waiter = queue.AdmitAsync(1).AsTask();
@@ -39,7 +39,7 @@ namespace Garnet.test
         public void RequestLargerThanCapacityFailsValidation()
         {
             var tracker = new MemoryTracker(64);
-            using var queue = new WaiterQueue<int>(tracker);
+            using var queue = new WaiterQueue<MemoryTracker, int>(tracker);
 
             var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
                 await queue.AdmitAsync(65).ConfigureAwait(false));
@@ -48,10 +48,21 @@ namespace Garnet.test
         }
 
         [Test]
+        public void TryReserveRejectsRequestLargerThanCapacity()
+        {
+            var tracker = new MemoryTracker(64);
+            var resourceTracker = (IResourceTracker<int>)tracker;
+
+            var exception = Assert.Throws<InvalidOperationException>(() => resourceTracker.TryReserve(65));
+            StringAssert.Contains("65 bytes exceeds the configured maximum of 64 bytes", exception.Message);
+            ClassicAssert.AreEqual(0, tracker.InUseBytes);
+        }
+
+        [Test]
         public void ReleasingMoreThanReservedFailsWithoutCorruptingAccounting()
         {
             var tracker = new MemoryTracker(64);
-            using var queue = new WaiterQueue<int>(tracker);
+            using var queue = new WaiterQueue<MemoryTracker, int>(tracker);
             ClassicAssert.IsTrue(queue.Admit(32));
 
             Assert.Throws<InvalidOperationException>(() => queue.Release(33));
@@ -63,7 +74,7 @@ namespace Garnet.test
         public void CancellationDoesNotConsumeCapacity()
         {
             var tracker = new MemoryTracker(64);
-            using var queue = new WaiterQueue<int>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<MemoryTracker, int>(tracker, spinCount: 0);
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
             ClassicAssert.IsTrue(queue.Admit(64));
 
@@ -78,7 +89,7 @@ namespace Garnet.test
         public void DisposingQueueWakesBlockedAdmission()
         {
             var tracker = new MemoryTracker(64);
-            var queue = new WaiterQueue<int>(tracker, spinCount: 0);
+            var queue = new WaiterQueue<MemoryTracker, int>(tracker, spinCount: 0);
             ClassicAssert.IsTrue(queue.Admit(64));
             var waiter = queue.AdmitAsync(1).AsTask();
 
@@ -93,7 +104,7 @@ namespace Garnet.test
         public async Task NewArrivalCanReserveWithoutInspectingBacklog()
         {
             var tracker = new MemoryTracker(4);
-            using var queue = new WaiterQueue<int>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<MemoryTracker, int>(tracker, spinCount: 0);
             ClassicAssert.IsTrue(queue.Admit(4));
 
             var first = queue.AdmitAsync(4).AsTask();
@@ -114,7 +125,7 @@ namespace Garnet.test
         public async Task CancelingHeadAllowsNextRequestToAdvance()
         {
             var tracker = new MemoryTracker(4);
-            using var queue = new WaiterQueue<int>(tracker, spinCount: 0);
+            using var queue = new WaiterQueue<MemoryTracker, int>(tracker, spinCount: 0);
             using var cts = new CancellationTokenSource();
             ClassicAssert.IsTrue(queue.Admit(4));
 
@@ -134,7 +145,7 @@ namespace Garnet.test
         public async Task CancelingHeadOfFullQueueReclaimsWrappedSlot()
         {
             var tracker = new MemoryTracker(1);
-            using var queue = new WaiterQueue<int>(
+            using var queue = new WaiterQueue<MemoryTracker, int>(
                 tracker,
                 ringPageSize: 2,
                 ringPageCount: 1,
@@ -168,7 +179,7 @@ namespace Garnet.test
         public async Task FullWaiterQueueReturnsFalse()
         {
             var tracker = new MemoryTracker(1);
-            using var queue = new WaiterQueue<int>(
+            using var queue = new WaiterQueue<MemoryTracker, int>(
                 tracker,
                 ringPageSize: 1,
                 ringPageCount: 1,
@@ -187,7 +198,7 @@ namespace Garnet.test
         {
             const int capacity = 256;
             var tracker = new MemoryTracker(capacity);
-            using var queue = new WaiterQueue<int>(tracker);
+            using var queue = new WaiterQueue<MemoryTracker, int>(tracker);
 
             var workers = new Task[8];
             for (var worker = 0; worker < workers.Length; worker++)

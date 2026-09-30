@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace Garnet.common
 {
     /// <summary>
-    /// Tracks active resource usage for a <see cref="WaiterQueue{TRequest}"/>.
+    /// Tracks active resource usage for a <see cref="WaiterQueue{TTracker, TRequest}"/>.
     /// </summary>
     /// <typeparam name="TRequest">Resource request type.</typeparam>
     public interface IResourceTracker<TRequest>
@@ -46,8 +46,10 @@ namespace Garnet.common
     /// attempts to enter a fixed-capacity FIFO log represented by monotonically increasing logical addresses
     /// managed by <see cref="LightBoundedFifoQueue{T}"/>.
     /// </remarks>
+    /// <typeparam name="TTracker">Concrete resource tracker type.</typeparam>
     /// <typeparam name="TRequest">Resource request type.</typeparam>
-    public sealed class WaiterQueue<TRequest> : IDisposable
+    public sealed class WaiterQueue<TTracker, TRequest> : IDisposable
+        where TTracker : struct, IResourceTracker<TRequest>
     {
         /// <summary>
         /// Default number of lock-free spin iterations before a request is enqueued.
@@ -80,14 +82,14 @@ namespace Garnet.common
             }
 
             readonly TaskCompletionSource<bool> signal;
-            readonly WaiterQueue<TRequest> owner;
+            readonly WaiterQueue<TTracker, TRequest> owner;
             readonly CancellationToken cancellationToken;
             CancellationTokenRegistration cancellationRegistration;
             int state;
 
             internal readonly TRequest requestResource;
 
-            internal Waiter(WaiterQueue<TRequest> owner, in TRequest requestResource, CancellationToken cancellationToken)
+            internal Waiter(WaiterQueue<TTracker, TRequest> owner, in TRequest requestResource, CancellationToken cancellationToken)
             {
                 this.owner = owner;
                 this.requestResource = requestResource;
@@ -111,7 +113,10 @@ namespace Garnet.common
                 owner.Drain();
             }
 
-            internal bool TryGrant()
+            /// <summary>
+            /// Atomically completes an already-reserved grant if cancellation or disposal has not won the waiter state.
+            /// </summary>
+            internal bool TryCompleteGrant()
             {
                 if (Interlocked.CompareExchange(ref state, (int)WaiterState.Granted, (int)WaiterState.Pending) !=
                     (int)WaiterState.Pending)
@@ -141,7 +146,7 @@ namespace Garnet.common
             }
         }
 
-        readonly IResourceTracker<TRequest> tracker;
+        TTracker tracker;
         readonly LightBoundedFifoQueue<Waiter> waiterQueue;
         readonly int spinCount;
 
@@ -162,13 +167,12 @@ namespace Garnet.common
         /// <param name="spinCount">Lock-free spin iterations before enqueueing and parking.</param>
         /// <param name="maxEnqueueSpinCount">Maximum spin iterations while reserving a bounded FIFO slot.</param>
         public WaiterQueue(
-            IResourceTracker<TRequest> tracker,
+            TTracker tracker,
             int ringPageSize = DefaultRingPageSize,
             int ringPageCount = DefaultRingPageCount,
             int spinCount = DefaultSpinCount,
             int maxEnqueueSpinCount = DefaultMaxEnqueueSpinCount)
         {
-            ArgumentNullException.ThrowIfNull(tracker);
             ArgumentOutOfRangeException.ThrowIfNegative(spinCount);
             ArgumentOutOfRangeException.ThrowIfNegative(maxEnqueueSpinCount);
 
@@ -198,7 +202,7 @@ namespace Garnet.common
                     spinner.SpinOnce();
                 drainAcquired = true;
 
-                var disposeException = new ObjectDisposedException(nameof(WaiterQueue<>));
+                var disposeException = new ObjectDisposedException(nameof(WaiterQueue<TTracker, TRequest>));
                 while (waiterQueue.TryDequeue(out var waiter))
                 {
                     try
@@ -340,7 +344,7 @@ namespace Garnet.common
         /// Attempts to admit queued requests in FIFO order. Calls are coalesced so only one drain runner consumes
         /// the queue, while a request arriving during drain shutdown cannot be lost.
         /// </summary>
-        public void Drain()
+        internal void Drain()
         {
             if (Volatile.Read(ref disposed) != 0)
                 return;
@@ -398,7 +402,7 @@ namespace Garnet.common
                     }
 
                     // Cancellation can win after the initial state check and before this grant transition.
-                    if (!waiter.TryGrant())
+                    if (!waiter.TryCompleteGrant())
                         tracker.Release(requestResource);
 
                     // The queue no longer references the waiter, so its cancellation registration can be released.

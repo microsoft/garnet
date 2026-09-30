@@ -16,27 +16,31 @@ namespace Garnet.common
     /// GarnetLightClient integration is intentionally reserved for a separate integration stage; this type
     /// currently provides only the memory-backpressure infrastructure.
     /// </remarks>
-    public sealed class MemoryTracker : IResourceTracker<int>
+    public readonly struct MemoryTracker : IResourceTracker<int>
     {
-        readonly long capacityBytes;
+        sealed class TrackerState(long capacityBytes)
+        {
+            internal readonly long capacityBytes = capacityBytes;
+            internal long inUseBytes;
+            internal long peakInUseBytes;
+        }
 
-        long inUseBytes;
-        long peakInUseBytes;
+        readonly TrackerState state;
 
         /// <summary>
         /// Configured maximum number of in-flight bytes. Zero means unlimited.
         /// </summary>
-        public long CapacityBytes => capacityBytes;
+        public long CapacityBytes => state?.capacityBytes ?? 0;
 
         /// <summary>
         /// Number of bytes currently reserved against this quota.
         /// </summary>
-        public long InUseBytes => Interlocked.Read(ref inUseBytes);
+        public long InUseBytes => state == null ? 0 : Interlocked.Read(ref state.inUseBytes);
 
         /// <summary>
         /// Highest observed number of bytes reserved against this quota.
         /// </summary>
-        public long PeakInUseBytes => Interlocked.Read(ref peakInUseBytes);
+        public long PeakInUseBytes => state == null ? 0 : Interlocked.Read(ref state.peakInUseBytes);
 
         /// <summary>
         /// Creates a memory resource tracker.
@@ -46,13 +50,17 @@ namespace Garnet.common
         {
             ArgumentOutOfRangeException.ThrowIfNegative(capacityBytes);
 
-            this.capacityBytes = capacityBytes;
+            state = capacityBytes == 0 ? null : new TrackerState(capacityBytes);
         }
 
         void IResourceTracker<int>.Validate(in int requestResource)
+            => ValidateRequest(requestResource);
+
+        void ValidateRequest(int requestResource)
         {
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(requestResource);
 
+            var capacityBytes = CapacityBytes;
             if (capacityBytes != 0 && requestResource > capacityBytes)
             {
                 throw new InvalidOperationException(
@@ -62,28 +70,31 @@ namespace Garnet.common
 
         bool IResourceTracker<int>.TryReserve(in int requestResource)
         {
-            if (capacityBytes == 0)
+            ValidateRequest(requestResource);
+
+            var state = this.state;
+            if (state == null)
                 return true;
 
             while (true)
             {
-                var current = Interlocked.Read(ref inUseBytes);
-                if (current > capacityBytes - requestResource)
+                var current = Interlocked.Read(ref state.inUseBytes);
+                if (current > state.capacityBytes - requestResource)
                     return false;
 
                 var next = current + requestResource;
-                if (Interlocked.CompareExchange(ref inUseBytes, next, current) != current)
+                if (Interlocked.CompareExchange(ref state.inUseBytes, next, current) != current)
                     continue;
 
-                UpdatePeak(next);
+                UpdatePeak(state, next);
                 return true;
 
-                void UpdatePeak(long value)
+                static void UpdatePeak(TrackerState state, long value)
                 {
-                    var current = Interlocked.Read(ref peakInUseBytes);
+                    var current = Interlocked.Read(ref state.peakInUseBytes);
                     while (value > current)
                     {
-                        var observed = Interlocked.CompareExchange(ref peakInUseBytes, value, current);
+                        var observed = Interlocked.CompareExchange(ref state.peakInUseBytes, value, current);
                         if (observed == current)
                             return;
                         current = observed;
@@ -94,15 +105,16 @@ namespace Garnet.common
 
         void IResourceTracker<int>.Release(in int requestResource)
         {
-            if (capacityBytes == 0)
+            var state = this.state;
+            if (state == null)
                 return;
 
             while (true)
             {
-                var current = Interlocked.Read(ref inUseBytes);
+                var current = Interlocked.Read(ref state.inUseBytes);
                 if (requestResource > current)
                     throw new InvalidOperationException($"Cannot release {requestResource} bytes when only {current} bytes are reserved.");
-                if (Interlocked.CompareExchange(ref inUseBytes, current - requestResource, current) == current)
+                if (Interlocked.CompareExchange(ref state.inUseBytes, current - requestResource, current) == current)
                     return;
             }
         }
