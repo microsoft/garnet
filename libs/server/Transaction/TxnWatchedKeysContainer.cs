@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -22,16 +22,27 @@ namespace Garnet.server
         readonly WatchVersionMap versionMap;
 
         readonly int initialSliceBufferSize;
-        readonly ScratchBufferAllocator txnScratchBufferAllocator;
+
+        /// <summary>
+        /// Allocator holding the copied watched-key bytes.
+        /// </summary>
+        /// <remarks>
+        /// Owned by this container rather than shared with the transaction manager's scratch allocator. A watch
+        /// outlives the transactions taken while it is held: an internal transaction (SMOVE, LMOVE, RENAME) commits
+        /// with <c>internal_txn: true</c>, which resets the transaction allocator without clearing this container, and
+        /// the next transaction's keys are then written over the still-watched bytes. What
+        /// <see cref="SaveKeysToLock"/> locks and <see cref="SaveKeysToKeyList"/> slot-verifies is read from those
+        /// bytes, so the transaction would lock and verify a key the client never watched.
+        /// </remarks>
+        readonly ScratchBufferAllocator watchScratchBufferAllocator = new();
         int sliceBufferSize;
         int sliceCount;
 
-        public WatchedKeysContainer(int size, WatchVersionMap versionMap, ScratchBufferAllocator txnScratchBufferAllocator)
+        public WatchedKeysContainer(int size, WatchVersionMap versionMap)
         {
             this.versionMap = versionMap;
             sliceCount = 0;
             initialSliceBufferSize = size;
-            this.txnScratchBufferAllocator = txnScratchBufferAllocator;
         }
 
         /// <summary>
@@ -40,7 +51,7 @@ namespace Garnet.server
         public void Reset()
         {
             sliceCount = 0;
-            txnScratchBufferAllocator.Reset();
+            watchScratchBufferAllocator.Reset();
         }
 
         public bool RemoveWatch(PinnedSpanByte key)
@@ -68,7 +79,7 @@ namespace Garnet.server
             }
 
             // Copy key bytes into scratch buffer (independent of receive buffer lifetime)
-            var keySlice = txnScratchBufferAllocator.CreateArgSlice(key.ReadOnlySpan);
+            var keySlice = watchScratchBufferAllocator.CreateArgSlice(key.ReadOnlySpan);
 
             keySlices[sliceCount].slice = keySlice;
             keySlices[sliceCount].isWatched = true;

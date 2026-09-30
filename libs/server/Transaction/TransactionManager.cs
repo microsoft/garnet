@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -176,7 +176,7 @@ namespace Garnet.server
             this.respSession = respSession;
 
             txnScratchBufferAllocator = new ScratchBufferAllocator();
-            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBufferAllocator);
+            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
