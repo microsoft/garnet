@@ -272,6 +272,34 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task CancelingMiddlePreservesSurvivorOrder()
+        {
+            var tracker = new ResourceTracker(1) { Blocked = true };
+            using var queue = new WaiterQueue<ResourceRequest>(tracker, spinCount: 0);
+            using var cts = new CancellationTokenSource();
+            var request = new ResourceRequest(1);
+
+            var first = queue.AdmitAsync(request).AsTask();
+            var canceled = queue.AdmitAsync(request, cts.Token).AsTask();
+            var third = queue.AdmitAsync(request).AsTask();
+
+            cts.Cancel();
+            Assert.ThrowsAsync<OperationCanceledException>(async () => await canceled.ConfigureAwait(false));
+
+            tracker.Blocked = false;
+            queue.Drain();
+            ClassicAssert.IsTrue(await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+            ClassicAssert.IsFalse(third.IsCompleted);
+
+            queue.Release(request);
+            ClassicAssert.IsTrue(await third.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+            queue.Release(request);
+
+            ClassicAssert.AreEqual(0, queue.WaiterCount);
+            ClassicAssert.AreEqual(0, tracker.InUse);
+        }
+
+        [Test]
         public void DisposeWakesParkedWaiters()
         {
             var tracker = new ResourceTracker(1);

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -43,7 +44,7 @@ namespace Garnet.common
     /// <remarks>
     /// Direct admission and bounded retries do not acquire the queue lock. A request that remains blocked then
     /// attempts to enter a fixed-capacity FIFO log represented by monotonically increasing logical addresses
-    /// managed by <see cref="LightBoundedFifoQueue{T}"/>. Waiter nodes are pooled by the queue and carry one completion signal.
+    /// managed by <see cref="LightBoundedFifoQueue{T}"/>.
     /// </remarks>
     /// <typeparam name="TRequest">Resource request type.</typeparam>
     public sealed class WaiterQueue<TRequest> : IDisposable
@@ -59,11 +60,6 @@ namespace Garnet.common
         public const int DefaultMaxEnqueueSpinCount = 10;
 
         /// <summary>
-        /// Default maximum number of waiter nodes retained for reuse.
-        /// </summary>
-        public const int DefaultMaxPooledWaiters = 128;
-
-        /// <summary>
         /// Default number of waiter slots in each ring page.
         /// </summary>
         public const int DefaultRingPageSize = 32;
@@ -75,82 +71,73 @@ namespace Garnet.common
 
         sealed class Waiter
         {
-            TaskCompletionSource<bool> signal;
+            enum WaiterState
+            {
+                Pending,
+                Granted,
+                Canceled,
+                Disposed,
+            }
+
+            readonly TaskCompletionSource<bool> signal;
+            readonly WaiterQueue<TRequest> owner;
+            readonly CancellationToken cancellationToken;
             CancellationTokenRegistration cancellationRegistration;
-            WaiterQueue<TRequest> owner;
+            int state;
 
-            // Queue completion can race producer setup; recycle only after both paths release the waiter.
-            int remainingOwners;
-            int registrationState;
+            internal readonly TRequest requestResource;
 
-            internal TRequest requestResource;
-            internal LightBoundedFifoQueue<Waiter>.QueueEntryHandle queueHandle;
-
-            internal void Prepare(WaiterQueue<TRequest> owner, in TRequest requestResource)
+            internal Waiter(WaiterQueue<TRequest> owner, in TRequest requestResource, CancellationToken cancellationToken)
             {
                 this.owner = owner;
                 this.requestResource = requestResource;
-                this.queueHandle = LightBoundedFifoQueue<Waiter>.QueueEntryHandle.Invalid;
+                this.cancellationToken = cancellationToken;
                 signal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                remainingOwners = 2;
-                registrationState = 0;
-            }
-
-            internal void RegisterCancellation(CancellationToken cancellationToken)
-            {
                 if (cancellationToken.CanBeCanceled)
-                {
-                    var registration = cancellationToken.UnsafeRegister(
-                        static (state, token) => ((Waiter)state).Cancel(token), this);
-                    cancellationRegistration = registration;
-                    if (Interlocked.CompareExchange(ref registrationState, 1, 0) != 0)
-                        registration.Dispose();
-                }
+                    cancellationRegistration = cancellationToken.UnsafeRegister(static state => ((Waiter)state).Cancel(), this);
             }
-
-            void Cancel(CancellationToken token) => owner.CancelWaiter(this, token);
 
             internal Task<bool> Task => signal.Task;
 
-            internal void Complete(Exception exception)
-            {
-                var toSignal = signal;
-                if (exception == null)
-                    toSignal.SetResult(true);
-                else
-                    toSignal.SetException(exception);
+            internal bool IsCanceled => Volatile.Read(ref state) == (int)WaiterState.Canceled;
 
-                if (Interlocked.Exchange(ref registrationState, 2) == 1)
-                    cancellationRegistration.Dispose();
+            void Cancel()
+            {
+                if (Interlocked.CompareExchange(ref state, (int)WaiterState.Canceled, (int)WaiterState.Pending) !=
+                    (int)WaiterState.Pending)
+                    return;
+
+                signal.TrySetException(new OperationCanceledException(cancellationToken));
+                owner.Drain();
+            }
+
+            internal bool TryGrant()
+            {
+                if (Interlocked.CompareExchange(ref state, (int)WaiterState.Granted, (int)WaiterState.Pending) !=
+                    (int)WaiterState.Pending)
+                    return false;
+
+                signal.TrySetResult(true);
+                return true;
+            }
+
+            internal void TryDispose(Exception exception)
+            {
+                if (Interlocked.CompareExchange(ref state, (int)WaiterState.Disposed, (int)WaiterState.Pending) ==
+                    (int)WaiterState.Pending)
+                    signal.TrySetException(exception);
+            }
+
+            internal void Release()
+            {
+                cancellationRegistration.Dispose();
                 cancellationRegistration = default;
-                ReleaseOwnership();
             }
 
-            internal void Clear()
+            internal void Abort()
             {
-                owner = null;
-                requestResource = default;
-                signal = null;
-                queueHandle = LightBoundedFifoQueue<Waiter>.QueueEntryHandle.Invalid;
-            }
-
-            internal void Recycle()
-            {
-                var queue = owner.waiterQueue;
-                Clear();
-                queue.Return(this);
-            }
-
-            internal void ReleaseOwnership()
-            {
-                if (Interlocked.Decrement(ref remainingOwners) == 0)
-                    Recycle();
-            }
-
-            internal void Abandon()
-            {
-                remainingOwners = 0;
-                Recycle();
+                Interlocked.CompareExchange(ref state, (int)WaiterState.Disposed, (int)WaiterState.Pending);
+                Release();
             }
         }
 
@@ -174,28 +161,81 @@ namespace Garnet.common
         /// <param name="ringPageCount">Number of pages in the waiter ring. Must be a power of two.</param>
         /// <param name="spinCount">Lock-free spin iterations before enqueueing and parking.</param>
         /// <param name="maxEnqueueSpinCount">Maximum spin iterations while reserving a bounded FIFO slot.</param>
-        /// <param name="maxPooledWaiters">Maximum waiter nodes retained for reuse.</param>
         public WaiterQueue(
             IResourceTracker<TRequest> tracker,
             int ringPageSize = DefaultRingPageSize,
             int ringPageCount = DefaultRingPageCount,
             int spinCount = DefaultSpinCount,
-            int maxEnqueueSpinCount = DefaultMaxEnqueueSpinCount,
-            int maxPooledWaiters = DefaultMaxPooledWaiters)
+            int maxEnqueueSpinCount = DefaultMaxEnqueueSpinCount)
         {
             ArgumentNullException.ThrowIfNull(tracker);
             ArgumentOutOfRangeException.ThrowIfNegative(spinCount);
             ArgumentOutOfRangeException.ThrowIfNegative(maxEnqueueSpinCount);
-            ArgumentOutOfRangeException.ThrowIfNegative(maxPooledWaiters);
 
             this.tracker = tracker;
             this.spinCount = spinCount;
             this.waiterQueue = new LightBoundedFifoQueue<Waiter>(
                 ringPageSize,
                 ringPageCount,
-                maxEnqueueSpinCount,
-                itemFactory: static () => new Waiter(),
-                maxPooledItems: maxPooledWaiters);
+                maxEnqueueSpinCount);
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+                return;
+
+            List<Exception> exceptions = null;
+            var drainAcquired = false;
+
+            try
+            {
+                waiterQueue.CompleteAdding();
+
+                var spinner = new SpinWait();
+                while (Interlocked.CompareExchange(ref drainWork, 1, 0) != 0)
+                    spinner.SpinOnce();
+                drainAcquired = true;
+
+                var disposeException = new ObjectDisposedException(nameof(WaiterQueue<>));
+                while (waiterQueue.TryDequeue(out var waiter))
+                {
+                    try
+                    {
+                        waiter.TryDispose(disposeException);
+                    }
+                    catch (Exception ex)
+                    {
+                        (exceptions ??= []).Add(ex);
+                    }
+
+                    try
+                    {
+                        waiter.Release();
+                    }
+                    catch (Exception ex)
+                    {
+                        (exceptions ??= []).Add(ex);
+                    }
+                }
+            }
+            finally
+            {
+                if (drainAcquired)
+                    Volatile.Write(ref drainWork, 0);
+                try
+                {
+                    waiterQueue.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    (exceptions ??= []).Add(ex);
+                }
+            }
+
+            if (exceptions != null)
+                throw new AggregateException("One or more waiters failed during disposal.", exceptions);
         }
 
         /// <summary>
@@ -210,10 +250,10 @@ namespace Garnet.common
             token.ThrowIfCancellationRequested();
             ThrowIfDisposed();
 
-            if (TryReserveBeforeQueue(requestResource, token))
+            if (TryReserveFast(requestResource, token))
                 return ValueTask.FromResult(true);
 
-            var waitTask = TryEnqueueAsync(requestResource, token);
+            var waitTask = TryEnqueueWaiterAsync(requestResource, token);
             if (waitTask == null)
                 return ValueTask.FromResult(false);
 
@@ -233,10 +273,10 @@ namespace Garnet.common
             token.ThrowIfCancellationRequested();
             ThrowIfDisposed();
 
-            if (TryReserveBeforeQueue(requestResource, token))
+            if (TryReserveFast(requestResource, token))
                 return true;
 
-            var waitTask = TryEnqueueAsync(requestResource, token);
+            var waitTask = TryEnqueueWaiterAsync(requestResource, token);
             if (waitTask == null)
                 return false;
 
@@ -246,7 +286,7 @@ namespace Garnet.common
 #pragma warning restore VSTHRD002
         }
 
-        bool TryReserveBeforeQueue(in TRequest requestResource, CancellationToken token)
+        bool TryReserveFast(in TRequest requestResource, CancellationToken token)
         {
             if (tracker.TryReserve(requestResource))
                 return true;
@@ -264,23 +304,27 @@ namespace Garnet.common
             return false;
         }
 
-        Task<bool> TryEnqueueAsync(in TRequest requestResource, CancellationToken token)
+        Task<bool> TryEnqueueWaiterAsync(in TRequest requestResource, CancellationToken token)
         {
             ThrowIfDisposed();
             token.ThrowIfCancellationRequested();
 
-            var waiter = waiterQueue.Rent();
-            waiter.Prepare(this, requestResource);
+            var waiter = new Waiter(this, requestResource, token);
             var waitTask = waiter.Task;
-            if (!waiterQueue.TryEnqueue(waiter, out var handle))
+            try
             {
-                waiter.Abandon();
-                return null;
+                if (!waiterQueue.TryEnqueue(waiter))
+                {
+                    waiter.Abort();
+                    return null;
+                }
+            }
+            catch
+            {
+                waiter.Abort();
+                throw;
             }
 
-            waiter.queueHandle = handle;
-            waiter.RegisterCancellation(token);
-            waiter.ReleaseOwnership();
             return waitTask;
         }
 
@@ -314,74 +358,57 @@ namespace Garnet.common
                 return;
 
             do
-                GrantWaiters();
+                ReleaseWaiters();
             while (Interlocked.Decrement(ref drainWork) != 0);
-        }
 
-        void GrantWaiters()
-        {
-            while (true)
+            void ReleaseWaiters()
             {
-                TRequest requestResource;
-                if (Volatile.Read(ref disposed) != 0 || !waiterQueue.TryPeek(out var handle, out var waiter))
-                    break;
-
-                requestResource = waiter.requestResource;
-
-                if (!tracker.TryReserve(requestResource))
-                    break;
-
-                if (Volatile.Read(ref disposed) != 0 || !waiterQueue.TryDequeue(handle, out waiter))
+                while (true)
                 {
-                    tracker.Release(requestResource);
-                    continue;
+                    TRequest requestResource;
+                    if (Volatile.Read(ref disposed) != 0 || !waiterQueue.TryPeek(out var waiter))
+                        break;
+
+                    if (waiter.IsCanceled)
+                    {
+                        // Cancellation completes the caller immediately, but its slot is reclaimed only when it
+                        // reaches the FIFO head.
+                        if (waiterQueue.TryDequeue(out waiter))
+                            waiter.Release();
+                        continue;
+                    }
+
+                    requestResource = waiter.requestResource;
+
+                    // Preserve FIFO fairness: a live head that cannot reserve blocks every later waiter.
+                    // Concurrent releases increment drainWork, forcing this owner or the releaser to retry.
+                    if (!tracker.TryReserve(requestResource))
+                        break;
+
+                    // Disposal may begin after reservation; return capacity before yielding queue ownership.
+                    if (Volatile.Read(ref disposed) != 0)
+                    {
+                        tracker.Release(requestResource);
+                        break;
+                    }
+
+                    if (!waiterQueue.TryDequeue(out waiter))
+                    {
+                        // Never retain a reservation unless its waiter was removed from the queue.
+                        tracker.Release(requestResource);
+                        continue;
+                    }
+
+                    // Cancellation can win after the initial state check and before this grant transition.
+                    if (!waiter.TryGrant())
+                        tracker.Release(requestResource);
+
+                    // The queue no longer references the waiter, so its cancellation registration can be released.
+                    waiter.Release();
                 }
-
-                waiter.Complete(exception: null);
             }
-        }
-
-        void CancelWaiter(Waiter waiter, CancellationToken token)
-        {
-            if (!waiterQueue.TryRemove(waiter.queueHandle, out var removedWaiter) ||
-                !ReferenceEquals(waiter, removedWaiter))
-                return;
-
-            waiter.Complete(new OperationCanceledException(token));
-            Drain();
         }
 
         void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-
-        /// <inheritdoc />
-        public void Dispose()
-        {
-            if (Interlocked.Exchange(ref disposed, 1) != 0)
-                return;
-
-            waiterQueue.CompleteAdding();
-
-            var spinner = new SpinWait();
-            while (Interlocked.CompareExchange(ref drainWork, 1, 0) != 0)
-                spinner.SpinOnce();
-
-            try
-            {
-                var exception = new ObjectDisposedException(nameof(WaiterQueue<TRequest>));
-                while (waiterQueue.TryPeek(out var handle, out var waiter))
-                {
-                    if (!waiterQueue.TryDequeue(handle, out waiter))
-                        continue;
-
-                    waiter.Complete(exception);
-                }
-            }
-            finally
-            {
-                Volatile.Write(ref drainWork, 0);
-            }
-
-            waiterQueue.Dispose();
-        }
     }
 }

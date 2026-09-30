@@ -16,55 +16,38 @@ namespace Garnet.common
         {
             Empty,
             Published,
-            Removed,
         }
 
         struct QueueSlot
         {
             internal T item;
-            internal long address;
             internal byte slotState;
-        }
-
-        /// <summary>
-        /// Identifies one logical queue entry across physical slot reuse.
-        /// </summary>
-        internal readonly struct QueueEntryHandle
-        {
-            internal static readonly QueueEntryHandle Invalid = new(-1);
-
-            internal long Address { get; }
-            internal bool IsValid => Address >= 0;
-
-            internal QueueEntryHandle(long address)
-            {
-                Address = address;
-            }
         }
 
         readonly RingBoundedBuffer<QueueSlot> buffer;
         readonly int capacity;
         readonly int maxSpinCount;
-        readonly Func<T> itemFactory;
-        readonly Action<T> itemDisposer;
-        readonly T[] itemPool;
 
         long headAddress;
         long tailAddress;
-        int itemCount;
         int activePublishers;
         int addingCompleted;
         int disposed;
-        int pooledItemCount;
-        SpinLock itemPoolLock;
 
         /// <summary>
-        /// Number of published entries that have not been dequeued or removed.
+        /// Number of reserved entries that have not been dequeued.
         /// </summary>
-        internal int Count => Volatile.Read(ref itemCount);
+        internal int Count
+        {
+            get
+            {
+                var head = Volatile.Read(ref headAddress);
+                return (int)(Volatile.Read(ref tailAddress) - head);
+            }
+        }
 
         /// <summary>
-        /// Maximum number of entries and removal tombstones retained by the queue.
+        /// Maximum number of entries retained by the queue.
         /// </summary>
         internal int Capacity => capacity;
 
@@ -74,96 +57,24 @@ namespace Garnet.common
         /// <param name="pageSize">Number of entries per page. Must be a power of two.</param>
         /// <param name="pageCount">Number of pages. Must be a power of two.</param>
         /// <param name="maxSpinCount">Maximum spin iterations after the initial bounded-tail reservation attempt.</param>
-        /// <param name="itemFactory">Optional factory used by <see cref="Rent"/>.</param>
-        /// <param name="itemDisposer">Optional callback for items rejected by or remaining in the pool during disposal.</param>
-        /// <param name="maxPooledItems">Maximum items retained for reuse.</param>
         internal LightBoundedFifoQueue(
             int pageSize,
             int pageCount,
-            int maxSpinCount,
-            Func<T> itemFactory = null,
-            Action<T> itemDisposer = null,
-            int maxPooledItems = 0)
+            int maxSpinCount)
         {
             ArgumentOutOfRangeException.ThrowIfNegative(maxSpinCount);
-            ArgumentOutOfRangeException.ThrowIfNegative(maxPooledItems);
-            if (maxPooledItems > 0 && itemFactory == null)
-                throw new ArgumentNullException(nameof(itemFactory));
 
             buffer = new RingBoundedBuffer<QueueSlot>(pageSize, pageCount);
             capacity = buffer.Capacity;
             this.maxSpinCount = maxSpinCount;
-            this.itemFactory = itemFactory;
-            this.itemDisposer = itemDisposer;
-            itemPool = new T[maxPooledItems];
         }
 
         /// <summary>
-        /// Rents an item from the queue-owned pool or creates one with the configured factory.
-        /// </summary>
-        internal T Rent()
-        {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-            if (itemFactory == null)
-                throw new InvalidOperationException("No item factory was configured.");
-
-            var lockTaken = false;
-            try
-            {
-                itemPoolLock.Enter(ref lockTaken);
-                ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-                if (pooledItemCount != 0)
-                {
-                    var item = itemPool[--pooledItemCount];
-                    itemPool[pooledItemCount] = null;
-                    return item;
-                }
-            }
-            finally
-            {
-                if (lockTaken)
-                    itemPoolLock.Exit(useMemoryBarrier: false);
-            }
-
-            return itemFactory();
-        }
-
-        /// <summary>
-        /// Returns an item to the queue-owned pool or disposes it when retention is unavailable.
-        /// </summary>
-        /// <param name="item">Item to return.</param>
-        internal void Return(T item)
-        {
-            ArgumentNullException.ThrowIfNull(item);
-
-            var retained = false;
-            var lockTaken = false;
-            try
-            {
-                itemPoolLock.Enter(ref lockTaken);
-                if (Volatile.Read(ref disposed) == 0 && pooledItemCount < itemPool.Length)
-                {
-                    itemPool[pooledItemCount++] = item;
-                    retained = true;
-                }
-            }
-            finally
-            {
-                if (lockTaken)
-                    itemPoolLock.Exit(useMemoryBarrier: false);
-            }
-
-            if (!retained)
-                itemDisposer?.Invoke(item);
-        }
-
-        /// <summary>
-        /// Attempts to append an item and assign its FIFO logical address.
+        /// Attempts to append an item.
         /// </summary>
         /// <param name="item">Item to append.</param>
-        /// <param name="handle">Handle identifying the published entry.</param>
         /// <returns>False when bounded slot reservation does not succeed within the configured spin limit.</returns>
-        internal bool TryEnqueue(T item, out QueueEntryHandle handle)
+        internal bool TryEnqueue(T item)
         {
             ArgumentNullException.ThrowIfNull(item);
 
@@ -185,20 +96,14 @@ namespace Garnet.common
                     }
 
                     if (spinner.Count >= maxSpinCount)
-                    {
-                        handle = QueueEntryHandle.Invalid;
                         return false;
-                    }
 
                     spinner.SpinOnce();
                 }
 
                 ref var slot = ref buffer[address];
                 slot.item = item;
-                slot.address = address;
-                Interlocked.Increment(ref itemCount);
                 Volatile.Write(ref slot.slotState, (byte)SlotState.Published);
-                handle = new QueueEntryHandle(address);
                 return true;
             }
             finally
@@ -208,96 +113,50 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Reads the published FIFO head without removing it. Removal tombstones are reclaimed automatically.
+        /// Reads the published FIFO head without removing it.
         /// </summary>
-        /// <param name="handle">Handle identifying the head entry.</param>
         /// <param name="item">Published head item.</param>
         /// <returns>False when the queue is empty or its logical head has not yet been published.</returns>
         /// <remarks>This method must be called by a serialized consumer.</remarks>
-        internal bool TryPeek(out QueueEntryHandle handle, out T item)
+        internal bool TryPeek(out T item)
         {
-            while (headAddress != Volatile.Read(ref tailAddress))
+            if (headAddress != Volatile.Read(ref tailAddress))
             {
                 ref var slot = ref buffer[headAddress];
-                var state = Volatile.Read(ref slot.slotState);
-                if (state == (byte)SlotState.Empty)
-                    break;
-
-                if (state == (byte)SlotState.Removed)
+                if (Volatile.Read(ref slot.slotState) == (byte)SlotState.Published)
                 {
-                    AdvanceHead();
-                    continue;
+                    item = slot.item;
+                    return true;
                 }
-
-                if (Volatile.Read(ref slot.address) != headAddress)
-                    break;
-
-                handle = new QueueEntryHandle(headAddress);
-                item = Volatile.Read(ref slot.item);
-                if (item == null)
-                    break;
-                return true;
             }
 
-            handle = QueueEntryHandle.Invalid;
             item = default;
             return false;
         }
 
         /// <summary>
-        /// Removes the published head when it still matches the supplied handle.
+        /// Removes the published FIFO head.
         /// </summary>
-        /// <param name="handle">Handle returned by <see cref="TryPeek"/>.</param>
         /// <param name="item">Removed item.</param>
-        /// <returns>True when the matching head was removed.</returns>
+        /// <returns>True when the published head was removed.</returns>
         /// <remarks>This method must be called by the same serialized consumer as <see cref="TryPeek"/>.</remarks>
-        internal bool TryDequeue(QueueEntryHandle handle, out T item)
+        internal bool TryDequeue(out T item)
         {
-            if (!handle.IsValid || headAddress != handle.Address)
+            if (headAddress == Volatile.Read(ref tailAddress))
             {
                 item = default;
                 return false;
             }
 
-            ref var slot = ref buffer[handle.Address];
-            if (Volatile.Read(ref slot.slotState) != (byte)SlotState.Published ||
-                Interlocked.CompareExchange(ref slot.address, ~handle.Address, handle.Address) != handle.Address)
+            ref var slot = ref buffer[headAddress];
+            if (Volatile.Read(ref slot.slotState) != (byte)SlotState.Published)
             {
                 item = default;
                 return false;
             }
 
             item = slot.item;
-            Interlocked.Decrement(ref itemCount);
             ClearAndAdvanceHead(ref slot);
-            return true;
-        }
-
-        /// <summary>
-        /// Marks a published entry as removed. The serialized consumer reclaims its slot in FIFO order.
-        /// </summary>
-        /// <param name="handle">Handle returned by <see cref="TryEnqueue"/>.</param>
-        /// <param name="item">Removed item.</param>
-        /// <returns>True when the matching published entry was marked as removed.</returns>
-        internal bool TryRemove(QueueEntryHandle handle, out T item)
-        {
-            if (!handle.IsValid)
-            {
-                item = default;
-                return false;
-            }
-
-            ref var slot = ref buffer[handle.Address];
-            if (Volatile.Read(ref slot.slotState) != (byte)SlotState.Published ||
-                Interlocked.CompareExchange(ref slot.address, ~handle.Address, handle.Address) != handle.Address)
-            {
-                item = default;
-                return false;
-            }
-
-            item = slot.item;
-            Volatile.Write(ref slot.slotState, (byte)SlotState.Removed);
-            Interlocked.Decrement(ref itemCount);
             return true;
         }
 
@@ -314,12 +173,6 @@ namespace Garnet.common
                 spinner.SpinOnce();
         }
 
-        void AdvanceHead()
-        {
-            ref var slot = ref buffer[headAddress];
-            ClearAndAdvanceHead(ref slot);
-        }
-
         void ClearAndAdvanceHead(ref QueueSlot slot)
         {
             slot = default;
@@ -333,32 +186,8 @@ namespace Garnet.common
                 return;
 
             CompleteAdding();
-            while (TryPeek(out var handle, out _))
-                TryDequeue(handle, out _);
-
-            T[] pooledItems = null;
-            var lockTaken = false;
-            try
+            while (TryDequeue(out _))
             {
-                itemPoolLock.Enter(ref lockTaken);
-                if (pooledItemCount != 0)
-                {
-                    pooledItems = new T[pooledItemCount];
-                    Array.Copy(itemPool, pooledItems, pooledItemCount);
-                    Array.Clear(itemPool, 0, pooledItemCount);
-                    pooledItemCount = 0;
-                }
-            }
-            finally
-            {
-                if (lockTaken)
-                    itemPoolLock.Exit(useMemoryBarrier: false);
-            }
-
-            if (itemDisposer != null && pooledItems != null)
-            {
-                foreach (var item in pooledItems)
-                    itemDisposer(item);
             }
         }
     }
