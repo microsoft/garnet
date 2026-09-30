@@ -16,7 +16,7 @@ namespace Garnet.common
     /// GarnetLightClient integration is intentionally reserved for a separate integration stage; this type
     /// currently provides only the memory-backpressure infrastructure.
     /// </remarks>
-    public sealed class MemoryBackpressureQuota : IResourceTracker<int>
+    public sealed class MemoryTracker : IResourceTracker<int>
     {
         readonly long capacityBytes;
 
@@ -39,10 +39,10 @@ namespace Garnet.common
         public long PeakInUseBytes => Interlocked.Read(ref peakInUseBytes);
 
         /// <summary>
-        /// Creates a memory backpressure quota.
+        /// Creates a memory resource tracker.
         /// </summary>
         /// <param name="capacityBytes">Maximum in-flight bytes. Zero disables throttling.</param>
-        public MemoryBackpressureQuota(long capacityBytes)
+        public MemoryTracker(long capacityBytes)
         {
             ArgumentOutOfRangeException.ThrowIfNegative(capacityBytes);
 
@@ -78,6 +78,18 @@ namespace Garnet.common
 
                 UpdatePeak(next);
                 return true;
+
+                void UpdatePeak(long value)
+                {
+                    var current = Interlocked.Read(ref peakInUseBytes);
+                    while (value > current)
+                    {
+                        var observed = Interlocked.CompareExchange(ref peakInUseBytes, value, current);
+                        if (observed == current)
+                            return;
+                        current = observed;
+                    }
+                }
             }
         }
 
@@ -93,18 +105,6 @@ namespace Garnet.common
                     throw new InvalidOperationException($"Cannot release {requestResource} bytes when only {current} bytes are reserved.");
                 if (Interlocked.CompareExchange(ref inUseBytes, current - requestResource, current) == current)
                     return;
-            }
-        }
-
-        void UpdatePeak(long value)
-        {
-            var current = Interlocked.Read(ref peakInUseBytes);
-            while (value > current)
-            {
-                var observed = Interlocked.CompareExchange(ref peakInUseBytes, value, current);
-                if (observed == current)
-                    return;
-                current = observed;
             }
         }
     }

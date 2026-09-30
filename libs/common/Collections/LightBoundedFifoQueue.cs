@@ -11,7 +11,7 @@ namespace Garnet.common
     /// Fixed-capacity, paged FIFO queue with lock-free multi-producer publication and serialized consumption.
     /// </summary>
     /// <typeparam name="T">Queue item type.</typeparam>
-    internal sealed class LightFifoQueue<T> : IDisposable where T : class
+    internal sealed class LightBoundedFifoQueue<T> : IDisposable where T : class
     {
         enum SlotState
         {
@@ -89,7 +89,7 @@ namespace Garnet.common
         /// <param name="itemFactory">Optional factory used by <see cref="Rent"/>.</param>
         /// <param name="itemDisposer">Optional callback for items rejected by or remaining in the pool during disposal.</param>
         /// <param name="maxPooledItems">Maximum items retained for reuse.</param>
-        internal LightFifoQueue(
+        internal LightBoundedFifoQueue(
             int pageSize,
             int pageCount,
             Func<T> itemFactory = null,

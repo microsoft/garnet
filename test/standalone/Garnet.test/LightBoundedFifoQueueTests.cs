@@ -9,7 +9,7 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     [TestFixture]
-    public class LightFifoQueueTests : TestBase
+    public class LightBoundedFifoQueueTests : TestBase
     {
         sealed class PooledItem : IDisposable
         {
@@ -24,7 +24,7 @@ namespace Garnet.test
         [Test]
         public void QueuePreservesOrderAcrossWrapAndReportsCapacity()
         {
-            using var queue = new LightFifoQueue<string>(pageSize: 2, pageCount: 2);
+            using var queue = new LightBoundedFifoQueue<string>(pageSize: 2, pageCount: 2);
 
             ClassicAssert.IsTrue(queue.TryEnqueue("a", out _));
             ClassicAssert.IsTrue(queue.TryEnqueue("b", out _));
@@ -54,7 +54,7 @@ namespace Garnet.test
         [Test]
         public void RemovedEntryBecomesOrderedTombstone()
         {
-            using var queue = new LightFifoQueue<string>(pageSize: 2, pageCount: 2);
+            using var queue = new LightBoundedFifoQueue<string>(pageSize: 2, pageCount: 2);
 
             ClassicAssert.IsTrue(queue.TryEnqueue("a", out var first));
             ClassicAssert.IsTrue(queue.TryEnqueue("b", out var removed));
@@ -75,7 +75,7 @@ namespace Garnet.test
         [Test]
         public void CompleteAddingRetainsPublishedItems()
         {
-            using var queue = new LightFifoQueue<string>(pageSize: 1, pageCount: 2);
+            using var queue = new LightBoundedFifoQueue<string>(pageSize: 1, pageCount: 2);
             ClassicAssert.IsTrue(queue.TryEnqueue("value", out var handle));
 
             queue.CompleteAdding();
@@ -88,7 +88,7 @@ namespace Garnet.test
         [Test]
         public void QueueOwnsItemReuseAndDisposal()
         {
-            var queue = new LightFifoQueue<PooledItem>(
+            var queue = new LightBoundedFifoQueue<PooledItem>(
                 pageSize: 1,
                 pageCount: 1,
                 itemFactory: static () => new PooledItem(),

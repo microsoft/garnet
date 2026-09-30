@@ -43,7 +43,7 @@ namespace Garnet.common
     /// <remarks>
     /// Direct admission and bounded retries do not acquire the queue lock. A request that remains blocked then
     /// attempts to enter a fixed-capacity FIFO log represented by monotonically increasing logical addresses
-    /// managed by <see cref="LightFifoQueue{T}"/>. Waiter nodes are pooled by the queue and carry one completion signal.
+    /// managed by <see cref="LightBoundedFifoQueue{T}"/>. Waiter nodes are pooled by the queue and carry one completion signal.
     /// </remarks>
     /// <typeparam name="TRequest">Resource request type.</typeparam>
     public sealed class WaiterQueue<TRequest> : IDisposable
@@ -79,7 +79,7 @@ namespace Garnet.common
             int registrationState;
 
             internal TRequest requestResource;
-            internal LightFifoQueue<Waiter>.EntryHandle queueHandle;
+            internal LightBoundedFifoQueue<Waiter>.EntryHandle queueHandle;
 
             internal void Prepare(WaiterQueue<TRequest> owner, in TRequest requestResource)
             {
@@ -150,7 +150,7 @@ namespace Garnet.common
         }
 
         readonly IResourceTracker<TRequest> tracker;
-        readonly LightFifoQueue<Waiter> waiterQueue;
+        readonly LightBoundedFifoQueue<Waiter> waiterQueue;
         readonly int spinCount;
 
         int drainWork;
@@ -182,7 +182,7 @@ namespace Garnet.common
 
             this.tracker = tracker;
             this.spinCount = spinCount;
-            this.waiterQueue = new LightFifoQueue<Waiter>(
+            this.waiterQueue = new LightBoundedFifoQueue<Waiter>(
                 ringPageSize,
                 ringPageCount,
                 itemFactory: static () => new Waiter(),

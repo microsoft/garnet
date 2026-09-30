@@ -11,16 +11,16 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     [TestFixture]
-    public class MemoryBackpressureQuotaTests : TestBase
+    public class MemoryTrackerTests : TestBase
     {
         [TearDown]
         public void TearDown() => TestUtils.OnTearDown();
 
         [Test]
-        public async Task WaiterQueueUsesQuotaForAsyncAdmission()
+        public async Task WaiterQueueUsesTrackerForAsyncAdmission()
         {
-            var quota = new MemoryBackpressureQuota(64);
-            using var queue = new WaiterQueue<int>(quota, spinCount: 0);
+            var tracker = new MemoryTracker(64);
+            using var queue = new WaiterQueue<int>(tracker, spinCount: 0);
             ClassicAssert.IsTrue(queue.Admit(64));
 
             var waiter = queue.AdmitAsync(1).AsTask();
@@ -28,57 +28,57 @@ namespace Garnet.test
 
             queue.Release(64);
             ClassicAssert.IsTrue(await waiter.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
-            ClassicAssert.AreEqual(1, quota.InUseBytes);
-            ClassicAssert.AreEqual(64, quota.PeakInUseBytes);
+            ClassicAssert.AreEqual(1, tracker.InUseBytes);
+            ClassicAssert.AreEqual(64, tracker.PeakInUseBytes);
 
             queue.Release(1);
-            ClassicAssert.AreEqual(0, quota.InUseBytes);
+            ClassicAssert.AreEqual(0, tracker.InUseBytes);
         }
 
         [Test]
         public void RequestLargerThanCapacityFailsValidation()
         {
-            var quota = new MemoryBackpressureQuota(64);
-            using var queue = new WaiterQueue<int>(quota);
+            var tracker = new MemoryTracker(64);
+            using var queue = new WaiterQueue<int>(tracker);
 
             var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
                 await queue.AdmitAsync(65).ConfigureAwait(false));
             StringAssert.Contains("65 bytes exceeds the configured maximum of 64 bytes", exception.Message);
-            ClassicAssert.AreEqual(0, quota.InUseBytes);
+            ClassicAssert.AreEqual(0, tracker.InUseBytes);
         }
 
         [Test]
         public void ReleasingMoreThanReservedFailsWithoutCorruptingAccounting()
         {
-            var quota = new MemoryBackpressureQuota(64);
-            using var queue = new WaiterQueue<int>(quota);
+            var tracker = new MemoryTracker(64);
+            using var queue = new WaiterQueue<int>(tracker);
             ClassicAssert.IsTrue(queue.Admit(32));
 
             Assert.Throws<InvalidOperationException>(() => queue.Release(33));
-            ClassicAssert.AreEqual(32, quota.InUseBytes);
+            ClassicAssert.AreEqual(32, tracker.InUseBytes);
             queue.Release(32);
         }
 
         [Test]
         public void CancellationDoesNotConsumeCapacity()
         {
-            var quota = new MemoryBackpressureQuota(64);
-            using var queue = new WaiterQueue<int>(quota, spinCount: 0);
+            var tracker = new MemoryTracker(64);
+            using var queue = new WaiterQueue<int>(tracker, spinCount: 0);
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
             ClassicAssert.IsTrue(queue.Admit(64));
 
             Assert.ThrowsAsync<OperationCanceledException>(async () =>
                 await queue.AdmitAsync(1, cts.Token).ConfigureAwait(false));
 
-            ClassicAssert.AreEqual(64, quota.InUseBytes);
+            ClassicAssert.AreEqual(64, tracker.InUseBytes);
             queue.Release(64);
         }
 
         [Test]
         public void DisposingQueueWakesBlockedAdmission()
         {
-            var quota = new MemoryBackpressureQuota(64);
-            var queue = new WaiterQueue<int>(quota, spinCount: 0);
+            var tracker = new MemoryTracker(64);
+            var queue = new WaiterQueue<int>(tracker, spinCount: 0);
             ClassicAssert.IsTrue(queue.Admit(64));
             var waiter = queue.AdmitAsync(1).AsTask();
 
@@ -86,14 +86,14 @@ namespace Garnet.test
 
             Assert.ThrowsAsync<ObjectDisposedException>(async () => await waiter.ConfigureAwait(false));
             queue.Release(64);
-            ClassicAssert.AreEqual(0, quota.InUseBytes);
+            ClassicAssert.AreEqual(0, tracker.InUseBytes);
         }
 
         [Test]
         public async Task NewArrivalCanReserveWithoutInspectingBacklog()
         {
-            var quota = new MemoryBackpressureQuota(4);
-            using var queue = new WaiterQueue<int>(quota, spinCount: 0);
+            var tracker = new MemoryTracker(4);
+            using var queue = new WaiterQueue<int>(tracker, spinCount: 0);
             ClassicAssert.IsTrue(queue.Admit(4));
 
             var first = queue.AdmitAsync(4).AsTask();
@@ -107,14 +107,14 @@ namespace Garnet.test
             queue.Release(4);
             ClassicAssert.IsTrue(await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
             queue.Release(4);
-            ClassicAssert.AreEqual(0, quota.InUseBytes);
+            ClassicAssert.AreEqual(0, tracker.InUseBytes);
         }
 
         [Test]
         public async Task CancelingHeadAllowsNextRequestToAdvance()
         {
-            var quota = new MemoryBackpressureQuota(4);
-            using var queue = new WaiterQueue<int>(quota, spinCount: 0);
+            var tracker = new MemoryTracker(4);
+            using var queue = new WaiterQueue<int>(tracker, spinCount: 0);
             using var cts = new CancellationTokenSource();
             ClassicAssert.IsTrue(queue.Admit(4));
 
@@ -133,9 +133,9 @@ namespace Garnet.test
         [Test]
         public async Task FullWaiterQueueReturnsFalse()
         {
-            var quota = new MemoryBackpressureQuota(1);
+            var tracker = new MemoryTracker(1);
             using var queue = new WaiterQueue<int>(
-                quota,
+                tracker,
                 ringPageSize: 1,
                 ringPageCount: 1,
                 spinCount: 0);
@@ -152,8 +152,8 @@ namespace Garnet.test
         public async Task ConcurrentAdmissionsDoNotExceedCapacity()
         {
             const int capacity = 256;
-            var quota = new MemoryBackpressureQuota(capacity);
-            using var queue = new WaiterQueue<int>(quota);
+            var tracker = new MemoryTracker(capacity);
+            using var queue = new WaiterQueue<int>(tracker);
 
             var workers = new Task[8];
             for (var worker = 0; worker < workers.Length; worker++)
@@ -170,8 +170,8 @@ namespace Garnet.test
             }
 
             await Task.WhenAll(workers).ConfigureAwait(false);
-            ClassicAssert.LessOrEqual(quota.PeakInUseBytes, capacity);
-            ClassicAssert.AreEqual(0, quota.InUseBytes);
+            ClassicAssert.LessOrEqual(tracker.PeakInUseBytes, capacity);
+            ClassicAssert.AreEqual(0, tracker.InUseBytes);
         }
     }
 }
