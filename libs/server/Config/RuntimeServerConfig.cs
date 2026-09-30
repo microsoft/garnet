@@ -44,6 +44,14 @@ namespace Garnet.server
 
         readonly long[] values = new long[TableSize];
 
+        readonly object checkpointFrequencyLock = new();
+        long checkpointTrackingGeneration;
+
+        internal bool CheckpointWriteTrackingEnabled => Volatile.Read(ref values[(int)ServerConfigType.CHECKPOINT_FREQ]) > 0;
+
+        // Enabling invalidates each database's clean state without touching databases or taking their locks.
+        internal long CheckpointTrackingGeneration => Volatile.Read(ref checkpointTrackingGeneration);
+
         // Startup options are retained only to resolve read-only parameters that derive from live server
         // state. Runtime-adjustable values are seeded into the table at construction and are thereafter
         // read exclusively through the typed accessors so a CONFIG SET is observed everywhere.
@@ -211,6 +219,8 @@ namespace Garnet.server
             // when the server started at 0.
             Set(ServerConfigType.AOF_COMMIT_FREQ, "aof-commit-freq", ConfigKind.Int32, -1, int.MaxValue,
                 updateAction: ApplyCommitFrequencyUpdate);
+            Set(ServerConfigType.CHECKPOINT_FREQ, "checkpoint-freq", ConfigKind.Int32, 0, int.MaxValue,
+                updateAction: ApplyCheckpointFrequencyUpdate);
             // expired-object-collection-freq (seconds): <= 0 = disabled (no task), > 0 = collection interval.
             Set(ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ, "expired-object-collection-freq",
                 ConfigKind.Int32, 0, int.MaxValue, updateAction: ApplyExpiredObjectCollectionUpdate);
@@ -267,6 +277,7 @@ namespace Garnet.server
             values[(int)ServerConfigType.MAXCLIENTS] = o.NetworkConnectionLimit;
             values[(int)ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY] = o.AofSizeLimitEnforceFrequencySecs;
             values[(int)ServerConfigType.AOF_COMMIT_FREQ] = o.CommitFrequencyMs;
+            values[(int)ServerConfigType.CHECKPOINT_FREQ] = o.CheckpointFrequencySecs;
             values[(int)ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ] = o.ExpiredObjectCollectionFrequencySecs;
             values[(int)ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ] = o.ExpiredKeyDeletionScanFrequencySecs;
         }
@@ -452,6 +463,21 @@ namespace Garnet.server
                     return false;
             }
 
+            // Serialize frequency transitions so concurrent CONFIG SET requests cannot miss a re-enable.
+            // This lock never waits for a checkpoint or takes a database lock.
+            if (type == ServerConfigType.CHECKPOINT_FREQ)
+            {
+                lock (checkpointFrequencyLock)
+                    return ApplyParsedValue(type, parsed, out error);
+            }
+
+            return ApplyParsedValue(type, parsed, out error);
+        }
+
+        bool ApplyParsedValue(ServerConfigType type, long parsed, out string error)
+        {
+            error = null;
+            ref readonly var meta = ref Meta[(int)type];
             // Publish the new value first so any task an update action restarts observes it, then run the
             // action. On rejection, roll the slot back so the option is left unchanged.
             var oldValue = Volatile.Read(ref values[(int)type]);
@@ -528,6 +554,17 @@ namespace Garnet.server
         {
             error = null;
             config.owner?.ReconcilePrimaryTask(TaskType.ObjectCollectTask);
+            return true;
+        }
+
+        static bool ApplyCheckpointFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        {
+            error = null;
+            // Tracking is already enabled by the published value. Writes from the disabled period
+            // require one save, even if no new write arrives after enabling.
+            if (oldValue <= 0 && newValue > 0)
+                Interlocked.Increment(ref config.checkpointTrackingGeneration);
+            config.owner?.NotifyCheckpointFrequencyChanged();
             return true;
         }
 

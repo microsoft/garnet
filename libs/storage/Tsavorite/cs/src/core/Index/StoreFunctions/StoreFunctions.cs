@@ -99,6 +99,13 @@ namespace Tsavorite.core
         public readonly bool CallOnTruncate => recordTriggers.CallOnTruncate;
 
         /// <inheritdoc/>
+        public readonly bool CallOnMutate => recordTriggers.CallOnMutate;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void OnMutate() => recordTriggers.OnMutate();
+
+        /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void OnDispose(ref LogRecord logRecord, DisposeReason reason) => recordTriggers.OnDispose(ref logRecord, reason);
 

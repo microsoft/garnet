@@ -34,6 +34,7 @@ namespace Garnet.server
         SG_GET,
         MAXCLIENTS,
         AOF_SIZE_LIMIT_ENFORCE_FREQUENCY,
+        CHECKPOINT_FREQ,
 
         // Runtime-adjustable options whose change requires a lifecycle action on a background task
         // (start / kill / restart), enacted through the ConfigMeta.UpdateAction during CONFIG SET.

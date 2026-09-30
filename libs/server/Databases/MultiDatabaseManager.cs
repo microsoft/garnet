@@ -202,6 +202,8 @@ namespace Garnet.server
                         var id = activeDbIdsMapSnapshot[i];
                         if (TryPauseCheckpoints(id))
                             pausedDbIds[pausedCount++] = id;
+                        else
+                            logger?.LogWarning("Checkpoint skipped database {dbId}: another checkpoint is in progress", id);
                     }
                 }
                 else
@@ -720,6 +722,8 @@ namespace Garnet.server
                 var enableAof = StoreWrapper.serverOptions.EnableAOF;
                 databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
                 databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
+                db1.CheckpointDirtyState.MarkDirty();
+                db2.CheckpointDirtyState.MarkDirty();
 
                 var activeSessions = 0;
                 foreach (var server in StoreWrapper.Servers)

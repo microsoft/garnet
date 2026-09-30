@@ -158,6 +158,11 @@ namespace Tsavorite.core
         public RMWAction Action { get; set; }
 
         /// <summary>
+        /// Set by an updater that completes without changing data to suppress the mutation notification.
+        /// </summary>
+        public bool SuppressOnMutate { get; set; }
+
+        /// <summary>
         /// User-defined byte of data associated with the operation
         /// </summary>
         public byte UserData { get; set; }

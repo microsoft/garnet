@@ -169,6 +169,8 @@ namespace Tsavorite.core
 
                         srcLogRecord.InfoRef.SetTombstone();
                         srcLogRecord.InfoRef.SetModified();
+                        if (storeFunctions.CallOnMutate)
+                            storeFunctions.OnMutate();
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.
@@ -429,6 +431,8 @@ namespace Tsavorite.core
                         {
                             srcLogRecord.InfoRef.SetTombstone();
                             srcLogRecord.InfoRef.SetModified();
+                            if (storeFunctions.CallOnMutate)
+                                storeFunctions.OnMutate();
 
                             // Elide from hei, and try to either do in-chain tombstoning or free list transfer. srcLogRecord is elidable so must be a memory LogRecord.
                             ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
@@ -577,6 +581,9 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                if (addTombstone && storeFunctions.CallOnMutate)
+                    storeFunctions.OnMutate();
+
                 // Track key overflow internally — session functions only track in-place value deltas.
                 if (newLogRecord.DataHeader.KeyIsOverflow)
                     hlogBase.logSizeTracker?.IncrementSize(newLogRecord.KeyOverflow.HeapMemorySize);
@@ -730,6 +737,8 @@ namespace Tsavorite.core
 
                 // Expiration with no insertion.
                 logRecord.InfoRef.SetTombstone();
+                if (isIpu && storeFunctions.CallOnMutate)
+                    storeFunctions.OnMutate();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                 return true;
             }
@@ -761,6 +770,8 @@ namespace Tsavorite.core
                     {
                         // Expiration with no insertion.
                         logRecord.InfoRef.SetTombstone();
+                        if (isIpu && storeFunctions.CallOnMutate)
+                            storeFunctions.OnMutate();
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, advancedStatusCode);
                         return true;
                     }
@@ -771,7 +782,11 @@ namespace Tsavorite.core
             //  IPU: move to the NIU->allocate->IU path. Set tombstone so CreateNewRecordRMW uses InitialUpdater (doingCU=false).
             //  CU: caller invalidates allocation, retries operation as NIU->allocate->IU
             if (isIpu)
+            {
                 logRecord.InfoRef.SetTombstone();
+                if (storeFunctions.CallOnMutate)
+                    storeFunctions.OnMutate();
+            }
             status = OperationStatus.SUCCESS;
             return false;
         }
