@@ -9,33 +9,33 @@ using System.Threading.Tasks;
 namespace Garnet.common
 {
     /// <summary>
-    /// Tracks active resource usage for a <see cref="WaiterQueue{TTracker, TRequest}"/>.
+    /// Tracks active resource usage for a <see cref="WaiterQueue{TTracker, TContext}"/>.
     /// </summary>
-    /// <typeparam name="TRequest">Resource request type.</typeparam>
-    public interface IResourceTracker<TRequest>
+    /// <typeparam name="TContext">Resource request context type.</typeparam>
+    public interface IResourceTracker<TContext>
     {
         /// <summary>
         /// Validates that a request can eventually be admitted. Permanently invalid requests must throw rather
         /// than enter the wait queue.
         /// </summary>
-        /// <param name="requestResource">Resource request.</param>
-        void Validate(in TRequest requestResource);
+        /// <param name="context">Resource request.</param>
+        void Validate(in TContext context);
 
         /// <summary>
         /// Attempts to reserve the requested resource. A successful call must update active resource accounting;
         /// false means the valid request is temporarily unable to proceed. This method must be thread-safe and
         /// may run concurrently with <see cref="Release"/>.
         /// </summary>
-        /// <param name="requestResource">Resource request.</param>
+        /// <param name="context">Resource request.</param>
         /// <returns>True when the resource was reserved.</returns>
-        bool TryReserve(in TRequest requestResource);
+        bool TryReserve(in TContext context);
 
         /// <summary>
         /// Releases a previously reserved resource. This method must be thread-safe and may run concurrently
         /// with <see cref="TryReserve"/>.
         /// </summary>
-        /// <param name="requestResource">Resource request originally admitted.</param>
-        void Release(in TRequest requestResource);
+        /// <param name="context">Resource request originally admitted.</param>
+        void Release(in TContext context);
     }
 
     /// <summary>
@@ -47,9 +47,9 @@ namespace Garnet.common
     /// managed by <see cref="LightBoundedFifoQueue{T}"/>.
     /// </remarks>
     /// <typeparam name="TTracker">Concrete resource tracker type.</typeparam>
-    /// <typeparam name="TRequest">Resource request type.</typeparam>
-    public sealed class WaiterQueue<TTracker, TRequest> : IDisposable
-        where TTracker : struct, IResourceTracker<TRequest>
+    /// <typeparam name="TContext">Resource request context type.</typeparam>
+    public sealed class WaiterQueue<TTracker, TContext> : IDisposable
+        where TTracker : struct, IResourceTracker<TContext>
     {
         /// <summary>
         /// Default number of lock-free spin iterations before a request is enqueued.
@@ -82,17 +82,17 @@ namespace Garnet.common
             }
 
             readonly TaskCompletionSource<bool> signal;
-            readonly WaiterQueue<TTracker, TRequest> owner;
+            readonly WaiterQueue<TTracker, TContext> owner;
             readonly CancellationToken cancellationToken;
             CancellationTokenRegistration cancellationRegistration;
             int state;
 
-            internal readonly TRequest requestResource;
+            internal readonly TContext context;
 
-            internal Waiter(WaiterQueue<TTracker, TRequest> owner, in TRequest requestResource, CancellationToken cancellationToken)
+            internal Waiter(WaiterQueue<TTracker, TContext> owner, in TContext context, CancellationToken cancellationToken)
             {
                 this.owner = owner;
-                this.requestResource = requestResource;
+                this.context = context;
                 this.cancellationToken = cancellationToken;
                 signal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 if (cancellationToken.CanBeCanceled)
@@ -202,7 +202,7 @@ namespace Garnet.common
                     spinner.SpinOnce();
                 drainAcquired = true;
 
-                var disposeException = new ObjectDisposedException(nameof(WaiterQueue<TTracker, TRequest>));
+                var disposeException = new ObjectDisposedException(nameof(WaiterQueue<TTracker, TContext>));
                 while (waiterQueue.TryDequeue(out var waiter))
                 {
                     try
@@ -245,19 +245,19 @@ namespace Garnet.common
         /// <summary>
         /// Admits a request in FIFO order, yielding asynchronously if it cannot be granted during the spin phase.
         /// </summary>
-        /// <param name="requestResource">Resource request.</param>
+        /// <param name="context">Resource request.</param>
         /// <param name="token">Token used to cancel the wait.</param>
         /// <returns>A task whose result is false when bounded waiter-slot reservation fails; otherwise true after admission.</returns>
-        public ValueTask<bool> AdmitAsync(in TRequest requestResource, CancellationToken token = default)
+        public ValueTask<bool> AdmitAsync(in TContext context, CancellationToken token = default)
         {
-            tracker.Validate(requestResource);
+            tracker.Validate(context);
             token.ThrowIfCancellationRequested();
             ThrowIfDisposed();
 
-            if (TryReserveFast(requestResource, token))
+            if (TryReserveFast(context, token))
                 return ValueTask.FromResult(true);
 
-            var waitTask = TryEnqueueWaiterAsync(requestResource, token);
+            var waitTask = TryEnqueueWaiterAsync(context, token);
             if (waitTask == null)
                 return ValueTask.FromResult(false);
 
@@ -268,19 +268,19 @@ namespace Garnet.common
         /// <summary>
         /// Admits a request in FIFO order, blocking if it cannot be granted during the spin phase.
         /// </summary>
-        /// <param name="requestResource">Resource request.</param>
+        /// <param name="context">Resource request.</param>
         /// <param name="token">Token used to cancel the wait.</param>
         /// <returns>False when bounded waiter-slot reservation fails; otherwise true after admission.</returns>
-        public bool Admit(in TRequest requestResource, CancellationToken token = default)
+        public bool Admit(in TContext context, CancellationToken token = default)
         {
-            tracker.Validate(requestResource);
+            tracker.Validate(context);
             token.ThrowIfCancellationRequested();
             ThrowIfDisposed();
 
-            if (TryReserveFast(requestResource, token))
+            if (TryReserveFast(context, token))
                 return true;
 
-            var waitTask = TryEnqueueWaiterAsync(requestResource, token);
+            var waitTask = TryEnqueueWaiterAsync(context, token);
             if (waitTask == null)
                 return false;
 
@@ -288,9 +288,9 @@ namespace Garnet.common
             return AsyncUtils.BlockingWait(waitTask);
         }
 
-        bool TryReserveFast(in TRequest requestResource, CancellationToken token)
+        bool TryReserveFast(in TContext context, CancellationToken token)
         {
-            if (tracker.TryReserve(requestResource))
+            if (tracker.TryReserve(context))
                 return true;
 
             var spinner = new SpinWait();
@@ -299,19 +299,19 @@ namespace Garnet.common
                 token.ThrowIfCancellationRequested();
                 ThrowIfDisposed();
                 spinner.SpinOnce();
-                if (tracker.TryReserve(requestResource))
+                if (tracker.TryReserve(context))
                     return true;
             }
 
             return false;
         }
 
-        Task<bool> TryEnqueueWaiterAsync(in TRequest requestResource, CancellationToken token)
+        Task<bool> TryEnqueueWaiterAsync(in TContext context, CancellationToken token)
         {
             ThrowIfDisposed();
             token.ThrowIfCancellationRequested();
 
-            var waiter = new Waiter(this, requestResource, token);
+            var waiter = new Waiter(this, context, token);
             var waitTask = waiter.Task;
             try
             {
@@ -333,10 +333,10 @@ namespace Garnet.common
         /// <summary>
         /// Releases a previously admitted request and drains newly available capacity.
         /// </summary>
-        /// <param name="requestResource">Resource request originally admitted.</param>
-        public void Release(in TRequest requestResource)
+        /// <param name="context">Resource request originally admitted.</param>
+        public void Release(in TContext context)
         {
-            tracker.Release(requestResource);
+            tracker.Release(context);
             Drain();
         }
 
@@ -367,7 +367,7 @@ namespace Garnet.common
             {
                 while (true)
                 {
-                    TRequest requestResource;
+                    TContext context;
                     if (Volatile.Read(ref disposed) != 0 || !waiterQueue.TryPeek(out var waiter))
                         break;
 
@@ -380,30 +380,30 @@ namespace Garnet.common
                         continue;
                     }
 
-                    requestResource = waiter.requestResource;
+                    context = waiter.context;
 
                     // Preserve FIFO fairness: a live head that cannot reserve blocks every later waiter.
                     // Concurrent releases increment drainWork, forcing this owner or the releaser to retry.
-                    if (!tracker.TryReserve(requestResource))
+                    if (!tracker.TryReserve(context))
                         break;
 
                     // Disposal may begin after reservation; return capacity before yielding queue ownership.
                     if (Volatile.Read(ref disposed) != 0)
                     {
-                        tracker.Release(requestResource);
+                        tracker.Release(context);
                         break;
                     }
 
                     if (!waiterQueue.TryDequeue(out waiter))
                     {
                         // Never retain a reservation unless its waiter was removed from the queue.
-                        tracker.Release(requestResource);
+                        tracker.Release(context);
                         continue;
                     }
 
                     // Cancellation can win after the initial state check and before this grant transition.
                     if (!waiter.TryCompleteGrant())
-                        tracker.Release(requestResource);
+                        tracker.Release(context);
 
                     // The queue no longer references the waiter, so its cancellation registration can be released.
                     waiter.Release();
