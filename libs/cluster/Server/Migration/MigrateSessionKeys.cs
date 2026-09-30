@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -36,7 +35,7 @@ namespace Garnet.cluster
 
                 // Discover Vector Sets linked namespaces
                 var allKeys = migrateTask.sketch.Keys.Select(t => t.Item1);
-                var indexesToMigrate = new Dictionary<byte[], byte[]>(ByteArrayComparer.Instance);
+                var indexesToMigrate = new Dictionary<byte[], (byte[] Value, DateTime? Expiration)>(ByteArrayComparer.Instance);
                 _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForKeys(clusterProvider.storeWrapper, allKeys, indexesToMigrate);
 
                 // Discover RangeIndex keys upfront
@@ -88,7 +87,7 @@ namespace Garnet.cluster
                     try
                     {
 
-                        foreach (var (key, value) in indexesToMigrate)
+                        foreach (var (key, (value, expiration)) in indexesToMigrate)
                         {
                             // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
                             // namespaces for element data
@@ -97,7 +96,7 @@ namespace Garnet.cluster
                             var newContext = _namespaceMap[oldContext];
                             VectorManager.SetContextForMigration(value, newContext);
 
-                            var neededSpace = sizeof(int) + key.Length + sizeof(int) + value.Length;
+                            var neededSpace = VectorManager.GetMigratedIndexKeySerializationSize(key, value);
 
                             if (neededSpace > serializeBufferArr.Length)
                             {
@@ -105,13 +104,7 @@ namespace Garnet.cluster
                                 serializeBufferArr = ArrayPool<byte>.Shared.Rent(neededSpace);
                             }
 
-                            {
-                                Span<byte> serializeBuffer = serializeBufferArr;
-                                BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer, key.Length);
-                                key.CopyTo(serializeBuffer[sizeof(int)..]);
-                                BinaryPrimitives.WriteInt32LittleEndian(serializeBuffer[(sizeof(int) + key.Length)..], value.Length);
-                                value.CopyTo(serializeBuffer[(sizeof(int) + key.Length + sizeof(int))..]);
-                            }
+                            VectorManager.SerializeMigratedIndexKey(serializeBufferArr.AsSpan(), key, value, expiration);
 
                             if (gcs.NeedsInitialization)
                                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isVectorSets: true);
