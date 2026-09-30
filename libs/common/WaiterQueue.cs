@@ -13,6 +13,7 @@ namespace Garnet.common
     /// </summary>
     /// <typeparam name="TContext">Resource request context type.</typeparam>
     public interface IResourceTracker<TContext>
+        where TContext : struct
     {
         /// <summary>
         /// Validates that a request can eventually be admitted. Permanently invalid requests must throw rather
@@ -50,6 +51,7 @@ namespace Garnet.common
     /// <typeparam name="TContext">Resource request context type.</typeparam>
     public sealed class WaiterQueue<TTracker, TContext> : IDisposable
         where TTracker : struct, IResourceTracker<TContext>
+        where TContext : struct
     {
         /// <summary>
         /// Default number of lock-free spin iterations before a request is enqueued.
