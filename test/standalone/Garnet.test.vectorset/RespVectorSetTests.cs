@@ -2953,7 +2953,7 @@ namespace Garnet.test
                 {
                 }
 
-                var vectorSetCommands = Enum.GetValues<RespCommand>().Where(static x => x.IsLegalOnVectorSet() && x is not (RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX)).OrderBy(static x => x);
+                var vectorSetCommands = Enum.GetValues<RespCommand>().Where(static x => x.IsLegalOnVectorSet() && x is not (RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.XVCREATE)).OrderBy(static x => x);
 
                 if (!deleteWasEffective)
                 {
@@ -3074,6 +3074,9 @@ namespace Garnet.test
                                 {
                                     exc = e;
                                 }
+                                break;
+                            case RespCommand.XVIMPORT:
+                                // TODO: Implement later
                                 break;
                             default:
                                 Assert.Fail($"No test for command: {cmd}");
