@@ -298,6 +298,7 @@ namespace Garnet.common
             var spinner = new SpinWait();
             for (var attempt = 0; attempt < spinCount; attempt++)
             {
+                Thread.Yield();
                 token.ThrowIfCancellationRequested();
                 ThrowIfDisposed();
                 spinner.SpinOnce();

@@ -451,7 +451,7 @@ namespace Garnet.client
             // depends only on totalLength versus fixed page geometry, not on the current page fill, so it is
             // loop-invariant and made once here rather than re-evaluated per allocation attempt.
             var inline = networkWriter.CanInline(totalLength);
-            var recordSize = inline ? networkWriter.InlineRecordSize(totalLength) : PayloadDescriptorSize;
+            var recordSize = inline ? networkWriter.GetInlineRecordSize(totalLength) : PayloadDescriptorSize;
 
             // Out-of-line rents its payload buffer and serializes into it up front, outside the epoch. Inline
             // rents nothing and defers serialization until it owns a page slot (written under the epoch below).
@@ -485,6 +485,7 @@ namespace Garnet.client
 
             try
             {
+                // Allocate side-buffer for payload because it cannot be inlined.
                 if (!inline)
                 {
                     try
@@ -524,9 +525,16 @@ namespace Garnet.client
                             ThrowException(disposeException);
                         }
 
-                        (taskId, address) = networkWriter.TryAllocate(recordSize, expectsResponse: true, out var flushEvent);
-                        if (address >= 0)
+                        if (networkWriter.TryScheduleSend(
+                            recordSize,
+                            expectsResponse: true,
+                            out var reservation,
+                            out var flushEvent))
+                        {
+                            taskId = reservation.CompletionTicket;
+                            address = reservation.RequestAddress;
                             break;
+                        }
 
                         try
                         {
@@ -555,13 +563,13 @@ namespace Garnet.client
                             // Do not introduce an await between the reserve and the completed payload write.
                             unsafe
                             {
-                                var curr = networkWriter.ReserveInlineRecord(address, totalLength);
+                                var curr = networkWriter.RegisterInlineRecord(address, totalLength);
                                 SerializeCommand(curr, curr + totalLength);
                             }
                         }
                         else
                         {
-                            networkWriter.RegisterRequest(address, payload);
+                            networkWriter.RegisterOfflineRecord(address, payload);
                         }
                     }
                     catch (ObjectDisposedException)
@@ -589,7 +597,7 @@ namespace Garnet.client
                     }
 
                     networkWriter.epoch.ProtectAndDrain();
-                    networkWriter.DoAggressiveShiftReadOnly();
+                    networkWriter.DrainRequests();
                 }
                 finally
                 {
@@ -621,7 +629,7 @@ namespace Garnet.client
             totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
 
             var inline = networkWriter.CanInline(totalLength);
-            var recordSize = inline ? networkWriter.InlineRecordSize(totalLength) : PayloadDescriptorSize;
+            var recordSize = inline ? networkWriter.GetInlineRecordSize(totalLength) : PayloadDescriptorSize;
             var allocationSize = inline ? 0 : networkWriter.GetPayloadAllocationSize(totalLength);
 
             LightRequest payload = default;
@@ -675,9 +683,15 @@ namespace Garnet.client
                             ThrowException(disposeException);
                         }
 
-                        (_, address) = networkWriter.TryAllocate(recordSize, expectsResponse: false, out var flushEvent);
-                        if (address >= 0)
+                        if (networkWriter.TryScheduleSend(
+                            recordSize,
+                            expectsResponse: false,
+                            out var reservation,
+                            out var flushEvent))
+                        {
+                            address = reservation.RequestAddress;
                             break;
+                        }
 
                         try
                         {
@@ -697,13 +711,13 @@ namespace Garnet.client
                     {
                         unsafe
                         {
-                            var curr = networkWriter.ReserveInlineRecord(address, totalLength);
+                            var curr = networkWriter.RegisterInlineRecord(address, totalLength);
                             SerializeCommand(curr, curr + totalLength, arraySize, respOp.Span, subop, param1, param2);
                         }
                     }
                     else
                     {
-                        networkWriter.RegisterRequest(address, payload);
+                        networkWriter.RegisterOfflineRecord(address, payload);
                     }
                     payloadRegistered = true;
 
@@ -711,7 +725,7 @@ namespace Garnet.client
                         ThrowException(disposeException);
 
                     networkWriter.epoch.ProtectAndDrain();
-                    networkWriter.DoAggressiveShiftReadOnly();
+                    networkWriter.DrainRequests();
                 }
                 finally
                 {

@@ -14,7 +14,8 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     /// <summary>
-    /// A request-lane payload used to drive <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/> in
+    /// A request-lane payload used to drive
+    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}"/> in
     /// isolation. It carries a plain byte buffer plus an identity used to verify that the ring transfers
     /// ownership to the sender exactly once: every non-default instance records each <see cref="Dispose"/> in a
     /// shared counter keyed by <see cref="id"/>, so both leaks (zero disposes) and double-disposes (two) are
@@ -107,19 +108,36 @@ namespace Garnet.test
     }
 
     /// <summary>
-    /// Test harness that drives a <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/> without a socket.
+    /// Test harness that drives a
+    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}"/> without a socket.
     /// It supplies a fake transport that reassembles each request's chunks (keyed by the ring's per-request
     /// flush-result context) into a completed payload, tracks buffer disposals for leak/double-dispose
     /// detection, and can inject send failures. Producers run the same allocate/register/drain dance the real
     /// client uses, choosing inline vs out-of-line automatically via
-    /// <see cref="DuplexBackpressureRing{TRequest, TCompletion}.CanInline"/>.
+    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}.CanInline"/>.
     /// </summary>
     internal sealed class RingTestHarness : IDisposable
     {
+        internal readonly struct RingTransport : IDuplexRingTransport
+        {
+            readonly RingTestHarness owner;
+
+            internal RingTransport(RingTestHarness owner)
+            {
+                this.owner = owner;
+            }
+
+            public void Send(byte[] buffer, int offset, int length, object context)
+                => owner.Send(buffer, offset, length, context);
+
+            public void OnFlushError(Exception exception)
+                => owner.OnFlushError(exception);
+        }
+
         const int DescriptorSize = sizeof(long);
 
         internal readonly LightEpoch epoch;
-        internal readonly DuplexBackpressureRing<TestRequest, int> Ring;
+        internal readonly DuplexOperationRing<TestRequest, int, RingTransport> Ring;
 
         readonly ConcurrentDictionary<object, List<byte>> reassembly = new();
         readonly ConcurrentBag<byte[]> completed = new();
@@ -138,8 +156,8 @@ namespace Garnet.test
         internal RingTestHarness(int pageSize, int pageCount, int completionCapacity, int maxChunkSize)
         {
             epoch = new LightEpoch();
-            Ring = new DuplexBackpressureRing<TestRequest, int>(
-                pageSize, pageCount, completionCapacity, maxChunkSize, Send, OnFlushError, epoch);
+            Ring = new DuplexOperationRing<TestRequest, int, RingTransport>(
+                pageSize, pageCount, completionCapacity, maxChunkSize, new RingTransport(this), epoch);
         }
 
         internal int CompletedCount => Volatile.Read(ref completedCount);
@@ -201,8 +219,8 @@ namespace Garnet.test
 
         void CompleteSend(object context)
         {
-            var result = (LightRequestAsyncFlushResult<TestRequest>)context;
-            LightRequestAsyncFlushResult<TestRequest>.CompleteChunk(context);
+            var result = (DuplexOperationAsyncFlushResult<TestRequest>)context;
+            DuplexOperationAsyncFlushResult<TestRequest>.CompleteChunk(context);
 
             // CompleteChunk decrements remainingChunks; the final chunk of a request drives it to zero. Because
             // a context's chunks are sequential, exactly the last-chunk sender observes zero and finalizes.
@@ -227,7 +245,9 @@ namespace Garnet.test
         {
             var totalLength = payload.Length;
             var inline = Ring.CanInline(totalLength);
-            var size = inline ? DuplexBackpressureRing<TestRequest, int>.InlineRecordSize(totalLength) : DescriptorSize;
+            var size = inline
+                ? DuplexOperationRing<TestRequest, int, RingTransport>.GetInlineRecordSize(totalLength)
+                : DescriptorSize;
             TestRequest outOfLineRequest = default;
             var outOfLineRequestCreated = false;
             var outOfLineRequestRegistered = false;
@@ -248,9 +268,16 @@ namespace Garnet.test
                 while (true)
                 {
                     token.ThrowIfCancellationRequested();
-                    (taskId, address) = Ring.TryAllocate(size, expectCompletion, out var flushEvent);
-                    if (address >= 0)
+                    if (Ring.TryScheduleOperation(
+                        size,
+                        expectCompletion,
+                        out var reservation,
+                        out var flushEvent))
+                    {
+                        taskId = reservation.CompletionTicket;
+                        address = reservation.RequestAddress;
                         break;
+                    }
 
                     try
                     {
@@ -270,18 +297,18 @@ namespace Garnet.test
                 {
                     unsafe
                     {
-                        var curr = Ring.ReserveInlineRecord(address, totalLength);
+                        var curr = Ring.RegisterInlineRecord(address, totalLength);
                         new ReadOnlySpan<byte>(payload).CopyTo(new Span<byte>(curr, totalLength));
                     }
                 }
                 else
                 {
-                    Ring.RegisterRequest(address, outOfLineRequest);
+                    Ring.RegisterOfflineRecord(address, outOfLineRequest);
                     outOfLineRequestRegistered = true;
                 }
 
                 epoch.ProtectAndDrain();
-                Ring.DoAggressiveShiftReadOnly();
+                Ring.DrainRequests();
             }
             finally
             {
@@ -300,7 +327,7 @@ namespace Garnet.test
             try
             {
                 epoch.ProtectAndDrain();
-                Ring.DoAggressiveShiftReadOnly();
+                Ring.DrainRequests();
             }
             finally
             {

@@ -6,13 +6,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.client;
 using NUnit.Framework;
 
 namespace Garnet.test
 {
     /// <summary>
-    /// Stage 1 soak test for <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>. Runs many randomized
+    /// Stage 1 soak test for <c>DuplexOperationRing</c>. Runs many randomized
     /// rounds — varying page geometry, producer counts, payload sizes, response expectation and occasional
     /// transport failures — over a bounded wall-clock budget, re-checking the core invariants (no hang, no memory
     /// corruption, exactly-once buffer disposal, and full in-order-agnostic delivery on clean rounds) on each
@@ -21,7 +20,7 @@ namespace Garnet.test
     /// <c>GARNET_RING_SOAK_SEED</c> and <c>GARNET_RING_SOAK_SECONDS</c> environment variables for reproduction.
     /// </summary>
     [TestFixture]
-    public class DuplexBackpressureRingSoakTests : TestBase
+    public class DuplexOperationRingSoakTests : TestBase
     {
         [TearDown]
         public void TearDown()

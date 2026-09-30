@@ -5,21 +5,20 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.client;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
     /// <summary>
-    /// Stage 1 correctness tests for <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/> exercised in
+    /// Stage 1 correctness tests for <c>DuplexOperationRing</c> exercised in
     /// isolation (no socket, no server) through <see cref="RingTestHarness"/>. Covers the inline / out-of-line
     /// size matrix, single- and multi-chunk framing, concurrent mixed ingestion under page wrap and
     /// back-pressure, response-expecting flow with a reply-advancing reader, and the empty-slot stride recovered
     /// during teardown.
     /// </summary>
     [TestFixture]
-    public class DuplexBackpressureRingTests : TestBase
+    public class DuplexOperationRingTests : TestBase
     {
         static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(60);
 
@@ -191,8 +190,13 @@ namespace Garnet.test
                 {
                     for (var i = 0; i < count; i++)
                     {
-                        var (_, address) = h.Ring.TryAllocate(sizeof(long), expectsCompletion: false, out _);
-                        ClassicAssert.GreaterOrEqual(address, 0);
+                        var reserved = h.Ring.TryScheduleOperation(
+                            sizeof(long),
+                            expectsCompletion: false,
+                            out var reservation,
+                            out _);
+                        ClassicAssert.IsTrue(reserved);
+                        var address = reservation.RequestAddress;
 
                         // Publish only even slots; odd slots stay at the 0xFF page fill (Uninitialized), which the
                         // teardown walk must stride over by a single descriptor without misreading the next record.
@@ -201,7 +205,7 @@ namespace Garnet.test
                             var id = nextId++;
                             h.TrackOutOfLine(id);
                             var payload = RingPayload.Create(id, 200);
-                            h.Ring.RegisterRequest(address, new TestRequest(payload, payload.Length, id, h.DisposeCounts));
+                            h.Ring.RegisterOfflineRecord(address, new TestRequest(payload, payload.Length, id, h.DisposeCounts));
                         }
                     }
                 }

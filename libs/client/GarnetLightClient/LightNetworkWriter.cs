@@ -13,7 +13,8 @@ namespace Garnet.client
     /// <summary>
     /// Concurrent network writer for inline and out-of-line payloads.
     /// <para>
-    /// This is a thin, network-owning shell over a <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>
+    /// This is a thin, network-owning shell over a
+    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}"/>
     /// specialized to <see cref="LightRequest"/> requests and <see cref="TcsWrapper"/> completions. It owns
     /// the socket, the <see cref="GarnetLightClientTcpNetworkHandler"/> and the send buffer pool, and forwards
     /// all ring bookkeeping (allocation, request enqueue, flush, and the completion lane) to the ring.
@@ -27,7 +28,35 @@ namespace Garnet.client
     /// </summary>
     internal sealed class LightNetworkWriter : IDisposable
     {
-        readonly DuplexBackpressureRing<LightRequest, TcsWrapper> ring;
+        readonly struct RingTransport : IDuplexRingTransport
+        {
+            readonly ClientTcpNetworkSender tcpSender;
+            readonly GarnetLightClientTcpNetworkHandler networkHandler;
+            readonly bool useTls;
+
+            internal RingTransport(
+                ClientTcpNetworkSender tcpSender,
+                GarnetLightClientTcpNetworkHandler networkHandler,
+                bool useTls)
+            {
+                this.tcpSender = tcpSender;
+                this.networkHandler = networkHandler;
+                this.useTls = useTls;
+            }
+
+            public void Send(byte[] buffer, int offset, int length, object context)
+            {
+                if (useTls)
+                    networkHandler.SendResponse(buffer, offset, length, context);
+                else
+                    tcpSender.SendResponse(buffer, offset, length, context);
+            }
+
+            public void OnFlushError(Exception exception)
+                => networkHandler.Dispose();
+        }
+
+        readonly DuplexOperationRing<LightRequest, TcsWrapper, RingTransport> ring;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetLightClientTcpNetworkHandler networkHandler;
@@ -55,7 +84,7 @@ namespace Garnet.client
             // ring<->handler cycle: build the handler first, then construct the fully-wired ring.
             var handler = new GarnetLightClientTcpNetworkHandler(
                 serverHook,
-                LightRequestAsyncFlushResult<LightRequest>.CompleteChunk,
+                DuplexOperationAsyncFlushResult<LightRequest>.CompleteChunk,
                 socket,
                 networkBufferSettings,
                 networkPool,
@@ -64,15 +93,15 @@ namespace Garnet.client
                 networkSendThrottleMax: networkSendThrottleMax,
                 logger: logger);
             this.networkHandler = networkHandler = handler;
-            var networkSender = handler.GetNetworkSender();
+            var useTls = sslOptions != null;
+            var tcpSender = useTls ? null : (ClientTcpNetworkSender)handler.GetNetworkSender();
 
-            this.ring = new DuplexBackpressureRing<LightRequest, TcsWrapper>(
+            this.ring = new DuplexOperationRing<LightRequest, TcsWrapper, RingTransport>(
                 sendPageSize,
                 pageBufferCount,
                 completionCapacity,
                 networkBufferSettings.sendBufferSize,
-                networkSender.SendResponse,
-                _ => handler.Dispose(),
+                new RingTransport(tcpSender, handler, useTls),
                 epoch,
                 logger);
         }
@@ -107,15 +136,15 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Claim a request address and (for response-expecting claims) a completion ticket.
+        /// Attempts to reserve the paired request address and optional completion ticket for one send operation.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int taskId, long address) TryAllocate(int size, bool expectsResponse, out CompletionEvent waitEvent)
-            => ring.TryAllocate(size, expectsResponse, out waitEvent);
-
-        /// <summary>Register (store and publish) a request payload at the descriptor address.</summary>
-        public void RegisterRequest(long address, LightRequest payload)
-            => ring.RegisterRequest(address, payload);
+        public bool TryScheduleSend(
+            int requestSize,
+            bool expectsResponse,
+            out DuplexOperationReservation reservation,
+            out CompletionEvent waitEvent)
+            => ring.TryScheduleOperation(requestSize, expectsResponse, out reservation, out waitEvent);
 
         /// <summary>True when a command of <paramref name="payloadLength"/> bytes fits inline in one page.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -123,23 +152,28 @@ namespace Garnet.client
 
         /// <summary>Ring bytes an inline command of <paramref name="payloadLength"/> reserves.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int InlineRecordSize(int payloadLength) => DuplexBackpressureRing<LightRequest, TcsWrapper>.InlineRecordSize(payloadLength);
+        public int GetInlineRecordSize(int payloadLength)
+            => DuplexOperationRing<LightRequest, TcsWrapper, RingTransport>.GetInlineRecordSize(payloadLength);
 
         /// <summary>
         /// Reserve an inline record and return a pointer to write its payload directly into page memory,
         /// skipping the pooled buffer. The caller must hold the epoch and fill exactly
         /// <paramref name="payloadLength"/> bytes.
         /// </summary>
-        public unsafe byte* ReserveInlineRecord(long address, int payloadLength)
-            => ring.ReserveInlineRecord(address, payloadLength);
+        public unsafe byte* RegisterInlineRecord(long address, int payloadLength)
+            => ring.RegisterInlineRecord(address, payloadLength);
+
+        /// <summary>Register (store and publish) a request record at the descriptor address.</summary>
+        public void RegisterOfflineRecord(long address, LightRequest payload)
+            => ring.RegisterOfflineRecord(address, payload);
 
         /// <summary>Register (store and publish) a completion for the given ticket.</summary>
         public void RegisterCompletion(int ticket, TcsWrapper completion)
             => ring.RegisterCompletion(ticket, completion);
 
         /// <summary>Nudge the read-only shift so enqueued descriptors are flushed promptly.</summary>
-        public void DoAggressiveShiftReadOnly()
-            => ring.DoAggressiveShiftReadOnly();
+        public void DrainRequests()
+            => ring.DrainRequests();
 
         /// <summary>Reader-side: try to read a published completion for the given ticket.</summary>
         public bool TryReadCompletion(int ticket, out TcsWrapper completion)

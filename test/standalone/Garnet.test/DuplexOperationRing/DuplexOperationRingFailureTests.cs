@@ -11,14 +11,15 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     /// <summary>
-    /// Stage 1 fault-injection tests for <see cref="DuplexBackpressureRing{TRequest, TCompletion}"/>. These assert
+    /// Stage 1 fault-injection tests for
+    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}"/>. These assert
     /// the ring's liveness and accounting invariants under adverse conditions — a throwing transport, teardown
     /// concurrent with in-flight producers, and racing single-delivery of completions — rather than full payload
     /// delivery. In every case the ring must never hang, never corrupt memory, and must dispose each out-of-line
     /// request buffer exactly once (no leak, no double-free).
     /// </summary>
     [TestFixture]
-    public class DuplexBackpressureRingFailureTests : TestBase
+    public class DuplexOperationRingFailureTests : TestBase
     {
         static readonly TimeSpan HangTimeout = TimeSpan.FromSeconds(30);
 
