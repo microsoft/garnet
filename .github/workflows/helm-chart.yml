@@ -10,6 +10,7 @@ on:
       - 'charts/**/templates/**'
       - 'charts/**/values*'
       - 'charts/**/README.md.gotmpl'
+      - 'charts/**/.helmignore'
 
 permissions:
   contents: read

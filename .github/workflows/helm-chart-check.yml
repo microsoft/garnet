@@ -45,7 +45,7 @@ jobs:
           chart_source_changed=false
           while IFS= read -r file; do
             case "${file}" in
-              charts/garnet/Chart.yaml|charts/garnet/values*|charts/garnet/README.md.gotmpl|charts/garnet/templates/*)
+              charts/garnet/Chart.yaml|charts/garnet/.helmignore|charts/garnet/values*|charts/garnet/README.md.gotmpl|charts/garnet/templates/*)
                 chart_source_changed=true
                 ;;
             esac
@@ -88,7 +88,7 @@ jobs:
           chart_source_changed=false
           while IFS= read -r file; do
             case "${file}" in
-              charts/garnet/Chart.yaml|charts/garnet/values*|charts/garnet/README.md.gotmpl|charts/garnet/templates/*)
+              charts/garnet/Chart.yaml|charts/garnet/.helmignore|charts/garnet/values*|charts/garnet/README.md.gotmpl|charts/garnet/templates/*)
                 chart_source_changed=true
                 ;;
             esac
