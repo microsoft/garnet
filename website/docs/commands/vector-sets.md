@@ -184,7 +184,7 @@ binary strings forwarded unchanged to DiskANN, without float conversion, JSON pa
 Payloads must match the native index format and configured dimensions
 and degree; the importer is responsible for graph and mapping consistency.
 
-`VECTOR` - Key is internal ID (u32). The value is a array of the element type. For F32 vectors, the size would be 4 * dimension.
+`VECTOR` - Key is internal ID (u32). The value is an array of the element type. For F32 vectors, the size would be 4 * dimension.
 `QUANT` - Key is internal ID (u32). The value is the binary serialization of the quantized vector, specific to the quantizer. This term should be used only in quantized indices.
 `NEIGHBORS` - Key is internal ID (u32). The value is an array of internal IDs which are u32s. Its size is 4 * (max_degree + 1) and the final element is the length of valid entries.
 `INTMAP` - Key is the external ID. The value is the internal ID (u32). 
