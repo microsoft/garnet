@@ -304,8 +304,8 @@ namespace Garnet.client
         /// <param name="untilAddress"></param>
         void AsyncFlushRequests(long fromAddress, long untilAddress)
         {
-            var startPage = fromAddress >> store.PageSizeBits;
-            var endPage = untilAddress >> store.PageSizeBits;
+            var startPage = store.GetUnwrappedPageIndex(fromAddress);
+            var endPage = store.GetUnwrappedPageIndex(untilAddress);
             var count = new CountWrapper
             {
                 count = 1,
@@ -317,9 +317,9 @@ namespace Garnet.client
             var flushPage = startPage;
             while (true)
             {
-                long startOffset = 0, endOffset = 1L << store.PageSizeBits;
-                if (flushPage == startPage) startOffset = GetOffsetInPage(fromAddress);
-                if (flushPage == endPage) endOffset = GetOffsetInPage(untilAddress);
+                long startOffset = 0, endOffset = store.PageSizeBytes;
+                if (flushPage == startPage) startOffset = store.GetOffsetInPage(fromAddress);
+                if (flushPage == endPage) endOffset = store.GetOffsetInPage(untilAddress);
 
                 var realEndOffset = store.ConsumePageEndOffset(flushPage, endOffset);
 
@@ -342,7 +342,7 @@ namespace Garnet.client
                         disposedBail = true;
                         break;
                     }
-                    var address = (flushPage << store.PageSizeBits) | (uint)offset;
+                    var address = store.PackAddress(flushPage, offset);
 
                     // Claim the record, recovering its stride whether or not we win the claim.
                     var won = store.TryClaimRequest(address, out var kind, out var recordSize, out var payloadLength, out var key, out var request);
@@ -446,8 +446,6 @@ namespace Garnet.client
                 logger?.LogError("{Message}", message);
                 transport.OnFlushError(new InvalidOperationException(message));
             }
-
-            long GetOffsetInPage(long address) => address & store.PageSizeMask;
         }
     }
 }

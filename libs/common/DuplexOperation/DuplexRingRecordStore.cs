@@ -117,19 +117,31 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static long DecodeMeta(long word) => word & PayloadMetaMask;
 
+        /// <summary>Byte offset of <paramref name="address"/> within its page.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long GetOffsetInPage(long address) => address & PageSizeMask;
+
+        /// <summary>Page index of <paramref name="address"/> (not wrapped to the physical ring page count).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long GetUnwrappedPageIndex(long address) => address >> PageSizeBits;
+
+        /// <summary>Composes a logical address from a page index and an in-page byte offset.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long PackAddress(long page, long offset) => (page << PageSizeBits) | (uint)offset;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int ComputeSlot(long address)
         {
-            var pageIndex = (int)((address >> PageSizeBits) & (PageCount - 1));
-            var offset = (int)(address & PageSizeMask);
+            var pageIndex = (int)(GetUnwrappedPageIndex(address) & (PageCount - 1));
+            var offset = (int)GetOffsetInPage(address);
             return ((pageIndex * PageSizeBytes) + offset) / RecordHeaderSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private long GetPhysicalAddress(long logicalAddress)
         {
-            var offset = (int)(logicalAddress & ((1L << PageSizeBits) - 1));
-            return bufferPages[logicalAddress >> PageSizeBits].pointer + offset;
+            var offset = (int)GetOffsetInPage(logicalAddress);
+            return bufferPages[GetUnwrappedPageIndex(logicalAddress)].pointer + offset;
         }
 
         /// <summary>
@@ -279,7 +291,7 @@ namespace Garnet.client
             {
                 for (var offset = 0; offset < PageSizeBytes;)
                 {
-                    var address = ((long)page << PageSizeBits) | (uint)offset;
+                    var address = PackAddress(page, offset);
                     if (TryClaimRequest(address, out var kind, out var recordSize, out _, out _, out var request) &&
                         kind == RequestKind.OutOfLine)
                         request.Dispose();
