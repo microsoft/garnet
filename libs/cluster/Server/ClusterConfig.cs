@@ -42,7 +42,7 @@ namespace Garnet.cluster
 
         /// <summary>
         /// Maximum supported cluster config serialization version.
-        /// Increment when the binary layout of <see cref="ToByteArray()"/>/<see cref="FromByteArray"/> changes.
+        /// Cluster config version should be incremented when the binary layout changes.
         /// </summary>
         public const byte MaximumSupportedClusterConfigVersion = 2;
 
