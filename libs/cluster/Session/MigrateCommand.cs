@@ -150,6 +150,9 @@ namespace Garnet.cluster
 
                 if (targetNodeId == null && pstate == MigrateCmdParseState.SUCCESS)
                     pstate = MigrateCmdParseState.UNKNOWNTARGET;
+
+                if (targetNodeId != null)
+                    (effectiveAddress, targetPort) = current.GetWorkerAddressFromNodeId(targetNodeId);
             }
 
             // Add single key if specified
