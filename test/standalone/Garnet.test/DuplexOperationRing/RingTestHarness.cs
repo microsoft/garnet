@@ -21,7 +21,7 @@ namespace Garnet.test
     /// shared counter keyed by <see cref="id"/>, so both leaks (zero disposes) and double-disposes (two) are
     /// detectable. The <c>default</c> instance (used by inline records, which own no buffer) is a no-op.
     /// </summary>
-    internal readonly struct TestRequest : IRequest
+    internal readonly struct TestRequest : IRequestContext
     {
         readonly byte[] buffer;
         readonly int length;

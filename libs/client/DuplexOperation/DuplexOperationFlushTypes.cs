@@ -9,7 +9,7 @@ namespace Garnet.client
     /// <summary>
     /// Out-of-line payload async flush result for the request lane of a duplex operation ring.
     /// </summary>
-    sealed class DuplexOperationAsyncFlushResult<TRequest> where TRequest : struct, IRequest
+    sealed class DuplexOperationAsyncFlushResult<TRequest> where TRequest : struct, IRequestContext
     {
         public CountWrapper count;
         public TRequest request;

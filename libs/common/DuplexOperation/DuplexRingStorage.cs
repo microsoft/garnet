@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Garnet.common;
 
 namespace Garnet.client
 {
@@ -34,8 +35,8 @@ namespace Garnet.client
     /// <summary>
     /// Physical request and completion storage for a duplex operation ring.
     /// </summary>
-    internal sealed unsafe class DuplexRingStorage<TRequest, TCompletion>
-        where TRequest : struct, IDisposable
+    internal sealed unsafe class DuplexRingStorage<TRequestContext, TCompletionContext>
+        where TRequestContext : struct, IDisposable
     {
         unsafe struct RingPage
         {
@@ -58,7 +59,7 @@ namespace Garnet.client
         struct CompletionSlot
         {
             internal long published;
-            internal TCompletion completion;
+            internal TCompletionContext completion;
         }
 
         internal const int RecordHeaderSize = sizeof(long);
@@ -68,9 +69,9 @@ namespace Garnet.client
         const long TakenBit = 1L << 63;
         const int RecordAlignment = 8;
 
-        readonly RingPage[] bufferPages;
-        readonly TRequest[] requests;
-        readonly CompletionSlot[] completionLane;
+        readonly RingBoundedBuffer<RingPage> bufferPages;
+        readonly TRequestContext[] requests;
+        readonly CompletionSlot[] completions;
         readonly int completionMask;
         int closed;
 
@@ -92,20 +93,44 @@ namespace Garnet.client
             PageSizeMask = ringPageSizeBytes - 1;
 
             var ringSlotCount = ringPageCount * ringPageSizeBytes / RecordHeaderSize;
-            requests = new TRequest[ringSlotCount];
+            requests = new TRequestContext[ringSlotCount];
 
-            bufferPages = new RingPage[ringPageCount];
-            for (var i = 0; i < bufferPages.Length; i++)
+            // Hold the per-page records in a single-page ring whose slots are the ring's pages, so page lookups
+            // reuse the buffer's wrap-around indexer instead of a hand-written modulo.
+            bufferPages = new RingBoundedBuffer<RingPage>(pageSize: ringPageCount, pageCount: 1);
+            for (var i = 0; i < ringPageCount; i++)
                 bufferPages[i] = new RingPage(ringPageSizeBytes);
 
             CompletionCapacity = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, completionCapacity));
             completionMask = CompletionCapacity - 1;
-            completionLane = new CompletionSlot[CompletionCapacity];
+            completions = new CompletionSlot[CompletionCapacity];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static int AlignedInlineRecordSize(int payloadLength)
+        private static int AlignedInlineRecordSize(int payloadLength)
             => (RecordHeaderSize + payloadLength + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static long EncodeDescriptor(RequestKind kind, long meta)
+            => ((long)(byte)kind << TagShift) | (meta & PayloadMetaMask);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static long DecodeMeta(long word) => word & PayloadMetaMask;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int ComputeSlot(long address)
+        {
+            var pageIndex = (int)((address >> PageSizeBits) & (PageCount - 1));
+            var offset = (int)(address & PageSizeMask);
+            return ((pageIndex * PageSizeBytes) + offset) / RecordHeaderSize;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private long GetPhysicalAddress(long logicalAddress)
+        {
+            var offset = (int)(logicalAddress & ((1L << PageSizeBits) - 1));
+            return bufferPages[logicalAddress >> PageSizeBits].pointer + offset;
+        }
 
         /// <summary>
         /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline.
@@ -120,37 +145,16 @@ namespace Garnet.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static long EncodeDescriptor(RequestKind kind, long meta)
-            => ((long)(byte)kind << TagShift) | (meta & PayloadMetaMask);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static long DecodeMeta(long word) => word & PayloadMetaMask;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int ComputeSlot(long address)
-        {
-            var pageIndex = (int)((address >> PageSizeBits) & (PageCount - 1));
-            var offset = (int)(address & PageSizeMask);
-            return ((pageIndex * PageSizeBytes) + offset) / RecordHeaderSize;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        long GetPhysicalAddress(long logicalAddress)
-        {
-            var offset = (int)(logicalAddress & ((1L << PageSizeBits) - 1));
-            var pageIndex = (int)((logicalAddress >> PageSizeBits) & (PageCount - 1));
-            return bufferPages[pageIndex].pointer + offset;
-        }
-
         internal void SetPageLastOffset(int page, long offset)
         {
-            Debug.Assert(bufferPages[page % PageCount].lastOffset == 0);
-            bufferPages[page % PageCount].lastOffset = offset;
+            Debug.Assert(bufferPages[page].lastOffset == 0);
+            bufferPages[page].lastOffset = offset;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long ConsumePageEndOffset(long page, long endOffset)
         {
-            ref var ringPage = ref bufferPages[page % PageCount];
+            ref var ringPage = ref bufferPages[page];
             if (ringPage.lastOffset <= 0 || endOffset <= ringPage.lastOffset)
                 return endOffset;
 
@@ -159,10 +163,10 @@ namespace Garnet.client
             return realEndOffset;
         }
 
-        internal byte[] GetPageBuffer(long page) => bufferPages[page % PageCount].value;
+        internal byte[] GetPageBuffer(long page) => bufferPages[page].value;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryClaimRequest(long address, out RequestKind kind, out int recordSize, out int payloadLength, out long key, out TRequest request)
+        internal bool TryClaimRequest(long address, out RequestKind kind, out int recordSize, out int payloadLength, out long key, out TRequestContext request)
         {
             request = default;
             payloadLength = 0;
@@ -205,7 +209,7 @@ namespace Garnet.client
             return true;
         }
 
-        internal void RegisterRequest(long address, TRequest request)
+        internal void RegisterRequest(long address, TRequestContext request)
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref closed) != 0, this);
             var slot = ComputeSlot(address);
@@ -219,7 +223,7 @@ namespace Garnet.client
                 reclaimed.Dispose();
         }
 
-        internal byte* ReserveInlineRecord(long address, int payloadLength)
+        internal byte* RegisterInlineRecord(long address, int payloadLength)
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref closed) != 0, this);
             var basePtr = GetPhysicalAddress(address);
@@ -228,22 +232,22 @@ namespace Garnet.client
             return (byte*)(basePtr + RecordHeaderSize);
         }
 
-        internal void RegisterCompletion(int ticket, TCompletion completion)
+        internal void RegisterCompletion(int ticket, TCompletionContext completion)
         {
             var slot = ticket & completionMask;
-            completionLane[slot].completion = completion;
-            Volatile.Write(ref completionLane[slot].published, (long)ticket + 1);
+            completions[slot].completion = completion;
+            Volatile.Write(ref completions[slot].published, (long)ticket + 1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryClaimCompletion(int ticket, out TCompletion completion)
+        internal bool TryClaimCompletion(int ticket, out TCompletionContext completion)
         {
             var slot = ticket & completionMask;
             var expected = (long)ticket + 1;
-            if (Volatile.Read(ref completionLane[slot].published) == expected &&
-                Interlocked.CompareExchange(ref completionLane[slot].published, -expected, expected) == expected)
+            if (Volatile.Read(ref completions[slot].published) == expected &&
+                Interlocked.CompareExchange(ref completions[slot].published, -expected, expected) == expected)
             {
-                completion = completionLane[slot].completion;
+                completion = completions[slot].completion;
                 return true;
             }
 
@@ -251,12 +255,12 @@ namespace Garnet.client
             return false;
         }
 
-        internal bool TryReadCompletion(int ticket, out TCompletion completion)
+        internal bool TryReadCompletion(int ticket, out TCompletionContext completion)
         {
             var slot = ticket & completionMask;
-            if (Volatile.Read(ref completionLane[slot].published) == (long)ticket + 1)
+            if (Volatile.Read(ref completions[slot].published) == (long)ticket + 1)
             {
-                completion = completionLane[slot].completion;
+                completion = completions[slot].completion;
                 return true;
             }
 

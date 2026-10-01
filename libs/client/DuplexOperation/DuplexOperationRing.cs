@@ -14,7 +14,7 @@ namespace Garnet.client
     /// The ring transfers ownership of the underlying buffer to the sender (flusher), which disposes
     /// it once the bytes have been handed to the network.
     /// </summary>
-    internal interface IRequest : IDisposable
+    internal interface IRequestContext : IDisposable
     {
         /// <summary>
         /// Backing buffer holding the serialized request bytes.
@@ -52,7 +52,7 @@ namespace Garnet.client
     /// producer's own flush to catch up).
     /// </description></item>
     /// <item><description>
-    /// The <b>completion lane</b> — a separate array of <typeparamref name="TCompletion"/> slots keyed by
+    /// The <b>completion lane</b> — a separate array of <typeparamref name="TCompletionContext"/> slots keyed by
     /// the completion ticket handed out alongside the request address. A completion must outlive its
     /// flush (it is needed until the reply arrives), so this lane is freed on reply, tracked by
     /// <c>repliedUntil</c>. Back-pressure here is remote (it waits for the peer to answer).
@@ -75,8 +75,8 @@ namespace Garnet.client
     /// are bounded by the completion-lane capacity; fire-and-forget claims never touch the lane.
     /// </para>
     /// </summary>
-    internal sealed class DuplexOperationRing<TRequest, TCompletion, TTransport> : IDisposable
-        where TRequest : struct, IRequest
+    internal sealed class DuplexOperationRing<TRequestContext, TCompletionContext, TTransport> : IDisposable
+        where TRequestContext : struct, IRequestContext
         where TTransport : struct, IDuplexRingTransport
     {
         /// <summary>Largest command payload that can be written inline into a single page.</summary>
@@ -93,7 +93,7 @@ namespace Garnet.client
 
         public readonly LightEpoch epoch;
 
-        readonly DuplexRingStorage<TRequest, TCompletion> storage;
+        readonly DuplexRingStorage<TRequestContext, TCompletionContext> storage;
         readonly DuplexOperationAdmission admission;
         readonly TTransport transport;
         readonly ILogger logger;
@@ -141,7 +141,7 @@ namespace Garnet.client
             this.transport = transport;
             this.logger = logger;
 
-            storage = new DuplexRingStorage<TRequest, TCompletion>(
+            storage = new DuplexRingStorage<TRequestContext, TCompletionContext>(
                 ringPageSizeBytes,
                 ringPageCount,
                 completionCapacity);
@@ -157,7 +157,7 @@ namespace Garnet.client
             // A descriptor's low 56 bits must hold the full log address, so the page-index bits plus the
             // in-page offset bits must fit below the tag byte. This bounds how the descriptor codec can
             // coexist with the address layout for any configured page size.
-            Debug.Assert(PageOffset.kPageBits + storage.PageSizeBits <= DuplexRingStorage<TRequest, TCompletion>.TagShift,
+            Debug.Assert(PageOffset.kPageBits + storage.PageSizeBits <= DuplexRingStorage<TRequestContext, TCompletionContext>.TagShift,
                 "Descriptor address space must leave the most-significant byte free for the payload kind tag.");
         }
 
@@ -227,7 +227,7 @@ namespace Garnet.client
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
-            return storage.ReserveInlineRecord(address, payloadLength);
+            return storage.RegisterInlineRecord(address, payloadLength);
         }
 
         /// <summary>
@@ -243,7 +243,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="address"></param>
         /// <param name="request"></param>
-        internal void RegisterOfflineRecord(long address, TRequest request)
+        internal void RegisterOfflineRecord(long address, TRequestContext request)
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
@@ -261,7 +261,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="ticket"></param>
         /// <param name="completion"></param>
-        internal void RegisterCompletion(int ticket, TCompletion completion)
+        internal void RegisterCompletion(int ticket, TCompletionContext completion)
             => storage.RegisterCompletion(ticket, completion);
 
         /// <summary>
@@ -274,14 +274,14 @@ namespace Garnet.client
         /// not published or was already claimed.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryClaimCompletionTicket(int ticket, out TCompletion completion)
+        internal bool TryClaimCompletionTicket(int ticket, out TCompletionContext completion)
             => storage.TryClaimCompletion(ticket, out completion);
 
         /// <summary>
         /// Reader-side: try to read a published completion for the given ticket. Returns false if the
         /// producer has not finished publishing it yet.
         /// </summary>
-        internal bool TryReadCompletion(int ticket, out TCompletion completion)
+        internal bool TryReadCompletion(int ticket, out TCompletionContext completion)
             => storage.TryReadCompletion(ticket, out completion);
 
         /// <summary>
@@ -323,11 +323,11 @@ namespace Garnet.client
 
                 var realEndOffset = storage.ConsumePageEndOffset(flushPage, endOffset);
 
-                if ((startOffset & (DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize - 1)) != 0 ||
-                    (realEndOffset & (DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize - 1)) != 0)
+                if ((startOffset & (DuplexRingStorage<TRequestContext, TCompletionContext>.RecordHeaderSize - 1)) != 0 ||
+                    (realEndOffset & (DuplexRingStorage<TRequestContext, TCompletionContext>.RecordHeaderSize - 1)) != 0)
                 {
-                    FailOnRequestFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize}-byte records.");
-                    realEndOffset -= (realEndOffset - startOffset) & (DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize - 1);
+                    FailOnRequestFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {DuplexRingStorage<TRequestContext, TCompletionContext>.RecordHeaderSize}-byte records.");
+                    realEndOffset -= (realEndOffset - startOffset) & (DuplexRingStorage<TRequestContext, TCompletionContext>.RecordHeaderSize - 1);
                 }
 
                 for (var offset = startOffset; offset < realEndOffset;)
@@ -370,7 +370,7 @@ namespace Garnet.client
                     if (kind == RequestKind.OutOfLine)
                         ProcessRequestChunks(request.Buffer, 0, request.Length, request, count, ref flushFailed);
                     else if (payloadLength > 0)
-                        ProcessRequestChunks(storage.GetPageBuffer(flushPage), (int)(offset + DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize), payloadLength, default, count, ref flushFailed);
+                        ProcessRequestChunks(storage.GetPageBuffer(flushPage), (int)(offset + DuplexRingStorage<TRequestContext, TCompletionContext>.RecordHeaderSize), payloadLength, default, count, ref flushFailed);
 
                     offset += recordSize;
                 }
@@ -381,11 +381,11 @@ namespace Garnet.client
 
             admission.CompleteFlush(count);
 
-            void ProcessRequestChunks(byte[] buffer, int baseOffset, int length, TRequest request, CountWrapper count, ref bool flushFailed)
+            void ProcessRequestChunks(byte[] buffer, int baseOffset, int length, TRequestContext request, CountWrapper count, ref bool flushFailed)
             {
                 var chunkSize = Math.Max(1, maxChunkSizeBytes);
                 var chunkCount = ((length - 1) / chunkSize) + 1;
-                var result = new DuplexOperationAsyncFlushResult<TRequest>
+                var result = new DuplexOperationAsyncFlushResult<TRequestContext>
                 {
                     count = count,
                     request = request,
@@ -413,7 +413,7 @@ namespace Garnet.client
                     // Undispatched chunks will never get a network completion, so account for them here via
                     // the same completion routine the network callback uses.
                     for (var i = dispatchedChunks; i < chunkCount; i++)
-                        DuplexOperationAsyncFlushResult<TRequest>.CompleteChunk(result);
+                        DuplexOperationAsyncFlushResult<TRequestContext>.CompleteChunk(result);
                 }
             }
 

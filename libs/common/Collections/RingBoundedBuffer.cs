@@ -12,17 +12,7 @@ namespace Garnet.common
     /// <typeparam name="T">Element type.</typeparam>
     internal sealed class RingBoundedBuffer<T>
     {
-        readonly struct RingPage
-        {
-            internal readonly T[] slots;
-
-            internal RingPage(int pageSize)
-            {
-                slots = new T[pageSize];
-            }
-        }
-
-        readonly RingPage[] bufferPages;
+        readonly T[][] bufferPages;
         readonly int pageSizeBits;
         readonly int pageSizeMask;
 
@@ -47,9 +37,9 @@ namespace Garnet.common
             pageSizeMask = pageSize - 1;
             Capacity = checked(pageSize * pageCount);
 
-            bufferPages = new RingPage[pageCount];
+            bufferPages = new T[pageCount][];
             for (var i = 0; i < bufferPages.Length; i++)
-                bufferPages[i] = new RingPage(pageSize);
+                bufferPages[i] = new T[pageSize];
         }
 
         /// <summary>
@@ -61,7 +51,7 @@ namespace Garnet.common
             get
             {
                 var pageIndex = (int)((address >> pageSizeBits) & (bufferPages.Length - 1));
-                return ref bufferPages[pageIndex].slots[(int)(address & pageSizeMask)];
+                return ref bufferPages[pageIndex][(int)(address & pageSizeMask)];
             }
         }
     }

@@ -13,7 +13,7 @@ namespace Garnet.client
     /// the completion ticket that the combined allocator hands out alongside the request address.
     /// The request lane is freed on flush (send), independently of when the reply arrives.
     /// </summary>
-    struct LightRequest : IRequest
+    struct LightRequest : IRequestContext
     {
         /// <summary>
         /// Rented buffer holding the serialized command bytes.
