@@ -65,11 +65,11 @@ namespace Garnet.common
         /// <summary>True when nothing has been accumulated.</summary>
         public bool IsEmpty => totalLength == 0;
 
-        /// <summary>Number of chunks; see <see cref="GetChunk"/>.</summary>
+        /// <summary>Number of chunks; see <see cref="this[int]"/>.</summary>
         public int Count => buffers.Count;
 
         /// <summary>The chunk at <paramref name="index"/>, bounded to its valid bytes (only the last chunk is partial).</summary>
-        public ReadOnlyMemory<byte> GetChunk(int index)
+        public ReadOnlyMemory<byte> this[int index]
             => buffers[index].AsReadOnlyMemory(0, index == buffers.Count - 1 ? lastFilled : bufferSize);
 
         /// <summary>Append bytes, spilling into additional pooled buffers as needed.</summary>
@@ -86,7 +86,7 @@ namespace Garnet.common
                 }
 
                 // The pool may return a larger block than requested; cap at bufferSize so chunk lengths stay uniform and
-                // GetChunk can derive every non-final chunk's length without tracking it per buffer.
+                // the indexer can derive every non-final chunk's length without tracking it per buffer.
                 var toCopy = Math.Min(data.Length, bufferSize - lastFilled);
                 data.Slice(0, toCopy).CopyTo(new Span<byte>(buffers[^1].aligned_pointer + lastFilled, toCopy));
                 lastFilled += toCopy;
@@ -104,12 +104,12 @@ namespace Garnet.common
                 return ReadOnlySequence<byte>.Empty;
             // Common case: a single chunk holds the whole payload — wrap it directly, with no ChunkSegment allocation.
             if (buffers.Count == 1)
-                return new ReadOnlySequence<byte>(GetChunk(0));
+                return new ReadOnlySequence<byte>(this[0]);
 
             ChunkSegment first = null, last = null;
             for (var i = 0; i < buffers.Count; i++)
             {
-                last = new ChunkSegment(GetChunk(i), last);
+                last = new ChunkSegment(this[i], last);
                 first ??= last;
             }
             return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);

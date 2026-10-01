@@ -118,7 +118,7 @@ namespace Garnet.server
         public int ChunkCount => objectValueChunks.Count;
 
         /// <summary>The serialized object value chunk at <paramref name="index"/>, bounded to its valid bytes.</summary>
-        public ReadOnlyMemory<byte> GetChunk(int index) => objectValueChunks.GetChunk(index);
+        public ReadOnlyMemory<byte> GetChunk(int index) => objectValueChunks[index];
 
         /// <summary>Total length of the overflow value or serialized object value (0 if the value is inline).</summary>
         public long ValueLength => valueOverflow is not null ? valueOverflow.Length : objectValueChunks.TotalLength;

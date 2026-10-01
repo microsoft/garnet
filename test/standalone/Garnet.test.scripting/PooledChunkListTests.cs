@@ -129,9 +129,9 @@ namespace Garnet.test
             ClassicAssert.AreEqual(payload.Length, sequence.Length);
             CollectionAssert.AreEqual(payload, sequence.ToArray());
 
-            // Every chunk but the last is full, which is what lets GetChunk derive lengths without tracking them.
+            // Every chunk but the last is full, which is what lets the indexer derive lengths without tracking them.
             for (var i = 0; i < list.Count - 1; i++)
-                ClassicAssert.AreEqual(BufferSize, list.GetChunk(i).Length);
+                ClassicAssert.AreEqual(BufferSize, list[i].Length);
         }
 
         /// <summary>An empty list yields an empty sequence rather than throwing, since a record may carry no object bytes.</summary>

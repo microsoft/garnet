@@ -95,7 +95,7 @@ namespace Garnet.server
         /// marker recorded alongside it: dropping the markers while leaving the groups queued would put the two out of
         /// step, and the next region's markers would dequeue the wrong groups.
         /// </remarks>
-        public void DiscardFuzzyRegionBuffer()
+        internal void DiscardFuzzyRegionBuffer()
         {
             foreach (var op in fuzzyRegionOps)
                 op.Chunk?.ReturnValueChunks();
@@ -123,7 +123,7 @@ namespace Garnet.server
         /// is replayed.</param>
         /// <param name="commitSequenceNumber">Log address sequence number of the commit record, needed for the
         /// multi-log commit barrier when the group is eventually replayed.</param>
-        public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker, long commitSequenceNumber = 0)
+        internal void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker, long commitSequenceNumber = 0)
         {
             // Add commit marker operation
             fuzzyRegionOps.Add(new ReplayOperation(commitMarker.ToArray(), commitSequenceNumber));
