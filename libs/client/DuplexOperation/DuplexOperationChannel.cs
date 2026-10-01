@@ -146,9 +146,7 @@ namespace Garnet.client
                 ringPageCount,
                 completionCapacity);
             admission = new DuplexAdmissionController(
-                store.PageSizeBytes,
-                store.PageSizeBits,
-                store.PageCount,
+                store.Shape,
                 store.CompletionCapacity,
                 epoch,
                 store.SetPageLastOffset,
@@ -157,7 +155,7 @@ namespace Garnet.client
             // A descriptor's low 56 bits must hold the full log address, so the page-index bits plus the
             // in-page offset bits must fit below the tag byte. This bounds how the descriptor codec can
             // coexist with the address layout for any configured page size.
-            Debug.Assert(PageOffset.kPageBits + store.PageSizeBits <= DuplexRingRecordStore<TRequestContext, TCompletionContext>.TagShift,
+            Debug.Assert(PageOffset.kPageBits + store.Shape.PageSizeBits <= DuplexRingRecordStore<TRequestContext, TCompletionContext>.TagShift,
                 "Descriptor address space must leave the most-significant byte free for the payload kind tag.");
         }
 
@@ -304,8 +302,8 @@ namespace Garnet.client
         /// <param name="untilAddress"></param>
         void AsyncFlushRequests(long fromAddress, long untilAddress)
         {
-            var startPage = store.GetUnwrappedPageIndex(fromAddress);
-            var endPage = store.GetUnwrappedPageIndex(untilAddress);
+            var startPage = store.Shape.GetUnwrappedPageIndex(fromAddress);
+            var endPage = store.Shape.GetUnwrappedPageIndex(untilAddress);
             var count = new CountWrapper
             {
                 count = 1,
@@ -317,9 +315,9 @@ namespace Garnet.client
             var flushPage = startPage;
             while (true)
             {
-                long startOffset = 0, endOffset = store.PageSizeBytes;
-                if (flushPage == startPage) startOffset = store.GetOffsetInPage(fromAddress);
-                if (flushPage == endPage) endOffset = store.GetOffsetInPage(untilAddress);
+                long startOffset = 0, endOffset = store.Shape.PageSizeBytes;
+                if (flushPage == startPage) startOffset = store.Shape.GetOffsetInPage(fromAddress);
+                if (flushPage == endPage) endOffset = store.Shape.GetOffsetInPage(untilAddress);
 
                 var realEndOffset = store.ConsumePageEndOffset(flushPage, endOffset);
 
@@ -342,7 +340,7 @@ namespace Garnet.client
                         disposedBail = true;
                         break;
                     }
-                    var address = store.PackAddress(flushPage, offset);
+                    var address = store.Shape.PackAddress(flushPage, offset);
 
                     // Claim the record, recovering its stride whether or not we win the claim.
                     var won = store.TryClaimRequest(address, out var kind, out var recordSize, out var payloadLength, out var key, out var request);

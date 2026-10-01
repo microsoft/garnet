@@ -33,6 +33,49 @@ namespace Garnet.client
     }
 
     /// <summary>
+    /// Immutable geometry of a power-of-two page ring: the page size and count, plus the
+    /// address ↔ (page, offset) arithmetic that keys off them. Holds no position/cursor state.
+    /// </summary>
+    internal readonly struct PageShape
+    {
+        /// <summary>Size of each page, in bytes.</summary>
+        internal int PageSizeBytes { get; }
+
+        /// <summary>Log2 of <see cref="PageSizeBytes"/>.</summary>
+        internal int PageSizeBits { get; }
+
+        /// <summary>Mask isolating the in-page byte offset (<see cref="PageSizeBytes"/> - 1).</summary>
+        internal int PageSizeMask { get; }
+
+        /// <summary>Number of physical pages in the ring.</summary>
+        internal int PageCount { get; }
+
+        internal PageShape(int pageSizeBytes, int pageCount)
+        {
+            PageSizeBytes = pageSizeBytes;
+            PageSizeBits = System.Numerics.BitOperations.Log2((uint)pageSizeBytes);
+            PageSizeMask = pageSizeBytes - 1;
+            PageCount = pageCount;
+        }
+
+        /// <summary>Byte offset of <paramref name="address"/> within its page.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long GetOffsetInPage(long address) => address & PageSizeMask;
+
+        /// <summary>Page index of <paramref name="address"/> (not wrapped to the physical ring page count).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long GetUnwrappedPageIndex(long address) => address >> PageSizeBits;
+
+        /// <summary>Physical ring slot: the logical page wrapped to <see cref="PageCount"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int GetPhysicalPageIndex(long address) => (int)(GetUnwrappedPageIndex(address) & (PageCount - 1));
+
+        /// <summary>Composes a logical address from a page index and an in-page byte offset.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long PackAddress(long page, long offset) => (page << PageSizeBits) | (uint)offset;
+    }
+
+    /// <summary>
     /// Physical request and completion storage for a duplex operation ring.
     /// </summary>
     internal sealed unsafe class DuplexRingRecordStore<TRequestContext, TCompletionContext>
@@ -75,22 +118,16 @@ namespace Garnet.client
         readonly int completionMask;
         int closed;
 
-        internal int PageCount { get; }
-        internal int PageSizeBytes { get; }
-        internal int PageSizeBits { get; }
-        internal int PageSizeMask { get; }
+        internal PageShape Shape { get; }
         internal int CompletionCapacity { get; }
-        internal int MaxInlinePayloadSize => PageSizeBytes - RecordHeaderSize;
+        internal int MaxInlinePayloadSize => Shape.PageSizeBytes - RecordHeaderSize;
 
         internal DuplexRingRecordStore(
             int ringPageSizeBytes,
             int ringPageCount,
             int completionCapacity)
         {
-            PageCount = ringPageCount;
-            PageSizeBytes = ringPageSizeBytes;
-            PageSizeBits = System.Numerics.BitOperations.Log2((uint)ringPageSizeBytes);
-            PageSizeMask = ringPageSizeBytes - 1;
+            Shape = new PageShape(ringPageSizeBytes, ringPageCount);
 
             var ringSlotCount = ringPageCount * ringPageSizeBytes / RecordHeaderSize;
             requests = new TRequestContext[ringSlotCount];
@@ -117,31 +154,19 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static long DecodeMeta(long word) => word & PayloadMetaMask;
 
-        /// <summary>Byte offset of <paramref name="address"/> within its page.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetOffsetInPage(long address) => address & PageSizeMask;
-
-        /// <summary>Page index of <paramref name="address"/> (not wrapped to the physical ring page count).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetUnwrappedPageIndex(long address) => address >> PageSizeBits;
-
-        /// <summary>Composes a logical address from a page index and an in-page byte offset.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long PackAddress(long page, long offset) => (page << PageSizeBits) | (uint)offset;
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int ComputeSlot(long address)
         {
-            var pageIndex = (int)(GetUnwrappedPageIndex(address) & (PageCount - 1));
-            var offset = (int)GetOffsetInPage(address);
-            return ((pageIndex * PageSizeBytes) + offset) / RecordHeaderSize;
+            var pageIndex = Shape.GetPhysicalPageIndex(address);
+            var offset = (int)Shape.GetOffsetInPage(address);
+            return ((pageIndex * Shape.PageSizeBytes) + offset) / RecordHeaderSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private long GetPhysicalAddress(long logicalAddress)
         {
-            var offset = (int)GetOffsetInPage(logicalAddress);
-            return bufferPages[GetUnwrappedPageIndex(logicalAddress)].pointer + offset;
+            var offset = (int)Shape.GetOffsetInPage(logicalAddress);
+            return bufferPages[Shape.GetUnwrappedPageIndex(logicalAddress)].pointer + offset;
         }
 
         /// <summary>
@@ -287,16 +312,16 @@ namespace Garnet.client
 
             // Live records are contiguous from offset zero. Stale bytes after the live tail may decode as
             // invalid framing, so stop when a recovered stride leaves the page.
-            for (var page = 0; page < PageCount; page++)
+            for (var page = 0; page < Shape.PageCount; page++)
             {
-                for (var offset = 0; offset < PageSizeBytes;)
+                for (var offset = 0; offset < Shape.PageSizeBytes;)
                 {
-                    var address = PackAddress(page, offset);
+                    var address = Shape.PackAddress(page, offset);
                     if (TryClaimRequest(address, out var kind, out var recordSize, out _, out _, out var request) &&
                         kind == RequestKind.OutOfLine)
                         request.Dispose();
 
-                    if (recordSize <= 0 || offset + recordSize > PageSizeBytes)
+                    if (recordSize <= 0 || offset + recordSize > Shape.PageSizeBytes)
                         break;
                     offset += recordSize;
                 }

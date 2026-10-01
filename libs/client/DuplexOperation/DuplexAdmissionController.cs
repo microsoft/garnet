@@ -33,9 +33,7 @@ namespace Garnet.client
     {
         const long PageWrapDistance = 1L << (PageOffset.kPageBits - 1);
 
-        readonly int pageSizeBytes;
-        readonly int pageSizeBits;
-        readonly int pageCount;
+        readonly PageShape shape;
         readonly int completionCapacity;
         readonly long wrapDistance;
         readonly LightEpoch epoch;
@@ -56,22 +54,18 @@ namespace Garnet.client
         internal int CompletionTail => tailPageOffset.TaskId;
 
         internal DuplexAdmissionController(
-            int pageSizeBytes,
-            int pageSizeBits,
-            int pageCount,
+            PageShape shape,
             int completionCapacity,
             LightEpoch epoch,
             Action<int, long> setPageLastOffset,
             Action<long, long> onPagesMarkedReadOnly)
         {
-            this.pageSizeBytes = pageSizeBytes;
-            this.pageSizeBits = pageSizeBits;
-            this.pageCount = pageCount;
+            this.shape = shape;
             this.completionCapacity = completionCapacity;
             this.epoch = epoch;
             this.setPageLastOffset = setPageLastOffset;
             this.onPagesMarkedReadOnly = onPagesMarkedReadOnly;
-            wrapDistance = PageWrapDistance << pageSizeBits;
+            wrapDistance = PageWrapDistance << shape.PageSizeBits;
 
             requestFreed.Initialize();
             completionFreed.Initialize();
@@ -89,12 +83,12 @@ namespace Garnet.client
         internal long GetTailAddress()
         {
             var local = tailPageOffset;
-            if (local.Offset >= pageSizeBytes)
+            if (local.Offset >= shape.PageSizeBytes)
             {
                 local.Page = (local.Page + 1) & (int)PageOffset.kPageMask;
                 local.Offset = 0;
             }
-            return (((long)local.Page) << pageSizeBits) | (uint)local.Offset;
+            return (((long)local.Page) << shape.PageSizeBits) | (uint)local.Offset;
         }
 
         /// <summary>
@@ -159,7 +153,7 @@ namespace Garnet.client
             PageOffset localTailPageOffset = default;
             localTailPageOffset.PageAndOffset = tailPageOffset.PageAndOffset;
 
-            if (localTailPageOffset.Offset > pageSizeBytes)
+            if (localTailPageOffset.Offset > shape.PageSizeBytes)
             {
                 completionTicket = 0;
                 if (NeedToWait(localTailPageOffset.Page + 1))
@@ -175,17 +169,17 @@ namespace Garnet.client
             var page = localTailPageOffset.Page;
             var offset = localTailPageOffset.Offset - size;
 
-            if (localTailPageOffset.Offset > pageSizeBytes)
+            if (localTailPageOffset.Offset > shape.PageSizeBytes)
             {
                 var pageIndex = (localTailPageOffset.Page + 1) & (int)PageOffset.kPageMask;
-                if (offset > pageSizeBytes)
+                if (offset > shape.PageSizeBytes)
                 {
                     if (NeedToWait(pageIndex))
                         return -1;
                     return -2;
                 }
 
-                if (offset < pageSizeBytes)
+                if (offset < shape.PageSizeBytes)
                     setPageLastOffset(page, offset);
 
                 DrainRequests();
@@ -193,7 +187,7 @@ namespace Garnet.client
                 if (NeedToWait(pageIndex))
                 {
                     localTailPageOffset.TaskId = completionTicket;
-                    localTailPageOffset.Offset = pageSizeBytes;
+                    localTailPageOffset.Offset = shape.PageSizeBytes;
                     Interlocked.Exchange(ref tailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
                     return -1;
                 }
@@ -205,11 +199,11 @@ namespace Garnet.client
                 offset = 0;
             }
 
-            return (((long)page) << pageSizeBits) | (uint)offset;
+            return (((long)page) << shape.PageSizeBits) | (uint)offset;
 
             bool NeedToWait(int nextPage)
             {
-                var limit = (pageCount + (int)(flushedUntilAddress >> pageSizeBits)) & (int)PageOffset.kPageMask;
+                var limit = (shape.PageCount + (int)shape.GetUnwrappedPageIndex(flushedUntilAddress)) & (int)PageOffset.kPageMask;
                 return nextPage >= limit && nextPage - limit < PageWrapDistance;
             }
         }
