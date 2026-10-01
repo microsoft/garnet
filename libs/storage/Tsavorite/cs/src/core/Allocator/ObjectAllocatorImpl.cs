@@ -381,6 +381,8 @@ namespace Tsavorite.core
 
             // Object allocator may have Inline or Overflow Keys or Values; additionally, Values may be Object. Both non-inline cases are an objectId in the record.
             // Key
+            if (sizeInfo.FieldInfo.KeySize <= 0)
+                ThrowTsavoriteException($"Key length must be greater than zero (got {sizeInfo.FieldInfo.KeySize})");
             if (sizeInfo.FieldInfo.KeySize <= maxInlineKeySize)
                 sizeInfo.SetKeyIsInline();
             var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;

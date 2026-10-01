@@ -59,6 +59,29 @@ namespace Tsavorite.test.Objects
             OnTearDown();
         }
 
+        /// <summary>
+        /// A zero-length key is rejected at sizing time. Recovery and the object-log reader both treat a zero key read
+        /// extent as "this record has an inline key", so a zero-length overflow key would be indistinguishable from one.
+        /// </summary>
+        [Test, Category(TsavoriteKVTestCategory), Category(ObjectIdMapCategory)]
+        public void ZeroLengthKeyIsRejected()
+        {
+            Assert.Throws<TsavoriteException>(PopulateWithZeroLengthKey);
+            Assert.DoesNotThrow(PopulateWithOneByteKey);
+
+            void PopulateWithZeroLengthKey()
+            {
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = new RecordFieldInfo() { KeySize = 0, ValueSize = sizeof(long) } };
+                store.hlog.PopulateRecordSizeInfo(ref sizeInfo);
+            }
+
+            void PopulateWithOneByteKey()
+            {
+                var sizeInfo = new RecordSizeInfo() { FieldInfo = new RecordFieldInfo() { KeySize = 1, ValueSize = sizeof(long) } };
+                store.hlog.PopulateRecordSizeInfo(ref sizeInfo);
+            }
+        }
+
         [Test, Category(TsavoriteKVTestCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         public void ObjectInMemWriteReadUpsert()
         {

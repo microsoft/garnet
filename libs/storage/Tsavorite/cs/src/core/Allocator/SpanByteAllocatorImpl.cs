@@ -193,6 +193,8 @@ namespace Tsavorite.core
             // Key
             sizeInfo.SetKeyIsInline();
             var keySize = sizeInfo.FieldInfo.KeySize;
+            if (keySize <= 0)
+                throw new TsavoriteException($"Key length must be greater than zero (got {keySize})");
             if (keySize > 1 << LogSettings.kMaxStringSizeBits)
                 throw new TsavoriteException($"Max inline key size is {1 << LogSettings.kMaxStringSizeBits}");
 
