@@ -14,7 +14,7 @@ namespace Garnet.cluster
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         public string RemoteNodeId { get; private set; }
-        byte gossipVersion = ClusterConfig.LegacyClusterConfigVersion;
+        byte gossipVersion = ClusterConfig.MinimumSupportedClusterConfigVersion;
 
         /// <summary>
         /// Implements CLUSTER BUMPEPOCH command

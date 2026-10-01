@@ -41,20 +41,20 @@ namespace Garnet.cluster
         public const int MAX_HASH_SLOT_VALUE = 16384;
 
         /// <summary>
-        /// Version of the cluster config serialization format.
+        /// Current version of the cluster config serialization format.
         /// Increment when the binary layout of <see cref="ToByteArray()"/>/<see cref="FromByteArray"/> changes.
         /// </summary>
-        public const byte ClusterConfigVersion = 2;
+        public const byte CurrentClusterConfigVersion = 2;
 
         /// <summary>
-        /// Legacy cluster config serialization format.
+        /// Minimum supported cluster config serialization version.
         /// </summary>
-        public const byte LegacyClusterConfigVersion = 1;
+        public const byte MinimumSupportedClusterConfigVersion = 1;
 
         /// <summary>
         /// Format used when initiating gossip, MEET, and failover exchanges.
         /// </summary>
-        public const byte OutboundGossipVersion = LegacyClusterConfigVersion;
+        public const byte OutboundGossipVersion = MinimumSupportedClusterConfigVersion;
 
         /// <summary>
         /// 
@@ -1132,7 +1132,7 @@ namespace Garnet.cluster
             return newConfig.MergeSlotMap(senderConfig, logger);
         }
 
-        private ClusterConfig MergeWorkerInfo(Worker worker, bool isSender)
+        private ClusterConfig MergeWorkerInfo(Worker worker, bool isWorkerOwner)
         {
             ushort workerId = RESERVED_WORKER_ID;
             // Find workerId offset from my local configuration
@@ -1149,8 +1149,8 @@ namespace Garnet.cluster
                     }
                     if (worker.ConfigEpoch == workers[i].ConfigEpoch)
                     {
-                        // Only an owner can replace known endpoints at the same epoch.
-                        if (!isSender && workers[i].ClusterAddress != null)
+                        // A relay can fill missing peer metadata, but only the owner can replace known endpoints at the same epoch.
+                        if (!isWorkerOwner && workers[i].ClusterAddress != null)
                             return this;
                         if (worker.Address == workers[i].Address && worker.Port == workers[i].Port &&
                             worker.ClusterAddress == workers[i].ClusterAddress && worker.ClusterPort == workers[i].ClusterPort &&
