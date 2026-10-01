@@ -325,7 +325,19 @@ namespace Garnet.server
                         var context = MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(10).Span);
                         var index = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
+                        // Expiration is only present during replication/migration, so this is conditionally present
+                        //
+                        // We have to do it at creation time IF present (rather than a separate PEXPIREAT or something)
+                        // because otherwise a replica might observe a Vector Set missing its expiration briefly
+                        var expirationTicks = input.parseState.Count >= 13 ? MemoryMarshal.Read<long>(input.parseState.GetArgSliceByRef(12).Span) : 0;
+
                         functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan);
+
+                        if (expirationTicks != 0)
+                        {
+                            var exprRes = logRecord.TrySetExpiration(expirationTicks);
+                            Debug.Assert(exprRes, "Should never fail to set expiration if provided");
+                        }
                     }
                     break;
                 default:

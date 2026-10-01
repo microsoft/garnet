@@ -21,7 +21,7 @@ namespace Garnet.cluster
             public readonly List<byte[]> keysToDelete;
             public StoreScan storeScan;
 
-            private readonly ConcurrentDictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
+            private readonly ConcurrentDictionary<byte[], (byte[] Value, DateTime? Expiration)> vectorSetsIndexKeysToMigrate;
             private readonly ConcurrentDictionary<byte[], byte> rangeIndexKeysToMigrate;
 
             readonly MigrateSession session;
@@ -32,7 +32,7 @@ namespace Garnet.cluster
 
             public LocalServerSession LocalSession => localServerSession;
 
-            public IEnumerable<KeyValuePair<byte[], byte[]>> VectorSets => vectorSetsIndexKeysToMigrate;
+            public IEnumerable<KeyValuePair<byte[], (byte[] Value, DateTime? Expiration)>> VectorSets => vectorSetsIndexKeysToMigrate;
 
             public IEnumerable<byte[]> RangeIndexKeys => rangeIndexKeysToMigrate.Keys;
 
@@ -52,8 +52,8 @@ namespace Garnet.cluster
 
                 return session._namespaces?.Contains(ns) ?? false;
             }
-            public void EncounteredVectorSet(byte[] key, byte[] value)
-            => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
+            public void EncounteredVectorSet(byte[] key, byte[] value, DateTime? expiration)
+            => vectorSetsIndexKeysToMigrate.TryAdd(key, (value, expiration));
 
             public void AddRangeIndexKey(byte[] key) => rangeIndexKeysToMigrate.TryAdd(key, 0);
 
