@@ -11,7 +11,7 @@ using NUnit.Framework;
 namespace Garnet.test
 {
     /// <summary>
-    /// Stage 1 soak test for <c>DuplexOperationRing</c>. Runs many randomized
+    /// Stage 1 soak test for <c>DuplexOperationChannel</c>. Runs many randomized
     /// rounds — varying page geometry, producer counts, payload sizes, response expectation and occasional
     /// transport failures — over a bounded wall-clock budget, re-checking the core invariants (no hang, no memory
     /// corruption, exactly-once buffer disposal, and full in-order-agnostic delivery on clean rounds) on each

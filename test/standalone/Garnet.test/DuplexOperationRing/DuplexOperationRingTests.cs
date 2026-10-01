@@ -11,7 +11,7 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     /// <summary>
-    /// Stage 1 correctness tests for <c>DuplexOperationRing</c> exercised in
+    /// Stage 1 correctness tests for <c>DuplexOperationChannel</c> exercised in
     /// isolation (no socket, no server) through <see cref="RingTestHarness"/>. Covers the inline / out-of-line
     /// size matrix, single- and multi-chunk framing, concurrent mixed ingestion under page wrap and
     /// back-pressure, response-expecting flow with a reply-advancing reader, and the empty-slot stride recovered
@@ -196,7 +196,7 @@ namespace Garnet.test
                             out var reservation,
                             out _);
                         ClassicAssert.IsTrue(reserved);
-                        var address = reservation.RequestAddress;
+                        var address = reservation.requestAddress;
 
                         // Publish only even slots; odd slots stay at the 0xFF page fill (Uninitialized), which the
                         // teardown walk must stride over by a single descriptor without misreading the next record.

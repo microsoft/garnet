@@ -15,13 +15,13 @@ namespace Garnet.client
     /// </summary>
     internal readonly struct DuplexOperationReservation
     {
-        internal readonly long RequestAddress;
-        internal readonly int CompletionTicket;
+        internal readonly long requestAddress;
+        internal readonly int completionTicket;
 
         internal DuplexOperationReservation(long requestAddress, int completionTicket)
         {
-            RequestAddress = requestAddress;
-            CompletionTicket = completionTicket;
+            this.requestAddress = requestAddress;
+            this.completionTicket = completionTicket;
         }
     }
 
@@ -29,7 +29,7 @@ namespace Garnet.client
     /// Coordinates admission and backpressure for paired request/completion operations. Request capacity is
     /// released by network flushes, while completion capacity is released independently by received replies.
     /// </summary>
-    internal sealed class DuplexOperationAdmission : IDisposable
+    internal sealed class DuplexAdmissionController : IDisposable
     {
         const long PageWrapDistance = 1L << (PageOffset.kPageBits - 1);
 
@@ -55,7 +55,7 @@ namespace Garnet.client
 
         internal int CompletionTail => tailPageOffset.TaskId;
 
-        internal DuplexOperationAdmission(
+        internal DuplexAdmissionController(
             int pageSizeBytes,
             int pageSizeBits,
             int pageCount,
@@ -102,7 +102,7 @@ namespace Garnet.client
         /// On backpressure, returns false and identifies the capacity event that the caller should await.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryReserveOperation(
+        internal bool TryScheduleOperation(
             int requestSize,
             bool expectsCompletion,
             out DuplexOperationReservation reservation,

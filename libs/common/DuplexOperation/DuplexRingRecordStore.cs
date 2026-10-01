@@ -35,7 +35,7 @@ namespace Garnet.client
     /// <summary>
     /// Physical request and completion storage for a duplex operation ring.
     /// </summary>
-    internal sealed unsafe class DuplexRingStorage<TRequestContext, TCompletionContext>
+    internal sealed unsafe class DuplexRingRecordStore<TRequestContext, TCompletionContext>
         where TRequestContext : struct, IDisposable
     {
         unsafe struct RingPage
@@ -82,7 +82,7 @@ namespace Garnet.client
         internal int CompletionCapacity { get; }
         internal int MaxInlinePayloadSize => PageSizeBytes - RecordHeaderSize;
 
-        internal DuplexRingStorage(
+        internal DuplexRingRecordStore(
             int ringPageSizeBytes,
             int ringPageCount,
             int completionCapacity)

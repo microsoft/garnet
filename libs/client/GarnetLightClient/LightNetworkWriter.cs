@@ -14,8 +14,8 @@ namespace Garnet.client
     /// Concurrent network writer for inline and out-of-line payloads.
     /// <para>
     /// This is a thin, network-owning shell over a
-    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}"/>
-    /// specialized to <see cref="LightRequest"/> requests and <see cref="TcsWrapper"/> completions. It owns
+    /// <see cref="DuplexOperationChannel{TRequest, TCompletion, TTransport}"/>
+    /// specialized to <see cref="LightRequestContext"/> requests and <see cref="TcsWrapper"/> completions. It owns
     /// the socket, the <see cref="GarnetLightClientTcpNetworkHandler"/> and the send buffer pool, and forwards
     /// all ring bookkeeping (allocation, request enqueue, flush, and the completion lane) to the ring.
     /// </para>
@@ -28,7 +28,7 @@ namespace Garnet.client
     /// </summary>
     internal sealed class LightNetworkWriter : IDisposable
     {
-        readonly struct RingTransport : IDuplexRingTransport
+        readonly struct RingTransport : ITransportContext
         {
             readonly ClientTcpNetworkSender tcpSender;
             readonly GarnetLightClientTcpNetworkHandler networkHandler;
@@ -56,7 +56,7 @@ namespace Garnet.client
                 => networkHandler.Dispose();
         }
 
-        readonly DuplexOperationRing<LightRequest, TcsWrapper, RingTransport> ring;
+        readonly DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport> ring;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetLightClientTcpNetworkHandler networkHandler;
@@ -84,7 +84,7 @@ namespace Garnet.client
             // ring<->handler cycle: build the handler first, then construct the fully-wired ring.
             var handler = new GarnetLightClientTcpNetworkHandler(
                 serverHook,
-                DuplexOperationAsyncFlushResult<LightRequest>.CompleteChunk,
+                DuplexOperationAsyncFlushResult<LightRequestContext>.CompleteChunk,
                 socket,
                 networkBufferSettings,
                 networkPool,
@@ -96,7 +96,7 @@ namespace Garnet.client
             var useTls = sslOptions != null;
             var tcpSender = useTls ? null : (ClientTcpNetworkSender)handler.GetNetworkSender();
 
-            this.ring = new DuplexOperationRing<LightRequest, TcsWrapper, RingTransport>(
+            this.ring = new DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport>(
                 sendPageSize,
                 pageBufferCount,
                 completionCapacity,
@@ -114,7 +114,7 @@ namespace Garnet.client
             networkPool?.Dispose();
         }
 
-        internal LightRequest RentPayloadBuffer(int length)
+        internal LightRequestContext RentPayloadBuffer(int length)
         {
             var allocationSize = length;
             if (length <= networkPool.MaxAllocationSize)
@@ -127,7 +127,7 @@ namespace Garnet.client
 
             var entry = networkPool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
             ObjectDisposedException.ThrowIf(entry is null, this);
-            return new LightRequest(entry, length);
+            return new LightRequestContext(entry, length);
         }
 
         /// <summary>
@@ -157,7 +157,7 @@ namespace Garnet.client
             => ring.RegisterInlineRecord(address, payloadLength);
 
         /// <summary>Register (store and publish) a request record at the descriptor address.</summary>
-        public void RegisterOfflineRecord(long address, LightRequest payload)
+        public void RegisterOfflineRecord(long address, LightRequestContext payload)
             => ring.RegisterOfflineRecord(address, payload);
 
         /// <summary>Register (store and publish) a completion for the given ticket.</summary>

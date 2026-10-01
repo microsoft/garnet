@@ -453,7 +453,7 @@ namespace Garnet.client
             // Out-of-line rents its payload buffer and serializes into it up front, outside the epoch. Inline
             // rents nothing and defers serialization until it owns a page slot (written under the epoch below).
 
-            LightRequest payload = default;
+            LightRequestContext payload = default;
             var payloadRegistered = false;
 
             // Serialize the command's RESP bytes into the span [curr, end). Shared by both paths so the wire
@@ -527,8 +527,8 @@ namespace Garnet.client
                             out var reservation,
                             out var flushEvent))
                         {
-                            taskId = reservation.CompletionTicket;
-                            address = reservation.RequestAddress;
+                            taskId = reservation.completionTicket;
+                            address = reservation.requestAddress;
                             break;
                         }
 
@@ -626,7 +626,7 @@ namespace Garnet.client
 
             var recordSize = networkWriter.GetRecordSize(totalLength, out var inline);
 
-            LightRequest payload = default;
+            LightRequestContext payload = default;
             var payloadRegistered = false;
 
             static unsafe void SerializeCommand(byte* curr, byte* end, int arraySize, ReadOnlySpan<byte> respOp,
@@ -683,7 +683,7 @@ namespace Garnet.client
                             out var reservation,
                             out var flushEvent))
                         {
-                            address = reservation.RequestAddress;
+                            address = reservation.requestAddress;
                             break;
                         }
 

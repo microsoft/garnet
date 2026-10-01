@@ -12,7 +12,7 @@ namespace Garnet.test
 {
     /// <summary>
     /// Stage 1 fault-injection tests for
-    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}"/>. These assert
+    /// <see cref="DuplexOperationChannel{TRequest, TCompletion, TTransport}"/>. These assert
     /// the ring's liveness and accounting invariants under adverse conditions — a throwing transport, teardown
     /// concurrent with in-flight producers, and racing single-delivery of completions — rather than full payload
     /// delivery. In every case the ring must never hang, never corrupt memory, and must dispose each out-of-line

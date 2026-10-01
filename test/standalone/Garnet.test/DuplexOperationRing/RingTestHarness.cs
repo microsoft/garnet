@@ -15,7 +15,7 @@ namespace Garnet.test
 {
     /// <summary>
     /// A request-lane payload used to drive
-    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}"/> in
+    /// <see cref="DuplexOperationChannel{TRequest, TCompletion, TTransport}"/> in
     /// isolation. It carries a plain byte buffer plus an identity used to verify that the ring transfers
     /// ownership to the sender exactly once: every non-default instance records each <see cref="Dispose"/> in a
     /// shared counter keyed by <see cref="id"/>, so both leaks (zero disposes) and double-disposes (two) are
@@ -109,16 +109,16 @@ namespace Garnet.test
 
     /// <summary>
     /// Test harness that drives a
-    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}"/> without a socket.
+    /// <see cref="DuplexOperationChannel{TRequest, TCompletion, TTransport}"/> without a socket.
     /// It supplies a fake transport that reassembles each request's chunks (keyed by the ring's per-request
     /// flush-result context) into a completed payload, tracks buffer disposals for leak/double-dispose
     /// detection, and can inject send failures. Producers run the same allocate/register/drain dance the real
     /// client uses, choosing inline vs out-of-line automatically via
-    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}.GetRecordSize"/>.
+    /// <see cref="DuplexOperationChannel{TRequest, TCompletion, TTransport}.GetRecordSize"/>.
     /// </summary>
     internal sealed class RingTestHarness : IDisposable
     {
-        internal readonly struct RingTransport : IDuplexRingTransport
+        internal readonly struct RingTransport : ITransportContext
         {
             readonly RingTestHarness owner;
 
@@ -135,7 +135,7 @@ namespace Garnet.test
         }
 
         internal readonly LightEpoch epoch;
-        internal readonly DuplexOperationRing<TestRequest, int, RingTransport> Ring;
+        internal readonly DuplexOperationChannel<TestRequest, int, RingTransport> Ring;
 
         readonly ConcurrentDictionary<object, List<byte>> reassembly = new();
         readonly ConcurrentBag<byte[]> completed = new();
@@ -154,7 +154,7 @@ namespace Garnet.test
         internal RingTestHarness(int pageSize, int pageCount, int completionCapacity, int maxChunkSize)
         {
             epoch = new LightEpoch();
-            Ring = new DuplexOperationRing<TestRequest, int, RingTransport>(
+            Ring = new DuplexOperationChannel<TestRequest, int, RingTransport>(
                 pageSize, pageCount, completionCapacity, maxChunkSize, new RingTransport(this), epoch);
         }
 
@@ -269,8 +269,8 @@ namespace Garnet.test
                         out var reservation,
                         out var flushEvent))
                     {
-                        taskId = reservation.CompletionTicket;
-                        address = reservation.RequestAddress;
+                        taskId = reservation.completionTicket;
+                        address = reservation.requestAddress;
                         break;
                     }
 

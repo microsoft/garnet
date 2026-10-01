@@ -9,12 +9,13 @@ namespace Garnet.client
     /// <summary>
     /// Out-of-line payload async flush result for the request lane of a duplex operation ring.
     /// </summary>
-    sealed class DuplexOperationAsyncFlushResult<TRequest> where TRequest : struct, IRequestContext
+    sealed class DuplexOperationAsyncFlushResult<TRequestContext>
+        where TRequestContext : struct, IRequestContext
     {
         public CountWrapper count;
-        public TRequest request;
+        public TRequestContext request;
         public int remainingChunks;
-        public DuplexOperationAdmission admission;
+        public DuplexAdmissionController admission;
 
         /// <summary>
         /// Finalizes one dispatched chunk. The final chunk disposes the request and advances the admission
@@ -24,7 +25,7 @@ namespace Garnet.client
         {
             switch (context)
             {
-                case DuplexOperationAsyncFlushResult<TRequest> result:
+                case DuplexOperationAsyncFlushResult<TRequestContext> result:
                     if (Interlocked.Decrement(ref result.remainingChunks) == 0)
                     {
                         result.request.Dispose();
