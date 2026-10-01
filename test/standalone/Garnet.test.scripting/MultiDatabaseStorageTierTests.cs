@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -525,6 +526,79 @@ namespace Garnet.test
             // Checkpointing walks the active database id list, so a duplicated entry surfaces here rather
             // than being silently tolerated.
             ClassicAssert.AreEqual("OK", (string)redis2.GetDatabase(0).Execute("SAVE"));
+        }
+
+        /// <summary>
+        /// A swap issued after the last checkpoint exists only in the AOF, which with <c>--aof</c> is the
+        /// common case rather than an edge: a server may checkpoint rarely or never. Each database's log
+        /// records the label that database carries, so recovery can restore the swap from the logs alone.
+        /// </summary>
+        [Test]
+        public async Task SwapDbAfterCheckpointIsRestoredFromAof()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (var dbId = 0; dbId < NumDbs; dbId++)
+                    WriteStrings(redis.GetDatabase(dbId), dbId);
+
+                // Checkpoint first, so the mapping the checkpoint records is the identity. Only the AOF
+                // can describe what happens next.
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SAVE"));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SWAPDB", 0, 1));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            // After the swap, database 0 holds what database 1 wrote, and vice versa.
+            var (db0Correct, _) = CountValues(redis2.GetDatabase(0), 1, ReadString, StrVal);
+            var (db1Correct, _) = CountValues(redis2.GetDatabase(1), 0, ReadString, StrVal);
+
+            ClassicAssert.AreEqual(NumKeys, db0Correct, "Database 0 did not recover the records written to database 1 before the swap");
+            ClassicAssert.AreEqual(NumKeys, db1Correct, "Database 1 did not recover the records written to database 0 before the swap");
+        }
+
+        /// <summary>
+        /// A flush is journalled into the flushed database's own AOF and replayed against that log's
+        /// database, not against an id carried in the record. Dispatching on a recorded id would flush
+        /// whichever database now answers to it, which after a swap is a different store entirely.
+        /// </summary>
+        [Test]
+        public async Task FlushDbIsReplayedAgainstItsOwnDatabase()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                for (var dbId = 0; dbId < NumDbs; dbId++)
+                    WriteStrings(redis.GetDatabase(dbId), dbId);
+
+                // Flush database 1 only. Database 0 must be untouched by the replay of that record.
+                ClassicAssert.AreEqual("OK", (string)redis.GetDatabase(1).Execute("FLUSHDB"));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            var (db0Correct, db0Foreign) = CountValues(redis2.GetDatabase(0), 0, ReadString, StrVal);
+            ClassicAssert.AreEqual(NumKeys, db0Correct, "Database 0 lost records to the replay of database 1's flush");
+            ClassicAssert.AreEqual(0, db0Foreign, "Database 0 recovered another database's records");
+
+            var (db1Correct, db1Foreign) = CountValues(redis2.GetDatabase(1), 1, ReadString, StrVal);
+            ClassicAssert.AreEqual(0, db1Correct + db1Foreign, "Database 1 recovered records although it was flushed");
         }
 
         /// <summary>

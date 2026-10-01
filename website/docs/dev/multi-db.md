@@ -91,7 +91,7 @@ Every name above is a logical device name; the device layer appends a segment in
 
 All of a database's file names are fixed when its store is created, so a file name records a **storage slot**, not a logical database index. The two are equal until [SWAPDB](../commands/server.md#swapdb) exchanges the logical indexes of two databases, which relabels them without moving any files. Each checkpoint records the slot-to-index mapping in force when it ran, along with a swap epoch identifying it, so recovery restores the relabelling rather than undoing it.
 
-A swap performed *after* the last checkpoint is not in that checkpoint, and so is not restored; those databases recover under the indexes they had when the checkpoint was taken.
+A swap is recorded in two places. Each checkpoint carries the mapping in force when it ran, and each database's AOF carries the label that database took, so a swap performed *after* the last checkpoint is restored from the logs. With `--aof` that is the common case rather than an edge, since a server may checkpoint rarely or never. Without AOF enabled, a swap after the last checkpoint is not restored, and those databases recover under the indexes they had when the checkpoint was taken.
 
 :::caution
 Databases did not always have their own log devices. A store checkpointed by an earlier release wrote every database into one shared `Store/hlog` and `Store/hlog_objs` pair, whose contents cannot be attributed to a single database (see [issue #2152](https://github.com/microsoft/garnet/issues/2152)). Recovering such a store reports the condition and cannot recover any records that databases other than the default had tiered to storage.
@@ -104,3 +104,18 @@ The default database is not exempt. It keeps the unsuffixed file names, so recov
 Upon recovery, Garnet extracts the storage slots of the saved databases from the aforementioned directory name pattern, and recovers the data saved under each slot. It then applies the slot-to-index mapping carried by the recovered checkpoints, taking the one belonging to the highest swap epoch, so each database comes back under the logical index it had when that checkpoint was taken.
 
 The mapping is applied whole or not at all. If it is not a valid permutation of the configured index range — for example because `MaxDatabases` was lowered since it was written — it is rejected, the condition is logged, and each database recovers under the index matching its storage slot. That discards a swap, but never loses data or attributes a store to the wrong index. A mapping naming a slot whose directory no longer exists is not an error: that index simply goes unused, and is logged.
+
+### Records that describe a database
+
+Two AOF record types describe a database rather than a key, and both are scoped to the log they are written into rather than naming a database index:
+
+| Record | Written when | Replayed as |
+| --- | --- | --- |
+| `FlushDb` | `FLUSHDB`, and once per database for `FLUSHALL` | Flush whichever database owns the log being replayed |
+| `SwapDb` | `SWAPDB`, into every active database's AOF | Note the label and swap epoch; nothing is applied mid-stream |
+
+Scoping them to the log is what keeps them correct across a swap. An index recorded inside a record names whichever database answers to it at recovery time, which after a swap is a different store; the log that contains the record, by contrast, always belongs to the same store.
+
+`FLUSHALL` therefore writes one `FlushDb` record into each database's own log instead of a single flush-all record. Replaying one database's log can then never flush another, including one whose log has already been replayed.
+
+`SwapDb` records are collected but never applied while a log is being replayed — relabelling a database mid-stream would move the store out from under the replay context. Recovery takes the highest epoch per storage slot, overlays those labels on the mapping the checkpoints carried, and relabels once after every log has been replayed. The overlay is per slot rather than wholesale, so a log truncated by an intervening flush keeps the label its checkpoint recorded instead of falling back to its own index.

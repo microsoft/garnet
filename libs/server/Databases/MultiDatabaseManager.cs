@@ -224,6 +224,104 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Apply any database labels the replayed AOFs carried past the last checkpoint.
+        /// </summary>
+        /// <remarks>
+        /// A swap is recorded in two places: the checkpoint, which states the mapping as of the moment it
+        /// ran, and each database's AOF, which states that database's label as of the swap. A swap issued
+        /// after the last checkpoint exists only in the second, and with <c>--aof</c> that is the common
+        /// case rather than an edge, because a server may checkpoint rarely or never.
+        ///
+        /// The two are combined per storage slot rather than wholesale: a log truncated by an intervening
+        /// flush carries no label, and that slot must keep the one its checkpoint recorded instead of
+        /// falling back to its own index. Only slots whose logged epoch beats <see cref="swapEpoch"/> -
+        /// the epoch already applied from the checkpoints - contribute.
+        /// </remarks>
+        /// <param name="aofProcessor">Processor that replayed the logs</param>
+        private void ApplyReplayedDatabaseLabels(AofProcessor aofProcessor)
+        {
+            var replayedLabels = aofProcessor.ReplayedDatabaseLabels;
+            if (replayedLabels.Count == 0)
+                return;
+
+            var highestEpoch = swapEpoch;
+            foreach (var (_, label) in replayedLabels)
+            {
+                if (label.Epoch > highestEpoch)
+                    highestEpoch = label.Epoch;
+            }
+
+            if (highestEpoch <= swapEpoch)
+                return;
+
+            // Start from the labels in force now, which already reflect the checkpoint mapping, then let
+            // any slot with a newer logged label override its own entry.
+            var storageSlots = new List<int>();
+            var logicalIds = new List<int>();
+
+            var databaseMapSnapshot = databases.Map;
+            for (var dbId = 0; dbId < databaseMapSnapshot.Length; dbId++)
+            {
+                var db = databaseMapSnapshot[dbId];
+                if (db == null)
+                    continue;
+
+                storageSlots.Add(db.StorageSlot);
+                logicalIds.Add(replayedLabels.TryGetValue(db.StorageSlot, out var label) && label.Epoch > swapEpoch
+                    ? label.LogicalId
+                    : db.Id);
+            }
+
+            var slots = storageSlots.ToArray();
+            var ids = logicalIds.ToArray();
+
+            if (!TryApplyDatabaseMapping(slots, BuildMappingFromLabels(slots, ids), out var resolved))
+            {
+                Logger?.LogError(
+                    "Ignoring the database labels recorded in the AOF at swap epoch {epoch} and keeping the labels the checkpoints recorded. " +
+                    "A swap performed after the last checkpoint is not restored, but no data is lost or misattributed.",
+                    highestEpoch);
+                return;
+            }
+
+            for (var i = 0; i < slots.Length; i++)
+            {
+                if (slots[i] != resolved[i])
+                    Logger?.LogInformation("Recovering storage slot {slot} as database {dbId}, per the label recorded in its AOF at swap epoch {epoch}",
+                        slots[i], resolved[i], highestEpoch);
+            }
+
+            ApplyDatabaseMapping(slots, resolved);
+            swapEpoch = highestEpoch;
+        }
+
+        /// <summary>
+        /// Build a <c>mapping[storageSlot] = logicalDatabaseId</c> array from parallel slot and id lists,
+        /// so the result can be validated by the same permutation check the checkpoint mapping uses.
+        /// </summary>
+        /// <param name="storageSlots">Storage slots</param>
+        /// <param name="logicalIds">Logical database id for each entry of <paramref name="storageSlots"/></param>
+        private static int[] BuildMappingFromLabels(int[] storageSlots, int[] logicalIds)
+        {
+            var maxSlot = -1;
+            foreach (var slot in storageSlots)
+            {
+                if (slot > maxSlot)
+                    maxSlot = slot;
+            }
+
+            // Slots with no live database keep their own index, matching GetCurrentDatabaseMapping.
+            var mapping = new int[maxSlot + 1];
+            for (var slot = 0; slot < mapping.Length; slot++)
+                mapping[slot] = slot;
+
+            for (var i = 0; i < storageSlots.Length; i++)
+                mapping[storageSlots[i]] = logicalIds[i];
+
+            return mapping;
+        }
+
+        /// <summary>
         /// Relabel recovered databases so each carries the logical id it had when the mapping was
         /// recorded, leaving every store bound to the slot that names its files. This is the same
         /// relabelling a swap performs at runtime, applied once after all stores are in place.
@@ -243,15 +341,28 @@ namespace Garnet.server
             {
                 var databaseMapSnapshot = databases.Map;
 
-                // Detach every store from its slot index before placing any of them: the mapping is a
-                // permutation, so an index being vacated may be the one another store moves into.
-                // Indexed by position in storageSlots, parallel to logicalIds - not by database id, which is
-                // exactly what is about to change.
+                // Locate each store by its storage slot rather than by map index. The two coincide only
+                // until the first relabelling; applying a second mapping - one the AOF carried past the
+                // last checkpoint - runs against databases that already moved.
                 var recoveredBySlotIndex = new GarnetDatabase[storageSlots.Length];
-                for (var i = 0; i < storageSlots.Length; i++)
-                    recoveredBySlotIndex[i] = databaseMapSnapshot[storageSlots[i]];
-                for (var i = 0; i < storageSlots.Length; i++)
-                    databaseMapSnapshot[storageSlots[i]] = null;
+                for (var dbId = 0; dbId < databaseMapSnapshot.Length; dbId++)
+                {
+                    var db = databaseMapSnapshot[dbId];
+                    if (db == null)
+                        continue;
+
+                    var slotIdx = Array.IndexOf(storageSlots, db.StorageSlot);
+                    if (slotIdx >= 0)
+                        recoveredBySlotIndex[slotIdx] = db;
+                }
+
+                // Detach every store before placing any of them: the mapping is a permutation, so an
+                // index being vacated may be the one another store moves into.
+                for (var i = 0; i < recoveredBySlotIndex.Length; i++)
+                {
+                    if (recoveredBySlotIndex[i] != null)
+                        databaseMapSnapshot[recoveredBySlotIndex[i].Id] = null;
+                }
 
                 // A target id can still be occupied by a database that recovered nothing. The default
                 // database is created before any checkpoint can be read, so it holds id 0 even when slot 0
@@ -904,6 +1015,8 @@ namespace Garnet.server
                     // Wait for Vector Sets to catch up before declaring us "recovered"
                     db.VectorManager?.WaitForQuiescence();
                 }
+
+                ApplyReplayedDatabaseLabels(aofProcessor);
             }
             finally
             {
@@ -1120,6 +1233,7 @@ namespace Garnet.server
                 swapEpoch++;
                 AttachDatabaseMappingProvider(databaseMapSnapshot[dbId1]);
                 AttachDatabaseMappingProvider(databaseMapSnapshot[dbId2]);
+                JournalDatabaseLabels();
 
                 var activeSessions = 0;
                 foreach (var server in StoreWrapper.Servers)
@@ -1210,6 +1324,25 @@ namespace Garnet.server
             // Update the databases snapshot and return a reference to the added database
             databasesMapSnapshot = databases.Map;
             return databasesMapSnapshot[dbId];
+        }
+
+        /// <summary>
+        /// Journal each active database's current logical label into its own AOF, so a swap made after
+        /// the last checkpoint is still known at recovery. Every active database is written on every
+        /// swap, not just the two that exchanged labels, so a log that was truncated by an intervening
+        /// flush regains its label at the next swap.
+        /// </summary>
+        private void JournalDatabaseLabels()
+        {
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+            var databaseMapSnapshot = databases.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var db = databaseMapSnapshot[activeDbIdsMapSnapshot[i]];
+                db?.AppendOnlyFile?.Log.EnqueueSwapDb(swapEpoch, db.Id);
+            }
         }
 
         /// <summary>
@@ -1322,6 +1455,7 @@ namespace Garnet.server
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
             FlushDatabase(db, unsafeTruncateLog);
+            EnqueueDatabaseFlush(db, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -1331,10 +1465,15 @@ namespace Garnet.server
             var activeDbIdsMapSnapshot = activeDbIds.Map;
             var databaseMapSnapshot = databases.Map;
 
+            // Journalled as a per-database flush into each database's own AOF rather than as one
+            // flush-all record: every log then describes only its own database, so replaying one
+            // cannot flush a database whose log has already been replayed.
             for (var i = 0; i < activeDbIdsMapSize; i++)
             {
                 var dbId = activeDbIdsMapSnapshot[i];
-                FlushDatabase(databaseMapSnapshot[dbId], unsafeTruncateLog);
+                var db = databaseMapSnapshot[dbId];
+                FlushDatabase(db, unsafeTruncateLog);
+                EnqueueDatabaseFlush(db, unsafeTruncateLog);
             }
         }
 

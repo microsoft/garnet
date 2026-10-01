@@ -397,6 +397,24 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Journal a flush of a single database into that database's own AOF. Called after the flush has
+        /// been applied, so the record survives the truncation the flush performs.
+        /// </summary>
+        /// <remarks>
+        /// The record makes the flush explicit rather than implied by truncation, which only becomes
+        /// durable once committed: a crash in that window leaves the pre-flush records readable, and
+        /// replay would resurrect flushed data without a marker telling it to flush again.
+        ///
+        /// It is a no-op when the database has no AOF, which is also what keeps replay from recursing -
+        /// replay applies flushes through a clone whose databases carry no AppendOnlyFile, so a flush read
+        /// out of the log is never written back into it.
+        /// </remarks>
+        /// <param name="db">Database that was flushed</param>
+        /// <param name="unsafeTruncateLog">Whether the flush truncated the hybrid log</param>
+        protected static void EnqueueDatabaseFlush(GarnetDatabase db, bool unsafeTruncateLog)
+            => db.AppendOnlyFile?.Log.EnqueueSafeFlushAOF(AofEntryType.FlushDb, unsafeTruncateLog);
+
+        /// <summary>
         /// Flush a single database
         /// </summary>
         /// <param name="db">Database to flush</param>

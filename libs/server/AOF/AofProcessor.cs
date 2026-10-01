@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -89,8 +90,21 @@ namespace Garnet.server
         readonly AofReplayCoordinator aofReplayCoordinator;
 
         int activeDbId;
+        int activeStorageSlot;
         internal VectorManager activeVectorManager;
         RangeIndexManager activeRangeIndexManager;
+
+        /// <summary>
+        /// Highest swap epoch seen per storage slot while replaying, with the logical label recorded at
+        /// that epoch. Recovery overlays this on the mapping the checkpoints carried, so a swap made
+        /// after the last checkpoint is not lost.
+        /// </summary>
+        readonly Dictionary<int, (long Epoch, int LogicalId)> replayedDatabaseLabels = [];
+
+        /// <summary>
+        /// Labels collected from the AOFs replayed by this processor, keyed by storage slot.
+        /// </summary>
+        public IReadOnlyDictionary<int, (long Epoch, int LogicalId)> ReplayedDatabaseLabels => replayedDatabaseLabels;
 
         /// <summary>
         /// Allow the cluster session to apply writes while replaying stored procedures
@@ -180,6 +194,11 @@ namespace Garnet.server
                     activeVectorManager = db.VectorManager;
                     activeRangeIndexManager = db.RangeIndexManager;
                 }
+
+                // Tracked separately from the id: a label recorded in the log belongs to the slot that
+                // owns the log, and the id this database currently carries may already have been
+                // relabelled by the checkpoint mapping.
+                activeStorageSlot = db.StorageSlot;
             }
         }
 
@@ -369,7 +388,7 @@ namespace Garnet.server
                 case AofEntryType.FlushAll:
                     if (!usingShardedLog)
                     {
-                        storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.UnsafeTruncateLog);
+                        replayAofStoreWrapper.FlushAllDatabases(unsafeTruncateLog: header.UnsafeTruncateLog);
                     }
                     else
                     {
@@ -379,26 +398,34 @@ namespace Garnet.server
                             seqNum,
                             partCount,
                             (int)LeaderBarrierType.FLUSH_DB_ALL,
-                            () => { storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.UnsafeTruncateLog); return Task.CompletedTask; }
+                            () => { replayAofStoreWrapper.FlushAllDatabases(unsafeTruncateLog: header.UnsafeTruncateLog); return Task.CompletedTask; }
                         );
                     }
                     break;
                 case AofEntryType.FlushDb:
                     if (!usingShardedLog)
                     {
-                        storeWrapper.FlushDatabase(unsafeTruncateLog: header.UnsafeTruncateLog, dbId: header.databaseId);
+                        replayAofStoreWrapper.FlushDatabase(unsafeTruncateLog: header.UnsafeTruncateLog, dbId: activeDbId);
                     }
                     else
                     {
                         GetSynchronizedOperationParams(ptr, logAddressSequenceNumber, out var seqNum, out var partCount);
+                        var flushDbId = activeDbId;
                         aofReplayCoordinator.ProcessSynchronizedOperation(
                             virtualSublogIdx,
                             seqNum,
                             partCount,
                             (int)LeaderBarrierType.FLUSH_DB,
-                            () => { storeWrapper.FlushDatabase(unsafeTruncateLog: header.UnsafeTruncateLog, dbId: header.databaseId); return Task.CompletedTask; }
+                            () => { replayAofStoreWrapper.FlushDatabase(unsafeTruncateLog: header.UnsafeTruncateLog, dbId: flushDbId); return Task.CompletedTask; }
                         );
                     }
+                    break;
+                case AofEntryType.SwapDb:
+                    // Noted, never applied mid-stream: relabelling a database while its own log is being
+                    // replayed would move the store out from under the replay context. Recovery applies
+                    // the highest epoch once, after every log has been replayed.
+                    if (!replayedDatabaseLabels.TryGetValue(activeStorageSlot, out var knownLabel) || header.storeVersion > knownLabel.Epoch)
+                        replayedDatabaseLabels[activeStorageSlot] = (header.storeVersion, header.databaseId);
                     break;
                 case AofEntryType.StoredProcedure:
                     aofReplayCoordinator.ReplayStoredProc(virtualSublogIdx, header.procedureId, ptr, logAddressSequenceNumber);

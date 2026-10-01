@@ -392,8 +392,10 @@ namespace Garnet.server
 
             FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
-            if (safeTruncateAof && StoreWrapper.serverOptions.EnableAOF)
+            if (safeTruncateAof)
                 SafeFlushAOF(AofEntryType.FlushDb, unsafeTruncateLog);
+            else
+                EnqueueDatabaseFlush(defaultDatabase, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -407,6 +409,8 @@ namespace Garnet.server
             // For standalone FlushDatabase will take care of the AOF truncation
             if (safeTruncateAof)
                 SafeFlushAOF(AofEntryType.FlushAll, unsafeTruncateLog);
+            else
+                EnqueueDatabaseFlush(defaultDatabase, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -453,16 +457,23 @@ namespace Garnet.server
 
         public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
-        private unsafe void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)
+        private void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {
-            // Safe truncate up to tail for botth primary and replica
-            StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.Log.TailAddress);
+            // AOF replay runs against a clone of this manager whose databases carry no AppendOnlyFile,
+            // while StoreWrapper still refers to the live one. Truncation must still run against the live
+            // AOF, but the record must not be appended again: a primary replaying its own AOF reaches here
+            // with IsPrimary() true and would re-enqueue the flush, growing the log on every recovery.
+            var replaying = AppendOnlyFile == null;
+            var liveAof = replaying ? StoreWrapper.appendOnlyFile : AppendOnlyFile;
+            if (liveAof == null)
+                return;
+
+            // Safe truncate up to tail for both primary and replica
+            StoreWrapper.clusterProvider.SafeTruncateAOF(liveAof.Log.TailAddress);
 
             // Only enqueue operation if this is a primary
-            if (StoreWrapper.clusterProvider.IsPrimary())
-            {
-                AppendOnlyFile.Log.EnqueueSafeFlushAOF(entryType, unsafeTruncateLog, defaultDatabase.Id);
-            }
+            if (!replaying && StoreWrapper.clusterProvider.IsPrimary())
+                liveAof.Log.EnqueueSafeFlushAOF(entryType, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
