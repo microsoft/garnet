@@ -451,9 +451,9 @@ namespace Garnet.server
             // Do NOT start the background size-tracker resizer here. It must not independently shift head / evict / free pages
             // concurrently with recovery, which owns the log: recovery does its own budget-aware eviction and directly resets
             // log addresses (RecoveryReset). Racing the resizer against that can lose a page read/flush completion and hang the
-            // main recovery thread in WaitRead/WaitFlush. The size tracker object still tracks size during recovery; AOF replay
-            // evicts synchronously via the allocator (IssueShiftAddress) while the resizer is not running. The resizer is started
-            // after recovery completes, in StoreWrapper.Start().
+            // main recovery thread in WaitRead/WaitFlush. The size tracker object still tracks size during recovery. The resizer
+            // is started once checkpoint recovery is done: in ReplayAOF, which is ordinary store traffic and must be budget-managed,
+            // and otherwise in StoreWrapper.Start().
             await databaseManager.RecoverCheckpointAsync(replicaRecover, recoverFromToken, metadata).ConfigureAwait(false);
         }
 
@@ -498,9 +498,29 @@ namespace Garnet.server
             => databaseManager.VerifyRecoveryIsComplete(canBeRepairedBySync);
 
         /// <summary>
+        /// Main-log heap size sampled at the end of AOF replay, or -1 if no replay has run.
+        /// </summary>
+        /// <remarks>
+        /// Replay is memory-budget-managed (see <see cref="ReplayAOF"/>), and this records how much heap it actually held.
+        /// Sampling after startup cannot show that: the resizer keeps trimming once the server is up, so an unmanaged replay
+        /// and a managed one converge to the same floor despite very different peaks.
+        /// </remarks>
+        public long AofReplayEndHeapSizeBytes { get; private set; } = -1;
+
+        /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public AofAddress ReplayAOF(AofAddress untilAddress) => this.databaseManager.ReplayAOF(untilAddress);
+        public AofAddress ReplayAOF(AofAddress untilAddress)
+        {
+            // AOF replay is ordinary store traffic, so it must be memory-budget-managed like normal operation. Checkpoint
+            // recovery runs before this and cannot tolerate a concurrent resizer, so this is the earliest point at which the
+            // size trackers can be started. Starting is idempotent; Start() calls this again for the non-recovery path.
+            StartSizeTrackers();
+
+            var replayedUntil = databaseManager.ReplayAOF(untilAddress);
+            AofReplayEndHeapSizeBytes = store.Log.HeapSizeBytes;
+            return replayedUntil;
+        }
 
         /// <summary>
         /// Append a checkpoint commit to the AOF
@@ -872,7 +892,7 @@ namespace Garnet.server
             // Start generic node tasks
             StartGenericNodeTasks();
 
-            StartSizeTrackers();    // We may have already started this for recovery.
+            StartSizeTrackers();    // We may have already started this for AOF replay during recovery.
         }
 
         private void StartSizeTrackers() => databaseManager.StartSizeTrackers(ctsCommit.Token);

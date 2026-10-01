@@ -59,7 +59,10 @@ namespace Garnet.cluster
                         {
                             // We can't delete the vector set _yet_ nor can we migrate it, 
                             // we just need to remember it to migrate once the associated namespaces are all moved over
-                            migrateOperation.EncounteredVectorSet(key.ToArray(), srcLogRecord.ValueSpan.ToArray());
+
+                            // Track expiration (if any) as a concrete date rather than offset since it may be a bit before we shove the bytes across the wire
+                            DateTime? expiration = srcLogRecord.DataHeader.HasExpiration ? new DateTime(srcLogRecord.Expiration, DateTimeKind.Utc) : null;
+                            migrateOperation.EncounteredVectorSet(key.ToArray(), srcLogRecord.ValueSpan.ToArray(), expiration);
                         }
                         else if (!migrateOperation.sketch.TryHashAndStore(key))
                         {

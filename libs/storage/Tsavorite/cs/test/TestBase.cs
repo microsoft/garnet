@@ -20,17 +20,19 @@ namespace Tsavorite.test
         [SetUp]
         public void TrackRunningTest()
         {
-            // Add test to the running list
-            RunningTests[TestContext.CurrentContext.Test.Name] = true;
+            // FullName rather than Name: Name carries the parameters but not the fixture, so same-named tests in
+            // different fixtures share a key. That both loses the disambiguation the dump exists to provide and
+            // lets one test's TearDown remove another's entry.
+            RunningTests[TestContext.CurrentContext.Test.FullName] = true;
 
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration {TestContext.CurrentContext.CurrentRepeatCount + 1}: {TestContext.CurrentContext.Test.Name} ***");
+                Debug.WriteLine($"*** Current test iteration {TestContext.CurrentContext.CurrentRepeatCount + 1}: {TestContext.CurrentContext.Test.FullName} ***");
         }
 
         [TearDown]
         public void RemoveRunningTest()
         {
-            Assert.That(RunningTests.TryRemove(TestContext.CurrentContext.Test.Name, out _), Is.True, $"Could not find running test {TestContext.CurrentContext.Test.Name}");
+            Assert.That(RunningTests.TryRemove(TestContext.CurrentContext.Test.FullName, out _), Is.True, $"Could not find running test {TestContext.CurrentContext.Test.FullName}");
         }
 
         /// <summary>

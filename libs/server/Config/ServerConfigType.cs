@@ -32,6 +32,7 @@ namespace Garnet.server
         SLOWLOG_LOG_SLOWER_THAN,
         OBJECT_SCAN_COUNT_LIMIT,
         SG_GET,
+        MAXCLIENTS,
         AOF_SIZE_LIMIT_ENFORCE_FREQUENCY,
 
         // Runtime-adjustable options whose change requires a lifecycle action on a background task

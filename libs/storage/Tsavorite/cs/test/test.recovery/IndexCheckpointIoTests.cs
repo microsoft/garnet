@@ -596,6 +596,96 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        /// <summary>An index checkpoint whose chunk cannot be submitted must fail rather than hang - the chunks after
+        /// the failure were counted but were never issued, so nothing else will retire them - and must not report
+        /// completion while the chunks it did issue are still writing. Completing early releases the waiters that go
+        /// on to dispose the checkpoint device, which fails those writes; their completions then land on whichever
+        /// checkpoint owns the shared flush state by that point, carrying this checkpoint's error into the next one.
+        /// </summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void IndexCheckpointDoesNotCompleteWhileAnIssuedChunkIsStillWriting()
+        {
+            const long maxIoBytesPerRequest = 1L << 20;     // The 4MiB table below needs four requests at this cap
+
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+
+            // Chunk 0 is forwarded but its completion is held, chunk 1's submission fails, and chunks 2 and 3 are
+            // never issued and so have no callback of their own to retire them.
+            // Not disposed here: it wraps htDevice, which the fixture teardown owns.
+            var failing = new ThrowOnNthWriteDevice(htDevice) { ThrowWritesAfter = 1, DeferWriteCompletions = true };
+
+            table.BeginMainIndexCheckpoint(0, failing, out _, maxIoBytesPerRequest: maxIoBytesPerRequest);
+
+            // The held completion only reaches the queue once the underlying write finishes, so wait for it before
+            // concluding anything from the checkpoint task still being incomplete.
+            var heldByDeadline = SpinWait.SpinUntil(() => failing.DeferredCount > 0, TimeSpan.FromSeconds(30));
+            ClassicAssert.IsTrue(heldByDeadline, "The issued chunk's completion must be the one being held");
+
+            var completion = table.GetMainIndexCheckpointTask();
+            var settled = completion.ContinueWith(_ => { }, TaskScheduler.Default);
+            ClassicAssert.IsFalse(settled.Wait(TimeSpan.FromMilliseconds(250)),
+                "The checkpoint must not report completion while the chunk it issued is still writing");
+
+            failing.CompleteDeferred();
+
+            ClassicAssert.IsTrue(settled.Wait(TimeSpan.FromSeconds(30)),
+                "The checkpoint must complete rather than hang on chunks that were never issued");
+            ClassicAssert.IsTrue(completion.IsFaulted, "The checkpoint must report the submission failure");
+        }
+
+        /// <summary>A device may complete a write inline, reporting success, and then throw out of the same submit. If
+        /// that write is the last one outstanding, its completion drives the retirement count to zero before the
+        /// failure is recorded, and the checkpoint is reported successful even though the write failed - a silent
+        /// durability hole, since recovery would then read a checkpoint that was never fully written.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void IndexCheckpointFailsWhenTheFinalChunkCompletesThenThrows()
+        {
+            table = CreatePopulatedTable(Seed, TableSizeInBuckets, NumAdds);
+
+            // The table fits one chunk at the production cap, so the very first write is also the last outstanding one.
+            // Not disposed here: it wraps htDevice, which the fixture teardown owns.
+            var failing = new ThrowOnNthWriteDevice(htDevice) { ThrowWritesAfter = 0, CompleteBeforeThrowing = true };
+
+            table.BeginMainIndexCheckpoint(0, failing, out _);
+
+            var completion = table.GetMainIndexCheckpointTask();
+            ClassicAssert.IsTrue(completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(TimeSpan.FromSeconds(30)),
+                "The checkpoint task must complete rather than hang");
+            ClassicAssert.IsTrue(completion.IsFaulted, "A checkpoint whose only write failed must not report success");
+        }
+
+        /// <summary>The overflow-bucket checkpoint shares the index checkpoint's retirement pattern, and the fuzzy
+        /// index checkpoint is only complete when both halves are. It must likewise not report success when the last
+        /// level completes inline and then fails its submit.</summary>
+        [Test]
+        [Category("CheckpointRestore")]
+        [Category("Smoke")]
+        public void OverflowBucketCheckpointFailsWhenTheFinalLevelCompletesThenThrows()
+        {
+            var allocator = new MallocFixedPageSize<HashBucket>();
+            _ = allocator.Allocate();
+
+            // Not disposed here: it wraps ofbDevice, which the fixture teardown owns.
+            var failing = new ThrowOnNthWriteDevice(ofbDevice) { ThrowWritesAfter = 0, CompleteBeforeThrowing = true };
+            try
+            {
+                _ = Assert.Throws<IOException>(() => allocator.BeginCheckpoint(failing, 0, out _, useReadCache: false, skipReadCache: null, epoch: null));
+
+                var completion = allocator.IsCheckpointCompletedAsync().AsTask();
+                ClassicAssert.IsTrue(completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(TimeSpan.FromSeconds(30)),
+                    "The checkpoint task must complete rather than hang");
+                ClassicAssert.IsTrue(completion.IsFaulted, "A checkpoint whose only level failed must not report success");
+            }
+            finally
+            {
+                allocator.Dispose();
+            }
+        }
+
         /// <summary>A 12-byte record: deliberately not a divisor of any sector size, so the checkpoint's sector
         /// rounding leaves padding that is not a whole number of records.</summary>
         [StructLayout(LayoutKind.Sequential, Size = 12)]

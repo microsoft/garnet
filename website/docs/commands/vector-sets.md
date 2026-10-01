@@ -183,19 +183,22 @@ VINFO key
 
 #### Resp Reply
 
-Array of 14 elements — 7 alternating field-name / value pairs:
+RESP2 returns an array of 14 elements (7 alternating field-name / value pairs); RESP3 returns a map with the same
+7 fields:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `quant-type` | simple string | One of `f32`, `bin`, `q8`, `xpreq8` |
 | `distance-metric` | simple string | One of `l2`, `cosine`, `inner-product`, `cosine-normalized` |
-| `input-vector-dimensions` | integer (bulk string) | Dimensions of the input vector |
-| `reduced-dimensions` | integer (bulk string) | Dimensions stored in the index (after `REDUCE`); same as `input-vector-dimensions` if no projection |
-| `build-exploration-factor` | integer (bulk string) | `EF` used at build time |
-| `num-links` | integer (bulk string) | `M` (max out-degree) |
-| `size` | integer (bulk string) | Number of elements currently in the index |
+| `input-vector-dimensions` | integer | Dimensions of the input vector |
+| `reduced-dimensions` | integer | Dimensions stored in the index (after `REDUCE`); same as `input-vector-dimensions` if no projection |
+| `build-exploration-factor` | integer | `EF` used at build time |
+| `num-links` | integer | `M` (max out-degree) |
+| `size` | integer | Number of elements currently in the index |
 
-Returns a null array if the key does not exist; `WRONGTYPE` if the key holds a different data type.
+Returns a null array in RESP2 or null in RESP3 if the key does not exist; `WRONGTYPE` if the key holds a different data type.
+
+RESP2 example:
 
 ```text
 > VINFO movies
@@ -204,15 +207,15 @@ Returns a null array if the key does not exist; `WRONGTYPE` if the key holds a d
  3) "distance-metric"
  4) "cosine"
  5) "input-vector-dimensions"
- 6) "768"
+ 6) (integer) 768
  7) "reduced-dimensions"
- 8) "768"
+ 8) (integer) 768
  9) "build-exploration-factor"
-10) "200"
+10) (integer) 200
 11) "num-links"
-12) "16"
+12) (integer) 16
 13) "size"
-14) "1024"
+14) (integer) 1024
 ```
 
 ---
@@ -285,7 +288,8 @@ VREM key element
 
 #### Resp Reply
 
-Integer reply: `:1` if the element was removed, `:0` if it was not present (or the key does not exist).
+RESP2: integer `:1` if the element was removed, `:0` if it was not present (or the key does not exist).
+RESP3: boolean `true` / `false`.
 
 ```bash
 > VREM movies inception
@@ -520,21 +524,6 @@ Vector Set keys are type-safe:
   Vector Set element ID without collision.
 - `DEL` / `UNLINK` / `TYPE` / `EXPIRE` / `TTL` / `RENAME` / `RENAMENX` / `DEBUG` work on any key type, including
   Vector Sets.
-
----
-
-## Not Yet Implemented
-
-These commands are reachable through the parser but currently return `+OK` regardless of arguments. They are
-reserved for future implementation:
-
-| Command | Intended behavior |
-|---------|--------------------|
-| `VLINKS key element [WITHSCORES]` | Return the neighbours of `element` in the DiskANN graph. |
-| `VRANDMEMBER key [count]` | Return random element IDs. |
-| `VSETATTR key element attr` | Update an element's attribute in place. Today the only way to set/replace an attribute is to re-run `VADD ... SETATTR`. |
-
-Treat these as no-ops in preview builds — do not rely on their return value.
 
 ---
 

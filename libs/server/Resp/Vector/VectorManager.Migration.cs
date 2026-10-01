@@ -52,7 +52,6 @@ namespace Garnet.server
 #endif
 
             VectorInput input = default;
-            input.AlignmentExpected = true;
             VectorOutput outputSpan = new(new SpanByteAndMemory());
 
             // When we migrate a record we expand the namespace to always occupy 4-bytes
@@ -139,7 +138,8 @@ namespace Garnet.server
             GarnetDatabase db,
             StoreWrapper storeWrapper,
             ReadOnlySpan<byte> key,
-            ReadOnlySpan<byte> value)
+            ReadOnlySpan<byte> value,
+            DateTime? expiration)
         {
             StringInput input = default;
             input.header.cmd = RespCommand.VADD;
@@ -192,13 +192,16 @@ namespace Garnet.server
                 bool requestQuantization;
                 unsafe
                 {
-                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, InlineFilterCallbackPtr, out requestQuantization);
+                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
                 }
 
                 var ctxArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref context, 1)));
                 var indexArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1)));
 
-                input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg]);
+                var expirationTicks = expiration?.Ticks ?? 0;
+                var expirationArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateSpan(ref expirationTicks, 1)));
+
+                input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg, expirationArg]);
 
                 Span<byte> indexSpan = stackalloc byte[Index.Size];
                 var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
@@ -258,7 +261,7 @@ namespace Garnet.server
                     }
 
                     // For REPLICAs which are following, we need to fake up a write
-                    ReplicateMigratedIndexKey(ref ActiveThreadSession.stringBasicContext, key, value, context, logger);
+                    ReplicateMigratedIndexKey(ref ActiveThreadSession.stringBasicContext, key, value, expiration, context, logger);
                 }
             }
             finally
@@ -274,6 +277,7 @@ namespace Garnet.server
                 ref StringBasicContext basicCtx,
                 ReadOnlySpan<byte> key,
                 ReadOnlySpan<byte> value,
+                DateTime? expiration,
                 ulong context,
                 ILogger logger)
             {
@@ -284,7 +288,10 @@ namespace Garnet.server
 
                 var contextArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref context, 1)));
 
-                input.parseState.InitializeWithArguments([PinnedSpanByte.FromPinnedSpan(key), PinnedSpanByte.FromPinnedSpan(value), contextArg]);
+                var expirationTicks = expiration?.Ticks ?? 0L;
+                var expirationArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateSpan(ref expirationTicks, 1)));
+
+                input.parseState.InitializeWithArguments([PinnedSpanByte.FromPinnedSpan(key), PinnedSpanByte.FromPinnedSpan(value), expirationArg, contextArg]);
 
                 var dummyKey = (FixedSpanByteKey)default(ReadOnlySpan<byte>);
                 StringOutput dummyOutput = new();
@@ -322,7 +329,7 @@ namespace Garnet.server
         /// 
         /// Meant for use during migration.
         /// </summary>
-        public HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], byte[]> vectorSetKeys)
+        public HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<PinnedSpanByte> keys, Dictionary<byte[], (byte[] Value, DateTime? Expiraiton)> vectorSetKeys)
         {
             // TODO: Ideally we wouldn't make a new session for this, but it's fine for now
             using var storageSession = new StorageSession(storeWrapper, new(), new(), null, null, storeWrapper.DefaultDatabase.Id, null, this, logger);
@@ -330,6 +337,9 @@ namespace Garnet.server
             HashSet<ulong> namespaces = null;
 
             Span<byte> indexSpan = stackalloc byte[Index.Size];
+
+            // Allocate enough space for long.MaxValue (20 chars), rounded up
+            Span<byte> pttlSpan = stackalloc byte[32];
 
             foreach (var key in keys)
             {
@@ -352,7 +362,42 @@ namespace Garnet.server
                         _ = namespaces.Add(context + i);
                     }
 
-                    vectorSetKeys[key.ToArray()] = indexSpan.ToArray();
+                    // Figure out expiration, if any, for migrated Vector Sets
+                    var pttlInput = new UnifiedInput(RespCommand.PTTL);
+                    var pttlOutput = new UnifiedOutput(SpanByteAndMemory.FromPinnedSpan(pttlSpan));
+
+                    var pttlRes = storageSession.Read_UnifiedStore(key, ref pttlInput, ref pttlOutput, ref storageSession.unifiedBasicContext);
+
+                    DateTime? expiration;
+                    if (pttlRes == GarnetStatus.OK)
+                    {
+                        Debug.Assert(pttlOutput.SpanByteAndMemory.IsSpanByte, "Should never need to allocate");
+
+                        unsafe
+                        {
+                            var ptr = pttlOutput.SpanByteAndMemory.SpanByte.ToPointer();
+                            var end = ptr + pttlOutput.SpanByteAndMemory.SpanByte.length;
+
+                            var readRes = RespReadUtils.TryReadInt64(out var expirationMillis, ref ptr, end);
+                            Debug.Assert(readRes, "Should never have written something other than a long for PTTL");
+
+                            if (expirationMillis >= 0)
+                            {
+                                // Have to call UtcNow each time, otherwise our expirations may drift backwards unacceptably
+                                expiration = DateTime.UtcNow + TimeSpan.FromMilliseconds(expirationMillis);
+                            }
+                            else
+                            {
+                                expiration = null;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        expiration = null;
+                    }
+
+                    vectorSetKeys[key.ToArray()] = (indexSpan.ToArray(), expiration);
                 }
             }
 
@@ -454,7 +499,7 @@ namespace Garnet.server
         /// </summary>
         public static int GetMigratedIndexKeySerializationSize(ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes)
         {
-            var neededSpace = sizeof(int) + keyBytes.Length + sizeof(int) + valueBytes.Length;
+            var neededSpace = sizeof(int) + keyBytes.Length + sizeof(int) + valueBytes.Length + sizeof(long);
 
             return neededSpace;
         }
@@ -462,7 +507,7 @@ namespace Garnet.server
         /// <summary>
         /// Serialize a record for migrating a Vector Set index key.
         /// </summary>
-        public static void SerializeMigratedIndexKey(Span<byte> dataBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes)
+        public static void SerializeMigratedIndexKey(Span<byte> dataBytes, ReadOnlySpan<byte> keyBytes, ReadOnlySpan<byte> valueBytes, DateTime? expiration)
         {
             Debug.Assert(valueBytes.Length == VectorManager.IndexSize, "Should only ever serialize index");
 
@@ -478,12 +523,16 @@ namespace Garnet.server
             BinaryPrimitives.WriteInt32LittleEndian(writeTo, valueBytes.Length);
             writeTo = writeTo[sizeof(int)..];
             valueBytes.CopyTo(writeTo);
+            writeTo = writeTo[valueBytes.Length..];
+
+            // Expiration date (0 for no expiration)
+            BinaryPrimitives.WriteInt64LittleEndian(writeTo, expiration?.Ticks ?? 0L);
         }
 
         /// <summary>
         /// Reverse <see cref="SerializeMigratedIndexKey"/>.
         /// </summary>
-        public static void DeserializeMigratedIndexKey(ReadOnlySpan<byte> dataBytes, out ReadOnlySpan<byte> keyBytes, out ReadOnlySpan<byte> valueBytes)
+        public static void DeserializeMigratedIndexKey(ReadOnlySpan<byte> dataBytes, out ReadOnlySpan<byte> keyBytes, out ReadOnlySpan<byte> valueBytes, out DateTime? expiration)
         {
             var readFrom = dataBytes;
 
@@ -497,6 +546,11 @@ namespace Garnet.server
             var valueLength = BinaryPrimitives.ReadInt32LittleEndian(readFrom);
             readFrom = readFrom[sizeof(int)..];
             valueBytes = readFrom[..valueLength];
+            readFrom = readFrom[valueLength..];
+
+            // Expiration date (0 is no expiration)
+            var expirationTicks = BinaryPrimitives.ReadInt64LittleEndian(readFrom);
+            expiration = expirationTicks != 0 ? new DateTime(expirationTicks, DateTimeKind.Utc) : null;
         }
     }
 }

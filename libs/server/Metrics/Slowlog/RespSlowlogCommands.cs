@@ -97,14 +97,12 @@ namespace Garnet.server
                         SendAndReset();
                     for (int i = 0; i < sps.Count; i++)
                     {
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(sps.GetString(i), ref dcurr, dend))
-                            SendAndReset();
+                        WriteAsciiBulkString(sps.GetString(i));
                     }
                 }
                 while (!RespWriteUtils.TryWriteAsciiBulkString(entry.ClientIpPort, ref dcurr, dend))
                     SendAndReset();
-                while (!RespWriteUtils.TryWriteAsciiBulkString(entry.ClientName, ref dcurr, dend))
-                    SendAndReset();
+                WriteAsciiBulkString(entry.ClientName);
             }
             return true;
         }

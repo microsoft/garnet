@@ -217,6 +217,14 @@ namespace Tsavorite.core
                 long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions;
 
+        /// <summary>
+        /// Disk buffering for <see cref="ScanCursor"/>. A bounded <paramref name="count"/> (e.g. SCAN) creates a new iterator per call and usually
+        /// consumes only part of one page, so read-ahead would be wasted IO. An unbounded count iterates the whole log in one call, so reading the
+        /// next page while the current one is processed overlaps IO with the per-record liveness checks.
+        /// </summary>
+        private protected static DiskScanBufferingMode GetScanCursorBufferingMode(long count)
+            => count == long.MaxValue ? DiskScanBufferingMode.DoublePageBuffering : DiskScanBufferingMode.SinglePageBuffering;
+
         private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store,
                 ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress,
                 bool resetCursor = true, bool includeTombstones = false)
