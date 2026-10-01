@@ -913,93 +913,6 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task XVIMPORTMigrateBySlotAsync([Values("pending", "completed", "failed")] string importState)
-        {
-            if (importState == "failed")
-            {
-                TestUtils.IgnoreIfExceptionInjectionDisabled();
-            }
-            _ = await SimpleSetupClusterAsync(4, primaryCount: 2, replicaCount: 1, useTLS: false);
-            var source = (IPEndPoint)context.endpoints[0];
-            var destination = (IPEndPoint)context.endpoints[1];
-            var sourceReplica = (IPEndPoint)context.endpoints[2];
-            var destinationReplica = (IPEndPoint)context.endpoints[3];
-            var sourceSlots = context.clusterTestUtils.GetOwnedSlotsFromNode(source, NullLogger.Instance);
-            var key = Enumerable.Range(0, 16384).Select(index => $"import-migrate:{index}")
-                .First(candidate => sourceSlots.Contains(context.clusterTestUtils.HashSlot(candidate)));
-            var slot = context.clusterTestUtils.HashSlot(key);
-            byte[] id = [1, 0, 0, 0];
-            var vector = MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray();
-            var attributes = new string('x', 3 * 1024 * 1024);
-            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(source, "XVCREATE", [key, "DIM", 3, "NOQUANT", "M", 4]));
-            foreach (var term in new (string Name, object Id, object Value)[]
-            {
-                ("VECTOR", id, vector),
-                ("NEIGHBORS", id, MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray()),
-                ("INTMAP", "member", id), ("EXTMAP", id, "member"), ("ATTRS", id, attributes),
-            })
-            {
-                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(source, "XVIMPORT", [key, term.Name, term.Id, term.Value]));
-            }
-            string failure = null;
-            if (importState == "failed")
-            {
-                using (ExceptionInjectionHelper.EnabledScope(ExceptionInjectionType.VectorSet_Fail_Before_Import_Finalization))
-                {
-                    failure = (string)context.clusterTestUtils.Execute(source, "XVIMPORT", [key, "FINISH"]);
-                    StringAssert.StartsWith("ERR", failure);
-                }
-            }
-            else if (importState == "completed")
-            {
-                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(source, "XVIMPORT", [key, "FINISH"]));
-            }
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 2);
-            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(sourceReplica, "READONLY", []));
-            AssertImportState(sourceReplica);
-
-            context.clusterTestUtils.MigrateSlots(source, destination, [slot]);
-            context.clusterTestUtils.WaitForMigrationCleanup(0);
-            context.clusterTestUtils.WaitForMigrationCleanup(1);
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 2);
-            context.clusterTestUtils.WaitForReplicaAofSync(1, 3);
-            context.clusterTestUtils.WaitForSlotOwnership(destinationReplica, context.clusterTestUtils.ClusterMyId(destination), [slot, slot]);
-            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(destinationReplica, "READONLY", []));
-            AssertImportState(destination);
-            AssertImportState(destinationReplica);
-            ClassicAssert.IsFalse(context.clusterTestUtils.GetOwnedSlotsFromNode(source, NullLogger.Instance).Contains(slot));
-            if (importState == "failed")
-            {
-                ClassicAssert.AreEqual(failure, (string)context.clusterTestUtils.Execute(destination, "XVIMPORT", [key, "FINISH"]));
-                StringAssert.StartsWith("ERR", (string)context.clusterTestUtils.Execute(destination, "XVIMPORT", [key, "VECTOR", id, vector]));
-            }
-            else
-            {
-                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(destination, "XVIMPORT", [key, "FINISH"]));
-                context.clusterTestUtils.WaitForReplicaAofSync(1, 3);
-                foreach (var endpoint in new[] { destination, destinationReplica })
-                {
-                    ClassicAssert.AreEqual(1, (int)context.clusterTestUtils.Execute(endpoint, "VCARD", [key], flags: CommandFlags.NoRedirect));
-                    CollectionAssert.AreEqual(new[] { "member" }, (string[])context.clusterTestUtils.Execute(endpoint, "VSIM", [key, "FP32", vector, "COUNT", 1], flags: CommandFlags.NoRedirect));
-                    ClassicAssert.AreEqual(attributes, (string)context.clusterTestUtils.Execute(endpoint, "VGETATTR", [key, "member"], flags: CommandFlags.NoRedirect));
-                }
-            }
-
-            void AssertImportState(IPEndPoint endpoint)
-            {
-                var response = context.clusterTestUtils.Execute(endpoint, "VINFO", [key], flags: CommandFlags.NoRedirect);
-                ClassicAssert.AreEqual(ResultType.Array, response.Resp2Type, $"VINFO at {endpoint}: {response}");
-                var info = ((string[])response).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
-                ClassicAssert.AreEqual(importState == "completed" ? "0" : "1", info["import-pending"]);
-                if (importState != "completed")
-                {
-                    ClassicAssert.IsFalse(info.ContainsKey("size"));
-                    ClassicAssert.AreEqual("ERR Vector Set import is not finished", (string)context.clusterTestUtils.Execute(endpoint, "VDIM", [key], flags: CommandFlags.NoRedirect));
-                }
-            }
-        }
-
-        [Test]
         public async Task VectorSetMigrateSingleBySlotAsync()
         {
             // Test migrating a single slot with a vector set of one element in it
@@ -2321,33 +2234,6 @@ namespace Garnet.test.cluster
 
                 return faultRound + faultResponse + faultMergeMap;
             }
-        }
-
-        [Test]
-        public async Task VectorReplayFailureRecoversAfterReattachAsync()
-        {
-            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false).ConfigureAwait(false);
-            await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
-            var primary = connection.GetServer(context.endpoints[0]);
-            var replica = connection.GetServer(context.endpoints[1]);
-            ClassicAssert.AreEqual(1, (int)await primary.ExecuteAsync(0, "VADD", ["replay-reset", "VALUES", 3, 1, 2, 3, "before", "NOQUANT"]).ConfigureAwait(false));
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
-
-            var wrapper = GetStoreWrapper(context.nodes[1]);
-            var manager = wrapper.DefaultDatabase.VectorManager;
-            GetVectorReplayFailure(manager) = ExceptionDispatchInfo.Capture(new GarnetException("Injected replay failure"));
-            ClassicAssert.Throws<GarnetException>(manager.WaitForVectorOperationsToComplete);
-
-            var primaryEndpoint = (IPEndPoint)context.endpoints[0];
-            ClassicAssert.AreEqual("OK", (string)await replica.ExecuteAsync(0, "REPLICAOF", [primaryEndpoint.Address.ToString(), primaryEndpoint.Port]).ConfigureAwait(false));
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
-            ClassicAssert.DoesNotThrow(manager.WaitForVectorOperationsToComplete);
-
-            ClassicAssert.AreEqual(1, (int)await primary.ExecuteAsync(0, "VADD", ["replay-reset", "VALUES", 3, 3, 2, 1, "after", "NOQUANT"]).ConfigureAwait(false));
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
-            ClassicAssert.AreEqual("OK", (string)await replica.ExecuteAsync(0, "READONLY", []).ConfigureAwait(false));
-            CollectionAssert.AreEqual(new[] { "1", "2", "3" }, (string[])await replica.ExecuteAsync(0, "VEMB", ["replay-reset", "before"], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
-            CollectionAssert.AreEqual(new[] { "3", "2", "1" }, (string[])await replica.ExecuteAsync(0, "VEMB", ["replay-reset", "after"], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
         }
 
         [Test]

@@ -3,119 +3,138 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Threading.Channels;
-using System.Threading.Tasks;
-using Garnet.common;
+using System.Threading;
 using Microsoft.Extensions.Logging;
-using ImportResult = Garnet.server.NativeDiskANNMethods.DiskANNImportResult;
 
 namespace Garnet.server
 {
     public partial class VectorManager
     {
-        internal readonly record struct ImportPartition(ImportJob Job, int TaskIndex);
+        private readonly ConcurrentDictionary<byte[], int> activeImportFinalizations;
+#if NET9_0_OR_GREATER
+        private readonly ConcurrentDictionary<byte[], int>.AlternateLookup<ReadOnlySpan<byte>> activeImportFinalizationsLookup;
+#endif
 
-        internal sealed class ImportJob
+        /// <summary>
+        /// Import a single term into a previously XVCREATE'd Vector Set.
+        /// </summary>
+        internal bool ImportTerm(ReadOnlySpan<byte> key, ReadOnlySpan<byte> indexConfig, uint termType, ReadOnlySpan<byte> id, ReadOnlySpan<byte> value)
         {
-            internal readonly ulong Context;
-            internal readonly nint IndexPtr;
-            private readonly ImportResult[] results;
-            private TaskCompletionSource<ImportResult> completion;
-            private ImportResult outcome;
-            private int pending;
-            private int activeImports;
-            private bool finalizationStarted;
-
-            internal int TaskCount => results.Length;
-
-            internal ImportJob(ulong context, nint indexPtr, int taskCount)
+            if (IsImportCompleted(indexConfig) || IsImportFailed(indexConfig))
             {
-                Context = context;
-                IndexPtr = indexPtr;
-                results = new ImportResult[taskCount];
-                Array.Fill(results, ImportResult.TaskFailed);
+                return false;
             }
 
-            internal bool TryBeginImport()
+            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            if (!Service.ImportTerm(context, indexPtr, termType, id, value))
             {
-                lock (this)
-                {
-                    if (finalizationStarted)
-                    {
-                        return false;
-                    }
-                    activeImports++;
-                    return true;
-                }
+                return false;
             }
 
-            internal void EndImport()
+            if (!IsImportPending(indexConfig))
             {
-                lock (this)
-                {
-                    if (--activeImports == 0)
-                    {
-                        System.Threading.Monitor.PulseAll(this);
-                    }
-                }
+                SetFlags(key, VectorSetFlags.ImportPending, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
             }
 
-            internal Task<ImportResult> StartOrJoinAsync(ChannelWriter<ImportPartition> writer)
+            ReplicateVectorSetImport(key, termType, id, value);
+            return true;
+
+        }
+
+        /// <summary>
+        /// During replication replay, we need to be able to wait for in progress finalization (if any) to complete.
+        /// 
+        /// This does that.
+        /// </summary>
+        internal void WaitForImportFinalization(ReadOnlySpan<byte> key)
+        {
+#if !NET9_0_OR_GREATER
+            byte[] keyCopy = null;
+#endif
+
+            while (
+                !quantizationOrImportChannel.Reader.Completion.IsCompleted &&
+#if NET9_0_OR_GREATER
+                activeImportFinalizationsLookup.ContainsKey(key)
+#else
+                activeImportFinalizations.ContainsKey(keyCopy ??= key.ToArray())
+#endif
+            )
             {
-                lock (this)
-                {
-                    finalizationStarted = true;
-                    while (activeImports != 0)
-                    {
-                        System.Threading.Monitor.Wait(this);
-                    }
-                    if (completion != null && (!completion.Task.IsCompleted || outcome != ImportResult.TaskFailed))
-                    {
-                        return completion.Task;
-                    }
-
-                    completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                    pending = 0;
-                    foreach (var result in results)
-                    {
-                        if (result == ImportResult.TaskFailed)
-                        {
-                            pending++;
-                        }
-                    }
-                    for (var taskIndex = 0; taskIndex < results.Length; taskIndex++)
-                    {
-                        if (results[taskIndex] == ImportResult.TaskFailed && !writer.TryWrite(new(this, taskIndex)))
-                        {
-                            Complete(taskIndex, ImportResult.TaskFailed);
-                        }
-                    }
-                    return completion.Task;
-                }
-            }
-
-            internal void Complete(int taskIndex, ImportResult result)
-            {
-                lock (this)
-                {
-                    results[taskIndex] = result;
-                    if (--pending != 0)
-                    {
-                        return;
-                    }
-
-                    outcome = Array.IndexOf(results, ImportResult.FinishFailed) >= 0
-                        ? ImportResult.FinishFailed
-                        : Array.IndexOf(results, ImportResult.TaskFailed) >= 0 ? ImportResult.TaskFailed : ImportResult.Success;
-                    completion.SetResult(outcome);
-                }
+                _ = Thread.Yield();
             }
         }
 
-        private readonly ConcurrentDictionary<(ulong Context, nint IndexPtr), ImportJob> importJobs = new();
-        private readonly Channel<ImportPartition> importChannel = Channel.CreateUnbounded<ImportPartition>(
-            new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
-        private readonly Task[] importTasks;
+        /// <summary>
+        /// Joins or retries finalization while the caller retains the index lifetime lock.
+        /// Partition progress is handle-local; completion and terminal failure are persisted in the index stub.
+        /// </summary>
+        internal NativeDiskANNMethods.DiskANNImportResult FinishImport(ReadOnlySpan<byte> key, ReadOnlySpan<byte> indexConfig)
+        {
+            if (IsImportFailed(indexConfig))
+            {
+                return NativeDiskANNMethods.DiskANNImportResult.FinishFailed;
+            }
+
+            if (IsImportCompleted(indexConfig))
+            {
+                return NativeDiskANNMethods.DiskANNImportResult.Success;
+            }
+
+            // If there's already an active finalization, don't do anything else
+            var keyCopy = key.ToArray();
+            if (!activeImportFinalizations.TryAdd(keyCopy, 0))
+            {
+                return NativeDiskANNMethods.DiskANNImportResult.Success;
+            }
+
+            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+            if (!IsImportPending(indexConfig))
+            {
+                if (!Service.CanImport(context, indexPtr))
+                {
+                    return NativeDiskANNMethods.DiskANNImportResult.TaskFailed;
+                }
+
+                SetFlags(key, VectorSetFlags.ImportPending, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
+            }
+
+            var countdown = new CountdownHolder(quantizationAndImportTasks.Length);
+
+            // Queue up finalization tasks
+            for (var taskIx = 0; taskIx < quantizationAndImportTasks.Length; taskIx++)
+            {
+                if (!quantizationOrImportChannel.Writer.TryWrite(new(keyCopy, QuantizationOrImportStep.FinalizeImport, taskIx, countdown)))
+                {
+                    _ = activeImportFinalizations.TryRemove(keyCopy, out _);
+
+                    return NativeDiskANNMethods.DiskANNImportResult.TaskFailed;
+                }
+            }
+
+            ReplicateVectorSetFinishImport(key);
+
+            return NativeDiskANNMethods.DiskANNImportResult.Success;
+        }
+
+        private bool TryProcessImportPartitionFinalize(ReadOnlySpan<byte> key, ulong context, nint indexPtr, int taskIndex, int taskCount)
+        {
+            try
+            {
+                var result = Service.FinishImport(context, indexPtr, taskIndex, taskCount);
+
+                return result == NativeDiskANNMethods.DiskANNImportResult.Success;
+            }
+            catch (Exception exception)
+            {
+                logger?.LogError(exception, "Import finalization partition {taskIndex}/{taskCount} failed for context {context}", taskIndex, taskCount, context);
+            }
+
+            return false;
+        }
+
 
         private static bool IsImportPending(ReadOnlySpan<byte> indexConfig)
         {
@@ -133,168 +152,6 @@ namespace Garnet.server
         {
             ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var flags, out _);
             return (flags & VectorSetFlags.ImportFailed) != 0;
-        }
-
-        internal bool ImportTerm(ReadOnlySpan<byte> key, ReadOnlySpan<byte> indexConfig, uint termType, ReadOnlySpan<byte> id, ReadOnlySpan<byte> value)
-        {
-            if (IsImportCompleted(indexConfig) || IsImportFailed(indexConfig))
-            {
-                return false;
-            }
-            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
-            var job = GetImportJob(context, indexPtr);
-            if (!job.TryBeginImport())
-            {
-                return false;
-            }
-            try
-            {
-                if (!Service.ImportTerm(context, indexPtr, termType, id, value))
-                {
-                    return false;
-                }
-                if (!IsImportPending(indexConfig))
-                {
-                    SetFlags(key, VectorSetFlags.ImportPending, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
-                }
-                ReplicateVectorSetImport(key, termType, id, value);
-                return true;
-            }
-            finally
-            {
-                job.EndImport();
-            }
-        }
-
-        private ImportJob GetImportJob(ulong context, nint indexPtr)
-            => importJobs.GetOrAdd((context, indexPtr),
-                static (identity, taskCount) => new(identity.Context, identity.IndexPtr, taskCount), importTasks.Length);
-
-        /// <summary>
-        /// Joins or retries finalization while the caller retains the index lifetime lock.
-        /// Partition progress is handle-local; completion and terminal failure are persisted in the index stub.
-        /// </summary>
-        internal ImportResult FinishImport(ReadOnlySpan<byte> key, ReadOnlySpan<byte> indexConfig)
-        {
-            if (IsImportFailed(indexConfig))
-            {
-                return ImportResult.FinishFailed;
-            }
-            if (IsImportCompleted(indexConfig))
-            {
-                ReplicateVectorSetFinishImport(key);
-                return ImportResult.Success;
-            }
-            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
-            if (!IsImportPending(indexConfig))
-            {
-                if (!Service.CanImport(context, indexPtr))
-                {
-                    return ImportResult.TaskFailed;
-                }
-                SetFlags(key, VectorSetFlags.ImportPending, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
-            }
-            var job = GetImportJob(context, indexPtr);
-            var result = AsyncUtils.BlockingWait(job.StartOrJoinAsync(importChannel.Writer));
-            if (result == ImportResult.Success)
-            {
-                ReplicateVectorSetFinishImport(key);
-                SetFlags(key, VectorSetFlags.ImportCompleted, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
-            }
-            else if (result == ImportResult.FinishFailed)
-            {
-                ReplicateVectorSetFinishImport(key, failed: true);
-                SetFlags(key, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
-            }
-            return result;
-        }
-
-        private void StartImportTasks()
-        {
-            for (var taskIndex = 0; taskIndex < importTasks.Length; taskIndex++)
-            {
-                importTasks[taskIndex] = RunImportTaskAsync();
-            }
-        }
-
-        private async Task RunImportTaskAsync()
-        {
-            await Task.Yield();
-
-            var reader = importChannel.Reader;
-            while (await reader.WaitToReadAsync().ConfigureAwait(false))
-            {
-                RespServerSession session = null;
-                try
-                {
-                    session = (RespServerSession)getTempSession();
-                    if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
-                    {
-                        throw new GarnetException($"Could not switch import finalization session to {dbId}");
-                    }
-
-                    while (reader.TryRead(out var partition))
-                    {
-                        ProcessImportPartition(session, partition);
-                    }
-                }
-                catch (Exception exception)
-                {
-                    logger?.LogError(exception, "Could not initialize import finalization worker for database {dbId}", dbId);
-                    while (reader.TryRead(out var partition))
-                    {
-                        partition.Job.Complete(partition.TaskIndex, ImportResult.TaskFailed);
-                    }
-                }
-                finally
-                {
-                    try
-                    {
-                        session?.Dispose();
-                    }
-                    catch (Exception exception)
-                    {
-                        logger?.LogError(exception, "Could not dispose import finalization session for database {dbId}", dbId);
-                    }
-                }
-            }
-        }
-
-        private void ProcessImportPartition(RespServerSession session, ImportPartition partition)
-        {
-            var previousSession = ActiveThreadSession;
-            var result = ImportResult.FinishFailed;
-            try
-            {
-                ActiveThreadSession = session.storageSession;
-                if (partition.TaskIndex == 0)
-                {
-                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Import_Finalization);
-                    ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Fail_Before_Import_Finalization);
-                }
-                result = Service.FinishImport(partition.Job.Context, partition.Job.IndexPtr, partition.TaskIndex, partition.Job.TaskCount);
-            }
-            catch (Exception exception)
-            {
-                logger?.LogError(exception, "Import finalization partition {taskIndex}/{taskCount} failed for context {context}",
-                    partition.TaskIndex, partition.Job.TaskCount, partition.Job.Context);
-            }
-            finally
-            {
-                ActiveThreadSession = previousSession;
-                partition.Job.Complete(partition.TaskIndex, result);
-            }
-        }
-
-        private void StopImportTasks()
-        {
-            _ = importChannel.Writer.TryComplete();
-            while (importChannel.Reader.TryRead(out var partition))
-            {
-                partition.Job.Complete(partition.TaskIndex, ImportResult.TaskFailed);
-            }
-            AsyncUtils.BlockingWait(Task.WhenAll(importTasks));
-            importJobs.Clear();
         }
     }
 }

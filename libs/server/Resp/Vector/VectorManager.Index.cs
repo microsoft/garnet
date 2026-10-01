@@ -125,7 +125,6 @@ namespace Garnet.server
             }
 
             Service.DropIndex(context, indexPtr);
-            _ = importJobs.TryRemove((context, indexPtr), out _);
         }
 
         /// <summary>

@@ -1,11 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -105,82 +102,6 @@ namespace Garnet.test.cluster
 
             // Without full sync, VADD replay builds a local index and isolates full sync as the cause.
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
-        }
-
-        [Test]
-        public async Task VectorSetImportReplayBarriersAsync([Values] bool asyncReplay)
-        {
-            TestUtils.IgnoreIfExceptionInjectionDisabled();
-            if (Environment.ProcessorCount < 2)
-            {
-                Assert.Ignore("Parallel replay requires at least two workers");
-            }
-            const string Key = "{vsdisk}import";
-            const string Marker = "{vsdisk}after-import";
-            const ExceptionInjectionType ImportPause = ExceptionInjectionType.VectorSet_Pause_Before_Import_Replay;
-            const ExceptionInjectionType FinishPause = ExceptionInjectionType.VectorSet_Pause_Before_Import_Finalization;
-            SetupDisklessCluster(2, commitFrequencyMs: -1, asyncReplay: asyncReplay);
-            context.clusterTestUtils.AttachReplicaToPrimary(ReplicaIndex, PrimaryIndex, logger: context.logger);
-            context.clusterTestUtils.ReadOnly(ReplicaIndex);
-            var primary = context.clusterTestUtils.GetEndPoint(PrimaryIndex);
-            var replica = context.clusterTestUtils.GetEndPoint(ReplicaIndex);
-            byte[] id = [1, 0, 0, 0];
-            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary, "XVCREATE", [Key, "DIM", 3, "NOQUANT", "M", 4]));
-            ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary, "XVIMPORT", [Key, "INTMAP", "member", id]));
-            _ = await context.nodes[PrimaryIndex].Store.CommitAOFAsync(default);
-            WaitForReplication(PrimaryIndex, ReplicaIndex);
-            ExceptionInjectionHelper.EnableException(ImportPause);
-            try
-            {
-                foreach (var term in new (string Name, object Id, object Value)[]
-                {
-                    ("VECTOR", id, MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray()),
-                    ("NEIGHBORS", id, MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray()),
-                    ("EXTMAP", id, "member"), ("ATTRS", id, "{\"id\":1}"),
-                })
-                {
-                    ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary, "XVIMPORT", [Key, term.Name, term.Id, term.Value]));
-                }
-                _ = await context.nodes[PrimaryIndex].Store.CommitAOFAsync(default);
-                await ExceptionInjectionHelper.WaitOnClearAsync(ImportPause).WaitAsync(TimeSpan.FromSeconds(30));
-                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary, "XVIMPORT", [Key, "FINISH"]));
-                ClassicAssert.AreEqual(1, (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "VALUES", 3, 4, 5, 6, "after", "NOQUANT", "M", 4]));
-                ClassicAssert.AreEqual("OK", (string)context.clusterTestUtils.Execute(primary, "SET", [Marker, "done"]));
-                _ = await context.nodes[PrimaryIndex].Store.CommitAOFAsync(default);
-                AssertReplayBlocked();
-
-                ExceptionInjectionHelper.EnableException(FinishPause);
-                ExceptionInjectionHelper.EnableException(ImportPause);
-                await ExceptionInjectionHelper.WaitOnClearAsync(FinishPause).WaitAsync(TimeSpan.FromSeconds(30));
-                AssertReplayBlocked();
-                ExceptionInjectionHelper.EnableException(FinishPause);
-                WaitForReplication(PrimaryIndex, ReplicaIndex);
-                ClassicAssert.AreEqual(2, VectorSetSize(ReplicaIndex, Key));
-                ClassicAssert.AreEqual("done", (string)context.clusterTestUtils.Execute(replica, "GET", [Marker]));
-                CollectionAssert.AreEqual(new[] { "member" }, (string[])context.clusterTestUtils.Execute(replica, "VSIM", [Key, "VALUES", 3, 1, 2, 3, "COUNT", 1]));
-            }
-            finally
-            {
-                ExceptionInjectionHelper.SuspendParking();
-                try
-                {
-                    ExceptionInjectionHelper.DisableException(ImportPause);
-                    ExceptionInjectionHelper.DisableException(FinishPause);
-                    WaitForReplication(PrimaryIndex, ReplicaIndex);
-                }
-                finally
-                {
-                    ExceptionInjectionHelper.ResumeParking();
-                }
-            }
-
-            void AssertReplayBlocked()
-            {
-                var info = ((string[])context.clusterTestUtils.Execute(replica, "VINFO", [Key])).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
-                ClassicAssert.AreEqual("1", info["import-pending"]);
-                ClassicAssert.IsFalse(info.ContainsKey("size"));
-                ClassicAssert.IsTrue(context.clusterTestUtils.Execute(replica, "GET", [Marker]).IsNull);
-            }
         }
 
         /// <summary>

@@ -239,18 +239,21 @@ namespace Garnet.server
             recoveredIndexes = new();
             recoveredMetadata = new();
 
-            quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
+            quantizationOrImportChannel = Channel.CreateUnbounded<QuantizationOrImportState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
 
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
-            quantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
-            quantizationTasks = new Task[quantizationTaskCount];
+            quantizationAndImportTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
+            quantizationAndImportTasks = new Task[quantizationAndImportTaskCount];
 
             // So Dispose's Task.WhenAll is safe even if StartQuantizationTasks never ran.
-            Array.Fill(quantizationTasks, Task.CompletedTask);
+            Array.Fill(quantizationAndImportTasks, Task.CompletedTask);
 
-            importTasks = new Task[quantizationTaskCount];
-            Array.Fill(importTasks, Task.CompletedTask);
+            // Tracking information for active XVIMPORT ... FINISH during replication
+            activeImportFinalizations = new(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+            activeImportFinalizationsLookup = activeImportFinalizations.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
 
             logger?.LogInformation("Created VectorManager");
         }
@@ -271,9 +274,8 @@ namespace Garnet.server
                 dirtyContextMetadatas = [];
             }
 
-            // Spin up quantization
-            StartQuantizationTasks();
-            StartImportTasks();
+            // Spin up quantization and import handling tasks
+            StartQuantizationAndImportTasks();
         }
 
         /// <summary>
@@ -592,8 +594,6 @@ namespace Garnet.server
 
             replicationBlockEvent.Dispose();
 
-            StopImportTasks();
-
             // Wait for any _drops_ in progress to finish
             requestDropTaskChannel.CompleteAndWaitForConsumerTask(requestDropTask);
 
@@ -611,9 +611,9 @@ namespace Garnet.server
             cleanupGate.Dispose();
 
             // drain quantization work and stop the worker tasks
-            _ = quantizationChannel.Writer.TryComplete();
-            while (quantizationChannel.Reader.TryRead(out _)) { }
-            AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
+            _ = quantizationOrImportChannel.Writer.TryComplete();
+            while (quantizationOrImportChannel.Reader.TryRead(out _)) { }
+            AsyncUtils.BlockingWait(Task.WhenAll(quantizationAndImportTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -749,7 +749,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                    _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                 }
 
                 return VectorManagerResult.OK;
@@ -865,7 +865,6 @@ namespace Garnet.server
             ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
 
             Service.DropIndex(context, indexPtr);
-            _ = importJobs.TryRemove((context, indexPtr), out _);
         }
 
         /// <summary>

@@ -642,6 +642,7 @@ namespace Garnet.server
                 return true;
             }
 
+            // Must sequence releative to other operations
             vectorManager.WaitForVectorOperationsToComplete();
 
             switch (input.header.cmd)

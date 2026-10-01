@@ -150,21 +150,5 @@ namespace Garnet.common
         /// token scan finds candidates but rejects every one of them.
         /// </summary>
         Replication_Fail_Replica_Unreadable_Checkpoint,
-        /// <summary>
-        /// Vector Set: pause the first import-finalization partition before entering DiskANN.
-        /// </summary>
-        VectorSet_Pause_Before_Import_Finalization,
-        /// <summary>
-        /// Vector Set: pause a full-vector term before applying it during AOF replay.
-        /// </summary>
-        VectorSet_Pause_Before_Import_Replay,
-        /// <summary>
-        /// Vector Set: fail the first import-finalization partition before entering DiskANN.
-        /// </summary>
-        VectorSet_Fail_Before_Import_Finalization,
-        /// <summary>
-        /// Vector Set: report a full-vector read as missing once during import verification.
-        /// </summary>
-        VectorSet_Fail_Import_Verification_Read,
     }
 }

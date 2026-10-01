@@ -42,8 +42,7 @@ namespace Garnet.server
         private RespCommand replicationBatchCommand;
         private ExceptionDispatchInfo replicationReplayFailure;
         private int importReplayRequestsProcessed;
-        private const long ImportFailedReplayArg = 1;
-
+        
         internal int ImportReplayRequestsProcessed => Volatile.Read(ref importReplayRequestsProcessed);
 
         private CancellationToken replicationReplayCancellation;
@@ -217,9 +216,9 @@ namespace Garnet.server
             ReplicateImportOperation(key, ref input);
         }
 
-        private static void ReplicateVectorSetFinishImport(ReadOnlySpan<byte> key, bool failed = false)
+        private static void ReplicateVectorSetFinishImport(ReadOnlySpan<byte> key)
         {
-            var input = new StringInput(RespCommand.XVIMPORT, arg1: failed ? ImportFailedReplayArg : 0);
+            var input = new StringInput(RespCommand.XVIMPORT);
             ReplicateImportOperation(key, ref input);
         }
 
@@ -229,6 +228,11 @@ namespace Garnet.server
             {
                 throw new GarnetException("Vector Set preview is disabled during import replay");
             }
+
+            Debug.Assert(input.header.cmd is RespCommand.XVCREATE or RespCommand.XVIMPORT, "Only XVCREATE and XVIMPORT should be redirected here");
+
+            WaitForImportFinalization(key);
+
             GarnetStatus status;
             VectorManagerResult result;
             ReadOnlySpan<byte> error;
@@ -245,21 +249,6 @@ namespace Garnet.server
             }
             else if (input.parseState.Count == 0)
             {
-                if (input.arg1 == ImportFailedReplayArg)
-                {
-                    var readInput = new StringInput(RespCommand.VINFO);
-                    Span<byte> indexSpan = stackalloc byte[IndexSize];
-                    using (ReadVectorIndex(session, key, ref readInput, indexSpan, out status))
-                    {
-                        if (status != GarnetStatus.OK)
-                        {
-                            throw new GarnetException($"Could not read Vector Set during import failure replay: {status}");
-                        }
-                        ReplicateVectorSetFinishImport(key, failed: true);
-                        SetFlags(key, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref session.stringBasicContext, SetImportStateArg);
-                    }
-                    return;
-                }
                 if (input.arg1 != 0)
                 {
                     throw new GarnetException("Invalid XVIMPORT FINISH AOF payload");
@@ -409,6 +398,8 @@ namespace Garnet.server
             ref StringInput input
         )
         {
+            WaitForImportFinalization(key);
+
             if (input.arg1 == MigrateElementKeyLogArg)
             {
                 // These are special, injecting by a PRIMARY applying migration operations
@@ -654,10 +645,6 @@ namespace Garnet.server
 
                         if (importTermType.HasValue)
                         {
-                            if (importTermType.Value == DiskANNService.FullVector)
-                            {
-                                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Import_Replay);
-                            }
                             var importStatus = storageSession.VectorSetImport(PinnedSpanByte.FromPinnedSpan(key), importTermType.Value,
                                 PinnedSpanByte.FromPinnedSpan(element), PinnedSpanByte.FromPinnedSpan(values), out var importResult, out var error);
                             if (importStatus != GarnetStatus.OK || importResult != VectorManagerResult.OK)
@@ -777,6 +764,8 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
+            WaitForImportFinalization(key);
+
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
 
@@ -803,6 +792,8 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetSetAttributeReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
+            WaitForImportFinalization(key);
+
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
             var attribute = input.parseState.GetArgSliceByRef(1);

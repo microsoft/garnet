@@ -283,7 +283,7 @@ namespace Garnet.server
                             // Post recreate the index might already need quantization - if so, queue it up
                             if (requestQuantization)
                             {
-                                _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                                _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                             }
 
                             // Try again so we don't hold an exclusive lock while performing a search
@@ -529,7 +529,7 @@ namespace Garnet.server
                             // Post (re)create the index might already need quantization - if so, queue it up
                             if (requestQuantization)
                             {
-                                _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                                _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                             }
 
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
@@ -657,7 +657,7 @@ namespace Garnet.server
                 result = VectorManagerResult.OK;
                 if (requestQuantization && !hasQuantState)
                 {
-                    _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                    _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                 }
 
                 return GarnetStatus.OK;
