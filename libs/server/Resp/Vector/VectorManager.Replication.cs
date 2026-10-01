@@ -42,7 +42,6 @@ namespace Garnet.server
         private RespCommand replicationBatchCommand;
         private ExceptionDispatchInfo replicationReplayFailure;
         private int importReplayRequestsProcessed;
-        
         internal int ImportReplayRequestsProcessed => Volatile.Read(ref importReplayRequestsProcessed);
 
         private CancellationToken replicationReplayCancellation;

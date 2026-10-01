@@ -1893,7 +1893,7 @@ namespace Garnet.server
                 WriteInt64(size);
             }
             WriteSimpleString("import-pending"u8);
-            WriteInt32(importPending? 1 : 0);
+            WriteInt32(importPending ? 1 : 0);
 
             return true;
         }
