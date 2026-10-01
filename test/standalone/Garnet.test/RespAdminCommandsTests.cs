@@ -505,6 +505,60 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SeAofRecoverObjectsOverHeapBudgetTest()
+        {
+            // Hash values keep the object heap far over the size tracker budget while the page count stays under the limit.
+            // Recovering that AOF must stay within the budget and must never block on an eviction that cannot happen:
+            // ReplayAOF starts the size trackers so replay is budget-managed, and the allocator's page-turn path does not
+            // wait on a size tracker whose resizer is not running (checkpoint recovery, which precedes replay, is in that
+            // state). If either side regresses, the recovering server.Start() below never returns, so bound the wait to
+            // report a named test failure instead of hanging the whole test run.
+            const int numKeys = 2000;
+            var value = new string('x', 2000);
+
+            server.Dispose();
+            server = CreateGarnetServer(MethodTestDir, lowMemory: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (int i = 0; i < numKeys; i++)
+                    db.HashSet($"SeAofRecoverHashKey{i:0000}", "field", value);
+                db.Execute("COMMITAOF");
+            }
+
+            server.Dispose(false);
+
+            // Assign `server` only once Start returns: on a regression the recovering server is wedged in replay, and
+            // letting TearDown dispose it would block the whole run on the same stuck allocation. Recovery takes about
+            // 100ms here and does not depend on the thread pool dispatching the size tracker's resizer, so this bound is
+            // three orders of magnitude of headroom rather than a timing assumption.
+            var recovered = CreateGarnetServer(MethodTestDir, tryRecover: true, lowMemory: true, enableAOF: true);
+            var start = Task.Run(recovered.Start);
+            ClassicAssert.IsTrue(start.Wait(TimeSpan.FromSeconds(60)), "AOF recovery did not complete");
+            start.GetAwaiter().GetResult();     // surface any exception
+            server = recovered;
+
+            using (var redis = ConnectionMultiplexer.Connect(GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (int i = 0; i < numKeys; i++)
+                    ClassicAssert.AreEqual(value, db.HashGet($"SeAofRecoverHashKey{i:0000}", "field").ToString(), $"Key SeAofRecoverHashKey{i:0000}");
+            }
+
+            // Replay must also be budget-managed, not merely non-hanging. The allocator's page-cap fallback alone lets
+            // replay finish while holding roughly five times the heap (measured ~600 KB vs ~120 KB here), so assert on
+            // the heap replay actually held. Sampling after startup cannot show this: the resizer keeps trimming once
+            // the server is up, so both converge to the same floor. The bound is well clear of both figures, since the
+            // point is to catch replay running unmanaged rather than to pin an exact size.
+            var replayHeapBytes = server.Provider.StoreWrapper.AofReplayEndHeapSizeBytes;
+            ClassicAssert.Greater(replayHeapBytes, 0, "AOF replay should have been sampled");
+            ClassicAssert.Less(replayHeapBytes, 300_000,
+                $"AOF replay held {replayHeapBytes} bytes of object heap; replay is not being memory-budget-managed");
+        }
+
+        [Test]
         public void SeAofRecoverTest()
         {
             server.Dispose(false);
