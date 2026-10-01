@@ -85,7 +85,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Captures formatted log messages so a test can assert on what recovery reported.
+        /// Asserts that every database returns its own values and none of another database's.
         /// </summary>
         static void AssertNoCrossDatabaseReads(ConnectionMultiplexer redis, Func<IDatabase, int, string> read, Func<int, int, string> expected)
         {
@@ -434,6 +434,100 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A checkpoint taken while the mapping is the identity records no mapping at all, so an absent
+        /// mapping does not mean the checkpoint has no opinion: it states "identity, as of this epoch".
+        /// Swapping and then swapping back leaves the newest checkpoint holding the identity at the
+        /// highest epoch. Ranking checkpoints by whether they carry a mapping, rather than by epoch,
+        /// lets the undone swap win and hands each database the other's records.
+        /// </summary>
+        [Test]
+        public void LatestIdentityMappingOutranksAnEarlierSwap()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (var dbId = 0; dbId < NumDbs; dbId++)
+                    WriteStrings(redis.GetDatabase(dbId), dbId);
+
+                // Give both slots a checkpoint, so neither is missing when recovery scans.
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SAVE"));
+
+                // Swap, then checkpoint database 1 alone - which is now storage slot 0 - so only that
+                // slot records the mapping [1, 0].
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SWAPDB", 0, 1));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SAVE", 1));
+
+                // Swap back and again checkpoint database 1 alone, now storage slot 1. It records the
+                // identity, writing no mapping, at a higher epoch than slot 0's. That is the checkpoint
+                // that has to win.
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SWAPDB", 0, 1));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SAVE", 1));
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, tryRecover: true);
+            server.Start();
+
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+
+            // The two swaps cancelled out, so every database holds exactly what it was given.
+            AssertNoCrossDatabaseReads(redis2, ReadString, StrVal);
+        }
+
+        /// <summary>
+        /// The default database is created before any checkpoint can be read, so it already occupies id 0
+        /// when the mapping asks for a recovered store to be placed there. Overwriting it would leak its
+        /// store and devices and leave the active-id list naming database 0 twice, so it has to be
+        /// disposed and the list rebuilt.
+        /// </summary>
+        [Test]
+        public void MappedDatabaseDisplacesThePlaceholderCreatedBeforeRecovery()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                for (var dbId = 0; dbId < NumDbs; dbId++)
+                    WriteStrings(redis.GetDatabase(dbId), dbId);
+
+                // Slot 1 becomes database 0, so the checkpoint records the mapping [1, 0].
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SWAPDB", 0, 1));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("SAVE"));
+            }
+
+            server.Dispose(false);
+            server = null;
+
+            // Remove storage slot 0 entirely. Slot 1 survives and the mapping sends it to database 0,
+            // which is the id the default database is about to be created under.
+            Directory.Delete(Path.Combine(StoreDir, "checkpoints"), recursive: true);
+            foreach (var path in Directory.GetFiles(StoreDir, "hlog*.*").Where(static p => !Path.GetFileName(p).Contains('_')))
+                File.Delete(path);
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, tryRecover: true);
+            server.Start();
+
+            using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+
+            // Slot 1 holds what was written to database 1, and the mapping labels it database 0.
+            var (db0Correct, _) = CountValues(redis2.GetDatabase(0), 1, ReadString, StrVal);
+            ClassicAssert.AreEqual(NumKeys, db0Correct, "Storage slot 1 did not recover under the database ID the mapping assigned it");
+
+            // Slot 0 is gone, so the id it was mapped to recovers nothing rather than another slot's records.
+            var (db1Correct, db1Foreign) = CountValues(redis2.GetDatabase(1), 1, ReadString, StrVal);
+            ClassicAssert.AreEqual(0, db1Correct + db1Foreign, "Database 1 recovered records although the storage slot mapped to it was removed");
+
+            // Checkpointing walks the active database id list, so a duplicated entry surfaces here rather
+            // than being silently tolerated.
+            ClassicAssert.AreEqual("OK", (string)redis2.GetDatabase(0).Execute("SAVE"));
+        }
+
+        /// <summary>
         /// A store written before databases had their own log devices has a checkpoint for database 1 but
         /// no hlog_1 to recover it from, and database 0's log is the shared one. Both must be reported
         /// explicitly rather than surfacing as the same message a fresh start produces.
@@ -478,9 +572,6 @@ namespace Garnet.test
             string reported;
             lock (logs)
                 reported = logBuffer.ToString();
-
-            var matched = reported.Split(Environment.NewLine).Where(l => l.Contains("2152", StringComparison.Ordinal)).ToArray();
-            TestContext.Progress.WriteLine(string.Join(Environment.NewLine, matched));
 
             ClassicAssert.IsTrue(reported.Contains("Database 1 was checkpointed before", StringComparison.Ordinal),
                 "Recovery did not report database 1's unrecoverable tiered records");

@@ -139,7 +139,10 @@ namespace Garnet.server
             // authoritative on its own - which matters because databases are checkpointed individually and
             // can therefore disagree.
             int[] persistedMapping = null;
-            long persistedSwapEpoch = 0;
+
+            // Below every epoch a checkpoint can record, so the first current-format checkpoint always
+            // wins outright, including one taken at epoch 0.
+            var persistedSwapEpoch = -1L;
 
             // Recover each store under the index of its own storage slot, then relabel once at the end.
             // Recovering directly under the mapped id cannot work: the default database already
@@ -155,8 +158,15 @@ namespace Garnet.server
                 {
                     storeVersion = await RecoverDatabaseCheckpointAsync(db).ConfigureAwait(false);
 
+                    // A checkpoint taken while the mapping was the identity records no mapping at all, so
+                    // an absent mapping is not an absent opinion: it states "identity, as of this epoch".
+                    // Ranking therefore has to be by epoch alone. Gating on a mapping being present would
+                    // let a swap that was later undone outrank the very checkpoint that undid it. Only
+                    // checkpoints carrying the epoch can be ranked, since below that version both fields
+                    // read back as defaults that assert nothing.
                     var outcome = db.CheckpointRecovery;
-                    if (outcome.DatabaseMapping?.Length > 0 && (persistedMapping == null || outcome.SwapEpoch > persistedSwapEpoch))
+                    if (outcome.CheckpointVersion >= HybridLogRecoveryInfo.DatabaseMappingCheckpointVersion &&
+                        outcome.SwapEpoch > persistedSwapEpoch)
                     {
                         persistedMapping = outcome.DatabaseMapping;
                         persistedSwapEpoch = outcome.SwapEpoch;
@@ -243,6 +253,30 @@ namespace Garnet.server
                 for (var i = 0; i < storageSlots.Length; i++)
                     databaseMapSnapshot[storageSlots[i]] = null;
 
+                // A target id can still be occupied by a database that recovered nothing. The default
+                // database is created before any checkpoint can be read, so it holds id 0 even when slot 0
+                // has no checkpoint directory at all and some other slot is mapped onto that id. It owns a
+                // store and that store's devices, so it has to be disposed rather than overwritten:
+                // ExpandableMap does not expect an occupied entry and would silently leak it. The
+                // recovered stores were detached just above, so nothing disposed here is one of them.
+                for (var i = 0; i < logicalIds.Length; i++)
+                {
+                    // An id past the map's current length cannot be occupied by anything; placement below
+                    // expands the map to reach it.
+                    if (logicalIds[i] >= databaseMapSnapshot.Length)
+                        continue;
+
+                    var displaced = databaseMapSnapshot[logicalIds[i]];
+                    if (displaced == null)
+                        continue;
+
+                    Logger?.LogInformation(
+                        "Discarding the empty database {dbId} created before recovery; storage slot {storageSlot} takes that id per the recorded mapping",
+                        displaced.Id, storageSlots[i]);
+                    displaced.Dispose();
+                    databaseMapSnapshot[logicalIds[i]] = null;
+                }
+
                 for (var i = 0; i < storageSlots.Length; i++)
                 {
                     var db = recoveredBySlotIndex[i];
@@ -268,14 +302,29 @@ namespace Garnet.server
                 databases.mapLock.WriteUnlock();
             }
 
-            // activeDbIds holds logical ids, which have just changed; rewrite the entries in place.
-            var activeDbIdsMapSize = activeDbIds.ActualSize;
-            var activeDbIdsMapSnapshot = activeDbIds.Map;
-            for (var i = 0; i < activeDbIdsMapSize; i++)
+            RebuildActiveDatabaseIds();
+        }
+
+        /// <summary>
+        /// Rebuild the active database id list from the database map. Relabelling changes which ids are
+        /// live and can retire one outright - a slot recovered under another slot's id leaves its own id
+        /// vacant, and a database the mapping displaced is gone altogether - so the list is rebuilt rather
+        /// than rewritten in place, which would keep a stale entry and report one database twice. Called
+        /// only while recovery is still single-threaded.
+        /// </summary>
+        private void RebuildActiveDatabaseIds()
+        {
+            var databasesMapSize = databases.ActualSize;
+            var databaseMapSnapshot = databases.Map;
+
+            activeDbIds = new ExpandableMap<int>(1, 0, StoreWrapper.serverOptions.MaxDatabases - 1);
+            for (var dbId = 0; dbId < databasesMapSize; dbId++)
             {
-                var slotIdx = Array.IndexOf(storageSlots, activeDbIdsMapSnapshot[i]);
-                if (slotIdx >= 0)
-                    activeDbIdsMapSnapshot[i] = logicalIds[slotIdx];
+                if (databaseMapSnapshot[dbId] == null)
+                    continue;
+
+                if (!activeDbIds.TryGetNextId(out var nextIdx) || !activeDbIds.TrySetValue(nextIdx, dbId))
+                    throw new GarnetException($"Failed to rebuild the active database ID list at database ID {dbId}.");
             }
         }
 
@@ -397,12 +446,21 @@ namespace Garnet.server
         /// </summary>
         /// <param name="storageSlots">Storage slots discovered on disk</param>
         /// <param name="mapping">Highest-epoch mapping of storage slot to logical database id recovered
-        /// from the checkpoints, or null if none recorded one</param>
-        /// <param name="epoch">Swap epoch <paramref name="mapping"/> belongs to</param>
+        /// from the checkpoints, or null if the winning checkpoint recorded the identity</param>
+        /// <param name="epoch">Swap epoch <paramref name="mapping"/> belongs to, or -1 if no checkpoint
+        /// recorded one</param>
         /// <returns>Logical database id for each entry of <paramref name="storageSlots"/>, or
         /// <paramref name="storageSlots"/> itself when the mapping is the identity or unusable</returns>
         private int[] ResolveLogicalDatabaseIds(int[] storageSlots, int[] mapping, long epoch)
         {
+            // Resume from the epoch that was read back, whatever mapping came with it, so a swap made
+            // after this recovery outranks it. This matters most when the winning checkpoint recorded the
+            // identity: it writes no mapping, but its epoch still has to carry forward, or the next swap
+            // would restart numbering below a mapping already on disk. Kept even when the mapping is
+            // rejected below, which is strictly safer: a later swap then outranks the rejected one.
+            if (epoch >= 0)
+                swapEpoch = epoch;
+
             if (mapping == null)
                 return storageSlots;
 
@@ -414,10 +472,6 @@ namespace Garnet.server
                     epoch);
                 return storageSlots;
             }
-
-            // Resume from the persisted epoch so a swap made after this recovery outranks the mapping
-            // that was just read back.
-            swapEpoch = epoch;
 
             for (var i = 0; i < storageSlots.Length; i++)
             {

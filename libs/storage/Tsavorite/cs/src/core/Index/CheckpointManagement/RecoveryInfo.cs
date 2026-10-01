@@ -23,6 +23,15 @@ namespace Tsavorite.core
         public const int MinRecoverableCheckpointVersion = 7;
 
         /// <summary>
+        /// First checkpoint version whose payload carries <see cref="databaseMapping"/> and
+        /// <see cref="swapEpoch"/>. Below it both read back as their defaults, which are
+        /// indistinguishable from a checkpoint that deliberately recorded the identity mapping at a
+        /// known epoch, so a recovering host must not read an older checkpoint as a statement about
+        /// either field.
+        /// </summary>
+        public const int DatabaseMappingCheckpointVersion = 8;
+
+        /// <summary>
         /// HybridLogRecoveryVersion 
         /// </summary>
         public int hybridLogRecoveryVersion;

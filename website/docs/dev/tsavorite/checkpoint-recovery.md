@@ -88,26 +88,53 @@ checkpoints.
 
 ## Checksum
 
-`Checksum()` covers `guid`, the log addresses, and the object log tail positions. It deliberately
-**excludes** the host-supplied fields (`cookie`, `databaseMapping`, `swapEpoch`).
+`Checksum(int cversion)` always covers `guid`, the log addresses, and the object log tail positions,
+xored together. What it does with the host-supplied fields (`cookie`, `databaseMapping`, `swapEpoch`)
+depends on the version being checksummed:
 
-That exclusion is what allows one checksum formula to validate payloads at more than one version: a
-downlevel payload and a current one describing the same checkpoint produce the same checksum. Host
-fields are validated by the host at the point of use instead — for example, a mapping that is not a
-permutation is rejected by its consumer rather than by the checksum.
+| Version | Host-supplied fields |
+| --- | --- |
+| `MinRecoverableCheckpointVersion` (7) | **Excluded.** Checkpoints at this version were written before the fields joined the checksum, so including them would make every one of them fail to verify. |
+| Above 7 | **Included**, by xoring in `HostSuppliedFieldsChecksum()`. |
+
+The version gate is what allows one formula to validate payloads at more than one version: each
+payload is checksummed the way its own version was written.
+
+`HostSuppliedFieldsChecksum()` folds the fields with FNV-1a rather than xoring them, because they are
+sequences rather than scalars — under a plain xor, two entries swapping places, or a value repeated
+twice, would leave the checksum unchanged. A null sequence folds identically to an empty one, matching
+the serializer, which writes both as a zero length and reads both back as null.
+
+The checksum establishes only that the fields are intact, not that they are meaningful. Semantic
+validation stays with the host at the point of use — a mapping that is not a permutation is rejected
+by its consumer, not by the checksum.
 
 ## Host hooks
 
-`ICheckpointManager` exposes two hooks, both called from `WriteHybridLogMetaInfo` immediately before
-the metadata is committed:
+`ICheckpointManager` exposes two read hooks, both called from `WriteHybridLogMetaInfo` immediately
+before the metadata is committed:
 
 ```csharp
 byte[] GetCookie();
 int[] GetDatabaseMapping(out long swapEpoch);
 ```
 
-`DeviceLogCommitCheckpointManager` implements both as virtual no-ops, returning `null` and `0`, so a
-host that does not care is unaffected and its metadata is unchanged.
+A host that relabels databases supplies the mapping through a third member:
+
+```csharp
+void SetDatabaseMappingProvider(Func<(int[] Mapping, long Epoch)> provider);
+```
+
+The provider is *queried* while the checkpoint runs rather than pushed on each relabelling, so a
+checkpoint always records the mapping that was in force at the moment it ran, with no window in which
+the two disagree.
+
+`DeviceLogCommitCheckpointManager` implements `GetCookie` as a virtual no-op returning `null`, and
+implements `SetDatabaseMappingProvider` as a virtual no-op that *discards* the provider — a checkpoint
+manager whose host does not relabel databases records no mapping, and its metadata is unchanged.
+`GetDatabaseMapping` is not virtual: it returns whatever provider a subclass accepted, or `null` and
+`0` when none was. Subclasses opt in by overriding the setter to store the provider, which is what
+Garnet's `GarnetCheckpointManager` does.
 
 Reading needs no hook: `HybridLogRecoveryInfo.Recover(token, checkpointManager)` deserializes the whole
 struct, so every field including the host-supplied ones is available to the caller. An overload also
