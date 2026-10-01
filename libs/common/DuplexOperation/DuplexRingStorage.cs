@@ -61,8 +61,7 @@ namespace Garnet.client
             internal TCompletion completion;
         }
 
-        internal const int RingDescriptorSize = sizeof(long);
-        internal const int InlineHeaderSize = sizeof(long);
+        internal const int RecordHeaderSize = sizeof(long);
 
         internal const int TagShift = 56;
         const long PayloadMetaMask = (1L << TagShift) - 1;
@@ -80,7 +79,7 @@ namespace Garnet.client
         internal int PageSizeBits { get; }
         internal int PageSizeMask { get; }
         internal int CompletionCapacity { get; }
-        internal int MaxInlinePayloadSize => PageSizeBytes - InlineHeaderSize;
+        internal int MaxInlinePayloadSize => PageSizeBytes - RecordHeaderSize;
 
         internal DuplexRingStorage(
             int ringPageSizeBytes,
@@ -92,7 +91,7 @@ namespace Garnet.client
             PageSizeBits = System.Numerics.BitOperations.Log2((uint)ringPageSizeBytes);
             PageSizeMask = ringPageSizeBytes - 1;
 
-            var ringSlotCount = ringPageCount * ringPageSizeBytes / RingDescriptorSize;
+            var ringSlotCount = ringPageCount * ringPageSizeBytes / RecordHeaderSize;
             requests = new TRequest[ringSlotCount];
 
             bufferPages = new RingPage[ringPageCount];
@@ -105,11 +104,20 @@ namespace Garnet.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int InlineRecordSize(int payloadLength)
-            => (InlineHeaderSize + payloadLength + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
+        static int AlignedInlineRecordSize(int payloadLength)
+            => (RecordHeaderSize + payloadLength + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
 
+        /// <summary>
+        /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline.
+        /// An inline record packs its whole payload into one page after an 8-byte header; otherwise the record
+        /// is just the 8-byte out-of-line descriptor pointing at a separately rented payload buffer.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool CanInline(int payloadLength) => (uint)payloadLength <= (uint)MaxInlinePayloadSize;
+        internal int GetRecordSize(int payloadLength, out bool isInline)
+        {
+            isInline = (uint)payloadLength <= (uint)MaxInlinePayloadSize;
+            return isInline ? AlignedInlineRecordSize(payloadLength) : RecordHeaderSize;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static long EncodeDescriptor(RequestKind kind, long meta)
@@ -123,7 +131,7 @@ namespace Garnet.client
         {
             var pageIndex = (int)((address >> PageSizeBits) & (PageCount - 1));
             var offset = (int)(address & PageSizeMask);
-            return ((pageIndex * PageSizeBytes) + offset) / RingDescriptorSize;
+            return ((pageIndex * PageSizeBytes) + offset) / RecordHeaderSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -165,7 +173,7 @@ namespace Garnet.client
             if (tag == (byte)RequestKind.Uninitialized)
             {
                 kind = RequestKind.Uninitialized;
-                recordSize = RingDescriptorSize;
+                recordSize = RecordHeaderSize;
                 key = default;
                 return false;
             }
@@ -175,12 +183,12 @@ namespace Garnet.client
             {
                 kind = RequestKind.Inline;
                 payloadLength = (int)key;
-                recordSize = InlineRecordSize(payloadLength);
+                recordSize = AlignedInlineRecordSize(payloadLength);
             }
             else
             {
                 kind = RequestKind.OutOfLine;
-                recordSize = RingDescriptorSize;
+                recordSize = RecordHeaderSize;
             }
 
             // Preserve metadata while claiming so a losing walker can still recover the record stride.
@@ -217,7 +225,7 @@ namespace Garnet.client
             var basePtr = GetPhysicalAddress(address);
             Volatile.Write(ref *(long*)basePtr, EncodeDescriptor(RequestKind.Inline, payloadLength));
             Interlocked.MemoryBarrier();
-            return (byte*)(basePtr + InlineHeaderSize);
+            return (byte*)(basePtr + RecordHeaderSize);
         }
 
         internal void RegisterCompletion(int ticket, TCompletion completion)

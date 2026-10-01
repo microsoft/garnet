@@ -29,8 +29,6 @@ namespace Garnet.client
     /// </summary>
     public sealed partial class GarnetLightClient : IServerHook, IMessageConsumer, IDisposable
     {
-        const int PayloadDescriptorSize = sizeof(long);
-
         // Number of circular pages backing the request lane's descriptor buffer.
         const int PageBufferCount = 2;
 
@@ -450,12 +448,10 @@ namespace Garnet.client
             // automatic and driven solely by whether the whole command fits in a single ring page. The decision
             // depends only on totalLength versus fixed page geometry, not on the current page fill, so it is
             // loop-invariant and made once here rather than re-evaluated per allocation attempt.
-            var inline = networkWriter.CanInline(totalLength);
-            var recordSize = inline ? networkWriter.GetInlineRecordSize(totalLength) : PayloadDescriptorSize;
+            var recordSize = networkWriter.GetRecordSize(totalLength, out var inline);
 
             // Out-of-line rents its payload buffer and serializes into it up front, outside the epoch. Inline
             // rents nothing and defers serialization until it owns a page slot (written under the epoch below).
-            var allocationSize = inline ? 0 : networkWriter.GetPayloadAllocationSize(totalLength);
 
             LightRequest payload = default;
             var payloadRegistered = false;
@@ -490,7 +486,7 @@ namespace Garnet.client
                 {
                     try
                     {
-                        payload = networkWriter.RentPayloadBuffer(totalLength, allocationSize);
+                        payload = networkWriter.RentPayloadBuffer(totalLength);
 
                         unsafe
                         {
@@ -628,9 +624,7 @@ namespace Garnet.client
             length = param2.Length;
             totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
 
-            var inline = networkWriter.CanInline(totalLength);
-            var recordSize = inline ? networkWriter.GetInlineRecordSize(totalLength) : PayloadDescriptorSize;
-            var allocationSize = inline ? 0 : networkWriter.GetPayloadAllocationSize(totalLength);
+            var recordSize = networkWriter.GetRecordSize(totalLength, out var inline);
 
             LightRequest payload = default;
             var payloadRegistered = false;
@@ -655,7 +649,7 @@ namespace Garnet.client
             {
                 if (!inline)
                 {
-                    payload = networkWriter.RentPayloadBuffer(totalLength, allocationSize);
+                    payload = networkWriter.RentPayloadBuffer(totalLength);
 
                     unsafe
                     {

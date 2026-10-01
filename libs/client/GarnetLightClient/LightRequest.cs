@@ -18,29 +18,29 @@ namespace Garnet.client
         /// <summary>
         /// Rented buffer holding the serialized command bytes.
         /// </summary>
-        internal PoolEntry Entry;
+        internal PoolEntry poolEntry;
 
         int length;
 
         /// <inheritdoc />
-        public byte[] Buffer => Entry.entry;
+        public byte[] Buffer => poolEntry.entry;
 
         /// <inheritdoc />
-        public int Length => length;
+        public readonly int Length => length;
 
-        internal LightRequest(PoolEntry entry, int length)
+        internal LightRequest(PoolEntry poolEntry, int length)
         {
-            this.Entry = entry;
+            this.poolEntry = poolEntry;
             this.length = length;
         }
 
         /// <inheritdoc />
         public void Dispose()
         {
-            if (Entry == null)
+            if (poolEntry == null)
                 return;
 
-            Entry.Dispose();
+            poolEntry.Dispose();
         }
     }
 }

@@ -79,18 +79,17 @@ namespace Garnet.client
         where TRequest : struct, IRequest
         where TTransport : struct, IDuplexRingTransport
     {
-        /// <summary>Bytes an inline record occupies in a page: the 8-byte header plus its payload, rounded up
-        /// to the record grid.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int GetInlineRecordSize(int payloadLength)
-            => DuplexRingStorage<TRequest, TCompletion>.InlineRecordSize(payloadLength);
-
         /// <summary>Largest command payload that can be written inline into a single page.</summary>
         internal int MaxInlinePayloadSize => storage.MaxInlinePayloadSize;
 
-        /// <summary>True when a command of <paramref name="payloadLength"/> bytes fits inline in one page.</summary>
+        /// <summary>
+        /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline
+        /// (its whole payload packed into one page after an 8-byte header) or out-of-line (an 8-byte descriptor
+        /// pointing at a separately rented payload buffer).
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool CanInline(int payloadLength) => storage.CanInline(payloadLength);
+        internal int GetRecordSize(int payloadLength, out bool isInline)
+            => storage.GetRecordSize(payloadLength, out isInline);
 
         public readonly LightEpoch epoch;
 
@@ -221,7 +220,7 @@ namespace Garnet.client
         /// </para>
         /// </summary>
         /// <param name="address">Descriptor address returned by <see cref="TryScheduleOperation"/> for an
-        /// <see cref="GetInlineRecordSize"/>-sized allocation.</param>
+        /// inline-sized allocation (see <see cref="GetRecordSize"/>).</param>
         /// <param name="payloadLength">Number of payload bytes the caller will write.</param>
         /// <returns>Pointer to the first payload byte (immediately after the 8-byte header).</returns>
         internal unsafe byte* RegisterInlineRecord(long address, int payloadLength)
@@ -324,11 +323,11 @@ namespace Garnet.client
 
                 var realEndOffset = storage.ConsumePageEndOffset(flushPage, endOffset);
 
-                if ((startOffset & (DuplexRingStorage<TRequest, TCompletion>.RingDescriptorSize - 1)) != 0 ||
-                    (realEndOffset & (DuplexRingStorage<TRequest, TCompletion>.RingDescriptorSize - 1)) != 0)
+                if ((startOffset & (DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize - 1)) != 0 ||
+                    (realEndOffset & (DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize - 1)) != 0)
                 {
-                    FailOnRequestFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {DuplexRingStorage<TRequest, TCompletion>.RingDescriptorSize}-byte records.");
-                    realEndOffset -= (realEndOffset - startOffset) & (DuplexRingStorage<TRequest, TCompletion>.RingDescriptorSize - 1);
+                    FailOnRequestFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize}-byte records.");
+                    realEndOffset -= (realEndOffset - startOffset) & (DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize - 1);
                 }
 
                 for (var offset = startOffset; offset < realEndOffset;)
@@ -371,7 +370,7 @@ namespace Garnet.client
                     if (kind == RequestKind.OutOfLine)
                         ProcessRequestChunks(request.Buffer, 0, request.Length, request, count, ref flushFailed);
                     else if (payloadLength > 0)
-                        ProcessRequestChunks(storage.GetPageBuffer(flushPage), (int)(offset + DuplexRingStorage<TRequest, TCompletion>.InlineHeaderSize), payloadLength, default, count, ref flushFailed);
+                        ProcessRequestChunks(storage.GetPageBuffer(flushPage), (int)(offset + DuplexRingStorage<TRequest, TCompletion>.RecordHeaderSize), payloadLength, default, count, ref flushFailed);
 
                     offset += recordSize;
                 }

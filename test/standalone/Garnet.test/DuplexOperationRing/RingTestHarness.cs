@@ -114,7 +114,7 @@ namespace Garnet.test
     /// flush-result context) into a completed payload, tracks buffer disposals for leak/double-dispose
     /// detection, and can inject send failures. Producers run the same allocate/register/drain dance the real
     /// client uses, choosing inline vs out-of-line automatically via
-    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}.CanInline"/>.
+    /// <see cref="DuplexOperationRing{TRequest, TCompletion, TTransport}.GetRecordSize"/>.
     /// </summary>
     internal sealed class RingTestHarness : IDisposable
     {
@@ -133,8 +133,6 @@ namespace Garnet.test
             public void OnFlushError(Exception exception)
                 => owner.OnFlushError(exception);
         }
-
-        const int DescriptorSize = sizeof(long);
 
         internal readonly LightEpoch epoch;
         internal readonly DuplexOperationRing<TestRequest, int, RingTransport> Ring;
@@ -244,10 +242,7 @@ namespace Garnet.test
         internal async Task EnqueueAsync(byte[] payload, bool expectCompletion, CancellationToken token)
         {
             var totalLength = payload.Length;
-            var inline = Ring.CanInline(totalLength);
-            var size = inline
-                ? DuplexOperationRing<TestRequest, int, RingTransport>.GetInlineRecordSize(totalLength)
-                : DescriptorSize;
+            var size = Ring.GetRecordSize(totalLength, out var inline);
             TestRequest outOfLineRequest = default;
             var outOfLineRequestCreated = false;
             var outOfLineRequestRegistered = false;

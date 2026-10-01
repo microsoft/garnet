@@ -114,7 +114,7 @@ namespace Garnet.client
             networkPool?.Dispose();
         }
 
-        internal int GetPayloadAllocationSize(int length)
+        internal LightRequest RentPayloadBuffer(int length)
         {
             var allocationSize = length;
             if (length <= networkPool.MaxAllocationSize)
@@ -125,11 +125,6 @@ namespace Garnet.client
                     allocationSize = (int)roundedSize;
             }
 
-            return allocationSize;
-        }
-
-        internal LightRequest RentPayloadBuffer(int length, int allocationSize)
-        {
             var entry = networkPool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
             ObjectDisposedException.ThrowIf(entry is null, this);
             return new LightRequest(entry, length);
@@ -146,14 +141,12 @@ namespace Garnet.client
             out CompletionEvent waitEvent)
             => ring.TryScheduleOperation(requestSize, expectsResponse, out reservation, out waitEvent);
 
-        /// <summary>True when a command of <paramref name="payloadLength"/> bytes fits inline in one page.</summary>
+        /// <summary>
+        /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline
+        /// (its whole payload packed into one page) or out-of-line (an 8-byte descriptor plus a rented buffer).
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool CanInline(int payloadLength) => ring.CanInline(payloadLength);
-
-        /// <summary>Ring bytes an inline command of <paramref name="payloadLength"/> reserves.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetInlineRecordSize(int payloadLength)
-            => DuplexOperationRing<LightRequest, TcsWrapper, RingTransport>.GetInlineRecordSize(payloadLength);
+        public int GetRecordSize(int payloadLength, out bool isInline) => ring.GetRecordSize(payloadLength, out isInline);
 
         /// <summary>
         /// Reserve an inline record and return a pointer to write its payload directly into page memory,
