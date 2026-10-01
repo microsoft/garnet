@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -14,8 +15,8 @@ namespace Garnet.test
     /// Stage 1 correctness tests for <c>DuplexOperationChannel</c> exercised in
     /// isolation (no socket, no server) through <see cref="RingTestHarness"/>. Covers the inline / out-of-line
     /// size matrix, single- and multi-chunk framing, concurrent mixed ingestion under page wrap and
-    /// back-pressure, response-expecting flow with a reply-advancing reader, and the empty-slot stride recovered
-    /// during teardown.
+    /// back-pressure, response-expecting flow with a reply-advancing reader, flush-lane back-pressure under
+    /// deferred transport completions, and the empty-slot stride recovered during teardown.
     /// </summary>
     [TestFixture]
     public class DuplexOperationRingTests : TestBase
@@ -171,6 +172,88 @@ namespace Garnet.test
             readerDone.Cancel();
             try { await reader.ConfigureAwait(false); } catch (OperationCanceledException) { }
 
+            h.AssertReceived(expectedIds);
+            h.AssertNoBufferLeaks();
+        }
+
+        /// <summary>
+        /// 1c (flush lane) — with transport completions deferred out of band, producers must park on request-lane
+        /// back-pressure and then make forward progress only as completions are released one at a time, with no
+        /// lost wakeups, full and intact delivery, and exactly-once disposal.
+        /// </summary>
+        [Test]
+        public async Task DelayedCompletions_FlushBackpressure_ReleasesWithoutLostWakeups([Values(2, 4)] int producers)
+        {
+            const int perProducer = 150;
+            var total = producers * perProducer;
+
+            // Small ring and small chunks: the request lane fills after only a handful of records (forcing
+            // producers to park), and multi-chunk requests exercise partial completion while completions are held.
+            using var h = new RingTestHarness(pageSize: 256, pageCount: 4, completionCapacity: 64, maxChunkSize: 64);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+            // Hold every transport send-completion in a side queue instead of finalizing it inline. Nothing the
+            // ring flushes can advance flushedUntilAddress until the test releases it below.
+            h.DeferCompletions();
+
+            var expectedIds = new List<long>(total);
+            for (var p = 0; p < producers; p++)
+            {
+                for (var i = 0; i < perProducer; i++)
+                    expectedIds.Add(((long)(p + 1) * 1_000_000) + i);
+            }
+
+            var tasks = new Task[producers];
+            for (var p = 0; p < producers; p++)
+            {
+                var producer = p;
+                tasks[p] = Task.Run(async () =>
+                {
+                    var rng = new Random(4000 + producer);
+                    for (var i = 0; i < perProducer; i++)
+                    {
+                        var id = ((long)(producer + 1) * 1_000_000) + i;
+                        var size = RingPayload.HeaderSize + rng.Next(0, 1024);
+                        await h.EnqueueAsync(RingPayload.Create(id, size), expectCompletion: false, cts.Token).ConfigureAwait(false);
+                    }
+                }, cts.Token);
+            }
+
+            var all = Task.WhenAll(tasks);
+
+            // Let producers fill the ring and park. Pumping drives flushes (so records are sent and their
+            // completions queued), but with completions withheld flushedUntilAddress cannot advance, so no payload
+            // can finalize and the whole workload cannot drain.
+            var sw = Stopwatch.StartNew();
+            while (sw.Elapsed < TimeSpan.FromMilliseconds(250))
+            {
+                h.Pump();
+                await Task.Delay(5, cts.Token).ConfigureAwait(false);
+            }
+            ClassicAssert.AreEqual(0, h.CompletedCount, "No payload may finalize while all transport completions are deferred.");
+            ClassicAssert.IsFalse(all.IsCompleted, "Producers should be parked on request-lane back-pressure while completions are withheld.");
+
+            // Release completions one at a time, pumping to keep flushing freshly unblocked records. Each release
+            // advances the flushed watermark and must wake a parked producer; a lost wakeup would stall this loop
+            // until the timeout fires.
+            var drainTimeout = TimeSpan.FromSeconds(90);
+            sw.Restart();
+            while (h.CompletedCount < total)
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                var released = h.CompleteOneDeferredChunk();
+                h.Pump();
+                if (!released)
+                    await Task.Delay(1, cts.Token).ConfigureAwait(false);
+                if (sw.Elapsed > drainTimeout)
+                    throw new TimeoutException($"Delayed-completion drain stalled: {h.CompletedCount}/{total} finalized, {h.DeferredCompletionCount} completions still deferred (possible lost wakeup).");
+            }
+
+            await all.ConfigureAwait(false);
+
+            // Every deferred completion was released, every payload arrived intact exactly once, and every
+            // out-of-line buffer was disposed exactly once.
+            ClassicAssert.AreEqual(0, h.DeferredCompletionCount, "All deferred completions should have been released.");
             h.AssertReceived(expectedIds);
             h.AssertNoBufferLeaks();
         }
