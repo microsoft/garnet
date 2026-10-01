@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -1366,19 +1366,29 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Check if there is sufficient space to store an ETag in the log record
+        /// The heap memory held by this record's value, or 0 if the value is inline or its out-of-line slot is unpopulated.
         /// </summary>
+        /// <remarks>
+        /// A record can be out-of-line by layout while its objectId slot is still <see cref="ObjectIdMap.InvalidObjectId"/>:
+        /// the record is allocated and framed from the size info before the value is produced, and a CopyUpdater that defers
+        /// population (or declines, e.g. for an expired source) leaves the slot unset. Such a record holds no heap, so report
+        /// 0 rather than resolving the slot. <see cref="CalculateHeapMemorySize"/> and
+        /// <see cref="LogField.ClearObjectIdAndConvertToInline"/> apply the same guard.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetValueHeapMemorySize()
         {
             if (DataHeader.ValueIsInline)
                 return 0;
 
-            if (DataHeader.ValueIsObject)
-                return ValueObject.HeapMemorySize;
-
             var (_ /*length*/, dataAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
-            return objectIdMap.GetOverflowByteArray(*(int*)dataAddress).HeapMemorySize;
+            var objectId = *(int*)dataAddress;
+            if (objectId == ObjectIdMap.InvalidObjectId)
+                return 0;
+
+            return DataHeader.ValueIsObject
+                ? objectIdMap.GetHeapObject(objectId).HeapMemorySize
+                : objectIdMap.GetOverflowByteArray(objectId).HeapMemorySize;
         }
 
         /// <summary>
