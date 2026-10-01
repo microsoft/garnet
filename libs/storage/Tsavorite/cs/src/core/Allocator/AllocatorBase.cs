@@ -1255,8 +1255,11 @@ namespace Tsavorite.core
 
             // First check whether we need to shift HeadAddress. If we have a logSizeTracker that's over budget then we have already issued
             // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
+            // When the background resizer is not running (before it is started, or after it has been stopped for shutdown) it will not issue that shift, and
+            // NeedToWaitForClose does not wait on it either, so we must request the MaxAllocatedPageCount-based shift here as we do when there is no logSizeTracker;
+            // otherwise the page count would grow past the cap unchecked.
             var desiredHeadAddress = HeadAddress;
-            if (logSizeTracker is null || !logSizeTracker.IsOverBudget)
+            if (logSizeTracker is null || !logSizeTracker.IsRunning || !logSizeTracker.IsOverBudget)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
@@ -1290,10 +1293,10 @@ namespace Tsavorite.core
 
             // First check whether we need to shift HeadAddress. If we are not forcing for flush and have a logSizeTracker that's over budget then we have already issued
             // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
-            // When the background resizer is not running (e.g. during recovery/AOF replay, before it is started post-recovery), we cannot defer eviction to it, so we
+            // When the background resizer is not running (e.g. before it is started, or after it has been stopped for shutdown), we cannot defer eviction to it, so we
             // evict synchronously here based on MaxAllocatedPageCount; otherwise the allocation retry loop would livelock waiting for a page close that never happens.
             var desiredHeadAddress = HeadAddress;
-            if (needSHA || logSizeTracker is null || !logSizeTracker.IsOverBudget || !logSizeTracker.IsRunning)
+            if (needSHA || logSizeTracker is null || !logSizeTracker.IsRunning || !logSizeTracker.IsOverBudget)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
@@ -1327,8 +1330,8 @@ namespace Tsavorite.core
         /// <summary>
         /// If the page we are trying to allocate is past the last page with an unclosed address region, then we can retry immediately
         /// because this is called after NeedToWait, so we know we've completed the wait on flushEvent for the necessary pages to be flushed,
-        /// and are waiting for OnPagesClosed to be completed. Similarly, if the log size tracker is over budget, it has already issued
-        /// the ShiftHeadAddress that will close pages, so we can retry immediately.
+        /// and are waiting for OnPagesClosed to be completed. Similarly, if the log size tracker is over budget and its background resizer
+        /// is running, that resizer will issue the ShiftHeadAddress that closes pages, so we can retry immediately.
         /// </summary>
         /// <param name="page">The page we are about to move to</param>
         /// <param name="needSHA">Returns whether we need to call <see cref="ShiftHeadAddress(long)"/> to advance HeadAddress so ClosedUntilAddress will advance</param>
@@ -1342,8 +1345,15 @@ namespace Tsavorite.core
             }
 
             needSHA = false;
-            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
+
+            // If the resizer is not running (before it is started, or after it has been stopped for shutdown) nobody will act on the Signal() below,
+            // so waiting for it would livelock the allocation retry loop when we are over budget because of heap size rather than page count.
+            // NeedToShiftAddress and IssueShiftAddress still enforce MaxAllocatedPageCount synchronously in that case, as they do when there is no
+            // size tracker at all. Test IsRunning before IsBeyondSizeLimitAndCanEvict: that method reads HeadAddress and TailAddress, which Recovery
+            // has not set up yet, so the short-circuit keeps it off the recovery path.
+            if (logSizeTracker is null || !logSizeTracker.IsRunning || !logSizeTracker.IsBeyondSizeLimitAndCanEvict(addingPage: true))
                 return false;
+
             logSizeTracker.Signal();
             return true;
         }
@@ -2451,6 +2461,25 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Prepare a frame's page-load completion event for a new read, reusing the frame's existing event rather than
+        /// allocating one per page.
+        /// </summary>
+        /// <remarks>
+        /// Reuse is safe because a frame is only re-read once its previous load has completed: the scanning thread
+        /// awaits the current frame in <c>WaitForFrameLoad</c> and any read-ahead frame in <c>WaitForPriorFrameLoad</c>
+        /// before re-claiming it, so no completion callback still references the event when it is reset. This keeps one
+        /// event, and so at most one lazily-created kernel wait handle, per frame for the iterator's lifetime; the scan
+        /// iterator's Dispose releases them.
+        /// </remarks>
+        private protected static void PrepareFrameLoadCompletionEvent(ref CountdownEvent completed)
+        {
+            if (completed is null)
+                completed = new CountdownEvent(1);
+            else
+                completed.Reset();
+        }
+
+        /// <summary>
         /// Read pages from specified device
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2460,13 +2489,13 @@ namespace Tsavorite.core
                                         DeviceIOCompletionCallback callback,
                                         TContext context,
                                         BlittableFrame frame,
-                                        out CountdownEvent completed,
+                                        ref CountdownEvent completed,
                                         long devicePageOffset = 0,
                                         IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
         {
             var usedDevice = device ?? this.device;
 
-            completed = new CountdownEvent(1);
+            PrepareFrameLoadCompletionEvent(ref completed);
 
             int pageIndex = (int)(readPage % frame.frameSize);
             if (!frame.IsAllocated(pageIndex))
