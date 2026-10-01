@@ -29,12 +29,12 @@ namespace Garnet.cluster
         /// Check whether a cluster config serialization version can be read.
         /// </summary>
         /// <param name="version">Serialization version.</param>
-        public static bool IsSupportedVersion(byte version) => version >= MinimumSupportedClusterConfigVersion && version <= CurrentClusterConfigVersion;
+        public static bool IsSupportedVersion(byte version) => version >= MinimumSupportedClusterConfigVersion && version <= MaximumSupportedClusterConfigVersion;
 
         /// <summary>
         /// Serialize config for persistence, including peer endpoints.
         /// </summary>
-        public byte[] ToByteArray() => ToByteArray(CurrentClusterConfigVersion);
+        public byte[] ToByteArray() => ToByteArray(MaximumSupportedClusterConfigVersion);
 
         /// <summary>
         /// Serialize config using the specified format version.
@@ -156,7 +156,7 @@ namespace Garnet.cluster
                 throw new InvalidDataException("Invalid ClusterConfig payload: too short to contain a version");
             var version = reader.ReadByte();
             if (!IsSupportedVersion(version))
-                throw new InvalidDataException($"Incompatible ClusterConfig version: expected {MinimumSupportedClusterConfigVersion} through {CurrentClusterConfigVersion}, got {version}");
+                throw new InvalidDataException($"Incompatible ClusterConfig version: expected {MinimumSupportedClusterConfigVersion} through {MaximumSupportedClusterConfigVersion}, got {version}");
 
             var newSlotMap = DeserializeSlotMap(ref reader);
 

@@ -611,7 +611,7 @@ namespace Garnet.test.cluster
             var configBytes = config.ToByteArray();
 
             // Corrupt the version byte (at index 0)
-            configBytes[0] = (byte)(ClusterConfig.CurrentClusterConfigVersion + 1);
+            configBytes[0] = (byte)(ClusterConfig.MaximumSupportedClusterConfigVersion + 1);
 
             // Deserialization should throw
             Assert.Throws<System.IO.InvalidDataException>(() => ClusterConfig.FromByteArray(configBytes));
