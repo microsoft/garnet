@@ -237,6 +237,30 @@ namespace Tsavorite.core
         /// <summary>Whether log is disposed</summary>
         private volatile bool disposed = false;
 
+        /// <summary>
+        /// Whether the allocator has begun disposal. Allocation retry loops test this because disposing
+        /// <see cref="flushEvent"/> leaves it permanently signaled, so their waits stop blocking and they would
+        /// otherwise spin on a flush or page close that can no longer happen.
+        /// </summary>
+        internal bool IsDisposed => disposed;
+
+        /// <summary>
+        /// Terminate an allocation retry loop waiting on a flush or page close that disposal has made
+        /// unreachable. By the time this throws, the buffer pool the allocation would have used is being freed,
+        /// so there is no outcome left to wait for.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void ThrowIfDisposed()
+        {
+            if (disposed)
+                ThrowDisposed();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void ThrowDisposed()
+            => throw new ObjectDisposedException(GetType().Name,
+                "The allocator was disposed while an allocation was waiting for a flush or page close to complete");
+
         /// <summary>Whether device is a null device</summary>
         internal readonly bool IsNullDevice;
 
@@ -462,7 +486,10 @@ namespace Tsavorite.core
             // -------- Final: publish BeginAddress (see XML doc on Reset for why this happens last) --------
             _ = MonotonicUpdate(ref BeginAddress, newBeginAddress, out _);
 
-            flushEvent.Initialize();
+            // Retire the current generation rather than installing a fresh event: Initialize() would overwrite
+            // the field without releasing the outgoing semaphore, stranding anyone parked on it, since every
+            // later Set() signals the new instance.
+            flushEvent.Set();
             Array.Clear(PageStatusIndicator, 0, BufferSize);
             if (PendingFlush != null)
             {
@@ -523,11 +550,15 @@ namespace Tsavorite.core
         {
             StopSizeTrackerForDispose();
 
+            // Release flushEvent waiters here, before the epoch and buffer pool they would touch on the way out
+            // are torn down below. StopSizeTrackerForDispose has already published disposed = true, so every
+            // retry loop observes it on waking and terminates instead of resuming work against freed resources.
+            flushEvent.Dispose();
+
             if (isEpochOwned)
                 epoch.Dispose();
             bufferPool.Free();
 
-            flushEvent.Dispose();
             notifyFlushedUntilAddressTcs?.TrySetCanceled();
             notifyFlushedUntilAddressTcs = null;
 
@@ -1575,6 +1606,11 @@ namespace Tsavorite.core
             {
                 epoch.Resume();
             }
+
+            // Disposal permanently signals flushEvent, so without this the wait above would stop blocking and
+            // this loop would spin on a flush and page close that will never come.
+            ThrowIfDisposed();
+
             localFlushEvent = flushEvent;
             spins = 0;
         }
@@ -1684,6 +1720,16 @@ namespace Tsavorite.core
                 {
                     if (FlushedUntilAddress >= newBeginAddress)
                         break;
+
+                    // Disposal permanently signals flushEvent, so the wait below would stop blocking and no
+                    // further flush can advance FlushedUntilAddress. Return rather than fall through: the head
+                    // shift below is uncapped (unlike ShiftHeadAddress, which clamps to FlushedUntilAddress), so
+                    // its OnPagesClosed would free pages concurrently with the teardown Dispose is already doing.
+                    // BeginAddress and ReadOnlyAddress are published by this point, and the remaining head shift
+                    // and truncate are teardown work Dispose performs itself.
+                    if (IsDisposed)
+                        return;
+
                     if (++spins < Constants.kFlushSpinCount)
                     {
                         _ = Thread.Yield();

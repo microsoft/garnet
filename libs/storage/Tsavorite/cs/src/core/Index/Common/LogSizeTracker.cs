@@ -51,6 +51,12 @@ namespace Tsavorite.core
         /// </summary>
         private CompletionEvent resizeTaskEvent;
 
+        /// <summary>
+        /// Nonzero while a wakeup of <see cref="ResizerTask"/> is outstanding, so that the over-budget record
+        /// path can coalesce redundant signals. See <see cref="SignalResizer"/>.
+        /// </summary>
+        private int resizePending;
+
         /// <summary>The running resizer task, retained so <see cref="Stop"/> can observe its completion.</summary>
         private volatile Task resizerTask;
 
@@ -209,8 +215,10 @@ namespace Tsavorite.core
         void OnStopped()
         {
             _ = Interlocked.Exchange(ref runState, (int)RunState.Stopped);
+
+            // The field is deliberately left in place: a size update that observed Running can still call
+            // SignalResizer after this point, and Set on a disposed event is a safe no-op.
             resizeTaskEvent.Dispose();
-            resizeTaskEvent = default;
         }
 
         /// <summary>
@@ -237,6 +245,27 @@ namespace Tsavorite.core
 
             // Only signal if we are shrinking; growth is handled normally as we add pages and records.
             if (shrink)
+                SignalResizer();
+        }
+
+        /// <summary>
+        /// Signal the resizer, coalescing redundant signals. While a wakeup is already outstanding this costs a
+        /// single read of a line that is written only on the signal edge and on resizer wakeups, so the
+        /// over-budget record path performs no allocation and no atomic read-modify-write.
+        /// </summary>
+        /// <remarks>
+        /// No size update can be missed, given <see cref="ResizerTask"/>'s capture-then-clear-then-sample
+        /// ordering. A caller that reads <see cref="resizePending"/> as 1, and therefore skips the signal, is
+        /// ordered before the next clear, which precedes the next sample; its size update precedes that read
+        /// because <see cref="ConcurrentCounter.Increment"/> is interlocked and therefore a full fence, so the
+        /// next sample observes it. A caller whose exchange returns 0 is ordered after the last clear, hence
+        /// after the capture that preceded it, so its <c>Set</c> retires the captured generation and the
+        /// resizer's wait returns at once rather than sleeping out the timeout. Callers must accordingly call
+        /// this only after publishing the size update.
+        /// </remarks>
+        private void SignalResizer()
+        {
+            if (Volatile.Read(ref resizePending) == 0 && Interlocked.Exchange(ref resizePending, 1) == 0)
                 resizeTaskEvent.Set();
         }
 
@@ -247,7 +276,7 @@ namespace Tsavorite.core
             {
                 heapSize.Increment(size);
                 if (size > 0 && IsBeyondSizeLimitAndCanEvict())
-                    resizeTaskEvent.Set();
+                    SignalResizer();
                 Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
             }
         }
@@ -263,7 +292,7 @@ namespace Tsavorite.core
                 {
                     heapSize.Increment(size);
                     if (IsBeyondSizeLimitAndCanEvict())
-                        resizeTaskEvent.Set();
+                        SignalResizer();
                 }
                 else
                 {
@@ -275,7 +304,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Called when the caller has determined we are over budget, to signal the event.</summary>
-        public void Signal() => resizeTaskEvent.Set();
+        public void Signal() => SignalResizer();
 
         /// <summary>
         /// Performs resizing by waiting for an event that is signaled whenever memory utilization changes.
@@ -300,6 +329,17 @@ namespace Tsavorite.core
                     // The capture must be taken afresh each iteration: Set() releases int.MaxValue permits on the
                     // generation it retires, so a capture that has already been consumed never blocks again.
                     var localResizeTaskEvent = resizeTaskEvent;
+
+                    // Consume any outstanding wakeup AFTER capturing and BEFORE ResizeIfNeeded samples sizes below.
+                    // Both halves of that ordering are load-bearing; see SignalResizer.
+                    //
+                    // Clearing before capturing would lose wakeups: a signaller slipping into that window sets
+                    // resizePending and calls Set(), the capture then picks up the generation Set() just published,
+                    // and the wait below parks on it -- having consumed the signal without acting on it -- while
+                    // resizePending stays latched at 1 so every later signaller coalesces itself away. The resizer
+                    // would then sleep out the full ResizeTaskDelaySeconds with work outstanding, stalling the
+                    // allocation retry loop that NeedToWaitForClose drives through Signal().
+                    _ = Interlocked.Exchange(ref resizePending, 0);
 
                     if (runState == (int)RunState.Running)
                     {
