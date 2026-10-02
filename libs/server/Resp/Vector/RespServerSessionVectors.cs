@@ -69,7 +69,7 @@ namespace Garnet.server
                     }
                     if (!parseState.TryGetInt(optionIndex, out var parsedDimensions))
                     {
-                        return AbortWithErrorMessage("ERR DIM must be an integer between 1 and 65536"u8);
+                        return AbortWithErrorMessage("ERR DIM must be between 1 and 65536"u8);
                     }
                     dimensions = parsedDimensions;
                 }
