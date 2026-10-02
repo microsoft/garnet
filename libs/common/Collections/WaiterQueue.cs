@@ -9,10 +9,10 @@ using System.Threading.Tasks;
 namespace Garnet.common
 {
     /// <summary>
-    /// Tracks active resource usage for a <see cref="WaiterQueue{TTracker, TContext}"/>.
+    /// Controls resource admission for a <see cref="WaiterQueue{TThrottle, TContext}"/>.
     /// </summary>
     /// <typeparam name="TContext">Resource request context type.</typeparam>
-    public interface IResourceTracker<TContext>
+    public interface IResourceThrottle<TContext>
         where TContext : struct
     {
         /// <summary>
@@ -40,17 +40,17 @@ namespace Garnet.common
     }
 
     /// <summary>
-    /// FIFO admission queue for requests governed by a custom resource tracker.
+    /// FIFO admission queue for requests governed by a custom resource throttle.
     /// </summary>
     /// <remarks>
     /// Direct admission and bounded retries do not acquire the queue lock. A request that remains blocked then
     /// attempts to enter a fixed-capacity FIFO log represented by monotonically increasing logical addresses
     /// managed by <see cref="LightBoundedFifoQueue{T}"/>.
     /// </remarks>
-    /// <typeparam name="TTracker">Concrete resource tracker type.</typeparam>
+    /// <typeparam name="TThrottle">Concrete resource throttle type.</typeparam>
     /// <typeparam name="TContext">Resource request context type.</typeparam>
-    public sealed class WaiterQueue<TTracker, TContext> : IDisposable
-        where TTracker : struct, IResourceTracker<TContext>
+    public sealed class WaiterQueue<TThrottle, TContext> : IDisposable
+        where TThrottle : struct, IResourceThrottle<TContext>
         where TContext : struct
     {
         /// <summary>
@@ -84,14 +84,14 @@ namespace Garnet.common
             }
 
             readonly TaskCompletionSource<bool> signal;
-            readonly WaiterQueue<TTracker, TContext> owner;
+            readonly WaiterQueue<TThrottle, TContext> owner;
             readonly CancellationToken cancellationToken;
             CancellationTokenRegistration cancellationRegistration;
             int state;
 
             internal readonly TContext context;
 
-            internal Waiter(WaiterQueue<TTracker, TContext> owner, in TContext context, CancellationToken cancellationToken)
+            internal Waiter(WaiterQueue<TThrottle, TContext> owner, in TContext context, CancellationToken cancellationToken)
             {
                 this.owner = owner;
                 this.context = context;
@@ -148,7 +148,7 @@ namespace Garnet.common
             }
         }
 
-        TTracker tracker;
+        TThrottle throttle;
         readonly LightBoundedFifoQueue<Waiter> waiterQueue;
         readonly int spinCount;
 
@@ -161,15 +161,15 @@ namespace Garnet.common
         public int WaiterCount => waiterQueue.Count;
 
         /// <summary>
-        /// Creates a FIFO waiter queue over a custom resource tracker.
+        /// Creates a FIFO waiter queue over a custom resource throttle.
         /// </summary>
-        /// <param name="tracker">Resource tracker used for reservation and release.</param>
+        /// <param name="throttle">Resource throttle used for reservation and release.</param>
         /// <param name="ringPageSize">Number of waiter slots in each ring page. Must be a power of two.</param>
         /// <param name="ringPageCount">Number of pages in the waiter ring. Must be a power of two.</param>
         /// <param name="spinCount">Lock-free spin iterations before enqueueing and parking.</param>
         /// <param name="maxEnqueueSpinCount">Maximum spin iterations while reserving a bounded FIFO slot.</param>
         public WaiterQueue(
-            TTracker tracker,
+            TThrottle throttle,
             int ringPageSize = DefaultRingPageSize,
             int ringPageCount = DefaultRingPageCount,
             int spinCount = DefaultSpinCount,
@@ -178,7 +178,7 @@ namespace Garnet.common
             ArgumentOutOfRangeException.ThrowIfNegative(spinCount);
             ArgumentOutOfRangeException.ThrowIfNegative(maxEnqueueSpinCount);
 
-            this.tracker = tracker;
+            this.throttle = throttle;
             this.spinCount = spinCount;
             this.waiterQueue = new LightBoundedFifoQueue<Waiter>(
                 ringPageSize,
@@ -204,7 +204,7 @@ namespace Garnet.common
                     spinner.SpinOnce();
                 drainAcquired = true;
 
-                var disposeException = new ObjectDisposedException(nameof(WaiterQueue<TTracker, TContext>));
+                var disposeException = new ObjectDisposedException(nameof(WaiterQueue<TThrottle, TContext>));
                 while (waiterQueue.TryDequeue(out var waiter))
                 {
                     try
@@ -252,7 +252,7 @@ namespace Garnet.common
         /// <returns>A task whose result is false when bounded waiter-slot reservation fails; otherwise true after admission.</returns>
         public ValueTask<bool> AdmitAsync(in TContext context, CancellationToken token = default)
         {
-            tracker.Validate(context);
+            throttle.Validate(context);
             token.ThrowIfCancellationRequested();
             ThrowIfDisposed();
 
@@ -275,7 +275,7 @@ namespace Garnet.common
         /// <returns>False when bounded waiter-slot reservation fails; otherwise true after admission.</returns>
         public bool Admit(in TContext context, CancellationToken token = default)
         {
-            tracker.Validate(context);
+            throttle.Validate(context);
             token.ThrowIfCancellationRequested();
             ThrowIfDisposed();
 
@@ -292,7 +292,7 @@ namespace Garnet.common
 
         bool TryReserveFast(in TContext context, CancellationToken token)
         {
-            if (tracker.TryReserve(context))
+            if (throttle.TryReserve(context))
                 return true;
 
             var spinner = new SpinWait();
@@ -302,7 +302,7 @@ namespace Garnet.common
                 token.ThrowIfCancellationRequested();
                 ThrowIfDisposed();
                 spinner.SpinOnce();
-                if (tracker.TryReserve(context))
+                if (throttle.TryReserve(context))
                     return true;
             }
 
@@ -339,7 +339,7 @@ namespace Garnet.common
         /// <param name="context">Resource request originally admitted.</param>
         public void Release(in TContext context)
         {
-            tracker.Release(context);
+            throttle.Release(context);
             Drain();
         }
 
@@ -387,26 +387,26 @@ namespace Garnet.common
 
                     // Preserve FIFO fairness: a live head that cannot reserve blocks every later waiter.
                     // Concurrent releases increment drainWork, forcing this owner or the releaser to retry.
-                    if (!tracker.TryReserve(context))
+                    if (!throttle.TryReserve(context))
                         break;
 
                     // Disposal may begin after reservation; return capacity before yielding queue ownership.
                     if (Volatile.Read(ref disposed) != 0)
                     {
-                        tracker.Release(context);
+                        throttle.Release(context);
                         break;
                     }
 
                     if (!waiterQueue.TryDequeue(out waiter))
                     {
                         // Never retain a reservation unless its waiter was removed from the queue.
-                        tracker.Release(context);
+                        throttle.Release(context);
                         continue;
                     }
 
                     // Cancellation can win after the initial state check and before this grant transition.
                     if (!waiter.TryCompleteGrant())
-                        tracker.Release(context);
+                        throttle.Release(context);
 
                     // The queue no longer references the waiter, so its cancellation registration can be released.
                     waiter.Release();

@@ -11,21 +11,21 @@ namespace Garnet.common
     /// in-flight quota.
     /// </summary>
     /// <remarks>
-    /// A zero-byte capacity disables accounting and throttling. Applications compose this tracker with a
+    /// A zero-byte capacity disables accounting and throttling. Applications compose this throttle with a
     /// <c>WaiterQueue&lt;int&gt;</c> to provide admission retries and waiting.
     /// GarnetLightClient integration is intentionally reserved for a separate integration stage; this type
     /// currently provides only the memory-backpressure infrastructure.
     /// </remarks>
-    public readonly struct MemoryTracker : IResourceTracker<int>
+    public readonly struct MemoryThrottle : IResourceThrottle<int>
     {
-        sealed class TrackerState(long capacityBytes)
+        sealed class ThrottleState(long capacityBytes)
         {
             internal readonly long capacityBytes = capacityBytes;
             internal long inUseBytes;
             internal long peakInUseBytes;
         }
 
-        readonly TrackerState state;
+        readonly ThrottleState state;
 
         /// <summary>
         /// Configured maximum number of in-flight bytes. Zero means unlimited.
@@ -43,17 +43,17 @@ namespace Garnet.common
         public long PeakInUseBytes => state == null ? 0 : Interlocked.Read(ref state.peakInUseBytes);
 
         /// <summary>
-        /// Creates a memory resource tracker.
+        /// Creates a memory resource throttle.
         /// </summary>
         /// <param name="capacityBytes">Maximum in-flight bytes. Zero disables throttling.</param>
-        public MemoryTracker(long capacityBytes)
+        public MemoryThrottle(long capacityBytes)
         {
             ArgumentOutOfRangeException.ThrowIfNegative(capacityBytes);
 
-            state = capacityBytes == 0 ? null : new TrackerState(capacityBytes);
+            state = capacityBytes == 0 ? null : new ThrottleState(capacityBytes);
         }
 
-        void IResourceTracker<int>.Validate(in int requestResource)
+        void IResourceThrottle<int>.Validate(in int requestResource)
             => ValidateRequest(requestResource);
 
         void ValidateRequest(int requestResource)
@@ -68,7 +68,7 @@ namespace Garnet.common
             }
         }
 
-        bool IResourceTracker<int>.TryReserve(in int requestResource)
+        bool IResourceThrottle<int>.TryReserve(in int requestResource)
         {
             ValidateRequest(requestResource);
 
@@ -89,7 +89,7 @@ namespace Garnet.common
                 UpdatePeak(state, next);
                 return true;
 
-                static void UpdatePeak(TrackerState state, long value)
+                static void UpdatePeak(ThrottleState state, long value)
                 {
                     var current = Interlocked.Read(ref state.peakInUseBytes);
                     while (value > current)
@@ -103,7 +103,7 @@ namespace Garnet.common
             }
         }
 
-        void IResourceTracker<int>.Release(in int requestResource)
+        void IResourceThrottle<int>.Release(in int requestResource)
         {
             var state = this.state;
             if (state == null)

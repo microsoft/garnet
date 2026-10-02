@@ -15,9 +15,9 @@ namespace Garnet.test
     {
         readonly record struct ResourceRequest(int Units);
 
-        readonly struct ResourceTracker : IResourceTracker<ResourceRequest>
+        readonly struct ResourceThrottle : IResourceThrottle<ResourceRequest>
         {
-            sealed class TrackerState(int capacity)
+            sealed class ThrottleState(int capacity)
             {
                 internal readonly int capacity = capacity;
                 internal int blocked;
@@ -29,11 +29,11 @@ namespace Garnet.test
                 internal ManualResetEventSlim resumeReservation;
             }
 
-            readonly TrackerState state;
+            readonly ThrottleState state;
 
-            internal ResourceTracker(int capacity)
+            internal ResourceThrottle(int capacity)
             {
-                state = new TrackerState(capacity);
+                state = new ThrottleState(capacity);
             }
 
             internal bool Blocked
@@ -117,16 +117,16 @@ namespace Garnet.test
         [Test]
         public void ConstructorRejectsNegativeEnqueueSpinLimit()
         {
-            var tracker = new ResourceTracker(1);
+            var throttle = new ResourceThrottle(1);
             Assert.Throws<ArgumentOutOfRangeException>(() =>
-                _ = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, maxEnqueueSpinCount: -1));
+                _ = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, maxEnqueueSpinCount: -1));
         }
 
         [Test]
         public async Task NewArrivalCanReserveWithoutInspectingBacklog()
         {
-            var tracker = new ResourceTracker(4);
-            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
+            var throttle = new ResourceThrottle(4);
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: 0);
             var four = new ResourceRequest(4);
             var one = new ResourceRequest(1);
             queue.Admit(four);
@@ -142,43 +142,43 @@ namespace Garnet.test
             queue.Release(four);
             await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             queue.Release(four);
-            ClassicAssert.AreEqual(0, tracker.InUse);
-            ClassicAssert.AreEqual(4, tracker.PeakInUse);
+            ClassicAssert.AreEqual(0, throttle.InUse);
+            ClassicAssert.AreEqual(4, throttle.PeakInUse);
         }
 
         [Test]
         public async Task ExternalDrainAdmitsNewlyAvailableResource()
         {
-            var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
+            var throttle = new ResourceThrottle(1) { Blocked = true };
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: 0);
             var request = new ResourceRequest(1);
 
             var waiter = queue.AdmitAsync(request).AsTask();
             ClassicAssert.IsFalse(waiter.IsCompleted);
 
-            tracker.Blocked = false;
+            throttle.Blocked = false;
             queue.Drain();
             await waiter.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
             queue.Release(request);
-            ClassicAssert.AreEqual(0, tracker.InUse);
+            ClassicAssert.AreEqual(0, throttle.InUse);
         }
 
         [Test]
         public async Task RetriesBeforeAsyncWait()
         {
             const int spinCount = 4;
-            var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: spinCount);
+            var throttle = new ResourceThrottle(1) { Blocked = true };
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: spinCount);
             var request = new ResourceRequest(1);
 
             var waiter = queue.AdmitAsync(request).AsTask();
 
-            ClassicAssert.AreEqual(spinCount + 2, tracker.ReservationAttempts);
+            ClassicAssert.AreEqual(spinCount + 2, throttle.ReservationAttempts);
             ClassicAssert.AreEqual(1, queue.WaiterCount);
             ClassicAssert.IsFalse(waiter.IsCompleted);
 
-            tracker.Blocked = false;
+            throttle.Blocked = false;
             queue.Drain();
             await waiter.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             queue.Release(request);
@@ -188,8 +188,8 @@ namespace Garnet.test
         public async Task ConcurrentDrainRequestsDoNotStrandWaiters()
         {
             const int waiterCount = 160;
-            var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, ringPageCount: 8, spinCount: 0);
+            var throttle = new ResourceThrottle(1) { Blocked = true };
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, ringPageCount: 8, spinCount: 0);
             var request = new ResourceRequest(1);
             var waiters = new Task[waiterCount];
 
@@ -206,34 +206,34 @@ namespace Garnet.test
                 SpinWait.SpinUntil(() => queue.WaiterCount == waiterCount, TimeSpan.FromSeconds(5)),
                 "Not all requests entered the waiter queue.");
 
-            tracker.Blocked = false;
+            throttle.Blocked = false;
             Parallel.For(0, 16, _ => queue.Drain());
             var allWaiters = Task.WhenAll(waiters);
             var completed = await Task.WhenAny(allWaiters, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(false);
             ClassicAssert.AreSame(allWaiters, completed,
-                $"Waiters were stranded: queued={queue.WaiterCount}, inUse={tracker.InUse}, attempts={tracker.ReservationAttempts}.");
+                $"Waiters were stranded: queued={queue.WaiterCount}, inUse={throttle.InUse}, attempts={throttle.ReservationAttempts}.");
             await allWaiters.ConfigureAwait(false);
 
             ClassicAssert.AreEqual(0, queue.WaiterCount);
-            ClassicAssert.AreEqual(0, tracker.InUse);
-            ClassicAssert.AreEqual(1, tracker.PeakInUse);
+            ClassicAssert.AreEqual(0, throttle.InUse);
+            ClassicAssert.AreEqual(1, throttle.PeakInUse);
         }
 
         [Test]
         public async Task ConcurrentDrainAfterFailedReservationIsNotLost()
         {
-            var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
+            var throttle = new ResourceThrottle(1) { Blocked = true };
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: 0);
             using var reservationPaused = new ManualResetEventSlim();
             using var resumeReservation = new ManualResetEventSlim();
             var request = new ResourceRequest(1);
             var waiter = queue.AdmitAsync(request).AsTask();
-            tracker.PauseNextReservation(reservationPaused, resumeReservation);
+            throttle.PauseNextReservation(reservationPaused, resumeReservation);
 
             var firstDrain = Task.Run(queue.Drain);
             ClassicAssert.IsTrue(reservationPaused.Wait(TimeSpan.FromSeconds(5)), "The first drain did not reach reservation.");
 
-            tracker.Blocked = false;
+            throttle.Blocked = false;
             queue.Drain();
             resumeReservation.Set();
 
@@ -245,8 +245,8 @@ namespace Garnet.test
         [Test]
         public async Task FullWaiterLogReturnsFalse()
         {
-            var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, ringPageSize: 1, ringPageCount: 1, spinCount: 0);
+            var throttle = new ResourceThrottle(1) { Blocked = true };
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, ringPageSize: 1, ringPageCount: 1, spinCount: 0);
             var request = new ResourceRequest(1);
 
             var first = queue.AdmitAsync(request).AsTask();
@@ -255,7 +255,7 @@ namespace Garnet.test
             ClassicAssert.IsFalse(queue.Admit(request));
             ClassicAssert.IsFalse(await queue.AdmitAsync(request).ConfigureAwait(false));
 
-            tracker.Blocked = false;
+            throttle.Blocked = false;
             queue.Drain();
             ClassicAssert.IsTrue(await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
             queue.Release(request);
@@ -264,8 +264,8 @@ namespace Garnet.test
         [Test]
         public async Task CancelingHeadRequestsAnotherDrain()
         {
-            var tracker = new ResourceTracker(2);
-            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
+            var throttle = new ResourceThrottle(2);
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: 0);
             using var cts = new CancellationTokenSource();
             var two = new ResourceRequest(2);
             var one = new ResourceRequest(1);
@@ -279,14 +279,14 @@ namespace Garnet.test
             Assert.ThrowsAsync<OperationCanceledException>(async () => await first.ConfigureAwait(false));
             await second.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
             queue.Release(two);
-            ClassicAssert.AreEqual(0, tracker.InUse);
+            ClassicAssert.AreEqual(0, throttle.InUse);
         }
 
         [Test]
         public async Task CancelingMiddlePreservesSurvivorOrder()
         {
-            var tracker = new ResourceTracker(1) { Blocked = true };
-            using var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
+            var throttle = new ResourceThrottle(1) { Blocked = true };
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: 0);
             using var cts = new CancellationTokenSource();
             var request = new ResourceRequest(1);
 
@@ -297,7 +297,7 @@ namespace Garnet.test
             cts.Cancel();
             Assert.ThrowsAsync<OperationCanceledException>(async () => await canceled.ConfigureAwait(false));
 
-            tracker.Blocked = false;
+            throttle.Blocked = false;
             queue.Drain();
             ClassicAssert.IsTrue(await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
             ClassicAssert.IsFalse(third.IsCompleted);
@@ -307,14 +307,14 @@ namespace Garnet.test
             queue.Release(request);
 
             ClassicAssert.AreEqual(0, queue.WaiterCount);
-            ClassicAssert.AreEqual(0, tracker.InUse);
+            ClassicAssert.AreEqual(0, throttle.InUse);
         }
 
         [Test]
         public void DisposeWakesParkedWaiters()
         {
-            var tracker = new ResourceTracker(1);
-            var queue = new WaiterQueue<ResourceTracker, ResourceRequest>(tracker, spinCount: 0);
+            var throttle = new ResourceThrottle(1);
+            var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: 0);
             var request = new ResourceRequest(1);
             queue.Admit(request);
             var waiter = queue.AdmitAsync(request).AsTask();
@@ -323,7 +323,7 @@ namespace Garnet.test
 
             Assert.ThrowsAsync<ObjectDisposedException>(async () => await waiter.ConfigureAwait(false));
             queue.Release(request);
-            ClassicAssert.AreEqual(0, tracker.InUse);
+            ClassicAssert.AreEqual(0, throttle.InUse);
         }
     }
 }
