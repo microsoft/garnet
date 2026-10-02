@@ -849,7 +849,7 @@ namespace Garnet.server
                 case RespCommand.XVIMPORT:
                     if (logRecord.RecordType != VectorManager.RecordType)
                     {
-                        rmwInfo.Action = RMWAction.CancelOperation;
+                        rmwInfo.Action = RMWAction.WrongType;
                         return IPUResult.Failed;
                     }
                     return IPUResult.Succeeded;

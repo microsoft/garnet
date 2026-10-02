@@ -30,9 +30,7 @@ namespace Garnet.server
         /// <summary>
         /// Represents a copied VADD or XVIMPORT term being replayed during replication.
         /// </summary>
-        private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks, VectorDistanceMetricType DistanceMetric, uint? ImportTermType = null)
-        {
-        }
+        private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks, VectorDistanceMetricType DistanceMetric, uint? ImportTermType = null);
 
         private int replicationReplayStarted;
         private CountingEventSlim replicationBlockEvent;
@@ -62,9 +60,9 @@ namespace Garnet.server
         {
             try
             {
-                replicationReplayCancellation = cancellationToken;
-
                 await Task.Yield();
+
+                replicationReplayCancellation = cancellationToken;
 
                 try
                 {

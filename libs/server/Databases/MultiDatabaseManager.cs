@@ -792,7 +792,6 @@ namespace Garnet.server
 
                 // Create the database and use TrySetValueUnsafe to add it to the map
                 var db = CreateDatabaseDelegate(dbId);
-                db.VectorManager?.Initialize();
                 if (!databases.TrySetValueUnsafe(dbId, ref db, false))
                     return default;
             }

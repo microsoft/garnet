@@ -595,34 +595,32 @@ namespace Garnet.server
 
             var context = NextVectorSetContext(HashSlotUtils.HashSlot(key));
             nint indexPtr = 0;
-            var published = false;
             CreateIndex(dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, indexPtr, indexSpan);
-            try
+
+            UpdateContextMetadata(ref storageSession.vectorBasicContext);
+            bool requestQuantization;
+            unsafe
             {
-                UpdateContextMetadata(ref storageSession.vectorBasicContext);
-                bool requestQuantization;
-                unsafe
-                {
-                    indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric,
-                        ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
-                }
-                CreateIndex(dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, indexPtr, indexSpan);
+                indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric,
+                    ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+            }
+            CreateIndex(dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, indexPtr, indexSpan);
 
-                if (indexPtr == 0)
-                {
-                    errorMsg = "ERR vector set creation failed"u8;
-                    return GarnetStatus.OK;
-                }
+            if (indexPtr == 0)
+            {
+                errorMsg = "ERR vector set creation failed"u8;
+                return GarnetStatus.OK;
+            }
 
-                if (hasQuantState && !Service.SetQuantState(context, indexPtr, quantState))
-                {
-                    errorMsg = "ERR vector set quantizer state initialization failed"u8;
-                    return GarnetStatus.OK;
-                }
+            if (hasQuantState && !Service.SetQuantState(context, indexPtr, quantState))
+            {
+                errorMsg = "ERR vector set quantizer state initialization failed"u8;
+                return GarnetStatus.OK;
+            }
 
-                input.arg1 = CreateIndexArg;
-                input.parseState.InitializeWithArguments([
-                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref dimensions, 1))),
+            input.arg1 = CreateIndexArg;
+            input.parseState.InitializeWithArguments([
+                PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref dimensions, 1))),
                     PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref reduceDims, 1))),
                     default, default, default,
                     PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref quantizer, 1))),
@@ -632,48 +630,34 @@ namespace Garnet.server
                     PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref distanceMetric, 1))),
                     PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref context, 1))),
                     PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref indexPtr, 1)))
-                ]);
+            ]);
 
-                var writeStatus = storageSession.stringBasicContext.RMW((FixedSpanByteKey)key, ref input);
-                if (writeStatus.IsPending)
-                {
-                    CompletePending(ref writeStatus, ref storageSession.stringBasicContext);
-                }
+            var writeStatus = storageSession.stringBasicContext.RMW((FixedSpanByteKey)key, ref input);
+            if (writeStatus.IsPending)
+            {
+                CompletePending(ref writeStatus, ref storageSession.stringBasicContext);
+            }
 
-                if (!writeStatus.IsCompletedSuccessfully)
-                {
-                    return GarnetStatus.WRONGTYPE;
-                }
+            if (!writeStatus.IsCompletedSuccessfully)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
 
-                if (!writeStatus.Record.Created)
-                {
-                    result = VectorManagerResult.Duplicate;
-                    errorMsg = "ERR vector set already exists"u8;
-                    return GarnetStatus.OK;
-                }
-
-                published = true;
-                ReplicateVectorSetCreate(key, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, hasQuantState, quantState);
-                result = VectorManagerResult.OK;
-                if (requestQuantization && !hasQuantState)
-                {
-                    _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
-                }
-
+            if (!writeStatus.Record.Created)
+            {
+                result = VectorManagerResult.Duplicate;
+                errorMsg = "ERR vector set already exists"u8;
                 return GarnetStatus.OK;
             }
-            catch (EntryPointNotFoundException)
+
+            ReplicateVectorSetCreate(key, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, hasQuantState, quantState);
+            result = VectorManagerResult.OK;
+            if (requestQuantization && !hasQuantState)
             {
-                errorMsg = "ERR native library does not support QUANT_STATE"u8;
-                return GarnetStatus.OK;
+                _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
             }
-            finally
-            {
-                if (!published)
-                {
-                    RequestDeletion(indexSpan);
-                }
-            }
+
+            return GarnetStatus.OK;
         }
 
         /// <summary>

@@ -47,13 +47,6 @@ namespace CommandInfoUpdater
             var (commandsToAdd, commandsToRemove) =
                 CommonUtils.GetCommandsToAddAndRemove(existingCommandsInfo, ignoreCommands, null);
 
-            if (commandsToAdd.Count == 0 && commandsToRemove.Count == 0)
-            {
-                logger.LogInformation("No commands info to update.");
-                updatedCommandsInfo = existingCommandsInfo;
-                return true;
-            }
-
             if (!CommonUtils.GetUserConfirmation(commandsToAdd, commandsToRemove, logger, autoConfirm))
             {
                 logger.LogInformation("User cancelled update operation.");
