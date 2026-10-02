@@ -21,15 +21,15 @@ namespace Garnet.server
         /// Creates an empty Vector Set.
         /// </summary>
         internal GarnetStatus CreateEmptyVectorSet(
-            StorageSession storageSession, 
+            StorageSession storageSession,
             ReadOnlySpan<byte> key,
             uint dims,
-            uint reduceDims, 
+            uint reduceDims,
             VectorQuantType quantizer,
             uint buildExplorationFactor,
             uint numLinks,
             VectorDistanceMetricType distanceMetric,
-            bool hasQuantState, 
+            bool hasQuantState,
             ReadOnlySpan<byte> quantState,
             out VectorManagerResult result,
             out ReadOnlySpan<byte> errorMsg
