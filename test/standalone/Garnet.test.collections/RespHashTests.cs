@@ -108,6 +108,22 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HDELAndHPERSISTOnMissingKeyDoNotCreateKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "user:user1";
+
+            ClassicAssert.IsFalse(db.HashDelete(key, "field1"));
+            ClassicAssert.IsFalse(db.KeyExists(key));
+
+            var result = db.HashFieldPersist(key, ["field1"]);
+            ClassicAssert.AreEqual(1, result.Length);
+            ClassicAssert.AreEqual(PersistResult.NoSuchField, result[0]);
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
+        [Test]
         public void CanSetAndGetOnePairLarge()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
