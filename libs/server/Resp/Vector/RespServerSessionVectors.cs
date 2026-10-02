@@ -211,16 +211,16 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
             }
 
-            uint termType =
-                term.EqualsUpperCaseSpanIgnoringCase("VECTOR"u8) ? DiskANNService.FullVector :
-                term.EqualsUpperCaseSpanIgnoringCase("NEIGHBORS"u8) ? DiskANNService.NeighborList :
-                term.EqualsUpperCaseSpanIgnoringCase("QUANT"u8) ? DiskANNService.QuantizedVector :
-                term.EqualsUpperCaseSpanIgnoringCase("ATTRS"u8) ? DiskANNService.Attributes :
-                term.EqualsUpperCaseSpanIgnoringCase("INTMAP"u8) ? DiskANNService.InternalIdMap :
-                term.EqualsUpperCaseSpanIgnoringCase("EXTMAP"u8) ? DiskANNService.ExternalIdMap :
-                uint.MaxValue;
+            var termType =
+                term.EqualsUpperCaseSpanIgnoringCase("VECTOR"u8) ? VectorImportTermType.Vector :
+                term.EqualsUpperCaseSpanIgnoringCase("NEIGHBORS"u8) ? VectorImportTermType.Neighbors :
+                term.EqualsUpperCaseSpanIgnoringCase("QUANT"u8) ? VectorImportTermType.Quant :
+                term.EqualsUpperCaseSpanIgnoringCase("ATTRS"u8) ? VectorImportTermType.Attrs :
+                term.EqualsUpperCaseSpanIgnoringCase("INTMAP"u8) ? VectorImportTermType.IntMap :
+                term.EqualsUpperCaseSpanIgnoringCase("EXTMAP"u8) ? VectorImportTermType.ExtMap :
+                VectorImportTermType.Invalid;
 
-            if (termType == uint.MaxValue)
+            if (termType == VectorImportTermType.Invalid)
             {
                 return AbortWithErrorMessage("ERR invalid vector set import term"u8);
             }

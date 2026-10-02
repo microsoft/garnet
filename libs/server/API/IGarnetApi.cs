@@ -1357,7 +1357,7 @@ namespace Garnet.server
         /// <param name="value">Opaque term value.</param>
         /// <param name="result">Import result.</param>
         /// <param name="errorMsg">Error details when import fails.</param>
-        GarnetStatus VectorSetImport(PinnedSpanByte key, uint termType, PinnedSpanByte id, PinnedSpanByte value,
+        GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
 
         /// <summary>

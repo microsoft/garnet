@@ -628,7 +628,7 @@ namespace Garnet.server
 
                         if (importTermType.HasValue)
                         {
-                            var importStatus = storageSession.VectorSetImport(PinnedSpanByte.FromPinnedSpan(key), importTermType.Value,
+                            var importStatus = storageSession.VectorSetImport(PinnedSpanByte.FromPinnedSpan(key), (VectorImportTermType)importTermType.Value,
                                 PinnedSpanByte.FromPinnedSpan(element), PinnedSpanByte.FromPinnedSpan(values), out var importResult, out var error);
                             if (importStatus != GarnetStatus.OK || importResult != VectorManagerResult.OK)
                             {

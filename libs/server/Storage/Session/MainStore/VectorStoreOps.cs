@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core;
@@ -89,6 +90,39 @@ namespace Garnet.server
         /// Bytes (8 bit), signed.
         /// </summary>
         XI8 = 3,
+    }
+
+    /// <summary>
+    /// Term types for XVIMPORT.
+    /// </summary>
+    public enum VectorImportTermType : uint
+    {
+        Invalid = uint.MaxValue,
+
+        /// <summary>
+        /// Full vector data.
+        /// </summary>
+        Vector = DiskANNService.FullVector,
+        /// <summary>
+        /// Neighbor list data.
+        /// </summary>
+        Neighbors = DiskANNService.NeighborList,
+        /// <summary>
+        /// Quantized vector data, for indexes that have quantizers.
+        /// </summary>
+        Quant = DiskANNService.QuantizedVector,
+        /// <summary>
+        /// Attribute data.
+        /// </summary>
+        Attrs = DiskANNService.Attributes,
+        /// <summary>
+        /// Internal id -&gt; external id data.
+        /// </summary>
+        IntMap = DiskANNService.InternalIdMap,
+        /// <summary>
+        /// External id -&gt; internal id data.
+        /// </summary>
+        ExtMap = DiskANNService.ExternalIdMap,
     }
 
     /// <summary>
@@ -243,31 +277,22 @@ namespace Garnet.server
         }
 
         /// <inheritdoc cref="IGarnetApi.VectorSetImport"/>
-        public GarnetStatus VectorSetImport(PinnedSpanByte key, uint termType, PinnedSpanByte id, PinnedSpanByte value,
+        public GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
-            result = VectorManagerResult.BadParams;
-            errorMsg = default;
+            Debug.Assert(Enum.IsDefined(termType) && termType != VectorImportTermType.Invalid, "Should have validate termType before calling");
+
             if (!vectorManager.IsEnabled)
             {
                 errorMsg = "ERR Vector Set (preview) commands are not enabled"u8;
-            }
-            else if (key.ReadOnlySpan.IsEmpty)
-            {
-                errorMsg = "ERR Vector Set key cannot be empty"u8;
-            }
-            else if (termType is not (DiskANNService.FullVector or DiskANNService.NeighborList or DiskANNService.QuantizedVector
-                or DiskANNService.Attributes or DiskANNService.InternalIdMap or DiskANNService.ExternalIdMap))
-            {
-                errorMsg = "ERR invalid vector set import term"u8;
-            }
-            else if (id.ReadOnlySpan.IsEmpty || value.ReadOnlySpan.IsEmpty)
-            {
-                errorMsg = "ERR vector set import ID and value must not be empty"u8;
+                result = VectorManagerResult.BadParams;
+                return GarnetStatus.OK;
             }
 
-            if (!errorMsg.IsEmpty)
+            if (id.ReadOnlySpan.IsEmpty || value.ReadOnlySpan.IsEmpty)
             {
+                errorMsg = "ERR vector set import ID and value must not be empty"u8;
+                result = VectorManagerResult.BadParams;
                 return GarnetStatus.OK;
             }
 
@@ -279,19 +304,23 @@ namespace Garnet.server
             {
                 if (status != GarnetStatus.OK)
                 {
+                    errorMsg = "ERR Vector Set not found"u8;
+                    result = VectorManagerResult.BadParams;
                     return status;
                 }
 
-                if (vectorManager.ImportTerm(key, indexSpan, termType, id.ReadOnlySpan, value.ReadOnlySpan))
+                if (vectorManager.ImportTerm(key, indexSpan, (uint)termType, id.ReadOnlySpan, value.ReadOnlySpan))
                 {
+                    errorMsg = ""u8;
                     result = VectorManagerResult.OK;
+                    return GarnetStatus.OK;
                 }
                 else
                 {
                     errorMsg = "ERR vector set import failed"u8;
+                    result = VectorManagerResult.BadParams;
+                    return GarnetStatus.OK;
                 }
-
-                return GarnetStatus.OK;
             }
         }
 
