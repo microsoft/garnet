@@ -217,49 +217,7 @@ namespace Garnet.server
             result = VectorManagerResult.BadParams;
             errorMsg = default;
 
-            if (key.ReadOnlySpan.IsEmpty)
-            {
-                errorMsg = "ERR Vector Set key cannot be empty"u8;
-                result = VectorManagerResult.BadParams;
-                return GarnetStatus.OK;
-            }
-            else if (dimensions <= 0 || dimensions > VectorManager.MaxVectorDimensions)
-            {
-                errorMsg = "ERR DIM must be an integer between 1 and 65536"u8;
-                result = VectorManagerResult.BadParams;
-                return GarnetStatus.OK;
-            }
-            else if (reduceDims < 0 || reduceDims > dimensions)
-            {
-                errorMsg = "ERR REDUCE dimension must be <= vector dimensions"u8;
-                result = VectorManagerResult.BadParams;
-                return GarnetStatus.OK;
-            }
-            else if (numLinks < 4 || numLinks > 4096)
-            {
-                errorMsg = "ERR M must be an integer between 4 and 4096"u8;
-                result = VectorManagerResult.BadParams;
-                return GarnetStatus.OK;
-            }
-            else if (buildExplorationFactor <= 0 || buildExplorationFactor > VectorManager.MaxExplorationFactor)
-            {
-                errorMsg = "ERR EF must be an integer between 1 and 1000000"u8;
-                result = VectorManagerResult.BadParams;
-                return GarnetStatus.OK;
-            }
-            else if (quantizer is < VectorQuantType.NoQuant or > VectorQuantType.XBin_U8)
-            {
-                errorMsg = "ERR invalid quantization"u8;
-                result = VectorManagerResult.BadParams;
-                return GarnetStatus.OK;
-            }
-            else if (distanceMetric is < VectorDistanceMetricType.Cosine or > VectorDistanceMetricType.XCosine_Normalized)
-            {
-                errorMsg = "ERR invalid DISTANCE_METRIC"u8;
-                result = VectorManagerResult.BadParams;
-                return GarnetStatus.OK;
-            }
-            else if (reduceDims != 0 && quantizer is VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 or VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8)
+            if (reduceDims != 0 && quantizer is VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 or VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8)
             {
                 errorMsg = "ERR REDUCE is not supported with this quantization"u8;
                 result = VectorManagerResult.BadParams;

@@ -98,6 +98,16 @@ namespace Garnet.server
         internal const int DefaultBeamWidth = 4;
 
         /// <summary>
+        /// Minimum (inclusive) value for M in VADD (or similar).
+        /// </summary>
+        internal const int MinNumLinks = 4;
+
+        /// <summary>
+        /// Maximum (inclusive) value for M in VADD (or similar).
+        /// </summary>
+        internal const int MaxNumLinks = 4096;
+
+        /// <summary>
         /// Ensures the VSIM distance output buffer has at least <paramref name="retrieveCount"/> * sizeof(float) bytes.
         /// Rents from <see cref="MemoryPool{T}"/> if the current buffer is too small.
         /// </summary>

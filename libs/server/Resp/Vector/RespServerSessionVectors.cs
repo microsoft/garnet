@@ -93,7 +93,7 @@ namespace Garnet.server
                     }
                     if (!parseState.TryGetInt(optionIndex, out var parsedNumLinks))
                     {
-                        return AbortWithErrorMessage("ERR M must be an integer between 4 and 4096"u8);
+                        return AbortWithErrorMessage($"ERR M must be an integer between {VectorManager.MinNumLinks} and {VectorManager.MaxNumLinks}");
                     }
                     numLinks = parsedNumLinks;
                 }
@@ -144,8 +144,35 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR DIM is required"u8);
             }
 
-            var status = storageApi.VectorSetCreate(parseState.GetArgSliceByRef(0), dimensions.Value, reduceDims ?? 0,
-                quantizer ?? VectorQuantType.Q8, buildExplorationFactor ?? 200, numLinks ?? 16, distanceMetric ?? VectorDistanceMetricType.L2,
+            // Apply defaults
+            reduceDims ??= 0;
+            quantizer ??= VectorQuantType.Q8;
+            buildExplorationFactor ??= 200;
+            numLinks ??= 16;
+            distanceMetric ??= VectorDistanceMetricType.L2;
+
+            if (dimensions.Value is <= 0 or > VectorManager.MaxVectorDimensions)
+            {
+                return AbortWithErrorMessage($"ERR DIM must be between 1 and {VectorManager.MaxVectorDimensions}");
+            }
+
+            if (reduceDims.Value < 0 || reduceDims.Value > dimensions)
+            {
+                return AbortWithErrorMessage("ERR REDUCE dimension must be <= vector dimensions"u8);
+            }
+
+            if (numLinks.Value is < VectorManager.MinNumLinks or > VectorManager.MaxNumLinks)
+            {
+                return AbortWithErrorMessage($"ERR M must be an integer between {VectorManager.MinNumLinks} and {VectorManager.MaxNumLinks}");
+            }
+
+            if (buildExplorationFactor.Value is <= 0 or > VectorManager.MaxExplorationFactor)
+            {
+                return AbortWithErrorMessage("ERR EF must be an integer between 1 and 1000000"u8);
+            }
+
+            var status = storageApi.VectorSetCreate(parseState.GetArgSliceByRef(0), dimensions.Value, reduceDims.Value,
+                quantizer.Value, buildExplorationFactor.Value, numLinks.Value, distanceMetric.Value,
                 quantState, out var result, out var errorMsg);
 
             if (status == GarnetStatus.WRONGTYPE)
@@ -251,9 +278,6 @@ namespace Garnet.server
             //
             // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
             // XPREQ8 is a non-Redis extension, stands for: eXtension PREcalculated Quantization 8-bit - requests no quantization on pre-calculated [0, 255] values
-
-            const int MinM = 4;
-            const int MaxM = 4_096;
 
             if (!storageSession.vectorManager.IsEnabled)
             {
@@ -596,9 +620,9 @@ namespace Garnet.server
                             return AbortWithErrorMessage("ERR invalid option after element");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out var numLinksNonNull) || numLinksNonNull < MinM || numLinksNonNull > MaxM)
+                        if (!parseState.TryGetInt(curIx, out var numLinksNonNull) || numLinksNonNull is < VectorManager.MinNumLinks or VectorManager.MaxNumLinks)
                         {
-                            return AbortWithErrorMessage($"ERR M must be an integer between {MinM} and {MaxM}");
+                            return AbortWithErrorMessage($"ERR M must be an integer between {VectorManager.MinNumLinks} and {VectorManager.MaxNumLinks}");
                         }
 
                         numLinks = numLinksNonNull;
