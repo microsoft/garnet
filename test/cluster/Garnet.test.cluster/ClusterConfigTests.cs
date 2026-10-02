@@ -733,7 +733,7 @@ namespace Garnet.test.cluster
         }
 
         private RedisResult ExecuteNode(int index, string command, params object[] args)
-            => context.clusterTestUtils.GetServer(context.endpoints[index].ToIPEndPoint()).Execute(command, args, CommandFlags.NoRedirect);
+            => context.clusterTestUtils.GetServer(context.endpoints[index].ToIPEndPoint()).Execute(0, command, args, CommandFlags.NoRedirect);
 
         private ClusterConfig ReadLiveConfig(int index)
         {
