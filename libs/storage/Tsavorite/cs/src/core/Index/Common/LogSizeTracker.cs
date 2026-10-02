@@ -263,10 +263,23 @@ namespace Tsavorite.core
         /// resizer's wait returns at once rather than sleeping out the timeout. Callers must accordingly call
         /// this only after publishing the size update.
         /// </remarks>
+        /// <summary>
+        /// Number of signals actually raised on <see cref="resizeTaskEvent"/>, as opposed to the (much larger)
+        /// number of times a caller asked for one. Incremented only on the rare path that genuinely signals, so
+        /// it costs the over-budget record path nothing; exposed so tests can assert that coalescing holds under
+        /// sustained pressure rather than inferring it from allocation counts.
+        /// </summary>
+        internal long ResizerSignalCount => Interlocked.Read(ref resizerSignalCount);
+
+        private long resizerSignalCount;
+
         private void SignalResizer()
         {
             if (Volatile.Read(ref resizePending) == 0 && Interlocked.Exchange(ref resizePending, 1) == 0)
+            {
+                _ = Interlocked.Increment(ref resizerSignalCount);
                 resizeTaskEvent.Set();
+            }
         }
 
         /// <summary>Adds size to the tracked total count</summary>
