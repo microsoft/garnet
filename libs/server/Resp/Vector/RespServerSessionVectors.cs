@@ -171,6 +171,11 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR EF must be an integer between 1 and 1000000"u8);
             }
 
+            if (distanceMetric.Value == VectorDistanceMetricType.Invalid)
+            {
+                return AbortWithErrorMessage("ERR invalid DISTANCE_METRIC"u8);
+            }
+
             var status = storageApi.VectorSetCreate(parseState.GetArgSliceByRef(0), dimensions.Value, reduceDims.Value,
                 quantizer.Value, buildExplorationFactor.Value, numLinks.Value, distanceMetric.Value,
                 quantState, out var result, out var errorMsg);
@@ -620,7 +625,7 @@ namespace Garnet.server
                             return AbortWithErrorMessage("ERR invalid option after element");
                         }
 
-                        if (!parseState.TryGetInt(curIx, out var numLinksNonNull) || numLinksNonNull is < VectorManager.MinNumLinks or VectorManager.MaxNumLinks)
+                        if (!parseState.TryGetInt(curIx, out var numLinksNonNull) || (numLinksNonNull is < VectorManager.MinNumLinks or > VectorManager.MaxNumLinks))
                         {
                             return AbortWithErrorMessage($"ERR M must be an integer between {VectorManager.MinNumLinks} and {VectorManager.MaxNumLinks}");
                         }

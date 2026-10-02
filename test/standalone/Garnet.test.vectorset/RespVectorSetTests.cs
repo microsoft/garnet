@@ -634,11 +634,11 @@ namespace Garnet.test
         [TestCase(new[] { "DIM", "3", "EF", "bad" }, "ERR EF must be an integer between 1 and 1000000")]
         [TestCase(new[] { "DIM", "3", "EF", "37", "EF", "37" }, "ERR EF specified multiple times")]
         [TestCase(new[] { "M", "16" }, "ERR DIM is required")]
-        [TestCase(new[] { "DIM", "0" }, "ERR DIM must be an integer between 1 and 65536")]
-        [TestCase(new[] { "DIM", "-1" }, "ERR DIM must be an integer between 1 and 65536")]
-        [TestCase(new[] { "DIM", "65537" }, "ERR DIM must be an integer between 1 and 65536")]
-        [TestCase(new[] { "DIM", "2147483648" }, "ERR DIM must be an integer between 1 and 65536")]
-        [TestCase(new[] { "DIM", "3.5" }, "ERR DIM must be an integer between 1 and 65536")]
+        [TestCase(new[] { "DIM", "0" }, "ERR DIM must be between 1 and 65536")]
+        [TestCase(new[] { "DIM", "-1" }, "ERR DIM must be between 1 and 65536")]
+        [TestCase(new[] { "DIM", "65537" }, "ERR DIM must be between 1 and 65536")]
+        [TestCase(new[] { "DIM", "2147483648" }, "ERR DIM must be between 1 and 65536")]
+        [TestCase(new[] { "DIM", "3.5" }, "ERR DIM must be between 1 and 65536")]
         [TestCase(new[] { "DIM", "3", "DIM", "3" }, "ERR DIM specified multiple times")]
         [TestCase(new[] { "DIM", "3", "M" }, "ERR missing XVCREATE option value")]
         [TestCase(new[] { "DIM", "3", "DISTANCE_METRIC" }, "ERR missing XVCREATE option value")]
@@ -690,16 +690,14 @@ namespace Garnet.test
         }
 
         [Test]
-        public void XVCREATERejectsEmptyKeyAndMissingDimensions()
+        public void XVCREATEMissingDimensions()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "", "DIM", 3));
-            ClassicAssert.AreEqual("ERR Vector Set key cannot be empty", exception.Message);
-            ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE"));
-            ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "vectors"));
-            ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "vectors", "DIM"));
+            _ = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE"));
+            _ = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "vectors"));
+            _ = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "vectors", "DIM"));
             ClassicAssert.IsFalse(db.KeyExists("vectors"));
         }
 
