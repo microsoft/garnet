@@ -492,6 +492,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AddWithXXOnMissingKeyDoesNotCreateKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "SortedSet_AddXX";
+            ClassicAssert.IsFalse(db.SortedSetAdd(key, "m1", 1, SortedSetWhen.Exists));
+            ClassicAssert.IsFalse(db.KeyExists(key));
+
+            ClassicAssert.AreEqual(0, (int)db.Execute("ZADD", key, "XX", "CH", "1", "m1"));
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
+        [Test]
         public void CanCreateLeaderBoard()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
