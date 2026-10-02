@@ -95,8 +95,8 @@ namespace Garnet.test
                     switch (cmd)
                     {
                         case RespCommand.XVCREATE:
-                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "foo", "DIM", 3));
-                            break;
+                            // XVCREATE fail if key already exists, doesn't matter if it's a Vector Set
+                            continue;
                         case RespCommand.XVIMPORT:
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "foo", "VECTOR", new byte[] { 1, 0, 0, 0 }, new byte[12]));
                             break;
@@ -630,7 +630,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "vectors"));
 
             exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "vectors", "DIM", 1024));
-            ClassicAssert.AreEqual("ERR vector set already exists", exception.Message);
+            ClassicAssert.AreEqual("ERR key already exists", exception.Message);
             ClassicAssert.AreEqual(768, (int)db.Execute("VDIM", "vectors"));
             ClassicAssert.IsTrue(db.KeyDelete("vectors"));
         }
@@ -782,7 +782,7 @@ namespace Garnet.test
                 }
                 catch (RedisServerException exception)
                 {
-                    ClassicAssert.AreEqual("ERR vector set already exists", exception.Message);
+                    ClassicAssert.AreEqual("ERR key already exists", exception.Message);
                     return false;
                 }
             }

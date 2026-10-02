@@ -637,6 +637,9 @@ namespace Garnet.server
             }
 
             database = databaseManager.TryGetOrAddDatabase(dbId, out var success, out added);
+
+            database.VectorManager?.Initialize();
+
             return success;
         }
 

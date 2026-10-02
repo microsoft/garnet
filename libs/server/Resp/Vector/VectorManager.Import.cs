@@ -3,8 +3,10 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -14,6 +16,76 @@ namespace Garnet.server
 #if NET9_0_OR_GREATER
         private readonly ConcurrentDictionary<byte[], int>.AlternateLookup<ReadOnlySpan<byte>> activeImportFinalizationsLookup;
 #endif
+
+        /// <summary>
+        /// Creates an empty Vector Set.
+        /// </summary>
+        internal GarnetStatus CreateEmptyVectorSet(
+            StorageSession storageSession, 
+            ReadOnlySpan<byte> key,
+            uint dims,
+            uint reduceDims, 
+            VectorQuantType quantizer,
+            uint buildExplorationFactor,
+            uint numLinks,
+            VectorDistanceMetricType distanceMetric,
+            bool hasQuantState, 
+            ReadOnlySpan<byte> quantState,
+            out VectorManagerResult result,
+            out ReadOnlySpan<byte> errorMsg
+        )
+        {
+            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+
+            SessionParseState reusableParseState = new();
+            var dimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
+            var reduceDimsArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+            PinnedSpanByte valueTypeArg = default;
+            PinnedSpanByte valuesArg = default;
+            PinnedSpanByte elementArg = default;
+            var quantizerArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
+            var buildExplorationFactorArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
+            PinnedSpanByte attributesArg = default;
+            var numLinksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+            var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
+
+            reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
+
+            var input = new StringInput(RespCommand.VADD, ref reusableParseState);
+
+            using (ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var indexRes, demandCreate: true))
+            {
+                if (indexRes == GarnetStatus.WRONGTYPE)
+                {
+                    result = VectorManagerResult.Duplicate;
+                    errorMsg = "ERR key already exists"u8;
+                    return GarnetStatus.OK;
+                }
+                else if (indexRes != GarnetStatus.OK)
+                {
+                    result = VectorManagerResult.BadParams;
+                    errorMsg = "ERR vector set create failed"u8;
+                    return GarnetStatus.OK;
+                }
+
+                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+
+                if (hasQuantState && !Service.SetQuantState(context, indexPtr, quantState))
+                {
+                    _ = storageSession.DELETE(PinnedSpanByte.FromPinnedSpan(key), ref storageSession.unifiedBasicContext);
+
+                    errorMsg = "ERR vector set quantizer state initialization failed"u8;
+                    result = VectorManagerResult.BadParams;
+                    return GarnetStatus.OK;
+                }
+
+                ReplicateVectorSetCreate(key, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, hasQuantState, quantState);
+            }
+
+            result = VectorManagerResult.OK;
+            errorMsg = ""u8;
+            return GarnetStatus.OK;
+        }
 
         /// <summary>
         /// Import a single term into a previously XVCREATE'd Vector Set.

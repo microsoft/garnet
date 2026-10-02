@@ -332,6 +332,8 @@ namespace Garnet.server
         /// <summary>
         /// Utility method that will read vector set index out, create one if it doesn't exist, or RECREATE one if needed.
         /// 
+        /// The <paramref name="demandCreate"/> allows fast failing if an index already exists under that key.
+        /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
         internal VectorSetLock ReadOrCreateVectorIndex(
@@ -339,7 +341,8 @@ namespace Garnet.server
             ReadOnlySpan<byte> key,
             ref StringInput input,
             scoped Span<byte> indexSpan,
-            out GarnetStatus status
+            out GarnetStatus status,
+            bool demandCreate = false
         )
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
@@ -387,6 +390,14 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
+                        if (demandCreate)
+                        {
+                            // WRONGTYPE is close enough - we wanted an empty key and we found a non-empty key
+                            status = GarnetStatus.WRONGTYPE;
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            return default;
+                        }
+
                         if (IsImportPending(indexSpan))
                         {
                             status = GarnetStatus.VECTORSETNOTREADY;
@@ -534,6 +545,9 @@ namespace Garnet.server
 
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
                             vectorSetLocks.ReleaseLock(lockToken);
+
+                            // We created the index, so we no longer need to demand create
+                            demandCreate = false;
                             continue;
                         }
                         else
@@ -565,99 +579,6 @@ namespace Garnet.server
 
                 throw;
             }
-        }
-
-        /// <summary>
-        /// Creates an empty index.
-        /// </summary>
-        internal GarnetStatus CreateVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key,
-            uint dimensions, uint reduceDims, VectorQuantType quantizer, uint buildExplorationFactor, uint numLinks,
-            VectorDistanceMetricType distanceMetric, bool hasQuantState, ReadOnlySpan<byte> quantState,
-            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
-        {
-            result = VectorManagerResult.Invalid;
-            errorMsg = default;
-
-            var input = new StringInput(RespCommand.VADD);
-            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
-            using var indexLock = ReadForDeleteVectorIndex(storageSession, key, ref input, indexSpan, out var readStatus);
-            if (readStatus == GarnetStatus.OK)
-            {
-                result = VectorManagerResult.Duplicate;
-                errorMsg = "ERR vector set already exists"u8;
-                return GarnetStatus.OK;
-            }
-
-            if (readStatus != GarnetStatus.NOTFOUND)
-            {
-                return readStatus;
-            }
-
-            var context = NextVectorSetContext(HashSlotUtils.HashSlot(key));
-            nint indexPtr = 0;
-            CreateIndex(dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, indexPtr, indexSpan);
-
-            UpdateContextMetadata(ref storageSession.vectorBasicContext);
-            bool requestQuantization;
-            unsafe
-            {
-                indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric,
-                    ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
-            }
-            CreateIndex(dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, indexPtr, indexSpan);
-
-            if (indexPtr == 0)
-            {
-                errorMsg = "ERR vector set creation failed"u8;
-                return GarnetStatus.OK;
-            }
-
-            if (hasQuantState && !Service.SetQuantState(context, indexPtr, quantState))
-            {
-                errorMsg = "ERR vector set quantizer state initialization failed"u8;
-                return GarnetStatus.OK;
-            }
-
-            input.arg1 = CreateIndexArg;
-            input.parseState.InitializeWithArguments([
-                PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref dimensions, 1))),
-                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref reduceDims, 1))),
-                    default, default, default,
-                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref quantizer, 1))),
-                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1))),
-                    default,
-                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref numLinks, 1))),
-                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref distanceMetric, 1))),
-                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref context, 1))),
-                    PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref indexPtr, 1)))
-            ]);
-
-            var writeStatus = storageSession.stringBasicContext.RMW((FixedSpanByteKey)key, ref input);
-            if (writeStatus.IsPending)
-            {
-                CompletePending(ref writeStatus, ref storageSession.stringBasicContext);
-            }
-
-            if (!writeStatus.IsCompletedSuccessfully)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-
-            if (!writeStatus.Record.Created)
-            {
-                result = VectorManagerResult.Duplicate;
-                errorMsg = "ERR vector set already exists"u8;
-                return GarnetStatus.OK;
-            }
-
-            ReplicateVectorSetCreate(key, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, hasQuantState, quantState);
-            result = VectorManagerResult.OK;
-            if (requestQuantization && !hasQuantState)
-            {
-                _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
-            }
-
-            return GarnetStatus.OK;
         }
 
         /// <summary>

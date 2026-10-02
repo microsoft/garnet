@@ -108,6 +108,10 @@ namespace Garnet.test
         {
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandsInfo(out var info, externalOnly: true));
 
+            HashSet<RespCommand> knownSafeONonnVectorSets = [
+                RespCommand.XVCREATE, // Fails on existing keys of any type
+            ];
+
             var pending = new Stack<RespCommandsInfo>(info.Values);
             var toCheck = new List<RespCommand>();
 
@@ -133,6 +137,8 @@ namespace Garnet.test
                     toCheck.Add(cmd.Command);
                 }
             }
+
+            toCheck.RemoveAll(knownSafeONonnVectorSets.Contains);
 
             return toCheck;
         }
@@ -230,15 +236,6 @@ namespace Garnet.test
         => [RespCommand.MSET, RespCommand.PSETEX, RespCommand.SET, RespCommand.SETEX, RespCommand.SETIFGREATER, RespCommand.SETIFMATCH, RespCommand.SETWITHETAG];
 
         // Vector Set commands - these WRONGTYPE against non-Vector Set keys
-
-        [Test]
-        public Task XVCREATEAsync()
-        {
-            return TestVectorSetCommandAsync(RunCommandAsync);
-
-            static Task RunCommandAsync(IDatabase db, RedisKey againstKey)
-            => db.ExecuteAsync("XVCREATE", againstKey, "DIM", 3);
-        }
 
         [Test]
         public Task XVIMPORTAsync()
