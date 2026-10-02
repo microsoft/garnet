@@ -80,9 +80,11 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | ----------- | ----------- | ----------- | ----------- | ----------- |
 | **Port** | ```--port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port to run server on |
 | **Address** | ```--bind``` | ```string``` | IP Address in v4/v6 format | Whitespace or comma separated string of IP addresses to bind server to (default: any) |
-| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | IP address that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Hostname that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Client-advertised port. Zero uses the listen port. Also used by peers unless ClusterPort is set. |
+| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | Client-advertised IP address. Also used by peers unless ClusterAddress is set. |
+| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Client-advertised hostname. |
+| **ClusterAddress** | ```--cluster-address``` | ```string``` | Concrete IP address in v4/v6 format | Peer IP address override. Null uses the client-advertised IP address. Does not change listener bindings. |
+| **ClusterPort** | ```--cluster-port``` | ```int``` | Integer in range:<br/>[1, 65535] | Peer port override. An unset value uses the client-advertised port. Does not change listener bindings. |
 | **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | ip, hostname, unknown | Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown) |
 | **LogMemorySize** | ```-m```<br/>```--memory``` | ```string``` | Memory size | Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2 |
 | **PageSize** | ```-p```<br/>```--page``` | ```string``` | Memory size | Size of each main-log page in bytes (rounds down to power of 2; minimum 512). |
@@ -284,13 +286,44 @@ when no valid checkpoint could be selected.
 
 ---
 
-## Cluster configuration compatibility
+## Separate peer and client endpoints
+
+`--cluster-announce-ip`, `--cluster-announce-port`, and `--cluster-announce-hostname`
+describe the client-facing endpoint. Client discovery and `MOVED` and `ASK` redirections use
+these values, subject to `--cluster-preferred-endpoint-type`.
+
+Set `--cluster-address` and `--cluster-port` to override the peer address and port.
+Each unset peer setting inherits the corresponding client-advertised value. Gossip,
+replication, failover, cluster publish, and migration connections use the peer endpoint.
+`CLUSTER MEET` must target a reachable peer endpoint. `MIGRATE` accepts a known peer endpoint
+or client-advertised address or hostname and port, then connects through the peer endpoint.
+
+For example, these arguments advertise a translated client endpoint for a private listener:
+
+```text
+--bind 10.0.0.4 --port 6379
+--cluster-announce-ip 203.0.113.4 --cluster-announce-port 17004
+--cluster-announce-hostname cache.example.com --cluster-preferred-endpoint-type hostname
+--cluster-address 10.0.0.4 --cluster-port 6379
+```
+
+Advertised endpoints do not change listener bindings or configure forwarding, name resolution,
+or certificates. Configure those separately. Startup settings replace recovered local
+endpoints. Removing a peer override restores inheritance from the client endpoint.
+
+### Upgrade compatibility
 
 :::warning Breaking change
 
-Garnet 2.2.0 writes persisted cluster configuration in format version two. After `nodes.conf`
-has been rewritten, the node cannot be rolled back to a Garnet version earlier than 2.2.0
-that only supports format version one. Back up the cluster configuration before upgrading.
+Garnet 3.0.0 enables cluster configuration format version two for outbound gossip and introduces
+separate peer endpoints. Existing clusters running a version earlier than 2.2.0 must first upgrade
+every node to Garnet 2.2.0 while keeping the existing endpoints. Only after every node runs Garnet
+2.2.0 may the cluster be upgraded to Garnet 3.0.0 and the new peer endpoint settings be configured.
+A direct rolling upgrade from a version earlier than 2.2.0 to 3.0.0 is not supported.
+
+Garnet 2.2.0 and 3.0.0 persist cluster configuration in format version two. After `nodes.conf`
+has been rewritten, the node cannot be rolled back to a version earlier than 2.2.0 that only
+supports format version one. Back up the cluster configuration before upgrading.
 
 :::
 

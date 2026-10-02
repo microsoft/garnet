@@ -33,7 +33,9 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname);
+                var peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
+                var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname,
+                    peerEndpoint.Address.ToString(), peerEndpoint.Port);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
@@ -122,6 +124,7 @@ namespace Garnet.cluster
                     var address = endpoint.Address.ToString();
                     var port = endpoint.Port;
                     var hostname = serverOptions.ClusterAnnounceHostname;
+                    var peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
 
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
@@ -132,7 +135,9 @@ namespace Garnet.cluster
                         configEpoch: configEpoch,
                         role: NodeRole.PRIMARY,
                         replicaOfNodeId: null,
-                        hostname: string.IsNullOrEmpty(hostname) ? "" : hostname);
+                        hostname: string.IsNullOrEmpty(hostname) ? "" : hostname,
+                        clusterAddress: peerEndpoint.Address.ToString(),
+                        clusterPort: peerEndpoint.Port);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }
