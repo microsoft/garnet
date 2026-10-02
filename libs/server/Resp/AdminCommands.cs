@@ -826,6 +826,11 @@ namespace Garnet.server
                 return NetworkDebugBlock();
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKGET))
+            {
+                return NetworkDebugBlockGet();
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
                 var help = new string[]
@@ -847,6 +852,9 @@ namespace Garnet.server
                     "BLOCK <seconds> [SYNC]",
                     "\tWait <seconds> before replying. The session parks for the duration and holds no",
                     "\tthread; SYNC waits in place on the session's thread instead.",
+                    "BLOCKGET <seconds> <key>",
+                    "\tWait <seconds>, then read <key> and reply with its value. The read runs on the",
+                    "\tthread that ends the wait, against the parked session's own storage.",
                     "PANIC",
                     "\tCrash the server simulating a panic.",
                     "HELP",
