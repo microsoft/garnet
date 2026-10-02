@@ -182,8 +182,7 @@ namespace Garnet.server
                         needsRecreate = false;
                     }
 
-                    var importNeedsExclusive = readRes == GarnetStatus.OK && readCmd == RespCommand.XVIMPORT && !IsImportPending(indexSpan);
-                    if (lockToken.IsExclusive && !needsRecreate && !importNeedsExclusive)
+                    if (lockToken.IsExclusive && !needsRecreate)
                     {
                         // Raised to recreate but don't need it, lower to shared and retry
                         vectorSetLocks.ReleaseLock(lockToken);
@@ -307,7 +306,7 @@ namespace Garnet.server
                         return default;
                     }
 
-                    if (importNeedsExclusive && !lockToken.IsExclusive && !vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
+                    if (!lockToken.IsExclusive && !vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
                     {
                         vectorSetLocks.ReleaseLock(lockToken);
                         takeExclusiveLock = true;
