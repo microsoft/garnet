@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Security;
@@ -436,6 +435,340 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A zero-length value replies with an empty bulk string.
+        /// </summary>
+        /// <remarks>
+        /// A successful read of an empty value has no pooled buffer behind it, so the result's span cannot
+        /// be taken without checking. It is reached on the parked path and on the inline fallback alike, and
+        /// getting it wrong closes the connection rather than returning a wrong answer, which makes it worth
+        /// covering on both.
+        /// </remarks>
+        [Test]
+        public void BlockGetRepliesWithAnEmptyValue()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("SET", "empty-key", ""));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0.1", "empty-key"));
+            ClassicAssert.AreEqual("$0", client.ReadLine());
+            ClassicAssert.AreEqual("", client.ReadLine());
+
+            // Still usable, which is the part that fails loudly if the empty value is mishandled.
+            client.Send(RawRespClient.Command("PING"));
+            ClassicAssert.AreEqual("+PONG", client.ReadLine());
+        }
+
+        /// <summary>
+        /// Reading a key of the wrong type reports it, rather than reporting the key as missing.
+        /// </summary>
+        /// <remarks>
+        /// The storage API answers with a status, and a blocking command that collapses every status other
+        /// than success into its "nothing there" reply turns a type error into a silent wrong answer. The
+        /// comparison against an ordinary <c>GET</c> on the same key is the point: a blocking command must
+        /// answer as its non-blocking equivalent does.
+        /// </remarks>
+        [Test]
+        public void BlockGetReportsAWrongTypeRatherThanAMiss()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("LPUSH", "wrongtype-key", "v"));
+            ClassicAssert.AreEqual(":1", client.ReadLine());
+
+            client.Send(RawRespClient.Command("GET", "wrongtype-key"));
+            StringAssert.StartsWith("-WRONGTYPE", client.ReadLine());
+
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0.1", "wrongtype-key"));
+            StringAssert.StartsWith("-WRONGTYPE", client.ReadLine());
+
+            client.Send(RawRespClient.Command("PING"));
+            ClassicAssert.AreEqual("+PONG", client.ReadLine());
+        }
+
+        /// <summary>
+        /// A blocking command inside a transaction must not read through a context that would deadlock
+        /// against the transaction's own locks.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A transaction holds exclusive locks on the keys its commands declare, and a read issued through a
+        /// basic context inside that transaction waits for a lock the same thread already holds. The session
+        /// never replies, and because the lock outlives it, every other connection that touches the key
+        /// stops too -- a single client stalls the key for the whole server.
+        /// </para>
+        /// <para>
+        /// <c>DEBUG</c> carries no key specs, because its key position depends on its subcommand, so a
+        /// transaction cannot lock what <c>BLOCKGET</c> is about to read. Refusing is therefore the correct
+        /// answer here rather than merely the convenient one; a real blocking command declares its keys and
+        /// is locked like any other command.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void BlockGetInsideATransactionDoesNotStallTheKey()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+            using var other = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("MULTI"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+            client.Send(RawRespClient.Command("SET", "txn-key", "v"));
+            ClassicAssert.AreEqual("+QUEUED", client.ReadLine());
+
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0", "txn-key"));
+            ClassicAssert.AreEqual("+QUEUED", client.ReadLine());
+
+            client.Send(RawRespClient.Command("EXEC"));
+
+            // Reaching the array at all is the assertion: before the fix EXEC never replied.
+            ClassicAssert.AreEqual("*2", client.ReadLine());
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+            StringAssert.StartsWith("-ERR", client.ReadLine());
+
+            // The key is not stalled behind a lock the aborted transaction never released.
+            other.Send(RawRespClient.Command("GET", "txn-key"));
+            ClassicAssert.AreEqual("$1", other.ReadLine());
+            ClassicAssert.AreEqual("v", other.ReadLine());
+
+            client.Send(RawRespClient.Command("PING"));
+            ClassicAssert.AreEqual("+PONG", client.ReadLine());
+        }
+
+        /// <summary>
+        /// Teardown must wait for a parked operation that is inside the session's storage, rather than
+        /// disposing that storage underneath it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A parked operation is licensed to use the session's storage, which means teardown can arrive
+        /// while it is in the middle of a read. Aborting does not help: an operation that has already
+        /// claimed its outcome is past the point where cancellation reaches it, and waiting for it to
+        /// *publish* would make teardown wait out an operation it is trying to cancel. What teardown has to
+        /// wait for is narrower -- the storage access itself, which starts only after the wait has ended.
+        /// </para>
+        /// <para>
+        /// Pinned rather than raced: the operation is held inside its storage scope, so the disposal below
+        /// is guaranteed to run against a session whose storage is demonstrably in use. The gate is opened
+        /// in-process rather than over a connection, because by then the server has closed its listener and
+        /// torn down its sessions -- there is no connection left to open it with.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void DisposeWaitsForAParkedOperationInsideTheStorage()
+        {
+            using (var arm = new RawRespClient(TestUtils.EndPoint))
+            {
+                arm.Send(RawRespClient.Command("SET", "held-read-key", "held"));
+                ClassicAssert.AreEqual("+OK", arm.ReadLine());
+
+                arm.Send(RawRespClient.Command("DEBUG", "BLOCK", "0", "GETHOLDREAD"));
+                ClassicAssert.AreEqual(1, arm.ReadInteger());
+            }
+
+            var victim = new RawRespClient(TestUtils.EndPoint);
+            var disposed = new ManualResetEventSlim(false);
+            Thread disposer = null;
+
+            try
+            {
+                victim.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0", "held-read-key"));
+
+                using (var probe = new RawRespClient(TestUtils.EndPoint))
+                {
+                    var waited = Stopwatch.StartNew();
+                    while (true)
+                    {
+                        probe.Send(RawRespClient.Command("DEBUG", "BLOCK", "0", "GETREADHELD"));
+                        if (probe.ReadInteger() == 1)
+                            break;
+
+                        ClassicAssert.Less(waited.Elapsed.TotalSeconds, 20,
+                            "The operation never reached its storage scope, so this test proves nothing");
+                        Thread.Sleep(5);
+                    }
+                }
+
+                disposer = new Thread(() =>
+                {
+                    server.Dispose();
+                    disposed.Set();
+                })
+                { IsBackground = true };
+                disposer.Start();
+
+                // Teardown must not get past the storage while the operation is inside it. A dispose that
+                // finished here would have released the Tsavorite sessions the held operation is about to
+                // read through.
+                ClassicAssert.IsFalse(disposed.Wait(500),
+                    "The server finished disposing while a parked operation was inside its storage");
+            }
+            finally
+            {
+                RespServerSession.DebugBlockGetValues.ProceedRead();
+                victim.Dispose();
+            }
+
+            // Letting it go must then let teardown finish, so the wait is a handshake and not a stall.
+            ClassicAssert.IsTrue(disposed.Wait(30_000),
+                "Teardown never completed after the parked operation left the session's storage");
+            disposer.Join(30_000);
+
+            // Replaced so that TearDown has a live server to dispose.
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+        }
+
+        /// <summary>
+        /// A blocking operation must not be started while the parse loop is still inside the batch that
+        /// parked it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Parking publishes the operation from deep inside the batch, but starting it there would let it
+        /// run -- on a timer or pool thread, against this session's storage and scratch buffers -- while the
+        /// batch still owes the session its response object, its cluster epoch and a pair of scratch buffer
+        /// resets. An operation with no wait at all is the case that exposes it, because it can be executing
+        /// before the parking thread has taken its next instruction.
+        /// </para>
+        /// <para>
+        /// The damage is a race, so the assertion is on the contract rather than on a symptom: every start
+        /// is checked, in every blocking command, on every one of these iterations. That is a debug-build
+        /// check, which is where this suite runs in CI.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ZeroDelayOperationIsNotStartedInsideTheBatch()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("SET", "handoff-key", "handoff"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+            BlockingCommandContext.ResetContractViolations();
+
+            for (var i = 0; i < 200; i++)
+            {
+                client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0", "handoff-key"));
+                ClassicAssert.AreEqual("$7", client.ReadLine());
+                ClassicAssert.AreEqual("handoff", client.ReadLine());
+
+                client.Send(RawRespClient.Command("DEBUG", "BLOCK", "0"));
+                ClassicAssert.AreEqual("+OK", client.ReadLine());
+            }
+
+            ClassicAssert.AreEqual(0, BlockingCommandContext.ContractViolations,
+                "A blocking operation was started while its session was still inside the batch that parked it");
+        }
+
+        /// <summary>
+        /// A session that has run a script can still park afterwards.
+        /// </summary>
+        /// <remarks>
+        /// Parking is refused from inside a script, because a script re-enters the parse loop on the session
+        /// that is running it and parking there would suspend a session whose script is still on the stack.
+        /// That refusal is driven by a nesting count, and a count that is not given back leaves the session
+        /// unable to park for the rest of its life -- a leak that no script test would notice and that turns
+        /// every later blocking command on that connection into a silent in-place wait.
+        /// </remarks>
+        [Test]
+        public void ASessionCanStillParkAfterRunningAScript()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("SET", "script-key", "scripted"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+            for (var i = 0; i < 3; i++)
+            {
+                client.Send(RawRespClient.Command("EVAL", "return redis.call('GET', KEYS[1])", "1", "script-key"));
+                ClassicAssert.AreEqual("$8", client.ReadLine());
+                ClassicAssert.AreEqual("scripted", client.ReadLine());
+            }
+
+            var sw = Stopwatch.StartNew();
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0.3", "script-key"));
+            ClassicAssert.AreEqual("$8", client.ReadLine());
+            ClassicAssert.AreEqual("scripted", client.ReadLine());
+            sw.Stop();
+
+            ClassicAssert.GreaterOrEqual(sw.ElapsedMilliseconds, 250,
+                "The command did not park after the session had run a script, so the nesting count was not given back");
+        }
+
+        /// <summary>
+        /// A blocked collection command that times out must leave the collection alone.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <c>BLPOP</c> registers an observer against the key and then waits. When the wait expires the
+        /// session gives up and replies nil, but the observer is still registered, and the broker drives it
+        /// using the session's own storage. An observer that is not re-checked against its own state under
+        /// the lock that owns it can therefore pop an element on behalf of a session that has already
+        /// stopped waiting for one -- the element is removed and handed to nobody.
+        /// </para>
+        /// <para>
+        /// That also contradicts the exclusivity a parked session relies on: the connection is free to issue
+        /// a blocking command immediately after the timeout, and the abandoned observer would be a second
+        /// driver of the storage the parked operation believes it has to itself.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ATimedOutBlockingPopDoesNotConsumeALaterPush()
+        {
+            const int Iterations = 400;
+
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            var timeouts = 0;
+            var consumed = 0;
+
+            for (var i = 0; i < Iterations; i++)
+            {
+                var key = "broker-key-" + i;
+
+                // The element is already there, so the only question is which side of the deadline the
+                // broker reaches this observer on. A one-millisecond timeout loses that race often: the
+                // observer is handed to the broker through a queue, and the wait expires while it is still
+                // in it.
+                client.Send(RawRespClient.Command("RPUSH", key, "v"));
+                _ = client.ReadInteger();
+
+                client.Send(RawRespClient.Command("BLPOP", key, "0.001"));
+
+                var reply = client.ReadLine();
+                if (reply != "*-1")
+                {
+                    // Served before the deadline, which is the correct outcome for that ordering.
+                    ClassicAssert.AreEqual("*2", reply);
+                    ClassicAssert.AreEqual("$" + key.Length, client.ReadLine());
+                    ClassicAssert.AreEqual(key, client.ReadLine());
+                    ClassicAssert.AreEqual("$1", client.ReadLine());
+                    ClassicAssert.AreEqual("v", client.ReadLine());
+                    continue;
+                }
+
+                timeouts++;
+
+                // The session stopped waiting, so nothing is entitled to pop on its behalf any more. Give
+                // the abandoned observer time to do so before looking.
+                Thread.Sleep(2);
+                client.Send(RawRespClient.Command("LLEN", key));
+                if (client.ReadInteger() != 1)
+                    consumed++;
+            }
+
+            ClassicAssert.Greater(timeouts, 0,
+                "Every BLPOP was served before its deadline, so the abandoned-observer window was never reached");
+
+            ClassicAssert.AreEqual(0, consumed,
+                $"{consumed} of {timeouts} timed-out BLPOPs still popped their element: an abandoned observer "
+                + "operated the session's storage on behalf of a session that had stopped waiting");
+        }
+
+        /// <summary>
         /// Tearing the server down between the read and the reply must still return the rented buffer.
         /// </summary>
         /// <remarks>
@@ -448,11 +781,10 @@ namespace Garnet.test
         /// path that lands inside it, so disposal is what has to return the buffer.
         /// </para>
         /// <para>
-        /// The window is reached by weight of numbers rather than by pinning the operation inside it: the
-        /// waits are staggered across the dispose so that whatever instant teardown lands on, some
-        /// operations are in it. The assertion is one-sided on purpose -- a run that happens to miss the
-        /// window still passes -- so what keeps it honest is that it fails reliably when disposal stops
-        /// returning the buffer.
+        /// The operation is pinned inside the window rather than raced into it, and both halves of that are
+        /// asserted before anything is torn down: that a buffer was rented, and that the operation is
+        /// holding between renting it and releasing its session. Without both, a reclamation check reads the
+        /// same count whether the window was entered or missed entirely, and passes either way.
         /// </para>
         /// </remarks>
         [Test]
@@ -464,39 +796,57 @@ namespace Garnet.test
                 return client.ReadInteger();
             }
 
-            const int SessionCount = 64;
+            int baselineOutstanding;
+            int baselineAcquired;
 
-            int baseline;
-            using (var probe = new RawRespClient(TestUtils.EndPoint))
+            using (var arm = new RawRespClient(TestUtils.EndPoint))
             {
-                probe.Send(RawRespClient.Command("SET", "disposed-key", "value"));
-                ClassicAssert.AreEqual("+OK", probe.ReadLine());
-                baseline = Poll(probe, "GETLEAKCOUNT");
+                arm.Send(RawRespClient.Command("SET", "disposed-key", "value"));
+                ClassicAssert.AreEqual("+OK", arm.ReadLine());
+
+                baselineOutstanding = Poll(arm, "GETLEAKCOUNT");
+                baselineAcquired = Poll(arm, "GETACQCOUNT");
+
+                ClassicAssert.AreEqual(1, Poll(arm, "GETHOLDVALUE"));
             }
 
-            var clients = new List<RawRespClient>(SessionCount);
+            var victim = new RawRespClient(TestUtils.EndPoint);
+
             try
             {
-                for (var i = 0; i < SessionCount; i++)
-                {
-                    clients.Add(new RawRespClient(TestUtils.EndPoint));
+                victim.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0", "disposed-key"));
 
-                    // Staggered so the deadlines are spread across the dispose below rather than bunched
-                    // before or after it.
-                    clients[i].Send(RawRespClient.Command("DEBUG", "BLOCKGET",
-                        (0.20 + (i * 0.005)).ToString(CultureInfo.InvariantCulture), "disposed-key"));
+                using (var probe = new RawRespClient(TestUtils.EndPoint))
+                {
+                    var waited = Stopwatch.StartNew();
+                    while (Poll(probe, "GETVALUEHELD") != 1)
+                    {
+                        ClassicAssert.Less(waited.Elapsed.TotalSeconds, 20,
+                            "The operation never reached the window between renting a buffer and releasing "
+                            + "its session, so this test proves nothing");
+                        Thread.Sleep(5);
+                    }
+
+                    // Both halves, before anything is disposed: a buffer exists, and it is held unpublished.
+                    ClassicAssert.AreEqual(baselineAcquired + 1, Poll(probe, "GETACQCOUNT"),
+                        "The held operation did not rent a buffer, so there is nothing for disposal to leak");
+                    ClassicAssert.AreEqual(baselineOutstanding + 1, Poll(probe, "GETLEAKCOUNT"),
+                        "The rented buffer was already returned before the window was entered");
                 }
 
-                Thread.Sleep(300);
+                // Teardown now runs with a buffer rented and no reply that will ever return it.
                 server.Dispose();
             }
             finally
             {
-                foreach (var client in clients)
-                    client.Dispose();
+                // Released after the dispose above, which is the ordering under test: the operation finds
+                // its session gone when it finally carries on.
+                RespServerSession.DebugBlockGetValues.Proceed();
+                victim.Dispose();
             }
 
-            // Process-wide statics outlive the disposed server, so a fresh one reports what it left behind.
+            // Process-wide statics outlive the disposed server, so a replacement reports what it left
+            // behind.
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
@@ -505,11 +855,11 @@ namespace Garnet.test
 
             var elapsed = Stopwatch.StartNew();
             int outstanding;
-            while ((outstanding = Poll(prober, "GETLEAKCOUNT")) != baseline)
+            while ((outstanding = Poll(prober, "GETLEAKCOUNT")) != baselineOutstanding)
             {
                 ClassicAssert.Less(elapsed.Elapsed.TotalSeconds, 20,
-                    $"{outstanding - baseline} pooled value buffers were read from the store and never "
-                    + "returned when the server was disposed before their replies could be written");
+                    $"{outstanding - baselineOutstanding} pooled value buffers were read from the store and "
+                    + "never returned when the server was disposed before their replies could be written");
                 Thread.Sleep(5);
             }
         }

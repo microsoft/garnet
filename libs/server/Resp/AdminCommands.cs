@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -70,7 +70,7 @@ namespace Garnet.server
                 RespCommand.ACL_SETUSER => NetworkAclSetUser(),
                 RespCommand.ACL_USERS => NetworkAclUsers(),
                 RespCommand.ACL_SAVE => NetworkAclSave(),
-                RespCommand.DEBUG => NetworkDebug(),
+                RespCommand.DEBUG => NetworkDebug(ref storageApi),
                 RespCommand.REGISTERCS => NetworkRegisterCs(storeWrapper.customCommandManager),
                 RespCommand.MODULE_LOADCS => NetworkModuleLoad(storeWrapper.customCommandManager),
                 _ => cmdFound = false
@@ -725,7 +725,8 @@ namespace Garnet.server
             return true;
         }
 
-        private bool NetworkDebug()
+        private bool NetworkDebug<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
         {
             if (parseState.Count == 0)
             {
@@ -828,7 +829,7 @@ namespace Garnet.server
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKGET))
             {
-                return NetworkDebugBlockGet();
+                return NetworkDebugBlockGet(ref storageApi);
             }
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))

@@ -414,6 +414,11 @@ namespace Garnet.server
             MarkDisposedForParking();
             DisposeParkedCommand();
 
+            // Before any storage is released below. A parked operation that got into the session's storage
+            // ahead of the flag above is still in it, and the database sessions it is driving are the ones
+            // this method is about to dispose.
+            DrainParkedStorage();
+
             if (recvBufferPtr != null)
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
@@ -548,6 +553,11 @@ namespace Garnet.server
             bytesRead = bytesReceived;
             if (!txnSkip)
                 readHead = 0;
+
+            // Nesting is counted because parking is only sound from the outermost frame: a Lua script
+            // dispatching redis.call re-enters this method, and a command parking there would suspend a
+            // session whose script is still running on this thread. See CanParkSession.
+            consumeDepth++;
             try
             {
                 LatencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
@@ -658,6 +668,13 @@ namespace Garnet.server
                 // this method when read on every batch.
                 if (--sessionTrimCountdown <= 0)
                     TrimSessionBuffers();
+
+                // Last, and deliberately after every reset above. A command that parked during this batch
+                // published its context where it parked but left the operation unstarted, because starting
+                // it there would let it run -- on a timer or pool thread, against this session's storage and
+                // scratch buffers -- while this frame still owed the session the cleanup directly above.
+                consumeDepth--;
+                StartParkedCommand();
             }
 
             if (txnSkip)

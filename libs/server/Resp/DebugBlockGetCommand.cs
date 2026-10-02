@@ -16,6 +16,128 @@ namespace Garnet.server
     internal sealed partial class RespServerSession
     {
         /// <summary>
+        /// Rent and return accounting for <c>DEBUG BLOCKGET</c>, held outside the generic context so that
+        /// every instantiation of it shares one counter.
+        /// </summary>
+        internal static class DebugBlockGetValues
+        {
+            internal static int Outstanding;
+
+            /// <summary>
+            /// How long a gate holds before giving up. Long enough that a test never races it, short enough
+            /// that a test which fails before opening it does not wedge a thread for the whole run.
+            /// </summary>
+            const int GateTimeoutMs = 30_000;
+
+            // Monotonic, so a test can tell "the read has produced a buffer" from "it has not got there
+            // yet". Without it, a reclamation check that runs right after a teardown reads the same zero
+            // either way and passes without the path it is checking ever having been taken.
+            static int acquired;
+
+            // Pins a completion between reading the value and releasing the session, which is the window a
+            // teardown must not silently drop a buffer in. Arming is one-shot so that exactly one operation
+            // is held, rather than every subsequent one on the server.
+            static int holdNext;
+            static readonly SemaphoreSlim ValueHeld = new(initialCount: 0);
+            static readonly SemaphoreSlim ValueProceed = new(initialCount: 0);
+
+            // The same instrument one step earlier: pins a completion inside the storage scope, which is
+            // the window a teardown must wait out rather than disposing the storage underneath it.
+            static int holdReadNext;
+            static readonly SemaphoreSlim ReadHeld = new(initialCount: 0);
+            static readonly SemaphoreSlim ReadProceed = new(initialCount: 0);
+
+            /// <summary>
+            /// Number of pooled value buffers read from the store and not yet returned. Any value other than
+            /// zero once every connection is gone is a leak, which is what makes the abort and teardown
+            /// paths testable rather than merely argued.
+            /// </summary>
+            internal static int Count => Volatile.Read(ref Outstanding);
+
+            /// <summary>
+            /// Number of pooled value buffers read since the server started. Strictly increasing, so a test
+            /// can wait for a read to have happened rather than assuming it has.
+            /// </summary>
+            internal static int Acquired => Volatile.Read(ref acquired);
+
+            /// <summary>
+            /// Records a rented buffer.
+            /// </summary>
+            internal static void Rent()
+            {
+                _ = Interlocked.Increment(ref Outstanding);
+                _ = Interlocked.Increment(ref acquired);
+            }
+
+            /// <summary>
+            /// Arms the next operation to pause between reading its value and releasing its session.
+            /// </summary>
+            internal static void ArmHold() => Volatile.Write(ref holdNext, 1);
+
+            /// <summary>
+            /// Takes the arming, if it is set, so that it applies to one operation only.
+            /// </summary>
+            internal static bool TryTakeHold() => Interlocked.Exchange(ref holdNext, 0) == 1;
+
+            /// <summary>
+            /// Pauses the calling operation until a test lets it proceed.
+            /// </summary>
+            internal static void Hold()
+            {
+                ValueHeld.Release();
+
+                // Bounded, because the release travels over a connection to a server that may be in the
+                // middle of being disposed. A gate that is never opened must give the thread back rather
+                // than hold it for the life of the process.
+                _ = ValueProceed.Wait(GateTimeoutMs);
+            }
+
+            /// <summary>
+            /// Whether an operation is currently pinned in that window, consuming the signal if so.
+            /// </summary>
+            /// <remarks>
+            /// Consuming matters: a signal that merely stayed raised would still read as set on the next
+            /// attempt, so a repeated test would observe the previous iteration's operation and tear down a
+            /// connection that had not reached the window at all.
+            /// </remarks>
+            internal static bool TryConsumeHeld() => ValueHeld.Wait(0);
+
+            /// <summary>
+            /// Lets a pinned operation carry on.
+            /// </summary>
+            internal static void Proceed() => ValueProceed.Release();
+
+            /// <summary>
+            /// Arms the next operation to pause inside its storage scope, before it reads.
+            /// </summary>
+            internal static void ArmHoldRead() => Volatile.Write(ref holdReadNext, 1);
+
+            /// <summary>
+            /// Takes that arming, if it is set, so that it applies to one operation only.
+            /// </summary>
+            internal static bool TryTakeHoldRead() => Interlocked.Exchange(ref holdReadNext, 0) == 1;
+
+            /// <summary>
+            /// Pauses the calling operation inside its storage scope until a test lets it proceed.
+            /// </summary>
+            internal static void HoldRead()
+            {
+                ReadHeld.Release();
+                _ = ReadProceed.Wait(GateTimeoutMs);
+            }
+
+            /// <summary>
+            /// Whether an operation is currently pinned inside its storage scope, consuming the signal if so.
+            /// </summary>
+            internal static bool TryConsumeReadHeld() => ReadHeld.Wait(0);
+
+            /// <summary>
+            /// Lets an operation pinned inside its storage scope carry on.
+            /// </summary>
+            internal static void ProceedRead() => ReadProceed.Release();
+        }
+
+        /// <summary>
         /// Waits without holding a thread and then performs a real <c>GET</c> against the parked session's
         /// own storage, from the thread the wait completes on.
         /// </summary>
@@ -28,16 +150,25 @@ namespace Garnet.server
         /// could not express it would not be a pattern for blocking commands at all.
         /// </para>
         /// <para>
-        /// The read runs on the timer or thread-pool thread that ends the wait, directly against
-        /// <see cref="RespServerSession.storageSession"/>. That is sound because the session is parked: it
-        /// has stopped parsing, so nothing else is driving its Tsavorite session, and
-        /// <see cref="RespServerSession.CanParkSession"/> has already refused the one case where something
-        /// would be. The ordering rule from <see cref="BlockingCommandContext.OnStart"/> is what keeps it
-        /// sound -- the read completes before the session is released, never after, because the release
-        /// hands the same storage back to the parse loop.
+        /// The read runs on the timer or thread-pool thread that ends the wait, through the storage API the
+        /// command was dispatched with. That API is captured by value because it arrives by <c>ref</c> and
+        /// the park outlives the frame holding it; capturing it, rather than reaching for a context of this
+        /// context's own choosing, is what keeps the read on the right one -- on a replica the dispatched
+        /// API is the consistent-read API, and a hard-coded basic context would silently bypass it.
+        /// </para>
+        /// <para>
+        /// Two things make that sound. The session is parked, so it has stopped parsing and nothing else is
+        /// driving its Tsavorite session, and <see cref="RespServerSession.CanParkSession"/> has already
+        /// refused the cases where something would be. And the read happens inside
+        /// <see cref="BlockingCommandContext.TryEnterStorageScope"/> and before
+        /// <see cref="BlockingCommandContext.ReleaseSession"/>, which bound it against the two things that
+        /// can take the storage away: teardown disposing it, and the resume handing it back to the parse
+        /// loop for whatever the client pipelined behind this command.
         /// </para>
         /// </remarks>
-        sealed class DebugBlockGetCommandContext : BlockingCommandContext, IThreadPoolWorkItem
+        /// <typeparam name="TGarnetApi">Storage API the command was dispatched with.</typeparam>
+        sealed class DebugBlockGetCommandContext<TGarnetApi> : BlockingCommandContext, IThreadPoolWorkItem
+            where TGarnetApi : IGarnetApi
         {
             readonly int millisecondsDelay;
 
@@ -55,11 +186,21 @@ namespace Garnet.server
             readonly byte[] key;
             readonly int keyLength;
 
+            /// <summary>
+            /// Storage API this command was dispatched with, copied out of the parse frame.
+            /// </summary>
+            readonly TGarnetApi storage;
+
             Timer timer;
             GarnetStatus status;
             MemoryResult<byte> value;
             bool aborted;
             bool readFailed;
+
+            /// <summary>
+            /// Whether the session was being torn down by the time the wait ended, so the read never ran.
+            /// </summary>
+            bool storageUnavailable;
 
             /// <summary>
             /// Whether <see cref="value"/> was counted as outstanding, so that the return is matched to the
@@ -73,20 +214,27 @@ namespace Garnet.server
             /// </summary>
             int valueTaken;
 
-            static int outstandingValues;
+            /// <summary>
+            /// Whether this operation pauses between reading its value and releasing its session, so that a
+            /// test can tear the connection down inside that window instead of hoping to hit it.
+            /// </summary>
+            readonly bool holdValue;
 
             /// <summary>
-            /// Number of pooled value buffers read from the store and not yet returned. Any value other than
-            /// zero once every connection is gone is a leak, which is what makes the abort and teardown
-            /// paths testable rather than merely argued.
+            /// Whether this operation pauses inside its storage scope, so that a test can tear the session
+            /// down while its storage is demonstrably in use.
             /// </summary>
-            internal static int OutstandingValues => Volatile.Read(ref outstandingValues);
+            readonly bool holdRead;
 
             /// <param name="millisecondsDelay">How long to wait before reading.</param>
             /// <param name="key">Key to read once the wait elapses.</param>
-            internal DebugBlockGetCommandContext(int millisecondsDelay, ReadOnlySpan<byte> key)
+            /// <param name="storage">Storage API the command was dispatched with.</param>
+            internal DebugBlockGetCommandContext(int millisecondsDelay, ReadOnlySpan<byte> key, ref TGarnetApi storage)
             {
                 this.millisecondsDelay = millisecondsDelay;
+                this.storage = storage;
+                holdValue = DebugBlockGetValues.TryTakeHold();
+                holdRead = DebugBlockGetValues.TryTakeHoldRead();
                 keyLength = key.Length;
 
                 // Pinned because the read below hands it to Tsavorite as a PinnedSpanByte, and length is
@@ -105,7 +253,7 @@ namespace Garnet.server
 
                 using (ExecutionContext.SuppressFlow())
                 {
-                    timer = new Timer(static state => ((DebugBlockGetCommandContext)state).Finish(aborted: false),
+                    timer = new Timer(static state => ((DebugBlockGetCommandContext<TGarnetApi>)state).Finish(aborted: false),
                                       this, Timeout.Infinite, Timeout.Infinite);
                 }
 
@@ -124,39 +272,78 @@ namespace Garnet.server
                 if (!TryClaimOutcome())
                     return;
 
-                this.aborted = aborted;
+                // The release is owed from here on: a claim that is won and then abandoned leaves the
+                // session parked on a wait that has already ended, with no receive outstanding to notice.
+                try
+                {
+                    this.aborted = aborted;
 
-                // Between the claim and the release is the whole of this operation's exclusive access to the
-                // session's storage, so the read goes here. An abort skips it: the connection is being torn
-                // down and the session's storage is no longer this operation's to touch.
-                if (!aborted)
-                    ReadValue();
+                    // Between the claim and the release is the whole of this operation's exclusive access
+                    // to the session's storage, so the read goes here. An abort skips it: the connection is
+                    // being torn down and the session's storage is no longer this operation's to touch.
+                    if (!aborted)
+                    {
+                        ReadValue();
 
-                ReleaseSession();
+                        if (holdValue)
+                        {
+                            // Pinned between owning the buffer and releasing the session, which is the
+                            // window in which a teardown must still reclaim it: the reply does not exist
+                            // yet, so nothing has returned it, and nothing will if the publication that
+                            // follows is discarded.
+                            DebugBlockGetValues.Hold();
+                        }
+                    }
+                }
+                finally
+                {
+                    ReleaseSession();
+                }
             }
 
             /// <summary>
-            /// Reads the key through the parked session's string context.
+            /// Reads the key through the storage API the command was dispatched with.
             /// </summary>
             /// <remarks>
-            /// Failures are recorded rather than thrown. The outcome is already claimed by the time this
-            /// runs, so letting an exception escape would skip the release in <see cref="Finish"/> and leave
-            /// the session parked on a wait that has already ended.
+            /// Failures are recorded rather than thrown, because this runs on a timer or thread-pool thread
+            /// with no handler above it.
             /// </remarks>
             void ReadValue()
             {
-                var session = Owner;
+                // Teardown can be disposing the session's storage underneath this. The scope is what makes
+                // the read and that disposal exclusive of one another; losing it is not a failure, it just
+                // means the connection is already gone and there is nothing left to read for.
+                if (!TryEnterStorageScope())
+                {
+                    storageUnavailable = true;
+                    return;
+                }
 
                 try
                 {
-                    var storage = session.storageSession;
-                    status = storage.GET(PinnedSpanByte.FromPinnedSpan(key.AsSpan(0, keyLength)),
-                                         out value, ref storage.stringBasicContext);
+                    if (holdRead)
+                    {
+                        // Pinned with the scope held, which is the state a teardown has to wait out: the
+                        // storage this is about to read is the storage that teardown is about to dispose.
+                        DebugBlockGetValues.HoldRead();
+                    }
+
+                    status = storage.GETForMemoryResult(PinnedSpanByte.FromPinnedSpan(key.AsSpan(0, keyLength)), out value);
                 }
                 catch (Exception ex)
                 {
                     readFailed = true;
-                    session.Logger?.LogError(ex, "DEBUG BLOCKGET failed to read the store");
+
+                    // Contained: a logger that threw here would escape the callback and take the process
+                    // down, turning a failed read into a failed server.
+                    try
+                    {
+                        Owner.Logger?.LogError(ex, "DEBUG BLOCKGET failed to read the store");
+                    }
+                    catch
+                    {
+                        // Nothing useful remains if reporting the failure itself fails.
+                    }
                 }
                 finally
                 {
@@ -164,8 +351,10 @@ namespace Garnet.server
                     if (value.MemoryOwner != null)
                     {
                         valueCounted = true;
-                        _ = Interlocked.Increment(ref outstandingValues);
+                        DebugBlockGetValues.Rent();
                     }
+
+                    ExitStorageScope();
                 }
             }
 
@@ -180,14 +369,14 @@ namespace Garnet.server
             void ReleaseValue()
             {
                 if (valueCounted)
-                    _ = Interlocked.Decrement(ref outstandingValues);
+                    _ = Interlocked.Decrement(ref DebugBlockGetValues.Outstanding);
 
                 value.Dispose();
             }
 
             internal override void WriteResponse(RespServerSession session)
             {
-                if (aborted)
+                if (aborted || storageUnavailable)
                 {
                     session.WriteError(CmdStrings.RESP_ERR_BLOCKING_ABORTED);
                     return;
@@ -196,6 +385,12 @@ namespace Garnet.server
                 if (readFailed)
                 {
                     session.WriteError(CmdStrings.RESP_ERR_BLOCKING_FAILED);
+                    return;
+                }
+
+                if (status == GarnetStatus.WRONGTYPE)
+                {
+                    session.WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
                     return;
                 }
 
@@ -210,7 +405,9 @@ namespace Garnet.server
 
                 try
                 {
-                    session.WriteBulkString(value.Span);
+                    // A successful read of a zero-length value has no pooled buffer behind it, and
+                    // MemoryResult.Span dereferences the owner unconditionally.
+                    session.WriteBulkString(value.MemoryOwner == null ? ReadOnlySpan<byte>.Empty : value.Span);
                 }
                 finally
                 {
@@ -218,7 +415,15 @@ namespace Garnet.server
                 }
             }
 
-            protected override void OnAbort() => Finish(aborted: true);
+            /// <summary>
+            /// Cancels the wait. The base class has already claimed the outcome and releases the session
+            /// itself, so this only records the outcome and stops the timer.
+            /// </summary>
+            protected override void OnAbort()
+            {
+                aborted = true;
+                timer?.Dispose();
+            }
 
             /// <summary>
             /// Returns the pooled buffer on the paths where no reply is ever written.
@@ -241,12 +446,26 @@ namespace Garnet.server
         /// that a parked operation may use the session's storage, which is what distinguishes this pattern
         /// from one that can only defer a reply it already knows.
         /// </remarks>
-        bool NetworkDebugBlockGet()
+        /// <typeparam name="TGarnetApi">Storage API this command was dispatched with.</typeparam>
+        /// <param name="storageApi">Storage API this command was dispatched with.</param>
+        bool NetworkDebugBlockGet<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
         {
             if (parseState.Count != 3)
             {
                 return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(nameof(CmdStrings.BLOCKGET),
                                                                           nameof(RespCommand.DEBUG));
+            }
+
+            // A transaction locks the keys its commands declare in their key specs, and DEBUG declares
+            // none -- its key position depends on the subcommand. Reading inside one would therefore be
+            // unlocked, and reading it through a basic context would deadlock against the transaction's own
+            // exclusive lock. Refusing is the honest answer for a debug command; a real blocking command
+            // belongs in the dispatch table with key specs, and then its non-blocking fallback inside a
+            // transaction works like any other command's.
+            if (txnManager.state != TxnState.None)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_BLOCKGET_IN_TXN);
             }
 
             if (!parseState.TryGetDouble(1, out var seconds) || double.IsNaN(seconds) || double.IsInfinity(seconds))
@@ -264,18 +483,23 @@ namespace Garnet.server
 
             if (CanParkSession)
             {
-                var context = new DebugBlockGetCommandContext(milliseconds, key.ReadOnlySpan);
+                var context = new DebugBlockGetCommandContext<TGarnetApi>(milliseconds, key.ReadOnlySpan, ref storageApi);
                 if (TryParkSession(context))
                     return true;
 
                 context.Dispose();
             }
 
-            // Parking was refused, so something else is driving this session -- a transaction, a script, or
-            // an async GET processor. The non-blocking answer for this command is the read without the wait,
-            // which is what any caller that cannot block gets, and it runs inline like any other command.
-            var storage = storageSession;
-            var status = storage.GET(key, out MemoryResult<byte> value, ref storage.stringBasicContext);
+            // Parking was refused, so something else is driving this session -- an async GET processor, a
+            // replication stream, or a transport that cannot suspend its receive loop. The non-blocking
+            // answer for this command is the read without the wait, which is what any caller that cannot
+            // block gets, and it runs inline like any other command.
+            var status = storageApi.GETForMemoryResult(key, out var value);
+
+            if (status == GarnetStatus.WRONGTYPE)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_WRONG_TYPE);
+            }
 
             if (status != GarnetStatus.OK)
             {
@@ -285,7 +509,7 @@ namespace Garnet.server
 
             try
             {
-                WriteBulkString(value.Span);
+                WriteBulkString(value.MemoryOwner == null ? ReadOnlySpan<byte>.Empty : value.Span);
             }
             finally
             {
