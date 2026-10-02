@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -409,6 +409,11 @@ namespace Garnet.server
         {
             logger?.LogDebug("Disposing RespServerSession Id={id}", this.Id);
 
+            // Published before the parked command is claimed, so a command parking concurrently either sees
+            // this and releases its own context, or is claimed here. See TryParkSession.
+            MarkDisposedForParking();
+            DisposeParkedCommand();
+
             if (recvBufferPtr != null)
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
@@ -601,6 +606,7 @@ namespace Garnet.server
 
                 // The session is no longer usable, dispose it
                 networkSender.DisposeNetworkSender(true);
+                AbortParkOnSessionFailure();
             }
             catch (GarnetException ex)
             {
@@ -628,6 +634,7 @@ namespace Garnet.server
                 {
                     // The session is no longer usable, dispose it
                     networkSender.DisposeNetworkSender(true);
+                    AbortParkOnSessionFailure();
                 }
             }
             catch (Exception ex)
@@ -636,6 +643,7 @@ namespace Garnet.server
                 logger?.LogCritical(ex, "ProcessMessages threw an exception:");
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
+                AbortParkOnSessionFailure();
             }
             finally
             {
@@ -809,6 +817,12 @@ namespace Garnet.server
                 }
                 if (SessionAsking != 0)
                     SessionAsking = (byte)(SessionAsking - 1);
+
+                // Parking ends the batch by leaving no unparsed bytes, which is what keeps the loop free of
+                // a check of its own. A handler that parks and then lets the loop continue would execute
+                // commands the client pipelined behind a blocking one, out of order and with the reply
+                // stream already committed to the parked command's position.
+                AssertParkContract();
             }
 
             if (dcurr > networkSender.GetResponseObjectHead())
@@ -817,6 +831,14 @@ namespace Garnet.server
                 if (toDispose)
                 {
                     networkSender.DisposeNetworkSender(true);
+
+                    // Same reconciliation the exception paths make, for the one terminal close that is not a
+                    // failure. QUIT does not end the batch, so a blocking command behind it in the same
+                    // write still parks -- and disposing the sender closes the socket without disturbing
+                    // the park, which has no receive outstanding to notice. Without this the handler and its
+                    // receive state stay held until the operation's own deadline, or forever if it has none,
+                    // on a connection the server itself just closed.
+                    AbortParkOnSessionFailure();
                 }
             }
         }
@@ -1391,7 +1413,16 @@ namespace Garnet.server
         /// Subsequent calls will return false.
         /// </summary>
         public bool TryKill()
-        => networkSender.TryClose();
+        {
+            if (!networkSender.TryClose())
+                return false;
+
+            // Closing the socket does not wake a session parked on a blocking operation, and does not run the
+            // handler's own teardown, so without this the connection would stay alive for the rest of the
+            // wait after its client is gone -- forever, for an operation with no deadline.
+            parkHost?.AbortPark();
+            return true;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private unsafe bool Write(ref Status s, ref byte* dst, int length)
@@ -1593,6 +1624,22 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Whether this session can survive a swap of the two given databases.
+        /// </summary>
+        /// <remarks>
+        /// The async GET processor captures the storage API it was started with and can never be handed a
+        /// new one, so rebinding this session would leave it completing against a context that no longer
+        /// receives this session's reads -- a drain loop spinning on a count only the old context can
+        /// advance. A swap that does not touch the active database rebinds nothing, and a swap of a database
+        /// with itself is a no-op, so neither is refused.
+        /// </remarks>
+        /// <param name="dbId1">Database ID of first session</param>
+        /// <param name="dbId2">Database ID of second session</param>
+        /// <returns>True if the swap would not rebind an API the async GET processor is still draining</returns>
+        internal bool CanSwapDatabaseSessions(int dbId1, int dbId2)
+            => asyncStarted == 0 || dbId1 == dbId2 || (activeDbId != dbId1 && activeDbId != dbId2);
+
+        /// <summary>
         /// Swap between two database sessions
         /// </summary>
         /// <param name="dbId1">Database ID of first session</param>
@@ -1787,6 +1834,25 @@ namespace Garnet.server
         /// <param name="dbSession">Database Session</param>
         private void SwitchActiveDatabaseSession(GarnetDatabaseSession dbSession)
         {
+            // The async GET processor captures the storage API it was started with and can never be handed a
+            // new one. Rebinding here would leave it calling GET_CompletePending on a context that no longer
+            // receives this session's reads: that context returns no completions, so asyncCompleted never
+            // advances, the drain loop spins without ever faulting, and ASYNC BARRIER waits on a release
+            // that is never issued. Because the processor does not stop, asyncProcessorStopped never latches
+            // and nothing downstream bounds the wait.
+            //
+            // SELECT and SWAPDB refuse before reaching here, so this is their backstop. The consistency-mode
+            // transition in TryConsumeMessages is not refusable -- it follows the node's cluster role, with
+            // no client command to reject -- so the connection is ended instead. That is the honest outcome:
+            // this session's reads can no longer be completed, and saying so beats spinning a thread forever
+            // on a reply that will never arrive.
+            if (asyncStarted > 0)
+            {
+                throw new GarnetException(
+                    "Session has async operations in flight and cannot switch its active database session.",
+                    LogLevel.Warning);
+            }
+
             this.activeDbId = dbSession.Id;
             this.txnManager = dbSession.TransactionManager;
             this.storageSession = dbSession.StorageSession;

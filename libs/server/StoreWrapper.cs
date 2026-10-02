@@ -165,6 +165,31 @@ namespace Garnet.server
         internal readonly ILogger sessionLogger;
         internal long safeAofAddress = -1;
 
+        int parkedSessionCount;
+
+        /// <summary>
+        /// Number of client connections currently waiting inside a blocking command, counting both sessions
+        /// parked by <see cref="RespServerSession.TryParkSession"/> and those waiting in place on the
+        /// collection item broker. Reported as <c>blocked_clients</c> by <c>INFO clients</c>.
+        /// </summary>
+        /// <remarks>
+        /// Both halves are needed for the number to mean anything while commands are migrating between the
+        /// two mechanisms: a server with a hundred connections in <c>BLPOP</c> and none parked must not
+        /// report zero. Read on the admin path only, so the broker's registry count is cheap enough.
+        /// </remarks>
+        internal int BlockedClientCount
+            => Volatile.Read(ref parkedSessionCount) + (itemBroker?.ObserverCount ?? 0);
+
+        /// <summary>
+        /// Records that a session has parked on a blocking command.
+        /// </summary>
+        internal void IncrementParkedSessions() => Interlocked.Increment(ref parkedSessionCount);
+
+        /// <summary>
+        /// Records that a parked session has been released, whether by completion or by teardown.
+        /// </summary>
+        internal void DecrementParkedSessions() => Interlocked.Decrement(ref parkedSessionCount);
+
         private readonly bool enforceConsistentRead;
 
         // Standalone instance node_id

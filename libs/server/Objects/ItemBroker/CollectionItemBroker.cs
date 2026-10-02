@@ -33,6 +33,12 @@ namespace Garnet.server
         // Mapping of RespServerSession ID (ObjectStoreSessionID) to observer instance
         readonly ConcurrentDictionary<int, CollectionItemObserver> sessionIdToObserver = new();
 
+        /// <summary>
+        /// Number of sessions currently waiting in place on this broker. Reported as part of
+        /// <c>blocked_clients</c>; admin path only, since reading it locks the registry.
+        /// </summary>
+        internal int ObserverCount => sessionIdToObserver.Count;
+
         // Mapping of observed keys to queue of observers, by order of subscription
         // Instantiated only when needed
         Dictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers = null;

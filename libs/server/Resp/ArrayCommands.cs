@@ -138,6 +138,17 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE);
             }
 
+            // The async GET processor captured this session's storage API when it started and drains pending
+            // reads against that capture for its whole life. Switching databases replaces the field without
+            // telling it, so reads issued after the switch complete on a context the processor never polls:
+            // it spins on a count that cannot fall, and any ASYNC BARRIER behind it waits forever. Refusing
+            // the switch is a visible error in place of an invisible hang. Re-selecting the current database
+            // changes nothing and is allowed.
+            if (index != this.activeDbId && asyncStarted > 0)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_SELECT_ASYNC_STARTED);
+            }
+
             if (index == this.activeDbId || this.TrySwitchActiveDatabaseSession(index))
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -188,6 +199,22 @@ namespace Garnet.server
                 index2 >= storeWrapper.serverOptions.MaxDatabases)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_DB_INDEX_OUT_OF_RANGE);
+            }
+
+            // SWAPDB rebinds this session's storage API for the same reason SELECT does: swapping the
+            // database behind the active ID replaces the active database session, and the async GET
+            // processor goes on draining the capture it took when it started. Only a swap that touches the
+            // active database can rebind it, so one that does not is left alone, and a swap of a database
+            // with itself is a no-op the manager completes without rebinding anything. The swap is refused
+            // rather than allowed to hang for the reasons given on SELECT above.
+            //
+            // This guard covers only the caller, so that the caller gets a precise error rather than the
+            // catch-all. It is not what makes the swap safe: TrySwapDatabases rebinds the first session it
+            // enumerates before it has counted enough sessions to refuse, so a swap issued by one session
+            // can rebind a different one. The manager preflights every session for this reason.
+            if (asyncStarted > 0 && index1 != index2 && (index1 == this.activeDbId || index2 == this.activeDbId))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_SWAPDB_ASYNC_STARTED);
             }
 
             if (storeWrapper.TrySwapDatabases(index1, index2))

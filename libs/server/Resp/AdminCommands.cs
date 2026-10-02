@@ -821,6 +821,11 @@ namespace Garnet.server
                 return NetworkPurgeBP(managerTypeArgIndex: 1);
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCK))
+            {
+                return NetworkDebugBlock();
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))
             {
                 var help = new string[]
@@ -839,6 +844,9 @@ namespace Garnet.server
                     "PURGEBP <manager-type>",
                     "\tPurge the network buffer pool for the given manager (MigrationManager,",
                     "\tReplicationManager, or ServerListener) and force a blocking GC.",
+                    "BLOCK <seconds> [SYNC]",
+                    "\tWait <seconds> before replying. The session parks for the duration and holds no",
+                    "\tthread; SYNC waits in place on the session's thread instead.",
                     "PANIC",
                     "\tCrash the server simulating a panic.",
                     "HELP",

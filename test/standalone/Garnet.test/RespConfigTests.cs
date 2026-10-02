@@ -1067,6 +1067,38 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Moving to manual commits is rejected while aof-commit-wait is on, matching the same combination
+        /// being refused at startup.
+        /// </summary>
+        /// <remarks>
+        /// With aof-commit-wait every reply blocks until the record behind it is committed, and the wait
+        /// does not start a commit of its own. Killing the periodic committer therefore leaves that wait
+        /// with nothing to end it, blocking the session -- and, when the reply is being written by a resume,
+        /// the connection teardown deferred behind it.
+        /// </remarks>
+        [Test]
+        public void ConfigCommitFreqManualRejectedUnderCommitWaitTest()
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true,
+                commitFrequencyMs: 100, commitWait: true);
+            server.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("100", Get(db, "aof-commit-freq"));
+
+            var toManual = Assert.Throws<RedisServerException>(
+                () => db.Execute("CONFIG", "SET", "aof-commit-freq", "-1"));
+            ClassicAssert.AreEqual(
+                "ERR 'aof-commit-freq' cannot be set to manual commits (-1) while 'aof-commit-wait' is enabled.",
+                toManual.Message);
+
+            // Rejected, not half-applied: the committer is still running, so a write still completes.
+            ClassicAssert.AreEqual("100", Get(db, "aof-commit-freq"));
+            ClassicAssert.IsTrue(db.StringSet("commit-wait-key", "v"));
+        }
+
+        /// <summary>
         /// When the server starts with periodic commit (aof-commit-freq &gt; 0), the safe {-1, &gt; 0}
         /// transitions are accepted and enacted by restarting / killing the commit task, while a move to 0
         /// remains rejected and leaves the value intact.

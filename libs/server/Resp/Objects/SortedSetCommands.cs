@@ -1579,7 +1579,7 @@ namespace Garnet.server
                 keysBytes[i] = parseState.GetArgSliceByRef(i).ToArray();
 
             // Must block, we're on the networking thread
-            var result = AsyncUtils.BlockingWait(storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout));
+            var result = BlockingWaitInPlace(storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout));
 
             if (result.IsForceUnblocked)
             {
@@ -1685,7 +1685,7 @@ namespace Garnet.server
             cmdArgs[1] = PinnedSpanByte.FromPinnedPointer((byte*)&popCount, sizeof(int));
 
             // We're on the networking thread, so must block
-            var result = AsyncUtils.BlockingWait(storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BZMPOP, keysBytes, this, timeout, cmdArgs));
+            var result = BlockingWaitInPlace(storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BZMPOP, keysBytes, this, timeout, cmdArgs));
 
             if (result.IsForceUnblocked)
             {

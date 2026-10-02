@@ -716,12 +716,11 @@ namespace Garnet.server
 
             try
             {
-                var databaseMapSnapshot = databases.Map;
-                var enableAof = StoreWrapper.serverOptions.EnableAOF;
-                databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
-                databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
-
+                // Preflight before mutating anything. The enumeration below rebinds the first session it
+                // reaches and only then discovers a second, so a session that cannot survive a rebind has to
+                // be found before any of it happens -- and it need not be the session that issued the swap.
                 var activeSessions = 0;
+                RespServerSession soleSession = null;
                 foreach (var server in StoreWrapper.Servers)
                 {
                     if (server is not GarnetServerBase serverBase) continue;
@@ -729,13 +728,23 @@ namespace Garnet.server
                     foreach (var session in serverBase.ActiveConsumers())
                     {
                         if (session is not RespServerSession respServerSession) continue;
-                        activeSessions++;
+                        if (++activeSessions > 1) return false;
 
-                        if (activeSessions > 1) return false;
-
-                        respServerSession.TrySwapDatabaseSessions(dbId1, dbId2);
+                        soleSession = respServerSession;
                     }
                 }
+
+                // A session whose async GET processor has started captured the API it drains; rebinding it
+                // would leave the processor completing against a context this session no longer uses.
+                if (soleSession != null && !soleSession.CanSwapDatabaseSessions(dbId1, dbId2))
+                    return false;
+
+                var databaseMapSnapshot = databases.Map;
+                var enableAof = StoreWrapper.serverOptions.EnableAOF;
+                databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
+                databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
+
+                soleSession?.TrySwapDatabaseSessions(dbId1, dbId2);
             }
             finally
             {

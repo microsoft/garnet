@@ -176,6 +176,7 @@ Subcommands:
 * `FLUSHANDEVICT`: Flush the store's in-memory log to disk and evict it (shifts HeadAddress to TailAddress) so subsequent reads are served from disk.
 * `FORCEGC [generation]`: Force a blocking garbage collection of the given generation (default: max). See [GC.Collect](https://learn.microsoft.com/en-us/dotnet/api/system.gc.collect).
 * `PURGEBP <manager-type>`: Purge the network buffer pool held by the given manager (`MigrationManager`, `ReplicationManager`, or `ServerListener`) and force a blocking GC, returning freed memory to the OS.
+* `BLOCK <seconds> [ASYNC | SYNC]`: Wait `<seconds>` before replying `+OK`. The default, `ASYNC`, parks the session for the duration: the network callback returns, the thread is released back to the pool, and the connection reads no further input until the wait ends — so the number of simultaneously blocked connections is not bounded by the thread pool. `SYNC` waits in place on the session's thread instead, which is the behaviour `ASYNC` replaces and is kept only for comparison. Additional modifiers exist to make the parking machinery testable and are not part of the supported surface.
 * `PANIC`: Crash the server, simulating a panic.
 * `HELP`: Print the subcommand list.
 
