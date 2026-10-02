@@ -62,8 +62,11 @@ namespace Garnet.test
         public void CheckInternalId()
         {
             const ulong Context = 8;
+            const ulong ImportContext = 16;
 
             ConcurrentDictionary<(ulong Context, byte[] Key), byte[]> data = new(new ContextAndKeyComparer());
+            var failWrites = false;
+            var failStartPointWrite = false;
 
             unsafe void ReadCallback(
                 ulong context,
@@ -100,6 +103,11 @@ namespace Garnet.test
 
             unsafe byte WriteCallback(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
             {
+                if (failWrites || (failStartPointWrite && context == (ImportContext | DiskANNService.FullVector)))
+                {
+                    return 0;
+                }
+
                 var keyDataSpan = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((byte*)keyData), (int)keyLength);
                 var writeDataSpan = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((byte*)writeData), (int)writeLength);
 
@@ -189,6 +197,14 @@ namespace Garnet.test
             var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
             var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            ClassicAssert.AreNotEqual(nint.Zero, rawIndex);
+            var service = new DiskANNService();
+            failWrites = true;
+            ClassicAssert.AreEqual(ulong.MaxValue, NativeDiskANNMethods.card(Context, rawIndex));
+            ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.TaskFailed, service.FinishImport(Context, rawIndex, 0, 1));
+            failWrites = false;
+            ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.Success, service.FinishImport(Context, rawIndex, 0, 1));
+            ClassicAssert.AreEqual(0UL, NativeDiskANNMethods.card(Context, rawIndex));
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -227,10 +243,31 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(0, validRes);
             }
 
+            service.DropIndex(Context, rawIndex);
+            var importIndex = NativeDiskANNMethods.create_index(ImportContext, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            ClassicAssert.AreNotEqual(nint.Zero, importIndex);
+            try
+            {
+                var importId = BitConverter.GetBytes(1u);
+                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.FullVector, importId, elem));
+                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.NeighborList, importId, new byte[11 * sizeof(uint)]));
+                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.InternalIdMap, id, importId));
+                ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.ExternalIdMap, importId, id));
+
+                failStartPointWrite = true;
+                ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.FinishFailed, service.FinishImport(ImportContext, importIndex, 0, 1));
+            }
+            finally
+            {
+                service.DropIndex(ImportContext, importIndex);
+            }
+
             GC.KeepAlive(deleteDel);
             GC.KeepAlive(writeDel);
             GC.KeepAlive(readDel);
             GC.KeepAlive(rmwDel);
+            GC.KeepAlive(filterDel);
+            GC.KeepAlive(logDel);
         }
 
 

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -13,12 +12,12 @@ namespace Garnet.server
         /// <summary>
         /// Replay a completed chunked record directly from its <see cref="ChunkedAccumulator"/> (no contiguous record image is built).
         /// A chunked record is always a data op (Store/Object/Unified Upsert/RMW/Delete): it is never a transaction marker,
-        /// checkpoint, flush, stored procedure, or vector op, so only the transaction buffer and the op dispatch are consulted.
+        /// checkpoint, flush, or stored procedure, so only the transaction buffer and the op dispatch are consulted.
         /// </summary>
         internal void ProcessAofRecordInternal(int virtualSublogIdx, ChunkedAccumulator acc, bool asReplica, long logAddressSequenceNumber = 0)
         {
             // If a transaction is active for this session, the op is buffered into its group; otherwise it is standalone.
-            if (aofReplayCoordinator.AddOrReplayTransactionOperation(virtualSublogIdx, acc))
+            if (aofReplayCoordinator.AddOrReplayTransactionOperation(virtualSublogIdx, acc, logAddressSequenceNumber))
                 return;
 
             var replayContext = aofReplayCoordinator.GetReplayContext(virtualSublogIdx);
@@ -66,7 +65,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            // StoreRMW can queue VADDs onto different threads; everything else must wait for those to complete first.
+            // StoreRMW can queue vector operations onto different threads; everything else must wait for those to complete first.
             // Skip (1) entries from a prior checkpoint; buffer (2) future entries in the fuzzy region.
             if (!BeginReplayOp(replayContext, acc.opType, ShouldSkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, acc, asReplica), out var bufferPtr, out var bufferLength))
                 return false;
@@ -77,7 +76,7 @@ namespace Garnet.server
                     StoreUpsert(acc, stringContext, ref replayContext.parseState);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(acc, stringContext, ref replayContext.parseState);
+                    StoreRMW(acc, stringContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession, obtainServerSession);
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(acc, stringContext);
@@ -92,7 +91,7 @@ namespace Garnet.server
                     ObjectStoreDelete(acc, objectContext);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
-                    UnifiedStoreStringUpsert(acc, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
+                    UnifiedStoreStringUpsert(acc, unifiedContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession.storageSession, bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreRMW:
                     UnifiedStoreRMW(acc, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength);
@@ -155,7 +154,7 @@ namespace Garnet.server
             }
         }
 
-        static void StoreRMW<TStringContext>(ChunkedAccumulator acc, TStringContext stringContext, ref SessionParseState parseState)
+        static void StoreRMW<TStringContext>(ChunkedAccumulator acc, TStringContext stringContext, ref SessionParseState parseState, VectorManager vectorManager, RespServerSession session, Func<RespServerSession> obtainServerSession)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             fixed (byte* keyPtr = acc.key)
@@ -163,9 +162,9 @@ namespace Garnet.server
             {
                 var stringInput = new StringInput { parseState = parseState };
                 _ = stringInput.DeserializeFrom(inputPtr);
-                // Vector/range-index RMW sub-dispatch is intentionally not supported on the chunked path.
-                Debug.Assert(stringInput.header.cmd is not (RespCommand.VADD or RespCommand.VREM),
-                    "chunked vector operations are not supported on the accumulator replay path");
+                if (TryReplayVectorRMW(vectorManager, session.storageSession, obtainServerSession, new ReadOnlySpan<byte>(keyPtr, acc.keyOffset), ref stringInput))
+                    return;
+                // Range-index RMW sub-dispatch is not supported on the chunked path.
 
                 var key = (FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset);
                 var output = StringOutput.FromPinnedSpan(stackalloc byte[32]);
@@ -175,6 +174,9 @@ namespace Garnet.server
                     StorageSession.CompletePendingForSession(ref status, ref output, ref stringContext);
                 if (!output.SpanByteAndMemory.IsSpanByte)
                     output.SpanByteAndMemory.Dispose();
+                if (stringInput.header.cmd == RespCommand.VADD && stringInput.arg1 == VectorManager.VADDSetFlagsArg
+                    && (!status.Found || status.IsWrongType || status.IsExpired))
+                    throw new GarnetException("Failed to apply flags to Vector Set, data loss is likely");
             }
         }
 
@@ -228,7 +230,7 @@ namespace Garnet.server
                 _ = objectContext.Delete((FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset));
         }
 
-        static void UnifiedStoreStringUpsert<TUnifiedContext>(ChunkedAccumulator acc, TUnifiedContext unifiedContext, ref SessionParseState parseState, byte* outputPtr, int outputLength)
+        static void UnifiedStoreStringUpsert<TUnifiedContext>(ChunkedAccumulator acc, TUnifiedContext unifiedContext, ref SessionParseState parseState, VectorManager vectorManager, StorageSession storageSession, byte* outputPtr, int outputLength)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             fixed (byte* keyPtr = acc.key)
@@ -239,6 +241,12 @@ namespace Garnet.server
                 var value = PinnedSpanByte.FromPinnedPointer(valuePtr, acc.valueOffset);
                 var unifiedInput = new UnifiedInput { parseState = parseState };
                 _ = unifiedInput.DeserializeFrom(inputPtr);
+
+                if (unifiedInput.header.cmd == RespCommand.RENAME && unifiedInput.arg1 == VectorManager.RecordType)
+                {
+                    vectorManager.HandleVectorSetRenameCopy(storageSession, ref unifiedContext, unifiedInput.parseState.GetArgSliceByRef(0).ReadOnlySpan, unifiedInput.parseState.GetArgSliceByRef(1).ReadOnlySpan);
+                    return;
+                }
 
                 var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
                 var upsertOptions = new UpsertOptions() { KeyHash = acc.keyHash };

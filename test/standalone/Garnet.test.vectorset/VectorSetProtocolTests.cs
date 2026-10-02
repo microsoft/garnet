@@ -150,7 +150,7 @@ namespace Garnet.test
 
             db.Execute("VADD", ["vectors", "REDUCE", "2", "VALUES", "3", "1", "0", "0", "first", "NOQUANT", "EF", "41", "M", "7"]);
             var info = db.Execute("VINFO", "vectors");
-            AssertVInfoIntegerFields(info, protocol, ("input-vector-dimensions", 3), ("reduced-dimensions", 2), ("build-exploration-factor", 41), ("num-links", 7), ("size", 1));
+            AssertVInfoIntegerFields(info, protocol, ("input-vector-dimensions", 3), ("reduced-dimensions", 2), ("build-exploration-factor", 41), ("num-links", 7), ("size", 1), ("import-pending", 0));
 
             var missing = db.Execute("VINFO", "missing");
             ClassicAssert.IsTrue(missing.IsNull);
@@ -461,12 +461,12 @@ namespace Garnet.test
             else
             {
                 var values = (RedisResult[])info;
-                ClassicAssert.AreEqual(14, values.Length);
+                ClassicAssert.AreEqual(16, values.Length);
                 for (var i = 0; i < values.Length; i += 2)
                     fields.Add((string)values[i], values[i + 1]);
             }
 
-            ClassicAssert.AreEqual(7, fields.Count);
+            ClassicAssert.AreEqual(8, fields.Count);
             foreach (var (field, value) in expected)
             {
                 var result = fields[field];

@@ -156,6 +156,25 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
+                        if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
+                        {
+                            status = GarnetStatus.OK;
+                            return new(in vectorSetLocks, lockToken);
+                        }
+                        if (IsImportPending(indexSpan))
+                        {
+                            if (readCmd == RespCommand.VINFO)
+                            {
+                                status = GarnetStatus.OK;
+                                return new(in vectorSetLocks, lockToken);
+                            }
+                            if (readCmd != RespCommand.XVIMPORT)
+                            {
+                                status = GarnetStatus.VECTORSETNOTREADY;
+                                vectorSetLocks.ReleaseLock(lockToken);
+                                return default;
+                            }
+                        }
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -263,7 +282,7 @@ namespace Garnet.server
                             // Post recreate the index might already need quantization - if so, queue it up
                             if (requestQuantization)
                             {
-                                _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                                _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                             }
 
                             // Try again so we don't hold an exclusive lock while performing a search
@@ -287,6 +306,13 @@ namespace Garnet.server
                         return default;
                     }
 
+                    if (!lockToken.IsExclusive && !vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
+                    {
+                        vectorSetLocks.ReleaseLock(lockToken);
+                        takeExclusiveLock = true;
+                        continue;
+                    }
+
                     status = GarnetStatus.OK;
                     return new(in vectorSetLocks, lockToken);
                 }
@@ -305,6 +331,8 @@ namespace Garnet.server
         /// <summary>
         /// Utility method that will read vector set index out, create one if it doesn't exist, or RECREATE one if needed.
         /// 
+        /// The <paramref name="demandCreate"/> allows fast failing if an index already exists under that key.
+        /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
         internal VectorSetLock ReadOrCreateVectorIndex(
@@ -312,7 +340,8 @@ namespace Garnet.server
             ReadOnlySpan<byte> key,
             ref StringInput input,
             scoped Span<byte> indexSpan,
-            out GarnetStatus status
+            out GarnetStatus status,
+            bool demandCreate = false
         )
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
@@ -360,6 +389,20 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
+                        if (demandCreate)
+                        {
+                            // WRONGTYPE is close enough - we wanted an empty key and we found a non-empty key
+                            status = GarnetStatus.WRONGTYPE;
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            return default;
+                        }
+
+                        if (IsImportPending(indexSpan))
+                        {
+                            status = GarnetStatus.VECTORSETNOTREADY;
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            return default;
+                        }
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -496,11 +539,14 @@ namespace Garnet.server
                             // Post (re)create the index might already need quantization - if so, queue it up
                             if (requestQuantization)
                             {
-                                _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                                _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                             }
 
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
                             vectorSetLocks.ReleaseLock(lockToken);
+
+                            // We created the index, so we no longer need to demand create
+                            demandCreate = false;
                             continue;
                         }
                         else
