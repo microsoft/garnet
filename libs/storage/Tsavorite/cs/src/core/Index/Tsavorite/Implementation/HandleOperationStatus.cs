@@ -85,6 +85,11 @@ namespace Tsavorite.core
                         operationState.flushEvent = default;
                         epoch.Resume();
                     }
+
+                    // Disposal permanently signals the flush event, so the wait above stops blocking. Retrying an
+                    // allocation that disposal has made unsatisfiable would spin this loop. Checked after the
+                    // finally so the epoch is resumed exactly once before the throw unwinds.
+                    hlogBase.ThrowIfDisposed();
                     return true;
                 default:
                     // RECORD_ON_DISK falls here: do NOT reset operationState.logicalAddress, the caller (HandleOperationStatus)
