@@ -63,6 +63,12 @@ namespace Tsavorite.core
         /// </summary>
         bool CallOnTruncate => false;
 
+        /// <summary>Whether <see cref="OnMutate"/> is called after a record changes.</summary>
+        bool CallOnMutate => false;
+
+        /// <summary>Called after a record mutation. Default implementation is a no-op.</summary>
+        void OnMutate() { }
+
         /// <summary>
         /// Called when a record is disposed due to delete, expiration, CAS failure, elision,
         /// revivification, or other store-internal reasons. Use <paramref name="reason"/> to

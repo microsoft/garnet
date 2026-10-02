@@ -242,8 +242,9 @@ namespace Garnet.server
 
         private void HashCollect(ref ObjectInput input, ref ObjectOutput output)
         {
+            var countBefore = hash.Count;
             DeleteExpiredItems();
-            output.result1 = 1;
+            output.result1 = countBefore - hash.Count;
         }
 
         private void HashGetKeysOrValues(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)

@@ -9,6 +9,41 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
+    /// Tracks writes since the last checkpoint for one database store.
+    /// </summary>
+    public sealed class CheckpointDirtyState
+    {
+        volatile bool dirty;
+        RuntimeServerConfig runtimeConfig;
+        long checkpointTrackingGeneration;
+
+        internal bool IsTrackingEnabled => runtimeConfig == null || runtimeConfig.CheckpointWriteTrackingEnabled;
+
+        internal bool IsDirty => dirty || (runtimeConfig != null &&
+            Volatile.Read(ref checkpointTrackingGeneration) != runtimeConfig.CheckpointTrackingGeneration);
+
+        internal void Initialize(RuntimeServerConfig config)
+        {
+            runtimeConfig = config;
+            checkpointTrackingGeneration = config.CheckpointTrackingGeneration;
+        }
+
+        internal void MarkDirty()
+        {
+            if (IsTrackingEnabled && !dirty)
+                dirty = true;
+        }
+
+        internal void Clear()
+        {
+            // A later enable must remain dirty, even if it overlaps this checkpoint.
+            if (runtimeConfig != null)
+                Volatile.Write(ref checkpointTrackingGeneration, runtimeConfig.CheckpointTrackingGeneration);
+            dirty = false;
+        }
+    }
+
+    /// <summary>
     /// Represents a logical database in Garnet
     /// </summary>
     public class GarnetDatabase : IDisposable
@@ -71,6 +106,11 @@ namespace Garnet.server
         public bool LastSaveSucceeded;
 
         /// <summary>
+        /// Write tracking shared with this database's record triggers.
+        /// </summary>
+        public CheckpointDirtyState CheckpointDirtyState { get; private set; }
+
+        /// <summary>
         /// What checkpoint recovery found on disk and what it recovered at startup
         /// </summary>
         public CheckpointRecoveryOutcome CheckpointRecovery;
@@ -128,7 +168,14 @@ namespace Garnet.server
 
         public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
                 CacheSizeTracker sizeTracker, GarnetAppendOnlyFile appendOnlyFile, bool storeIndexMaxedOut, VectorManager vectorManager, RangeIndexManager rangeIndexManager)
-            : this()
+            : this(id, store, kvSettings, epoch, stateMachineDriver, sizeTracker, appendOnlyFile, storeIndexMaxedOut, vectorManager, rangeIndexManager,
+                  new CheckpointDirtyState())
+        { }
+
+        public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings kvSettings, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+                CacheSizeTracker sizeTracker, GarnetAppendOnlyFile appendOnlyFile, bool storeIndexMaxedOut, VectorManager vectorManager, RangeIndexManager rangeIndexManager,
+                CheckpointDirtyState checkpointDirtyState)
+            : this(checkpointDirtyState)
         {
             Id = id;
             Store = store;
@@ -142,7 +189,7 @@ namespace Garnet.server
             RangeIndexManager = rangeIndexManager;
         }
 
-        public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
+        public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this(srcDb.CheckpointDirtyState)
         {
             Id = id;
             Store = srcDb.Store;
@@ -163,8 +210,11 @@ namespace Garnet.server
             }
         }
 
-        public GarnetDatabase()
+        public GarnetDatabase() : this(new CheckpointDirtyState()) { }
+
+        private GarnetDatabase(CheckpointDirtyState checkpointDirtyState)
         {
+            CheckpointDirtyState = checkpointDirtyState ?? throw new ArgumentNullException(nameof(checkpointDirtyState));
             VersionMap = new WatchVersionMap(DefaultVersionMapSize);
             LastSaveStoreTailAddress = 0;
             LastSaveTime = DateTimeOffset.FromUnixTimeSeconds(0);

@@ -29,6 +29,13 @@ namespace Tsavorite.core
         public TsavoriteKV<TStoreFunctions, TAllocator> Store => _clientSession.store;
         public OverflowBucketLockTable<TStoreFunctions, TAllocator> LockTable => _clientSession.store.LockTable;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void MarkMutation()
+        {
+            if (_clientSession.store.StoreFunctions.CallOnMutate)
+                _clientSession.store.StoreFunctions.OnMutate();
+        }
+
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
@@ -58,6 +65,7 @@ namespace Tsavorite.core
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             logRecord.InfoRef.SetModified();
+            MarkMutation();
             _clientSession.functions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
         }
 
@@ -65,6 +73,7 @@ namespace Tsavorite.core
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             logRecord.InfoRef.SetModified();
+            MarkMutation();
             _clientSession.functions.PostInitialWriter(ref logRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
         }
 
@@ -73,6 +82,7 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             dstLogRecord.InfoRef.SetModified();
+            MarkMutation();
             _clientSession.functions.PostInitialWriter(ref dstLogRecord, in sizeInfo, ref input, in inputLogRecord, ref output, ref upsertInfo);
         }
 
@@ -82,6 +92,7 @@ namespace Tsavorite.core
             if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetModified();
+            MarkMutation();
             return true;
         }
 
@@ -91,6 +102,7 @@ namespace Tsavorite.core
             if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, srcValue, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetModified();
+            MarkMutation();
             return true;
         }
 
@@ -101,6 +113,7 @@ namespace Tsavorite.core
             if (!_clientSession.functions.InPlaceWriter(ref logRecord, ref input, in inputLogRecord, ref output, ref upsertInfo))
                 return false;
             logRecord.InfoRef.SetModified();
+            MarkMutation();
             return true;
         }
 
@@ -141,6 +154,7 @@ namespace Tsavorite.core
         public void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
         {
             logRecord.InfoRef.SetModified();
+            MarkMutation();
             _clientSession.functions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
         }
         #endregion InitialUpdater
@@ -154,14 +168,25 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => _clientSession.functions.CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+        {
+            rmwInfo.SuppressOnMutate = false;
+            return _clientSession.functions.CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             dstLogRecord.InfoRef.SetModified();
-            return _clientSession.functions.PostCopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            try
+            {
+                return _clientSession.functions.PostCopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            }
+            finally
+            {
+                if (!rmwInfo.SuppressOnMutate)
+                    MarkMutation();
+            }
         }
         #endregion CopyUpdater
 
@@ -169,11 +194,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceUpdater(ref LogRecord logRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo, out OperationStatus status)
         {
+            rmwInfo.SuppressOnMutate = false;
             // This wraps the ISessionFunctions call to provide expiration logic.
             if (_clientSession.functions.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo))
             {
                 rmwInfo.Action = RMWAction.Default;
                 logRecord.InfoRef.SetModified();
+                if (!rmwInfo.SuppressOnMutate)
+                    MarkMutation();
 
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                 return true;
@@ -231,6 +259,7 @@ namespace Tsavorite.core
         public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             logRecord.InfoRef.SetModified();
+            MarkMutation();
             _clientSession.functions.PostInitialDeleter(ref logRecord, ref deleteInfo);
         }
 
