@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -62,10 +62,33 @@ namespace Garnet.server
         /// Valid from <see cref="Attach"/> until the session is released. While the session is parked it
         /// parses no further commands, so its <see cref="StorageSession"/> and the Tsavorite contexts
         /// reached through it have no other user and may be operated on directly from the thread the
-        /// operation completes on -- see the remarks on <see cref="OnStart"/> for the rules that make that
-        /// safe.
+        /// operation completes on -- inside <see cref="TryEnterStorageScope"/>, and subject to the rules in
+        /// the remarks on <see cref="OnStart"/>.
         /// </remarks>
         protected RespServerSession Owner => owner;
+
+        /// <summary>
+        /// Takes the parked session's storage for this operation.
+        /// </summary>
+        /// <returns>
+        /// True if the storage may be used, in which case the caller must call
+        /// <see cref="ExitStorageScope"/> when it is done with it -- from a <c>finally</c>, because a
+        /// teardown waiting on the scope would otherwise wait forever. False if the session is being torn
+        /// down, in which case the storage must not be touched and the operation has nothing to publish.
+        /// </returns>
+        /// <remarks>
+        /// A parked session has no other user of its storage, but it can still be *disposed* while an
+        /// operation is using it: connection teardown deliberately does not wait for an operation that has
+        /// already claimed its outcome, because waiting would stall reclamation behind the very thing it is
+        /// cancelling. This scope is the narrower wait that is safe -- teardown waits only for storage work
+        /// already in progress, and refuses entry to any that has not started.
+        /// </remarks>
+        protected bool TryEnterStorageScope() => owner.TryEnterParkedStorage();
+
+        /// <summary>
+        /// Gives the parked session's storage back, releasing a teardown that is waiting on it.
+        /// </summary>
+        protected void ExitStorageScope() => owner.ExitParkedStorage();
 
         int state;
         int starting;
@@ -131,8 +154,16 @@ namespace Garnet.server
         /// that an operation completing instantly -- or failing outright -- is handled by the park rendezvous
         /// rather than racing it.
         /// </summary>
+        /// <remarks>
+        /// Also called after the parse loop has finished with the session, which is a separate guarantee and
+        /// the stronger one: the operation may run on another thread the instant it is started, and until
+        /// that cleanup is done the session still has a response object checked out, holds the cluster
+        /// epoch, and has scratch buffers it is about to reset.
+        /// </remarks>
         internal void Start()
         {
+            owner.AssertStartedAfterBatch();
+
             try
             {
                 OnStart();
@@ -346,18 +377,32 @@ namespace Garnet.server
         /// known before they block.
         /// </para>
         /// <para>
-        /// Two rules bound that. Storage work must be finished before <see cref="ReleaseSession"/> is
-        /// called, because the resume it triggers hands the same storage back to the parse loop for whatever
-        /// the client pipelined behind the blocking command; and it must happen here rather than in
-        /// <see cref="WriteResponse"/>, which runs holding the session's sender lock, where a read that goes
-        /// to disk would stall every other writer the session has. The natural shape is therefore to claim
-        /// the outcome, do the storage work, publish its result, and only then release.
+        /// Three rules bound that. Storage work must happen inside <see cref="TryEnterStorageScope"/>, which
+        /// is what keeps it from running against a session being torn down. It must be finished before
+        /// <see cref="ReleaseSession"/> is called, because the resume that triggers hands the same storage
+        /// back to the parse loop for whatever the client pipelined behind the blocking command. And it must
+        /// happen here rather than in <see cref="WriteResponse"/>, which runs holding the session's sender
+        /// lock, where a read that goes to disk would stall every other writer the session has. The natural
+        /// shape is therefore to claim the outcome, enter the storage scope, do the work, publish its
+        /// result, leave the scope, and only then release.
+        /// </para>
+        /// <para>
+        /// The session's own storage API must be captured before the park, not reconstructed after it. The
+        /// dispatched <c>TGarnetApi</c> is what selects between the basic, transactional and consistent-read
+        /// contexts, and on a replica it is the consistent-read one; an operation that reaches past it to a
+        /// context of its own choosing silently reads through the wrong one. It is captured by value because
+        /// it arrives by <c>ref</c> and the park outlives the frame that holds it.
+        /// </para>
+        /// <para>
+        /// The cluster epoch is *not* held. The parse loop releases it before this runs, so a cluster-aware
+        /// operation must acquire its own; the Tsavorite epoch that <c>BasicContext</c> takes internally is
+        /// a different epoch and is not a substitute.
         /// </para>
         /// <para>
         /// Exclusivity is a property the park establishes, not one the context can assume unconditionally:
         /// <see cref="RespServerSession.CanParkSession"/> refuses to park a session whose storage already
         /// has another driver, which is why a session with async <c>GET</c> processing in flight does not
-        /// park.
+        /// park, and why a command dispatched from a Lua script does not park either.
         /// </para>
         /// </remarks>
         protected abstract void OnStart();

@@ -374,7 +374,9 @@ namespace Garnet.server
         /// DEBUG BLOCK seconds
         ///     [SYNC|SLOWSTART|FAILSTART|FAILSTART2|FAILBATCH|GATE|HOLDCLAIM|HOLDABORT
         ///      |RELEASE|GATECOUNT|CLAIMHELD|CLAIMPROCEED|LEAKCOUNT|GETLEAKCOUNT|ACQCOUNT
-        ///      |ABORTGATED|ABORTHELD|ABORTPROCEED]
+        ///      |ABORTGATED|ABORTHELD|ABORTPROCEED
+        ///      |GETACQCOUNT|GETHOLDVALUE|GETVALUEHELD|GETVALUEPROCEED
+        ///      |GETHOLDREAD|GETREADHELD|GETREADPROCEED]
         /// </summary>
         /// <remarks>
         /// Without <c>SYNC</c> the session parks for the duration, so the connection holds no thread while
@@ -507,7 +509,33 @@ namespace Garnet.server
             else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LEAKCOUNT))
                 reply = DebugBlockCommandContext.OutstandingResults;
             else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETLEAKCOUNT))
-                reply = DebugBlockGetCommandContext.OutstandingValues;
+                reply = DebugBlockGetValues.Count;
+            else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETACQCOUNT))
+                reply = DebugBlockGetValues.Acquired;
+            else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETHOLDVALUE))
+            {
+                DebugBlockGetValues.ArmHold();
+                reply = 1;
+            }
+            else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETVALUEHELD))
+                reply = DebugBlockGetValues.TryConsumeHeld() ? 1 : 0;
+            else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETVALUEPROCEED))
+            {
+                DebugBlockGetValues.Proceed();
+                reply = 1;
+            }
+            else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETHOLDREAD))
+            {
+                DebugBlockGetValues.ArmHoldRead();
+                reply = 1;
+            }
+            else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETREADHELD))
+                reply = DebugBlockGetValues.TryConsumeReadHeld() ? 1 : 0;
+            else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETREADPROCEED))
+            {
+                DebugBlockGetValues.ProceedRead();
+                reply = 1;
+            }
             else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ACQCOUNT))
                 reply = DebugBlockCommandContext.ResultsAcquired;
             else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ABORTGATED))

@@ -120,6 +120,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> CLAIMPROCEED => "CLAIMPROCEED"u8;
         public static ReadOnlySpan<byte> LEAKCOUNT => "LEAKCOUNT"u8;
         public static ReadOnlySpan<byte> GETLEAKCOUNT => "GETLEAKCOUNT"u8;
+        public static ReadOnlySpan<byte> GETACQCOUNT => "GETACQCOUNT"u8;
+        public static ReadOnlySpan<byte> GETHOLDVALUE => "GETHOLDVALUE"u8;
+        public static ReadOnlySpan<byte> GETVALUEHELD => "GETVALUEHELD"u8;
+        public static ReadOnlySpan<byte> GETVALUEPROCEED => "GETVALUEPROCEED"u8;
+        public static ReadOnlySpan<byte> GETHOLDREAD => "GETHOLDREAD"u8;
+        public static ReadOnlySpan<byte> GETREADHELD => "GETREADHELD"u8;
+        public static ReadOnlySpan<byte> GETREADPROCEED => "GETREADPROCEED"u8;
         public static ReadOnlySpan<byte> HOLDABORT => "HOLDABORT"u8;
         public static ReadOnlySpan<byte> ABORTGATED => "ABORTGATED"u8;
         public static ReadOnlySpan<byte> ABORTHELD => "ABORTHELD"u8;
@@ -298,6 +305,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_TIMEOUT_IS_OUT_OF_RANGE => "ERR timeout is out of range"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BLOCKING_ABORTED => "ERR blocking operation aborted"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BLOCKING_FAILED => "ERR blocking operation could not be started"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BLOCKGET_IN_TXN => "ERR DEBUG BLOCKGET is not allowed inside a transaction"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_PASSWORD => "WRONGPASS Invalid password"u8;
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;

@@ -55,6 +55,35 @@ namespace Garnet.server
         int sessionDisposed;
 
         /// <summary>
+        /// Depth of this session's message-consumption stack: one while the network's own parse loop is
+        /// running, more while something re-enters it. A Lua script dispatching <c>redis.call</c> does
+        /// exactly that, on the session's own thread.
+        /// </summary>
+        int consumeDepth;
+
+        /// <summary>
+        /// Command that parked during the batch currently unwinding, and whose operation has not been
+        /// started yet. Written and read only by the session's own thread, between
+        /// <see cref="TryParkSession"/> and <see cref="StartParkedCommand"/> in the same call stack.
+        /// </summary>
+        BlockingCommandContext pendingParkStart;
+
+        /// <summary>
+        /// Set while a parked operation is driving this session's storage.
+        /// </summary>
+        /// <remarks>
+        /// Paired with <see cref="sessionDisposed"/> as a Dekker handshake. Teardown publishes the disposed
+        /// flag and then reads this one; <see cref="TryEnterParkedStorage"/> publishes this one and then
+        /// reads the disposed flag. Each store is followed by a load of the other with a barrier between,
+        /// so the two cannot both read stale: either the operation sees the teardown and declines to touch
+        /// the storage, or teardown sees the operation and waits for it. Without this, teardown disposes
+        /// the database sessions while a parked operation is still reading through them, because a context
+        /// that has claimed its outcome is deliberately *not* waited for -- see
+        /// <see cref="BlockingCommandContext.Abort"/>.
+        /// </remarks>
+        int parkStorageInUse;
+
+        /// <summary>
         /// Set by <see cref="CancelInPlaceWaits"/> before it delivers its notifications, and read by
         /// <see cref="BlockingWaitInPlace{T}"/> after a wait has registered.
         /// </summary>
@@ -111,11 +140,20 @@ namespace Garnet.server
         /// host would couple replication cleanup to session lifetime for a connection that has no business
         /// running a blocking command in the first place.
         /// </para>
+        /// <para>
+        /// The nesting clause confines parking to the network's own parse loop. Lua re-enters
+        /// <see cref="TryConsumeMessages"/> to dispatch <c>redis.call</c>, and a command parking there would
+        /// suspend a session whose script is still running on this thread -- the operation would then drive
+        /// the session's storage concurrently with the script, and the resume would land while the outer
+        /// frame was still in the middle of a batch. Blocking commands reached from a script must fall back
+        /// to non-blocking behavior, which is what Redis does for them anyway.
+        /// </para>
         /// </remarks>
         internal bool CanParkSession
             => parkedCommand == null &&
                txnManager.state == TxnState.None &&
                asyncStarted == 0 &&
+               consumeDepth == 1 &&
                clusterSession?.IsReplicating != true &&
                parkHost != null &&
                parkHost.CanParkSession;
@@ -165,20 +203,111 @@ namespace Garnet.server
             // Snapshot of the reply stream as the parked command left it, for the loop-tail contract check.
             parkResponseCursor = dcurr;
 #endif
-            command.Start();
-
-            // A dispose that ran between the check above and the publish would have found nothing to claim,
-            // leaving this context to leak. Re-check now that it is published; the handler makes the matching
-            // check for connection-level teardown when it arms the park.
-            if (Volatile.Read(ref sessionDisposed) != 0)
-                AbortParkedOperation();
+            // Published, but deliberately not started. Starting here would put the operation on a timer or
+            // pool thread while this call stack still owns the session -- it has a response object checked
+            // out, holds the cluster epoch, and has scratch buffers it is about to reset and may trim. The
+            // parse loop's own cleanup is the handoff point, so the start waits for it.
+            pendingParkStart = command;
 
             return true;
+        }
+
+        /// <summary>
+        /// Starts the operation a command parked on, once the parse loop has finished with the session.
+        /// </summary>
+        /// <remarks>
+        /// Runs from the batch's <c>finally</c>, so it is reached however the batch ended -- including the
+        /// failure paths, which abort the context before this runs and are applied by
+        /// <see cref="BlockingCommandContext.Start"/> rather than racing it. The park host arms the resume
+        /// only after the whole receive call stack has returned, which is strictly later than this, so an
+        /// operation that completes the instant it is started still rendezvous with the park rather than
+        /// resuming the session underneath the thread that parked it.
+        /// </remarks>
+        void StartParkedCommand()
+        {
+            var command = pendingParkStart;
+            if (command == null)
+                return;
+
+            pendingParkStart = null;
+            command.Start();
+
+            // A dispose that ran between the publish in TryParkSession and this point would have found a
+            // context that was still starting and deferred to it; one that ran before the publish would
+            // have found nothing to claim. Re-checking here, after the start has settled, covers both.
+            if (Volatile.Read(ref sessionDisposed) != 0)
+                AbortParkedOperation();
+        }
+
+        /// <summary>
+        /// Takes this session's storage for a parked operation, unless the session is being torn down.
+        /// </summary>
+        /// <returns>
+        /// True if the storage may be used, and the caller must call <see cref="ExitParkedStorage"/> when
+        /// it is done with it. False if the session is going away and its storage must not be touched.
+        /// </returns>
+        internal bool TryEnterParkedStorage()
+        {
+            Volatile.Write(ref parkStorageInUse, 1);
+
+            // Store-before-load, explicitly. Release/acquire would order each side's own accesses but still
+            // permit the store above and the load below to be seen out of order, which is the one
+            // reordering that loses here: both sides would read stale and teardown would dispose the
+            // storage this operation is about to use.
+            Interlocked.MemoryBarrier();
+
+            if (Volatile.Read(ref sessionDisposed) == 0)
+                return true;
+
+            Volatile.Write(ref parkStorageInUse, 0);
+            return false;
+        }
+
+        /// <summary>
+        /// Gives this session's storage back, releasing a teardown that is waiting on it.
+        /// </summary>
+        internal void ExitParkedStorage() => Volatile.Write(ref parkStorageInUse, 0);
+
+        /// <summary>
+        /// Waits for a parked operation that is using this session's storage to finish with it.
+        /// </summary>
+        /// <remarks>
+        /// Bounded by a single storage operation rather than by the blocking command's wait: an operation
+        /// only enters the storage after its wait has ended and it has claimed its outcome. The wait is
+        /// therefore no longer than the pending-read drain disposal does immediately afterwards anyway.
+        /// </remarks>
+        void DrainParkedStorage()
+        {
+            if (Volatile.Read(ref parkStorageInUse) == 0)
+                return;
+
+            var spin = new SpinWait();
+            while (Volatile.Read(ref parkStorageInUse) != 0)
+                spin.SpinOnce();
         }
 
 #if DEBUG
         byte* parkResponseCursor;
 #endif
+
+        /// <summary>
+        /// Trips if a blocking operation was started while its session was still inside a batch.
+        /// </summary>
+        /// <remarks>
+        /// Covers every blocking command rather than the one a test was written against, which matters
+        /// because the damage is a race -- an operation started early may touch the session's storage,
+        /// cluster epoch or scratch buffers while the parse loop is still giving them back -- and a race
+        /// that a command-specific test has to win is a race it will usually lose.
+        /// </remarks>
+        [Conditional("DEBUG")]
+        internal void AssertStartedAfterBatch()
+        {
+            if (consumeDepth != 0)
+            {
+                BlockingCommandContext.ReportContractViolation(
+                    "A blocking operation must start from the parse loop's cleanup, not from inside the batch.");
+            }
+        }
 
         /// <summary>
         /// Trips if a handler kept working after parking. <see cref="TryParkSession"/> has a calling

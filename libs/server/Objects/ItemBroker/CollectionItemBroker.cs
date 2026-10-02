@@ -264,35 +264,53 @@ namespace Garnet.server
             {
                 keysToObservers ??= new Dictionary<byte[], ConcurrentQueue<CollectionItemObserver>>(ByteArrayComparer.Instance);
 
-                // Iterate over the keys in order, set the observer's result if collection in key contains an item
-                foreach (var key in keys)
+                // The status lock is held across the whole body, and the status is re-checked under it, for the
+                // same reason the update path does both: everything below operates the observer's session
+                // storage, and that is only this thread's to operate while the session is still waiting on this
+                // observer. A timeout, a CLIENT UNBLOCK or session teardown can land between the event being
+                // queued and this running, and the session is free the moment one does -- free to run further
+                // commands, including one that parks and completes on another thread. Reading the status
+                // without the lock, or taking the lock without re-reading it, both leave that window open.
+                observer.ObserverStatusLock.WriteLock();
+                try
                 {
-                    // If the key already has a non-empty observer queue, it does not have an item to retrieve
-                    if (keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty)
-                        continue;
+                    if (observer.Status != ObserverStatus.WaitingForResult)
+                        return;
 
-                    // The key has an empty observer queue, try to retrieve next available item
-                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
-                            out _, out var result))
-                        continue;
+                    // Iterate over the keys in order, set the observer's result if collection in key contains an item
+                    foreach (var key in keys)
+                    {
+                        // If the key already has a non-empty observer queue, it does not have an item to retrieve
+                        if (keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty)
+                            continue;
 
-                    // An item was found - set the observer result and return
-                    sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
-                    observer.HandleSetResult(result);
+                        // The key has an empty observer queue, try to retrieve next available item
+                        if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
+                                out _, out var result))
+                            continue;
 
-                    // The key still has an empty observer queue, and the current observer retrieved a result, so we can remove the key.
-                    keysToObservers.Remove(key);
+                        // An item was found - set the observer result and return
+                        sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+                        observer.HandleSetResult(result, true);
 
-                    return;
+                        // The key still has an empty observer queue, and the current observer retrieved a result, so we can remove the key.
+                        keysToObservers.Remove(key);
+
+                        return;
+                    }
+
+                    // No item was found, enqueue new observer in every observed key's queue
+                    foreach (var key in keys)
+                    {
+                        if (!keysToObservers.ContainsKey(key))
+                            keysToObservers.Add(key, new ConcurrentQueue<CollectionItemObserver>());
+
+                        keysToObservers[key].Enqueue(observer);
+                    }
                 }
-
-                // No item was found, enqueue new observer in every observed key's queue
-                foreach (var key in keys)
+                finally
                 {
-                    if (!keysToObservers.ContainsKey(key))
-                        keysToObservers.Add(key, new ConcurrentQueue<CollectionItemObserver>());
-
-                    keysToObservers[key].Enqueue(observer);
+                    observer.ObserverStatusLock.WriteUnlock();
                 }
             }
             finally
