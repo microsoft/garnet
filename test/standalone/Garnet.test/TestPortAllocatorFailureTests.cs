@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using NUnit.Framework;
@@ -242,6 +243,144 @@ namespace Garnet.test
             Assert.That(report, Does.Contain("not a defect in Garnet"),
                 "The report does not say that a conflict here is an environment problem, which is the one " +
                 "thing the reader needs in order to stop looking for a bug in Garnet.");
+        }
+
+        /// <summary>
+        /// A pinned base need not be block-aligned, so a run can span two blocks. Leasing only the block
+        /// holding the first port would leave the tail unclaimed, and another host could lease the next block
+        /// and be handed an overlapping run - both probes passing because neither has bound yet.
+        /// </summary>
+        [Test]
+        public void PinnedRunSpanningTwoBlocksLeasesBoth()
+        {
+            TestPortAllocator.WithIsolatedLeases(leaseDirectory, () =>
+            {
+                // One port below a block boundary, so a two-port run straddles it.
+                var boundary = TestPortAllocator.BlockBasePort(TestPortAllocator.PortBlock(TestUtils.TestPort) + 4);
+                var basePort = boundary - 1;
+
+                var firstBlock = TestPortAllocator.PortBlock(basePort);
+                var secondBlock = TestPortAllocator.PortBlock(basePort + 1);
+                ClassicAssert.AreNotEqual(firstBlock, secondBlock, "The run does not straddle a boundary.");
+
+                if (!TestPortAllocator.PortsAreFree(basePort, 2))
+                    Assert.Ignore($"Ports {basePort}-{basePort + 1} are in use on this host.");
+
+                Environment.SetEnvironmentVariable(TestPortAllocator.PinnedBaseEnvVar, basePort.ToString());
+                ClassicAssert.AreEqual(basePort, TestPortAllocator.Reserve(2, "pinned-straddle"));
+
+                // The second block must now be unavailable to anyone else. Taking its lease from here stands
+                // in for another test host trying to claim it.
+                using var stolen = TestPortAllocator.HoldLeaseForTest(secondBlock);
+                Assert.That(stolen, Is.Null,
+                    $"Block {secondBlock} holds the tail of pinned run {basePort}-{basePort + 1} but was " +
+                    $"still available, so another host could reserve an overlapping run.");
+            });
+        }
+
+        [Test]
+        public void IntersectedBlocksCoversEveryBlockARunTouches()
+        {
+            var boundary = TestPortAllocator.BlockBasePort(10);
+
+            CollectionAssert.AreEqual(new[] { 9, 10 },
+                TestPortAllocator.IntersectedBlocks(boundary - 1, 2).ToArray(),
+                "A run straddling a boundary must report both blocks.");
+            CollectionAssert.AreEqual(new[] { 10 },
+                TestPortAllocator.IntersectedBlocks(boundary, 4).ToArray(),
+                "A run inside one block must report only that block.");
+
+            // Ports outside the allocatable range belong to no block; PortBlock would return a negative or
+            // past-the-end index for them, which names no lease file.
+            CollectionAssert.IsEmpty(TestPortAllocator.IntersectedBlocks(1024, 4).ToArray());
+            CollectionAssert.IsEmpty(TestPortAllocator.IntersectedBlocks(40000, 4).ToArray());
+            CollectionAssert.AreEqual(new[] { 0 },
+                TestPortAllocator.IntersectedBlocks(TestPortAllocator.UniverseBase - 1, 2).ToArray(),
+                "A run entering the range from below must report only the in-range part.");
+        }
+
+        /// <summary>
+        /// The report explains a port someone else is holding. The other bind failures have different causes -
+        /// a platform-reserved range, an address absent from the machine - so attaching this reasoning to them
+        /// would state a confident diagnosis that is wrong.
+        /// </summary>
+        [TestCase("AccessDenied")]
+        [TestCase("AddressNotAvailable")]
+        [TestCase("NetworkDown")]
+        public void PortConflictReportIsSilentForNonConflictBindErrors(string socketError)
+        {
+            var message = $"Could not bind 127.0.0.1:{TestUtils.TestPort} ({socketError}). Something else.";
+
+            Assert.That(TestUtils.BuildPortConflictReport(message), Is.Null,
+                $"A {socketError} bind failure is not a port conflict, but the port-conflict report fired.");
+        }
+
+        /// <summary>
+        /// Cluster projects reserve through <c>ClusterTestContext.ReservePorts</c>, which never touches the
+        /// standalone port field, yet cluster teardown runs the same report. Consulting that field would tell
+        /// a cluster host it had reserved nothing while it held an eight-port run.
+        /// </summary>
+        [Test]
+        public void PortConflictReportNamesTheRunThatCoversThePort()
+        {
+            var reserved = TestPortAllocator.FindReservation(TestUtils.TestPort);
+            Assert.That(reserved, Is.Not.Null, "This host's own reservation is not recorded.");
+
+            var report = TestUtils.BuildPortConflictReport(
+                $"Could not bind 127.0.0.1:{TestUtils.TestPort} (AddressAlreadyInUse).");
+
+            Assert.That(report, Does.Contain(reserved.BasePort.ToString()));
+            Assert.That(report, Does.Contain(reserved.Purpose),
+                "The report does not name the project holding the run, so a cluster failure cannot be " +
+                "attributed to its own reservation.");
+            Assert.That(report, Does.Contain("not a defect in Garnet"));
+        }
+
+        /// <summary>
+        /// An endpoint the test built itself carries none of the allocator's guarantees, so claiming the OS
+        /// cannot have taken the port would send the reader hunting for software that is not there.
+        /// </summary>
+        [Test]
+        public void PortConflictReportWithholdsGuaranteesForUnreservedPorts()
+        {
+            var unreserved = TestPortAllocator.UniverseBase + TestPortAllocator.UniverseSize + 5000;
+            Assert.That(TestPortAllocator.FindReservation(unreserved), Is.Null);
+
+            var report = TestUtils.BuildPortConflictReport(
+                $"Could not bind 127.0.0.1:{unreserved} (AddressAlreadyInUse).");
+
+            Assert.That(report, Is.Not.Null);
+            Assert.That(report, Does.Contain("not reserved by this test host"));
+            Assert.That(report, Does.Not.Contain("cannot have assigned"),
+                "The report claims the non-ephemeral guarantee for a port the allocator never handed out.");
+        }
+
+        /// <summary>
+        /// Pinning can place a run inside the ephemeral range, which is the one case where the OS really can
+        /// take the port between the probe and the bind. Reporting that as external software would blame the
+        /// wrong thing for a collision the operator opted into.
+        /// </summary>
+        [Test]
+        public void PortConflictReportWithholdsGuaranteesForPinnedPortsOutsideTheUniverse()
+        {
+            var outside = TestPortAllocator.UniverseBase + TestPortAllocator.UniverseSize + 1000;
+            if (!TestPortAllocator.PortsAreFree(outside, 2))
+                Assert.Ignore($"Ports {outside}-{outside + 1} are in use on this host.");
+
+            TestPortAllocator.WithIsolatedLeases(leaseDirectory, () =>
+            {
+                Environment.SetEnvironmentVariable(TestPortAllocator.PinnedBaseEnvVar, outside.ToString());
+                ClassicAssert.AreEqual(outside, TestPortAllocator.Reserve(2, "pinned-outside"));
+
+                var report = TestUtils.BuildPortConflictReport(
+                    $"Could not bind 127.0.0.1:{outside} (AddressAlreadyInUse).");
+
+                Assert.That(report, Is.Not.Null);
+                Assert.That(report, Does.Contain("may itself have assigned"));
+                Assert.That(report, Does.Not.Contain("not a defect in Garnet"),
+                    "A pinned port inside the ephemeral range is exactly the case the allocator cannot rule " +
+                    "out, so it must not be reported as certainly external software.");
+            });
         }
 
         /// <summary>

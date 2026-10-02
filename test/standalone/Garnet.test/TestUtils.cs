@@ -16,6 +16,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -176,32 +177,90 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Builds the port-allocation context for a failed test, or returns null when the failure was not a
-        /// bind failure. Separated from <see cref="ReportPortConflictIfBindFailed"/> so the decision and the
-        /// wording can be asserted without having to make a real test fail.
+        /// Builds the port-allocation context for a failed test, or returns null when the failure is not one
+        /// this context explains. Separated from <see cref="ReportPortConflictIfBindFailed"/> so the decision
+        /// and the wording can be asserted without having to make a real test fail.
         /// </summary>
         /// <param name="failureMessage">The failed test's message.</param>
-        /// <returns>The report to emit, or null when this failure is unrelated to binding.</returns>
+        /// <returns>The report to emit, or null when this failure is unrelated.</returns>
         internal static string BuildPortConflictReport(string failureMessage)
         {
-            // Matches the message GarnetServerTcp produces. That string is authored in this repository rather
-            // than supplied by the platform, so it is neither locale-dependent nor liable to drift.
-            if (failureMessage is null || !failureMessage.Contains("Could not bind", StringComparison.Ordinal))
+            if (failureMessage is null)
                 return null;
 
-            var reserved = testPort == 0
-                ? "This host reserved no ports, so the bind used an endpoint the test supplied directly."
-                : $"This host reserved ports {testPort}-{testPort + StandalonePortCount - 1}, which were leased " +
-                  $"and probed free at startup.";
+            // Matches the message GarnetServerTcp produces. That string is authored in this repository rather
+            // than supplied by the platform, so it is neither locale-dependent nor liable to drift.
+            var match = BindFailurePattern.Match(failureMessage);
+            if (!match.Success)
+                return null;
 
-            return $"A Garnet test server failed to bind. {reserved} Reserved ports lie below " +
+            // Only an occupied port is explained by how ports were allocated. GarnetServerTcp already reports
+            // AccessDenied as a platform-reserved range and AddressNotAvailable as an address absent from the
+            // machine; neither is another process taking the port, so repeating this reasoning for them would
+            // state a confident diagnosis that is simply wrong.
+            if (match.Groups["error"].Value != nameof(SocketError.AddressAlreadyInUse))
+                return null;
+
+            var endpoint = match.Groups["endpoint"].Value;
+            var reservation = TryParsePort(endpoint, out var port) ? TestPortAllocator.FindReservation(port) : null;
+            var occupant =
+                $"Identify the occupant with 'Get-NetTCPConnection -LocalPort {(reservation is null ? "<port>" : port.ToString())}' " +
+                $"on Windows or 'ss -ltnp' on Linux, and stop it by process id rather than by name.";
+
+            if (reservation is null)
+            {
+                // Covers an endpoint the test constructed itself, which the allocator never promised anything
+                // about - saying otherwise would send the reader looking for an external process that does not
+                // exist.
+                return $"A Garnet test server failed to bind {endpoint}. That port was not reserved by this " +
+                    $"test host, so it carries none of the allocator's guarantees: the test supplied the " +
+                    $"endpoint directly. {occupant}";
+            }
+
+            var held = $"This host holds {reservation.BasePort}-{reservation.BasePort + reservation.PortCount - 1} " +
+                $"for '{reservation.Purpose}', probed free at startup.";
+
+            if (!reservation.IsWhollyInUniverse)
+            {
+                // A pinned run may sit anywhere, including inside the ephemeral range, where the kernel can
+                // hand the port to an outbound connection between the probe and the bind. That is the one case
+                // the allocator cannot rule out, so it must not be described as external software.
+                return $"A Garnet test server failed to bind {endpoint}. {held} Those ports were pinned with " +
+                    $"{TestPortAllocator.PinnedBaseEnvVar} and lie outside " +
+                    $"{TestPortAllocator.UniverseBase}-{TestPortAllocator.UniverseBase + TestPortAllocator.UniverseSize - 1}, " +
+                    $"so the operating system may itself have assigned one to an outbound connection - the " +
+                    $"collision pinning opts out of. Re-run without the pin, or pin inside that range, before " +
+                    $"treating this as a conflict with other software. {occupant}";
+            }
+
+            return $"A Garnet test server failed to bind {endpoint}. {held} Reserved ports lie below " +
                 $"{TestPortAllocator.UniverseBase + TestPortAllocator.UniverseSize}, beneath every supported " +
                 $"platform's ephemeral range, so the operating system cannot have assigned one to an outbound " +
                 $"connection, and the lease excludes every other Garnet test host. A conflict here is therefore " +
                 $"software outside this suite taking the port mid-run, not a defect in Garnet or in this test. " +
-                $"Identify the occupant by port with 'Get-NetTCPConnection -LocalPort <port>' on Windows or " +
-                $"'ss -ltnp' on Linux, stop it by process id rather than by name, and set " +
-                $"{TestPortAllocator.PinnedBaseEnvVar} to pin a known-free base port if it recurs.";
+                $"{occupant} Set {TestPortAllocator.PinnedBaseEnvVar} to pin a known-free base port if it recurs.";
+        }
+
+        /// <summary>
+        /// Recognizes the bind failure <c>GarnetServerTcp</c> reports, capturing the endpoint and the socket
+        /// error so the two can be judged separately.
+        /// </summary>
+        private static readonly Regex BindFailurePattern =
+            new(@"Could not bind (?<endpoint>\S+) \((?<error>\w+)\)", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Reads the port from an endpoint as rendered by <see cref="IPEndPoint.ToString"/>, which is
+        /// <c>address:port</c> for IPv4 and <c>[address]:port</c> for IPv6 - so the port follows the last
+        /// colon in both forms.
+        /// </summary>
+        /// <param name="endpoint">Endpoint text captured from the failure message.</param>
+        /// <param name="port">The parsed port.</param>
+        /// <returns>True when a port could be read.</returns>
+        private static bool TryParsePort(string endpoint, out int port)
+        {
+            port = 0;
+            var colon = endpoint.LastIndexOf(':');
+            return colon >= 0 && int.TryParse(endpoint.AsSpan(colon + 1), out port);
         }
 
         /// <summary>

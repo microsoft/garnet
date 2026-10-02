@@ -106,6 +106,48 @@ namespace Garnet.test
         private static readonly HashSet<int> reservedBlocks = [];
 
         /// <summary>
+        /// A run of ports this process holds.
+        /// </summary>
+        /// <param name="Purpose">Name of the project the run was reserved for.</param>
+        /// <param name="BasePort">First port of the run.</param>
+        /// <param name="PortCount">Number of contiguous ports.</param>
+        /// <param name="Pinned">Whether the run came from <see cref="PinnedBaseEnvVar"/> rather than the search.</param>
+        internal sealed record Reservation(string Purpose, int BasePort, int PortCount, bool Pinned)
+        {
+            /// <summary>
+            /// Whether every port in the run lies inside the allocatable range, which is what makes it immune
+            /// to the OS assigning the same port to an outbound connection. Automatic reservations always
+            /// satisfy this; a pinned one need not, since an operator may name a port anywhere.
+            /// </summary>
+            internal bool IsWhollyInUniverse
+                => BasePort >= UniverseBase && BasePort + PortCount <= UniverseBase + UniverseSize;
+
+            /// <summary>Whether a port falls in this run.</summary>
+            /// <param name="port">Port to test.</param>
+            /// <returns>True when the port is part of this reservation.</returns>
+            internal bool Covers(int port) => port >= BasePort && port < BasePort + PortCount;
+        }
+
+        /// <summary>
+        /// Every run this process holds, across all contexts. Recorded here rather than in the caller because
+        /// standalone and cluster projects reserve through different entry points: a diagnostic that consulted
+        /// only the standalone field would report a cluster host as having reserved nothing.
+        /// </summary>
+        private static readonly List<Reservation> reservations = [];
+
+        /// <summary>
+        /// Finds the run covering a port, or null when this process did not reserve it - which is the case for
+        /// an endpoint a test constructed itself.
+        /// </summary>
+        /// <param name="port">Port to look up.</param>
+        /// <returns>The covering reservation, or null.</returns>
+        internal static Reservation FindReservation(int port)
+        {
+            lock (reservationLock)
+                return reservations.Find(r => r.Covers(port));
+        }
+
+        /// <summary>
         /// Reserves a contiguous run of ports and holds it until the process exits.
         /// <para>
         /// The search starts at a block derived from the checkout and the calling assembly, so a given test
@@ -172,6 +214,7 @@ namespace Garnet.test
 
                     heldLeases.Add(lease);
                     _ = reservedBlocks.Add(block);
+                    reservations.Add(new Reservation(purpose, basePort, portCount, Pinned: false));
 
                     TestContext.Progress.WriteLine(
                         $"Garnet test ports {basePort}-{basePort + portCount - 1} reserved for '{purpose}' " +
@@ -193,6 +236,17 @@ namespace Garnet.test
         /// Honors <see cref="PinnedBaseEnvVar"/>. The base is used as given rather than snapped to a block, so
         /// an operator can name the exact port they have opened a firewall for. It is still leased and probed,
         /// so pinning cannot silently reintroduce a collision.
+        /// <para>
+        /// Because a pinned base need not be block-aligned, the run can span two blocks. Every block it
+        /// touches is leased, not just the one holding the first port: leasing only the first would leave the
+        /// tail of the run unclaimed, and another host could lease that next block and be handed an
+        /// overlapping run whose probe passes because neither side has bound yet.
+        /// </para>
+        /// <para>
+        /// A pinned run outside the allocatable range has no block to lease, so there the probe is the only
+        /// protection. That is sound because the search never hands out ports there, so the sole way to
+        /// collide is a second host pinned to the same place - a deliberate act on both sides.
+        /// </para>
         /// </summary>
         /// <param name="raw">Raw environment variable value.</param>
         /// <param name="portCount">Contiguous ports required.</param>
@@ -206,28 +260,73 @@ namespace Garnet.test
                     $"{PinnedBaseEnvVar} must be a port between 1024 and {65536 - portCount}; got '{raw}'.");
             }
 
-            if (basePort + portCount > UniverseBase + UniverseSize)
+            if (basePort < UniverseBase || basePort + portCount > UniverseBase + UniverseSize)
             {
                 TestContext.Progress.WriteLine(
-                    $"Warning: {PinnedBaseEnvVar}={basePort} puts test ports at or above " +
-                    $"{UniverseBase + UniverseSize}, where the OS can assign the same port to an outbound " +
-                    $"connection and the bind then fails intermittently.");
+                    $"Warning: {PinnedBaseEnvVar}={basePort} puts test ports outside {UniverseBase}-" +
+                    $"{UniverseBase + UniverseSize - 1}. Above that range the OS can assign the same port to " +
+                    $"an outbound connection and the bind then fails intermittently; outside it entirely, no " +
+                    $"lease can be taken and the probe is the only protection against another pinned host.");
             }
 
-            var lease = TryAcquireLease(PortBlock(basePort), purpose)
-                ?? throw new InvalidOperationException(
-                    $"{PinnedBaseEnvVar}={basePort} names a port block already leased by another test host.");
+            var taken = new List<FileStream>();
+            foreach (var block in IntersectedBlocks(basePort, portCount))
+            {
+                var lease = TryAcquireLease(block, purpose);
+                if (lease is null)
+                {
+                    foreach (var held in taken)
+                        held.Dispose();
+
+                    throw new InvalidOperationException(
+                        $"{PinnedBaseEnvVar}={basePort} names ports in block {block}, which another test host " +
+                        $"already holds.");
+                }
+
+                taken.Add(lease);
+            }
 
             if (!PortsAreFree(basePort, portCount))
             {
-                lease.Dispose();
+                foreach (var held in taken)
+                    held.Dispose();
+
                 throw new InvalidOperationException(
                     $"{PinnedBaseEnvVar}={basePort} names ports that are already in use ({basePort}-" +
                     $"{basePort + portCount - 1}), so '{purpose}' cannot bind them.");
             }
 
-            heldLeases.Add(lease);
+            heldLeases.AddRange(taken);
+            foreach (var block in IntersectedBlocks(basePort, portCount))
+                _ = reservedBlocks.Add(block);
+
+            reservations.Add(new Reservation(purpose, basePort, portCount, Pinned: true));
             return basePort;
+        }
+
+        /// <summary>
+        /// The blocks a run of ports touches, limited to blocks that exist. Ports outside the allocatable
+        /// range belong to no block, so <see cref="PortBlock"/> is not meaningful for them and they are
+        /// skipped rather than producing a negative or out-of-range index.
+        /// </summary>
+        /// <param name="basePort">First port of the run.</param>
+        /// <param name="portCount">Number of contiguous ports.</param>
+        /// <returns>Each distinct in-range block the run intersects, ascending.</returns>
+        internal static IEnumerable<int> IntersectedBlocks(int basePort, int portCount)
+        {
+            var previous = -1;
+            for (var port = basePort; port < basePort + portCount; port++)
+            {
+                if (port < UniverseBase || port >= UniverseBase + UniverseSize)
+                    continue;
+
+                var block = PortBlock(port);
+                if (block != previous)
+                {
+                    previous = block;
+                    yield return block;
+                }
+            }
         }
 
         /// <summary>First port of a block.</summary>
@@ -235,7 +334,11 @@ namespace Garnet.test
         /// <returns>The block's base port.</returns>
         internal static int BlockBasePort(int block) => UniverseBase + (block * BlockPorts);
 
-        /// <summary>Block containing a port, for ports inside the universe.</summary>
+        /// <summary>
+        /// Block containing a port. Defined only for ports inside the allocatable range; outside it the result
+        /// is negative or past <see cref="BlockCount"/> and names no real block, so callers handling arbitrary
+        /// ports must range-check first - <see cref="IntersectedBlocks"/> does.
+        /// </summary>
         /// <param name="port">Port to locate.</param>
         /// <returns>The containing block index.</returns>
         internal static int PortBlock(int port) => (port - UniverseBase) / BlockPorts;
@@ -282,6 +385,7 @@ namespace Garnet.test
                 var previousDirectory = leaseDirectoryOverride;
                 var previousBlocks = new int[reservedBlocks.Count];
                 reservedBlocks.CopyTo(previousBlocks);
+                var previousReservations = reservations.ToArray();
 
                 leaseDirectoryOverride = directory;
                 reservedBlocks.Clear();
@@ -296,6 +400,11 @@ namespace Garnet.test
                     reservedBlocks.Clear();
                     foreach (var block in previousBlocks)
                         _ = reservedBlocks.Add(block);
+
+                    // Runs taken against the private directory are released with it, so leaving them recorded
+                    // would make a later diagnostic claim ports this process no longer holds.
+                    reservations.Clear();
+                    reservations.AddRange(previousReservations);
                 }
             }
         }
