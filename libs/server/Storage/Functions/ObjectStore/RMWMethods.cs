@@ -51,6 +51,11 @@ namespace Garnet.server
             {
                 value = GarnetObject.Create(type);
                 _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion);
+
+                // The operation left the new object empty (e.g. ZADD XX on a missing key): do not create the key
+                if (output.HasRemoveKey)
+                    return false;
+
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 return true;
             }
