@@ -222,8 +222,8 @@ namespace Garnet.test
         {
             var options = LightNetworkWriterOptions.Default;
 
-            ClassicAssert.AreEqual(8 * 1024, options.MinMemoryFootprint());
-            ClassicAssert.AreEqual(15 * 1024, options.MaxMemoryFootprint());
+            ClassicAssert.AreEqual(12 * 1024, options.MinMemoryFootprint());
+            ClassicAssert.AreEqual(26 * 1024, options.MaxMemoryFootprint());
         }
 
         [Test]

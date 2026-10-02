@@ -15,12 +15,18 @@ namespace BDN.benchmark.Client
     [MemoryDiagnoser]
     public unsafe class DuplexOperationChannelOperations
     {
-        const int RingPageSize = 64;
         const int RingPageCount = 8;
         const int CompletionCapacity = 32;
         const int MaxChunkSize = 256;
+        const int RequestPoolMinAllocationSize = 64;
         const int InlinePayloadLength = 32;
         const int OutOfLinePayloadLength = 64;
+
+        /// <summary>
+        /// Request-ring page size used to compare transition-heavy and production-sized pages.
+        /// </summary>
+        [Params(64, 512, 4096)]
+        public int RingPageSize { get; set; }
 
         readonly struct BenchmarkCompletion
         {
@@ -116,7 +122,7 @@ namespace BDN.benchmark.Client
         {
             epoch = new LightEpoch();
             requestPool = new LimitedFixedBufferPool(
-                minAllocationSize: RingPageSize,
+                minAllocationSize: RequestPoolMinAllocationSize,
                 maxEntriesPerLevel: 4,
                 numLevels: 4,
                 ownerType: PoolOwnerType.GarnetClient);

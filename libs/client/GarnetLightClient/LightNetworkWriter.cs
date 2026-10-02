@@ -42,15 +42,21 @@ namespace Garnet.client
         /// Default settings for a general-purpose <see cref="GarnetLightClient"/>.
         /// </summary>
         /// <remarks>
-        /// On a 64-bit process, the fixed request/completion ring footprint is approximately 8 KiB:
+        /// The default uses two 1-KiB request pages. For inline requests, two pages outperform larger
+        /// page counts, and 1 KiB is the only tested page-size increase over 512 bytes that improves
+        /// per-request cost; larger pages regress. For out-of-line requests, total ring capacity rather
+        /// than page geometry determines the amortized per-request cost.
+        /// <para>
+        /// On a 64-bit process, the fixed request/completion ring footprint is approximately 12 KiB:
+        /// </para>
         /// <list type="bullet">
         /// <item><description>
-        /// Request pages: 2 pages * 512 bytes = 1 KiB of pinned payload storage.
+        /// Request pages: 2 pages * 1,024 bytes = 2 KiB of pinned payload storage.
         /// </description></item>
         /// <item><description>
-        /// Request side table: (2 * 512 bytes) / 8-byte record alignment = 128 slots;
+        /// Request side table: (2 * 1,024 bytes) / 8-byte record alignment = 256 slots;
         /// each <c>LightRequestContext</c> plus flush-context reference is approximately 24 bytes,
-        /// for approximately 3 KiB.
+        /// for approximately 6 KiB.
         /// </description></item>
         /// <item><description>
         /// Completion lane: 64 slots * 64 bytes per cache-line-padded completion slot = 4 KiB.
@@ -59,11 +65,11 @@ namespace Garnet.client
         /// The total excludes array headers, 8 KiB network buffers, and pooled out-of-line request buffers.
         /// It also excludes reusable flush contexts from the fixed footprint because they are allocated lazily.
         /// After every physical request slot has been used, their approximate worst-case footprint is
-        /// 128 slots * 56 bytes = 7 KiB, keeping the fully warmed request/completion ring near 15 KiB.
+        /// 256 slots * 56 bytes = 14 KiB, keeping the fully warmed request/completion ring near 26 KiB.
         /// </remarks>
         public static LightNetworkWriterOptions Default => new(
             networkBufferSizeBytes: 1 << 13,
-            requestPageSizeBytes: 1 << 9,
+            requestPageSizeBytes: 1 << 10,
             requestPageCount: 2,
             maxOutstandingCompletions: 1 << 6,
             maxConcurrentNetworkSends: 8);
