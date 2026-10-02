@@ -373,67 +373,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task VectorReplayFailureCanResetAsync([Values] bool failSession)
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase();
-            ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "replay-reset", "DIM", 3, "NOQUANT"));
-            var manager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
-            var replayWrapper = new StoreWrapper(server.Provider.StoreWrapper, recordToAof: false);
-            byte[] key = "replay-reset"u8.ToArray();
-            byte[] id = [1, 0, 0, 0];
-            var vector = MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray();
-
-            for (var generation = 0; generation < 2; generation++)
-            {
-                using var cancellation = new CancellationTokenSource();
-                var lifecycle = manager.StartReplicationTasksAsync(cancellation.Token);
-                try
-                {
-                    QueueTerm(generation == 0 && !failSession ? new byte[1] : vector, generation == 0 && failSession);
-                    if (generation == 0)
-                    {
-                        ClassicAssert.ThrowsAsync<GarnetException>(async () =>
-                            await Task.Run(manager.WaitForVectorOperationsToComplete).WaitAsync(TimeSpan.FromSeconds(10)));
-                        ClassicAssert.Throws<GarnetException>(manager.WaitForVectorOperationsToComplete);
-                        ClassicAssert.Throws<GarnetException>(() => QueueTerm(vector, false));
-                    }
-                    else
-                    {
-                        await Task.Run(manager.WaitForVectorOperationsToComplete).WaitAsync(TimeSpan.FromSeconds(10));
-                        CollectionAssert.AreEqual(vector, ReadRawVectorTerm("replay-reset", DiskANNService.FullVector, id));
-                    }
-                }
-                finally
-                {
-                    await cancellation.CancelAsync();
-                    await lifecycle.WaitAsync(TimeSpan.FromSeconds(10));
-                }
-                ClassicAssert.DoesNotThrow(manager.WaitForVectorOperationsToComplete);
-            }
-
-            manager.ShutdownReplayTasks();
-            ClassicAssert.Throws<GarnetException>(() => QueueTerm(vector, false));
-
-            unsafe void QueueTerm(byte[] value, bool throwOnSessionCreation)
-            {
-                fixed (byte* keyPtr = key, idPtr = id, valuePtr = value)
-                {
-                    uint termType = DiskANNService.FullVector;
-                    var input = new StringInput(RespCommand.XVIMPORT);
-                    input.parseState.InitializeWithArguments(
-                        PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref termType, 1))),
-                        PinnedSpanByte.FromPinnedSpan(new ReadOnlySpan<byte>(idPtr, id.Length)),
-                        PinnedSpanByte.FromPinnedSpan(new ReadOnlySpan<byte>(valuePtr, value.Length)));
-                    manager.HandleVectorSetImportReplication(null,
-                        () => throwOnSessionCreation ? throw new GarnetException("Replay session creation failed")
-                            : new RespServerSession(0, networkSender: null, storeWrapper: replayWrapper, subscribeBroker: null, authenticator: null, enableScripts: false),
-                        new ReadOnlySpan<byte>(keyPtr, key.Length), ref input);
-                }
-            }
-        }
-
-        [Test]
         public void XVIMPORTInvalidArguments()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

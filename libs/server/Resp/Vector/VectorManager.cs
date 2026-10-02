@@ -209,7 +209,7 @@ namespace Garnet.server
 
             replicationBlockEvent = CountingEventSlim.Create();
             // NOTE: for multi-log we need to disable single writer since multiple AOF replay tasks may append to this common channel.
-            replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
+            replicationReplayChannel = Channel.CreateUnbounded<VectorSetReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
 
             if (serverOptions.VectorSetReplayTaskCount < 0 || serverOptions.VectorSetReplayTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");

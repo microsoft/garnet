@@ -7,7 +7,6 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -30,17 +29,12 @@ namespace Garnet.server
         /// <summary>
         /// Represents a copied VADD or XVIMPORT term being replayed during replication.
         /// </summary>
-        private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks, VectorDistanceMetricType DistanceMetric, uint? ImportTermType = null);
+        private readonly record struct VectorSetReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks, VectorDistanceMetricType DistanceMetric, uint? ImportTermType = null);
 
         private int replicationReplayStarted;
         private CountingEventSlim replicationBlockEvent;
-        private readonly Channel<VADDReplicationState> replicationReplayChannel;
+        private readonly Channel<VectorSetReplicationState> replicationReplayChannel;
         private readonly Task[] replicationReplayTasks;
-        private readonly object replicationReplayGate = new();
-        private RespCommand replicationBatchCommand;
-        private ExceptionDispatchInfo replicationReplayFailure;
-        private int importReplayRequestsProcessed;
-        internal int ImportReplayRequestsProcessed => Volatile.Read(ref importReplayRequestsProcessed);
 
         private CancellationToken replicationReplayCancellation;
 
@@ -519,41 +513,27 @@ namespace Garnet.server
             QueueVectorReplay(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric), obtainServerSession);
         }
 
-        private void QueueVectorReplay(VADDReplicationState state, Func<RespServerSession> obtainServerSession)
+        private void QueueVectorReplay(VectorSetReplicationState state, Func<RespServerSession> obtainServerSession)
         {
-            lock (replicationReplayGate)
+            if (replicationReplayCancellation.IsCancellationRequested || replicationReplayStarted < 0)
             {
-                var command = state.ImportTermType.HasValue ? RespCommand.XVIMPORT : RespCommand.VADD;
-                try
-                {
-                    if (replicationReplayCancellation.IsCancellationRequested || replicationReplayStarted < 0)
-                    {
-                        throw new GarnetException("Vector replay is stopped");
-                    }
-                    if (replicationBatchCommand != command)
-                    {
-                        WaitForVectorOperationsToComplete();
-                        replicationBatchCommand = command;
-                    }
-                    replicationReplayFailure?.Throw();
-                    if (replicationReplayStarted == 0)
-                    {
-                        replicationReplayStarted = 1;
-                        StartReplicationReplayTasks(this, obtainServerSession);
-                    }
-                    replicationBlockEvent.Increment();
-                    if (!replicationReplayChannel.Writer.TryWrite(state))
-                    {
-                        replicationBlockEvent.Decrement();
-                        throw new GarnetException("Vector replay queue is closed");
-                    }
-                }
-                catch
-                {
-                    ReleaseReplayEntry(state);
-                    throw;
-                }
+                throw new GarnetException("Vector replay is stopped");
             }
+
+            if (replicationReplayStarted == 0 && Interlocked.CompareExchange(ref replicationReplayStarted, 1, 0) == 0)
+            {
+                StartReplicationReplayTasks(this, obtainServerSession);
+            }
+
+            replicationBlockEvent.Increment();
+            if (!replicationReplayChannel.Writer.TryWrite(state))
+            {
+                replicationBlockEvent.Decrement();
+                ReleaseReplayEntry(state);
+
+                throw new GarnetException("Vector replay queue is closed");
+            }
+
 
             static void StartReplicationReplayTasks(VectorManager self, Func<RespServerSession> obtainServerSession)
             {
@@ -589,15 +569,26 @@ namespace Garnet.server
                             {
                                 try
                                 {
-                                    if (self.replicationReplayFailure == null)
-                                    {
-                                        ApplyVectorSetReplay(self, allocatedSession.storageSession, entry, ref reusableParseState);
-                                    }
+                                    ApplyVectorSetReplay(self, allocatedSession.storageSession, entry, ref reusableParseState);
                                 }
-                                catch (Exception exception)
+                                catch (Exception e)
                                 {
-                                    _ = Interlocked.CompareExchange(ref self.replicationReplayFailure, ExceptionDispatchInfo.Capture(exception), null);
-                                    self.logger?.LogCritical(exception, "Vector replay failed for {key}", Encoding.UTF8.GetString(entry.Key.Span));
+                                    self.logger?.LogCritical(
+                                        e,
+                                        "Faulting Vector Set Replication task ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}, {termType})",
+                                        Encoding.UTF8.GetString(entry.Key.Span),
+                                        entry.Dims,
+                                        entry.ReduceDims,
+                                        entry.ValueType,
+                                        Convert.ToBase64String(entry.Values.Span),
+                                        Convert.ToBase64String(entry.Element.Span),
+                                        entry.Quantizer,
+                                        entry.BuildExplorationFactor,
+                                        Encoding.UTF8.GetString(entry.Attributes.Span),
+                                        entry.NumLinks,
+                                        entry.ImportTermType
+                                    );
+                                    throw;
                                 }
                                 finally
                                 {
@@ -613,18 +604,13 @@ namespace Garnet.server
                     }
                     catch (Exception e)
                     {
-                        _ = Interlocked.CompareExchange(ref self.replicationReplayFailure, ExceptionDispatchInfo.Capture(e), null);
-                        while (self.replicationReplayChannel.Reader.TryRead(out var abandoned))
-                        {
-                            ReleaseReplayEntry(abandoned);
-                            self.replicationBlockEvent.Decrement();
-                        }
                         self.logger?.LogCritical(e, "Unexpected abort of replication replay task");
+                        throw;
                     }
                 }
             }
 
-            static unsafe void ApplyVectorSetReplay(VectorManager self, StorageSession storageSession, VADDReplicationState state, ref SessionParseState reusableParseState)
+            static unsafe void ApplyVectorSetReplay(VectorManager self, StorageSession storageSession, VectorSetReplicationState state, ref SessionParseState reusableParseState)
             {
                 var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric, importTermType) = state;
                 {
@@ -648,7 +634,7 @@ namespace Garnet.server
                             {
                                 throw new GarnetException($"XVIMPORT replay failed: {importStatus}, {importResult}, {Encoding.UTF8.GetString(error)}");
                             }
-                            _ = Interlocked.Increment(ref self.importReplayRequestsProcessed);
+
                             return;
                         }
 
@@ -692,7 +678,7 @@ namespace Garnet.server
             }
         }
 
-        private static void ReleaseReplayEntry(VADDReplicationState entry)
+        private static void ReleaseReplayEntry(VectorSetReplicationState entry)
         {
             ReturnBuffer(entry.Key);
             ReturnBuffer(entry.Values);
@@ -716,25 +702,18 @@ namespace Garnet.server
         private async Task<int> ResetReplayTasksAsync()
         {
             await Task.WhenAll(replicationReplayTasks).ConfigureAwait(false);
-            lock (replicationReplayGate)
-            {
-                Array.Fill(replicationReplayTasks, Task.CompletedTask);
-                var abandoned = 0;
-                while (replicationReplayChannel.Reader.TryRead(out var entry))
-                {
-                    ReleaseReplayEntry(entry);
-                    replicationBlockEvent.Decrement();
-                    abandoned++;
-                }
+            Array.Fill(replicationReplayTasks, Task.CompletedTask);
+            _ = Interlocked.Exchange(ref replicationReplayStarted, 0);
 
-                if (replicationReplayStarted >= 0)
-                {
-                    replicationBatchCommand = default;
-                    _ = Interlocked.Exchange(ref replicationReplayFailure, null);
-                    _ = Interlocked.Exchange(ref replicationReplayStarted, 0);
-                }
-                return abandoned;
+            var abandoned = 0;
+            while (replicationReplayChannel.Reader.TryRead(out var entry))
+            {
+                ReleaseReplayEntry(entry);
+                replicationBlockEvent.Decrement();
+                abandoned++;
             }
+
+            return abandoned;
         }
 
         /// <summary>
@@ -744,14 +723,12 @@ namespace Garnet.server
         /// </summary>
         public void ShutdownReplayTasks()
         {
-            lock (replicationReplayGate)
-            {
-                _ = Interlocked.Exchange(ref replicationReplayStarted, -1);
-                _ = replicationReplayChannel.Writer.TryComplete();
-            }
+            _ = replicationReplayChannel.Writer.TryComplete();
 
             // Disposal path, has to be synchronous
             AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
+
+            _ = Interlocked.Exchange(ref replicationReplayStarted, -1);
         }
 
         /// <summary>
@@ -824,7 +801,6 @@ namespace Garnet.server
                 //
                 // Dispose already takes pains to drain everything before disposing, so this is safe to ignore
             }
-            replicationReplayFailure?.Throw();
         }
 
         /// <summary>
