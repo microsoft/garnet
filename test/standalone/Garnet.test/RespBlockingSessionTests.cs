@@ -1542,8 +1542,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// What parking costs in allocation on a TLS connection, measured against the same command not
-        /// parking rather than against zero.
+        /// What parking costs in allocation on a TLS connection, bounded per command at pipeline depth
+        /// rather than asserted to be zero.
         /// </summary>
         /// <remarks>
         /// <para>
@@ -1554,14 +1554,13 @@ namespace Garnet.test
         /// and per write on its own, so a park can only be asked to add little *beyond the transport*.
         /// </para>
         /// <para>
-        /// The baseline is <c>DEBUG BLOCK 0 SYNC</c>, which is the same command producing the same reply
-        /// over the same TLS records and differing only in that it waits in place instead of parking, so the
-        /// transport and the parser are common to both and cancel out. The <c>SYNC</c> path does *not*
-        /// construct a context -- it sleeps and replies inline -- so the difference is the context plus the
-        /// park, the unpark and the resume-side TLS re-entry. <see cref="ParkAndResumeDoNotAllocate"/>
-        /// establishes the context at 80 bytes independently, which is what lets the remainder be
-        /// attributed to the TLS resume. <c>PING</c> is measured too, only to report what the transport
-        /// costs by itself.
+        /// <c>DEBUG BLOCK 0 SYNC</c> and <c>PING</c> are measured alongside it, but as context rather than
+        /// as a baseline to subtract. They are the same command over the same TLS records differing only in
+        /// that they never park, so they show how much of a round trip is transport; what they cannot do is
+        /// serve as the thing the budget is stated against, because the in-place figure is the unstable one.
+        /// See the budget's own comment for the measurements that establish this.
+        /// <see cref="ParkAndResumeDoNotAllocate"/> pins the context at 80 bytes independently, which is
+        /// what lets the remainder of the bounded figure be attributed to the TLS resume.
         /// </para>
         /// <para>
         /// Pipelining is then measured the same way: a resume that drains commands it never parsed must not
@@ -1588,7 +1587,23 @@ namespace Garnet.test
             // pinned independently by ParkAndResumeDoNotAllocate, and is subtracted when reporting so the
             // TLS-specific remainder is visible rather than conflated with it.
             const int ContextBytes = 80;
-            const int ParkBudgetBytesOverSyncWait = 288;
+
+            // Measured at PipelineDepth, not at depth 1, and stated absolutely rather than as a difference
+            // from the in-place wait. Both choices are forced by what is actually stable.
+            //
+            // At depth 1 every command is its own TLS record and its own round trip, so each measurement
+            // carries the transport's fixed per-round-trip cost -- PING alone costs over 240 bytes per
+            // command there. That fixed cost is environment-sensitive: the in-place SYNC baseline measures
+            // 241 bytes per command on a 4-core host and 337 on a 160-core one, a 40% swing, because the
+            // SslStream read path sizes its buffers differently. The parked measurement over the same range
+            // moves by 0.2% (568.0 to 569.0 at depth 1, 274.0 to 274.2 at depth 8).
+            //
+            // So the park is the stable term and the baseline is the noisy one. Subtracting the second from
+            // the first imports 40% of noise into a quantity that has none, which is what made the former
+            // difference-based budget fail on a 4-core CI runner while passing locally. Pipelining amortizes
+            // the per-round-trip cost away, and the resulting per-command figure is then stable enough to
+            // bound directly: 80 bytes of context plus the TLS resume's re-entry into the async reader.
+            const int TlsParkBudgetBytes = 320;
 
             var endPoint = StartTlsServer();
             using var client = new RawRespClient(endPoint, useTls: true);
@@ -1631,21 +1646,20 @@ namespace Garnet.test
             var transport = Measure(ping, PongReplyLength, 1);
             var waited = Measure(inPlace, OkReplyLength, 1);
             var parked = Measure(park, OkReplyLength, 1);
+            var waitedBatched = Measure(inPlace, OkReplyLength, PipelineDepth);
             var parkedBatched = Measure(park, OkReplyLength, PipelineDepth);
 
-            var parkCost = parked - waited;
-
-            // The SYNC baseline builds no context, so parkCost carries the context as well as the park. The
-            // plaintext test pins the context at ContextBytes, which is what attributes the remainder.
+            // Reported at both depths because the depth-1 figures are what make the depth-8 ones legible:
+            // they show how much of a single round trip is transport rather than park.
             TestContext.Out.WriteLine(
-                $"TLS: PING {transport:F1} bytes per command, DEBUG BLOCK 0 SYNC {waited:F1}, parked " +
-                $"{parked:F1} ({parkCost:F1} over the in-place wait, of which {ContextBytes} is the context, " +
-                $"leaving {parkCost - ContextBytes:F1} for the TLS resume), {parkedBatched:F1} at pipeline " +
-                $"depth {PipelineDepth}");
+                $"TLS at depth 1: PING {transport:F1} bytes per command, DEBUG BLOCK 0 SYNC {waited:F1}, " +
+                $"parked {parked:F1}. At depth {PipelineDepth}: SYNC {waitedBatched:F1}, parked " +
+                $"{parkedBatched:F1}, of which {ContextBytes} is the context, leaving " +
+                $"{parkedBatched - ContextBytes:F1} for the TLS resume");
 
-            ClassicAssert.Less(parkCost, ParkBudgetBytesOverSyncWait,
-                $"Parking a TLS session added {parkCost:F1} bytes per command over the {waited:F1} the same " +
-                "command costs when it waits in place");
+            ClassicAssert.Less(parkedBatched, TlsParkBudgetBytes,
+                $"A parked TLS command cost {parkedBatched:F1} bytes, of which {ContextBytes} is the " +
+                $"context, leaving {parkedBatched - ContextBytes:F1} for the TLS resume");
 
             // The same invariant the plaintext test asserts: draining seven commands the resume never parsed
             // must cost the same per command as draining none.
