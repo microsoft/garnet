@@ -56,7 +56,7 @@ namespace Garnet.client
                 => networkHandler.Dispose();
         }
 
-        readonly DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport> ring;
+        readonly DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport> channel;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetLightClientTcpNetworkHandler networkHandler;
@@ -65,10 +65,10 @@ namespace Garnet.client
         /// <summary>
         /// Shared epoch protecting the ring's page allocator and flush machinery.
         /// </summary>
-        public LightEpoch epoch => ring.epoch;
+        public LightEpoch epoch => channel.epoch;
 
         /// <summary>Number of completion tickets issued so far (task-space).</summary>
-        public int CompletionTail => ring.CompletionTail;
+        public int CompletionTail => channel.CompletionTail;
 
         /// <summary>
         /// Constructor
@@ -96,7 +96,7 @@ namespace Garnet.client
             var useTls = sslOptions != null;
             var tcpSender = useTls ? null : (ClientTcpNetworkSender)handler.GetNetworkSender();
 
-            this.ring = new DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport>(
+            this.channel = new DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport>(
                 sendPageSize,
                 pageBufferCount,
                 completionCapacity,
@@ -109,26 +109,18 @@ namespace Garnet.client
         /// <inheritdoc />
         public void Dispose()
         {
-            ring.Dispose();
+            channel.Dispose();
             networkHandler.Dispose();
             networkPool?.Dispose();
         }
 
-        internal LightRequestContext RentPayloadBuffer(int length)
-        {
-            var allocationSize = length;
-            if (length <= networkPool.MaxAllocationSize)
-            {
-                var minimumSize = Math.Max(length, networkPool.MinAllocationSize);
-                var roundedSize = System.Numerics.BitOperations.RoundUpToPowerOf2((uint)minimumSize);
-                if (roundedSize <= (uint)networkPool.MaxAllocationSize)
-                    allocationSize = (int)roundedSize;
-            }
-
-            var entry = networkPool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
-            ObjectDisposedException.ThrowIf(entry is null, this);
-            return new LightRequestContext(entry, length);
-        }
+        /// <summary>
+        /// Rent request buffer for out-of-line operation
+        /// </summary>
+        /// <param name="length"></param>
+        /// <returns></returns>
+        internal LightRequestContext RentRequestBuffer(int length)
+            => LightRequestContext.RentRequestBuffer(networkPool, length);
 
         /// <summary>
         /// Attempts to reserve the paired request address and optional completion ticket for one send operation.
@@ -139,14 +131,15 @@ namespace Garnet.client
             bool expectsResponse,
             out DuplexOperationReservation reservation,
             out CompletionEvent waitEvent)
-            => ring.TryScheduleOperation(requestSize, expectsResponse, out reservation, out waitEvent);
+            => channel.TryScheduleOperation(requestSize, expectsResponse, out reservation, out waitEvent);
 
         /// <summary>
         /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline
         /// (its whole payload packed into one page) or out-of-line (an 8-byte descriptor plus a rented buffer).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetRecordSize(int payloadLength, out bool isInline) => ring.GetRecordSize(payloadLength, out isInline);
+        public int GetRecordSize(int payloadLength, out bool isInline)
+            => channel.GetRecordSize(payloadLength, out isInline);
 
         /// <summary>
         /// Reserve an inline record and return a pointer to write its payload directly into page memory,
@@ -154,30 +147,30 @@ namespace Garnet.client
         /// <paramref name="payloadLength"/> bytes.
         /// </summary>
         public unsafe byte* RegisterInlineRecord(long address, int payloadLength)
-            => ring.RegisterInlineRecord(address, payloadLength);
+            => channel.RegisterInlineRecord(address, payloadLength);
 
         /// <summary>Register (store and publish) a request record at the descriptor address.</summary>
         public void RegisterOfflineRecord(long address, LightRequestContext payload)
-            => ring.RegisterOfflineRecord(address, payload);
+            => channel.RegisterOfflineRecord(address, payload);
 
         /// <summary>Register (store and publish) a completion for the given ticket.</summary>
         public void RegisterCompletion(int ticket, TcsWrapper completion)
-            => ring.RegisterCompletion(ticket, completion);
+            => channel.RegisterCompletion(ticket, completion);
 
         /// <summary>Nudge the read-only shift so enqueued descriptors are flushed promptly.</summary>
         public void DrainRequests()
-            => ring.DrainRequests();
+            => channel.DrainRequests();
 
         /// <summary>Reader-side: try to read a published completion for the given ticket.</summary>
         public bool TryReadCompletion(int ticket, out TcsWrapper completion)
-            => ring.TryReadCompletion(ticket, out completion);
+            => channel.TryReadCompletion(ticket, out completion);
 
         /// <summary>Atomically claim a published completion for single delivery (teardown/fault path).</summary>
         public bool TryClaimCompletionTicket(int ticket, out TcsWrapper completion)
-            => ring.TryClaimCompletionTicket(ticket, out completion);
+            => channel.TryClaimCompletionTicket(ticket, out completion);
 
         /// <summary>Reader-side: advance the reply watermark, freeing completion slots.</summary>
         public void AdvanceReplied(int consumedCount)
-            => ring.AdvanceCompletion(consumedCount);
+            => channel.AdvanceCompletion(consumedCount);
     }
 }

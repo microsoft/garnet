@@ -195,7 +195,7 @@ namespace Garnet.client
                 localTailPageOffset.Page = pageIndex;
                 localTailPageOffset.Offset = size;
                 tailPageOffset = localTailPageOffset;
-                page++;
+                page = pageIndex;
                 offset = 0;
             }
 

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -62,6 +63,29 @@ namespace Garnet.test
 
             h.AssertReceived(expectedIds);
             h.AssertNoBufferLeaks();
+        }
+
+        /// <summary>Logical page wrap preserves the published out-of-line descriptor address.</summary>
+        [Test]
+        public async Task OutOfLineDescriptorAddressWrapsWithPageCounter()
+        {
+            var operationCount = (1 << PageOffset.kPageBits) + 1;
+            using var h = new RingTestHarness(pageSize: 8, pageCount: 4, completionCapacity: 64, maxChunkSize: 8);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+            var expectedIds = new List<long>(operationCount);
+            for (var i = 0; i < operationCount; i++)
+            {
+                long id = i + 1;
+                expectedIds.Add(id);
+                await h.EnqueueAsync(RingPayload.Create(id, RingPayload.HeaderSize), expectCompletion: false, cts.Token).ConfigureAwait(false);
+            }
+
+            await h.DrainUntilAsync(operationCount, DrainTimeout, cts.Token).ConfigureAwait(false);
+
+            h.AssertReceived(expectedIds);
+            h.AssertNoBufferLeaks();
+            ClassicAssert.IsEmpty(h.FlushErrors);
         }
 
         /// <summary>1b — many concurrent producers, mixed inline/out-of-line, small pages to force wrap + back-pressure.</summary>

@@ -94,7 +94,7 @@ namespace Garnet.client
         public readonly LightEpoch epoch;
 
         readonly DuplexRingRecordStore<TRequestContext, TCompletionContext> store;
-        readonly DuplexAdmissionController admission;
+        readonly DuplexAdmissionController controller;
         readonly TTransport transport;
         readonly ILogger logger;
         readonly int maxChunkSizeBytes;
@@ -102,7 +102,7 @@ namespace Garnet.client
         bool disposed;
 
         /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
-        internal int CompletionTail => admission.CompletionTail;
+        internal int CompletionTail => controller.CompletionTail;
 
         /// <summary>
         /// Create a duplex back-pressured ring over a single connection.
@@ -145,7 +145,7 @@ namespace Garnet.client
                 ringPageSizeBytes,
                 ringPageCount,
                 completionCapacity);
-            admission = new DuplexAdmissionController(
+            controller = new DuplexAdmissionController(
                 store.Shape,
                 store.CompletionCapacity,
                 epoch,
@@ -163,7 +163,7 @@ namespace Garnet.client
         public void Dispose()
         {
             Volatile.Write(ref disposed, true);
-            admission.Dispose();
+            controller.Dispose();
             store.CloseAndReclaimRequests();
         }
 
@@ -173,7 +173,7 @@ namespace Garnet.client
         /// Get tail address
         /// </summary>
         public long GetTailAddress()
-            => admission.GetTailAddress();
+            => controller.GetTailAddress();
 
         /// <summary>
         /// Attempts to reserve the paired request address and optional completion ticket for one operation.
@@ -185,13 +185,13 @@ namespace Garnet.client
             bool expectsCompletion,
             out DuplexOperationReservation reservation,
             out CompletionEvent waitEvent)
-            => admission.TryScheduleOperation(requestSize, expectsCompletion, out reservation, out waitEvent);
+            => controller.TryScheduleOperation(requestSize, expectsCompletion, out reservation, out waitEvent);
 
         /// <summary>
         /// Advances published requests toward the read-only frontier so epoch-safe request flushing can run.
         /// </summary>
         public void DrainRequests()
-            => admission.DrainRequests();
+            => controller.DrainRequests();
 
         #endregion
 
@@ -207,7 +207,7 @@ namespace Garnet.client
         /// like any other record — so no post-publish reclaim is needed.
         /// <para>
         /// Flush-safety of this early header publish rests entirely on the epoch: the flusher
-        /// (<see cref="AsyncFlushRequests"/>) runs only as the drain-list action queued by
+        /// (<see cref="AsyncFlushRequestContext"/>) runs only as the drain-list action queued by
         /// <see cref="LightEpoch.BumpCurrentEpoch(System.Action)"/> when read-only shifts (see
         /// <c>AggressiveFlushShiftReadOnlyBump</c>), so it cannot read this record until every producer that
         /// held the epoch at shift time has drained. Unlike out-of-line records — whose payload lives in a pool
@@ -287,12 +287,12 @@ namespace Garnet.client
         /// producer blocked on completion-lane back-pressure.
         /// </summary>
         internal void AdvanceCompletion(int consumedCount)
-            => admission.AdvanceCompletion(consumedCount);
+            => controller.AdvanceCompletion(consumedCount);
 
         #endregion
 
         void OnPagesMarkedReadOnly(long oldReadOnlyAddress, long newReadOnlyAddress)
-            => AsyncFlushRequests(oldReadOnlyAddress, newReadOnlyAddress);
+            => AsyncFlushRequestContext(oldReadOnlyAddress, newReadOnlyAddress);
 
         /// <summary>
         /// Flush an address range of request descriptors to the network. Only the request buffer is sent;
@@ -300,7 +300,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="fromAddress"></param>
         /// <param name="untilAddress"></param>
-        void AsyncFlushRequests(long fromAddress, long untilAddress)
+        void AsyncFlushRequestContext(long fromAddress, long untilAddress)
         {
             var startPage = store.Shape.GetUnwrappedPageIndex(fromAddress);
             var endPage = store.Shape.GetUnwrappedPageIndex(untilAddress);
@@ -369,10 +369,10 @@ namespace Garnet.client
                     {
                         // Header-only inline records carry no payload; skip the send path entirely.
                         if (payloadLength > 0)
-                            ProcessRequestChunks(store.GetPageBuffer(flushPage), (int)(offset + DuplexRingRecordStore<TRequestContext, TCompletionContext>.RecordHeaderSize), payloadLength, default, count, ref flushFailed);
+                            ProcessRequestContext(store.GetPageBuffer(flushPage), (int)(offset + DuplexRingRecordStore<TRequestContext, TCompletionContext>.RecordHeaderSize), payloadLength, default, count, ref flushFailed);
                     }
                     else if (kind == RequestKind.OutOfLine)
-                        ProcessRequestChunks(request.Buffer, 0, request.Length, request, count, ref flushFailed);
+                        ProcessRequestContext(request.Buffer, 0, request.Length, request, count, ref flushFailed);
                     else
                     {
                         // A won claim is always Inline or OutOfLine; any other kind here means an uninitialized
@@ -388,9 +388,9 @@ namespace Garnet.client
                 flushPage = (flushPage + 1) & PageOffset.kPageMask;
             }
 
-            admission.CompleteFlush(count);
+            controller.CompleteFlush(count);
 
-            void ProcessRequestChunks(byte[] buffer, int baseOffset, int length, TRequestContext request, CountWrapper count, ref bool flushFailed)
+            void ProcessRequestContext(byte[] buffer, int baseOffset, int length, TRequestContext request, CountWrapper count, ref bool flushFailed)
             {
                 // An empty payload has nothing to send, and the chunk-count protocol below assumes length >= 1:
                 // bumping count without dispatching a chunk would leave the flush count permanently unbalanced
@@ -408,7 +408,7 @@ namespace Garnet.client
                     count = count,
                     request = request,
                     remainingChunks = chunkCount,
-                    admission = admission
+                    admission = controller
                 };
                 _ = Interlocked.Increment(ref count.count);
 

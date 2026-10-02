@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Garnet.common;
 
 namespace Garnet.client
@@ -32,6 +33,22 @@ namespace Garnet.client
         {
             this.poolEntry = poolEntry;
             this.length = length;
+        }
+
+        internal static LightRequestContext RentRequestBuffer(LimitedFixedBufferPool pool, int length)
+        {
+            var allocationSize = length;
+            if (length <= pool.MaxAllocationSize)
+            {
+                var minimumSize = Math.Max(length, pool.MinAllocationSize);
+                var roundedSize = System.Numerics.BitOperations.RoundUpToPowerOf2((uint)minimumSize);
+                if (roundedSize <= (uint)pool.MaxAllocationSize)
+                    allocationSize = (int)roundedSize;
+            }
+
+            var entry = pool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
+            ObjectDisposedException.ThrowIf(entry is null, pool);
+            return new LightRequestContext(entry, length);
         }
 
         /// <inheritdoc />

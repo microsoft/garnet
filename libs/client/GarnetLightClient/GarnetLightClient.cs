@@ -486,7 +486,7 @@ namespace Garnet.client
                 {
                     try
                     {
-                        payload = networkWriter.RentPayloadBuffer(totalLength);
+                        payload = networkWriter.RentRequestBuffer(totalLength);
 
                         unsafe
                         {
@@ -649,7 +649,7 @@ namespace Garnet.client
             {
                 if (!inline)
                 {
-                    payload = networkWriter.RentPayloadBuffer(totalLength);
+                    payload = networkWriter.RentRequestBuffer(totalLength);
 
                     unsafe
                     {
