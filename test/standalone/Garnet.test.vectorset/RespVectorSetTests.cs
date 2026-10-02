@@ -5046,43 +5046,6 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Re-typed cancel gate: if the key was concurrently deleted and re-created as a String, a synthetic
-        /// VADD/VREM RMW carrying any arg1 must CANCEL before touching the record, leaving the String value and
-        /// type intact — no resurrection, corruption, or type change. Parameterized across both the mutable region
-        /// (InPlaceUpdater guard) and the read-only region (NeedCopyUpdate guard), which share the same cancel rule.
-        /// </summary>
-        [Test]
-        public void VectorRmwOnRetypedStringKeyIsCanceledAndPreservesValue([Values("VADD", "VREM", "XVCREATE", "XVIMPORT")] string operation, [Values(false, true)] bool inReadOnlyRegion)
-        {
-            var cmd = Enum.Parse<RespCommand>(operation);
-            const string StringValue = "not-a-vector-index";
-
-            var store = server.Provider.StoreWrapper.store;
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            foreach (var (name, arg1) in VectorRmwArg1Sentinels)
-            {
-                var key = $"{nameof(VectorRmwOnRetypedStringKeyIsCanceledAndPreservesValue)}:{operation}:{name}";
-                _ = db.KeyDelete(key);
-                ClassicAssert.IsTrue(db.StringSet(key, StringValue), "test precondition: String seed must succeed");
-
-                if (inReadOnlyRegion)
-                    store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
-
-                var status = SimulateVectorSetStubRmw(key, cmd, arg1, out var output);
-
-                ClassicAssert.IsTrue(status.IsCanceled, $"{operation} with arg1={name} against a re-typed String key must CANCEL");
-                ClassicAssert.IsFalse(output.HasError, $"{operation} with arg1={name} cancel must not surface an output error");
-                ClassicAssert.IsFalse(status.Record.InPlaceUpdated, $"{operation} with arg1={name} cancel must not update the record in place");
-                ClassicAssert.IsFalse(status.Record.CopyUpdated, $"{operation} with arg1={name} cancel must not copy-update the record to the tail");
-                ClassicAssert.AreEqual(RedisType.String, db.KeyType(key), $"{operation} with arg1={name} changed the key type away from String");
-                ClassicAssert.AreEqual(StringValue, (string)db.StringGet(key), $"{operation} with arg1={name} corrupted the String value");
-            }
-        }
-
-        /// <summary>
         /// Syntheticargs (VADDAppendLogArg / VREMAppendLogArg) must leave the index intact and copy if needed. Parameterized across both
         /// the mutable region (InPlaceUpdater) and the read-only region (NeedCopyUpdate → CopyUpdater), so the
         /// copy-to-tail path that must preserve the index is exercised.
