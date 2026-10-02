@@ -145,6 +145,82 @@ namespace Garnet.networking
 
         IMessageConsumer session;
 
+        /// <summary>
+        /// <see cref="session"/> when it supports parking, else null. Cached at bind time so the receive path
+        /// never type-tests.
+        /// </summary>
+        IParkableMessageConsumer parkableSession;
+
+        /// <summary>
+        /// Set while the session is parked on a blocking operation. Only the thread that owns message
+        /// processing touches it -- the receive thread when parking, the resume work item when unparking --
+        /// and those two are ordered by the park rendezvous, so it needs no synchronization. Teardown runs on
+        /// foreign threads and so must never read it; those paths go through the session's own interlocked
+        /// claim on the parked operation instead.
+        /// </summary>
+        protected bool sessionParked;
+
+        /// <summary>
+        /// Guards connection-owned state against being reclaimed while a parked session's resume is using it.
+        /// The low bits count the resumes currently holding it; <see cref="ResumeLeaseReclaimDeferred"/>
+        /// records that teardown arrived while at least one did, and handed reclamation to the last one out.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Without this, teardown and resume race: the resume passes its disposed check, teardown frees the
+        /// receive buffer entry and disposes the session, and the resume then reads freed memory. Notification
+        /// ordering alone cannot close that window -- any check the resume makes is check-then-act -- so
+        /// reclamation itself has to be deferred. Only the park paths touch this, so a connection that never
+        /// parks pays nothing.
+        /// </para>
+        /// <para>
+        /// It counts rather than flags because two resumes can overlap. A resume that hands its buffer to an
+        /// asynchronous receive still has to drop the lease afterwards, and that receive may complete, park,
+        /// and schedule the next resume in between. A flag would let the first resume's release free a lease
+        /// the second is relying on, and teardown would then reclaim underneath it.
+        /// </para>
+        /// </remarks>
+        int resumeLease;
+
+        /// <summary>
+        /// Set when teardown found the lease held. The last resume to leave performs the reclamation.
+        /// </summary>
+        const int ResumeLeaseReclaimDeferred = 1 << 30;
+
+        /// <summary>
+        /// Covers the resume-owner count, excluding <see cref="ResumeLeaseReclaimDeferred"/>.
+        /// </summary>
+        const int ResumeLeaseOwnerMask = ResumeLeaseReclaimDeferred - 1;
+
+        /// <summary>
+        /// Whether this transport could suspend its receive loop for the session it is bound to. Only
+        /// handlers that implement <see cref="ISessionParkHost"/> can act on it.
+        /// </summary>
+        /// <remarks>
+        /// The test is on the session rather than the handler because the only reader is
+        /// <c>TcpNetworkHandlerBase.CanParkSession</c>, and that type is itself an
+        /// <see cref="ISessionParkHost"/>, so the two coincide there. A handler that is *not* a park host
+        /// leaves the session's own <c>parkHost</c> null (see <see cref="BindParkableSession"/>), and the
+        /// session refuses to park on that ground instead -- which is what keeps the embedded handler used by
+        /// the benchmarks off this path. A new handler type that reads this property without implementing
+        /// <see cref="ISessionParkHost"/> would be reading it for a question it does not answer.
+        /// </remarks>
+        protected bool TransportSupportsParking => parkableSession != null;
+
+        /// <summary>
+        /// Whether this connection runs the TLS receive path, which parks and resumes through the reader
+        /// loop rather than through the synchronous receive.
+        /// </summary>
+        protected bool UsesTls => sslStream != null;
+
+        /// <summary>
+        /// Carries the reader's <c>retry</c> flag across a park. The flag means "the transport buffer was
+        /// just doubled, read again into the enlarged buffer" and is the reader's only record that more
+        /// plaintext is available without more ciphertext arriving. A park that dropped it would leave the
+        /// decrypted remainder stuck in the transport buffer until the client happened to send more.
+        /// </summary>
+        bool tlsReaderRetryAfterPark;
+
         /// <inheritdoc />
         public IMessageConsumer Session => session;
 
@@ -203,6 +279,8 @@ namespace Garnet.networking
                 transportSendBuffer = transportSendBufferEntry.entry;
                 transportSendBufferPtr = transportSendBufferEntry.entryPtr;
             }
+
+            BindParkableSession();
         }
 
         /// <summary>
@@ -351,6 +429,174 @@ namespace Garnet.networking
 
             EndTransformNetworkToTransport();
             UpdateNetworkBuffers(demand);
+        }
+
+        /// <summary>
+        /// Resumes a parked session on the non-TLS path: lets it emit the reply for the command that blocked
+        /// and then consume whatever pipelined bytes were already buffered when it parked. No bytes have been
+        /// received since the park, so this is the receive pass that never happened.
+        /// </summary>
+        protected unsafe void OnNetworkResumeWithoutTLS()
+        {
+            sessionParked = false;
+
+            transportReceiveBuffer = networkReceiveBuffer;
+            transportReceiveBufferPtr = networkReceiveBufferPtr;
+            transportBytesRead = networkBytesRead;
+
+            var demand = networkBytesRead;
+
+            transportReadHead += parkableSession.ResumeParkedMessages(
+                transportReceiveBufferPtr + transportReadHead, transportBytesRead - transportReadHead);
+            ShiftTransportReceiveBuffer();
+
+            EndTransformNetworkToTransport();
+            UpdateNetworkBuffers(demand);
+        }
+
+        /// <summary>
+        /// Resumes a parked session on the TLS path. The reply and the commands pipelined behind it are
+        /// already decrypted and sitting in the transport buffer, so they are drained first; only then does
+        /// the reader go back for ciphertext that arrived before the park.
+        /// </summary>
+        /// <remarks>
+        /// The two buffers are distinct under TLS, which is the whole difference from the plaintext resume.
+        /// Draining the transport buffer cannot be folded into the reader loop, because that loop is driven
+        /// by unconsumed *ciphertext* and there may be none: a client that pipelined two commands inside one
+        /// TLS record leaves the second as plaintext with no ciphertext behind it, and a reader-only resume
+        /// would never look at it.
+        /// <para>
+        /// Re-entering the reader is the ordinary <see cref="TlsReaderStatus.Rest"/> entry, so the status
+        /// protocol and the <c>expectingData</c> handshake are exactly those of a normal receive pass.
+        /// </para>
+        /// </remarks>
+        protected async ValueTask OnNetworkResumeWithTLSAsync()
+        {
+            // Sampled before anything is consumed, for the same reason the receive path samples it there.
+            var demand = networkBytesRead;
+
+            DrainParkedTransportMessages();
+
+            // A second blocking command pipelined behind the first parks again right here, with ciphertext
+            // still unread. Leaving it unread is correct: it stays in the network buffer until this session
+            // resumes again.
+            if (!sessionParked && (networkBytesRead > networkReadHead || tlsReaderRetryAfterPark))
+            {
+                // Consume the flag before the call, not after. Read may re-park synchronously and publish a
+                // fresh value on the way out, and may also hand off to SslReaderAsync and publish from there
+                // after it has returned; clearing afterwards would drop either one and lose a transport
+                // buffer that still needs to grow.
+                var retryAfterPark = tlsReaderRetryAfterPark;
+                tlsReaderRetryAfterPark = false;
+
+                readerStatus = TlsReaderStatus.Active;
+                Read(retryAfterPark);
+                while (readerStatus == TlsReaderStatus.Active)
+                    await expectingData.WaitAsync(cancellationTokenSource.Token).ConfigureAwait(false);
+            }
+
+            UpdateNetworkBuffers(demand);
+        }
+
+        /// <summary>
+        /// Emits the parked command's reply and consumes whatever was already decrypted behind it. Separate
+        /// from <see cref="OnNetworkResumeWithTLSAsync"/> only because a pointer cannot be taken in an
+        /// <see langword="async"/> method.
+        /// </summary>
+        unsafe void DrainParkedTransportMessages()
+        {
+            sessionParked = false;
+
+            transportReadHead += parkableSession.ResumeParkedMessages(
+                transportReceiveBufferPtr + transportReadHead, transportBytesRead - transportReadHead);
+            ShiftTransportReceiveBuffer();
+        }
+
+        /// <summary>
+        /// Whether <see cref="DisposeImpl"/> has been entered. The resume path checks this after waking so it
+        /// discards a reply for a connection that was torn down while parked.
+        /// </summary>
+        protected bool IsDisposed => disposeCount > 0;
+
+        /// <summary>
+        /// Abandons a parked operation so this connection's resume path runs now rather than whenever the
+        /// operation would have finished on its own. Called when the connection is closed out from under a
+        /// parked session, which would otherwise keep its receive state -- including the
+        /// <c>SocketAsyncEventArgs</c> the resume path is holding -- alive for the rest of the wait.
+        /// </summary>
+        /// <remarks>
+        /// Best-effort, and says nothing about whether a release is coming: see
+        /// <see cref="IParkableMessageConsumer.AbortParkedOperation"/>.
+        /// </remarks>
+        protected void AbortParkedSession()
+        {
+            if (parkableSession == null)
+                return;
+
+            try
+            {
+                parkableSession.AbortParkedOperation();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error aborting parked operation");
+            }
+        }
+
+        /// <summary>
+        /// Takes the lease that keeps teardown from reclaiming connection state underneath a resume. Must be
+        /// paired with <see cref="ReleaseResumeLease"/> on every path, and callers must re-check
+        /// <see cref="IsDisposed"/> *after* it returns: teardown publishes <c>disposeCount</c> before reading
+        /// the lease, and this publishes the lease before the caller reads <c>disposeCount</c>, so at least
+        /// one of the two sees the other.
+        /// </summary>
+        protected void AcquireResumeLease()
+            => Interlocked.Increment(ref resumeLease);
+
+        /// <summary>
+        /// Drops the resume lease, performing the reclamation teardown skipped if it ran while the lease was
+        /// held.
+        /// </summary>
+        protected void ReleaseResumeLease()
+        {
+            // Reclaim only when this was the last owner out and teardown left the work behind. The exchange
+            // to zero claims it, so overlapping releases cannot both reclaim.
+            if (Interlocked.Decrement(ref resumeLease) == ResumeLeaseReclaimDeferred &&
+                Interlocked.CompareExchange(ref resumeLease, 0, ResumeLeaseReclaimDeferred) == ResumeLeaseReclaimDeferred)
+                ReclaimConnectionResources();
+        }
+
+        /// <summary>
+        /// Releases the parked operation's state after the resume observes that the connection is gone. The
+        /// session has normally released it already by then; this covers a teardown that raced the park and
+        /// so ran before the session had anything to release.
+        /// </summary>
+        protected void DiscardParkedSession()
+        {
+            if (parkableSession == null)
+                return;
+
+            try
+            {
+                parkableSession.DiscardParkedOperation();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error discarding parked operation");
+            }
+        }
+
+        /// <summary>
+        /// Caches the parking interface for <see cref="session"/>, if it implements one. Called once per
+        /// session, never from the receive path.
+        /// </summary>
+        void BindParkableSession()
+        {
+            parkableSession = session as IParkableMessageConsumer;
+
+            // Null for handlers that cannot suspend a receive loop, which is what keeps a session from
+            // parking against one.
+            parkableSession?.SetParkHost(this as ISessionParkHost);
         }
 
         /// <summary>
@@ -536,9 +782,18 @@ namespace Garnet.networking
         {
             if (transportBytesRead > 0)
             {
-                if (session != null || serverHook.TryCreateMessageConsumer(new Span<byte>(transportReceiveBufferPtr, transportBytesRead), GetNetworkSender(), out session))
+                if (session != null || TryCreateSession())
                     TryProcessRequest();
             }
+        }
+
+        unsafe bool TryCreateSession()
+        {
+            if (!serverHook.TryCreateMessageConsumer(new Span<byte>(transportReceiveBufferPtr, transportBytesRead), GetNetworkSender(), out session))
+                return false;
+
+            BindParkableSession();
+            return true;
         }
 
         /// <summary>
@@ -546,10 +801,13 @@ namespace Garnet.networking
         /// </summary>
         public INetworkSender GetNetworkSender() => sslStream == null ? networkSender : this;
 
-        void Read()
+        void Read(bool initialRetry = false)
         {
-            bool retry = false;
-            while (networkBytesRead > networkReadHead || retry)
+            bool retry = initialRetry;
+
+            // Stops on a park so no further ciphertext is decrypted and handed to the session: the parked
+            // command's reply has to reach the wire before anything pipelined behind it is even parsed.
+            while ((networkBytesRead > networkReadHead || retry) && !sessionParked)
             {
                 retry = false;
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
@@ -586,6 +844,8 @@ namespace Garnet.networking
                     return;
                 }
             }
+            if (sessionParked)
+                tlsReaderRetryAfterPark = retry;
             readerStatus = TlsReaderStatus.Rest;
             // We do not release expectingData here because it is the synchronous code path (i.e., there is no waiter)
         }
@@ -628,12 +888,14 @@ namespace Garnet.networking
                 // SslReaderLoopAsync would start with retry=false and, when networkBytesRead==networkReadHead,
                 // exit its loop immediately without ever issuing the follow-up read, leaving the half-parsed
                 // payload stuck in the transport buffer until more network bytes happen to arrive.
-                if (networkBytesRead > networkReadHead || retry)
+                if (!sessionParked && (networkBytesRead > networkReadHead || retry))
                 {
                     _ = SslReaderLoopAsync(retry, token);
                 }
                 else
                 {
+                    if (sessionParked)
+                        tlsReaderRetryAfterPark = retry;
                     readerStatus = TlsReaderStatus.Rest;
                     if (expectingData.CurrentCount == 0) expectingData.Release();
                 }
@@ -654,7 +916,7 @@ namespace Garnet.networking
             try
             {
                 bool retry = initialRetry;
-                while (networkBytesRead > networkReadHead || retry)
+                while ((networkBytesRead > networkReadHead || retry) && !sessionParked)
                 {
                     retry = false;
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);
@@ -686,7 +948,9 @@ namespace Garnet.networking
                     }
                 }
 
-                // Normal exit: hand control back to OnNetworkReceiveWithTLSAsync.
+                // Normal exit, or a park: either way hand control back to OnNetworkReceiveWithTLSAsync.
+                if (sessionParked)
+                    tlsReaderRetryAfterPark = retry;
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
             }
@@ -926,6 +1190,34 @@ namespace Garnet.networking
             }
 
             cancellationTokenSource?.Cancel();
+
+            // A parked session owns the receive state, including the SocketAsyncEventArgs its resume path is
+            // waiting to release. Abandon the operation so that path runs and cleans up rather than leaking.
+            AbortParkedSession();
+
+            // Before deferring anything: a resume may be draining a pipelined command that still waits in
+            // place, and such a wait ends only when the session is told it is going away. That notification
+            // is part of the reclamation about to be deferred behind the very wait it would end, so it has
+            // to be delivered here instead.
+            parkableSession?.CancelInPlaceWaits();
+
+            // If a resume is in flight it is actively using the session and the receive buffer, so it -- not
+            // this thread -- must be the one to release them. It takes the lease before reading disposeCount
+            // and this reads the lease after publishing disposeCount, so the two cannot both skip the work.
+            if ((Interlocked.Or(ref resumeLease, ResumeLeaseReclaimDeferred) & ResumeLeaseOwnerMask) != 0)
+                return;
+
+            // No resume was in flight. Claim the reclamation, unless one started in the meantime and took it.
+            if (Interlocked.CompareExchange(ref resumeLease, 0, ResumeLeaseReclaimDeferred) == ResumeLeaseReclaimDeferred)
+                ReclaimConnectionResources();
+        }
+
+        /// <summary>
+        /// Releases everything the connection owns. Runs exactly once, on whichever of teardown or a parked
+        /// session's resume path is last to let go of the connection.
+        /// </summary>
+        void ReclaimConnectionResources()
+        {
             serverHook.DisposeMessageConsumer(this);
             networkSender.Dispose();
             sslStream?.Dispose();

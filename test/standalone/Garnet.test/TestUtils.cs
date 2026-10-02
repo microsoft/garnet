@@ -2000,6 +2000,22 @@ using System.Threading.Tasks;
                 failMsg += $"Garnet.client.LightEpoch instances still active: {count2}";
             }
 
+            // Checked for every test, not just the blocking ones, so a command migrated onto the session
+            // parking pattern inherits the contract checks wherever its tests happen to live. Reset as well
+            // as read, so one offending test does not fail every test after it.
+            var violations = Garnet.server.BlockingCommandContext.ContractViolations;
+            if (violations != 0)
+            {
+                Garnet.server.BlockingCommandContext.ResetContractViolations();
+
+                if (!string.IsNullOrEmpty(failMsg))
+                {
+                    failMsg += Environment.NewLine;
+                }
+
+                failMsg += $"Blocking command contract violations: {violations}";
+            }
+
             if (failTestOnLeak && !string.IsNullOrEmpty(failMsg))
             {
                 Assert.Fail(failMsg);

@@ -483,6 +483,15 @@ namespace Garnet.server
                 error = "ERR 'aof-commit-freq' cannot be changed at runtime because the server started with per-operation auto-commit (0).";
                 return false;
             }
+            // Startup refuses this combination outright: with manual commits there is no periodic committer,
+            // and the commit a reply waits for is never initiated by the wait itself, so the session blocks
+            // until something else commits. Allowing the move at runtime would reach the same state by a
+            // different door.
+            if (newValue < 0 && config.serverOptions.WaitForCommit)
+            {
+                error = "ERR 'aof-commit-freq' cannot be set to manual commits (-1) while 'aof-commit-wait' is enabled.";
+                return false;
+            }
             config.owner?.ReconcilePrimaryTask(TaskType.CommitTask);
             return true;
         }

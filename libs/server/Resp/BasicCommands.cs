@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -1753,7 +1754,15 @@ namespace Garnet.server
                     try
                     {
                         networkSender.ExitAndReturnResponseObject();
-                        while (asyncCompleted < asyncStarted) asyncDone.Wait();
+
+                        // Stop when the operations are done, or when the processor that would report them
+                        // done has gone away. Waiting only on the count means a processor that faulted mid
+                        // drain leaves this wait with nothing that can ever end it, which strands the
+                        // connection -- and, when this command was reached from a resume, server shutdown
+                        // behind it.
+                        while (asyncCompleted < asyncStarted && Volatile.Read(ref asyncProcessorStopped) == 0)
+                            asyncDone.Wait();
+
                         asyncDone.Dispose();
                         asyncDone = null;
                     }

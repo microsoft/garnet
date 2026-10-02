@@ -279,7 +279,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(error);
 
             // Must block as we're on the network thread
-            var result = AsyncUtils.BlockingWait(storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout));
+            var result = BlockingWaitInPlace(storeWrapper.itemBroker.GetCollectionItemAsync(command, keysBytes, this, timeout));
 
             if (result.IsForceUnblocked)
             {
@@ -367,7 +367,7 @@ namespace Garnet.server
 
             // On the networking thread, no choice but to block
             var result =
-                AsyncUtils.BlockingWait(
+                BlockingWaitInPlace(
                     storeWrapper.itemBroker.MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey.ToArray(), this, timeout, cmdArgs)
                 );
 
@@ -903,7 +903,7 @@ namespace Garnet.server
             cmdArgs[1] = PinnedSpanByte.FromPinnedPointer((byte*)&popCount, sizeof(int));
 
             // Must block, we're on the networking thread
-            var result = AsyncUtils.BlockingWait(storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs));
+            var result = BlockingWaitInPlace(storeWrapper.itemBroker.GetCollectionItemAsync(RespCommand.BLMPOP, keysBytes, this, timeout, cmdArgs));
 
             if (result.IsForceUnblocked)
             {
