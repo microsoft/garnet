@@ -373,7 +373,7 @@ namespace Garnet.server
         /// <summary>
         /// DEBUG BLOCK seconds
         ///     [SYNC|SLOWSTART|FAILSTART|FAILSTART2|FAILBATCH|GATE|HOLDCLAIM|HOLDABORT
-        ///      |RELEASE|GATECOUNT|CLAIMHELD|CLAIMPROCEED|LEAKCOUNT|ACQCOUNT
+        ///      |RELEASE|GATECOUNT|CLAIMHELD|CLAIMPROCEED|LEAKCOUNT|GETLEAKCOUNT|ACQCOUNT
         ///      |ABORTGATED|ABORTHELD|ABORTPROCEED]
         /// </summary>
         /// <remarks>
@@ -506,6 +506,8 @@ namespace Garnet.server
             }
             else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.LEAKCOUNT))
                 reply = DebugBlockCommandContext.OutstandingResults;
+            else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.GETLEAKCOUNT))
+                reply = DebugBlockGetCommandContext.OutstandingValues;
             else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ACQCOUNT))
                 reply = DebugBlockCommandContext.ResultsAcquired;
             else if (control.EqualsUpperCaseSpanIgnoringCase(CmdStrings.ABORTGATED))

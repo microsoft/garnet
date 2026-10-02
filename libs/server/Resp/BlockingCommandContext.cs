@@ -54,6 +54,19 @@ namespace Garnet.server
         const int StateCompleted = 4;
 
         RespServerSession owner;
+
+        /// <summary>
+        /// Session this operation is parked on, for implementations that need its storage.
+        /// </summary>
+        /// <remarks>
+        /// Valid from <see cref="Attach"/> until the session is released. While the session is parked it
+        /// parses no further commands, so its <see cref="StorageSession"/> and the Tsavorite contexts
+        /// reached through it have no other user and may be operated on directly from the thread the
+        /// operation completes on -- see the remarks on <see cref="OnStart"/> for the rules that make that
+        /// safe.
+        /// </remarks>
+        protected RespServerSession Owner => owner;
+
         int state;
         int starting;
         int disposeRequested;
@@ -318,9 +331,34 @@ namespace Garnet.server
         /// however it finishes -- success, failure, timeout or cancellation.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// Should not throw; a throw is handled as a failed start, reported through
         /// <see cref="OnStartFailed"/>, but an implementation that can fail predictably should record the
         /// failure and call <see cref="Complete"/> itself.
+        /// </para>
+        /// <para>
+        /// The operation may use the parked session's storage. A parked session parses no further commands,
+        /// so its <see cref="StorageSession"/>, the Tsavorite contexts reached through it, its transaction
+        /// manager and its scratch buffers have no other user for as long as the park lasts, and the thread
+        /// the operation completes on may drive them exactly as the inline session would. This is what makes
+        /// a blocking command that has to *read* or *mutate* the store on completion expressible --
+        /// <c>BLPOP</c> popping the element it waited for, say -- rather than only commands whose reply is
+        /// known before they block.
+        /// </para>
+        /// <para>
+        /// Two rules bound that. Storage work must be finished before <see cref="ReleaseSession"/> is
+        /// called, because the resume it triggers hands the same storage back to the parse loop for whatever
+        /// the client pipelined behind the blocking command; and it must happen here rather than in
+        /// <see cref="WriteResponse"/>, which runs holding the session's sender lock, where a read that goes
+        /// to disk would stall every other writer the session has. The natural shape is therefore to claim
+        /// the outcome, do the storage work, publish its result, and only then release.
+        /// </para>
+        /// <para>
+        /// Exclusivity is a property the park establishes, not one the context can assume unconditionally:
+        /// <see cref="RespServerSession.CanParkSession"/> refuses to park a session whose storage already
+        /// has another driver, which is why a session with async <c>GET</c> processing in flight does not
+        /// park.
+        /// </para>
         /// </remarks>
         protected abstract void OnStart();
 
@@ -334,7 +372,10 @@ namespace Garnet.server
         /// <summary>
         /// Writes the command's RESP reply. Runs once, on the resuming thread, with the session's response
         /// buffer acquired, in the same position in the reply stream the command occupied in the request
-        /// stream. Must serialize the already-published outcome and must not touch the store.
+        /// stream. Must serialize the already-published outcome rather than compute it: the session's sender
+        /// lock is held here, so a store access that went to disk would stall pub/sub delivery and async
+        /// <c>GET</c> replies behind it. Storage work belongs in the operation itself -- see
+        /// <see cref="OnStart"/>.
         /// </summary>
         /// <param name="session">Session being resumed.</param>
         internal abstract void WriteResponse(RespServerSession session);

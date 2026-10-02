@@ -88,9 +88,20 @@ namespace Garnet.server
         /// </summary>
         /// <remarks>
         /// Parking is only valid for a command the network layer dispatched directly, on a transport that can
-        /// suspend its receive loop, outside any transaction, and on a connection that is not carrying a
-        /// replication stream. Blocking commands must fall back to non-blocking behavior when this is false
-        /// -- they must not wait in place instead.
+        /// suspend its receive loop, outside any transaction, with no async <c>GET</c> processing in flight,
+        /// and on a connection that is not carrying a replication stream. Blocking commands must fall back
+        /// to non-blocking behavior when this is false -- they must not wait in place instead.
+        /// <para>
+        /// The async clause is what makes the park's exclusivity claim true. A parked session parses no
+        /// further commands, so a blocking operation may drive its <see cref="StorageSession"/> directly
+        /// from the thread it completes on, which is what lets a blocking command read or mutate the store
+        /// on completion. The async <c>GET</c> processor is the one other driver of that same storage
+        /// session: it drains pending reads on its own thread, on the contexts this session owns, at times
+        /// unrelated to the parse loop. Parking alongside it would put two threads on a Tsavorite session
+        /// that permits one. Refusing is cheap -- async <c>GET</c> is opt-in per session -- and it keeps the
+        /// exclusivity rule stated in <see cref="BlockingCommandContext.OnStart"/> unconditional rather than
+        /// qualified by a mode the operation cannot see.
+        /// </para>
         /// <para>
         /// The replication clause closes a strand rather than expressing a preference. A session that has run
         /// <c>CLUSTER APPENDLOG</c> hands its raw <see cref="INetworkSender"/> to the replay driver, which
@@ -104,6 +115,7 @@ namespace Garnet.server
         internal bool CanParkSession
             => parkedCommand == null &&
                txnManager.state == TxnState.None &&
+               asyncStarted == 0 &&
                clusterSession?.IsReplicating != true &&
                parkHost != null &&
                parkHost.CanParkSession;

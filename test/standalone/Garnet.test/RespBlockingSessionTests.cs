@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net.Security;
@@ -205,6 +206,372 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("$2", client.ReadLine());
                 ClassicAssert.AreEqual("v" + i, client.ReadLine());
             }
+        }
+
+        /// <summary>
+        /// A parked operation may use the parked session's storage. <c>DEBUG BLOCKGET</c> reads the key
+        /// after its wait, from the thread the wait completes on, through the session's own
+        /// <c>StorageSession</c>.
+        /// </summary>
+        [Test]
+        public void BlockGetReadsTheStoreAfterTheWait()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("SET", "bg-key", "bg-value"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+            var sw = Stopwatch.StartNew();
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0.3", "bg-key"));
+            ClassicAssert.AreEqual("$8", client.ReadLine());
+            ClassicAssert.AreEqual("bg-value", client.ReadLine());
+            sw.Stop();
+
+            ClassicAssert.GreaterOrEqual(sw.ElapsedMilliseconds, 250,
+                "The reply arrived without the wait, so the read was not reached through a park");
+        }
+
+        /// <summary>
+        /// The read happens when the wait ends, not when the command is parsed.
+        /// </summary>
+        /// <remarks>
+        /// This is the test that separates a pattern which can express real blocking commands from one that
+        /// can only deliver a reply it already knew. The key does not exist when the command parks, and is
+        /// written by a different connection while the first is parked on it. Returning the value proves the
+        /// store was read after the wait, on the resuming thread; a design that captured its reply before
+        /// blocking would answer nil here, and could never implement <c>BLPOP</c>.
+        /// </remarks>
+        [Test]
+        public void BlockGetSeesAWriteThatLandsDuringTheWait()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+            using var writer = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "1", "late-key"));
+
+            // Comfortably inside the wait, and after the park has certainly been established.
+            Thread.Sleep(300);
+            writer.Send(RawRespClient.Command("SET", "late-key", "arrived"));
+            ClassicAssert.AreEqual("+OK", writer.ReadLine());
+
+            ClassicAssert.AreEqual("$7", client.ReadLine());
+            ClassicAssert.AreEqual("arrived", client.ReadLine());
+        }
+
+        /// <summary>
+        /// A miss replies with a null bulk string, and the pooled-buffer bookkeeping holds on that path too.
+        /// </summary>
+        [Test]
+        public void BlockGetRepliesNullForAMissingKey()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0.1", "no-such-key"));
+            ClassicAssert.AreEqual("$-1", client.ReadLine());
+
+            // The session is still usable, so the miss did not strand anything.
+            client.Send(RawRespClient.Command("PING"));
+            ClassicAssert.AreEqual("+PONG", client.ReadLine());
+        }
+
+        /// <summary>
+        /// Bad arguments are rejected without parking.
+        /// </summary>
+        [Test]
+        public void BlockGetRejectsBadArguments()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0.1"));
+            StringAssert.StartsWith("-ERR", client.ReadLine());
+
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "nope", "k"));
+            StringAssert.StartsWith("-ERR", client.ReadLine());
+
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "-1", "k"));
+            StringAssert.StartsWith("-ERR", client.ReadLine());
+
+            client.Send(RawRespClient.Command("PING"));
+            ClassicAssert.AreEqual("+PONG", client.ReadLine());
+        }
+
+        /// <summary>
+        /// The exclusivity claim under load: far more sessions than the host has threads each read their own
+        /// key through their own storage session, concurrently, and every one gets its own value back.
+        /// </summary>
+        /// <remarks>
+        /// Parking is what makes this safe. Each of these reads runs on a pool thread rather than the
+        /// session's IO thread, which is only sound because the session has stopped parsing and nothing else
+        /// is driving its Tsavorite session. A crossed or torn result here would say that assumption is
+        /// wrong; the values are distinct per connection so that a cross would be visible rather than
+        /// coincidentally correct.
+        /// </remarks>
+        [Test]
+        public void ManyConcurrentBlockGetsEachReadTheirOwnKey()
+        {
+            var sessionCount = Math.Clamp(Environment.ProcessorCount * 3, 128, 256);
+            const int BlockSeconds = 2;
+
+            using var loader = new RawRespClient(TestUtils.EndPoint);
+            for (var i = 0; i < sessionCount; i++)
+            {
+                loader.Send(RawRespClient.Command("SET", $"concurrent-{i}", $"value-of-{i}"));
+                ClassicAssert.AreEqual("+OK", loader.ReadLine());
+            }
+
+            var clients = new List<RawRespClient>(sessionCount);
+            try
+            {
+                for (var i = 0; i < sessionCount; i++)
+                    clients.Add(new RawRespClient(TestUtils.EndPoint));
+
+                var sw = Stopwatch.StartNew();
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i].Send(RawRespClient.Command("DEBUG", "BLOCKGET", BlockSeconds.ToString(), $"concurrent-{i}"));
+
+                for (var i = 0; i < sessionCount; i++)
+                {
+                    var expected = $"value-of-{i}";
+                    ClassicAssert.AreEqual($"${expected.Length}", clients[i].ReadLine(),
+                        $"Session {i} did not get a bulk string back");
+                    ClassicAssert.AreEqual(expected, clients[i].ReadLine(),
+                        $"Session {i} read another session's value");
+                }
+
+                sw.Stop();
+
+                // Same two-sided bound as the plain block: the waits must have happened, and they must have
+                // happened at once rather than in pool-sized waves.
+                ClassicAssert.GreaterOrEqual(sw.ElapsedMilliseconds, (BlockSeconds * 1000) - 100,
+                    $"{sessionCount} sessions drained in {sw.ElapsedMilliseconds}ms, so they never waited");
+                ClassicAssert.Less(sw.ElapsedMilliseconds, BlockSeconds * 3 * 1000,
+                    $"{sessionCount} blocked reads took {sw.ElapsedMilliseconds}ms, so they did not run at once");
+            }
+            finally
+            {
+                foreach (var client in clients)
+                    client.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Storage work on the resuming thread must finish before the session is handed back to the parse
+        /// loop, so commands pipelined behind a blocking read still see a consistent session.
+        /// </summary>
+        [Test]
+        public void BlockGetStaysOrderedWithPipelinedCommands()
+        {
+            using var client = new RawRespClient(TestUtils.EndPoint);
+
+            client.Send(RawRespClient.Command("SET", "ordered-key", "first"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+            client.Send(
+                RawRespClient.Command("DEBUG", "BLOCKGET", "0.5", "ordered-key"),
+                RawRespClient.Command("SET", "ordered-key", "second"),
+                RawRespClient.Command("DEBUG", "BLOCKGET", "0.1", "ordered-key"));
+
+            ClassicAssert.AreEqual("$5", client.ReadLine());
+            ClassicAssert.AreEqual("first", client.ReadLine());
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+            ClassicAssert.AreEqual("$6", client.ReadLine());
+            ClassicAssert.AreEqual("second", client.ReadLine());
+        }
+
+        /// <summary>
+        /// A connection that vanishes mid-read must not leave the pooled value buffer behind.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Reading the store on the resume thread introduces something a reply-only operation does not have:
+        /// a rented buffer whose only consumer is a reply that may never be written. Two paths matter and
+        /// the disconnects below are timed to span both -- aborting before the read, where the read is
+        /// skipped and there is nothing to return, and disconnecting after it, where the value has been
+        /// rented and only disposal can give it back.
+        /// </para>
+        /// <para>
+        /// The disconnects walk across the deadline rather than sitting on one side of it, because the
+        /// interesting path is the narrow one where the value is rented and the connection is already gone.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void DisconnectDuringBlockGetIsCleanedUp()
+        {
+            using var control = new RawRespClient(TestUtils.EndPoint);
+            control.Send(RawRespClient.Command("SET", "abandoned-key", "value"));
+            ClassicAssert.AreEqual("+OK", control.ReadLine());
+
+            int Poll(string counter)
+            {
+                control.Send(RawRespClient.Command("DEBUG", "BLOCK", "0", counter));
+                return control.ReadInteger();
+            }
+
+            // Process-wide, so taken as a baseline rather than assumed to be zero.
+            var baseline = Poll("GETLEAKCOUNT");
+
+            const int BlockMilliseconds = 100;
+            for (var i = 0; i < 40; i++)
+            {
+                var client = new RawRespClient(TestUtils.EndPoint);
+                client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0.1", "abandoned-key"));
+
+                // Sweeps from well before the deadline to well after it.
+                Thread.Sleep((i * 5) % (BlockMilliseconds * 2));
+                client.Dispose();
+            }
+
+            var elapsed = Stopwatch.StartNew();
+            int outstanding;
+            while ((outstanding = Poll("GETLEAKCOUNT")) != baseline)
+            {
+                ClassicAssert.Less(elapsed.Elapsed.TotalSeconds, 20,
+                    $"{outstanding - baseline} pooled value buffers were never returned after the "
+                    + "connections reading them disappeared");
+                Thread.Sleep(5);
+            }
+
+            control.Send(RawRespClient.Command("PING"));
+            ClassicAssert.AreEqual("+PONG", control.ReadLine());
+        }
+
+        /// <summary>
+        /// Tearing the server down between the read and the reply must still return the rented buffer.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is the one window where the value has an owner but no consumer. The operation has claimed
+        /// its outcome and rented a buffer from the pool, and the reply that would hand it back has not run
+        /// yet. A closed socket does not reach it -- a parked connection has no outstanding receive, so
+        /// nothing notices, which is why
+        /// <see cref="DisconnectDuringBlockGetIsCleanedUp"/> cannot cover this. Disposing the server is the
+        /// path that lands inside it, so disposal is what has to return the buffer.
+        /// </para>
+        /// <para>
+        /// The window is reached by weight of numbers rather than by pinning the operation inside it: the
+        /// waits are staggered across the dispose so that whatever instant teardown lands on, some
+        /// operations are in it. The assertion is one-sided on purpose -- a run that happens to miss the
+        /// window still passes -- so what keeps it honest is that it fails reliably when disposal stops
+        /// returning the buffer.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void DisposeDuringBlockGetPublicationDoesNotLeakTheValue()
+        {
+            int Poll(RawRespClient client, string counter)
+            {
+                client.Send(RawRespClient.Command("DEBUG", "BLOCK", "0", counter));
+                return client.ReadInteger();
+            }
+
+            const int SessionCount = 64;
+
+            int baseline;
+            using (var probe = new RawRespClient(TestUtils.EndPoint))
+            {
+                probe.Send(RawRespClient.Command("SET", "disposed-key", "value"));
+                ClassicAssert.AreEqual("+OK", probe.ReadLine());
+                baseline = Poll(probe, "GETLEAKCOUNT");
+            }
+
+            var clients = new List<RawRespClient>(SessionCount);
+            try
+            {
+                for (var i = 0; i < SessionCount; i++)
+                {
+                    clients.Add(new RawRespClient(TestUtils.EndPoint));
+
+                    // Staggered so the deadlines are spread across the dispose below rather than bunched
+                    // before or after it.
+                    clients[i].Send(RawRespClient.Command("DEBUG", "BLOCKGET",
+                        (0.20 + (i * 0.005)).ToString(CultureInfo.InvariantCulture), "disposed-key"));
+                }
+
+                Thread.Sleep(300);
+                server.Dispose();
+            }
+            finally
+            {
+                foreach (var client in clients)
+                    client.Dispose();
+            }
+
+            // Process-wide statics outlive the disposed server, so a fresh one reports what it left behind.
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using var prober = new RawRespClient(TestUtils.EndPoint);
+
+            var elapsed = Stopwatch.StartNew();
+            int outstanding;
+            while ((outstanding = Poll(prober, "GETLEAKCOUNT")) != baseline)
+            {
+                ClassicAssert.Less(elapsed.Elapsed.TotalSeconds, 20,
+                    $"{outstanding - baseline} pooled value buffers were read from the store and never "
+                    + "returned when the server was disposed before their replies could be written");
+                Thread.Sleep(5);
+            }
+        }
+
+        /// <summary>
+        /// A session with an async GET processor running must refuse to park, because the processor drains
+        /// pending reads on the same storage session from its own thread.
+        /// </summary>
+        /// <remarks>
+        /// Parking's licence to use the session's storage rests on the session having stopped parsing, which
+        /// makes the operation the only user of that storage. <c>ASYNC</c> breaks the premise rather than the
+        /// conclusion: its replies are out of order by design, so the processor keeps working the session's
+        /// storage while the session parses on. Refusing the park is what keeps the exclusivity claim true,
+        /// and it costs nothing in practice because <c>ASYNC</c> is opt-in per session.
+        /// </remarks>
+        [Test]
+        public void BlockGetRefusesToParkWhileAsyncOperationsAreRunning()
+        {
+            var endPoint = StartLowMemoryServer();
+
+            using var client = new RawRespClient(endPoint);
+
+            client.Send(RawRespClient.Command("HELLO", "3"), RawRespClient.Command("PING"));
+            while (client.ReadLine() != "+PONG") { }
+
+            client.Send(RawRespClient.Command("SET", "async-probe", "v"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+            client.Send(RawRespClient.Command("SET", "blockget-probe", "hot"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+            _ = LoadColdKeys(endPoint, keyCount: 256);
+
+            // Parking works on this session until something async starts.
+            var sw = Stopwatch.StartNew();
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0.3", "blockget-probe"));
+            ClassicAssert.AreEqual("$3", client.ReadLine());
+            ClassicAssert.AreEqual("hot", client.ReadLine());
+            ClassicAssert.GreaterOrEqual(sw.ElapsedMilliseconds, 250,
+                "The command did not park before ASYNC was enabled, so the comparison below proves nothing");
+
+            client.Send(RawRespClient.Command("ASYNC", "ON"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+            // Cold, so the read goes pending and an async GET processor starts against this session's
+            // storage. The barrier drains it; the started count stays raised, which is what the guard reads.
+            client.Send(RawRespClient.Command("GET", "async-probe"));
+            ClassicAssert.IsTrue(client.ReadLine().StartsWith("-ASYNC", StringComparison.Ordinal),
+                "The read completed from memory, so no async GET processor was started and the test would "
+                + "not have exercised the guard.");
+            client.Send(RawRespClient.Command("ASYNC", "BARRIER"));
+            while (client.ReadLine() != "+OK") { }
+
+            // Now the park is refused. The fallback is the read without the wait, matching what any command
+            // that cannot park does, so the reply is correct and immediate rather than absent.
+            sw.Restart();
+            client.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "5", "blockget-probe"));
+            ClassicAssert.AreEqual("$3", client.ReadLine());
+            ClassicAssert.AreEqual("hot", client.ReadLine());
+            sw.Stop();
+
+            ClassicAssert.Less(sw.ElapsedMilliseconds, 2000,
+                $"DEBUG BLOCKGET waited {sw.ElapsedMilliseconds}ms with an async processor started: it "
+                + "parked, and the session's storage now has two drivers");
         }
 
         /// <summary>
