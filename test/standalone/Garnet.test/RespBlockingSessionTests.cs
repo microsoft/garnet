@@ -1900,9 +1900,18 @@ namespace Garnet.test
             const double ParkBudgetMicroseconds = 200;
 
             // Parks on different connections are independent, so aggregate throughput should rise with
-            // connection count until something shared saturates. A quarter of linear is far below what is
-            // measured and far above what a global lock or a single-threaded resume would allow.
+            // connection count until something shared saturates. What bounds that rise is the parallelism
+            // the host actually has, not the number of connections: a park is CPU work -- a thread-pool
+            // hand-off, a resume, a reply write -- so sixteen connections cannot reach sixteen times the
+            // single-connection rate on a four-core CI runner however clean the implementation is. The
+            // floor therefore tracks available concurrency rather than ScaledConnections.
             const double MinimumScaling = 0.25;
+
+            // ...and is held above 1.0 regardless, because that is what the assertion exists to catch. A
+            // global lock or a single-threaded resume collapses aggregate throughput to the
+            // single-connection rate or below, so scaling lands at 1.0 or under on any hardware. Without
+            // this floor a sufficiently small core count would make the bound vacuous.
+            const double SerializationFloor = 1.1;
 
             using var client = new RawRespClient(TestUtils.EndPoint);
 
@@ -2007,12 +2016,17 @@ namespace Garnet.test
             }
 
             var scaling = scaledRate / parkedRate;
+            var availableConcurrency = Math.Min(ScaledConnections, Environment.ProcessorCount);
+            var minimumScaling = Math.Max(SerializationFloor, availableConcurrency * MinimumScaling);
+
             TestContext.Out.WriteLine(
                 $"{ScaledConnections} connections: {scaledRate:N0} parks/s aggregate, " +
-                $"{scaling:F1}x the single-connection rate ({scaling / ScaledConnections:P0} of linear)");
+                $"{scaling:F1}x the single-connection rate ({scaling / ScaledConnections:P0} of linear) " +
+                $"on {Environment.ProcessorCount} cores, floor {minimumScaling:F1}x");
 
-            ClassicAssert.Greater(scaling, ScaledConnections * MinimumScaling,
-                $"{ScaledConnections} connections reached only {scaling:F1}x the single-connection park rate");
+            ClassicAssert.Greater(scaling, minimumScaling,
+                $"{ScaledConnections} connections reached only {scaling:F1}x the single-connection park " +
+                $"rate on {Environment.ProcessorCount} cores");
         }
 
         /// <summary>
