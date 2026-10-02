@@ -103,38 +103,51 @@ namespace Tsavorite.test.Objects
                         ++overBudgetSamples;
                     Thread.Sleep(5);
                 }
-            });
+            })
+            {
+                // Belt and braces alongside the finally below: a sampler that somehow outlived the test must not
+                // keep the test host alive, and must not still be reading tracker once TearDown has cleared it.
+                IsBackground = true
+            };
 
             var sw = Stopwatch.StartNew();
             sampler.Start();
 
             var threads = new List<Thread>();
             Exception failure = null;
-            for (var t = 0; t < InserterThreads; t++)
+            try
             {
-                var threadId = t;
-                var thread = new Thread(() =>
+                for (var t = 0; t < InserterThreads; t++)
                 {
-                    try
+                    var threadId = t;
+                    var thread = new Thread(() =>
                     {
-                        using var session = store.NewSession<TestObjectKey, Empty, Empty, Empty, SizedHeapObjectFunctions>(new SizedHeapObjectFunctions());
-                        var bContext = session.BasicContext;
-                        for (var i = 0; i < RecordsPerThread; i++)
-                            _ = bContext.Upsert(new TestObjectKey { key = (threadId * RecordsPerThread) + i }, new SizedHeapObject(ObjectHeapSize));
-                    }
-                    catch (Exception e) { _ = Interlocked.CompareExchange(ref failure, e, null); }
-                });
-                thread.Start();
-                threads.Add(thread);
+                        try
+                        {
+                            using var session = store.NewSession<TestObjectKey, Empty, Empty, Empty, SizedHeapObjectFunctions>(new SizedHeapObjectFunctions());
+                            var bContext = session.BasicContext;
+                            for (var i = 0; i < RecordsPerThread; i++)
+                                _ = bContext.Upsert(new TestObjectKey { key = (threadId * RecordsPerThread) + i }, new SizedHeapObject(ObjectHeapSize));
+                        }
+                        catch (Exception e) { _ = Interlocked.CompareExchange(ref failure, e, null); }
+                    });
+                    thread.Start();
+                    threads.Add(thread);
+                }
+
+                foreach (var thread in threads)
+                    Assert.That(thread.Join(CompletionTimeout), Is.True,
+                        $"Inserters did not finish within {CompletionTimeout}; the allocation path is not making progress. Tracker: {tracker}");
             }
-
-            foreach (var thread in threads)
-                Assert.That(thread.Join(CompletionTimeout), Is.True,
-                    $"Inserters did not finish within {CompletionTimeout}; the allocation path is not making progress. Tracker: {tracker}");
-
-            sw.Stop();
-            Volatile.Write(ref stopSampling, true);
-            sampler.Join();
+            finally
+            {
+                // A timed-out inserter throws from the assertion above. Without this the sampler keeps running and
+                // keeps reading tracker, which TearDown then clears, so the intended timeout failure is replaced by
+                // a NullReferenceException on the sampler thread.
+                sw.Stop();
+                Volatile.Write(ref stopSampling, true);
+                _ = sampler.Join(CompletionTimeout);
+            }
 
             if (failure is not null)
                 Assert.Fail(failure.ToString());
