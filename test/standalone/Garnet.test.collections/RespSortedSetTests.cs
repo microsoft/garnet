@@ -355,6 +355,14 @@ namespace Garnet.test
             resp = db.Execute("ZADD", [key + '2', "NX", .. testArgs]);
             ClassicAssert.AreEqual(3.5, double.Parse(resp.ToString(), CultureInfo.InvariantCulture));
 
+            // Test XX option: a missing member is not added and the reply is null.
+            resp = db.Execute("ZADD", [key, "XX", "INCR", "3.5", "z"]);
+            ClassicAssert.IsTrue(resp.IsNull);
+            ClassicAssert.IsNull(db.SortedSetScore(key, "z"));
+
+            resp = db.Execute("ZADD", [key + '4', "XX", .. testArgs]);
+            ClassicAssert.IsTrue(resp.IsNull);
+
             // INCR + LT/GT combination should prevent update when condition fails and key exists.
             resp = db.Execute("ZADD", [key, "LT", .. testArgs]);
             ClassicAssert.IsTrue(resp.IsNull);
