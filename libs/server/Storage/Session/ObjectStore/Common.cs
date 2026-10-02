@@ -820,9 +820,12 @@ namespace Garnet.server
                     if (!DbScan(searchKey, true, cursor, out storeCursor, out var hashKeys, 100, typeObject))
                         return GarnetStatus.OK;
 
-                    var output = new ObjectOutput();
                     foreach (var hashKey in hashKeys)
+                    {
+                        // A new output for each key: a flag one key sets (RemoveKey, WrongType) must not carry over to the next
+                        var output = new ObjectOutput();
                         RMWObjectStoreOperation(hashKey, ref input, ref objectContext, ref output);
+                    }
 
                     cursor = storeCursor;
                 } while (storeCursor != 0);
