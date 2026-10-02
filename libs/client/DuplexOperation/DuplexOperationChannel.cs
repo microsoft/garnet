@@ -93,7 +93,7 @@ namespace Garnet.client
 
         public readonly LightEpoch epoch;
 
-        readonly DuplexRingRecordStore<TRequestContext, TCompletionContext> store;
+        readonly DuplexRingRecordStore<TRequestContext, TCompletionContext, DuplexOperationAsyncFlushResult<TRequestContext>> store;
         readonly DuplexAdmissionController controller;
         readonly TTransport transport;
         readonly ILogger logger;
@@ -141,7 +141,7 @@ namespace Garnet.client
             this.transport = transport;
             this.logger = logger;
 
-            store = new DuplexRingRecordStore<TRequestContext, TCompletionContext>(
+            store = new DuplexRingRecordStore<TRequestContext, TCompletionContext, DuplexOperationAsyncFlushResult<TRequestContext>>(
                 ringPageSizeBytes,
                 ringPageCount,
                 completionCapacity);
@@ -155,7 +155,7 @@ namespace Garnet.client
             // A descriptor's low 56 bits must hold the full log address, so the page-index bits plus the
             // in-page offset bits must fit below the tag byte. This bounds how the descriptor codec can
             // coexist with the address layout for any configured page size.
-            Debug.Assert(PageOffset.kPageBits + store.Shape.PageSizeBits <= DuplexRingRecordStore<TRequestContext, TCompletionContext>.TagShift,
+            Debug.Assert(PageOffset.kPageBits + store.Shape.PageSizeBits <= DuplexRingRecordFormat.TagShift,
                 "Descriptor address space must leave the most-significant byte free for the payload kind tag.");
         }
 
@@ -225,7 +225,7 @@ namespace Garnet.client
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
-            return store.RegisterInlineRecord(address, payloadLength);
+            return store.RegisterInlineRecord(address, payloadLength, default);
         }
 
         /// <summary>
@@ -321,11 +321,11 @@ namespace Garnet.client
 
                 var realEndOffset = store.ConsumePageEndOffset(flushPage, endOffset);
 
-                if ((startOffset & (DuplexRingRecordStore<TRequestContext, TCompletionContext>.RecordHeaderSize - 1)) != 0 ||
-                    (realEndOffset & (DuplexRingRecordStore<TRequestContext, TCompletionContext>.RecordHeaderSize - 1)) != 0)
+                if ((startOffset & (DuplexRingRecordFormat.HeaderSize - 1)) != 0 ||
+                    (realEndOffset & (DuplexRingRecordFormat.HeaderSize - 1)) != 0)
                 {
-                    FailOnRequestFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {DuplexRingRecordStore<TRequestContext, TCompletionContext>.RecordHeaderSize}-byte records.");
-                    realEndOffset -= (realEndOffset - startOffset) & (DuplexRingRecordStore<TRequestContext, TCompletionContext>.RecordHeaderSize - 1);
+                    FailOnRequestFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {DuplexRingRecordFormat.HeaderSize}-byte records.");
+                    realEndOffset -= (realEndOffset - startOffset) & (DuplexRingRecordFormat.HeaderSize - 1);
                 }
 
                 for (var offset = startOffset; offset < realEndOffset;)
@@ -343,7 +343,7 @@ namespace Garnet.client
                     var address = store.Shape.PackAddress(flushPage, offset);
 
                     // Claim the record, recovering its stride whether or not we win the claim.
-                    var won = store.TryClaimRequest(address, out var kind, out var recordSize, out var payloadLength, out var key, out var request);
+                    var won = store.TryClaimRequest(address, out var kind, out var recordSize, out var payloadLength, out var key, out var request, out var flushContext);
                     if (!won)
                     {
                         offset += recordSize; // Empty slot or taken by teardown.
@@ -369,10 +369,10 @@ namespace Garnet.client
                     {
                         // Header-only inline records carry no payload; skip the send path entirely.
                         if (payloadLength > 0)
-                            ProcessRequestContext(store.GetPageBuffer(flushPage), (int)(offset + DuplexRingRecordStore<TRequestContext, TCompletionContext>.RecordHeaderSize), payloadLength, default, count, ref flushFailed);
+                            ProcessRequestContext(store.GetPageBuffer(flushPage), (int)(offset + DuplexRingRecordFormat.HeaderSize), payloadLength, request, address, flushContext, count, ref flushFailed);
                     }
                     else if (kind == RequestKind.OutOfLine)
-                        ProcessRequestContext(request.Buffer, 0, request.Length, request, count, ref flushFailed);
+                        ProcessRequestContext(request.Buffer, 0, request.Length, request, address, flushContext, count, ref flushFailed);
                     else
                     {
                         // A won claim is always Inline or OutOfLine; any other kind here means an uninitialized
@@ -390,7 +390,7 @@ namespace Garnet.client
 
             controller.CompleteFlush(count);
 
-            void ProcessRequestContext(byte[] buffer, int baseOffset, int length, TRequestContext request, CountWrapper count, ref bool flushFailed)
+            void ProcessRequestContext(byte[] buffer, int baseOffset, int length, TRequestContext request, long address, DuplexOperationAsyncFlushResult<TRequestContext> flushContext, CountWrapper count, ref bool flushFailed)
             {
                 // An empty payload has nothing to send, and the chunk-count protocol below assumes length >= 1:
                 // bumping count without dispatching a chunk would leave the flush count permanently unbalanced
@@ -403,13 +403,13 @@ namespace Garnet.client
 
                 var chunkSize = Math.Max(1, maxChunkSizeBytes);
                 var chunkCount = ((length - 1) / chunkSize) + 1;
-                var result = new DuplexOperationAsyncFlushResult<TRequestContext>
+                var result = flushContext;
+                if (result == null)
                 {
-                    count = count,
-                    request = request,
-                    remainingChunks = chunkCount,
-                    admission = controller
-                };
+                    result = new DuplexOperationAsyncFlushResult<TRequestContext>();
+                    store.SetFlushContext(address, result);
+                }
+                result.Initialize(count, request, chunkCount, controller);
                 _ = Interlocked.Increment(ref count.count);
 
                 var dispatchedChunks = 0;

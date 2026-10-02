@@ -32,6 +32,13 @@ namespace Garnet.client
         Uninitialized = 0xFF,
     }
 
+    internal static class DuplexRingRecordFormat
+    {
+        internal const int HeaderSize = sizeof(long);
+        internal const int TagShift = 56;
+        internal const int CompletionSlotSize = 64;
+    }
+
     /// <summary>
     /// Immutable geometry of a power-of-two page ring: the page size and count, plus the
     /// address ↔ (page, offset) arithmetic that keys off them. Holds no position/cursor state.
@@ -78,8 +85,9 @@ namespace Garnet.client
     /// <summary>
     /// Physical request and completion storage for a duplex operation ring.
     /// </summary>
-    internal sealed unsafe class DuplexRingRecordStore<TRequestContext, TCompletionContext>
+    internal sealed unsafe class DuplexRingRecordStore<TRequestContext, TCompletionContext, TFlushContext>
         where TRequestContext : struct, IDisposable
+        where TFlushContext : class
     {
         unsafe struct RingPage
         {
@@ -98,29 +106,32 @@ namespace Garnet.client
         }
 
         // Keep adjacent producer-published completions on separate cache lines.
-        [StructLayout(LayoutKind.Sequential, Size = 64)]
+        [StructLayout(LayoutKind.Sequential, Size = DuplexRingRecordFormat.CompletionSlotSize)]
         struct CompletionSlot
         {
             internal long published;
             internal TCompletionContext completion;
         }
 
-        internal const int RecordHeaderSize = sizeof(long);
+        struct RequestSlot
+        {
+            internal TRequestContext request;
+            internal TFlushContext flushContext;
+        }
 
-        internal const int TagShift = 56;
-        const long PayloadMetaMask = (1L << TagShift) - 1;
+        const long PayloadMetaMask = (1L << DuplexRingRecordFormat.TagShift) - 1;
         const long TakenBit = 1L << 63;
         const int RecordAlignment = 8;
 
         readonly RingBoundedBuffer<RingPage> bufferPages;
-        readonly TRequestContext[] requests;
+        readonly RequestSlot[] requestSlots;
         readonly CompletionSlot[] completions;
         readonly int completionMask;
         int closed;
 
         internal PageShape Shape { get; }
         internal int CompletionCapacity { get; }
-        internal int MaxInlinePayloadSize => Shape.PageSizeBytes - RecordHeaderSize;
+        internal int MaxInlinePayloadSize => Shape.PageSizeBytes - DuplexRingRecordFormat.HeaderSize;
 
         internal DuplexRingRecordStore(
             int ringPageSizeBytes,
@@ -129,8 +140,8 @@ namespace Garnet.client
         {
             Shape = new PageShape(ringPageSizeBytes, ringPageCount);
 
-            var ringSlotCount = ringPageCount * ringPageSizeBytes / RecordHeaderSize;
-            requests = new TRequestContext[ringSlotCount];
+            var ringSlotCount = ringPageCount * ringPageSizeBytes / DuplexRingRecordFormat.HeaderSize;
+            requestSlots = new RequestSlot[ringSlotCount];
 
             // Hold the per-page records in a single-page ring whose slots are the ring's pages, so page lookups
             // reuse the buffer's wrap-around indexer instead of a hand-written modulo.
@@ -145,11 +156,11 @@ namespace Garnet.client
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static int AlignedInlineRecordSize(int payloadLength)
-            => (RecordHeaderSize + payloadLength + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
+            => (DuplexRingRecordFormat.HeaderSize + payloadLength + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static long EncodeDescriptor(RequestKind kind, long meta)
-            => ((long)(byte)kind << TagShift) | (meta & PayloadMetaMask);
+            => ((long)(byte)kind << DuplexRingRecordFormat.TagShift) | (meta & PayloadMetaMask);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static long DecodeMeta(long word) => word & PayloadMetaMask;
@@ -159,7 +170,7 @@ namespace Garnet.client
         {
             var pageIndex = Shape.GetPhysicalPageIndex(address);
             var offset = (int)Shape.GetOffsetInPage(address);
-            return ((pageIndex * Shape.PageSizeBytes) + offset) / RecordHeaderSize;
+            return ((pageIndex * Shape.PageSizeBytes) + offset) / DuplexRingRecordFormat.HeaderSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -178,7 +189,7 @@ namespace Garnet.client
         internal int GetRecordSize(int payloadLength, out bool isInline)
         {
             isInline = (uint)payloadLength <= (uint)MaxInlinePayloadSize;
-            return isInline ? AlignedInlineRecordSize(payloadLength) : RecordHeaderSize;
+            return isInline ? AlignedInlineRecordSize(payloadLength) : DuplexRingRecordFormat.HeaderSize;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -203,18 +214,19 @@ namespace Garnet.client
         internal byte[] GetPageBuffer(long page) => bufferPages[page].value;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryClaimRequest(long address, out RequestKind kind, out int recordSize, out int payloadLength, out long key, out TRequestContext request)
+        internal bool TryClaimRequest(long address, out RequestKind kind, out int recordSize, out int payloadLength, out long key, out TRequestContext request, out TFlushContext flushContext)
         {
             request = default;
+            flushContext = default;
             payloadLength = 0;
             var recPtr = (long*)GetPhysicalAddress(address);
             var word = Volatile.Read(ref *recPtr);
-            var tag = (byte)((ulong)word >> TagShift);
+            var tag = (byte)((ulong)word >> DuplexRingRecordFormat.TagShift);
 
             if (tag == (byte)RequestKind.Uninitialized)
             {
                 kind = RequestKind.Uninitialized;
-                recordSize = RecordHeaderSize;
+                recordSize = DuplexRingRecordFormat.HeaderSize;
                 key = default;
                 return false;
             }
@@ -229,7 +241,7 @@ namespace Garnet.client
             else
             {
                 kind = RequestKind.OutOfLine;
-                recordSize = RecordHeaderSize;
+                recordSize = DuplexRingRecordFormat.HeaderSize;
             }
 
             // Preserve metadata while claiming so a losing walker can still recover the record stride.
@@ -237,12 +249,10 @@ namespace Garnet.client
                 Interlocked.CompareExchange(ref *recPtr, word | TakenBit, word) != word)
                 return false;
 
-            if (kind == RequestKind.OutOfLine)
-            {
-                var slot = ComputeSlot(address);
-                request = requests[slot];
-                requests[slot] = default;
-            }
+            var slot = ComputeSlot(address);
+            request = requestSlots[slot].request;
+            requestSlots[slot].request = default;
+            flushContext = requestSlots[slot].flushContext;
             return true;
         }
 
@@ -250,24 +260,28 @@ namespace Garnet.client
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref closed) != 0, this);
             var slot = ComputeSlot(address);
-            requests[slot] = request;
+            requestSlots[slot].request = request;
             var ptr = (long*)GetPhysicalAddress(address);
             *ptr = EncodeDescriptor(RequestKind.OutOfLine, address);
 
             if (Volatile.Read(ref closed) != 0 &&
-                TryClaimRequest(address, out var kind, out _, out _, out _, out var reclaimed) &&
+                TryClaimRequest(address, out var kind, out _, out _, out _, out var reclaimed, out _) &&
                 kind == RequestKind.OutOfLine)
                 reclaimed.Dispose();
         }
 
-        internal byte* RegisterInlineRecord(long address, int payloadLength)
+        internal byte* RegisterInlineRecord(long address, int payloadLength, TRequestContext request)
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref closed) != 0, this);
+            requestSlots[ComputeSlot(address)].request = request;
             var basePtr = GetPhysicalAddress(address);
             Volatile.Write(ref *(long*)basePtr, EncodeDescriptor(RequestKind.Inline, payloadLength));
             Interlocked.MemoryBarrier();
-            return (byte*)(basePtr + RecordHeaderSize);
+            return (byte*)(basePtr + DuplexRingRecordFormat.HeaderSize);
         }
+
+        internal void SetFlushContext(long address, TFlushContext flushContext)
+            => requestSlots[ComputeSlot(address)].flushContext = flushContext;
 
         internal void RegisterCompletion(int ticket, TCompletionContext completion)
         {
@@ -317,7 +331,7 @@ namespace Garnet.client
                 for (var offset = 0; offset < Shape.PageSizeBytes;)
                 {
                     var address = Shape.PackAddress(page, offset);
-                    if (TryClaimRequest(address, out var kind, out var recordSize, out _, out _, out var request) &&
+                    if (TryClaimRequest(address, out var kind, out var recordSize, out _, out _, out var request, out _) &&
                         kind == RequestKind.OutOfLine)
                         request.Dispose();
 

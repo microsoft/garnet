@@ -141,11 +141,15 @@ namespace Garnet.test
             server.Start();
 
             const int completionCapacity = 8;
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: completionCapacity,
+                maxConcurrentNetworkSends: 8);
             using var db = TestUtils.GetGarnetLightClient(
                 useTLS: useTLS,
-                sendPageSize: 256,
-                bufferSize: 256,
-                maxOutstandingTasks: completionCapacity);
+                networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             const int producers = 8;
@@ -214,13 +218,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void DefaultNetworkWriterMemoryFootprint()
+        {
+            var options = LightNetworkWriterOptions.Default;
+
+            ClassicAssert.AreEqual(8 * 1024, options.MinMemoryFootprint());
+            ClassicAssert.AreEqual(15 * 1024, options.MaxMemoryFootprint());
+        }
+
+        [Test]
         public async Task ChunkedLargePayloadTest()
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
             // Force small pages so the payload spans several chunks/pages.
-            using var db = new GarnetLightClient(TestUtils.EndPoint, sendPageSize: 1 << 12);
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 1 << 17,
+                requestPageSizeBytes: 1 << 12,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 1 << 19,
+                maxConcurrentNetworkSends: 8);
+            using var db = new GarnetLightClient(TestUtils.EndPoint, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var value = new string('x', 1 << 16);
@@ -283,7 +302,13 @@ namespace Garnet.test
             await subscriber.GetSubscriber().SubscribeAsync(RedisChannel.Literal("no-response-news"),
                 (_, message) => messages.Add(message)).ConfigureAwait(false);
 
-            using var db = TestUtils.GetGarnetLightClient(sendPageSize: 256, bufferSize: 256);
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 1 << 12,
+                maxConcurrentNetworkSends: 8);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var channel = Encoding.ASCII.GetBytes("no-response-news");

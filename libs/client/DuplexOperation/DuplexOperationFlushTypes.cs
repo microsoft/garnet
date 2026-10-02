@@ -7,7 +7,7 @@ using System.Threading;
 namespace Garnet.client
 {
     /// <summary>
-    /// Out-of-line payload async flush result for the request lane of a duplex operation ring.
+    /// Reusable payload async flush result for the request lane of a duplex operation ring.
     /// </summary>
     sealed class DuplexOperationAsyncFlushResult<TRequestContext>
         where TRequestContext : struct, IRequestContext
@@ -15,7 +15,15 @@ namespace Garnet.client
         public CountWrapper count;
         public TRequestContext request;
         public int remainingChunks;
-        public DuplexAdmissionController admission;
+        public DuplexAdmissionController controller;
+
+        internal void Initialize(CountWrapper count, TRequestContext request, int remainingChunks, DuplexAdmissionController admission)
+        {
+            this.count = count;
+            this.request = request;
+            this.remainingChunks = remainingChunks;
+            this.controller = admission;
+        }
 
         /// <summary>
         /// Finalizes one dispatched chunk. The final chunk disposes the request and advances the admission
@@ -28,8 +36,14 @@ namespace Garnet.client
                 case DuplexOperationAsyncFlushResult<TRequestContext> result:
                     if (Interlocked.Decrement(ref result.remainingChunks) == 0)
                     {
-                        result.request.Dispose();
-                        result.admission.CompleteFlush(result.count);
+                        var request = result.request;
+                        var admission = result.controller;
+                        var count = result.count;
+                        result.request = default;
+                        result.controller = null;
+                        result.count = null;
+                        request.Dispose();
+                        admission.CompleteFlush(count);
                     }
                     break;
 

@@ -11,6 +11,133 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.client
 {
     /// <summary>
+    /// Capacity and buffer settings for a <see cref="LightNetworkWriter"/>.
+    /// </summary>
+    /// <remarks>
+    /// Creates a complete set of network writer capacity and buffer options.
+    /// </remarks>
+    /// <param name="networkBufferSizeBytes">Fixed send-buffer size, initial receive-buffer size, and maximum send chunk size.</param>
+    /// <param name="requestPageSizeBytes">Size of each request-ring page, rounded down to a power of two.</param>
+    /// <param name="requestPageCount">Number of circular request-ring pages.</param>
+    /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
+    /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
+    public readonly struct LightNetworkWriterOptions(
+        int networkBufferSizeBytes,
+        int requestPageSizeBytes,
+        int requestPageCount,
+        int maxOutstandingCompletions,
+        int maxConcurrentNetworkSends)
+    {
+        static int RequestSlotSizeBytes
+            => Align(Unsafe.SizeOf<LightRequestContext>() + IntPtr.Size);
+
+        static int FlushContextSizeBytes
+            => Align(
+                (2 * IntPtr.Size) +
+                Unsafe.SizeOf<LightRequestContext>() +
+                (2 * IntPtr.Size) +
+                sizeof(int));
+
+        /// <summary>
+        /// Default settings for a general-purpose <see cref="GarnetLightClient"/>.
+        /// </summary>
+        /// <remarks>
+        /// On a 64-bit process, the fixed request/completion ring footprint is approximately 8 KiB:
+        /// <list type="bullet">
+        /// <item><description>
+        /// Request pages: 2 pages * 512 bytes = 1 KiB of pinned payload storage.
+        /// </description></item>
+        /// <item><description>
+        /// Request side table: (2 * 512 bytes) / 8-byte record alignment = 128 slots;
+        /// each <c>LightRequestContext</c> plus flush-context reference is approximately 24 bytes,
+        /// for approximately 3 KiB.
+        /// </description></item>
+        /// <item><description>
+        /// Completion lane: 64 slots * 64 bytes per cache-line-padded completion slot = 4 KiB.
+        /// </description></item>
+        /// </list>
+        /// The total excludes array headers, 8 KiB network buffers, and pooled out-of-line request buffers.
+        /// It also excludes reusable flush contexts from the fixed footprint because they are allocated lazily.
+        /// After every physical request slot has been used, their approximate worst-case footprint is
+        /// 128 slots * 56 bytes = 7 KiB, keeping the fully warmed request/completion ring near 15 KiB.
+        /// </remarks>
+        public static LightNetworkWriterOptions Default => new(
+            networkBufferSizeBytes: 1 << 13,
+            requestPageSizeBytes: 1 << 9,
+            requestPageCount: 2,
+            maxOutstandingCompletions: 1 << 6,
+            maxConcurrentNetworkSends: 8);
+
+        /// <summary>
+        /// Size of the fixed network send buffer and initial receive buffer.
+        /// Also determines the maximum request chunk sent in one transport operation.
+        /// </summary>
+        public int NetworkBufferSizeBytes { get; } = networkBufferSizeBytes;
+
+        /// <summary>
+        /// Size of each request-ring page. This controls the maximum inline request size and,
+        /// together with <see cref="RequestPageCount"/>, the request capacity awaiting local send completion.
+        /// </summary>
+        public int RequestPageSizeBytes { get; } = (int)Utility.PreviousPowerOf2(requestPageSizeBytes);
+
+        /// <summary>
+        /// Number of circular pages in the request ring.
+        /// </summary>
+        public int RequestPageCount { get; } = requestPageCount;
+
+        /// <summary>
+        /// Maximum number of response-expecting requests whose replies have not yet been consumed.
+        /// This capacity is independent of request pages, which are released on local send completion.
+        /// </summary>
+        public int MaxOutstandingCompletions { get; } = maxOutstandingCompletions;
+
+        /// <summary>
+        /// Maximum number of transport sends that may be in progress concurrently.
+        /// </summary>
+        public int MaxConcurrentNetworkSends { get; } = maxConcurrentNetworkSends;
+
+        /// <summary>
+        /// Estimates the fixed request-page, request-side-table, and completion-lane memory in bytes.
+        /// </summary>
+        /// <remarks>
+        /// Excludes array headers, network buffers, pooled out-of-line payloads, and lazily allocated
+        /// flush contexts.
+        /// </remarks>
+        public long MinMemoryFootprint()
+        {
+            checked
+            {
+                var requestPageBytes = (long)RequestPageSizeBytes * RequestPageCount;
+                var requestSlotCount = requestPageBytes / DuplexRingRecordFormat.HeaderSize;
+                var requestSideTableBytes = requestSlotCount * RequestSlotSizeBytes;
+                var completionLaneBytes = (long)MaxOutstandingCompletions * DuplexRingRecordFormat.CompletionSlotSize;
+                return requestPageBytes + requestSideTableBytes + completionLaneBytes;
+            }
+        }
+
+        /// <summary>
+        /// Estimates the fully warmed request/completion ring memory in bytes.
+        /// </summary>
+        /// <remarks>
+        /// Adds one lazily allocated reusable flush context for every physical request slot to
+        /// <see cref="MinMemoryFootprint"/>. Excludes array headers, network buffers, and pooled
+        /// out-of-line payloads.
+        /// </remarks>
+        public long MaxMemoryFootprint()
+        {
+            checked
+            {
+                var requestPageBytes = (long)RequestPageSizeBytes * RequestPageCount;
+                var requestSlotCount = requestPageBytes / DuplexRingRecordFormat.HeaderSize;
+                return MinMemoryFootprint() + (requestSlotCount * FlushContextSizeBytes);
+            }
+        }
+
+        static int Align(int size)
+            => (size + (IntPtr.Size - 1)) & ~(IntPtr.Size - 1);
+    }
+
+    /// <summary>
     /// Concurrent network writer for inline and out-of-line payloads.
     /// <para>
     /// This is a thin, network-owning shell over a
@@ -73,10 +200,18 @@ namespace Garnet.client
         /// <summary>
         /// Constructor
         /// </summary>
-        public LightNetworkWriter(GarnetLightClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetLightClientTcpNetworkHandler networkHandler, int sendPageSize, int pageBufferCount, int completionCapacity, int networkSendThrottleMax, LightEpoch epoch, PoolOwnerType ownerType, ILogger logger = null)
+        public LightNetworkWriter(
+            GarnetLightClient serverHook,
+            Socket socket,
+            LightNetworkWriterOptions options,
+            SslClientAuthenticationOptions sslOptions,
+            out GarnetLightClientTcpNetworkHandler networkHandler,
+            LightEpoch epoch,
+            PoolOwnerType ownerType,
+            ILogger logger = null)
         {
             this.logger = logger;
-            this.networkBufferSettings = new NetworkBufferSettings(messageBufferSize, messageBufferSize);
+            this.networkBufferSettings = new NetworkBufferSettings(options.NetworkBufferSizeBytes, options.NetworkBufferSizeBytes);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
 
             // The flush-completion callback is a static routine on the flush result and recovers its ring via
@@ -90,16 +225,16 @@ namespace Garnet.client
                 networkPool,
                 sslOptions != null,
                 serverHook,
-                networkSendThrottleMax: networkSendThrottleMax,
+                networkSendThrottleMax: options.MaxConcurrentNetworkSends,
                 logger: logger);
             this.networkHandler = networkHandler = handler;
             var useTls = sslOptions != null;
             var tcpSender = useTls ? null : (ClientTcpNetworkSender)handler.GetNetworkSender();
 
             this.channel = new DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport>(
-                sendPageSize,
-                pageBufferCount,
-                completionCapacity,
+                options.RequestPageSizeBytes,
+                options.RequestPageCount,
+                options.MaxOutstandingCompletions,
                 networkBufferSettings.sendBufferSize,
                 new RingTransport(tcpSender, handler, useTls),
                 epoch,

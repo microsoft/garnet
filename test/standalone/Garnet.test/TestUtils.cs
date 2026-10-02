@@ -1588,8 +1588,11 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency, epoch: epoch);
         }
 
-        public static GarnetLightClient GetGarnetLightClient(EndPoint endpoint = null, bool useTLS = false, client.LightEpoch epoch = null,
-            int sendPageSize = 1 << 21, int bufferSize = 1 << 17, int maxOutstandingTasks = 1 << 19)
+        public static GarnetLightClient GetGarnetLightClient(
+            EndPoint endpoint = null,
+            bool useTLS = false,
+            client.LightEpoch epoch = null,
+            LightNetworkWriterOptions? networkWriterOptions = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -1602,8 +1605,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetLightClient(endpoint ?? EndPoint, sslOptions, sendPageSize: sendPageSize, bufferSize: bufferSize,
-                maxOutstandingTasks: maxOutstandingTasks, epoch: epoch);
+            return new GarnetLightClient(endpoint ?? EndPoint, sslOptions, networkWriterOptions: networkWriterOptions, epoch: epoch);
         }
 
         public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)

@@ -29,16 +29,11 @@ namespace Garnet.client
     /// </summary>
     public sealed partial class GarnetLightClient : IServerHook, IMessageConsumer, IDisposable
     {
-        // Number of circular pages backing the request lane's descriptor buffer.
-        const int PageBufferCount = 2;
-
         static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
         static readonly Memory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
         static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetLightClient"u8.ToArray()];
 
-        readonly int sendPageSize;
-        readonly int bufferSize;
-        readonly int maxOutstandingTasks;
+        readonly LightNetworkWriterOptions networkWriterOptions;
         readonly LightEpoch epoch;
         readonly bool isEpochOwned;
         LightNetworkWriter networkWriter;
@@ -58,7 +53,6 @@ namespace Garnet.client
 
         readonly CancellationTokenSource timeoutCheckerCts;
         readonly int timeoutMilliseconds;
-        readonly int networkSendThrottleMax;
 
         readonly string authUsername = null;
         readonly string authPassword = null;
@@ -79,12 +73,12 @@ namespace Garnet.client
         /// <summary>
         /// Get the max number of allowed outstanding tasks.
         /// </summary>
-        public int GetOutstandingTasksLimit => maxOutstandingTasks;
+        public int GetOutstandingTasksLimit => networkWriterOptions.MaxOutstandingCompletions;
 
         /// <summary>
         /// Get the send page size.
         /// </summary>
-        public int SendPageSize => sendPageSize;
+        public int SendPageSize => networkWriterOptions.RequestPageSizeBytes;
 
         /// <summary>
         /// Create client instance
@@ -94,13 +88,10 @@ namespace Garnet.client
         /// <param name="authUsername">Username to authenticate with</param>
         /// <param name="authPassword">Password to authenticate with</param>
         /// <param name="clientName">Client name to be used with CLIENT SETNAME command</param>
-        /// <param name="sendPageSize">Size of pages where descriptors are written, determines how many requests can be queued before page reuse waits for an earlier flush (rounds down to previous power of 2)</param>
-        /// <param name="bufferSize">Network writer buffer size</param>
-        /// <param name="maxOutstandingTasks">Maximum outstanding tasks before client throttles new requests (rounds down to previous power of 2)</param>
+        /// <param name="networkWriterOptions">Request-ring, completion, network-buffer, and send-throttling options. Uses <see cref="LightNetworkWriterOptions.Default"/> when omitted.</param>
         /// <param name="timeoutMilliseconds">Timeout (in milliseconds) after which client disposes itself and throws exception on all active tasks</param>
         /// <param name="memoryPool">Pool for Memory based response buffers</param>
         /// <param name="useTimeoutChecker"></param>
-        /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="epoch">Shared epoch instance for thread protection; if null, a new instance is created and owned by this client</param>
         /// <param name="logger">Logger instance</param>
         public GarnetLightClient(
@@ -109,30 +100,26 @@ namespace Garnet.client
             string authUsername = null,
             string authPassword = null,
             string clientName = null,
-            int sendPageSize = 1 << 21,
-            int bufferSize = 1 << 17,
-            int maxOutstandingTasks = 1 << 19,
+            LightNetworkWriterOptions? networkWriterOptions = null,
             int timeoutMilliseconds = 0,
             MemoryPool<byte> memoryPool = null,
             bool useTimeoutChecker = true,
-            int networkSendThrottleMax = 8,
             LightEpoch epoch = null,
             ILogger logger = null)
         {
             EndPoint = endpoint;
-            this.sendPageSize = (int)Utility.PreviousPowerOf2(sendPageSize);
-            this.bufferSize = bufferSize;
+            var options = networkWriterOptions ?? LightNetworkWriterOptions.Default;
             this.authUsername = authUsername;
             this.authPassword = authPassword;
             this.clientName = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
-            if (maxOutstandingTasks > PageOffset.kTaskMask + 1)
+            if (options.MaxOutstandingCompletions > PageOffset.kTaskMask + 1)
                 ThrowException(new Exception($"Maximum outstanding tasks supported is {PageOffset.kTaskMask + 1}"));
 
-            if (maxOutstandingTasks != (int)Utility.PreviousPowerOf2(maxOutstandingTasks))
+            if (options.MaxOutstandingCompletions != (int)Utility.PreviousPowerOf2(options.MaxOutstandingCompletions))
                 ThrowException(new Exception($"Maximum outstanding tasks should be a power of two, up to {PageOffset.kTaskMask + 1}"));
 
-            this.maxOutstandingTasks = maxOutstandingTasks;
+            this.networkWriterOptions = options;
             this.sslOptions = tlsOptions;
             this.disposed = 0;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
@@ -140,7 +127,6 @@ namespace Garnet.client
             this.timeoutMilliseconds = timeoutMilliseconds;
             if (timeoutMilliseconds > 0 && useTimeoutChecker)
                 timeoutCheckerCts = new();
-            this.networkSendThrottleMax = networkSendThrottleMax;
             if (epoch == null)
             {
                 this.epoch = new LightEpoch();
@@ -164,7 +150,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocket();
-            networkWriter = new LightNetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, PageBufferCount, maxOutstandingTasks, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
+            networkWriter = new LightNetworkWriter(this, socket, networkWriterOptions, sslOptions, out networkHandler, epoch, PoolOwnerType.GarnetClient, logger);
             networkHandler.Start(sslOptions, EndPoint.ToString(), token);
 
             if (timeoutMilliseconds > 0)
@@ -179,7 +165,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
-            networkWriter = new LightNetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, PageBufferCount, maxOutstandingTasks, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
+            networkWriter = new LightNetworkWriter(this, socket, networkWriterOptions, sslOptions, out networkHandler, epoch, PoolOwnerType.GarnetClient, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
