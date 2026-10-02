@@ -198,7 +198,7 @@ namespace Garnet.cluster
         {
             this.userHandle = userHandle;
         }
-        public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
+        public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.garnetEpoch.GetCurrentEpoch();
         public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
 
         /// <summary>
