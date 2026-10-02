@@ -108,6 +108,22 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HDELAndHPERSISTOnMissingKeyDoNotCreateKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "user:user1";
+
+            ClassicAssert.IsFalse(db.HashDelete(key, "field1"));
+            ClassicAssert.IsFalse(db.KeyExists(key));
+
+            var result = db.HashFieldPersist(key, ["field1"]);
+            ClassicAssert.AreEqual(1, result.Length);
+            ClassicAssert.AreEqual(PersistResult.NoSuchField, result[0]);
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
+        [Test]
         public void CanSetAndGetOnePairLarge()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1430,6 +1446,59 @@ namespace Garnet.test
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "myhash");
             ClassicAssert.Less(newMemory, orginalMemory);
+        }
+
+        [Test]
+        public async Task HashCollectKeepsLiveFieldsOfEveryKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Each "emptied" hash loses its only field, each "partial" hash keeps field2
+            for (var i = 0; i < 3; i++)
+            {
+                db.HashSet($"emptied{i}", [new HashEntry("field1", "value1")]);
+                db.HashSet($"partial{i}", [new HashEntry("field1", "value1"), new HashEntry("field2", "value2")]);
+            }
+
+            var deadline = MemberExpiry.Imminent();
+            for (var i = 0; i < 3; i++)
+            {
+                db.Execute("HPEXPIREAT", $"emptied{i}", deadline, "FIELDS", "1", "field1");
+                db.Execute("HPEXPIREAT", $"partial{i}", deadline, "FIELDS", "1", "field1");
+            }
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("HCOLLECT", "emptied0", "partial0"));
+            ClassicAssert.IsFalse(db.KeyExists("emptied0"));
+            ClassicAssert.AreEqual(1, db.HashLength("partial0"));
+            ClassicAssert.AreEqual("value2", (string)db.HashGet("partial0", "field2"));
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("HCOLLECT", "*"));
+            for (var i = 1; i < 3; i++)
+            {
+                ClassicAssert.IsFalse(db.KeyExists($"emptied{i}"));
+                ClassicAssert.AreEqual(1, db.HashLength($"partial{i}"));
+                ClassicAssert.AreEqual("value2", (string)db.HashGet($"partial{i}", "field2"));
+            }
+        }
+
+        [Test]
+        public async Task HashCollectRemovesEmptiedKeyAfterWrongTypeKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.StringSet("mystring", "value");
+            db.HashSet("myhash", [new HashEntry("field1", "value1")]);
+
+            var deadline = MemberExpiry.Imminent();
+            db.Execute("HPEXPIREAT", "myhash", deadline, "FIELDS", "1", "field1");
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("HCOLLECT", "mystring", "myhash"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE), ex.Message);
+            ClassicAssert.IsFalse(db.KeyExists("myhash"));
         }
 
         [Test]
