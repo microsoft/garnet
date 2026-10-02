@@ -84,7 +84,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | Client-advertised IP address. Also used by peers unless ClusterAddress is set. |
 | **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Client-advertised hostname. |
 | **ClusterAddress** | ```--cluster-address``` | ```string``` | Concrete IP address in v4/v6 format | Peer IP address override. Null uses the client-advertised IP address. Does not change listener bindings. |
-| **ClusterPort** | ```--cluster-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Peer port override. Zero uses the client-advertised port. Does not change listener bindings. |
+| **ClusterPort** | ```--cluster-port``` | ```int``` | Integer in range:<br/>[1, 65535] | Peer port override. An unset value uses the client-advertised port. Does not change listener bindings. |
 | **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | ip, hostname, unknown | Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown) |
 | **LogMemorySize** | ```-m```<br/>```--memory``` | ```string``` | Memory size | Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2 |
 | **PageSize** | ```-p```<br/>```--page``` | ```string``` | Memory size | Size of each main-log page in bytes (rounds down to power of 2; minimum 512). |
@@ -297,8 +297,6 @@ Each unset peer setting inherits the corresponding client-advertised value. Goss
 replication, failover, cluster publish, and migration connections use the peer endpoint.
 `CLUSTER MEET` must target a reachable peer endpoint. `MIGRATE` accepts a known peer endpoint
 or client-advertised address or hostname and port, then connects through the peer endpoint.
-The synthetic bus port in `CLUSTER NODES` remains the client-advertised port plus 10000.
-Garnet does not open a listener on that port.
 
 For example, these arguments advertise a translated client endpoint for a private listener:
 
@@ -319,10 +317,9 @@ endpoints. Removing a peer override restores inheritance from the client endpoin
 
 Garnet 3.0.0 enables cluster configuration format version two for outbound gossip and introduces
 separate peer endpoints. Existing clusters running a version earlier than 2.2.0 must first upgrade
-every node to Garnet 2.2.0 while keeping the existing endpoints. Garnet 2.2.0 can read both format
-versions while continuing to send version one. Only after every node runs Garnet 2.2.0 may the
-cluster be upgraded to Garnet 3.0.0 and the new peer endpoint settings be configured. A direct
-rolling upgrade from a version earlier than 2.2.0 to 3.0.0 is not supported.
+every node to Garnet 2.2.0 while keeping the existing endpoints. Only after every node runs Garnet
+2.2.0 may the cluster be upgraded to Garnet 3.0.0 and the new peer endpoint settings be configured.
+A direct rolling upgrade from a version earlier than 2.2.0 to 3.0.0 is not supported.
 
 Garnet 2.2.0 and 3.0.0 persist cluster configuration in format version two. After `nodes.conf`
 has been rewritten, the node cannot be rolled back to a version earlier than 2.2.0 that only

@@ -96,9 +96,9 @@ namespace Garnet.test
         {
             Assert.That(ServerSettingsManager.TryParseCommandLineArguments([], out var defaults, out _, out _, out _, silentMode: true), Is.True);
             Assert.That(defaults.ClusterAddress, Is.Null);
-            Assert.That(defaults.ClusterPort, Is.Zero);
+            Assert.That(defaults.ClusterPort, Is.Null);
             Assert.That(defaults.GetServerOptions().ClusterAddress, Is.Null);
-            Assert.That(defaults.GetServerOptions().ClusterPort, Is.Zero);
+            Assert.That(defaults.GetServerOptions().ClusterPort, Is.Null);
 
             string[] args = ["--bind", "127.0.0.1", "--port", "6379",
                 "--cluster-announce-ip", "203.0.113.1", "--cluster-announce-port", "17001",
@@ -126,6 +126,7 @@ namespace Garnet.test
         [TestCase("--cluster-address", "0.0.0.0")]
         [TestCase("--cluster-address", "::")]
         [TestCase("--cluster-port", "-1")]
+        [TestCase("--cluster-port", "0")]
         [TestCase("--cluster-port", "65536")]
         public void InvalidClusterPeerEndpointOptions(string name, string value)
         {

@@ -35,9 +35,9 @@ namespace Garnet.server
         public string ClusterAddress { get; set; }
 
         /// <summary>
-        /// Peer port override. Zero uses the client-advertised port.
+        /// Peer port override. Null uses the client-advertised port.
         /// </summary>
-        public int ClusterPort { get; set; }
+        public int? ClusterPort { get; set; }
 
         /// <summary>
         /// Cluster Preferred Endpoint Type

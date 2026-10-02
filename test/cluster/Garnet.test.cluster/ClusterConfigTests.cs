@@ -600,7 +600,7 @@ namespace Garnet.test.cluster
             Assert.That(worker.ClusterPort, Is.EqualTo(7001));
 
             context.nodeOptions[0].ClusterAddress = null;
-            context.nodeOptions[0].ClusterPort = 0;
+            context.nodeOptions[0].ClusterPort = null;
             context.RestartNode(0);
             context.CreateConnection();
             worker = ReadLiveConfig(0).GetWorkerFromNodeId(nodeId);
@@ -695,10 +695,10 @@ namespace Garnet.test.cluster
             }
         }
 
-        [TestCase(null, 0, "203.0.113.1", 17001)]
-        [TestCase("127.0.0.2", 0, "127.0.0.2", 17001)]
+        [TestCase(null, null, "203.0.113.1", 17001)]
+        [TestCase("127.0.0.2", null, "127.0.0.2", 17001)]
         [TestCase(null, 7001, "203.0.113.1", 7001)]
-        public void ClusterPeerOverridesDefaultIndependentlyTest(string address, int port, string expectedAddress, int expectedPort)
+        public void ClusterPeerOverridesDefaultIndependentlyTest(string address, int? port, string expectedAddress, int expectedPort)
         {
             context.CreateInstances(1);
             context.nodeOptions[0].ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Parse("203.0.113.1"), 17001);

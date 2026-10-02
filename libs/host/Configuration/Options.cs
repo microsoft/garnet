@@ -60,9 +60,9 @@ namespace Garnet
         [Option("cluster-address", Required = false, HelpText = "IP address advertised for peer connections. Defaults to the client-advertised IP address.")]
         public string ClusterAddress { get; set; }
 
-        [IntRangeValidation(0, 65535)]
-        [Option("cluster-port", Required = false, HelpText = "Port advertised for peer connections. Zero uses the client-advertised port.")]
-        public int ClusterPort { get; set; }
+        [IntRangeValidation(1, 65535, isRequired: false)]
+        [Option("cluster-port", Required = false, HelpText = "Port advertised for peer connections. Defaults to the client-advertised port.")]
+        public int? ClusterPort { get; set; }
 
         [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown)")]
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }

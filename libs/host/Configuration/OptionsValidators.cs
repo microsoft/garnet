@@ -87,9 +87,13 @@ namespace Garnet
 
             if (!IsRequired)
             {
+                Type propertyType = validationContext.MemberName == null
+                    ? null
+                    : validationContext.ObjectType.GetProperty(validationContext.MemberName)?.PropertyType;
+                bool isNullableValueType = propertyType != null && Nullable.GetUnderlyingType(propertyType) != null;
                 var isDefaultValue =
-                    (value == null && !typeof(T).IsValueType) ||
-                    (value?.Equals(GetDefault(typeof(T))) ?? false) ||
+                    value == null ||
+                    (!isNullableValueType && (value?.Equals(GetDefault(typeof(T))) ?? false)) ||
                     (value is string strVal && string.IsNullOrEmpty(strVal));
 
                 if (isDefaultValue)
