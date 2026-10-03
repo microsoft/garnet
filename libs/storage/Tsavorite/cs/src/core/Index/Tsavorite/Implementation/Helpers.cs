@@ -217,7 +217,9 @@ namespace Tsavorite.core
             // (We no longer need to guard the read-cache prefix boundary here: with the latch-free design nothing
             // consumes the boundary after FindInReadCache - the update detaches and the promotion head-inserts via the
             // hash-entry CAS, which itself fails if the prefix was concurrently evicted and the head changed.)
-            return !(stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress);
+            // A readcache source keeps the readcache bit set in its LogicalAddress, so it must be compared to the
+            // readcache HeadAddress in absolute form; AbsoluteAddress is a no-op for a main-log source.
+            return !(stackCtx.recSrc.HasInMemorySrc && AbsoluteAddress(stackCtx.recSrc.LogicalAddress) < stackCtx.recSrc.AllocatorBase.HeadAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
