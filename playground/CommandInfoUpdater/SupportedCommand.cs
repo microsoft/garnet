@@ -255,6 +255,7 @@ namespace CommandInfoUpdater
                 new("PUBSUB|NUMSUB", RespCommand.PUBSUB_NUMSUB),
             ]),
             new("PUNSUBSCRIBE", RespCommand.PUNSUBSCRIBE),
+            new("COPY", RespCommand.COPY, StoreType.All),
             new("REGISTERCS", RespCommand.REGISTERCS),
             new("QUIT", RespCommand.QUIT),
             new("READONLY", RespCommand.READONLY),

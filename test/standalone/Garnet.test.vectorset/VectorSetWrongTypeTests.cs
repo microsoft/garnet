@@ -34,6 +34,23 @@ namespace Garnet.test
 
         private static KeyType[] NonVectorSetKeyTypes { get; } = [.. Enum.GetValues<KeyType>().Except([KeyType.VectorSet])];
 
+        [Test]
+        public void COPYAsync()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const string source = "copy-vector-source";
+            const string destination = "copy-vector-destination";
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", source, "VALUES", "3", "1", "2", "3", "item"));
+            db.StringSet(destination, "keep");
+
+            var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("COPY", source, destination, "REPLACE"));
+
+            ClassicAssert.AreEqual("ERR COPY does not support Vector Sets or Range Indexes", exception.Message);
+            ClassicAssert.AreEqual(1, (long)db.Execute("VCARD", source));
+            ClassicAssert.AreEqual("keep", (string)db.StringGet(destination));
+        }
+
         GarnetServer server;
 
         [SetUp]

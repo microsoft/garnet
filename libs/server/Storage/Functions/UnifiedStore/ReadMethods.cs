@@ -41,6 +41,8 @@ namespace Garnet.server
                 RespCommand.EXPIRETIME or
                 RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref output, cmd == RespCommand.PEXPIRETIME),
                 RespCommand.RENAME => HandleRename(in srcLogRecord, ref output),
+                // The reader exposes a remapped record view; InitialWriter deep-serializes COPY object values before storing them.
+                RespCommand.COPY => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
         }

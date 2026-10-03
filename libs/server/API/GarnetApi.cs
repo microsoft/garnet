@@ -174,6 +174,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result)
             => storageSession.RENAMENX(oldKey, newKey, out result);
+
+        /// <inheritdoc />
+        public GarnetStatus COPY(PinnedSpanByte source, PinnedSpanByte destination, bool replace, out int result)
+            => storageSession.COPY(source, destination, replace, out result);
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
