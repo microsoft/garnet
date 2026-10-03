@@ -243,6 +243,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NOSUCHKEY => "ERR no such key"u8;
         public static ReadOnlySpan<byte> RESP_ERR_OBJECT_FREQ_UNSUPPORTED => "ERR OBJECT FREQ is not supported: Garnet does not track access frequency (no LFU maxmemory policy)."u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NESTED_MULTI => "ERR MULTI calls can not be nested"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_NESTED_TRANSACTION => "ERR Transaction procedures can not be nested"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_EXEC_WO_MULTI => "ERR EXEC without MULTI"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_DISCARD_WO_MULTI => "ERR DISCARD without MULTI"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WATCH_IN_MULTI => "ERR WATCH inside MULTI is not allowed"u8;

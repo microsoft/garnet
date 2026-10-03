@@ -163,5 +163,13 @@ namespace Garnet.common
         /// marker or the rest of the log stops replaying.
         /// </summary>
         Transaction_Fail_After_TxnStart_Append,
+
+        /// <summary>
+        /// Fail a transaction after it has been marked as having opened its AOF group but before the
+        /// <c>TxnStart</c> marker is actually appended, standing in for an append that throws. The unwind
+        /// then emits an end marker with no matching start, which recovery must tolerate rather than fault
+        /// on -- the same shape a checkpoint truncation leaves behind.
+        /// </summary>
+        Transaction_Fail_Before_TxnStart_Append,
     }
 }

@@ -1748,7 +1748,11 @@ namespace Garnet.server
             {
                 if (asyncCompleted < asyncStarted)
                 {
-                    asyncDone = new(0);
+                    // Exchange rather than a plain store: this must be a full fence. The processor
+                    // increments the count and then reads this field, while this thread writes this field
+                    // and then re-reads the count. Let either side's store sink past its load and both can
+                    // miss the other -- the processor releasing nothing, this thread waiting on it forever.
+                    _ = Interlocked.Exchange(ref asyncDone, new(0));
                     if (dcurr > networkSender.GetResponseObjectHead())
                         Send(networkSender.GetResponseObjectHead());
                     try
@@ -1760,11 +1764,17 @@ namespace Garnet.server
                         // drain leaves this wait with nothing that can ever end it, which strands the
                         // connection -- and, when this command was reached from a resume, server shutdown
                         // behind it.
-                        while (asyncCompleted < asyncStarted && Volatile.Read(ref asyncProcessorStopped) == 0)
+                        while (Volatile.Read(ref asyncCompleted) < asyncStarted && Volatile.Read(ref asyncProcessorStopped) == 0)
                             asyncDone.Wait();
 
-                        asyncDone.Dispose();
-                        asyncDone = null;
+                        // Retracted but deliberately not disposed. A processor can have loaded the
+                        // reference already and be about to release it, and no retraction can recall a
+                        // reference that has been read -- disposing here would turn that release into an
+                        // ObjectDisposedException that faults the processor and kills a healthy connection.
+                        // Nothing is leaked by letting it go: the only unmanaged resource a SemaphoreSlim
+                        // holds is the wait handle behind AvailableWaitHandle, which nothing here ever asks
+                        // for, so collection is the whole of its cleanup.
+                        _ = Interlocked.Exchange(ref asyncDone, null);
                     }
                     finally
                     {

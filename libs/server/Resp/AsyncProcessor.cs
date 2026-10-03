@@ -67,7 +67,10 @@ namespace Garnet.server
                     SendAndReset();
             }
 
-            if (++asyncStarted == 1) // first async operation on the session, create the IO continuation processor
+            // Interlocked because the processor loop below reads this concurrently: the auto-reset event
+            // that notifies it coalesces, so a signal raised for an earlier operation can be the one the
+            // processor consumes, and it must see this count rather than a cached one when it wakes.
+            if (Interlocked.Increment(ref asyncStarted) == 1) // first async operation on the session, create the IO continuation processor
             {
                 asyncWaiterCancel = new();
                 asyncWaiter = new()
@@ -100,7 +103,7 @@ namespace Garnet.server
             {
                 while (!asyncWaiterCancel.Token.IsCancellationRequested)
                 {
-                    while (asyncCompleted < asyncStarted)
+                    while (asyncCompleted < Volatile.Read(ref asyncStarted))
                     {
                         // First complete all pending ops
                         storageApi.GET_CompletePending(out var completedOutputs, true);
@@ -118,8 +121,11 @@ namespace Garnet.server
                                 // Send async replies with completed outputs
                                 while (completedOutputs.Next())
                                 {
-                                    // This is the only thread that updates asyncCompleted so we do not need atomics here
-                                    asyncCompleted++;
+                                    // This is the only thread that updates asyncCompleted, so the atomic is not
+                                    // for mutual exclusion -- it is the fence that orders this store ahead of the
+                                    // asyncDone read below, so a barrier that has just published its semaphore
+                                    // cannot be missed by this thread and left waiting on a count already reached.
+                                    Interlocked.Increment(ref asyncCompleted);
                                     var o = completedOutputs.Current.Output;
 
                                     // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
@@ -152,8 +158,10 @@ namespace Garnet.server
                         }
                     }
 
-                    // Let ongoing barrier command know that all async operations are done
-                    asyncDone?.Release();
+                    // Let ongoing barrier command know that all async operations are done. Read through a
+                    // fence: a barrier publishes the semaphore and only then re-tests the count, so a stale
+                    // null here would drop the only wake-up it will ever get.
+                    Volatile.Read(ref asyncDone)?.Release();
 
                     // Wait for next async operation
                     // We do not need to cancel the wait - it should get garbage collected when the session ends
@@ -201,7 +209,7 @@ namespace Garnet.server
                     Interlocked.Exchange(ref asyncProcessorStopped, 1);
 
                     // Let an ongoing barrier command know that no further async operations will complete.
-                    asyncDone?.Release();
+                    Volatile.Read(ref asyncDone)?.Release();
                 }
             }
         }

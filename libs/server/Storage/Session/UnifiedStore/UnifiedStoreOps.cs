@@ -284,8 +284,6 @@ namespace Garnet.server
             var oldKey = oldKeySlice;
             var newKey = newKeySlice;
 
-            var abortTransaction = false;
-
             var output = new UnifiedOutput();
             try
             {
@@ -301,7 +299,6 @@ namespace Garnet.server
                 if (isNX && newExists)
                 {
                     result = 0;             // This is the "oldkey was found" return
-                    abortTransaction = true;
                     return GarnetStatus.OK;
                 }
 
@@ -324,7 +321,6 @@ namespace Garnet.server
                 status = GET(oldKey, ref input, ref output, ref context);
                 if (status != GarnetStatus.OK)
                 {
-                    abortTransaction = true;
                     return status;
                 }
 
@@ -388,10 +384,10 @@ namespace Garnet.server
             {
                 if (createTransaction)
                 {
-                    if (abortTransaction)
-                        txnManager.Reset();
-                    else
-                        txnManager.Commit(true);
+                    // Commit on both exits. The abort exits do no writes, so the group is empty, but it was
+                    // still opened by a TxnStart and replay attributes every later record to an unterminated
+                    // group. Releasing with Reset clears the open-group flag without writing the marker.
+                    txnManager.Commit(true);
                 }
                 output.Dispose();
             }
