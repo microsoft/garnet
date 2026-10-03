@@ -62,22 +62,37 @@ namespace Garnet.server
                 var origReadHead = endReadHead;
                 endReadHead = txnManager.txnStartHead;
 
-                if (clusterSession != null)
+                bool startTxn;
+                try
                 {
-                    txnManager.GetSlotVerificationInput(recvBufferPtr, SessionAsking, out var clusterSlotVerificationInput);
-
-                    if (txnManager.txnKeysParseState.Count > 0 &&
-                        clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))
+                    if (clusterSession != null)
                     {
-                        logger?.LogWarning("Failed CheckClusterTxnKeys");
-                        txnManager.Reset(false);
-                        txnManager.watchContainer.Reset();
-                        endReadHead = origReadHead;
-                        return true;
-                    }
-                }
+                        txnManager.GetSlotVerificationInput(recvBufferPtr, SessionAsking, out var clusterSlotVerificationInput);
 
-                var startTxn = txnManager.Run();
+                        if (txnManager.txnKeysParseState.Count > 0 &&
+                            clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))
+                        {
+                            logger?.LogWarning("Failed CheckClusterTxnKeys");
+                            txnManager.Reset(false);
+                            txnManager.watchContainer.Reset();
+                            endReadHead = origReadHead;
+                            return true;
+                        }
+                    }
+
+                    startTxn = txnManager.Run();
+                }
+                catch
+                {
+                    // The rewind above is what makes the queued commands run: it points endReadHead back at
+                    // the first of them, and the assignment after dispatch turns that into readHead. If this
+                    // unwinds instead, a session that survives the error does the same assignment from its
+                    // error handler, and the queued commands run one at a time as ordinary commands -- after
+                    // EXEC has already failed, against no transaction, with their replies going to a client
+                    // that is not expecting them. Put the cursor back on EXEC's own boundary first.
+                    endReadHead = origReadHead;
+                    throw;
+                }
 
                 if (startTxn)
                 {

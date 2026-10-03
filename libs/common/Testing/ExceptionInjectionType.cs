@@ -156,5 +156,12 @@ namespace Garnet.common
         /// leave the session parked on an operation that can never be started.
         /// </summary>
         Session_Fail_Batch_Cleanup,
+        /// <summary>
+        /// Fail a transaction immediately after its <c>TxnStart</c> marker has been appended to the AOF and
+        /// before the manager reaches <c>TxnState.Running</c>. Exercises the unwind of a transaction whose
+        /// group is already open in the log but which never became running, which must still append an end
+        /// marker or the rest of the log stops replaying.
+        /// </summary>
+        Transaction_Fail_After_TxnStart_Append,
     }
 }

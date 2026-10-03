@@ -220,6 +220,7 @@ namespace Garnet.common
             }
             DisposeImpl();
             e.Dispose();
+            NoteParkedReceiveStateReclaimed();
         }
 
         void RecvEventArgCompletedWithTLS(object sender, SocketAsyncEventArgs e) =>
@@ -231,11 +232,22 @@ namespace Garnet.common
         /// <inheritdoc />
         public bool CanParkSession => TransportSupportsParking;
 
+#if DEBUG
+        /// <summary>
+        /// Whether this connection ever parked. Gates the reclamation count so that it follows parks rather
+        /// than connections; see <see cref="NoteParkedReceiveStateReclaimed"/>.
+        /// </summary>
+        bool everParked;
+#endif
+
         /// <inheritdoc />
         public void ParkSession()
         {
             parkRendezvous = 0;
             sessionParked = true;
+#if DEBUG
+            everParked = true;
+#endif
         }
 
         /// <inheritdoc />
@@ -328,26 +340,33 @@ namespace Garnet.common
         void ScheduleResume() => ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
 
         /// <summary>
-        /// Records that a park's receive state -- the accept socket and the pinned receive buffer -- was
-        /// taken back off the handler by a resume.
+        /// Records that the receive state of a connection that parked -- the accept socket and the pinned
+        /// receive buffer -- was released.
         /// </summary>
         /// <remarks>
         /// <para>
-        /// The counterpart to the release <see cref="ClosePark"/> stands in for. An abandoned park that
-        /// never rendezvous never schedules the resume that reaches here, so a count that stops short of the
-        /// number of parks torn down is the strand itself, observed rather than inferred.
+        /// The counterpart to the release <see cref="ClosePark"/> stands in for. A park whose rendezvous
+        /// never completes holds its <see cref="SocketAsyncEventArgs"/> for the life of the process, and
+        /// nothing else can see it: the connection is already off the server's books, and the buffer is
+        /// still checked out of the pool. A count that stops short of the number of parks torn down is that
+        /// strand, observed rather than inferred.
         /// </para>
         /// <para>
-        /// Counted at the handoff rather than at each disposal, because the resume can release the state
-        /// through several routes: the two teardown checks around the resume body, the receive loop it
-        /// re-enters when a read completes synchronously, and that loop's failure handler. Counting them
-        /// individually makes the total depend on which route a given teardown happens to take. Once the
-        /// field has been read and cleared the state is on this frame and the park cannot strand it, which
-        /// is the property being counted.
+        /// Counted from the single disposal helper rather than from the resume, because the release does
+        /// not always go through a resume. When the read a session parks in completed synchronously, a
+        /// failure in that batch's cleanup unwinds straight into the receive loop's own handler, which
+        /// disposes the state before any resume is scheduled. Counting inside the resume misses that route
+        /// entirely and makes the total depend on how the kernel happened to complete the read.
         /// </para>
         /// </remarks>
         [Conditional("DEBUG")]
-        static void NoteParkedReceiveStateReclaimed() => ParkDiagnostics.NoteReceiveStateReclaimed();
+        void NoteParkedReceiveStateReclaimed()
+        {
+#if DEBUG
+            if (everParked)
+                ParkDiagnostics.NoteReceiveStateReclaimed();
+#endif
+        }
 
         /// <summary>
         /// Runs the resume for a session whose blocking operation has finished. Queued as a work item rather
@@ -366,7 +385,6 @@ namespace Garnet.common
 
             var e = parkedReceiveArgs;
             parkedReceiveArgs = null;
-            NoteParkedReceiveStateReclaimed();
 
             // Claim the connection before reading its teardown state, so teardown either observes this and
             // leaves reclamation to us, or completes first and is observed below. Either way nothing is
@@ -460,7 +478,6 @@ namespace Garnet.common
         {
             var e = parkedReceiveArgs;
             parkedReceiveArgs = null;
-            NoteParkedReceiveStateReclaimed();
 
             AcquireResumeLease();
             var leaseHeld = true;

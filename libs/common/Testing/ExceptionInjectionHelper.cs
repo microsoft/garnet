@@ -116,6 +116,25 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Trigger an exception scenario that the session is expected to report and survive, rather than
+        /// close the connection over. Use this where the point of the injection is what the session does
+        /// after the failure, which a disposed session never gets to show.
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <exception cref="GarnetException"></exception>
+        [Conditional("DEBUG")]
+        public static void TriggerRecoverableException(ExceptionInjectionType exceptionType)
+        {
+            if (exceptionType == ExceptionInjectionType.None)
+            {
+                return;
+            }
+
+            if (ExceptionInjectionTypes[(int)exceptionType])
+                throw new GarnetException($"Exception injection triggered {exceptionType}", disposeSession: false);
+        }
+
+        /// <summary>
         /// Trigger condition and reset it
         /// </summary>
         /// <param name="exceptionType"></param>

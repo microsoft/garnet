@@ -152,6 +152,7 @@ namespace Garnet.test
                 disableObjects: disableObjects,
                 externalLoggerFactory: luaTxnLoggerFactory,
                 endpoints: [luaEndPoint]);
+
             luaTxnServer.Start();
             return luaEndPoint;
         }
@@ -931,8 +932,15 @@ namespace Garnet.test
 
             var endPoint = StartTlsServer();
 
-            using var prober = new RawRespClient(endPoint, useTls: true);
-            var baseline = ConnectedClients(prober);
+            // The injection is process-wide and fires from batch cleanup, which runs on the server's thread
+            // after the reply has been written. A connection held open across the window can therefore have
+            // its own cleanup hit even while it is idle -- the client has already read its reply and moved
+            // on. So the baseline is taken through a prober that is then closed, and the result is read
+            // through a second one opened after the window. Both samples are taken with exactly one prober
+            // connected, so they are comparable; the poll below is what waits for the first to go away.
+            int baseline;
+            using (var baseliner = new RawRespClient(endPoint, useTls: true))
+                baseline = ConnectedClients(baseliner);
 
             ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Session_Fail_Batch_Cleanup);
             try
@@ -952,16 +960,18 @@ namespace Garnet.test
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Session_Fail_Batch_Cleanup);
             }
 
+            using var prober = new RawRespClient(endPoint, useTls: true);
+
             // Reclamation is asynchronous -- the park's resume is queued, not run inline -- so poll rather
             // than sampling once. A stranded park never completes, so this expires rather than racing.
-            var observed = baseline;
-            for (var attempt = 0; attempt < 100 && observed > baseline; attempt++)
+            var observed = ConnectedClients(prober);
+            for (var attempt = 0; attempt < 100 && observed != baseline; attempt++)
             {
                 Thread.Sleep(100);
                 observed = ConnectedClients(prober);
             }
 
-            ClassicAssert.AreEqual(baseline, ConnectedClients(prober),
+            ClassicAssert.AreEqual(baseline, observed,
                 "Connections whose batch cleanup failed were never reclaimed");
         }
 
@@ -3124,6 +3134,101 @@ namespace Garnet.test
             ClassicAssert.AreEqual("v", reader.ReadBulkString(),
                 "The write that the abandoned transaction completed before the failure was not replayed. "
                 + "EXEC applied it and acknowledged it, so recovery must reproduce it.");
+        }
+
+        /// <summary>
+        /// A transaction that fails while starting must not leave its queued commands to be run one at a
+        /// time as ordinary commands, and must close the AOF group it already opened.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <c>EXEC</c> runs the queued commands by rewinding the parse cursor to the first of them and
+        /// letting the dispatch loop re-read the buffer. The rewind happens before the transaction is
+        /// started, so a failure in between leaves the cursor pointing backwards at commands that EXEC has
+        /// just declined to run. The session's error handler then puts the read head on that cursor, and
+        /// the queued commands execute outside any transaction, after the client was told EXEC failed.
+        /// Recovery is where it shows: the replayed log contains a write the client never had applied.
+        /// </para>
+        /// <para>
+        /// The same unwind also has to close the AOF group, because <c>Run</c> appends <c>TxnStart</c>
+        /// several statements before it records itself as running. Keying the end marker off the running
+        /// state misses this window, and the group it leaves open swallows everything the same session
+        /// appends afterwards: on replay those records are buffered into a transaction that never commits
+        /// and then dropped, and the session's next real <c>TxnStart</c> fails replay outright with "No
+        /// nested transactions expected".
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ATransactionFailingRightAfterItsTxnStartTerminatesItsAofGroup()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var endPoint = StartAofNoObjectsServer(tryRecover: false);
+
+            using (var victim = new RawRespClient(endPoint))
+            {
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Transaction_Fail_After_TxnStart_Append);
+                try
+                {
+                    victim.Send(RawRespClient.Command("MULTI"));
+                    ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+                    victim.Send(RawRespClient.Command("SET", "aof-start-only-inside", "v"));
+                    ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+                    // Read the reply before releasing the injection, so the injection is still enabled by
+                    // the time EXEC reaches the append.
+                    victim.Send(RawRespClient.Command("EXEC"));
+                    var reply = victim.ReadLine();
+                    ClassicAssert.IsTrue(reply.StartsWith("-ERR Garnet Exception: Exception injection", StringComparison.Ordinal),
+                        $"EXEC did not fail at the injected point, so nothing exercised the unwind: {reply}");
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Transaction_Fail_After_TxnStart_Append);
+                }
+
+                // The same connection, deliberately. Replay groups records by the session id its markers
+                // carry, and ids are handed out monotonically, so a group left open by a dead session can
+                // never be joined again within this process -- only a session that is still alive can show
+                // the damage.
+                victim.Send(RawRespClient.Command("SET", "aof-start-only-after", "survivor"));
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+                victim.Send(RawRespClient.Command("MULTI"));
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+                victim.Send(RawRespClient.Command("SET", "aof-start-only-later", "survivor"));
+                ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+                victim.Send(RawRespClient.Command("EXEC"));
+                ClassicAssert.AreEqual("*1", victim.ReadLine());
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+                victim.Send(RawRespClient.Command("COMMITAOF"));
+                ClassicAssert.AreEqual("+AOF file committed", victim.ReadLine());
+            }
+
+            var disposing = aofNoObjectsServer;
+            aofNoObjectsServer = null;
+            disposing.Dispose(false);
+
+            endPoint = StartAofNoObjectsServer(tryRecover: true);
+
+            using var reader = new RawRespClient(endPoint);
+
+            reader.Send(RawRespClient.Command("GET", "aof-start-only-inside"));
+            ClassicAssert.IsNull(reader.ReadBulkString(),
+                "A queued command was replayed even though the transaction failed before running any of "
+                + "them, so EXEC left the parse cursor rewound onto its own queued commands and the "
+                + "session ran them as ordinary commands after reporting EXEC as failed.");
+
+            reader.Send(RawRespClient.Command("GET", "aof-start-only-after"));
+            ClassicAssert.AreEqual("survivor", reader.ReadBulkString(),
+                "A write appended after a transaction that failed right after its TxnStart did not survive "
+                + "recovery.");
+
+            reader.Send(RawRespClient.Command("GET", "aof-start-only-later"));
+            ClassicAssert.AreEqual("survivor", reader.ReadBulkString(),
+                "A later transaction did not survive recovery.");
         }
 
         /// <summary>
