@@ -129,15 +129,27 @@ namespace Garnet.server
                 // TCP Initialization & Port Reuse
                 listenSocket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-                // Set reuse BEFORE Bind to handle TIME_WAIT states.
-                listenSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                if (OperatingSystem.IsWindows())
+                {
+                    // Windows SO_REUSEADDR is permissive: it lets a socket bind an address and port that
+                    // another socket already holds, so two live servers would both bind successfully and
+                    // the OS would split incoming connections between them. SO_EXCLUSIVEADDRUSE is the
+                    // option that refuses the second bind, which is what makes a port conflict surface as
+                    // a bind failure rather than as two servers answering for one port.
+                    listenSocket.ExclusiveAddressUse = true;
+                }
+                else
+                {
+                    // Set reuse BEFORE Bind to handle TIME_WAIT states.
+                    listenSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
 
-                // On Unix, .NET's ReuseAddress sets both SO_REUSEADDR and SO_REUSEPORT.
-                // Keep address reuse for restarts, but do not let two live servers share a port.
-                if (OperatingSystem.IsLinux())
-                    listenSocket.SetRawSocketOption(1 /* SOL_SOCKET */, 15 /* SO_REUSEPORT */, BitConverter.GetBytes(0));
-                else if (OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD())
-                    listenSocket.SetRawSocketOption(0xffff /* SOL_SOCKET */, 0x0200 /* SO_REUSEPORT */, BitConverter.GetBytes(0));
+                    // On Unix, .NET's ReuseAddress sets both SO_REUSEADDR and SO_REUSEPORT.
+                    // Keep address reuse for restarts, but do not let two live servers share a port.
+                    if (OperatingSystem.IsLinux())
+                        listenSocket.SetRawSocketOption(1 /* SOL_SOCKET */, 15 /* SO_REUSEPORT */, BitConverter.GetBytes(0));
+                    else if (OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD())
+                        listenSocket.SetRawSocketOption(0xffff /* SOL_SOCKET */, 0x0200 /* SO_REUSEPORT */, BitConverter.GetBytes(0));
+                }
             }
 
             acceptEventArg = new SocketAsyncEventArgs();
@@ -194,7 +206,15 @@ namespace Garnet.server
         /// </summary>
         public override void Start()
         {
-            listenSocket.Bind(EndPoint);
+            try
+            {
+                listenSocket.Bind(EndPoint);
+            }
+            catch (SocketException e)
+            {
+                throw new GarnetException(DescribeBindFailure(e), e);
+            }
+
             if (EndPoint is UnixDomainSocketEndPoint && unixSocketPermission != default && !OperatingSystem.IsWindows())
             {
                 File.SetUnixFileMode(unixSocketPath, unixSocketPermission);
@@ -203,6 +223,34 @@ namespace Garnet.server
             listenSocket.Listen(512);
             if (!listenSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
+        }
+
+        /// <summary>
+        /// Explains a failed bind in terms of the endpoint and the operating system's reason for refusing it.
+        /// The raw <see cref="SocketException"/> names neither, and the two common causes call for opposite
+        /// responses: a port already serving something has to be freed, while a refused port is usually one the
+        /// platform has reserved and has to be avoided.
+        /// </summary>
+        /// <param name="exception">The failure reported by <see cref="Socket.Bind"/>.</param>
+        /// <returns>A message naming the endpoint and the likely cause.</returns>
+        private string DescribeBindFailure(SocketException exception)
+        {
+            var cause = exception.SocketErrorCode switch
+            {
+                SocketError.AddressAlreadyInUse =>
+                    "Another process is already listening there. Identify it with " +
+                    "'Get-NetTCPConnection -LocalPort <port>' on Windows or 'ss -ltnp' on Linux, and stop it by " +
+                    "process id.",
+                SocketError.AccessDenied =>
+                    "The operating system refused the port. On Windows this is usually a range excluded by " +
+                    "Hyper-V, WSL, or Docker, which 'netsh int ipv4 show excludedportrange tcp' lists; on Linux " +
+                    "a port below 1024 requires elevated privilege.",
+                SocketError.AddressNotAvailable =>
+                    "The address is not present on this machine, so nothing can bind it.",
+                _ => "See the inner exception for the operating system error.",
+            };
+
+            return $"Could not bind {EndPoint} ({exception.SocketErrorCode}). {cause}";
         }
 
         private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)

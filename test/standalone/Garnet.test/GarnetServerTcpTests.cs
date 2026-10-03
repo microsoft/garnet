@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -43,8 +44,6 @@ namespace Garnet.test
 
         static IPEndPoint GetEndPoint(bool ipv6)
         {
-            if (OperatingSystem.IsWindows())
-                Assert.Ignore("Tests Unix listener reuse semantics.");
             if (ipv6 && !Socket.OSSupportsIPv6)
                 Assert.Ignore("IPv6 is unavailable.");
 
@@ -60,8 +59,14 @@ namespace Garnet.test
             using var second = new GarnetServerTcp(endpoint);
             first.Start();
 
-            var exception = Assert.Throws<SocketException>(() => second.Start());
-            Assert.That(exception.SocketErrorCode, Is.EqualTo(SocketError.AddressAlreadyInUse));
+            var exception = Assert.Throws<GarnetException>(() => second.Start());
+            Assert.That(exception.InnerException, Is.TypeOf<SocketException>());
+            Assert.That(((SocketException)exception.InnerException).SocketErrorCode,
+                Is.EqualTo(SocketError.AddressAlreadyInUse));
+
+            // The endpoint has to appear in the message: a bind failure that names no port leaves the reader
+            // unable to tell a port conflict from any other startup fault.
+            Assert.That(exception.Message, Does.Contain(endpoint.Port.ToString()));
         }
 
         [TestCase(false)]
