@@ -289,6 +289,18 @@ namespace Garnet.server
 
                         continue;
                     }
+                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL2_I8"u8, allowNonAlphabeticChars: true))
+                    {
+                        if (quantType != null)
+                        {
+                            return AbortWithErrorMessage("Quantization specified multiple times");
+                        }
+
+                        quantType = VectorQuantType.XSpherical2_I8;
+                        curIx++;
+
+                        continue;
+                    }
                     else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true))
                     {
                         if (quantType != null)
@@ -432,11 +444,16 @@ namespace Garnet.server
                 numLinks ??= 16;
                 distanceMetric ??= VectorDistanceMetricType.L2;
 
+                if (quantType == VectorQuantType.XSpherical2_I8 && !NativeDiskANNMethods.SupportsSpherical2I8)
+                {
+                    return AbortWithErrorMessage("ERR XSPHERICAL2_I8 requires a native diskann-garnet library with spherical 2-bit support");
+                }
+
                 // We need to reject these HERE because validation during create_index is very awkward
                 GarnetStatus res;
                 VectorManagerResult result;
                 ReadOnlySpan<byte> customErrMsg;
-                if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 && reduceDim != 0)
+                if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XSpherical2_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 && reduceDim != 0)
                 {
                     result = VectorManagerResult.BadParams;
                     res = GarnetStatus.OK;
@@ -523,7 +540,7 @@ namespace Garnet.server
             const int DefaultIdSize = sizeof(ulong);
             const int DefaultAttributeSize = 32;
 
-            // VSIM key (ELE | FP32 | XB8 | VALUES num) (vector | element) [WITHSCORES] [WITHATTRIBS] [COUNT num] [EPSILON delta] [EF search-exploration - factor] [FILTER expression][FILTER-EF max - filtering - effort] [TRUTH][NOTHREAD]
+            // VSIM key (ELE | FP32 | XB8 | VALUES num) (vector | element) [WITHSCORES] [WITHATTRIBS] [COUNT num] [EPSILON delta] [EF search-exploration-factor] [XBEAMWIDTH n] [XRERANK n] [FILTER expression] [FILTER-EF max-filtering-effort] [TRUTH] [NOTHREAD]
             //
             // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
 
@@ -670,6 +687,8 @@ namespace Garnet.server
                 int? count = null;
                 float? delta = null;
                 int? searchExplorationFactor = null;
+                int? beamWidth = null;
+                int? rerankDepth = null;
                 PinnedSpanByte? filter = null;
                 int? maxFilteringEffort = null;
                 var truth = false;
@@ -775,6 +794,53 @@ namespace Garnet.server
                         continue;
                     }
 
+                    // Check for beam width
+                    if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("XBEAMWIDTH"u8))
+                    {
+                        if (beamWidth != null)
+                        {
+                            return AbortWithErrorMessage("XBEAMWIDTH specified multiple times");
+                        }
+
+                        curIx++;
+                        if (curIx >= parseState.Count)
+                        {
+                            return AbortWithWrongNumberOfArguments("VSIM");
+                        }
+
+                        if (!parseState.TryGetInt(curIx, out var beamWidthNonNull) || beamWidthNonNull <= 0 || beamWidthNonNull > VectorManager.MaxBeamWidth)
+                        {
+                            return AbortWithErrorMessage($"ERR XBEAMWIDTH must be an integer between 1 and {VectorManager.MaxBeamWidth}");
+                        }
+
+                        beamWidth = beamWidthNonNull;
+                        curIx++;
+                        continue;
+                    }
+
+                    if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("XRERANK"u8))
+                    {
+                        if (rerankDepth != null)
+                        {
+                            return AbortWithErrorMessage("XRERANK specified multiple times");
+                        }
+
+                        curIx++;
+                        if (curIx >= parseState.Count)
+                        {
+                            return AbortWithWrongNumberOfArguments("VSIM");
+                        }
+
+                        if (!parseState.TryGetInt(curIx, out var depth) || depth <= 0 || depth > VectorManager.MaxExplorationFactor)
+                        {
+                            return AbortWithErrorMessage($"ERR XRERANK must be an integer between 1 and {VectorManager.MaxExplorationFactor}");
+                        }
+
+                        rerankDepth = depth;
+                        curIx++;
+                        continue;
+                    }
+
                     // Check for filter
                     if (parseState.GetArgSliceByRef(curIx).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase("FILTER"u8))
                     {
@@ -859,8 +925,22 @@ namespace Garnet.server
                 count ??= 10;
                 delta ??= 2f;
                 searchExplorationFactor ??= 100;
+                beamWidth ??= VectorManager.DefaultBeamWidth;
                 filter ??= default;
                 maxFilteringEffort ??= 16;
+
+                if (rerankDepth.HasValue)
+                {
+                    if (rerankDepth.Value < count.Value || rerankDepth.Value > searchExplorationFactor.Value)
+                    {
+                        return AbortWithErrorMessage("ERR XRERANK must be between COUNT and EF");
+                    }
+
+                    if (!NativeDiskANNMethods.SupportsRerankDepth)
+                    {
+                        return AbortWithErrorMessage("ERR XRERANK requires a native diskann-garnet library with rerank support");
+                    }
+                }
 
                 // TODO: these stackallocs are dangerous, need logic to avoid stack overflow
                 Span<byte> idSpace = stackalloc byte[(DefaultResultSetSize * DefaultIdSize) + (DefaultResultSetSize * sizeof(int))];
@@ -888,17 +968,17 @@ namespace Garnet.server
                             // For large enough values we have to pay for a pin
                             fixed (byte* valuesPtr = rentedValues)
                             {
-                                res = storageApi.VectorSetValueSimilarity(key, valueType, PinnedSpanByte.FromPinnedPointer(valuesPtr, values.Length), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, out customErrMsg, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
+                                res = storageApi.VectorSetValueSimilarity(key, valueType, PinnedSpanByte.FromPinnedPointer(valuesPtr, values.Length), count.Value, delta.Value, searchExplorationFactor.Value, beamWidth.Value, rerankDepth, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, out customErrMsg, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
                             }
                         }
                         else
                         {
-                            res = storageApi.VectorSetValueSimilarity(key, valueType, PinnedSpanByte.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, out customErrMsg, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
+                            res = storageApi.VectorSetValueSimilarity(key, valueType, PinnedSpanByte.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, beamWidth.Value, rerankDepth, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, out customErrMsg, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
                         }
                     }
                     else
                     {
-                        res = storageApi.VectorSetElementSimilarity(key, element.Value, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
+                        res = storageApi.VectorSetElementSimilarity(key, element.Value, count.Value, delta.Value, searchExplorationFactor.Value, beamWidth.Value, rerankDepth, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes, ref filterBitmapResult);
                         customErrMsg = default;
                     }
 
@@ -1283,6 +1363,7 @@ namespace Garnet.server
                 //
                 // The quantization map (which is written as first element) is as:
                 //  BIN, XBIN_I8, XBIN_U8  -> bin
+                //  XSPHERICAL2_I8 -> spherical2
                 //  Q8, XNOQUANT_I8, XNOQUANT_U8 -> q8
                 //  NOQUANT -> fp32
                 //
@@ -1320,6 +1401,10 @@ namespace Garnet.server
                         else if (quantType is VectorQuantType.Q8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8)
                         {
                             WriteSimpleString("q8"u8);
+                        }
+                        else if (quantType == VectorQuantType.XSpherical2_I8)
+                        {
+                            WriteSimpleString("spherical2"u8);
                         }
                         else if (quantType == VectorQuantType.NoQuant)
                         {
@@ -1588,6 +1673,7 @@ namespace Garnet.server
                 VectorQuantType.XNoQuant_I8 => "xnoquant_i8"u8,
                 VectorQuantType.XBin_I8 => "xbin_i8"u8,
                 VectorQuantType.XBin_U8 => "xbin_u8"u8,
+                VectorQuantType.XSpherical2_I8 => "xspherical2_i8"u8,
                 _ => throw new GarnetException($"Invalid VectorQuantType: {quantType}"),
             };
 
