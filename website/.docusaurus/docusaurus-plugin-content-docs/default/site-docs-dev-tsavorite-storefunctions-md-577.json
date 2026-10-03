@@ -1,0 +1,28 @@
+{
+  "id": "dev/tsavorite/storefunctions",
+  "title": "StoreFunctions and Allocator Wrapper",
+  "description": "This section discusses both of these because they were part of a change to add two additional type args, TStoreFunctions and TAllocator, to TsavoriteKV as well as the various sessions and *Context (e.g. BasicContext). The purpose of both of these is to provide better performance by inlining calls. StoreFunctions also provides better logical design for the location of the operations that are store-level rather than session-level, as described below.",
+  "source": "@site/docs/dev/tsavorite/storefunctions.md",
+  "sourceDirName": "dev/tsavorite",
+  "slug": "/dev/tsavorite/storefunctions",
+  "permalink": "/garnet/docs/dev/tsavorite/storefunctions",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/tsavorite/storefunctions.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "storefunctions",
+    "sidebar_label": "StoreFunctions",
+    "title": "StoreFunctions and Allocator Wrapper"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Locking",
+    "permalink": "/garnet/docs/dev/tsavorite/locking"
+  },
+  "next": {
+    "title": "EpochProtection",
+    "permalink": "/garnet/docs/dev/tsavorite/epoch"
+  }
+}

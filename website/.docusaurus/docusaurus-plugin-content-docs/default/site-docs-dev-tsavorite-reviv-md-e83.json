@@ -1,0 +1,28 @@
+{
+  "id": "dev/tsavorite/reviv",
+  "title": "Revivification",
+  "description": "Revivification in Tsavorite refers to reusing (\"revivifying\") Tombstoned (deleted) records, as well as in-memory source records for RCUs done by Upsert or RMW. This minimizes log growth (and unused space) for high-delete scenarios. It is used in the following cases:",
+  "source": "@site/docs/dev/tsavorite/reviv.md",
+  "sourceDirName": "dev/tsavorite",
+  "slug": "/dev/tsavorite/reviv",
+  "permalink": "/garnet/docs/dev/tsavorite/reviv",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/tsavorite/reviv.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "reviv",
+    "sidebar_label": "Revivification",
+    "title": "Revivification"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Introduction",
+    "permalink": "/garnet/docs/dev/tsavorite/intro"
+  },
+  "next": {
+    "title": "Locking",
+    "permalink": "/garnet/docs/dev/tsavorite/locking"
+  }
+}

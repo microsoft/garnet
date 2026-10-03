@@ -1,0 +1,25 @@
+{
+  "id": "welcome/intro",
+  "title": "Welcome to Garnet",
+  "description": "Garnet is a new remote cache-store from Microsoft Research, that is designed to be extremely fast, extensible,",
+  "source": "@site/docs/welcome/intro.md",
+  "sourceDirName": "welcome",
+  "slug": "/",
+  "permalink": "/garnet/docs/",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/welcome/intro.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "intro",
+    "sidebar_label": "Intro",
+    "title": "Welcome to Garnet",
+    "slug": "/"
+  },
+  "sidebar": "garnetDocSidebar",
+  "next": {
+    "title": "News",
+    "permalink": "/garnet/docs/welcome/news"
+  }
+}
