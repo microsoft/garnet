@@ -172,7 +172,15 @@ namespace Garnet.server
             var storeVersion = await db.Store.RecoverAsync().ConfigureAwait(false);
             Logger?.LogInformation("Recovered store to version {storeVersion}", storeVersion);
 
-            db.CheckpointRecovery = new CheckpointRecoveryOutcome { StoreVersion = storeVersion };
+            // The mapping and swap epoch come back as a by-product of the recovery that just read the
+            // checkpoint metadata, so no caller needs to re-read it to find out how the store was labelled.
+            db.CheckpointRecovery = new CheckpointRecoveryOutcome
+            {
+                StoreVersion = storeVersion,
+                DatabaseMapping = db.Store.RecoveredDatabaseMapping,
+                SwapEpoch = db.Store.RecoveredSwapEpoch,
+                CheckpointVersion = db.Store.RecoveredCheckpointVersion
+            };
 
             if (storeVersion > 0)
                 db.LastSaveTime = DateTimeOffset.UtcNow;
@@ -387,6 +395,24 @@ namespace Garnet.server
 
             db.AppendOnlyFile.Log.EnqueueDatabaseCommit(entryType, version);
         }
+
+        /// <summary>
+        /// Journal a flush of a single database into that database's own AOF. Called after the flush has
+        /// been applied, so the record survives the truncation the flush performs.
+        /// </summary>
+        /// <remarks>
+        /// The record makes the flush explicit rather than implied by truncation, which only becomes
+        /// durable once committed: a crash in that window leaves the pre-flush records readable, and
+        /// replay would resurrect flushed data without a marker telling it to flush again.
+        ///
+        /// It is a no-op when the database has no AOF, which is also what keeps replay from recursing -
+        /// replay applies flushes through a clone whose databases carry no AppendOnlyFile, so a flush read
+        /// out of the log is never written back into it.
+        /// </remarks>
+        /// <param name="db">Database that was flushed</param>
+        /// <param name="unsafeTruncateLog">Whether the flush truncated the hybrid log</param>
+        protected static void EnqueueDatabaseFlush(GarnetDatabase db, bool unsafeTruncateLog)
+            => db.AppendOnlyFile?.Log.EnqueueSafeFlushAOF(AofEntryType.FlushDb, unsafeTruncateLog);
 
         /// <summary>
         /// Flush a single database
@@ -604,7 +630,9 @@ namespace Garnet.server
                 else
                 {
                     checkpointCoveredAofAddress = db.AppendOnlyFile.Log.TailAddress;
-                    StoreWrapper.StoreCheckpointManager.SetCurrentSafeAofAddress(ref checkpointCoveredAofAddress);
+                    // Record the address on this database's own checkpoint manager; StoreWrapper's
+                    // resolves to the default database's and would mislabel every other database.
+                    (db.Store.CheckpointManager as GarnetCheckpointManager)?.SetCurrentSafeAofAddress(ref checkpointCoveredAofAddress);
                 }
 
                 if (checkpointCoveredAofAddress.AnyGreater(0))

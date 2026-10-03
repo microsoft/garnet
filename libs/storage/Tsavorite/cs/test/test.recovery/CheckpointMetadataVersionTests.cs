@@ -139,8 +139,9 @@ namespace Tsavorite.test.recovery
         public void DownlevelMetadataOmitsAppendedLogGeometry()
         {
             var info = MakeInfo();
-            Assert.That(Lines(info.ToByteArray(7)), Has.Length.EqualTo(Lines(info.ToByteArray(8)).Length - 2),
-                "v8 appends exactly two lines (segmentSize, objectLogSegmentSize) relative to v7");
+            Assert.That(Lines(info.ToByteArray(7)), Has.Length.EqualTo(Lines(info.ToByteArray(8)).Length - 4),
+                "v8 appends four lines relative to v7: segmentSize and objectLogSegmentSize from the store, then the"
+                + " host-supplied databaseMapping length (zero here, so no entries follow) and swapEpoch");
         }
 
         [Test]

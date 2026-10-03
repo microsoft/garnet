@@ -13,17 +13,22 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        /// <summary>Current checkpoint version written by this build. v8 is the object-log chunk-framing format ("v2.2"), and carries the
-        /// hybrid-log <see cref="pageSize"/> and <see cref="segmentSize"/> in metadata. v7 is the only released downlevel version: it uses the
-        /// split/objectId-slot object-log encoding ("v2.1", read via <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>)
-        /// and duplicates <see cref="recoveredTailAddress"/> in the fifth address slot.</summary>
+        /// <summary>Current checkpoint version written by this build. v8 is the object-log chunk-framing format ("v2.2"); it carries the
+        /// hybrid-log <see cref="pageSize"/> and <see cref="segmentSize"/>, and the <see cref="databaseMapping"/> and <see cref="swapEpoch"/>,
+        /// in metadata. v7 is the only released downlevel version: it uses the split/objectId-slot object-log encoding ("v2.1", read via
+        /// <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>) and duplicates <see cref="recoveredTailAddress"/> in the
+        /// fifth address slot.</summary>
         public const int CheckpointVersion = 8;
 
         /// <summary>First version whose metadata carries <see cref="pageSize"/>/<see cref="segmentSize"/> instead of duplicating
         /// <see cref="recoveredTailAddress"/> in the fifth address slot.</summary>
         internal const int LogGeometryCheckpointVersion = 8;
 
-        /// <summary>Oldest checkpoint version this build can recover. Version 7 checkpoints remain readable.</summary>
+        /// <summary>
+        /// Oldest checkpoint version this build can recover. Version 7 checkpoints remain readable; they predate
+        /// <see cref="databaseMapping"/> and <see cref="swapEpoch"/>, so those fields are absent from the payload
+        /// and read back as their defaults.
+        /// </summary>
         public const int MinRecoverableCheckpointVersion = 7;
 
         /// <summary>First checkpoint version whose object log uses the chunk-framed length-hint encoding. Versions below this wrote the
@@ -31,6 +36,15 @@ namespace Tsavorite.core
         /// Recovery selects the object-log decode from the checkpoint's metadata version (threaded via <see cref="RecoveryOptions"/> and
         /// <see cref="PageAsyncFlushResult{TContext}"/>), not from a per-record position-word flag.</summary>
         internal const int ChunkFramedObjectLogCheckpointVersion = 8;
+
+        /// <summary>
+        /// First checkpoint version whose payload carries <see cref="databaseMapping"/> and
+        /// <see cref="swapEpoch"/>. Below it both read back as their defaults, which are
+        /// indistinguishable from a checkpoint that deliberately recorded the identity mapping at a
+        /// known epoch, so a recovering host must not read an older checkpoint as a statement about
+        /// either field.
+        /// </summary>
+        public const int DatabaseMappingCheckpointVersion = 8;
 
         /// <summary>Whether a checkpoint of <paramref name="checkpointVersion"/> wrote its object log in the downlevel v2.1
         /// dense/split-length encoding rather than the current chunk-framed length-hint encoding.</summary>
@@ -129,6 +143,22 @@ namespace Tsavorite.core
         public long objectLogSegmentSize;
 
         /// <summary>
+        /// Maps a host-defined storage slot to the logical database id that occupied it when this
+        /// checkpoint was taken, as <c>databaseMapping[slot] = logicalDatabaseId</c>. Null or empty
+        /// when the mapping is the identity, which is the case for any host that does not relabel
+        /// its databases. The full mapping is recorded in every database's checkpoint so that the
+        /// most recent one describes the whole permutation on its own.
+        /// </summary>
+        public int[] databaseMapping;
+
+        /// <summary>
+        /// Monotonic counter incremented by the host each time it swaps two logical databases.
+        /// Because checkpoints are taken per database, two checkpoints can carry different
+        /// <see cref="databaseMapping"/> values; the one with the highest epoch is authoritative.
+        /// </summary>
+        public long swapEpoch;
+
+        /// <summary>
         /// If struct deserialized succesfully
         /// </summary>
         public bool Deserialized { get; private set; }
@@ -152,6 +182,9 @@ namespace Tsavorite.core
             segmentSize = 0;
             objectLogSegmentSize = 0;
             headAddress = 0;
+
+            databaseMapping = null;
+            swapEpoch = 0;
 
             hlogEndObjectLogTail = new();       // Marks as "unset"
             snapshotStartObjectLogTail = new();
@@ -243,7 +276,27 @@ namespace Tsavorite.core
                 }
             }
 
-            if (checksum != ChecksumCore(addressSlotValue, segmentSize, objectLogSegmentSize))
+            // Read the database mapping. Absent at MinRecoverableCheckpointVersion, in which case the
+            // defaults set by Initialize(Guid, long) stand for "identity mapping, no swaps".
+            if (cversion > MinRecoverableCheckpointVersion)
+            {
+                value = reader.ReadLine();
+                var mappingLength = int.Parse(value);
+                if (mappingLength > 0)
+                {
+                    databaseMapping = new int[mappingLength];
+                    for (var i = 0; i < mappingLength; i++)
+                    {
+                        value = reader.ReadLine();
+                        databaseMapping[i] = int.Parse(value);
+                    }
+                }
+
+                value = reader.ReadLine();
+                swapEpoch = long.Parse(value);
+            }
+
+            if (checksum != ChecksumCore(cversion, addressSlotValue, segmentSize, objectLogSegmentSize))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
 
             Deserialized = true;
@@ -292,7 +345,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Write info to byte array in the layout of <paramref name="targetVersion"/>. Only the current version is written by
         /// production code; downlevel targets exist so compatibility tests can generate real historical metadata through this
-        /// serializer rather than relabeling current bytes with an older version number.
+        /// serializer rather than relabeling current bytes with an older version number. Writing at
+        /// <see cref="MinRecoverableCheckpointVersion"/> omits the fields that version does not carry.
         /// </summary>
         internal readonly byte[] ToByteArray(int targetVersion)
         {
@@ -311,7 +365,7 @@ namespace Tsavorite.core
                 using (StreamWriter writer = new(ms))
                 {
                     writer.WriteLine(targetVersion); // checkpoint version
-                    writer.WriteLine(ChecksumCore(addressSlotValue, trailingSegmentSize, trailingObjectLogSegmentSize));
+                    writer.WriteLine(ChecksumCore(targetVersion, addressSlotValue, trailingSegmentSize, trailingObjectLogSegmentSize));
 
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
@@ -345,6 +399,18 @@ namespace Tsavorite.core
                         for (var i = 0; i < cookieSize; i++)
                             writer.WriteLine(cookie[i]);
                     }
+
+                    // Write the database mapping. A reader at MinRecoverableCheckpointVersion stops before
+                    // these fields, so an older build sees a well-formed payload ending at the cookie.
+                    if (targetVersion > MinRecoverableCheckpointVersion)
+                    {
+                        var mappingLength = databaseMapping == null ? 0 : databaseMapping.Length;
+                        writer.WriteLine(mappingLength);
+                        for (var i = 0; i < mappingLength; i++)
+                            writer.WriteLine(databaseMapping[i]);
+
+                        writer.WriteLine(swapEpoch);
+                    }
                 }
                 return ms.ToArray();
             }
@@ -355,14 +421,54 @@ namespace Tsavorite.core
         /// downlevel checkpoint validates against the raw values it actually serialized: v7 metadata wrote a duplicate
         /// of <see cref="recoveredTailAddress"/> in the slot and had no trailing values, which reduces this to the v7 formula.
         /// </summary>
-        private readonly long ChecksumCore(long addressSlotValue, long trailingSegmentSize, long trailingObjectLogSegmentSize)
+        private readonly long ChecksumCore(int cversion, long addressSlotValue, long trailingSegmentSize, long trailingObjectLogSegmentSize)
         {
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ mainLogRecoveryEndAddress ^ snapshotFileLogicalStartAddress ^ fuzzyRegionStartAddress ^ recoveredTailAddress ^ addressSlotValue
+            var checksum = long1 ^ long2 ^ version ^ mainLogRecoveryEndAddress ^ snapshotFileLogicalStartAddress ^ fuzzyRegionStartAddress ^ recoveredTailAddress ^ addressSlotValue
                 ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word
                 ^ trailingSegmentSize ^ trailingObjectLogSegmentSize;
+
+            // The host-supplied fields joined the checksum after MinRecoverableCheckpointVersion, so a
+            // checkpoint at that version must be checksummed without them or it will not verify.
+            if (cversion > MinRecoverableCheckpointVersion)
+                checksum ^= HostSuppliedFieldsChecksum();
+
+            return checksum;
+        }
+
+        /// <summary>
+        /// Checksum of the host-supplied fields. These are sequences rather than scalars, so they are
+        /// folded (FNV-1a) rather than xored: xor alone would let two entries swapping places, or a
+        /// repeated value being added twice, leave the checksum unchanged. A null sequence folds as an
+        /// empty one, matching the serializer, which writes both as a zero length and reads both back as
+        /// null.
+        /// </summary>
+        private readonly long HostSuppliedFieldsChecksum()
+        {
+            const long FnvOffsetBasis = unchecked((long)14695981039346656037);
+            const long FnvPrime = 1099511628211;
+
+            var hash = FnvOffsetBasis;
+
+            static long Fold(long hash, long value) => unchecked((hash ^ value) * FnvPrime);
+
+            hash = Fold(hash, cookie?.Length ?? 0);
+            if (cookie != null)
+            {
+                foreach (var b in cookie)
+                    hash = Fold(hash, b);
+            }
+
+            hash = Fold(hash, databaseMapping?.Length ?? 0);
+            if (databaseMapping != null)
+            {
+                foreach (var id in databaseMapping)
+                    hash = Fold(hash, id);
+            }
+
+            return Fold(hash, swapEpoch);
         }
 
         /// <summary>
@@ -387,6 +493,8 @@ namespace Tsavorite.core
             logger?.LogInformation("Hybrid Log End Object Tail Position: {hlogEndObjLogTail}", hlogEndObjectLogTail);
             logger?.LogInformation("Snapshot Begin Object Log Tail Position: {snapshotStartObjLogTail}", snapshotStartObjectLogTail);
             logger?.LogInformation("Snapshot End Object Log Tail Position: {snapshotEndObjLogTail}", snapshotEndObjectLogTail);
+            if (databaseMapping?.Length > 0)
+                logger?.LogInformation("Database Mapping (slot -> logical): {databaseMapping}; Swap Epoch: {swapEpoch}", string.Join(",", databaseMapping), swapEpoch);
         }
     }
 

@@ -255,6 +255,32 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Get the storage-slot to logical-database mapping recorded by the latest hybrid log checkpoint,
+        /// without recovering the store. A mapping is recorded only when a host relabelled its databases,
+        /// so its absence means every slot holds the logical database of the same number.
+        /// </summary>
+        /// <param name="databaseMapping">Mapping, as databaseMapping[storageSlot] = logicalDatabaseId</param>
+        /// <param name="swapEpoch">Epoch the mapping belongs to; the highest is authoritative</param>
+        /// <returns>True if the latest checkpoint recorded a mapping</returns>
+        public bool TryGetLatestCheckpointDatabaseMapping(out int[] databaseMapping, out long swapEpoch)
+        {
+            databaseMapping = null;
+            swapEpoch = 0;
+
+            GetClosestHybridLogCheckpointInfo(-1, out var hlogToken, out var hlcInfo, out var _, out _);
+            hlcInfo.Dispose();
+            if (hlogToken == default)
+                return false;
+
+            using var current = new HybridLogCheckpointInfo();
+
+            current.Recover(hlogToken, checkpointManager, out var _);
+            databaseMapping = current.info.databaseMapping;
+            swapEpoch = current.info.swapEpoch;
+            return databaseMapping is { Length: > 0 };
+        }
+
+        /// <summary>
         /// Get size of snapshot files for token
         /// </summary>
         public LogFileInfo GetLogFileSize(Guid token)
@@ -434,10 +460,22 @@ namespace Tsavorite.core
             }
 
             recoveredHlcInfo.info.DebugPrint(logger);
+            CaptureRecoveredCheckpointMetadata(in recoveredHlcInfo.info);
 
             GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out _, out recoveredICInfo);
             if (recoveredICInfo.IsDefault)
                 logger?.LogInformation("No index checkpoint found, recovering from beginning of log");
+        }
+
+        /// <summary>
+        /// Retain the host-supplied fields of a recovered checkpoint so the host can read them back after
+        /// recovery, rather than re-reading the metadata itself.
+        /// </summary>
+        private void CaptureRecoveredCheckpointMetadata(in HybridLogRecoveryInfo info)
+        {
+            RecoveredDatabaseMapping = info.databaseMapping;
+            RecoveredSwapEpoch = info.swapEpoch;
+            RecoveredCheckpointVersion = info.hybridLogRecoveryVersion;
         }
 
         private static bool IsCompatible(in IndexRecoveryInfo indexInfo, in HybridLogRecoveryInfo recoveryInfo)
@@ -454,6 +492,7 @@ namespace Tsavorite.core
             recoveredHLCInfo = new HybridLogCheckpointInfo();
             recoveredHLCInfo.Recover(hybridLogToken, checkpointManager, out recoveredCommitCookie);
             recoveredHLCInfo.info.DebugPrint(logger);
+            CaptureRecoveredCheckpointMetadata(in recoveredHLCInfo.info);
             try
             {
                 recoveredICInfo = new IndexCheckpointInfo();

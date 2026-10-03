@@ -48,6 +48,8 @@ namespace Tsavorite.core
         internal void WriteHybridLogMetaInfo()
         {
             _hybridLogCheckpoint.info.cookie = checkpointManager.GetCookie();
+            _hybridLogCheckpoint.info.databaseMapping = checkpointManager.GetDatabaseMapping(out var swapEpoch);
+            _hybridLogCheckpoint.info.swapEpoch = swapEpoch;
             checkpointManager.CommitLogCheckpointMetadata(_hybridLogCheckpointToken, _hybridLogCheckpoint.info.ToByteArray());
         }
 

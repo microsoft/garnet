@@ -24,6 +24,9 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            // lowMemory and storage tiering are enabled here, but the data volume in this fixture is far
+            // below the low-memory budget, so no record is ever evicted and the log devices are never
+            // written. Tiered multi-database behavior is covered by MultiDatabaseStorageTierTests.
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true, commitFrequencyMs: 1000, enableLua: true);
             server.Start();
         }
@@ -364,6 +367,8 @@ namespace Garnet.test
         [Test]
         public void MultiDatabaseSameKeyTestSE()
         {
+            // In-memory only; for the same isolation property with records evicted to the log devices,
+            // see MultiDatabaseStorageTierTests.
             var key1 = "key1";
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

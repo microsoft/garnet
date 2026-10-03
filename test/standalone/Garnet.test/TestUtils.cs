@@ -1322,8 +1322,8 @@ namespace Garnet.test
         /// <remarks>
         /// This mirrors the equivalent helper in Tsavorite's TestUtils. Without it, a checkout under a long
         /// root makes the deepest files Garnet creates — checkpoint files such as
-        /// "\Store\checkpoints\cpr-checkpoints\&lt;guid&gt;\snapshot.obj.dat" (~88 chars) — exceed the limit,
-        /// and the device layer rejects them. Because the directory name embeds a per-process randomized
+        /// "\Store\checkpoints_&lt;slot&gt;\cpr-checkpoints\&lt;guid&gt;\snapshot.obj.dat" (~92 chars) — exceed the
+        /// limit, and the device layer rejects them. Because the directory name embeds a per-process randomized
         /// <see cref="HashCode"/>, its length varies between runs, so such failures are intermittent.
         ///
         /// Only a path that actually needs rewriting is canonicalized: when it is close enough to the limit,
@@ -1347,8 +1347,13 @@ namespace Garnet.test
             // The device layer rejects non-extended paths longer than MAX_PATH - 11 (the 11 reserves room for
             // a ".<segmentId>" suffix). Once this directory's fully-qualified length is within the reserve
             // below of MAX_PATH, switch to an extended-length path so those children stay valid.
+            //
+            // The deepest file Garnet creates below this directory is a checkpoint snapshot,
+            // "\Store\checkpoints_<slot>\cpr-checkpoints\<guid>\snapshot.obj.dat": 92 chars at a
+            // three-digit storage slot, plus the device layer's 11-char reserve, is 103. The reserve is
+            // rounded up from there for headroom.
             const int win32MaxPath = 260;
-            const int reservedForChildPaths = 100;
+            const int reservedForChildPaths = 128;
             if (fullPath.Length <= win32MaxPath - reservedForChildPaths)
                 return path;
 
