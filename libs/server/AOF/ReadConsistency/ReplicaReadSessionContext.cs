@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -139,6 +139,13 @@ namespace Garnet.server
             consistentReadCts = new();
             readTimeout = serverOptions.ReplicaSyncTimeout;
         }
+
+        /// <summary>
+        /// Ends any consistent read waiting for a sublog to catch up, without releasing anything the
+        /// waiter is still using. Lets a caller deliver the cancellation up front and leave
+        /// <see cref="Dispose"/> to whoever is last to finish with this state.
+        /// </summary>
+        public void Cancel() => consistentReadCts.Cancel();
 
         /// <summary>
         /// Releases all resources used by the current instance of the class.

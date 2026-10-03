@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -54,12 +55,13 @@ namespace Garnet.server
         /// </summary>
         int sessionDisposed;
 
+#if DEBUG
         /// <summary>
-        /// Depth of this session's message-consumption stack: one while the network's own parse loop is
-        /// running, more while something re-enters it. A Lua script dispatching <c>redis.call</c> does
-        /// exactly that, on the session's own thread.
+        /// Set while this session is inside a batch, so that a parked operation starting from the batch's
+        /// cleanup can be told from one started inside the batch.
         /// </summary>
-        int consumeDepth;
+        bool insideBatch;
+#endif
 
         /// <summary>
         /// Command that parked during the batch currently unwinding, and whose operation has not been
@@ -68,20 +70,39 @@ namespace Garnet.server
         /// </summary>
         BlockingCommandContext pendingParkStart;
 
+        /// <summary>A parked operation is driving this session's storage.</summary>
+        const int StorageScopeHeld = 1;
+
         /// <summary>
-        /// Set while a parked operation is driving this session's storage.
+        /// Teardown has handed the session's storage to whoever is holding it, and no further entry is
+        /// permitted. Never cleared: once teardown has arrived the storage is going away.
+        /// </summary>
+        const int StorageTeardownDeferred = 2;
+
+        /// <summary>
+        /// Lease on the storage a parked operation drives -- the database sessions, the consistent-read
+        /// state and the cluster session -- deciding which thread disposes them.
         /// </summary>
         /// <remarks>
-        /// Paired with <see cref="sessionDisposed"/> as a Dekker handshake. Teardown publishes the disposed
-        /// flag and then reads this one; <see cref="TryEnterParkedStorage"/> publishes this one and then
-        /// reads the disposed flag. Each store is followed by a load of the other with a barrier between,
-        /// so the two cannot both read stale: either the operation sees the teardown and declines to touch
-        /// the storage, or teardown sees the operation and waits for it. Without this, teardown disposes
-        /// the database sessions while a parked operation is still reading through them, because a context
-        /// that has claimed its outcome is deliberately *not* waited for -- see
-        /// <see cref="BlockingCommandContext.Abort"/>.
+        /// A context that has claimed its outcome is deliberately not waited for by teardown (see
+        /// <see cref="BlockingCommandContext.Abort"/>), so a parked operation can still be reading through
+        /// the database sessions when teardown reaches them. Teardown therefore does not free them itself
+        /// if the operation is inside: it hands them over, and the operation frees them on its way out.
+        /// <para>
+        /// A handover rather than a wait, because waiting would make teardown depend on the liveness of
+        /// arbitrary storage work. A read can block on a disk device, on a consistent-read catch-up whose
+        /// configured timeout may legitimately be infinite, or on a lock held by a transaction on another
+        /// connection that is itself waiting to be told it is going away. Each of those turns a
+        /// disconnecting client into a teardown that never finishes, and burns the very thread this whole
+        /// pattern exists to give back. Handing the storage over costs one interlocked operation and cannot
+        /// deadlock, because no thread ever waits for another.
+        /// </para>
+        /// <para>
+        /// Every access is an interlocked read-modify-write on this one word, so the two sides are ordered
+        /// against each other without any further fencing, and exactly one of them observes itself as last.
+        /// </para>
         /// </remarks>
-        int parkStorageInUse;
+        int parkStorageLease;
 
         /// <summary>
         /// Set by <see cref="CancelInPlaceWaits"/> before it delivers its notifications, and read by
@@ -141,19 +162,17 @@ namespace Garnet.server
         /// running a blocking command in the first place.
         /// </para>
         /// <para>
-        /// The nesting clause confines parking to the network's own parse loop. Lua re-enters
-        /// <see cref="TryConsumeMessages"/> to dispatch <c>redis.call</c>, and a command parking there would
-        /// suspend a session whose script is still running on this thread -- the operation would then drive
-        /// the session's storage concurrently with the script, and the resume would land while the outer
-        /// frame was still in the middle of a batch. Blocking commands reached from a script must fall back
-        /// to non-blocking behavior, which is what Redis does for them anyway.
+        /// The park-host clause also covers scripts, which is why there is no separate nesting rule. Lua
+        /// dispatches <c>redis.call</c> through a <see cref="RespServerSession"/> of its own, built by
+        /// <see cref="SessionScriptCache"/> over a scratch-buffer sender; that session is never attached to
+        /// a network handler, so it has no park host and cannot park. A blocking command reached from a
+        /// script therefore falls back to non-blocking behavior, which is what Redis does for them anyway.
         /// </para>
         /// </remarks>
         internal bool CanParkSession
             => parkedCommand == null &&
                txnManager.state == TxnState.None &&
                asyncStarted == 0 &&
-               consumeDepth == 1 &&
                clusterSession?.IsReplicating != true &&
                parkHost != null &&
                parkHost.CanParkSession;
@@ -213,6 +232,66 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Returns everything a batch borrowed from the session. Runs at every batch boundary, so it is on
+        /// the hot path for ordinary non-blocking traffic and is deliberately free of exception handling.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void EndBatch()
+        {
+            networkSender.ExitAndReturnResponseObject();
+            clusterSession?.ReleaseCurrentEpoch();
+            scratchBufferBuilder.Reset();
+            scratchBufferAllocator.Reset();
+
+            // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers grown for
+            // one unusually wide command can be released here. Counting down an integer keeps this off the
+            // parse state itself, which measurably degrades code generation for the parse loop when read on
+            // every batch.
+            if (--sessionTrimCountdown <= 0)
+                TrimSessionBuffers();
+
+            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Session_Fail_Batch_Cleanup);
+
+#if DEBUG
+            insideBatch = false;
+#endif
+        }
+
+        /// <summary>
+        /// Ends a batch during which a command parked, and then starts the operation it parked on.
+        /// </summary>
+        /// <remarks>
+        /// The start is deliberately last, after every reset in <see cref="EndBatch"/>. A command that parked
+        /// published its context where it parked but left the operation unstarted, because starting it there
+        /// would let it run -- on a timer or pool thread, against this session's storage and scratch buffers
+        /// -- while the parse loop still owed the session that cleanup.
+        /// <para>
+        /// The cleanup is wrapped here rather than in the batch's <c>finally</c> so that the common path
+        /// carries no exception-handling region: a failed cleanup must still hand the context off, since one
+        /// already marked as starting leaves the connection parked on an operation nothing can finish or
+        /// reclaim, but that obligation exists only when something parked.
+        /// </para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void EndBatchHoldingAParkedCommand()
+        {
+            try
+            {
+                EndBatch();
+            }
+            catch (Exception cleanupFailure)
+            {
+#if DEBUG
+                insideBatch = false;
+#endif
+                AbandonParkedCommandStart(cleanupFailure);
+                throw;
+            }
+
+            StartParkedCommand();
+        }
+
+        /// <summary>
         /// Starts the operation a command parked on, once the parse loop has finished with the session.
         /// </summary>
         /// <remarks>
@@ -223,12 +302,10 @@ namespace Garnet.server
         /// operation that completes the instant it is started still rendezvous with the park rather than
         /// resuming the session underneath the thread that parked it.
         /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         void StartParkedCommand()
         {
             var command = pendingParkStart;
-            if (command == null)
-                return;
-
             pendingParkStart = null;
             command.Start();
 
@@ -240,7 +317,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Takes this session's storage for a parked operation, unless the session is being torn down.
+        /// Takes this session's storage for a parked operation, unless teardown has already claimed it.
         /// </summary>
         /// <returns>
         /// True if the storage may be used, and the caller must call <see cref="ExitParkedStorage"/> when
@@ -248,43 +325,113 @@ namespace Garnet.server
         /// </returns>
         internal bool TryEnterParkedStorage()
         {
-            Volatile.Write(ref parkStorageInUse, 1);
+            // Counted on the store before the session is claimed, never after. The session's own teardown
+            // hands the storage over rather than waiting, so this count is the only thing standing between
+            // a parked operation and a store that is being torn down -- and a claim taken first would leave
+            // a window in which teardown has already handed the storage over while the store still sees no
+            // user of it. Admission that is then refused gives the count straight back.
+            storeWrapper.EnterParkedStorageScope();
 
-            // Store-before-load, explicitly. Release/acquire would order each side's own accesses but still
-            // permit the store above and the load below to be seen out of order, which is the one
-            // reordering that loses here: both sides would read stale and teardown would dispose the
-            // storage this operation is about to use.
-            Interlocked.MemoryBarrier();
-
-            if (Volatile.Read(ref sessionDisposed) == 0)
+            if (Interlocked.CompareExchange(ref parkStorageLease, StorageScopeHeld, 0) == 0)
                 return true;
 
-            Volatile.Write(ref parkStorageInUse, 0);
+            storeWrapper.ExitParkedStorageScope();
             return false;
         }
 
         /// <summary>
-        /// Gives this session's storage back, releasing a teardown that is waiting on it.
+        /// Gives this session's storage back, disposing it if teardown handed it over while it was in use.
         /// </summary>
-        internal void ExitParkedStorage() => Volatile.Write(ref parkStorageInUse, 0);
+        internal void ExitParkedStorage()
+        {
+            if (Interlocked.CompareExchange(ref parkStorageLease, 0, StorageScopeHeld) == StorageScopeHeld)
+            {
+                storeWrapper.ExitParkedStorageScope();
+                return;
+            }
+
+            // Teardown arrived while this operation was inside, and left the storage to it. Drop only the
+            // scope bit: the teardown bit stays set so nothing enters storage that is about to go.
+            const int HeldAndDeferred = StorageScopeHeld | StorageTeardownDeferred;
+            if (Interlocked.CompareExchange(ref parkStorageLease, StorageTeardownDeferred, HeldAndDeferred) != HeldAndDeferred)
+            {
+                // Neither CAS saw a scope, so this exit has no entry behind it. Releasing the storage or
+                // the store's count here would free a session still in use and drive the store's drain
+                // below zero, where it never terminates.
+                BlockingCommandContext.ReportContractViolation(
+                    "A blocking operation left a storage scope it never entered.");
+                return;
+            }
+
+            try
+            {
+                DisposeSessionStorage();
+                _ = Interlocked.Increment(ref parkStorageHandoversCompleted);
+            }
+            finally
+            {
+                // After the release above, so that the store's drain covers it.
+                storeWrapper.ExitParkedStorageScope();
+            }
+        }
 
         /// <summary>
-        /// Waits for a parked operation that is using this session's storage to finish with it.
+        /// Closes this session's storage to parked operations and disposes it, unless one is inside it --
+        /// in which case that operation disposes it when it leaves.
+        /// </summary>
+        void ReleaseSessionStorage()
+        {
+            if ((Interlocked.Or(ref parkStorageLease, StorageTeardownDeferred) & StorageScopeHeld) == 0)
+            {
+                DisposeSessionStorage();
+                return;
+            }
+
+            _ = Interlocked.Increment(ref parkStorageHandovers);
+        }
+
+        static int parkStorageHandovers;
+        static int parkStorageHandoversCompleted;
+
+        /// <summary>
+        /// Number of times connection teardown found a parked operation inside its session's storage and
+        /// left the release of that storage to it.
+        /// </summary>
+        internal static int ParkStorageHandovers => Volatile.Read(ref parkStorageHandovers);
+
+        /// <summary>
+        /// Number of handed-over storages a parked operation has gone on to release. Lags
+        /// <see cref="ParkStorageHandovers"/> only while an operation is still inside one.
+        /// </summary>
+        internal static int ParkStorageHandoversCompleted => Volatile.Read(ref parkStorageHandoversCompleted);
+
+        /// <summary>
+        /// Releases the storage a parked operation is allowed to drive. Runs exactly once, on whichever of
+        /// teardown or a parked operation is last to let go of it.
+        /// </summary>
+        void DisposeSessionStorage()
+        {
+            readSessionState?.Dispose();
+            consistentReadDBSession?.Dispose();
+
+            foreach (var dbSession in databaseSessions.Map)
+                dbSession?.Dispose();
+
+            clusterSession?.Dispose();
+        }
+
+        /// <summary>
+        /// Ends every wait a parked operation could be inside, so that the storage it holds comes back
+        /// without teardown having to wait for it.
         /// </summary>
         /// <remarks>
-        /// Bounded by a single storage operation rather than by the blocking command's wait: an operation
-        /// only enters the storage after its wait has ended and it has claimed its outcome. The wait is
-        /// therefore no longer than the pending-read drain disposal does immediately afterwards anyway.
+        /// Separated from <see cref="DisposeSessionStorage"/> because the object that carries a wait is
+        /// usually the same object that carries its cancellation, and disposing it is what delivers the
+        /// cancellation today. Handing the storage to a parked operation defers that disposal behind the
+        /// very wait it would end, so the signal has to be delivered up front and the release left to
+        /// whoever is last.
         /// </remarks>
-        void DrainParkedStorage()
-        {
-            if (Volatile.Read(ref parkStorageInUse) == 0)
-                return;
-
-            var spin = new SpinWait();
-            while (Volatile.Read(ref parkStorageInUse) != 0)
-                spin.SpinOnce();
-        }
+        void CancelSessionStorageWaits() => readSessionState?.Cancel();
 
 #if DEBUG
         byte* parkResponseCursor;
@@ -302,11 +449,44 @@ namespace Garnet.server
         [Conditional("DEBUG")]
         internal void AssertStartedAfterBatch()
         {
-            if (consumeDepth != 0)
+#if DEBUG
+            if (insideBatch)
             {
                 BlockingCommandContext.ReportContractViolation(
                     "A blocking operation must start from the parse loop's cleanup, not from inside the batch.");
             }
+#endif
+        }
+
+        /// <summary>
+        /// Hands a command that parked during this batch to a start that will never run, because the batch
+        /// failed while giving the session back.
+        /// </summary>
+        /// <remarks>
+        /// The handoff cannot simply be skipped. <see cref="BlockingCommandContext.Attach"/> has already
+        /// marked the context as starting, so teardown defers its disposal to a start that is no longer
+        /// coming, and the session stays parked on an operation nothing can finish -- with no receive
+        /// outstanding to ever notice. Nor can the operation be started: the cleanup that failed is what
+        /// gives back the response object, the cluster epoch and the scratch buffers it would run against.
+        /// Reporting the failure to the command is the only remaining option, and it resumes the session.
+        /// </remarks>
+        /// <param name="cause">Failure that kept the batch from completing its cleanup.</param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void AbandonParkedCommandStart(Exception cause)
+        {
+            var command = pendingParkStart;
+            if (command == null)
+                return;
+
+            pendingParkStart = null;
+            command.AbandonStart(cause);
+
+            // The operation was never started, so nothing will ever release this park -- an abort would only
+            // be recorded against a context still logically starting, and no start is coming to apply it.
+            // Stand in for the release, which latches the close first so the resume it may schedule discards
+            // the session instead of re-parsing the batch whose cleanup just failed.
+            if (Volatile.Read(ref sessionDisposed) != 0)
+                AbortParkedOperation();
         }
 
         /// <summary>
@@ -388,6 +568,12 @@ namespace Garnet.server
             // Interlocked rather than Volatile: this store must not be reordered past the sweep's reads.
             Interlocked.Exchange(ref inPlaceWaitsCancelled, 1);
 
+            // Delivered here rather than only from Dispose, because a resume draining a pipelined read can
+            // be inside a consistent-read catch-up while holding the resume lease -- and that lease is what
+            // makes the caller defer session disposal. The cancellation would then sit behind the wait it
+            // exists to end. Idempotent, so Dispose still delivers it on the paths that skip this hook.
+            CancelSessionStorageWaits();
+
             // Only the collection broker families (BLPOP and friends) wait in place for something that
             // teardown itself is what ends. The other in-place waits on the command path -- AOF commit,
             // cluster PUBLISH, SAVE, ASYNC BARRIER -- complete on their own, so they delay reclamation
@@ -429,18 +615,45 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Reconciles a park that was established during a batch which then failed. Disposing the network
-        /// sender closes the socket but leaves the park standing, and a parked connection has no outstanding
-        /// receive to notice, so without this the session would stay parked -- holding its
-        /// <see cref="System.Net.Sockets.SocketAsyncEventArgs"/> -- until the operation's own deadline, or
-        /// forever if it has none.
+        /// Gives up the work a batch was in the middle of when it failed, for a session that is being torn
+        /// down because of it.
         /// </summary>
         /// <remarks>
+        /// Two things are owed. A park established during the failed batch has to be abandoned: disposing
+        /// the network sender closes the socket but leaves the park standing, and a parked connection has
+        /// no outstanding receive to notice, so the session would stay parked -- holding its
+        /// <see cref="System.Net.Sockets.SocketAsyncEventArgs"/> -- until the operation's own deadline, or
+        /// forever if it has none. And a transaction that was running has to be unwound, because its locks
+        /// outlive the session otherwise: they are held by the transactional contexts rather than by the
+        /// connection, so every other session blocks on them indefinitely, including a parked operation
+        /// whose storage the store's own teardown then waits for.
+        /// <para>
         /// Cold path only: called from the exception handlers that tear the session down, never from
         /// command processing.
+        /// </para>
         /// </remarks>
-        void AbortParkOnSessionFailure()
+        void AbandonSessionWorkOnFailure()
         {
+            // The batch is over, so nothing of it may be parsed again. TryConsumeMessages reports readHead
+            // as consumed and the network layer shifts the rest forward, so a readHead that stops short of
+            // the command that threw leaves those bytes in the buffer to be re-parsed behind the next
+            // receive -- replaying a command the client was already told had failed. Consuming the whole
+            // batch discards what was pipelined behind the failure, which is what abandoning it means.
+            // txnSkip must be cleared alongside, or the return is 0 and the buffer is never shifted at all.
+            txnSkip = false;
+            readHead = bytesRead;
+
+            // No-op unless a transaction was actually running, and self-clearing, so the three failure
+            // paths that reach this can overlap without unlocking twice.
+            try
+            {
+                txnManager?.Reset();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Failed to unwind a transaction left running by a failed batch");
+            }
+
             if (Volatile.Read(ref parkedCommand) == null)
                 return;
 
