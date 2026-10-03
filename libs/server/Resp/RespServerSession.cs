@@ -414,26 +414,19 @@ namespace Garnet.server
             MarkDisposedForParking();
             DisposeParkedCommand();
 
-            // Before any storage is released below. A parked operation that got into the session's storage
-            // ahead of the flag above is still in it, and the database sessions it is driving are the ones
-            // this method is about to dispose.
-            DrainParkedStorage();
+            // Ahead of the handover below, which can leave the release of these waits to a parked operation
+            // that is itself inside one of them.
+            CancelSessionStorageWaits();
 
             if (recvBufferPtr != null)
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
             }
 
-            // Dispose read session state
-            readSessionState?.Dispose();
-            // Dispose special consistent read database session
-            consistentReadDBSession?.Dispose();
-
-            // Dispose all database sessions
-            foreach (var dbSession in databaseSessions.Map)
-                dbSession?.Dispose();
-
-            clusterSession?.Dispose();
+            // The read session state, the consistent-read database session, the database sessions and the
+            // cluster session. A parked operation that got into them ahead of this is still reading through
+            // them, so they are handed to it rather than freed here; see ReleaseSessionStorage.
+            ReleaseSessionStorage();
 
             // Cancel the async processor before the latency histograms are released below: an in-flight
             // completion records into those arrays, and they go back to a shared pool.
@@ -554,10 +547,10 @@ namespace Garnet.server
             if (!txnSkip)
                 readHead = 0;
 
-            // Nesting is counted because parking is only sound from the outermost frame: a Lua script
-            // dispatching redis.call re-enters this method, and a command parking there would suspend a
-            // session whose script is still running on this thread. See CanParkSession.
-            consumeDepth++;
+#if DEBUG
+            // Read only by AssertStartedAfterBatch, to check the start handoff below.
+            insideBatch = true;
+#endif
             try
             {
                 LatencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
@@ -616,12 +609,18 @@ namespace Garnet.server
 
                 // The session is no longer usable, dispose it
                 networkSender.DisposeNetworkSender(true);
-                AbortParkOnSessionFailure();
+                AbandonSessionWorkOnFailure();
             }
             catch (GarnetException ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
+
+                // Before the reply, and whatever the exception says about the connection. The batch is
+                // abandoned either way, so a transaction it left running holds its keys locked either way,
+                // and a session that survives the error goes on holding them for as long as the client stays
+                // connected. Writing the error can itself throw, which is the other way this gets skipped.
+                AbandonSessionWorkOnFailure();
 
                 // Forward Garnet error as RESP error
                 if (ex.ClientResponse)
@@ -644,7 +643,6 @@ namespace Garnet.server
                 {
                     // The session is no longer usable, dispose it
                     networkSender.DisposeNetworkSender(true);
-                    AbortParkOnSessionFailure();
                 }
             }
             catch (Exception ex)
@@ -653,28 +651,17 @@ namespace Garnet.server
                 logger?.LogCritical(ex, "ProcessMessages threw an exception:");
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
-                AbortParkOnSessionFailure();
+                AbandonSessionWorkOnFailure();
             }
             finally
             {
-                networkSender.ExitAndReturnResponseObject();
-                clusterSession?.ReleaseCurrentEpoch();
-                scratchBufferBuilder.Reset();
-                scratchBufferAllocator.Reset();
-
-                // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers
-                // grown for one unusually wide command can be released here. Counting down an integer
-                // keeps this off the parse state itself, which measurably degrades code generation for
-                // this method when read on every batch.
-                if (--sessionTrimCountdown <= 0)
-                    TrimSessionBuffers();
-
-                // Last, and deliberately after every reset above. A command that parked during this batch
-                // published its context where it parked but left the operation unstarted, because starting
-                // it there would let it run -- on a timer or pool thread, against this session's storage and
-                // scratch buffers -- while this frame still owed the session the cleanup directly above.
-                consumeDepth--;
-                StartParkedCommand();
+                // Split so the common path carries no exception-handling region of its own. The handoff
+                // below is needed only when something parked during this batch, and a try/catch sited here
+                // costs the batch path whether or not it is ever entered.
+                if (pendingParkStart == null)
+                    EndBatch();
+                else
+                    EndBatchHoldingAParkedCommand();
             }
 
             if (txnSkip)
@@ -855,7 +842,7 @@ namespace Garnet.server
                     // the park, which has no receive outstanding to notice. Without this the handler and its
                     // receive state stay held until the operation's own deadline, or forever if it has none,
                     // on a connection the server itself just closed.
-                    AbortParkOnSessionFailure();
+                    AbandonSessionWorkOnFailure();
                 }
             }
         }

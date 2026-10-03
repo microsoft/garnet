@@ -150,5 +150,11 @@ namespace Garnet.common
         /// token scan finds candidates but rejects every one of them.
         /// </summary>
         Replication_Fail_Replica_Unreadable_Checkpoint,
+        /// <summary>
+        /// Fail the cleanup a RESP batch owes its session, after the batch body has finished. Exercises the
+        /// handoff of a command that parked during a batch whose cleanup then threw, which would otherwise
+        /// leave the session parked on an operation that can never be started.
+        /// </summary>
+        Session_Fail_Batch_Cleanup,
     }
 }

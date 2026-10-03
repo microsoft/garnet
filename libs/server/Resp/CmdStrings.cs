@@ -111,6 +111,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> SLOWSTART => "SLOWSTART"u8;
         public static ReadOnlySpan<byte> FAILSTART => "FAILSTART"u8;
         public static ReadOnlySpan<byte> FAILSTART2 => "FAILSTART2"u8;
+        public static ReadOnlySpan<byte> BADSTORAGE => "BADSTORAGE"u8;
+        public static ReadOnlySpan<byte> BADEXIT => "BADEXIT"u8;
         public static ReadOnlySpan<byte> FAILBATCH => "FAILBATCH"u8;
         public static ReadOnlySpan<byte> GATE => "GATE"u8;
         public static ReadOnlySpan<byte> GATECOUNT => "GATECOUNT"u8;

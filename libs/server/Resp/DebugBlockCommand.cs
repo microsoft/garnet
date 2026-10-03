@@ -217,7 +217,9 @@ namespace Garnet.server
                 FailStartAndRecovery,
                 Gate,
                 HoldClaim,
-                HoldAbort
+                HoldAbort,
+                BadStorage,
+                BadExit
             }
 
             /// <summary>
@@ -233,6 +235,23 @@ namespace Garnet.server
                 // the base class has to unpark it rather than leaving the connection silent forever.
                 if (startMode is StartMode.FailStart or StartMode.FailStartAndRecovery)
                     throw new GarnetException("DEBUG BLOCK FAILSTART");
+
+                // Two deliberate breaches of the authoring rules, so that the debug-build checks guarding
+                // them have something that trips them. Both are what a mistaken command would do, and both
+                // have to degrade into a reported violation rather than into a session whose storage is
+                // released underneath it.
+                if (startMode == StartMode.BadStorage)
+                {
+                    // Storage before the outcome is claimed. The claim is what makes this operation the
+                    // session's only user, so without it the scope guarantees nothing.
+                    if (TryEnterStorageScope())
+                        ExitStorageScope();
+                }
+                else if (startMode == StartMode.BadExit)
+                {
+                    // An exit with no entry behind it, as a stray finally would produce.
+                    ExitStorageScope();
+                }
 
                 if (startMode is StartMode.Gate or StartMode.HoldAbort)
                 {
@@ -373,7 +392,7 @@ namespace Garnet.server
         /// <summary>
         /// DEBUG BLOCK seconds
         ///     [SYNC|SLOWSTART|FAILSTART|FAILSTART2|FAILBATCH|GATE|HOLDCLAIM|HOLDABORT
-        ///      |RELEASE|GATECOUNT|CLAIMHELD|CLAIMPROCEED|LEAKCOUNT|GETLEAKCOUNT|ACQCOUNT
+        ///      |BADSTORAGE|BADEXIT|RELEASE|GATECOUNT|CLAIMHELD|CLAIMPROCEED|LEAKCOUNT|GETLEAKCOUNT|ACQCOUNT
         ///      |ABORTGATED|ABORTHELD|ABORTPROCEED
         ///      |GETACQCOUNT|GETHOLDVALUE|GETVALUEHELD|GETVALUEPROCEED
         ///      |GETHOLDREAD|GETREADHELD|GETREADPROCEED]
@@ -426,6 +445,10 @@ namespace Garnet.server
                     startMode = DebugBlockCommandContext.StartMode.FailStart;
                 else if (modifier.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FAILSTART2))
                     startMode = DebugBlockCommandContext.StartMode.FailStartAndRecovery;
+                else if (modifier.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BADSTORAGE))
+                    startMode = DebugBlockCommandContext.StartMode.BadStorage;
+                else if (modifier.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BADEXIT))
+                    startMode = DebugBlockCommandContext.StartMode.BadExit;
                 else if (modifier.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FAILBATCH))
                 {
                     startMode = DebugBlockCommandContext.StartMode.Gate;

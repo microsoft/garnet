@@ -72,23 +72,51 @@ namespace Garnet.server
         /// </summary>
         /// <returns>
         /// True if the storage may be used, in which case the caller must call
-        /// <see cref="ExitStorageScope"/> when it is done with it -- from a <c>finally</c>, because a
-        /// teardown waiting on the scope would otherwise wait forever. False if the session is being torn
-        /// down, in which case the storage must not be touched and the operation has nothing to publish.
+        /// <see cref="ExitStorageScope"/> when it is done with it -- from a <c>finally</c>, because the
+        /// session's storage is not released until it does. False if the session is being torn down, in
+        /// which case the storage must not be touched and the operation has nothing to publish.
         /// </returns>
         /// <remarks>
         /// A parked session has no other user of its storage, but it can still be *disposed* while an
         /// operation is using it: connection teardown deliberately does not wait for an operation that has
         /// already claimed its outcome, because waiting would stall reclamation behind the very thing it is
-        /// cancelling. This scope is the narrower wait that is safe -- teardown waits only for storage work
-        /// already in progress, and refuses entry to any that has not started.
+        /// cancelling. The scope resolves that by moving the release rather than delaying it -- teardown
+        /// hands the storage to an operation that is already inside, and refuses entry to any that is not.
         /// </remarks>
-        protected bool TryEnterStorageScope() => owner.TryEnterParkedStorage();
+        protected bool TryEnterStorageScope()
+        {
+            AssertClaimedBeforeStorage();
+            return owner.TryEnterParkedStorage();
+        }
 
         /// <summary>
-        /// Gives the parked session's storage back, releasing a teardown that is waiting on it.
+        /// Gives the parked session's storage back. Releases it if teardown arrived while it was in use.
         /// </summary>
         protected void ExitStorageScope() => owner.ExitParkedStorage();
+
+        /// <summary>
+        /// Trips if an operation reached for its session's storage without having claimed its outcome
+        /// first.
+        /// </summary>
+        /// <remarks>
+        /// The claim is what makes the storage the operation's to use: it is the point at which no other
+        /// thread can still complete this command, so the session is not about to resume and start parsing
+        /// again underneath it. Entering without one leaves two threads on a Tsavorite session that permits
+        /// one, which corrupts quietly rather than failing. A second entry is refused by the lease; an exit
+        /// with no entry is reported where it happens, since the lease can tell it apart from a real one but
+        /// cannot make it harmless on its own.
+        /// <para>
+        /// A convention, not a cage: an operation that caches a context or an API alias obtained before it
+        /// parked can still reach the storage without passing through here. See the authoring rules in
+        /// <see cref="OnStart"/>.
+        /// </para>
+        /// </remarks>
+        [Conditional("DEBUG")]
+        void AssertClaimedBeforeStorage()
+        {
+            if (Volatile.Read(ref state) != StatePublishing)
+                ReportContractViolation("A blocking operation used its session's storage without claiming its outcome.");
+        }
 
         int state;
         int starting;
@@ -107,11 +135,13 @@ namespace Garnet.server
         /// Always zero outside Debug builds, where the checks that feed it compile away.
         /// </summary>
         /// <remarks>
-        /// A counter rather than a bare <see cref="Debug.Assert(bool)"/> because an assertion is not a
-        /// reliable tripwire here: the server adds a trace listener at startup, which reroutes assertion
-        /// failures into the log instead of failing the process, so a test would watch the contract break
-        /// and still pass. The violations these guard against are all invisible from a client -- a leaked
-        /// registration, a connection torn down either way -- so a test needs something to read.
+        /// A counter rather than a bare <see cref="Debug.Assert(bool)"/>, for two reasons. An assertion is
+        /// not a reliable tripwire: whether it fails the process or merely logs depends on the trace
+        /// listeners the host has installed, so a test could watch the contract break and still pass. And
+        /// the violations reported here include ones raised from unwind paths, where throwing would turn an
+        /// authoring mistake into a second exception on top of whatever is already in flight. The violations
+        /// these guard against are all invisible from a client -- a leaked registration, a connection torn
+        /// down either way -- so a test needs something to read.
         /// </remarks>
         internal static int ContractViolations => Volatile.Read(ref contractViolations);
 
@@ -124,7 +154,7 @@ namespace Garnet.server
         internal static void ReportContractViolation(string message)
         {
             _ = Interlocked.Increment(ref contractViolations);
-            Debug.Fail(message);
+            Debug.WriteLine(message);
         }
 
         /// <summary>
@@ -143,6 +173,7 @@ namespace Garnet.server
         internal void Attach(RespServerSession session)
         {
             owner = session;
+            CountLive(1);
 
             // Released before the caller publishes the context, so any thread that can reach it already
             // sees a start in progress and defers disposal to Start rather than racing OnStart.
@@ -170,30 +201,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                // Startup is a cold path, but it is not guaranteed not to fail: registering with a broker can
-                // allocate, and a timer can fail to arm. Swallowing it here would leave the session parked on
-                // an operation that will never complete, with no receive outstanding to ever notice -- the
-                // one failure this design cannot recover from. Turn it into a normal completion instead, so
-                // the session resumes and the command reports an error.
-                owner.Logger?.LogError(ex, "Blocking command failed to start");
-                if (TryClaimOutcome())
-                {
-                    // Recorded before the hook runs, so the reply is owed even if the hook itself fails.
-                    startFailed = true;
-
-                    try
-                    {
-                        OnStartFailed(ex);
-                    }
-                    catch (Exception cleanupFailure)
-                    {
-                        owner.Logger?.LogError(cleanupFailure, "Blocking command failed to clean up a failed start");
-                    }
-
-                    ReleaseSession();
-                }
-
-                FinishStarting();
+                FailStart(ex);
                 return;
             }
 
@@ -243,6 +251,65 @@ namespace Garnet.server
             if (Interlocked.Increment(ref releaseCount) != 1)
                 ReportContractViolation("Blocking command released its session more than once");
 #endif
+        }
+
+        /// <summary>
+        /// Completes a context that was attached and published but whose operation will never be started,
+        /// because the batch that parked it failed before it could hand the session back.
+        /// </summary>
+        /// <remarks>
+        /// Indistinguishable to the command from a start that threw, and handled the same way: the session
+        /// resumes and the command reports an error. The distinction matters only to the session, which
+        /// must not start storage work against a session whose cleanup did not finish.
+        /// </remarks>
+        /// <param name="cause">Failure that kept the operation from being started.</param>
+        internal void AbandonStart(Exception cause)
+        {
+            owner.Logger?.LogError(cause, "Blocking command was abandoned before it could be started");
+
+            // Deliberately not FailStart, which releases the session. The batch that parked this context
+            // threw while giving the session back, so its return value never reached the transport and the
+            // bytes it consumed were never accounted for; a session resumed on that footing would re-parse
+            // the batch and run every command ahead of the blocking one a second time. The connection is
+            // going away regardless -- the throw is already unwinding towards the handler that tears it
+            // down, and every path there disposes the receive args this park is holding -- so the only thing
+            // owed here is to stop deferring disposal to a start that is not coming.
+            startFailed = true;
+            FinishStarting();
+        }
+
+        /// <summary>
+        /// Turns a start that did not happen into a normal completion.
+        /// </summary>
+        /// <remarks>
+        /// Startup is a cold path, but it is not guaranteed not to fail: registering with a broker can
+        /// allocate, and a timer can fail to arm. Swallowing the failure would leave the session parked on
+        /// an operation that will never complete, with no receive outstanding to ever notice -- the one
+        /// failure this design cannot recover from.
+        /// </remarks>
+        /// <param name="ex">Failure to report.</param>
+        void FailStart(Exception ex)
+        {
+            owner.Logger?.LogError(ex, "Blocking command failed to start");
+
+            if (TryClaimOutcome())
+            {
+                // Recorded before the hook runs, so the reply is owed even if the hook itself fails.
+                startFailed = true;
+
+                try
+                {
+                    OnStartFailed(ex);
+                }
+                catch (Exception cleanupFailure)
+                {
+                    owner.Logger?.LogError(cleanupFailure, "Blocking command failed to clean up a failed start");
+                }
+
+                ReleaseSession();
+            }
+
+            FinishStarting();
         }
 
         /// <summary>
@@ -543,7 +610,39 @@ namespace Garnet.server
                 return;
 
             AssertNotInUse();
+            CountAttachedAsDisposed();
             OnDispose();
+        }
+
+        static int liveContexts;
+
+        /// <summary>
+        /// Contexts bound to a session and not yet disposed, across the process. Always zero in release
+        /// builds, where the count is not maintained.
+        /// </summary>
+        /// <remarks>
+        /// Disposal is owed from <see cref="Attach"/> onwards, and is deferred by every path that could be
+        /// using the context, so a path that fails to re-run the deferred disposal strands it: the context
+        /// and the session it points at are retained for the life of the process, with any registration
+        /// <see cref="OnStart"/> made never undone. That is invisible from the wire -- the connection is
+        /// gone either way -- and is not specific to any one command, so it is counted here rather than
+        /// being left to each command to notice. Debug-only, and off the hot path regardless, since a park
+        /// is already the expensive case.
+        /// </remarks>
+        internal static int LiveContexts => Volatile.Read(ref liveContexts);
+
+        [Conditional("DEBUG")]
+        static void CountLive(int delta) => Interlocked.Add(ref liveContexts, delta);
+
+        /// <summary>
+        /// Balances <see cref="CountLive"/> for a context that was attached. A park that is refused
+        /// disposes a context that was never attached and so was never counted.
+        /// </summary>
+        [Conditional("DEBUG")]
+        void CountAttachedAsDisposed()
+        {
+            if (owner != null)
+                CountLive(-1);
         }
 
         /// <summary>

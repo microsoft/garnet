@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -987,6 +987,11 @@ namespace Garnet.server
                 return;
             disposed = true;
 
+            // Before the store goes. Sessions hand their storage to a parked operation that is inside it
+            // rather than waiting for it, so by here an operation can still be reading through a session
+            // this store owns.
+            DrainParkedStorageScopes();
+
             clusterProvider?.Dispose();
             itemBroker?.Dispose();
             monitor?.Dispose();
@@ -997,6 +1002,47 @@ namespace Garnet.server
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();
+        }
+
+        int parkedStorageScopes;
+
+        /// <summary>
+        /// Records that a parked blocking operation has taken its session's storage.
+        /// </summary>
+        internal void EnterParkedStorageScope() => Interlocked.Increment(ref parkedStorageScopes);
+
+        /// <summary>
+        /// Records that a parked blocking operation has finished with its session's storage, and has
+        /// released that storage if teardown left it to do so.
+        /// </summary>
+        internal void ExitParkedStorageScope() => Interlocked.Decrement(ref parkedStorageScopes);
+
+        /// <summary>
+        /// Number of parked blocking operations currently inside a session's storage.
+        /// </summary>
+        internal int ParkedStorageScopes => Volatile.Read(ref parkedStorageScopes);
+
+        /// <summary>
+        /// Waits for every parked blocking operation to finish with the storage it is driving.
+        /// </summary>
+        /// <remarks>
+        /// The one place in teardown where waiting for a parked operation is safe, and the reason
+        /// connection teardown does not have to. A session hands its storage over rather than waiting,
+        /// because waiting there would depend on the liveness of work that can only be ended by a
+        /// cancellation teardown has not delivered yet -- a consistent read catching up, a lock held by a
+        /// transaction on another connection, a wait that ends only when its own session is told it is
+        /// going away. By here every session has been disposed and every one of those notifications has
+        /// been delivered, so what remains is storage work that is already running and bounded by the
+        /// device it is reading from.
+        /// </remarks>
+        void DrainParkedStorageScopes()
+        {
+            if (Volatile.Read(ref parkedStorageScopes) == 0)
+                return;
+
+            var spin = new SpinWait();
+            while (Volatile.Read(ref parkedStorageScopes) != 0)
+                spin.SpinOnce();
         }
 
         /// <summary>
