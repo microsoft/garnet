@@ -883,6 +883,39 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public async Task StoreApiTakeCheckpointAsyncWaitsForInProgressCheckpoint()
+        {
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            // 1. Background checkpoint returns false immediately when checkpoint is already in progress
+            var paused = server.Provider.StoreWrapper.TryPauseCheckpoints(0);
+            ClassicAssert.IsTrue(paused);
+
+            var bgResult = await server.Store.TakeCheckpointAsync(background: true);
+            ClassicAssert.IsFalse(bgResult, "Background checkpoint should not block and return false when already in progress");
+
+            // 2. Foreground checkpoint with short timeout returns false on cancellation
+            using (var shortCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100)))
+            {
+                var cancelResult = await server.Store.TakeCheckpointAsync(background: false, token: shortCts.Token);
+                ClassicAssert.IsFalse(cancelResult, "Foreground checkpoint should return false when cancelled while waiting");
+            }
+
+            // 3. Foreground checkpoint waits and succeeds once in-progress checkpoint completes
+            var checkpointTask = Task.Run(async () => await server.Store.TakeCheckpointAsync(background: false));
+
+            await Task.Delay(150);
+            ClassicAssert.IsFalse(checkpointTask.IsCompleted, "Task should still be waiting while checkpoint is paused");
+
+            server.Provider.StoreWrapper.ResumeCheckpoints(0);
+
+            var result = await checkpointTask;
+            ClassicAssert.IsTrue(result, "Foreground checkpoint should complete successfully after in-progress checkpoint finishes");
+        }
+
         #endregion
     }
 }
