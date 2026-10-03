@@ -54,7 +54,10 @@ namespace Garnet.server
         internal TxnKeyEntries(int initialCount,
                 TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
         {
-            keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
+            // Not pinned: every use is through AsSpan, indexing or Array.Copy, and no caller takes a
+            // stable address into this array. The growth path below has always allocated unpinned, so
+            // pinning here only applied until the first resize while adding pinned-heap pressure.
+            keys = new TxnKeyEntry[initialCount];
             // We sort a single array for speed, and the sessions use the same sorting logic,
             comparison = new(unifiedTransactionalContext);
         }

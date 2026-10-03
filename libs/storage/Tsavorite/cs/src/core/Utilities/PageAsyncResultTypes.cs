@@ -19,7 +19,7 @@ namespace Tsavorite.core
     public sealed class PageAsyncReadResult<TContext>
     {
         /// <summary>Index of the main-log page being read</summary>
-        internal int page;
+        internal long page;
 
         /// <summary>Recovery device page offset</summary>
         internal int devicePageOffset;

@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using NUnit.Framework;
@@ -29,6 +31,12 @@ namespace Tsavorite.test
         private const int MaxDrainAttempts = 8;
         private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(60);
 
+        /// <summary>
+        /// How long a re-claim must stay blocked to show it is waiting on the prior read-ahead. Without the wait the
+        /// re-claim issues its read immediately, so this only has to exceed scheduling noise.
+        /// </summary>
+        private static readonly TimeSpan ReclaimObservationWindow = TimeSpan.FromMilliseconds(500);
+
         /// <summary>Minimal <see cref="IAllocator"/> for the address arithmetic the iterator performs.</summary>
         private struct StubAllocator : IAllocator
         {
@@ -42,32 +50,117 @@ namespace Tsavorite.test
         /// <summary>Iterator that records page-read issuance and exposes the members the tests drive.</summary>
         private sealed class StubScanIterator : ScanIteratorBase<StubAllocator>, IDisposable
         {
-            public int ReadCallCount;
+            private int readCallCount;
+            private readonly ConcurrentDictionary<long, CountdownEvent> heldCompletions = new();
+            private readonly HashSet<CountdownEvent> distinctCompletionEvents = [];
 
             /// <summary>When set, issuing the page read throws, as a device that fails before the read is submitted does.</summary>
             public Exception ThrowOnRead;
 
-            public StubScanIterator(LightEpoch epoch)
-                : base(beginAddress: 0, endAddress: long.MaxValue, DiskScanBufferingMode.SinglePageBuffering,
+            /// <summary>When set alongside <see cref="ThrowOnRead"/>, only this page's read throws.</summary>
+            public long? ThrowOnReadPage;
+
+            /// <summary>The cancellation source handed to each page read, by page.</summary>
+            private readonly ConcurrentDictionary<long, CancellationTokenSource> readCtsByPage = new();
+
+            public CancellationTokenSource ReadCtsForPage(long readPage)
+                => readCtsByPage.TryGetValue(readPage, out var cts) ? cts : null;
+
+            /// <summary>When set, a page read is reported as still in flight until <see cref="CompleteRead"/> is called
+            /// for it, as a real device does between submission and its completion callback.</summary>
+            public bool HoldCompletions;
+
+            /// <summary>The cancellation source handed to the most recent page read.</summary>
+            public CancellationTokenSource LastReadCts { get; private set; }
+
+            public StubScanIterator(LightEpoch epoch, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.SinglePageBuffering)
+                : base(beginAddress: 0, endAddress: long.MaxValue, scanBufferingMode,
                        InMemoryScanBufferingMode.NoBuffering, includeClosedRecords: false, epoch, LogPageSizeBits, new StubAllocator())
             { }
 
             public int PendingDrainCallbacks => Volatile.Read(ref pendingDrainCallbacks);
 
-            public bool ClaimFrameAndIssueRead(int page)
-                => BufferAndLoad(currentIterationAddress: (long)page << LogPageSizeBits, currentPage: page, currentFrame: 0,
+            public int ReadCallCount => Volatile.Read(ref readCallCount);
+
+            public int FrameSize => frameSize;
+
+            /// <summary>Number of distinct completion event instances handed to page reads, by reference.</summary>
+            public int DistinctCompletionEventCount
+            {
+                get
+                {
+                    lock (distinctCompletionEvents)
+                        return distinctCompletionEvents.Count;
+                }
+            }
+
+            public bool ClaimFrameAndIssueRead(long page)
+                => BufferAndLoad(currentIterationAddress: page << LogPageSizeBits, currentPage: page, currentFrame: page % frameSize,
                                  headAddress: long.MaxValue, endIterationAddress: long.MaxValue);
 
-            internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, int readPage, long untilAddress, TContext context,
-                    out CountdownEvent completed, int devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+            /// <summary>Delivers the completion of a held page read, as the device's callback would.</summary>
+            public void CompleteRead(long readPage)
             {
-                _ = Interlocked.Increment(ref ReadCallCount);
+                if (!heldCompletions.TryRemove(readPage, out var completed))
+                    return;
+                if (!completed.IsSet)
+                    _ = completed.Signal();
+                _ = Interlocked.Decrement(ref pendingDrainCallbacks);
+            }
 
-                if (ThrowOnRead is not null)
+            /// <summary>Delivers every outstanding held completion, so Dispose is not left waiting on them.</summary>
+            public void CompleteAllReads()
+            {
+                foreach (var readPage in heldCompletions.Keys)
+                    CompleteRead(readPage);
+            }
+
+            /// <summary>Blocks until <paramref name="count"/> page reads have been issued.</summary>
+            public void WaitForReadCount(int count, TimeSpan timeout)
+            {
+                var deadline = DateTime.UtcNow + timeout;
+                var spinWait = new SpinWait();
+                while (ReadCallCount < count)
+                {
+                    if (DateTime.UtcNow >= deadline)
+                        throw new TimeoutException($"Only {ReadCallCount} of {count} page reads were issued");
+                    spinWait.SpinOnce();
+                }
+            }
+
+            internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context,
+                    ref CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+            {
+                LastReadCts = cts;
+                if (cts is not null)
+                    readCtsByPage[readPage] = cts;
+
+                if (ThrowOnRead is not null && (ThrowOnReadPage is null || ThrowOnReadPage.Value == readPage))
+                {
+                    _ = Interlocked.Increment(ref readCallCount);
                     throw ThrowOnRead;
+                }
+
+                // Reuse the frame's event exactly as the allocator does, so the tests exercise that lifetime too.
+                if (completed is null)
+                    completed = new CountdownEvent(1);
+                else
+                    completed.Reset();
+
+                lock (distinctCompletionEvents)
+                    _ = distinctCompletionEvents.Add(completed);
+
+                if (HoldCompletions)
+                {
+                    // Publish the event before the read is counted, so a test that waits on the count can always
+                    // resolve the read it just observed.
+                    heldCompletions[readPage] = completed;
+                    _ = Interlocked.Increment(ref readCallCount);
+                    return;
+                }
 
                 // Report the load as already complete so the caller does not wait on a device that does not exist.
-                completed = new CountdownEvent(1);
+                _ = Interlocked.Increment(ref readCallCount);
                 _ = completed.Signal();
                 _ = Interlocked.Decrement(ref pendingDrainCallbacks);
             }
@@ -162,7 +255,8 @@ namespace Tsavorite.test
         /// </summary>
         [Test]
         [Category("TsavoriteLog")]
-        public void FrameClaimIsReleasedWhenEpochBumpThrows()
+        public void FrameClaimIsReleasedWhenEpochBumpThrows(
+                [Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode scanBufferingMode)
         {
             RunBounded(() =>
             {
@@ -170,7 +264,7 @@ namespace Tsavorite.test
 
                 // Construct while unprotected; the iterator only adopts the epoch when the constructing thread is not
                 // already holding it.
-                var iterator = new StubScanIterator(epoch);
+                var iterator = new StubScanIterator(epoch, scanBufferingMode);
 
                 var poison = new InvalidOperationException("poison drain action");
 
@@ -199,7 +293,7 @@ namespace Tsavorite.test
                     // stalls Dispose.
                     DrainIgnoringQueuedFailures(epoch);
                     ClassicAssert.AreEqual(0, iterator.PendingDrainCallbacks, "the frame's claim must be released exactly once");
-                    ClassicAssert.LessOrEqual(iterator.ReadCallCount, 1, "the abandoned read must not be issued twice");
+                    ClassicAssert.LessOrEqual(iterator.ReadCallCount, iterator.FrameSize, "the abandoned read must not be issued twice");
 
                     // Draining again must not repeat the release.
                     DrainIgnoringQueuedFailures(epoch);
@@ -231,12 +325,13 @@ namespace Tsavorite.test
         /// </summary>
         [Test]
         [Category("TsavoriteLog")]
-        public void FrameClaimIsReleasedWhenEpochBumpThrowsBeforeRegistration()
+        public void FrameClaimIsReleasedWhenEpochBumpThrowsBeforeRegistration(
+                [Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode scanBufferingMode)
         {
             RunBounded(() =>
             {
                 var epoch = new LightEpoch();
-                var iterator = new StubScanIterator(epoch);
+                var iterator = new StubScanIterator(epoch, scanBufferingMode);
                 var poison = new InvalidOperationException("poison drain action");
 
                 // A second protected thread keeps SafeToReclaimEpoch below the poison's epoch while it is queued, so
@@ -290,12 +385,13 @@ namespace Tsavorite.test
         /// </summary>
         [Test]
         [Category("TsavoriteLog")]
-        public void FrameClaimIsReleasedWhenIssuingTheReadThrows()
+        public void FrameClaimIsReleasedWhenIssuingTheReadThrows(
+                [Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode scanBufferingMode)
         {
             RunBounded(() =>
             {
                 var epoch = new LightEpoch();
-                var iterator = new StubScanIterator(epoch) { ThrowOnRead = new InvalidOperationException("device failed to issue read") };
+                var iterator = new StubScanIterator(epoch, scanBufferingMode) { ThrowOnRead = new InvalidOperationException("device failed to issue read") };
 
                 epoch.Resume();
                 try
@@ -303,7 +399,7 @@ namespace Tsavorite.test
                     // The read is skipped rather than retried, so the claim is released and the wait is cancelled.
                     _ = Assert.Catch(() => iterator.ClaimFrameAndIssueRead(page: 0));
 
-                    ClassicAssert.AreEqual(1, iterator.ReadCallCount, "the read must have been attempted");
+                    ClassicAssert.AreEqual(iterator.FrameSize, iterator.ReadCallCount, "every frame's read must have been attempted");
                     ClassicAssert.AreEqual(0, iterator.PendingDrainCallbacks, "the frame's claim must be released exactly once");
 
                     epoch.ProtectAndDrain();
@@ -321,12 +417,13 @@ namespace Tsavorite.test
         /// </summary>
         [Test]
         [Category("TsavoriteLog")]
-        public void FrameLoadSucceedsWhenEpochBumpDoesNotThrow()
+        public void FrameLoadSucceedsWhenEpochBumpDoesNotThrow(
+                [Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode scanBufferingMode)
         {
             RunBounded(() =>
             {
                 var epoch = new LightEpoch();
-                var iterator = new StubScanIterator(epoch);
+                var iterator = new StubScanIterator(epoch, scanBufferingMode);
 
                 epoch.Resume();
                 try
@@ -334,11 +431,177 @@ namespace Tsavorite.test
                     _ = iterator.ClaimFrameAndIssueRead(page: 0);
                     epoch.ProtectAndDrain();
 
-                    ClassicAssert.AreEqual(1, iterator.ReadCallCount);
+                    ClassicAssert.AreEqual(iterator.FrameSize, iterator.ReadCallCount);
                     ClassicAssert.AreEqual(0, iterator.PendingDrainCallbacks);
                 }
                 finally
                 {
+                    DrainAndDispose(epoch, iterator);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Each frame keeps one completion event for its lifetime, reset per page read, so the number of events a scan
+        /// creates is bounded by the frame count rather than the number of pages it reads. Dispose disposes each
+        /// frame's event, so this also bounds the kernel wait handles the scan holds.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteLog")]
+        public void FrameLoadCompletionEventIsReusedAcrossPageLoads(
+                [Values(DiskScanBufferingMode.SinglePageBuffering, DiskScanBufferingMode.DoublePageBuffering)] DiskScanBufferingMode scanBufferingMode)
+        {
+            RunBounded(() =>
+            {
+                var epoch = new LightEpoch();
+                var iterator = new StubScanIterator(epoch, scanBufferingMode);
+
+                const int pageCount = 6;
+
+                epoch.Resume();
+                try
+                {
+                    for (var page = 0; page < pageCount; page++)
+                        _ = iterator.ClaimFrameAndIssueRead(page);
+                    epoch.ProtectAndDrain();
+
+                    ClassicAssert.GreaterOrEqual(iterator.ReadCallCount, pageCount, "every page must have been read");
+                    ClassicAssert.AreEqual(iterator.FrameSize, iterator.DistinctCompletionEventCount,
+                        $"{iterator.ReadCallCount} page reads must share {iterator.FrameSize} completion event(s), one per frame");
+                    ClassicAssert.AreEqual(0, iterator.PendingDrainCallbacks);
+                }
+                finally
+                {
+                    DrainAndDispose(epoch, iterator);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Only currentFrame is awaited by <c>BufferAndLoad</c>, so a read-ahead issued into the other frame can still
+        /// be in flight when the scan next maps a page back to it — which happens when the scan skips past the
+        /// prefetched page, as advancing BeginAddress makes it do. Re-issuing then would put two device reads on one
+        /// buffer and orphan the completion event being replaced, so the claim must wait for the prior load.
+        /// </summary>
+        /// <remarks>
+        /// Unreachable while frameSize is 1: nextFrame is then always currentFrame, which is awaited before every
+        /// return, so this is specific to read-ahead.
+        /// </remarks>
+        [Test]
+        [Category("TsavoriteLog")]
+        public void FrameReclaimWaitsForAnInFlightReadAhead()
+        {
+            RunBounded(() =>
+            {
+                var epoch = new LightEpoch();
+                var iterator = new StubScanIterator(epoch, DiskScanBufferingMode.DoublePageBuffering) { HoldCompletions = true };
+                ClassicAssert.AreEqual(2, iterator.FrameSize, "this test covers read-ahead");
+
+                // The claims block on their own frame, so they run off-thread while this thread delivers completions.
+                // Each claim thread holds the epoch across the call, as a scanning thread does.
+                Exception claimFailure = null;
+                Thread runClaim(long page) => new(() =>
+                {
+                    epoch.Resume();
+                    try
+                    {
+                        _ = iterator.ClaimFrameAndIssueRead(page);
+                    }
+                    catch (Exception ex)
+                    {
+                        claimFailure = ex;
+                    }
+                    finally
+                    {
+                        epoch.Suspend();
+                    }
+                })
+                { IsBackground = true };
+
+                Thread first = null, second = null;
+                try
+                {
+                    // Pages 0 and 1 are claimed into frames 0 and 1; only frame 0 is awaited, so page 1's read-ahead
+                    // is still in flight once this returns.
+                    first = runClaim(0);
+                    first.Start();
+                    iterator.WaitForReadCount(2, TestTimeout);
+                    iterator.CompleteRead(0);
+                    ClassicAssert.IsTrue(first.Join(TestTimeout), "the first claim did not complete");
+
+                    // Page 5 maps back to frame 1, whose page-1 read-ahead has not completed.
+                    second = runClaim(5);
+                    second.Start();
+
+                    ClassicAssert.IsFalse(second.Join(ReclaimObservationWindow),
+                        "re-claiming a frame must not return while its prior read-ahead is in flight");
+                    ClassicAssert.AreEqual(2, iterator.ReadCallCount,
+                        "no read may be issued into a frame whose prior read-ahead is still in flight");
+
+                    // Releasing the read-ahead lets the re-claim proceed and issue its own reads.
+                    iterator.CompleteRead(1);
+                    iterator.WaitForReadCount(4, TestTimeout);
+                    iterator.CompleteRead(5);
+                    ClassicAssert.IsTrue(second.Join(TestTimeout), "the re-claim did not complete after its prior load finished");
+                    ClassicAssert.IsNull(claimFailure, $"claim failed: {claimFailure}");
+                }
+                finally
+                {
+                    // Release every held read and let the claim threads exit before the epoch is disposed under them.
+                    iterator.CompleteAllReads();
+                    _ = first?.Join(TestTimeout);
+                    _ = second?.Join(TestTimeout);
+                    epoch.Resume();
+                    DrainAndDispose(epoch, iterator);
+                }
+            });
+        }
+
+        /// <summary>
+        /// A read-ahead that fails cancels its frame's token without replacing it, and only <c>WaitForFrameLoad</c>'s
+        /// failure path installs a fresh one -- which a frame re-claimed without first being awaited as currentFrame
+        /// never reaches. The replacement read must not inherit that cancelled token: the next wait on the frame would
+        /// throw at once, skipping a page that is genuinely being read and signalling the frame reusable while that read
+        /// is still writing into its buffer.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ReclaimAfterFailedReadAheadRenewsTheFrameToken()
+        {
+            RunBounded(() =>
+            {
+                var epoch = new LightEpoch();
+                var iterator = new StubScanIterator(epoch, DiskScanBufferingMode.DoublePageBuffering);
+                ClassicAssert.AreEqual(2, iterator.FrameSize, "this test covers read-ahead");
+
+                epoch.Resume();
+                try
+                {
+                    // Claim pages 0 and 1 into frames 0 and 1, failing only page 1's read-ahead. That cancels frame 1's
+                    // token, leaves its completion event unset, and is never observed by a WaitForFrameLoad, because
+                    // only frame 0 is awaited here.
+                    iterator.ThrowOnRead = new InvalidOperationException("read-ahead failed");
+                    iterator.ThrowOnReadPage = 1;
+                    _ = iterator.ClaimFrameAndIssueRead(0);
+
+                    var failedCts = iterator.ReadCtsForPage(1);
+                    ClassicAssert.IsNotNull(failedCts, "page 1's read should have been issued");
+                    ClassicAssert.IsTrue(failedCts.IsCancellationRequested,
+                        "a failed read-ahead should leave its frame's token cancelled");
+
+                    // Page 5 maps back to frame 1 and re-claims it, never having gone through WaitForFrameLoad there.
+                    iterator.ThrowOnRead = null;
+                    iterator.ThrowOnReadPage = null;
+                    _ = iterator.ClaimFrameAndIssueRead(5);
+
+                    var reclaimCts = iterator.ReadCtsForPage(5);
+                    ClassicAssert.IsNotNull(reclaimCts, "page 5's read should have been issued into the re-claimed frame");
+                    ClassicAssert.IsFalse(reclaimCts.IsCancellationRequested,
+                        "the replacement read must not be issued under the cancelled token left by the failed read-ahead");
+                }
+                finally
+                {
+                    iterator.CompleteAllReads();
                     DrainAndDispose(epoch, iterator);
                 }
             });

@@ -526,7 +526,9 @@ namespace Garnet.client
             timeoutCheckerCts?.Cancel();
             socket?.Dispose();
             networkWriter?.Dispose();
-            latency?.Return();
+            // Released rather than pooled: reply processing on the network thread records through this
+            // histogram and is not drained by the socket dispose above.
+            latency?.Release();
             if (isEpochOwned)
                 epoch.Dispose();
         }

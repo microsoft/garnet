@@ -51,6 +51,12 @@ namespace Tsavorite.core
         /// </summary>
         private CompletionEvent resizeTaskEvent;
 
+        /// <summary>
+        /// Nonzero while a wakeup of <see cref="ResizerTask"/> is outstanding, so that the over-budget record
+        /// path can coalesce redundant signals. See <see cref="SignalResizer"/>.
+        /// </summary>
+        private int resizePending;
+
         /// <summary>The running resizer task, retained so <see cref="Stop"/> can observe its completion.</summary>
         private volatile Task resizerTask;
 
@@ -75,11 +81,31 @@ namespace Tsavorite.core
         public bool IsStopped => runState == (int)RunState.Stopped;
 
         /// <summary>
-        /// Indicates whether the background resizer task is currently running (started and not yet stop-requested/stopped).
-        /// Callers on the allocation path use this to decide whether they must evict synchronously themselves (when the
-        /// resizer is not running, e.g. during recovery/AOF replay) instead of deferring eviction to the resizer.
+        /// Set by <see cref="ResizerTask"/> once its body is actually executing. <see cref="Start"/> publishes
+        /// <see cref="RunState.Running"/> and then queues the body with <c>Task.Run</c>, so between those two points the
+        /// resizer is nominally running but cannot act on anything; under thread-pool starvation that window is unbounded.
         /// </summary>
-        public bool IsRunning => runState == (int)RunState.Running;
+        /// <remarks>
+        /// <see cref="RunState.Running"/> must keep being published synchronously in <see cref="Start"/> rather than moved
+        /// here: <see cref="Stop"/> hands off by CAS-ing Running to StopRequested, so if the state were still NotStarted at
+        /// that point the CAS would fail, <see cref="Stop"/> would return without signalling or waiting, and the body would
+        /// then start against an allocator that has already torn down its epoch and buffer pool.
+        /// </remarks>
+        volatile bool resizerDispatched;
+
+        /// <summary>
+        /// Indicates whether the background resizer task is currently running: started, actually dispatched, and not yet
+        /// stop-requested/stopped. Callers on the allocation path use this to decide whether they must evict synchronously
+        /// themselves (when the resizer is not running, such as before it is started or after it has been stopped for
+        /// shutdown) instead of deferring eviction to the resizer, which would never act on the request.
+        /// </summary>
+        /// <remarks>
+        /// This requires <see cref="resizerDispatched"/> rather than <see cref="RunState.Running"/> alone. Deferring to a
+        /// resizer that the thread pool has not dispatched yet stalls the allocation retry loop for as long as dispatch
+        /// takes, which a starved pool makes unbounded; treating that window as "not running" costs nothing when the pool
+        /// is healthy and falls back to the same synchronous page-cap eviction used when there is no size tracker at all.
+        /// </remarks>
+        public bool IsRunning => runState == (int)RunState.Running && resizerDispatched;
 
         /// <summary>
         /// Callback for when we have trimmed memory, such as by shifting headAddress to close records and/or evicting pages.
@@ -104,7 +130,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             return $"{runState}; TargetSize: [{TargetSize}, hi: {highTargetSize}, lo: {lowTargetSize}]; TotalSize: [{TotalSize}, Heap: {heapSize.Total}];"
-                 + $" isOver: [{IsOverBudget}, canEvict {IsBeyondSizeLimitAndCanEvict}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
+                 + $" isOver: [{IsOverBudget}, canEvict {IsBeyondSizeLimitAndCanEvict()}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
         }
 
         /// <summary>Returns the memory budget we have remaining</summary>
@@ -189,8 +215,10 @@ namespace Tsavorite.core
         void OnStopped()
         {
             _ = Interlocked.Exchange(ref runState, (int)RunState.Stopped);
+
+            // The field is deliberately left in place: a size update that observed Running can still call
+            // SignalResizer after this point, and Set on a disposed event is a safe no-op.
             resizeTaskEvent.Dispose();
-            resizeTaskEvent = default;
         }
 
         /// <summary>
@@ -217,7 +245,41 @@ namespace Tsavorite.core
 
             // Only signal if we are shrinking; growth is handled normally as we add pages and records.
             if (shrink)
+                SignalResizer();
+        }
+
+        /// <summary>
+        /// Signal the resizer, coalescing redundant signals. While a wakeup is already outstanding this costs a
+        /// single read of a line that is written only on the signal edge and on resizer wakeups, so the
+        /// over-budget record path performs no allocation and no atomic read-modify-write.
+        /// </summary>
+        /// <remarks>
+        /// No size update can be missed, given <see cref="ResizerTask"/>'s capture-then-clear-then-sample
+        /// ordering. A caller that reads <see cref="resizePending"/> as 1, and therefore skips the signal, is
+        /// ordered before the next clear, which precedes the next sample; its size update precedes that read
+        /// because <see cref="ConcurrentCounter.Increment"/> is interlocked and therefore a full fence, so the
+        /// next sample observes it. A caller whose exchange returns 0 is ordered after the last clear, hence
+        /// after the capture that preceded it, so its <c>Set</c> retires the captured generation and the
+        /// resizer's wait returns at once rather than sleeping out the timeout. Callers must accordingly call
+        /// this only after publishing the size update.
+        /// </remarks>
+        /// <summary>
+        /// Number of signals actually raised on <see cref="resizeTaskEvent"/>, as opposed to the (much larger)
+        /// number of times a caller asked for one. Incremented only on the rare path that genuinely signals, so
+        /// it costs the over-budget record path nothing; exposed so tests can assert that coalescing holds under
+        /// sustained pressure rather than inferring it from allocation counts.
+        /// </summary>
+        internal long ResizerSignalCount => Interlocked.Read(ref resizerSignalCount);
+
+        private long resizerSignalCount;
+
+        private void SignalResizer()
+        {
+            if (Volatile.Read(ref resizePending) == 0 && Interlocked.Exchange(ref resizePending, 1) == 0)
+            {
+                _ = Interlocked.Increment(ref resizerSignalCount);
                 resizeTaskEvent.Set();
+            }
         }
 
         /// <summary>Adds size to the tracked total count</summary>
@@ -227,7 +289,7 @@ namespace Tsavorite.core
             {
                 heapSize.Increment(size);
                 if (size > 0 && IsBeyondSizeLimitAndCanEvict())
-                    resizeTaskEvent.Set();
+                    SignalResizer();
                 Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
             }
         }
@@ -243,7 +305,7 @@ namespace Tsavorite.core
                 {
                     heapSize.Increment(size);
                     if (IsBeyondSizeLimitAndCanEvict())
-                        resizeTaskEvent.Set();
+                        SignalResizer();
                 }
                 else
                 {
@@ -255,7 +317,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Called when the caller has determined we are over budget, to signal the event.</summary>
-        public void Signal() => resizeTaskEvent.Set();
+        public void Signal() => SignalResizer();
 
         /// <summary>
         /// Performs resizing by waiting for an event that is signaled whenever memory utilization changes.
@@ -263,22 +325,60 @@ namespace Tsavorite.core
         /// </summary>
         async Task ResizerTask(CancellationToken cancellationToken)
         {
+            // Publish that the body is executing, so IsRunning stops reporting a resizer the thread pool has not dispatched
+            // yet. Until this point the allocation path evicts synchronously rather than waiting on a signal we cannot act on.
+            resizerDispatched = true;
+
             while (true)
             {
                 try
                 {
-                    // Note: CompletionEvent functions as an AutoResetEvent, so any signals that arrive between 
-                    // these calls to WaitAsync will be lost. ResizeIfNeeded retries as long as we are over budget, 
-                    // but there is still a chance we'll miss a growth+signal between that check and the next WaitAsync.
-                    // The timeout mitigates this but it would be better to find an awaitable ManualResetEvent.
-                    await resizeTaskEvent.WaitAsync(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), cancellationToken).ConfigureAwait(false);
+                    // Capture the event generation BEFORE resizing, and wait on the capture. Set() retires the current
+                    // generation and installs a fresh, unsignaled one, so a signal raised while we are resizing (rather
+                    // than parked in WaitAsync) releases the generation captured here and the wait below returns at once.
+                    // Re-reading the field after resizing would instead pick up the fresh generation and sleep out the
+                    // full timeout, having missed the signal. This is the same capture-before-check discipline every
+                    // flushEvent caller uses, and the reason CompletionEvent is a struct.
+                    // The capture must be taken afresh each iteration: Set() releases int.MaxValue permits on the
+                    // generation it retires, so a capture that has already been consumed never blocks again.
+                    var localResizeTaskEvent = resizeTaskEvent;
+
+                    // Consume any outstanding wakeup AFTER capturing and BEFORE ResizeIfNeeded samples sizes below.
+                    // Both halves of that ordering are load-bearing; see SignalResizer.
+                    //
+                    // Clearing before capturing would lose wakeups: a signaller slipping into that window sets
+                    // resizePending and calls Set(), the capture then picks up the generation Set() just published,
+                    // and the wait below parks on it -- having consumed the signal without acting on it -- while
+                    // resizePending stays latched at 1 so every later signaller coalesces itself away. The resizer
+                    // would then sleep out the full ResizeTaskDelaySeconds with work outstanding, stalling the
+                    // allocation retry loop that NeedToWaitForClose drives through Signal().
+                    _ = Interlocked.Exchange(ref resizePending, 0);
+
                     if (runState == (int)RunState.Running)
-                        ResizeIfNeeded(cancellationToken);
+                    {
+                        // Contain resize failures so they cannot skip the wait below; otherwise a persistently failing
+                        // resize would spin this loop with no delay between attempts.
+                        try
+                        {
+                            ResizeIfNeeded(cancellationToken);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception e)
+                        {
+                            logger?.LogWarning(e, "Exception when attempting to perform memory resizing.");
+                        }
+                    }
+
                     if (runState != (int)RunState.Running)
                     {
                         OnStopped();
                         return;
                     }
+
+                    await localResizeTaskEvent.WaitAsync(TimeSpan.FromSeconds(ResizeTaskDelaySeconds), cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -288,7 +388,7 @@ namespace Tsavorite.core
                 }
                 catch (Exception e)
                 {
-                    logger?.LogWarning(e, "Exception when attempting to perform memory resizing.");
+                    logger?.LogWarning(e, "Exception while waiting to perform memory resizing.");
                 }
             }
         }

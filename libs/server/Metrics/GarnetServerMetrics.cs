@@ -13,6 +13,13 @@ namespace Garnet.server
         public long total_connections_active;
 
         /// <summary>
+        /// Connections refused because the configured connection limit was reached. Summed across
+        /// listeners, so this is process-wide even though the limit it reports on is applied per
+        /// listener -- see GarnetServer's per-endpoint construction loop.
+        /// </summary>
+        public long rejected_connections;
+
+        /// <summary>
         /// Instantaneous metrics
         /// </summary>
         public static readonly int byteUnit = 1 << 10;
@@ -50,6 +57,7 @@ namespace Garnet.server
             total_connections_received = 0;
             total_connections_disposed = 0;
             total_connections_active = 0;
+            rejected_connections = 0;
 
             instantaneous_cmd_per_sec = 0;
             instantaneous_net_input_tpt = 0;
@@ -58,7 +66,7 @@ namespace Garnet.server
             globalSessionMetrics = trackStats ? new GarnetSessionMetrics() : null;
             historySessionMetrics = trackStats ? new GarnetSessionMetrics() : null;
 
-            globalLatencyMetrics = trackLatency ? new() : null;
+            globalLatencyMetrics = trackLatency ? new(monitor.LatencyPrecision) : null;
 
             globalCommandStats = trackCommandStats ? new CommandStats() : null;
             historyCommandStats = trackCommandStats ? new CommandStats() : null;

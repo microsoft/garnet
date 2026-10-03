@@ -454,8 +454,8 @@ namespace Tsavorite.core
             frame?.Dispose();
         }
 
-        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, int readPage, long untilAddress, TContext context, out CountdownEvent completed,
-                int devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPageFromDeviceToFrame(readBuffers, readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
+        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
+                long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
+            => hlogBase.AsyncReadPageFromDeviceToFrame(readBuffers, readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame, ref completed, devicePageOffset, device, objectLogDevice, cts);
     }
 }

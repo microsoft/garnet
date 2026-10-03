@@ -196,20 +196,20 @@ namespace Tsavorite.core
         /// Read pages from specified device
         /// </summary>
         internal void AsyncReadPageFromDeviceToFrame<TContext>(
-                                        int readPage,
+                                        long readPage,
                                         long untilAddress,
                                         DeviceIOCompletionCallback callback,
                                         TContext context,
                                         BlittableFrame frame,
-                                        out CountdownEvent completed,
-                                        int devicePageOffset = 0,
+                                        ref CountdownEvent completed,
+                                        long devicePageOffset = 0,
                                         IDevice device = null,
                                         IDevice objectLogDevice = null,
                                         CancellationTokenSource cts = null)
         {
             var usedDevice = device ?? this.device;
 
-            completed = new CountdownEvent(1);
+            PrepareFrameLoadCompletionEvent(ref completed);
 
             int pageIndex = (int)(readPage % frame.frameSize);
             if (!frame.IsAllocated(pageIndex))
