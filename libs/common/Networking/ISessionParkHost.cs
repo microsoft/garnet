@@ -71,5 +71,24 @@ namespace Garnet.networking
         /// window where a kill lands while the park is still being established.
         /// </remarks>
         void AbortPark();
+
+        /// <summary>
+        /// Latches a terminal close for this connection and contributes the release the abandoned operation
+        /// will never make. Callable from any thread and idempotent.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="AbortPark"/> alone is not enough when the park never starts. An operation abandoned
+        /// before it starts is consumed without ever releasing its session, so the handoff between the
+        /// session parking and the receive state arriving at the handler has one contributor that will
+        /// never arrive, and the receive state -- the accept socket and the pinned receive buffer -- is
+        /// held until the handler is collected rather than disposed when the connection closes. Standing
+        /// in for the missing release is what lets the handler reclaim it deterministically.
+        /// <para>
+        /// On TLS this is the only thing that reclaims it. The reader loop catches its own exceptions and
+        /// disposes the handler without the receive state in hand, so the receive path's own failure
+        /// handling -- which would otherwise dispose exactly these args -- is never reached.
+        /// </para>
+        /// </remarks>
+        void ClosePark();
     }
 }

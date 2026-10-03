@@ -609,7 +609,7 @@ namespace Garnet.server
 
                 // The session is no longer usable, dispose it
                 networkSender.DisposeNetworkSender(true);
-                AbandonSessionWorkOnFailure();
+                _ = AbandonSessionWorkOnFailure();
             }
             catch (GarnetException ex)
             {
@@ -620,7 +620,7 @@ namespace Garnet.server
                 // abandoned either way, so a transaction it left running holds its keys locked either way,
                 // and a session that survives the error goes on holding them for as long as the client stays
                 // connected. Writing the error can itself throw, which is the other way this gets skipped.
-                AbandonSessionWorkOnFailure();
+                var protocolStateLost = AbandonSessionWorkOnFailure();
 
                 // Forward Garnet error as RESP error
                 if (ex.ClientResponse)
@@ -639,7 +639,7 @@ namespace Garnet.server
                     Environment.Exit(-1);
                 }
 
-                if (ex.DisposeSession)
+                if (ex.DisposeSession || protocolStateLost)
                 {
                     // The session is no longer usable, dispose it
                     networkSender.DisposeNetworkSender(true);
@@ -651,7 +651,7 @@ namespace Garnet.server
                 logger?.LogCritical(ex, "ProcessMessages threw an exception:");
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
-                AbandonSessionWorkOnFailure();
+                _ = AbandonSessionWorkOnFailure();
             }
             finally
             {
@@ -736,7 +736,7 @@ namespace Garnet.server
                 {
                     var noScriptPassed = true;
 
-                    if (CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd)))
+                    if ((CheckACLPermissions(cmd) && (noScriptPassed = CheckScriptPermissions(cmd))) || IsTransactionCommitPass(cmd))
                     {
                         // In RESP2, only a small set of commands are allowed while in subscription mode.
                         // RESP3 uses distinct push types for subscription messages, so all commands are valid.
@@ -842,10 +842,31 @@ namespace Garnet.server
                     // the park, which has no receive outstanding to notice. Without this the handler and its
                     // receive state stay held until the operation's own deadline, or forever if it has none,
                     // on a connection the server itself just closed.
-                    AbandonSessionWorkOnFailure();
+                    _ = AbandonSessionWorkOnFailure();
                 }
             }
         }
+
+        /// <summary>
+        /// Whether this dispatch is the commit pass of a transaction that is already running, rather than a
+        /// command the client is issuing now.
+        /// </summary>
+        /// <remarks>
+        /// <c>EXEC</c> replays its queued commands out of the receive buffer and reaches itself a second
+        /// time to step over them; that second pass is what commits the transaction and releases its locks.
+        /// It is the framework re-entering an <c>EXEC</c> the client already issued and was already
+        /// authorized for, so checking permissions again is not meaningful -- and it is harmful, because a
+        /// queued <c>ACL SETUSER</c> that revokes <c>EXEC</c> takes effect between the two passes. Rejecting
+        /// the commit pass raises no exception, so nothing unwinds the transaction: it stays running and its
+        /// keys stay locked for the life of the connection.
+        /// <para>
+        /// Consulted only once the permission check has already failed, so the dispatch path pays nothing
+        /// for it.
+        /// </para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        bool IsTransactionCommitPass(RespCommand cmd)
+            => cmd == RespCommand.EXEC && txnManager.state == TxnState.Running;
 
         // Make first command in string as uppercase
         private bool MakeUpperCase(byte* ptr, int len)
