@@ -67,13 +67,28 @@ namespace Tsavorite.core
         /// bound that cannot be observed too late.
         /// </para>
         /// <para>
-        /// The lower bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.FlushedUntilAddress"/>: below it the
-        /// record's bytes are already durable and the flush that wrote them has released it.
+        /// A record below <see cref="AllocatorBase{TStoreFunctions, TAllocator}.FlushedUntilAddress"/> is durable, but not yet
+        /// free: a partial flush must begin its device write on a sector boundary, so it rewrites from the live page every record
+        /// between that boundary and its own start address. Those records are below the flush's record walk and are never
+        /// re-serialized, but disposing one while that write is in flight can still persist a torn image of it. That applies only
+        /// while such a flush is actually outstanding, which is exactly <see cref="LastIssuedFlushedUntilAddress"/> leading
+        /// FlushedUntilAddress - the issuing worker publishes LastIssued before issuing the write. Once the flush completes the
+        /// two converge and the sector is released.
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool IsFrozenForFlush(long logicalAddress)
-            => logicalAddress < SafeReadOnlyAddress && logicalAddress >= FlushedUntilAddress;
+        {
+            if (logicalAddress >= SafeReadOnlyAddress)
+                return false;
+
+            var flushedUntilAddress = FlushedUntilAddress;
+            if (logicalAddress >= flushedUntilAddress)
+                return true;
+
+            return GetLastIssuedReadOnlyFlushAddress() > flushedUntilAddress
+                && logicalAddress >= RoundDown(flushedUntilAddress, sectorSize);
+        }
 
         /// <summary>
         /// Dynamically extended Flush end address, used by <see cref="OnPagesMarkedReadOnlyWorker"/>

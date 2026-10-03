@@ -7,6 +7,7 @@ using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
@@ -350,8 +351,9 @@ namespace Tsavorite.test
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjDeleteDisposeTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjDeleteDisposeTests.obj.log"), deleteOnClose: true);
 
-            // Only the frozen-flush test needs to hold a flush in flight; everywhere else the gate would just add indirection.
-            if (TestContext.CurrentContext.Test.MethodName.Contains("FrozenForFlush"))
+            // Only the flush-window tests need to hold a flush in flight; everywhere else the gate would just add indirection.
+            if (TestContext.CurrentContext.Test.MethodName.Contains("FrozenForFlush")
+                || TestContext.CurrentContext.Test.MethodName.Contains("PartialSector"))
                 gatedLog = new GatedCompletionDevice(log);
 
             tracker = new ObjDisposeTracker();
@@ -453,6 +455,51 @@ namespace Tsavorite.test
                 _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
 
             ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) must be deferred while the record's flush is in flight");
+
+            // Let the flush complete so teardown does not block on it.
+            gatedLog.Release(0);
+            gatedLog.WaitForCompletion(0, TimeSpan.FromSeconds(30));
+        }
+
+        /// <summary>
+        /// A partial flush must start its device write on a sector boundary, so it rewrites, from the live page, the records
+        /// between that boundary and its own start address - records a previous flush already made durable. Disposing one of
+        /// them while that write is in flight can persist a torn record image, so the frozen window has to extend down to the
+        /// sector boundary rather than stopping at FlushedUntilAddress.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDisposeDeferredWhileInRewrittenPartialSectorTest()
+        {
+            var recordAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+
+            // First flush: make the record durable, ending on a non-sector-aligned boundary.
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            var sectorSize = (int)log.SectorSize;
+            var flushedUntil = store.hlogBase.FlushedUntilAddress;
+            Assert.That(flushedUntil, Is.GreaterThan(recordAddress), "record should be durable");
+            Assert.That(flushedUntil % sectorSize, Is.Not.EqualTo(0), "the flush must end mid-sector for the next one to rewrite it");
+            Assert.That(recordAddress, Is.GreaterThanOrEqualTo(RoundDown(flushedUntil, sectorSize)),
+                "record must sit in the sector that the next flush rewrites");
+
+            // Second flush: hold its device write. It starts at the first flush's end and rounds that down to the sector
+            // boundary, so its write span covers the already-durable record.
+            gatedLog.Gate = true;
+            UpsertObj(2, 200);
+            store.hlogBase.ShiftReadOnlyAddressWithWait(store.Log.TailAddress, wait: false);
+            gatedLog.WaitForPending(1, TimeSpan.FromSeconds(30));
+            tracker.Reset();
+
+            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.True,
+                "a record being rewritten by an in-flight flush must be frozen");
+
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
+                _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
+
+            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount,
+                "OnDispose(Deleted) must be deferred while a flush is rewriting the record's sector");
 
             // Let the flush complete so teardown does not block on it.
             gatedLog.Release(0);
