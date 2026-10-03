@@ -925,7 +925,7 @@ namespace Garnet.server
                     chunkHeader = chunkHeader
                 };
                 var chKey = ConditionallyHoistedKey.Create(key, log.BufferPool);
-                log.EnqueueChunkedObject(header, AofBasicChunkHeader.ObjectIdOffset, in chKey, ref input, objectSerializer, value, ChunkBufferSize(log, value), writeInput: opType.HasChunkInput(), epochAccessor, out logicalAddress);
+                log.EnqueueChunkedObject(header, AofBasicChunkHeader.ObjectIdOffset, in chKey, ref input, objectSerializer, value, writeInput: opType.HasChunkInput(), epochAccessor, out logicalAddress);
                 chKey.Dispose();
             }
             // Multi physical sublogs and multi-replay support
@@ -949,21 +949,12 @@ namespace Garnet.server
                     chunkHeader = chunkHeader
                 };
                 var chKey = ConditionallyHoistedKey.Create(key, log.BufferPool);
-                log.EnqueueChunkedObject(header, AofShardedChunkHeader.ObjectIdOffset, in chKey, ref input, objectSerializer, value, ChunkBufferSize(log, value), writeInput: opType.HasChunkInput(), epochAccessor, out logicalAddress);
+                log.EnqueueChunkedObject(header, AofShardedChunkHeader.ObjectIdOffset, in chKey, ref input, objectSerializer, value, writeInput: opType.HasChunkInput(), epochAccessor, out logicalAddress);
                 chKey.Dispose();
 
                 if (serverOptions.AofAutoCommit)
                     Commit();
             }
-        }
-
-        // Buffer size for streaming an object into chunks: min(object heap size, half a log page), floored at 1 byte.
-        static int ChunkBufferSize(TsavoriteLog log, IHeapObject value)
-        {
-            var half = (1L << log.UnsafeGetLogPageSizeBits()) / 2;
-            var heap = value.HeapMemorySize;
-            var size = (heap > 0 && heap < half) ? heap : half;
-            return size < 1 ? 1 : (int)size;
         }
 
         internal unsafe void EnqueueStoredProc(AofEntryType opType, byte procedureId, long txnVersion, int sessionId, ref CustomProcedureInput procInput, CustomTransactionProcedure proc)

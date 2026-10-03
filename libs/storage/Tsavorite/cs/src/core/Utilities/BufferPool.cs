@@ -192,12 +192,6 @@ namespace Tsavorite.core
             // Assume ctor is called for allocation and leave Free unset
         }
 
-        public unsafe (byte[] array, long offset) GetArrayAndUnalignedOffset(long alignedOffset)
-        {
-            long ptr = (long)Unsafe.AsPointer(ref buffer[0]);
-            return (buffer, alignedOffset + ptr - (long)aligned_pointer);
-        }
-
         /// <summary>
         /// Dispose
         /// </summary>
@@ -246,14 +240,19 @@ namespace Tsavorite.core
         public Span<byte> TotalValidSpan => new(GetValidPointer(), ValidTotalCapacity);
 
         /// <summary>
-        /// Get Span of entire allocated space after the aligned pointer (see <see cref="available_bytes"/>).
+        /// The aligned region as <see cref="ReadOnlyMemory{T}"/>, for APIs that need memory rather than a span — notably
+        /// <see cref="System.Buffers.ReadOnlySequenceSegment{T}"/>, whose <c>Memory</c> can span buffers.
         /// </summary>
-        public Span<byte> AvailableSpan => new(aligned_pointer, available_bytes);
-
-        /// <summary>
-        /// Get Span of entire allocated space after the valid pointer (see <see cref="valid_offset"/>).
-        /// </summary>
-        public Span<byte> AvailableValidSpan => new(GetValidPointer(), available_bytes - valid_offset);
+        /// <remarks>
+        /// Unlike the <c>Span</c> accessors on this type, this is derived from <see cref="buffer"/> and
+        /// <see cref="aligned_offset"/> rather than from <see cref="aligned_pointer"/>. <see cref="Memory{T}"/> stores an
+        /// object reference and cannot point at a raw address, so a pointer-based form is not expressible without a
+        /// <see cref="System.Buffers.MemoryManager{T}"/>; going through the array avoids that object entirely. The result is
+        /// array-backed and the array is pinned, so it stays valid until the buffer is returned to the pool.
+        /// </remarks>
+        /// <param name="offset">Start offset relative to <see cref="aligned_pointer"/>.</param>
+        /// <param name="length">Number of bytes.</param>
+        public ReadOnlyMemory<byte> AsReadOnlyMemory(int offset, int length) => buffer.AsMemory(aligned_offset + offset, length);
 
         /// <summary>
         /// Returns the Span of requested space (see <see cref="required_bytes"/>).
