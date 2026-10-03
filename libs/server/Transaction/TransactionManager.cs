@@ -455,6 +455,15 @@ namespace Garnet.server
         /// recovered store match the live one. Aborting would discard writes the client was told had landed.
         /// </para>
         /// <para>
+        /// That holds for every path that reaches here, not just the one the tests exercise. Committing a
+        /// group would only be unsafe if it could contain a record whose mutation never happened, and it
+        /// cannot: every AOF write is issued from a <c>Post*Operation</c> callback, which Tsavorite invokes
+        /// after the record has been mutated, with the pre-operation callback only setting a flag on the
+        /// operation info. The one reachable asymmetry is the opposite and harmless one -- a mutation whose
+        /// record was never written -- which committing preserves and aborting would discard along with the
+        /// rest of the group.
+        /// </para>
+        /// <para>
         /// The watch container is deliberately left alone. Every path that reaches here goes on to destroy
         /// the connection, and the container holds nothing outside the session, so resetting it would be
         /// unobservable work on a session that is about to be disposed.
