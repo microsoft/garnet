@@ -117,6 +117,28 @@ namespace Garnet.server
         /// State
         /// </summary>
         public TxnState state;
+
+        /// <summary>
+        /// True once <see cref="Run"/> has acquired the transactional contexts, locks and store version,
+        /// and until <see cref="Reset(bool)"/> has released them.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <see cref="state"/> cannot be used to decide whether this manager owns a transaction, for two
+        /// reasons. Lua's transactional mode assigns <see cref="TxnState.Running"/> directly through
+        /// <c>SetTransactionMode</c> while owning a *different* lock set and holding its store version in a
+        /// local, so a manager in that state owns nothing and must not release anything. And
+        /// <see cref="Run"/> acquires the contexts and locks well before it assigns
+        /// <see cref="TxnState.Running"/>, so a failure in between -- the <c>TxnStart</c> append is the
+        /// reachable one -- leaves a transaction that is owned but not yet <c>Running</c>.
+        /// </para>
+        /// <para>
+        /// Ownership answers "must this be released", which is what teardown needs.
+        /// <see cref="TxnState.Running"/> answers "is the AOF group open and is <c>EXEC</c> mid-replay",
+        /// which is what the closing marker and the commit pass need. They are not the same question.
+        /// </para>
+        /// </remarks>
+        internal bool OwnsTransaction { get; private set; }
         private const int initialSliceBufferSize = 1 << 10;
         private const int initialKeyBufferSize = 1 << 10;
         readonly ILogger logger;
@@ -270,6 +292,7 @@ namespace Garnet.server
             this.txnStartHead = 0;
             this.operationCntTxn = 0;
             this.state = TxnState.None;
+            this.OwnsTransaction = false;
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
@@ -438,30 +461,30 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Ends a transaction that a failed batch left running.
+        /// Ends a transaction that a failed batch left behind.
         /// </summary>
         /// <remarks>
+        /// <para>
+        /// Guarded on <see cref="OwnsTransaction"/> rather than on <see cref="TxnState.Running"/>, because
+        /// the two differ at both ends. Lua's transactional mode sets <c>Running</c> on a manager that owns
+        /// nothing, and releasing Lua's contexts from here unbalances the store's transaction counters and
+        /// ends contexts whose locks Lua still holds. In the other direction, <see cref="Run"/> owns the
+        /// contexts and locks before it reaches <c>Running</c>, so a failure to append <c>TxnStart</c>
+        /// would otherwise leave them held with nothing to release them.
+        /// </para>
         /// <para>
         /// Running means <see cref="Run"/> reached the point where it writes the <see cref="AofEntryType.TxnStart"/>
         /// marker, so the log holds an open group for this session. Replay attributes every subsequent record
         /// to that group until something terminates it, and a later <c>TxnStart</c> on the same session fails
         /// replay outright with "No nested transactions expected". Ending the group is as much a part of
-        /// abandoning the transaction as releasing its locks.
+        /// abandoning the transaction as releasing its locks -- but only when there is a group to end, which
+        /// is why the marker is conditioned on <c>Running</c> while the release below is not.
         /// </para>
         /// <para>
         /// The marker is <see cref="AofEntryType.TxnCommit"/>, not <see cref="AofEntryType.TxnAbort"/>, because
         /// <c>EXEC</c> does not roll back: the commands that ran before the failure mutated the store and were
         /// acknowledged to the client, and the ones after it never ran. Committing the group is what makes a
         /// recovered store match the live one. Aborting would discard writes the client was told had landed.
-        /// </para>
-        /// <para>
-        /// That holds for every path that reaches here, not just the one the tests exercise. Committing a
-        /// group would only be unsafe if it could contain a record whose mutation never happened, and it
-        /// cannot: every AOF write is issued from a <c>Post*Operation</c> callback, which Tsavorite invokes
-        /// after the record has been mutated, with the pre-operation callback only setting a flag on the
-        /// operation info. The one reachable asymmetry is the opposite and harmless one -- a mutation whose
-        /// record was never written -- which committing preserves and aborting would discard along with the
-        /// rest of the group.
         /// </para>
         /// <para>
         /// The watch container is deliberately left alone. Every path that reaches here goes on to destroy
@@ -471,16 +494,34 @@ namespace Garnet.server
         /// </remarks>
         internal void Abandon()
         {
-            if (state != TxnState.Running)
+            if (!OwnsTransaction)
                 return;
 
-            if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
+            try
             {
-                ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
-                appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnCommit, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
+                // Only when Run reached TxnState.Running, which is the point after the TxnStart append
+                // succeeded. Without an open group there is nothing to close, and an unmatched TxnCommit
+                // is itself a replay hazard.
+                if (state == TxnState.Running && PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
+                {
+                    ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
+                    appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnCommit, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
+                }
             }
-
-            Reset(true);
+            finally
+            {
+                // Appending the marker can fail -- a full or failed device surfaces as an exception from
+                // the append path -- and the transaction's locks, contexts and store version have to come
+                // off regardless. Losing the group's terminator costs the tail of the log, which a device
+                // that is already failing was going to cost anyway. Losing the release strands them with no
+                // owner: keys stay exclusively locked, and the store's count of active transactions in the
+                // version never drops, so no checkpoint can complete again.
+                //
+                // Demonstrated rather than assumed: injecting a throw at the append above and removing this
+                // finally wedges the server, and wedges it past shutdown. That severity is also why there is
+                // no test for it -- a regression would hang the test host rather than fail it.
+                Reset(true);
+            }
         }
 
         internal void Watch(PinnedSpanByte key)
@@ -562,6 +603,10 @@ namespace Garnet.server
 
             // Acquire lock sessions
             BeginTransaction();
+
+            // From here the contexts, the locks taken below and the store version all have to be released,
+            // whether or not this call reaches TxnState.Running.
+            OwnsTransaction = true;
 
             bool lockSuccess;
             if (fail_fast_on_lock)

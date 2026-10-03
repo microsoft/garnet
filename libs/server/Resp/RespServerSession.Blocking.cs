@@ -652,11 +652,13 @@ namespace Garnet.server
         /// commands and run them a second time. Neither can be repaired from here, so the connection closes.
         /// </para>
         /// <para>
-        /// Nothing adjusts the cursor on the way out. Outside a transaction the parser has already consumed
-        /// the command that threw before dispatching it, so the cursor is at a command boundary and the
-        /// pipeline behind it is intact; forcing it to the end of the receive instead would discard whatever
-        /// else arrived in the same read, and a receive boundary is not a command boundary -- a bulk payload
-        /// split across two reads would leave the second read's payload bytes to be parsed as commands.
+        /// The cursor is not adjusted here, because what it needs depends on whether the session survives,
+        /// which this method reports rather than decides. A surviving session has its cursor advanced to
+        /// <c>endReadHead</c> by the handler: parsing leaves <c>readHead</c> on the failed command's own
+        /// argument list, and leaving it there lets those arguments be parsed as commands. Forcing it to
+        /// the end of the receive is equally wrong in the other direction -- a receive boundary is not a
+        /// command boundary, so a bulk payload split across two reads would leave the second read's payload
+        /// bytes to be parsed as commands.
         /// </para>
         /// <para>
         /// Cold path only: called from the exception handlers that tear the session down, never from
@@ -666,7 +668,7 @@ namespace Garnet.server
         /// <returns>True if the session's protocol state is unrecoverable and the connection must close.</returns>
         bool AbandonSessionWorkOnFailure()
         {
-            var diedInsideTransaction = txnManager is { state: TxnState.Running };
+            var diedInsideTransaction = txnManager is { state: TxnState.Running, OwnsTransaction: true };
 
             // No-op unless a transaction was actually running, and self-clearing, so the three failure
             // paths that reach this can overlap without unlocking twice.

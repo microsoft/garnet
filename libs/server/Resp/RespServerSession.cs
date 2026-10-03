@@ -607,9 +607,11 @@ namespace Garnet.server
                 if (dcurr > networkSender.GetResponseObjectHead())
                     Send(networkSender.GetResponseObjectHead());
 
+                // Before the dispose, for the same reason as the catch-all below.
+                _ = AbandonSessionWorkOnFailure();
+
                 // The session is no longer usable, dispose it
                 networkSender.DisposeNetworkSender(true);
-                _ = AbandonSessionWorkOnFailure();
             }
             catch (GarnetException ex)
             {
@@ -644,14 +646,32 @@ namespace Garnet.server
                     // The session is no longer usable, dispose it
                     networkSender.DisposeNetworkSender(true);
                 }
+                else
+                {
+                    // The session survives, so the cursor has to be left on a command boundary. Parsing
+                    // advances readHead past the command *name* and records the end of the arguments in
+                    // endReadHead; the assignment that joins them runs after dispatch returns, which this
+                    // exception skipped. readHead is therefore sitting on the failed command's own argument
+                    // list, and TryConsumeMessages returns it as the consumed count -- so those arguments
+                    // stay buffered and are parsed as commands on the next receive. A client that sends a
+                    // value which is itself well-formed RESP has it executed.
+                    readHead = endReadHead;
+                }
             }
             catch (Exception ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.LogCritical(ex, "ProcessMessages threw an exception:");
+
+                // Before the dispose, because on a TLS connection the session's sender is the network
+                // handler itself (NetworkHandler.GetNetworkSender returns `this` once an SslStream exists),
+                // and disposing the handler reclaims the connection -- which disposes this session along
+                // with its storage contexts. Abandoning afterwards would unwind a transaction through
+                // contexts that are already gone, leaving its keys locked with no owner.
+                _ = AbandonSessionWorkOnFailure();
+
                 // The session is no longer usable, dispose it
                 networkSender.Dispose();
-                _ = AbandonSessionWorkOnFailure();
             }
             finally
             {
@@ -860,13 +880,20 @@ namespace Garnet.server
         /// the commit pass raises no exception, so nothing unwinds the transaction: it stays running and its
         /// keys stay locked for the life of the connection.
         /// <para>
+        /// <see cref="TransactionManager.OwnsTransaction"/> is what makes this an <c>EXEC</c> commit pass
+        /// rather than any dispatch in a <c>Running</c> manager. Lua's transactional mode sets <c>Running</c>
+        /// directly, so without it a script calling <c>redis.pcall('EXEC')</c> would be admitted here --
+        /// bypassing <c>NOSCRIPT</c>, entering <c>NetworkEXEC</c>, and committing a transaction whose locks
+        /// and store version belong to the script.
+        /// </para>
+        /// <para>
         /// Consulted only once the permission check has already failed, so the dispatch path pays nothing
         /// for it.
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         bool IsTransactionCommitPass(RespCommand cmd)
-            => cmd == RespCommand.EXEC && txnManager.state == TxnState.Running;
+            => cmd == RespCommand.EXEC && txnManager.state == TxnState.Running && txnManager.OwnsTransaction;
 
         // Make first command in string as uppercase
         private bool MakeUpperCase(byte* ptr, int len)
