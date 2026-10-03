@@ -13,6 +13,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using Garnet.common;
+using Garnet.networking;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -112,6 +113,51 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Started only by the tests that need permission checking to be live, so that an <c>ACL</c> change
+        /// made inside a transaction can take effect on the commands around it.
+        /// </summary>
+        GarnetServer aclServer;
+
+        /// <summary>
+        /// Brings up a plain server with ACL enforcement enabled and returns its endpoint.
+        /// </summary>
+        System.Net.EndPoint StartAclServer()
+        {
+            var endPoint = (System.Net.IPEndPoint)TestUtils.EndPoint;
+            var aclEndPoint = new System.Net.IPEndPoint(endPoint.Address, endPoint.Port + 5);
+
+            aclServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir + "_acl",
+                useAcl: true,
+                endpoints: [aclEndPoint]);
+            aclServer.Start();
+            return aclEndPoint;
+        }
+
+        /// <summary>
+        /// Started only by the AOF test that needs a command to fail mid-transaction, so it is restarted
+        /// in-place for recovery rather than disposed once.
+        /// </summary>
+        GarnetServer aofNoObjectsServer;
+
+        /// <summary>
+        /// Brings up a server with the AOF on and the object store disabled, so a collection command inside
+        /// a transaction raises a client-visible error against a log that is replayed on restart.
+        /// </summary>
+        System.Net.EndPoint StartAofNoObjectsServer(bool tryRecover)
+        {
+            var endPoint = (System.Net.IPEndPoint)TestUtils.EndPoint;
+            var aofEndPoint = new System.Net.IPEndPoint(endPoint.Address, endPoint.Port + 6);
+
+            aofNoObjectsServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir + "_aofnoobj",
+                disableObjects: true,
+                enableAOF: true,
+                tryRecover: tryRecover,
+                endpoints: [aofEndPoint]);
+            aofNoObjectsServer.Start();
+            return aofEndPoint;
+        }
+
+        /// <summary>
         /// Writes enough large values through <paramref name="endPoint"/> that reading them back misses memory
         /// and goes pending, and returns their keys.
         /// </summary>
@@ -142,6 +188,12 @@ namespace Garnet.test
             noObjectsServer?.Dispose();
             noObjectsServer = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir + "_noobj");
+            aclServer?.Dispose();
+            aclServer = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir + "_acl");
+            aofNoObjectsServer?.Dispose();
+            aofNoObjectsServer = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir + "_aofnoobj");
             server?.Dispose();
             server = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
@@ -846,6 +898,186 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(baseline, ConnectedClients(prober),
                 "Connections whose batch cleanup failed were never reclaimed");
+        }
+
+        /// <summary>
+        /// A command that fails must not cost the bytes behind it their framing.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A receive boundary is not a command boundary. A failing command leaves the parse cursor at the
+        /// boundary after itself -- the parser consumes a command before dispatching it -- and everything
+        /// from there to the end of the receive is a partially received command that the next read
+        /// completes. Forcing the cursor to the end of the receive instead throws that prefix away, and the
+        /// bytes that complete it are then read as a command in their own right.
+        /// </para>
+        /// <para>
+        /// With a bulk payload split across the boundary, those bytes are attacker-supplied: the value of a
+        /// <c>SET</c> is parsed as RESP and executed. This sends a payload that is itself a valid command
+        /// and asserts that it was stored rather than run.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ACommandFailingBeforeASplitBulkPayloadDoesNotExecuteThePayload()
+        {
+            var endPoint = StartNoObjectsServer();
+
+            using var client = new RawRespClient(endPoint);
+
+            // A valid command, which is what makes the distinction observable: if it is parsed rather than
+            // stored, the witness moves.
+            var payload = Encoding.UTF8.GetString(RawRespClient.Command("INCR", "framing-witness"));
+
+            var header = Encoding.UTF8.GetBytes(
+                $"*3\r\n$3\r\nSET\r\n$11\r\nframing-key\r\n${Encoding.UTF8.GetByteCount(payload)}\r\n");
+
+            // One write, so the failing command and the start of the SET land in the same receive. LPUSH
+            // raises GarnetException("Object store is disabled", disposeSession: false) outside any
+            // transaction, so the session survives and goes on parsing.
+            client.Send(RawRespClient.Command("LPUSH", "framing-list", "v"), header);
+            ClassicAssert.IsTrue(client.ReadLine().StartsWith('-'),
+                "The object command succeeded, so nothing abandoned the batch");
+
+            // Settles the first receive, so the remainder below genuinely arrives as a second one.
+            Thread.Sleep(50);
+
+            client.SendRaw(Encoding.UTF8.GetBytes(payload + "\r\n"));
+            ClassicAssert.AreEqual("+OK", client.ReadLine(),
+                "The split SET did not complete, so its payload was not treated as a payload");
+
+            client.Send(RawRespClient.Command("GET", "framing-key"));
+            ClassicAssert.AreEqual(payload, client.ReadBulkString(),
+                "The bulk payload did not survive the receive boundary intact");
+
+            client.Send(RawRespClient.Command("EXISTS", "framing-witness"));
+            ClassicAssert.AreEqual(0, client.ReadInteger(),
+                "The payload of a SET was parsed and executed as a command: the bytes before it were "
+                + "discarded at a receive boundary, so the payload was read as the start of a new command");
+        }
+
+        /// <summary>
+        /// A transaction that revokes its own permission to <c>EXEC</c> must still finish.
+        /// </summary>
+        /// <remarks>
+        /// <c>EXEC</c> replays its queued commands out of the receive buffer and reaches itself a second
+        /// time to step over them; that second pass is what commits and unlocks. It is the framework
+        /// re-entering a command the client already issued, but it is dispatched through the same
+        /// permission check as a fresh one -- so a queued <c>ACL SETUSER</c> that revokes <c>EXEC</c> takes
+        /// effect in between and rejects it. No exception is raised, so nothing unwinds the transaction:
+        /// it stays running and its keys stay locked for the life of the connection.
+        /// </remarks>
+        [Test]
+        public void ATransactionThatRevokesExecStillCommitsAndUnlocks()
+        {
+            var endPoint = StartAclServer();
+
+            using var victim = new RawRespClient(endPoint);
+
+            victim.Send(RawRespClient.Command("MULTI"));
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+            victim.Send(RawRespClient.Command("SET", "acl-locked-key", "v"));
+            ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+            victim.Send(RawRespClient.Command("ACL", "SETUSER", "default", "-exec"));
+            ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+            victim.Send(RawRespClient.Command("EXEC"));
+            ClassicAssert.AreEqual("*2", victim.ReadLine());
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+            // Restored before anything else runs, so the rest of the test is not itself unauthorized.
+            victim.Send(RawRespClient.Command("ACL", "SETUSER", "default", "+exec"));
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+            // Parks on the key the transaction locked. An uncommitted transaction never gives it back, so
+            // this never completes and the store's drain never terminates.
+            var reader = new RawRespClient(endPoint);
+            reader.Send(RawRespClient.Command("DEBUG", "BLOCKGET", "0", "acl-locked-key"));
+
+            var disposing = aclServer;
+            aclServer = null;
+
+            var thread = new Thread(disposing.Dispose) { IsBackground = true };
+            thread.Start();
+
+            try
+            {
+                ClassicAssert.IsTrue(thread.Join(TimeSpan.FromSeconds(30)),
+                    "Server shutdown hung. An ACL change queued inside a transaction rejected the commit "
+                    + "pass of its own EXEC, so the transaction never finished and its keys stayed locked.");
+            }
+            finally
+            {
+                try { reader.Dispose(); } catch (IOException) { } catch (SocketException) { }
+            }
+        }
+
+        /// <summary>
+        /// A park abandoned before its operation starts must still hand back its receive state.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The handoff between a session parking and its receive state reaching the handler has two
+        /// contributors, and an operation abandoned before it starts is consumed without ever releasing its
+        /// session -- so one of the two never arrives and the receive state, the accept socket and the
+        /// pinned receive buffer, is held until the handler is collected. Something has to stand in for the
+        /// release that is not coming.
+        /// </para>
+        /// <para>
+        /// Over TLS because that is where it is reachable: the reader loop catches its own exceptions and
+        /// disposes the handler without the receive state in hand, so the receive path's failure handling --
+        /// which would otherwise dispose exactly these args -- is never entered. The connection goes away
+        /// either way, which is why <see cref="ABatchWhoseCleanupFailsReclaimsItsConnection"/> cannot see
+        /// this and the handoff itself has to be counted.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void AnAbandonedParkHandsBackItsReceiveState()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const int Victims = 8;
+
+            var endPoint = StartTlsServer();
+
+            using var prober = new RawRespClient(endPoint, useTls: true);
+            prober.Send(RawRespClient.Command("PING"));
+            ClassicAssert.AreEqual("+PONG", prober.ReadLine());
+
+            var baseline = Volatile.Read(ref ParkDiagnostics.ReceiveStateReclaimed);
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Session_Fail_Batch_Cleanup);
+            try
+            {
+                for (var i = 0; i < Victims; i++)
+                {
+                    using var victim = new RawRespClient(endPoint, useTls: true);
+                    victim.Send(
+                        RawRespClient.Command("INCR", $"handback-witness-{i}"),
+                        RawRespClient.Command("DEBUG", "BLOCK", "30"));
+
+                    try { _ = victim.ReadLine(); } catch (IOException) { } catch (SocketException) { }
+                }
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Session_Fail_Batch_Cleanup);
+            }
+
+            // The stand-in schedules the resume rather than running it, so poll. A stranded park schedules
+            // nothing at all, so this expires rather than racing.
+            var reclaimed = 0;
+            for (var attempt = 0; attempt < 100 && reclaimed < Victims; attempt++)
+            {
+                Thread.Sleep(100);
+                reclaimed = Volatile.Read(ref ParkDiagnostics.ReceiveStateReclaimed) - baseline;
+            }
+
+            ClassicAssert.GreaterOrEqual(reclaimed, Victims,
+                $"Only {reclaimed} of {Victims} abandoned parks handed their receive state back. The rest "
+                + "are holding an accept socket and a pinned receive buffer with no release coming.");
         }
 
         /// <summary>
@@ -2418,23 +2650,93 @@ namespace Garnet.test
 
 
         /// <summary>
-        /// A transaction abandoned by an error that is reported to the client, rather than one that closes
-        /// the connection, must still give its locks back.
+        /// A transaction abandoned by an error that is reported to the client must give its locks back, and
+        /// must take the connection down with it.
         /// </summary>
         /// <remarks>
         /// <para>
         /// A <c>GarnetException</c> carries a <c>DisposeSession</c> flag. When it is set the connection is
         /// torn down and the transaction is unwound along with it. When it is clear -- the object store
-        /// being disabled is the reachable example -- the error is written, the connection stays usable, and
-        /// the batch is abandoned exactly as before. The unwinding must not be attached to the teardown,
-        /// because the keys the transaction locked are locked either way.
+        /// being disabled is the reachable example -- the error is written and, before this, the connection
+        /// stayed usable with the transaction still running: its keys were held by the transactional
+        /// contexts, which outlive the batch, so every other connection blocked on them for as long as the
+        /// client stayed connected.
         /// </para>
         /// <para>
-        /// Asserted through shutdown rather than through a lock count, for the same reason as the killed
-        /// session above: an orphaned exclusive lock is invisible until something else wants the key, and
-        /// what makes it serious here is that a parked read of that key never finishes, so it never leaves
-        /// the store's storage scope and the drain that gates store teardown never terminates. A test that
-        /// only checked the error reply would pass with the locks still held.
+        /// The connection cannot survive it. <c>EXEC</c> has already written the array header announcing one
+        /// reply per queued command, and the replay stopped partway through, so the client is owed elements
+        /// that will never be written -- it would read the reply to its *next* command as one of them. That
+        /// is what the first half of this test pins, and it is what makes the lock release falsifiable at
+        /// all: a session allowed to carry on repairs itself by accident, because the next command it sends
+        /// resumes parsing inside the rewound queue and eventually re-reaches <c>EXEC</c>.
+        /// </para>
+        /// <para>
+        /// So the lock assertion below sends nothing on the victim. An earlier version of this test sent a
+        /// <c>PING</c> first to show the session had survived, and that <c>PING</c> committed the broken
+        /// transaction before anything looked at the lock -- the test passed against the bug.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ATransactionAbandonedByAClientErrorClosesTheConnection()
+        {
+            var endPoint = StartNoObjectsServer();
+
+            using var victim = new RawRespClient(endPoint);
+
+            victim.Send(RawRespClient.Command("MULTI"));
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+            victim.Send(RawRespClient.Command("SET", "txn-desync-key", "v"));
+            ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+            // Raises GarnetException("Object store is disabled", disposeSession: false) from inside EXEC,
+            // which is what abandons the batch mid-replay.
+            victim.Send(RawRespClient.Command("LPUSH", "txn-desync-list", "v"));
+            ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+            // Three queued commands, so the client is told to expect three elements.
+            victim.Send(RawRespClient.Command("INCR", "txn-desync-counter"));
+            ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+            victim.Send(RawRespClient.Command("EXEC"));
+            ClassicAssert.AreEqual("*3", victim.ReadLine());
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+            ClassicAssert.IsTrue(victim.ReadLine().StartsWith('-'),
+                "The object command succeeded, so no exception abandoned the batch");
+
+            // Two of the three promised elements arrived. Anything this connection is told from here would
+            // be read as the third, so there is nothing correct left to say on it.
+            victim.Send(RawRespClient.Command("PING"));
+
+            string stray = null;
+            try
+            {
+                stray = victim.ReadLine();
+            }
+            catch (IOException) { }
+            catch (SocketException) { }
+
+            ClassicAssert.IsNull(stray,
+                $"The connection stayed open after a transaction died mid-replay and answered with "
+                + $"'{stray}', which the client reads as the third element of the EXEC array it is still "
+                + "owed");
+        }
+
+        /// <summary>
+        /// A transaction abandoned by an error that is reported to the client must give its locks back.
+        /// </summary>
+        /// <remarks>
+        /// The locks are held by the transactional contexts rather than by the connection, so they are not
+        /// released by anything that happens to the socket. Asserted through shutdown rather than through a
+        /// lock count, for the same reason as the killed session above: an orphaned exclusive lock is
+        /// invisible until something else wants the key, and what makes it serious here is that a parked
+        /// read of that key never finishes, so it never leaves the store's storage scope and the drain that
+        /// gates store teardown never terminates. A test that only checked the error reply would pass with
+        /// the locks still held.
+        /// <para>
+        /// Nothing is sent on the victim after the failed <c>EXEC</c>, and the reader below is a different
+        /// connection: see <see cref="ATransactionAbandonedByAClientErrorClosesTheConnection"/> for why
+        /// further victim traffic repairs the defect this is trying to observe.
         /// </para>
         /// </remarks>
         [Test]
@@ -2442,9 +2744,6 @@ namespace Garnet.test
         {
             var endPoint = StartNoObjectsServer();
 
-            // Held open for the rest of the test. Closing it would tear the session down, and teardown
-            // unwinds the transaction by a different route -- which is exactly how an earlier version of
-            // this test passed against the bug.
             using var victim = new RawRespClient(endPoint);
 
             victim.Send(RawRespClient.Command("MULTI"));
@@ -2454,8 +2753,6 @@ namespace Garnet.test
             victim.Send(RawRespClient.Command("SET", "txn-abandoned-key", "v"));
             ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
 
-            // Raises GarnetException("Object store is disabled", disposeSession: false) from inside EXEC,
-            // which is what abandons the batch with the connection still alive.
             victim.Send(RawRespClient.Command("LPUSH", "txn-abandoned-list", "v"));
             ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
 
@@ -2466,10 +2763,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("+OK", victim.ReadLine());
             ClassicAssert.IsTrue(victim.ReadLine().StartsWith('-'),
                 "The object command succeeded, so no exception abandoned the batch");
-
-            // The session survived, which is the whole point: it is still holding the lock.
-            victim.Send(RawRespClient.Command("PING"));
-            ClassicAssert.AreEqual("+PONG", victim.ReadLine());
 
             // Parks on the key the abandoned transaction locked. If the lock was orphaned this never
             // completes, and the store's drain never terminates.
@@ -2493,6 +2786,143 @@ namespace Garnet.test
             {
                 try { reader.Dispose(); } catch (IOException) { } catch (SocketException) { }
             }
+        }
+
+        /// <summary>
+        /// A transaction abandoned by a client-visible error must end its transaction with the state machine
+        /// driver, so that a later checkpoint can still complete.
+        /// </summary>
+        /// <remarks>
+        /// EXEC registers the transaction against a store version, and the checkpoint state machine waits for
+        /// every transaction in the version it is sealing to finish before it can proceed. Releasing the locks
+        /// is not enough: the registration is separate, it is not undone by anything that happens to the
+        /// socket, and an abandoned transaction that never deregisters leaves the count permanently above
+        /// zero. The next checkpoint then waits forever, which takes down persistence for the whole server
+        /// rather than just the connection that failed.
+        /// </remarks>
+        [Test]
+        public void ATransactionAbandonedByAClientErrorDoesNotStallCheckpoints()
+        {
+            var endPoint = StartNoObjectsServer();
+
+            using (var victim = new RawRespClient(endPoint))
+            {
+                victim.Send(RawRespClient.Command("MULTI"));
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+                victim.Send(RawRespClient.Command("SET", "checkpoint-stall-key", "v"));
+                ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+                victim.Send(RawRespClient.Command("LPUSH", "checkpoint-stall-list", "v"));
+                ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+                victim.Send(RawRespClient.Command("EXEC"));
+                ClassicAssert.AreEqual("*2", victim.ReadLine());
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+                ClassicAssert.IsTrue(victim.ReadLine().StartsWith('-'),
+                    "The object command succeeded, so no exception abandoned the batch");
+            }
+
+            using var saver = new RawRespClient(endPoint);
+            saver.Send(RawRespClient.Command("SAVE"));
+
+            string reply = null;
+            var reader = new Thread(() => { try { reply = saver.ReadLine(); } catch (IOException) { } catch (SocketException) { } })
+            {
+                IsBackground = true
+            };
+            reader.Start();
+
+            ClassicAssert.IsTrue(reader.Join(TimeSpan.FromSeconds(30)),
+                "SAVE never returned. A transaction abandoned by a client-visible error stayed registered "
+                + "with the state machine driver, so the checkpoint waits forever for a transaction that "
+                + "will never end.");
+            ClassicAssert.AreEqual("+OK", reply);
+        }
+
+        /// <summary>
+        /// A transaction abandoned by a client-visible error must close its AOF group, so that the whole log
+        /// after it still replays and recovery reproduces the live store.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// EXEC enqueues <c>TxnStart</c> before running the queued commands. If the error unwind releases the
+        /// locks without enqueueing a matching end marker, the log keeps an open transaction group forever:
+        /// replay buffers every subsequent record into a group that never terminates and then drops it, and
+        /// the next real <c>TxnStart</c> fails replay outright with "No nested transactions expected". The
+        /// damage is therefore mostly to the unrelated writes that follow, which is why this asserts on a
+        /// plain write and a later transaction from a second connection as well as on the abandoned one.
+        /// </para>
+        /// <para>
+        /// The abandoned transaction's own completed write is asserted present, not absent. <c>EXEC</c> does
+        /// not roll back: the <c>SET</c> ran and was acknowledged before the object command failed, so a
+        /// recovered store that lacked it would disagree with the store the client was talking to.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ATransactionAbandonedByAClientErrorTerminatesItsAofGroup()
+        {
+            var endPoint = StartAofNoObjectsServer(tryRecover: false);
+
+            using (var victim = new RawRespClient(endPoint))
+            {
+                victim.Send(RawRespClient.Command("MULTI"));
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+                victim.Send(RawRespClient.Command("SET", "aof-txn-inside", "v"));
+                ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+                victim.Send(RawRespClient.Command("LPUSH", "aof-txn-list", "v"));
+                ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+                victim.Send(RawRespClient.Command("EXEC"));
+                ClassicAssert.AreEqual("*2", victim.ReadLine());
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+                ClassicAssert.IsTrue(victim.ReadLine().StartsWith('-'),
+                    "The object command succeeded, so no exception abandoned the batch");
+            }
+
+            using (var writer = new RawRespClient(endPoint))
+            {
+                // Appended after the abandoned group. An unterminated group swallows this on replay.
+                writer.Send(RawRespClient.Command("SET", "aof-after-abandon", "survivor"));
+                ClassicAssert.AreEqual("+OK", writer.ReadLine());
+
+                // A second, fully successful transaction. Its TxnStart is what trips "No nested
+                // transactions expected" if the abandoned group is still open.
+                writer.Send(RawRespClient.Command("MULTI"));
+                ClassicAssert.AreEqual("+OK", writer.ReadLine());
+                writer.Send(RawRespClient.Command("SET", "aof-later-txn", "survivor"));
+                ClassicAssert.AreEqual("+QUEUED", writer.ReadLine());
+                writer.Send(RawRespClient.Command("EXEC"));
+                ClassicAssert.AreEqual("*1", writer.ReadLine());
+                ClassicAssert.AreEqual("+OK", writer.ReadLine());
+
+                writer.Send(RawRespClient.Command("COMMITAOF"));
+                ClassicAssert.AreEqual("+AOF file committed", writer.ReadLine());
+            }
+
+            var disposing = aofNoObjectsServer;
+            aofNoObjectsServer = null;
+            disposing.Dispose(false);
+
+            endPoint = StartAofNoObjectsServer(tryRecover: true);
+
+            using var reader = new RawRespClient(endPoint);
+
+            reader.Send(RawRespClient.Command("GET", "aof-after-abandon"));
+            ClassicAssert.AreEqual("survivor", reader.ReadBulkString(),
+                "A write appended after a transaction that an error abandoned did not survive recovery. The "
+                + "abandoned transaction left an unterminated group in the AOF, so replay buffered this "
+                + "record into a transaction that never commits and then dropped it.");
+
+            reader.Send(RawRespClient.Command("GET", "aof-later-txn"));
+            ClassicAssert.AreEqual("survivor", reader.ReadBulkString(),
+                "A later transaction did not survive recovery. Its TxnStart landed inside the abandoned "
+                + "transaction's unterminated group.");
+
+            reader.Send(RawRespClient.Command("GET", "aof-txn-inside"));
+            ClassicAssert.AreEqual("v", reader.ReadBulkString(),
+                "The write that the abandoned transaction completed before the failure was not replayed. "
+                + "EXEC applied it and acknowledged it, so recovery must reproduce it.");
         }
 
         /// <summary>

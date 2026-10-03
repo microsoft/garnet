@@ -437,6 +437,43 @@ namespace Garnet.server
             Reset(true);
         }
 
+        /// <summary>
+        /// Ends a transaction that a failed batch left running.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Running means <see cref="Run"/> reached the point where it writes the <see cref="AofEntryType.TxnStart"/>
+        /// marker, so the log holds an open group for this session. Replay attributes every subsequent record
+        /// to that group until something terminates it, and a later <c>TxnStart</c> on the same session fails
+        /// replay outright with "No nested transactions expected". Ending the group is as much a part of
+        /// abandoning the transaction as releasing its locks.
+        /// </para>
+        /// <para>
+        /// The marker is <see cref="AofEntryType.TxnCommit"/>, not <see cref="AofEntryType.TxnAbort"/>, because
+        /// <c>EXEC</c> does not roll back: the commands that ran before the failure mutated the store and were
+        /// acknowledged to the client, and the ones after it never ran. Committing the group is what makes a
+        /// recovered store match the live one. Aborting would discard writes the client was told had landed.
+        /// </para>
+        /// <para>
+        /// The watch container is deliberately left alone. Every path that reaches here goes on to destroy
+        /// the connection, and the container holds nothing outside the session, so resetting it would be
+        /// unobservable work on a session that is about to be disposed.
+        /// </para>
+        /// </remarks>
+        internal void Abandon()
+        {
+            if (state != TxnState.Running)
+                return;
+
+            if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
+            {
+                ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
+                appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnCommit, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
+            }
+
+            Reset(true);
+        }
+
         internal void Watch(PinnedSpanByte key)
         {
             watchContainer.AddWatch(key);

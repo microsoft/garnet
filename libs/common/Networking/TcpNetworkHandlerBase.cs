@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -46,6 +47,7 @@ namespace Garnet.common
         /// so the park can reconcile it after publishing its state. See <see cref="AbortPark"/>.
         /// </summary>
         int parkAbortRequested;
+
 
         const int ParkRendezvousComplete = 2;
 
@@ -250,6 +252,21 @@ namespace Garnet.common
             AbortParkedSession();
         }
 
+        /// <inheritdoc />
+        public void ClosePark()
+        {
+            Interlocked.Exchange(ref parkAbortRequested, 1);
+
+            // The same stand-in ArmPark makes when it observes a latched close, for the case where the
+            // release is known to be missing rather than merely unobservable: the operation was consumed
+            // before it started, so nothing else will ever contribute. Latching first is what makes this
+            // safe -- the close is monotonic, so this park has no successor whose count a late contribution
+            // could contaminate -- and only the increment landing exactly on the target schedules anything,
+            // so racing ArmPark's own stand-in is harmless.
+            if (Interlocked.Increment(ref parkRendezvous) == ParkRendezvousComplete)
+                ScheduleResume();
+        }
+
         /// <summary>
         /// Whether this connection has been terminally closed, by either handler teardown or an external
         /// close such as <c>CLIENT KILL</c>.
@@ -311,6 +328,18 @@ namespace Garnet.common
         void ScheduleResume() => ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
 
         /// <summary>
+        /// Records that a park's receive state -- the accept socket and the pinned receive buffer -- was
+        /// deterministically released.
+        /// </summary>
+        /// <remarks>
+        /// The counterpart to the release <see cref="ClosePark"/> stands in for. An abandoned park that
+        /// never rendezvous never schedules the resume that reaches here, so a count that stops short of the
+        /// number of parks torn down is the strand itself, observed rather than inferred.
+        /// </remarks>
+        [Conditional("DEBUG")]
+        static void NoteParkedReceiveStateReclaimed() => ParkDiagnostics.NoteReceiveStateReclaimed();
+
+        /// <summary>
         /// Runs the resume for a session whose blocking operation has finished. Queued as a work item rather
         /// than allocated as a continuation, so a park costs nothing on the managed heap.
         /// </summary>
@@ -343,6 +372,7 @@ namespace Garnet.common
                     leaseHeld = false;
                     ReleaseResumeLease();
                     Dispose(e);
+                    NoteParkedReceiveStateReclaimed();
                     return;
                 }
 
@@ -433,6 +463,7 @@ namespace Garnet.common
                     leaseHeld = false;
                     ReleaseResumeLease();
                     Dispose(e);
+                    NoteParkedReceiveStateReclaimed();
                     return;
                 }
 

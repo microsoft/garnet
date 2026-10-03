@@ -485,6 +485,8 @@ namespace Garnet.server
             // be recorded against a context still logically starting, and no start is coming to apply it.
             // Stand in for the release, which latches the close first so the resume it may schedule discards
             // the session instead of re-parsing the batch whose cleanup just failed.
+            parkHost?.ClosePark();
+
             if (Volatile.Read(ref sessionDisposed) != 0)
                 AbortParkedOperation();
         }
@@ -632,22 +634,43 @@ namespace Garnet.server
         /// command processing.
         /// </para>
         /// </remarks>
-        void AbandonSessionWorkOnFailure()
+        /// <summary>
+        /// Unwinds the work a failed batch left behind, and reports whether the session can carry on.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A transaction still <see cref="TxnState.Running"/> when the batch failed died inside <c>EXEC</c>'s
+        /// replay pass. Its locks are held by the transactional contexts, not by the connection, so a session
+        /// that survives the error goes on holding them for as long as the client stays connected, and every
+        /// other connection blocks on those keys indefinitely. <see cref="TransactionManager.Abandon"/> is
+        /// what ends it: locks, AOF group, and watches together.
+        /// </para>
+        /// <para>
+        /// That session cannot carry on, which is what the return value says. <c>EXEC</c> has already written
+        /// the array header announcing one reply per queued command and the replay stopped partway through
+        /// it, so the client is owed elements that will never be written and would read the next command's
+        /// reply as one of them. The parse cursor is equally unrecoverable: it is somewhere inside the region
+        /// <c>EXEC</c> rewound it to, so the next bytes to arrive resume parsing in the middle of the queued
+        /// commands and run them a second time. Neither can be repaired from here, so the connection closes.
+        /// </para>
+        /// <para>
+        /// Nothing adjusts the cursor on the way out. Outside a transaction the parser has already consumed
+        /// the command that threw before dispatching it, so the cursor is at a command boundary and the
+        /// pipeline behind it is intact; forcing it to the end of the receive instead would discard whatever
+        /// else arrived in the same read, and a receive boundary is not a command boundary -- a bulk payload
+        /// split across two reads would leave the second read's payload bytes to be parsed as commands.
+        /// </para>
+        /// </remarks>
+        /// <returns>True if the session's protocol state is unrecoverable and the connection must close.</returns>
+        bool AbandonSessionWorkOnFailure()
         {
-            // The batch is over, so nothing of it may be parsed again. TryConsumeMessages reports readHead
-            // as consumed and the network layer shifts the rest forward, so a readHead that stops short of
-            // the command that threw leaves those bytes in the buffer to be re-parsed behind the next
-            // receive -- replaying a command the client was already told had failed. Consuming the whole
-            // batch discards what was pipelined behind the failure, which is what abandoning it means.
-            // txnSkip must be cleared alongside, or the return is 0 and the buffer is never shifted at all.
-            txnSkip = false;
-            readHead = bytesRead;
+            var diedInsideTransaction = txnManager is { state: TxnState.Running };
 
             // No-op unless a transaction was actually running, and self-clearing, so the three failure
             // paths that reach this can overlap without unlocking twice.
             try
             {
-                txnManager?.Reset();
+                txnManager?.Abandon();
             }
             catch (Exception ex)
             {
@@ -655,10 +678,12 @@ namespace Garnet.server
             }
 
             if (Volatile.Read(ref parkedCommand) == null)
-                return;
+                return diedInsideTransaction;
 
             AbortParkedOperation();
             parkHost?.AbortPark();
+
+            return diedInsideTransaction;
         }
 
         /// <summary>
