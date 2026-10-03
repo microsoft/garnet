@@ -22,6 +22,17 @@ namespace Garnet.test.cluster
     {
         ClusterTestContext context;
 
+        /// <summary>
+        /// The direct connection used by the current test, disposed in <see cref="TearDown"/>.
+        /// </summary>
+        /// <remarks>
+        /// Disposal is not merely tidiness. Every cluster fixture in this assembly binds the same reserved ports, so
+        /// node 0 of the next fixture listens where this one did. A multiplexer left running has
+        /// <see cref="ConfigurationOptions.AbortOnConnectFail"/> false, so it keeps retrying that endpoint and
+        /// reconnects to whichever server binds it next, showing up there as an unexplained client connection.
+        /// </remarks>
+        ConnectionMultiplexer redis;
+
         [SetUp]
         public void Setup()
         {
@@ -30,7 +41,13 @@ namespace Garnet.test.cluster
         }
 
         [TearDown]
-        public void TearDown() => context?.TearDown();
+        public void TearDown()
+        {
+            // Before the servers, so the client stops reconnecting while they are being torn down.
+            redis?.Dispose();
+            redis = null;
+            context?.TearDown();
+        }
 
         IDatabase SetUpSingleNodeCluster()
         {
@@ -40,8 +57,8 @@ namespace Garnet.test.cluster
 
             var config = new ConfigurationOptions { AbortOnConnectFail = false, ConnectRetry = 5, ConnectTimeout = 5000 };
             config.EndPoints.Add(context.clusterTestUtils.GetEndPoint(0));
-            // Held for the fixture's lifetime; the multiplexer is disposed with the test process.
-            return ConnectionMultiplexer.Connect(config).GetDatabase(0);
+            redis = ConnectionMultiplexer.Connect(config);
+            return redis.GetDatabase(0);
         }
 
         /// <summary>
@@ -89,10 +106,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(ops.ToString(), db.StringGet(Key).ToString());
         }
 
-        /// <summary>
-        /// A genuinely cross-slot transaction must still be rejected, including when it is large enough to span the
-        /// receive buffer — the fix must not have turned the check off.
-        /// </summary>
         /// <summary>
         /// A genuinely cross-slot transaction must still be rejected, including when it is large enough to span the
         /// receive buffer — the fix must not have turned the check off.
