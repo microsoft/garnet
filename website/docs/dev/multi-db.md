@@ -101,21 +101,41 @@ The default database is not exempt. It keeps the unsuffixed file names, so recov
 
 ## Checkpointing, AOF & Recovery
 
-Upon recovery, Garnet extracts the storage slots of the saved databases from the aforementioned directory name pattern, and recovers the data saved under each slot. It then applies the slot-to-index mapping carried by the recovered checkpoints, taking the one belonging to the highest swap epoch, so each database comes back under the logical index it had when that checkpoint was taken.
+Upon recovery, Garnet extracts the storage slots of the saved databases from the aforementioned directory name pattern, and recovers the data saved under each slot. Each database then has to be given back the logical index it carried, which is the only thing a swap changed. That index is recorded in two places — the checkpoints and the AOFs — so recovery relabels in two passes.
 
-The mapping is applied whole or not at all. If it is not a valid permutation of the configured index range — for example because `MaxDatabases` was lowered since it was written — it is rejected, the condition is logged, and each database recovers under the index matching its storage slot. That discards a swap, but never loses data or attributes a store to the wrong index. A mapping naming a slot whose directory no longer exists is not an error: that index simply goes unused, and is logged.
+### Recovery sequence
 
-### Records that describe a database
+Driven by `StoreWrapper.RecoverAsync`:
 
-Two AOF record types describe a database rather than a key, and both are scoped to the log they are written into rather than naming a database index:
-
-| Record | Written when | Replayed as |
+| # | Step | Where |
 | --- | --- | --- |
-| `FlushDb` | `FLUSHDB`, and once per database for `FLUSHALL` | Flush whichever database owns the log being replayed |
-| `SwapDb` | `SWAPDB`, into every active database's AOF | Note the label and swap epoch; nothing is applied mid-stream |
+| 1 | Discover the storage slots on disk and recover each store under its own slot, collecting the `(mapping, swapEpoch)` each checkpoint carried. The highest epoch wins. | `MultiDatabaseManager.RecoverCheckpointAsync` |
+| 2 | **Relabel, pass 1.** Apply that mapping, so every database carries the index it had when the winning checkpoint ran. `swapEpoch` is advanced to the epoch just applied. | `ResolveLogicalDatabaseIds` → `ApplyDatabaseMapping` |
+| 3 | Load each database's AOF from disk. | `RecoverAOFAsync` |
+| 4 | Replay the AOFs, one database at a time. Before each log, the processor binds itself to that log's database, recording both its logical index (`activeDbId`) and its storage slot (`activeStorageSlot`). | `ReplayAOF` → `ReplayDatabaseAOF` → `AofProcessor.SwitchActiveDatabaseContext` |
+| 5 | **Relabel, pass 2.** Overlay the labels the logs carried onto the result of pass 1, and relabel once. | `ApplyReplayedDatabaseLabels` |
 
-Scoping them to the log is what keeps them correct across a swap. An index recorded inside a record names whichever database answers to it at recovery time, which after a swap is a different store; the log that contains the record, by contrast, always belongs to the same store.
+Step 4 is where the two database-scoped record types are handled, and they are handled differently:
+
+| Record | Written when | During replay (step 4) |
+| --- | --- | --- |
+| `FlushDb` | `FLUSHDB`, and once per database for `FLUSHALL` | **Applied immediately**, to the bound database |
+| `SwapDb` | `SWAPDB`, into every active database's AOF | **Collected, never applied**, into `AofProcessor.ReplayedDatabaseLabels` |
+
+A flush changes a database's *contents*, so its position among the surrounding key records is significant — records written after it must survive it — and it has to be applied in stream order. A swap changes only a database's *label*. Applying one mid-stream would move the store out from under the replay context currently walking that log, and it would buy nothing: the remaining records in the log belong to the store, not to the label, so they replay identically either way.
+
+`ReplayedDatabaseLabels` is therefore a pure accumulator, keyed by storage slot and keeping the highest epoch seen for each. It is read once, in step 5, after every log has been replayed.
+
+### Scoping to the log
+
+Both record types are scoped to the log they are written into rather than naming a database index. An index recorded *inside* a record names whichever database answers to it at recovery time, which after a swap is a different store; the log that *contains* the record always belongs to the same store.
 
 `FLUSHALL` therefore writes one `FlushDb` record into each database's own log instead of a single flush-all record. Replaying one database's log can then never flush another, including one whose log has already been replayed.
 
-`SwapDb` records are collected but never applied while a log is being replayed — relabelling a database mid-stream would move the store out from under the replay context. Recovery takes the highest epoch per storage slot, overlays those labels on the mapping the checkpoints carried, and relabels once after every log has been replayed. The overlay is per slot rather than wholesale, so a log truncated by an intervening flush keeps the label its checkpoint recorded instead of falling back to its own index.
+`SwapDb` records carry the label its own database took, rather than the whole mapping. Every active database is written on every swap, so a log truncated by an intervening flush regains its label at the next one.
+
+### Combining the two passes
+
+Pass 2 overlays per storage slot rather than wholesale. A slot whose log carried no `SwapDb` record — because it was truncated by a flush, or never written — keeps the label pass 1 gave it, instead of falling back to its own index. Only slots whose logged epoch beats the epoch already applied in pass 1 contribute, so an AOF that is older than the checkpoint cannot undo it. If no log carries a newer epoch, pass 2 does nothing.
+
+Both passes apply a mapping whole or not at all, through the same permutation check. If a mapping is not a valid permutation of the configured index range — for example because `MaxDatabases` was lowered since it was written — it is rejected, the condition is logged, and the databases keep the labels they already had: their storage slots in pass 1, or the checkpoint's labels in pass 2. That discards a swap, but never loses data or attributes a store to the wrong index. A mapping naming a slot whose directory no longer exists is not an error: that index simply goes unused, and is logged.
