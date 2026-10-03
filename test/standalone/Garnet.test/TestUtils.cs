@@ -479,6 +479,8 @@ namespace Garnet.test
             ConnectionProtectionOption enableDebugCommand = ConnectionProtectionOption.Yes,
             ConnectionProtectionOption enableModuleCommand = ConnectionProtectionOption.No,
             bool enableLua = false,
+            bool luaTransactionMode = false,
+            ILoggerFactory externalLoggerFactory = null,
             bool enableReadCache = false,
             string readCacheMemorySize = default,
             string readCachePageSize = default,
@@ -581,6 +583,7 @@ namespace Garnet.test
                 UseNativeAllocator = nativeAllocator ?? false,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
+                LuaTransactionMode = luaTransactionMode,
                 AofMemorySize = aofMemorySize,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,
@@ -679,8 +682,8 @@ namespace Garnet.test
                     opts.ReadCacheMemorySize = string.Empty;
             }
 
-            ILoggerFactory loggerFactory = null;
-            if (useTestLogger || logTo != null)
+            ILoggerFactory loggerFactory = externalLoggerFactory;
+            if (loggerFactory == null && (useTestLogger || logTo != null))
             {
                 loggerFactory = LoggerFactory.Create(builder =>
                 {

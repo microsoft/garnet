@@ -329,12 +329,22 @@ namespace Garnet.common
 
         /// <summary>
         /// Records that a park's receive state -- the accept socket and the pinned receive buffer -- was
-        /// deterministically released.
+        /// taken back off the handler by a resume.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// The counterpart to the release <see cref="ClosePark"/> stands in for. An abandoned park that
         /// never rendezvous never schedules the resume that reaches here, so a count that stops short of the
         /// number of parks torn down is the strand itself, observed rather than inferred.
+        /// </para>
+        /// <para>
+        /// Counted at the handoff rather than at each disposal, because the resume can release the state
+        /// through several routes: the two teardown checks around the resume body, the receive loop it
+        /// re-enters when a read completes synchronously, and that loop's failure handler. Counting them
+        /// individually makes the total depend on which route a given teardown happens to take. Once the
+        /// field has been read and cleared the state is on this frame and the park cannot strand it, which
+        /// is the property being counted.
+        /// </para>
         /// </remarks>
         [Conditional("DEBUG")]
         static void NoteParkedReceiveStateReclaimed() => ParkDiagnostics.NoteReceiveStateReclaimed();
@@ -356,6 +366,7 @@ namespace Garnet.common
 
             var e = parkedReceiveArgs;
             parkedReceiveArgs = null;
+            NoteParkedReceiveStateReclaimed();
 
             // Claim the connection before reading its teardown state, so teardown either observes this and
             // leaves reclamation to us, or completes first and is observed below. Either way nothing is
@@ -372,7 +383,6 @@ namespace Garnet.common
                     leaseHeld = false;
                     ReleaseResumeLease();
                     Dispose(e);
-                    NoteParkedReceiveStateReclaimed();
                     return;
                 }
 
@@ -450,6 +460,7 @@ namespace Garnet.common
         {
             var e = parkedReceiveArgs;
             parkedReceiveArgs = null;
+            NoteParkedReceiveStateReclaimed();
 
             AcquireResumeLease();
             var leaseHeld = true;
@@ -463,7 +474,6 @@ namespace Garnet.common
                     leaseHeld = false;
                     ReleaseResumeLease();
                     Dispose(e);
-                    NoteParkedReceiveStateReclaimed();
                     return;
                 }
 

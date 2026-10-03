@@ -15,6 +15,7 @@ using System.Threading;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -113,6 +114,64 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Started only by the tests that need Lua's transactional mode, which sets the session's
+        /// transaction state without the transaction manager owning anything.
+        /// </summary>
+        GarnetServer luaTxnServer;
+
+        /// <summary>
+        /// Captures the Lua server's log so a test can assert on a server-side failure that the client
+        /// never sees. Lua reports every internal failure to the client as a generic script error, and the
+        /// session it runs on writes through a no-op sender, so an unbalanced transaction release leaves no
+        /// client-visible trace at all -- the log is the only place it surfaces.
+        /// </summary>
+        CapturingLogger luaTxnLog;
+
+        ILoggerFactory luaTxnLoggerFactory;
+
+        /// <summary>
+        /// Brings up a server with Lua transaction mode enabled and returns its endpoint.
+        /// </summary>
+        /// <param name="disableObjects">Whether object commands should fail, to raise a GarnetException
+        /// from inside a script.</param>
+        System.Net.EndPoint StartLuaTxnServer(bool disableObjects)
+        {
+            var endPoint = (System.Net.IPEndPoint)TestUtils.EndPoint;
+            var luaEndPoint = new System.Net.IPEndPoint(endPoint.Address, endPoint.Port + 7);
+
+            luaTxnLog = new CapturingLogger();
+            luaTxnLoggerFactory = LoggerFactory.Create(b =>
+            {
+                _ = b.SetMinimumLevel(LogLevel.Trace);
+                _ = b.AddProvider(new CapturingLoggerProvider(luaTxnLog));
+            });
+
+            luaTxnServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir + "_luatxn",
+                enableLua: true,
+                luaTransactionMode: true,
+                disableObjects: disableObjects,
+                externalLoggerFactory: luaTxnLoggerFactory,
+                endpoints: [luaEndPoint]);
+            luaTxnServer.Start();
+            return luaEndPoint;
+        }
+
+        /// <summary>
+        /// Fails if the server released transactional resources it did not own. Tsavorite raises this from
+        /// <c>EndTransaction</c> when the context's lock counts are non-zero, which is exactly what ending a
+        /// context whose locks another owner still holds produces.
+        /// </summary>
+        void AssertNoUnbalancedTransactionRelease()
+        {
+            var offender = luaTxnLog.Entries.FirstOrDefault(
+                e => e.Exception is not null &&
+                     e.Exception.ToString().Contains("EndTransactional called with locks held", StringComparison.Ordinal));
+
+            ClassicAssert.IsNull(offender,
+                $"The server released a transaction it did not own: {offender?.Exception}");
+        }
+
+        /// <summary>
         /// Started only by the tests that need permission checking to be live, so that an <c>ACL</c> change
         /// made inside a transaction can take effect on the commands around it.
         /// </summary>
@@ -191,6 +250,12 @@ namespace Garnet.test
             aclServer?.Dispose();
             aclServer = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir + "_acl");
+            luaTxnServer?.Dispose();
+            luaTxnLoggerFactory?.Dispose();
+            luaTxnLoggerFactory = null;
+            luaTxnLog = null;
+            luaTxnServer = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir + "_luatxn");
             aofNoObjectsServer?.Dispose();
             aofNoObjectsServer = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir + "_aofnoobj");
@@ -898,6 +963,142 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(baseline, ConnectedClients(prober),
                 "Connections whose batch cleanup failed were never reclaimed");
+        }
+
+        /// <summary>
+        /// A script must not be able to reach <c>EXEC</c> through the transaction commit pass.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Lua's transactional mode assigns <c>TxnState.Running</c> directly to the session's transaction
+        /// manager while the script owns the locks, contexts and store version itself. A commit pass keyed
+        /// only on that state admits the script's own <c>EXEC</c>: the <c>NOSCRIPT</c> rejection has already
+        /// been written, and the command runs anyway, reaching <c>NetworkEXEC</c> and committing a
+        /// transaction that belongs to the script.
+        /// </para>
+        /// <para>
+        /// The client cannot see this. Lua collapses the resulting <c>TsavoriteException</c> into a generic
+        /// script error, and the session is disposed through a no-op sender, so the connection survives and
+        /// every subsequent command succeeds. What does happen is that the store's transactional contexts
+        /// are ended under locks the script still holds, and the store's per-version active-transaction
+        /// count is decremented for a version the manager never acquired -- which makes a later checkpoint
+        /// stop waiting for transactions that are still in flight. The log is the only observable.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void AScriptCannotReachExecThroughTheTransactionCommitPass()
+        {
+            var endPoint = StartLuaTxnServer(disableObjects: false);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(new EndPointCollection { endPoint }));
+            var db = redis.GetDatabase(0);
+
+            try
+            {
+                _ = db.ScriptEvaluate("return redis.call('EXEC')", [(RedisKey)"lua-exec-probe"]);
+            }
+            catch (RedisException)
+            {
+                // Expected: EXEC is not runnable from a script.
+            }
+
+            AssertNoUnbalancedTransactionRelease();
+
+            // The script's own locks must still come off, and the session must still be usable.
+            ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
+            db.StringSet("lua-exec-probe", "reachable");
+            ClassicAssert.AreEqual("reachable", (string)db.StringGet("lua-exec-probe"));
+        }
+
+        /// <summary>
+        /// A command failing inside a script must not have the script's transaction torn down underneath it.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The failure unwinds through the same batch-level handler as any other, which abandons a
+        /// transaction the batch left behind. Keyed on <c>TxnState.Running</c> alone that fires for Lua's
+        /// transactional mode too, ending contexts whose locks the script still holds and decrementing a
+        /// store transaction count the manager never incremented.
+        /// </para>
+        /// <para>
+        /// As above the damage is invisible to the client, so this asserts on the server's log and then
+        /// proves the script's own resources were still released normally.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ACommandFailingInsideAScriptDoesNotTearDownTheScriptsTransaction()
+        {
+            var endPoint = StartLuaTxnServer(disableObjects: true);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(new EndPointCollection { endPoint }));
+            var db = redis.GetDatabase(0);
+
+            try
+            {
+                _ = db.ScriptEvaluate("return redis.call('LPUSH', KEYS[1], 'v')",
+                    [(RedisKey)"lua-abandon-probe"]);
+            }
+            catch (RedisException)
+            {
+                // Expected: the object store is disabled.
+            }
+
+            AssertNoUnbalancedTransactionRelease();
+
+            ClassicAssert.AreEqual("PONG", db.Execute("PING").ToString());
+            db.StringSet("lua-abandon-probe", "reachable");
+            ClassicAssert.AreEqual("reachable", (string)db.StringGet("lua-abandon-probe"));
+        }
+
+        /// <summary>
+        /// A command that fails must not leave its own arguments to be parsed as commands.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Parsing advances <c>readHead</c> past the command *name* and records the end of the arguments
+        /// separately in <c>endReadHead</c>; <c>readHead = endReadHead</c> runs only after dispatch returns.
+        /// A command that throws therefore leaves the cursor sitting on its own argument list, and the next
+        /// parse pass reads those arguments as commands.
+        /// </para>
+        /// <para>
+        /// That makes the value of a failing command directly executable, with no receive boundary involved
+        /// and nothing split: a client sends one well-formed command whose value happens to be RESP, and
+        /// the server runs it. This asserts the witness never moves.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void AFailingCommandDoesNotExecuteItsOwnArgumentsAsCommands()
+        {
+            var endPoint = StartNoObjectsServer();
+
+            using var client = new RawRespClient(endPoint);
+
+            // A complete, valid command carried as the value of the failing one.
+            var smuggled = Encoding.UTF8.GetString(RawRespClient.Command("INCR", "smuggle-witness"));
+
+            // LPUSH raises GarnetException("Object store is disabled", disposeSession: false), so the
+            // session survives the error and goes on parsing from wherever the cursor was left.
+            client.Send(RawRespClient.Command("LPUSH", "smuggle-list", smuggled));
+            ClassicAssert.IsTrue(client.ReadLine().StartsWith('-'),
+                "The object command succeeded, so nothing abandoned the batch");
+
+            // Ordering barrier: PING is answered only once everything ahead of it has been processed, so a
+            // smuggled command would have run by the time this returns.
+            client.Send(RawRespClient.Command("PING"));
+
+            string line;
+            do
+            {
+                line = client.ReadLine();
+            }
+            while (line.StartsWith('-') || line.StartsWith(':') || line.StartsWith('$'));
+
+            ClassicAssert.AreEqual("+PONG", line);
+
+            client.Send(RawRespClient.Command("EXISTS", "smuggle-witness"));
+            ClassicAssert.AreEqual(0, client.ReadInteger(),
+                "The failing command's arguments were parsed and executed as commands: the cursor was left "
+                + "on the argument list rather than advanced past the command that consumed it");
         }
 
         /// <summary>
