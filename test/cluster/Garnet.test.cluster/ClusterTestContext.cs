@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Reflection;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
@@ -23,25 +24,6 @@ using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
-    /// <summary>
-    /// Unique base port for each cluster test sub-project, enabling parallel test runs without port conflicts.
-    /// </summary>
-    public enum ClusterPortAssignment
-    {
-        ClusterTest = 7000,
-        ClusterMigrate = 7100,
-        ClusterReplication = 7200,
-        ClusterReplicationTls = 7300,
-        ClusterReplicationAsync = 7400,
-        ClusterReplicationDiskless = 7500,
-        ClusterVectorSets = 7600,
-        ClusterMultiLog = 7700,
-        ClusterReplicationRangeIndex = 7800,
-        ClusterMultiLogDiskless = 7900,
-        ClusterMigrateRangeIndex = 8000,
-        ClusterReplicationVectorSets = 8100,
-    }
-
     public class ClusterTestContext
     {
         public CredentialManager credManager;
@@ -55,18 +37,35 @@ namespace Garnet.test.cluster
         public ILogger logger;
 
         public int defaultShards = 3;
-        public static int Port = (int)ClusterPortAssignment.ClusterTest + TestUtils.PortOffset;    // No OneTimeSetUp needed for "Garnet.test.cluster" to set this
+
+        private static int port;
 
         /// <summary>
-        /// Sets the cluster test port for the current sub-project. Mirrors <see cref="TestUtils.SetTestPort"/>;
-        /// call from a <c>[SetUpFixture]</c> in each sub-project.
+        /// Base port for this cluster test host. Node <c>n</c> binds <c>Port + n</c>, so the reservation is a
+        /// contiguous run within one block. Assigned by <see cref="ReservePorts"/>, which every cluster
+        /// sub-project's setup fixture calls before any test runs; reading it earlier means a missing setup
+        /// fixture rather than a port problem, so it throws instead of quietly allocating.
         /// </summary>
-        /// <param name="port">The sub-project's port assignment.</param>
-        public static void SetPort(ClusterPortAssignment port)
-        {
-            Port = (int)port + TestUtils.PortOffset;
-            TestUtils.EnsureClusterPortsAvailable(Port, port.ToString());
-        }
+        public static int Port =>
+            port != 0
+                ? port
+                : throw new InvalidOperationException(
+                    $"Cluster test ports have not been reserved for this assembly. Every cluster test project " +
+                    $"needs a [SetUpFixture] whose [OneTimeSetUp] calls " +
+                    $"{nameof(ClusterTestContext)}.{nameof(ReservePorts)}.");
+
+        /// <summary>
+        /// Reserves this cluster sub-project's contiguous port run and holds it for the life of the process.
+        /// Mirrors <see cref="TestUtils.ReserveTestPorts"/>; call from a <c>[SetUpFixture]</c> in each
+        /// sub-project.
+        /// </summary>
+        /// <param name="projectAssembly">
+        /// The test project's own assembly. Its name identifies the project, so adding a cluster sub-project
+        /// needs no central registration.
+        /// </param>
+        public static void ReservePorts(Assembly projectAssembly)
+            => port = TestPortAllocator.Reserve(
+                TestUtils.MaxClusterNodesPerSubProject, projectAssembly.GetName().Name);
 
         public Random r = new();
         public ManualResetEventSlim waiter;
