@@ -617,10 +617,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gives up the work a batch was in the middle of when it failed, for a session that is being torn
-        /// down because of it.
+        /// Unwinds the work a failed batch left behind, and reports whether the session can carry on.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// Two things are owed. A park established during the failed batch has to be abandoned: disposing
         /// the network sender closes the socket but leaves the park standing, and a parked connection has
         /// no outstanding receive to notice, so the session would stay parked -- holding its
@@ -629,21 +629,19 @@ namespace Garnet.server
         /// outlive the session otherwise: they are held by the transactional contexts rather than by the
         /// connection, so every other session blocks on them indefinitely, including a parked operation
         /// whose storage the store's own teardown then waits for.
-        /// <para>
-        /// Cold path only: called from the exception handlers that tear the session down, never from
-        /// command processing.
         /// </para>
-        /// </remarks>
-        /// <summary>
-        /// Unwinds the work a failed batch left behind, and reports whether the session can carry on.
-        /// </summary>
-        /// <remarks>
+        /// <para>
+        /// The two are mutually exclusive, which is why their order here does not matter. A session cannot
+        /// park inside a transaction -- <see cref="CanParkSession"/> requires
+        /// <see cref="TxnState.None"/> -- and a parked session parses no further commands, so it cannot
+        /// reach <c>MULTI</c> while parked. Whichever of the two did happen, the other is a no-op.
+        /// </para>
         /// <para>
         /// A transaction still <see cref="TxnState.Running"/> when the batch failed died inside <c>EXEC</c>'s
-        /// replay pass. Its locks are held by the transactional contexts, not by the connection, so a session
-        /// that survives the error goes on holding them for as long as the client stays connected, and every
-        /// other connection blocks on those keys indefinitely. <see cref="TransactionManager.Abandon"/> is
-        /// what ends it: locks, AOF group, and watches together.
+        /// replay pass. <see cref="TransactionManager.Abandon"/> is what ends it, releasing the locks,
+        /// terminating the AOF group, and deregistering the transaction from the checkpoint state machine.
+        /// It deliberately leaves the watch container alone: every path that reaches here destroys the
+        /// connection, and watches are session-local state that dies with it.
         /// </para>
         /// <para>
         /// That session cannot carry on, which is what the return value says. <c>EXEC</c> has already written
@@ -659,6 +657,10 @@ namespace Garnet.server
         /// pipeline behind it is intact; forcing it to the end of the receive instead would discard whatever
         /// else arrived in the same read, and a receive boundary is not a command boundary -- a bulk payload
         /// split across two reads would leave the second read's payload bytes to be parsed as commands.
+        /// </para>
+        /// <para>
+        /// Cold path only: called from the exception handlers that tear the session down, never from
+        /// command processing.
         /// </para>
         /// </remarks>
         /// <returns>True if the session's protocol state is unrecoverable and the connection must close.</returns>
