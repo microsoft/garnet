@@ -173,6 +173,37 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Started only by the test that queues a custom transaction procedure inside <c>MULTI</c>.
+        /// </summary>
+        GarnetServer txnProcServer;
+        CapturingLogger txnProcLog;
+        ILoggerFactory txnProcLoggerFactory;
+
+        /// <summary>
+        /// Brings up a server with a no-op custom transaction procedure registered, and returns its endpoint.
+        /// </summary>
+        System.Net.EndPoint StartTxnProcServer()
+        {
+            var endPoint = (System.Net.IPEndPoint)TestUtils.EndPoint;
+            var procEndPoint = new System.Net.IPEndPoint(endPoint.Address, endPoint.Port + 8);
+
+            txnProcLog = new CapturingLogger();
+            txnProcLoggerFactory = LoggerFactory.Create(b =>
+            {
+                _ = b.SetMinimumLevel(LogLevel.Trace);
+                _ = b.AddProvider(new CapturingLoggerProvider(txnProcLog));
+            });
+
+            txnProcServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir + "_txnproc",
+                externalLoggerFactory: txnProcLoggerFactory,
+                endpoints: [procEndPoint]);
+            txnProcServer.Register.NewTransactionProc("NOOPTX", () => new NoOpTxn(),
+                new RespCommandsInfo { Name = "NOOPTX", Arity = 1 });
+            txnProcServer.Start();
+            return procEndPoint;
+        }
+
+        /// <summary>
         /// Started only by the tests that need permission checking to be live, so that an <c>ACL</c> change
         /// made inside a transaction can take effect on the commands around it.
         /// </summary>
@@ -251,6 +282,12 @@ namespace Garnet.test
             aclServer?.Dispose();
             aclServer = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir + "_acl");
+            txnProcServer?.Dispose();
+            txnProcLoggerFactory?.Dispose();
+            txnProcLoggerFactory = null;
+            txnProcLog = null;
+            txnProcServer = null;
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir + "_txnproc");
             luaTxnServer?.Dispose();
             luaTxnLoggerFactory?.Dispose();
             luaTxnLoggerFactory = null;
@@ -1956,34 +1993,42 @@ namespace Garnet.test
 
                 // Total for the round, not per connection: a round also pays a fixed cost for the control
                 // round-trips that gate it, and dividing that by the connection count would make it look
-                // like a per-connection cost that shrinks as concurrency rises. Taking the cheapest round
-                // settles both levels on the same fixed cost -- one gate read and one release -- so
-                // differencing them below removes it exactly.
-                double Measure(int connections)
+                // like a per-connection cost that shrinks as concurrency rises. Differencing two levels
+                // settles both on the same fixed cost -- one gate read and one release -- so it cancels.
+                long Measure(int connections)
                 {
+                    var before = GC.GetTotalAllocatedBytes(precise: true);
                     Round(connections);
-
-                    var best = double.MaxValue;
-                    for (var round = 0; round < Rounds; round++)
-                    {
-                        var before = GC.GetTotalAllocatedBytes(precise: true);
-                        Round(connections);
-                        var measured = GC.GetTotalAllocatedBytes(precise: true) - before;
-
-                        if (measured < best)
-                            best = measured;
-                    }
-
-                    return best;
+                    return GC.GetTotalAllocatedBytes(precise: true) - before;
                 }
 
-                var few = Measure(FewConnections);
-                var many = Measure(ManyConnections);
-                var marginal = (many - few) / (double)(ManyConnections - FewConnections);
+                // The counter is process-wide, so every measured window also collects whatever the rest of
+                // the process allocated while it was open -- and the wide window is the longer of the two by
+                // the ratio of their connection counts. Measuring each level to its own minimum and
+                // subtracting afterwards therefore subtracts a small window's noise floor from a large
+                // one's, which biases the result upward by however busy the host happened to be. Pairing
+                // the levels inside a round and taking the cheapest difference removes that: the two
+                // windows are adjacent, so a quiet round is quiet for both, and one round undisturbed is
+                // all the estimate needs.
+                Round(FewConnections);
+                Round(ManyConnections);
+
+                var marginal = double.MaxValue;
+                long few = 0, many = 0;
+                for (var round = 0; round < Rounds; round++)
+                {
+                    var roundFew = Measure(FewConnections);
+                    var roundMany = Measure(ManyConnections);
+                    var roundMarginal = (roundMany - roundFew) / (double)(ManyConnections - FewConnections);
+
+                    if (roundMarginal < marginal)
+                        (marginal, few, many) = (roundMarginal, roundFew, roundMany);
+                }
 
                 TestContext.Out.WriteLine($"burst park and resume allocated {marginal:F1} bytes per " +
-                                          $"additional simultaneously parked connection ({few:F0} bytes at " +
-                                          $"{FewConnections} connections, {many:F0} at {ManyConnections})");
+                                          $"additional simultaneously parked connection ({few} bytes at " +
+                                          $"{FewConnections} connections, {many} at {ManyConnections}, " +
+                                          $"cheapest of {Rounds} paired rounds)");
 
                 // Each additional connection parked at the same instant must cost one context and nothing
                 // else. A work-item box, a queue node, or a continuation taken only under contention is
@@ -3229,6 +3274,226 @@ namespace Garnet.test
             reader.Send(RawRespClient.Command("GET", "aof-start-only-later"));
             ClassicAssert.AreEqual("survivor", reader.ReadBulkString(),
                 "A later transaction did not survive recovery.");
+        }
+
+        /// <summary>
+        /// A command that opens its own transaction has to close the AOF group that transaction opened,
+        /// even on the path where it decides there is nothing to do. <c>RENAME</c> and <c>RENAMENX</c> run
+        /// under an internal transaction, and their no-op exits -- a <c>RENAMENX</c> whose destination
+        /// already exists, and a <c>RENAME</c> whose source does not -- release the transaction with
+        /// <c>Reset</c>. Reset clears the bookkeeping that says a group is open; it does not write the
+        /// marker that closes it. Everything the connection writes afterwards is then attributed to a
+        /// group that never commits and is dropped on replay. No fault injection: this is the ordinary
+        /// return value of a correct command.
+        /// </summary>
+        [Test]
+        public void ANoOpRenameClosesTheAofGroupItOpened()
+        {
+            var endPoint = StartAofNoObjectsServer(tryRecover: false);
+
+            using (var client = new RawRespClient(endPoint))
+            {
+                client.Send(RawRespClient.Command("SET", "rename-control", "before"));
+                ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+                client.Send(RawRespClient.Command("SET", "rename-source", "src"));
+                ClassicAssert.AreEqual("+OK", client.ReadLine());
+                client.Send(RawRespClient.Command("SET", "rename-dest", "dst"));
+                ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+                // Destination exists, so this is a no-op and takes the abort exit.
+                client.Send(RawRespClient.Command("RENAMENX", "rename-source", "rename-dest"));
+                ClassicAssert.AreEqual(":0", client.ReadLine());
+
+                // Source does not exist, so this takes the other abort exit.
+                client.Send(RawRespClient.Command("RENAME", "rename-absent", "rename-dest2"));
+                ClassicAssert.AreEqual("-ERR no such key", client.ReadLine());
+
+                client.Send(RawRespClient.Command("SET", "rename-after", "kept"));
+                ClassicAssert.AreEqual("+OK", client.ReadLine());
+
+                client.Send(RawRespClient.Command("COMMITAOF"));
+                ClassicAssert.AreEqual("+AOF file committed", client.ReadLine());
+            }
+
+            var disposing = aofNoObjectsServer;
+            aofNoObjectsServer = null;
+            disposing.Dispose(false);
+
+            endPoint = StartAofNoObjectsServer(tryRecover: true);
+
+            using var reader = new RawRespClient(endPoint);
+
+            reader.Send(RawRespClient.Command("GET", "rename-control"));
+            ClassicAssert.AreEqual("before", reader.ReadBulkString(),
+                "A write made before the no-op RENAME did not survive recovery.");
+
+            reader.Send(RawRespClient.Command("GET", "rename-after"));
+            ClassicAssert.AreEqual("kept", reader.ReadBulkString(),
+                "A write made after a no-op RENAME did not survive recovery. The internal transaction "
+                + "RENAME opened appended a TxnStart and then released itself with Reset, which clears the "
+                + "open-group flag without writing the marker that closes the group, so replay buffered "
+                + "every later record into a group that never commits and dropped them all.");
+        }
+
+        /// <summary>
+        /// The open-group flag is raised before the <c>TxnStart</c> append, so an append that throws leaves
+        /// the unwind emitting an end marker with no matching start. That direction is deliberate -- the
+        /// opposite error swallows the rest of the log -- but it is only safe if recovery actually tolerates
+        /// an unmatched end. It did not: the ignore path tracked a sequence number through
+        /// <c>readConsistencyManager</c>, which is never created unless the sharded log is enabled, so
+        /// recovery faulted on the very record the path exists to ignore. A checkpoint truncation leaves the
+        /// same shape behind, independently of this work.
+        /// </summary>
+        [Test]
+        public void AnUnmatchedTransactionEndIsToleratedOnRecovery()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var endPoint = StartAofNoObjectsServer(tryRecover: false);
+
+            using (var victim = new RawRespClient(endPoint))
+            {
+                victim.Send(RawRespClient.Command("SET", "unmatched-control", "before"));
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Transaction_Fail_Before_TxnStart_Append);
+                try
+                {
+                    victim.Send(RawRespClient.Command("MULTI"));
+                    ClassicAssert.AreEqual("+OK", victim.ReadLine());
+                    victim.Send(RawRespClient.Command("SET", "unmatched-inside", "v"));
+                    ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+                    // Read the reply inside the window: the enable/disable pair is process-wide, so clearing
+                    // it before the server has acted leaves the injection unexercised and the test vacuous.
+                    victim.Send(RawRespClient.Command("EXEC"));
+                    var reply = victim.ReadLine();
+                    ClassicAssert.IsTrue(reply.StartsWith("-ERR Garnet Exception: Exception injection", StringComparison.Ordinal),
+                        $"Expected the injected failure to be reported, but got: {reply}");
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Transaction_Fail_Before_TxnStart_Append);
+                }
+
+                victim.Send(RawRespClient.Command("SET", "unmatched-after", "kept"));
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+                victim.Send(RawRespClient.Command("COMMITAOF"));
+                ClassicAssert.AreEqual("+AOF file committed", victim.ReadLine());
+            }
+
+            var disposing = aofNoObjectsServer;
+            aofNoObjectsServer = null;
+            disposing.Dispose(false);
+
+            endPoint = StartAofNoObjectsServer(tryRecover: true);
+
+            using var reader = new RawRespClient(endPoint);
+
+            reader.Send(RawRespClient.Command("GET", "unmatched-control"));
+            ClassicAssert.AreEqual("before", reader.ReadBulkString(),
+                "Recovery did not get past an unmatched transaction end marker: the write made before it is gone.");
+
+            reader.Send(RawRespClient.Command("GET", "unmatched-after"));
+            ClassicAssert.AreEqual("kept", reader.ReadBulkString(),
+                "A write made after an unmatched transaction end marker did not survive recovery.");
+        }
+
+        /// <summary>
+        /// A failed <c>EXEC</c> attempt owns its WATCHes and has to end them with the attempt. Both of the
+        /// paths that refuse to start a transaction without throwing already do this; the path that throws
+        /// did not, and it is the one that can now leave the session alive. The stale registration then
+        /// aborts the *next*, unrelated transaction on that connection, because the watched key has been
+        /// modified in the meantime -- a transaction that never watched anything silently returns nil.
+        /// </summary>
+        [Test]
+        public void AFailedExecAttemptEndsItsWatches()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var endPoint = StartAofNoObjectsServer(tryRecover: false);
+
+            using var victim = new RawRespClient(endPoint);
+            using var other = new RawRespClient(endPoint);
+
+            victim.Send(RawRespClient.Command("WATCH", "watched-key"));
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Transaction_Fail_After_TxnStart_Append);
+            try
+            {
+                victim.Send(RawRespClient.Command("MULTI"));
+                ClassicAssert.AreEqual("+OK", victim.ReadLine());
+                victim.Send(RawRespClient.Command("SET", "watch-inside", "v"));
+                ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+                victim.Send(RawRespClient.Command("EXEC"));
+                var reply = victim.ReadLine();
+                ClassicAssert.IsTrue(reply.StartsWith("-ERR Garnet Exception: Exception injection", StringComparison.Ordinal),
+                    $"Expected the injected failure to be reported, but got: {reply}");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Transaction_Fail_After_TxnStart_Append);
+            }
+
+            // Invalidate the key the failed attempt watched.
+            other.Send(RawRespClient.Command("SET", "watched-key", "changed"));
+            ClassicAssert.AreEqual("+OK", other.ReadLine());
+
+            // A fresh transaction that watches nothing must run.
+            victim.Send(RawRespClient.Command("MULTI"));
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+            victim.Send(RawRespClient.Command("SET", "watch-after", "kept"));
+            ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+            victim.Send(RawRespClient.Command("EXEC"));
+            ClassicAssert.AreEqual("*1", victim.ReadLine(),
+                "A later transaction that watched nothing was aborted, because the EXEC attempt that failed "
+                + "at its start left its WATCH registered on a session that survived the failure.");
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+        }
+
+        /// <summary>
+        /// A custom transaction procedure queued inside <c>MULTI</c> runs while <c>EXEC</c>'s own
+        /// transaction is already running, so it re-enters the manager and starts a second transaction on
+        /// top of the first. The inner start overwrites the outer one's version and lock set, so the outer
+        /// release frees neither, and the store is left counting an active transaction in a version nothing
+        /// will end -- after which a checkpoint spins instead of completing. The immediate, bounded symptom
+        /// is that the aborted inner transaction emits a reply of its own past the end of the array EXEC
+        /// already declared, so the connection's reply stream no longer matches its framing and every later
+        /// reply on it is off by one. Refusing the re-entry before any manager state is touched is the only
+        /// point at which this is harmless, and it has to be a runtime refusal rather than an assertion
+        /// because Release is where the corruption actually lands.
+        /// </summary>
+        [Test]
+        public void ATransactionProcedureQueuedInsideMultiDoesNotStartASecondTransaction()
+        {
+            var endPoint = StartTxnProcServer();
+
+            using var victim = new RawRespClient(endPoint);
+            victim.Send(RawRespClient.Command("MULTI"));
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+            victim.Send(RawRespClient.Command("SET", "nested-txn-key", "v"));
+            ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+            victim.Send(RawRespClient.Command("NOOPTX"));
+            ClassicAssert.AreEqual("+QUEUED", victim.ReadLine());
+
+            victim.Send(RawRespClient.Command("EXEC"));
+            ClassicAssert.AreEqual("*2", victim.ReadLine());
+            ClassicAssert.AreEqual("+OK", victim.ReadLine());
+
+            // The procedure is refused either way; what matters is that the refusal is the array's second
+            // and last element, not an extra reply appended after the array has already ended.
+            ClassicAssert.IsTrue(victim.ReadLine().StartsWith('-'),
+                "The nested transaction procedure was expected to be refused.");
+
+            victim.Send(RawRespClient.Command("PING"));
+            ClassicAssert.AreEqual("+PONG", victim.ReadLine(),
+                "A transaction procedure queued inside MULTI started a second transaction on a manager that "
+                + "was already running one. Unwinding it wrote a reply of its own after EXEC's array had "
+                + "ended, so this connection's replies no longer line up with its framing.");
         }
 
         /// <summary>
@@ -4797,6 +5062,20 @@ namespace Garnet.test
                 try { socket.Shutdown(SocketShutdown.Both); } catch { }
                 socket.Dispose();
             }
+        }
+    }
+
+    /// <summary>
+    /// A custom transaction procedure that locks nothing and does nothing. Exists so that a test can queue
+    /// a <c>CustomTxn</c> inside <c>MULTI</c> without the procedure's own behaviour confusing the result.
+    /// </summary>
+    sealed class NoOpTxn : CustomTransactionProcedure
+    {
+        public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
+            => true;
+
+        public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        {
         }
     }
 }

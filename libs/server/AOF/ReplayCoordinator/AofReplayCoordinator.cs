@@ -216,7 +216,12 @@ namespace Garnet.server
                         // We encountered a transaction end without start - this could happen because we truncated the AOF
                         // after a checkpoint, and the transaction belonged to the previous version. It can safely
                         // be ignored.
-                        UpdateMaxSequenceNumberFromHeader();
+                        //
+                        // The sequence number only has a consumer under a sharded log; readConsistencyManager is
+                        // never created otherwise (CreateOrUpdateKeySequenceManager returns early), so tracking it
+                        // here unconditionally would fault recovery on the very record this case exists to tolerate.
+                        if (serverOptions.MultiLogEnabled)
+                            UpdateMaxSequenceNumberFromHeader();
                         break;
                     default:
                         // Continue processing

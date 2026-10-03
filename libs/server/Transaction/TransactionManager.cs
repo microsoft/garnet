@@ -276,6 +276,13 @@ namespace Garnet.server
 
         internal void Reset(bool isRunning)
         {
+            // Reset releases a transaction; it does not terminate the AOF group one opened. Reaching here
+            // with a group still open means some exit released the transaction without writing the marker
+            // that closes it, and replay will attribute every later record from this session to a group
+            // that never commits and drop them all. Commit and Abandon clear the flag as they emit.
+            Debug.Assert(!txnStartPublished,
+                "A transaction was released with its AOF group still open; terminate it via Commit or Abandon.");
+
             if (isRunning)
             {
                 try
@@ -461,6 +468,7 @@ namespace Garnet.server
             {
                 ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
                 appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnCommit, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
+                txnStartPublished = false;
             }
             if (!internal_txn)
                 watchContainer.Reset();
@@ -494,9 +502,11 @@ namespace Garnet.server
         /// recovered store match the live one. Aborting would discard writes the client was told had landed.
         /// </para>
         /// <para>
-        /// The watch container is deliberately left alone. Every path that reaches here goes on to destroy
-        /// the connection, and the container holds nothing outside the session, so resetting it would be
-        /// unobservable work on a session that is about to be disposed.
+        /// The watch container is reset with the rest of the attempt. A transaction's WATCHes belong to the
+        /// attempt that was about to consume them, and both paths that refuse to start a transaction
+        /// without throwing already clear them. The path that throws can now leave the session alive, and a
+        /// registration that outlives its attempt silently aborts the *next*, unrelated transaction on that
+        /// connection once the watched key is modified.
         /// </para>
         /// </remarks>
         internal void Abandon()
@@ -522,6 +532,11 @@ namespace Garnet.server
             }
             finally
             {
+                // Cleared here rather than after the append, because the append can throw: the group is no
+                // longer this transaction's to terminate either way, and leaving the flag raised would only
+                // make the release below trip the assertion that guards against exactly that.
+                txnStartPublished = false;
+
                 // Appending the marker can fail -- a full or failed device surfaces as an exception from
                 // the append path -- and the transaction's locks, contexts and store version have to come
                 // off regardless. Losing the group's terminator costs the tail of the log, which a device
@@ -532,6 +547,7 @@ namespace Garnet.server
                 // Demonstrated rather than assumed: injecting a throw at the append above and removing this
                 // finally wedges the server, and wedges it past shutdown. That severity is also why there is
                 // no test for it -- a regression would hang the test host rather than fail it.
+                watchContainer.Reset();
                 Reset(true);
             }
         }
@@ -659,6 +675,9 @@ namespace Garnet.server
                 // the commit behind it, so a flag raised afterwards would miss a group that is already in
                 // the log. See Abandon for why erring this way is the safe direction.
                 txnStartPublished = true;
+
+                ExceptionInjectionHelper.TriggerRecoverableException(ExceptionInjectionType.Transaction_Fail_Before_TxnStart_Append);
+
                 appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnStart, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
 
                 ExceptionInjectionHelper.TriggerRecoverableException(ExceptionInjectionType.Transaction_Fail_After_TxnStart_Append);

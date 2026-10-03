@@ -20,8 +20,18 @@ namespace Garnet.server
             // Define output
             var output = new MemoryResult<byte>(null, 0);
 
-            // Run procedure
-            Debug.Assert(txnManager.state == TxnState.None);
+            // A procedure queued inside MULTI reaches here while EXEC's transaction is still running.
+            // Starting a second one would overwrite the running transaction's version and lock set, so
+            // releasing the outer transaction would release neither: the store keeps an active transaction
+            // in a version nothing ends, and the refusal is written past the end of the array EXEC has
+            // already declared. Refuse it as the element EXEC is expecting instead.
+            if (txnManager.state != TxnState.None)
+            {
+                sessionMetrics?.incr_total_transaction_execution_failed();
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NESTED_TRANSACTION, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             LatencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
