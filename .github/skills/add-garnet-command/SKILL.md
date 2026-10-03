@@ -776,22 +776,21 @@ dotnet format Garnet.slnx --verify-no-changes
 
 ### Run your tests
 ```bash
-GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespMyFeatureTests"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespMyFeatureTests"
 ```
 
 ### Run ACL coverage test
 ```bash
-GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~AllCommandsCovered"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~AllCommandsCovered"
 ```
 
 ### Run broader regression tests
 ```bash
-GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
 ```
 
-`GARNET_TEST_PORT_SLOT=auto` keeps this working copy's test ports clear of other working copies that also use a
-slot; in PowerShell write `$env:GARNET_TEST_PORT_SLOT = 'auto'; dotnet test ...`. See
-`.github/copilot-instructions.md`. Check the output for `error CS` before trusting a pass — with `--no-build`, or
+Test ports are claimed automatically per test host, so working copies sharing a machine do not collide and
+nothing needs to be set; see `.github/copilot-instructions.md`. Check the output for `error CS` before trusting a pass — with `--no-build`, or
 when a compile error surfaces in a project that is not rebuilt, the previously built assembly runs instead.
 
 ---

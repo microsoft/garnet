@@ -563,6 +563,10 @@ namespace Tsavorite.core
                     epoch.Resume();
                     BeginInflightEnqueue();
                 }
+
+                // Disposal permanently signals flushEvent, so the wait above stops blocking and this loop would
+                // spin on an allocation no flush can satisfy.
+                allocator.ThrowIfDisposed();
             }
         }
     }
