@@ -28,7 +28,7 @@ namespace Garnet.cluster
         internal readonly StoreWrapper storeWrapper;
         internal readonly GarnetServerOptions serverOptions;
         internal readonly RangeIndexManager rangeIndexManager;
-        internal readonly GarnetEpoch garnetEpoch;
+        internal readonly GarnetEpoch<ServerEpochObserverSource> garnetEpoch;
         ClusterAuthContainer authContainer;
 
         /// <summary>
@@ -50,7 +50,7 @@ namespace Garnet.cluster
             this.serverOptions = storeWrapper.serverOptions;
             this.rangeIndexManager = rangeIndexManager;
             this.loggerFactory = storeWrapper.loggerFactory;
-            this.garnetEpoch = new GarnetEpoch(storeWrapper);
+            this.garnetEpoch = new GarnetEpoch<ServerEpochObserverSource>(storeWrapper, new ServerEpochObserverSource(storeWrapper));
 
             authContainer = new ClusterAuthContainer
             {
