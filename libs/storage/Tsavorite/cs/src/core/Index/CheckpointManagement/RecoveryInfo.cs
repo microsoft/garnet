@@ -13,7 +13,23 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        public const int CheckpointVersion = 7;
+        public const int CheckpointVersion = 8;
+
+        /// <summary>
+        /// Oldest checkpoint version this build can recover. Checkpoints at this version predate
+        /// <see cref="databaseMapping"/> and <see cref="swapEpoch"/>, so those fields are absent
+        /// from the payload and read back as their defaults.
+        /// </summary>
+        public const int MinRecoverableCheckpointVersion = 7;
+
+        /// <summary>
+        /// First checkpoint version whose payload carries <see cref="databaseMapping"/> and
+        /// <see cref="swapEpoch"/>. Below it both read back as their defaults, which are
+        /// indistinguishable from a checkpoint that deliberately recorded the identity mapping at a
+        /// known epoch, so a recovering host must not read an older checkpoint as a statement about
+        /// either field.
+        /// </summary>
+        public const int DatabaseMappingCheckpointVersion = 8;
 
         /// <summary>
         /// HybridLogRecoveryVersion 
@@ -94,6 +110,22 @@ namespace Tsavorite.core
         public byte[] cookie;
 
         /// <summary>
+        /// Maps a host-defined storage slot to the logical database id that occupied it when this
+        /// checkpoint was taken, as <c>databaseMapping[slot] = logicalDatabaseId</c>. Null or empty
+        /// when the mapping is the identity, which is the case for any host that does not relabel
+        /// its databases. The full mapping is recorded in every database's checkpoint so that the
+        /// most recent one describes the whole permutation on its own.
+        /// </summary>
+        public int[] databaseMapping;
+
+        /// <summary>
+        /// Monotonic counter incremented by the host each time it swaps two logical databases.
+        /// Because checkpoints are taken per database, two checkpoints can carry different
+        /// <see cref="databaseMapping"/> values; the one with the highest epoch is authoritative.
+        /// </summary>
+        public long swapEpoch;
+
+        /// <summary>
         /// If struct deserialized succesfully
         /// </summary>
         public bool Deserialized { get; private set; }
@@ -116,6 +148,9 @@ namespace Tsavorite.core
             snapshotFinalLogicalAddress = 0;
             headAddress = 0;
 
+            databaseMapping = null;
+            swapEpoch = 0;
+
             hlogEndObjectLogTail = new();       // Marks as "unset"
             snapshotStartObjectLogTail = new();
             snapshotEndObjectLogTail = new();
@@ -130,8 +165,8 @@ namespace Tsavorite.core
             var value = reader.ReadLine();
             var cversion = int.Parse(value);
 
-            if (cversion != CheckpointVersion)
-                throw new TsavoriteException($"Invalid checkpoint version {cversion} encountered, current version is {CheckpointVersion}, cannot recover with this checkpoint");
+            if (cversion < MinRecoverableCheckpointVersion || cversion > CheckpointVersion)
+                throw new TsavoriteException($"Invalid checkpoint version {cversion} encountered, this build recovers versions {MinRecoverableCheckpointVersion} through {CheckpointVersion}, cannot recover with this checkpoint");
 
             hybridLogRecoveryVersion = cversion;
 
@@ -191,7 +226,27 @@ namespace Tsavorite.core
                 }
             }
 
-            if (checksum != Checksum())
+            // Read the database mapping. Absent at MinRecoverableCheckpointVersion, in which case the
+            // defaults set by Initialize(Guid, long) stand for "identity mapping, no swaps".
+            if (cversion > MinRecoverableCheckpointVersion)
+            {
+                value = reader.ReadLine();
+                var mappingLength = int.Parse(value);
+                if (mappingLength > 0)
+                {
+                    databaseMapping = new int[mappingLength];
+                    for (var i = 0; i < mappingLength; i++)
+                    {
+                        value = reader.ReadLine();
+                        databaseMapping[i] = int.Parse(value);
+                    }
+                }
+
+                value = reader.ReadLine();
+                swapEpoch = long.Parse(value);
+            }
+
+            if (checksum != Checksum(cversion))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
 
             Deserialized = true;
@@ -228,14 +283,22 @@ namespace Tsavorite.core
         /// <summary>
         /// Write info to byte array
         /// </summary>
-        public readonly byte[] ToByteArray()
+        public readonly byte[] ToByteArray() => ToByteArray(CheckpointVersion);
+
+        /// <summary>
+        /// Write info to a byte array at a given checkpoint version. Production always writes
+        /// <see cref="CheckpointVersion"/>; writing at <see cref="MinRecoverableCheckpointVersion"/> omits the
+        /// fields that version does not carry, and is how tests produce the payload an older build would have
+        /// written.
+        /// </summary>
+        internal readonly byte[] ToByteArray(int cversion)
         {
             using (MemoryStream ms = new())
             {
                 using (StreamWriter writer = new(ms))
                 {
-                    writer.WriteLine(CheckpointVersion); // checkpoint version
-                    writer.WriteLine(Checksum());
+                    writer.WriteLine(cversion); // checkpoint version
+                    writer.WriteLine(Checksum(cversion));
 
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
@@ -263,18 +326,70 @@ namespace Tsavorite.core
                         for (var i = 0; i < cookieSize; i++)
                             writer.WriteLine(cookie[i]);
                     }
+
+                    // Write the database mapping. A reader at MinRecoverableCheckpointVersion stops before
+                    // these fields, so an older build sees a well-formed payload ending at the cookie.
+                    if (cversion > MinRecoverableCheckpointVersion)
+                    {
+                        var mappingLength = databaseMapping == null ? 0 : databaseMapping.Length;
+                        writer.WriteLine(mappingLength);
+                        for (var i = 0; i < mappingLength; i++)
+                            writer.WriteLine(databaseMapping[i]);
+
+                        writer.WriteLine(swapEpoch);
+                    }
                 }
                 return ms.ToArray();
             }
         }
 
-        private readonly long Checksum()
+        private readonly long Checksum(int cversion)
         {
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress
+            var checksum = long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress
                 ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word;
+
+            // The host-supplied fields joined the checksum after MinRecoverableCheckpointVersion, so a
+            // checkpoint at that version must be checksummed without them or it will not verify.
+            if (cversion > MinRecoverableCheckpointVersion)
+                checksum ^= HostSuppliedFieldsChecksum();
+
+            return checksum;
+        }
+
+        /// <summary>
+        /// Checksum of the host-supplied fields. These are sequences rather than scalars, so they are
+        /// folded (FNV-1a) rather than xored: xor alone would let two entries swapping places, or a
+        /// repeated value being added twice, leave the checksum unchanged. A null sequence folds as an
+        /// empty one, matching the serializer, which writes both as a zero length and reads both back as
+        /// null.
+        /// </summary>
+        private readonly long HostSuppliedFieldsChecksum()
+        {
+            const long FnvOffsetBasis = unchecked((long)14695981039346656037);
+            const long FnvPrime = 1099511628211;
+
+            var hash = FnvOffsetBasis;
+
+            static long Fold(long hash, long value) => unchecked((hash ^ value) * FnvPrime);
+
+            hash = Fold(hash, cookie?.Length ?? 0);
+            if (cookie != null)
+            {
+                foreach (var b in cookie)
+                    hash = Fold(hash, b);
+            }
+
+            hash = Fold(hash, databaseMapping?.Length ?? 0);
+            if (databaseMapping != null)
+            {
+                foreach (var id in databaseMapping)
+                    hash = Fold(hash, id);
+            }
+
+            return Fold(hash, swapEpoch);
         }
 
         /// <summary>
@@ -297,6 +412,8 @@ namespace Tsavorite.core
             logger?.LogInformation("Hybrid Log End Object Tail Position: {hlogEndObjLogTail}", hlogEndObjectLogTail);
             logger?.LogInformation("Snapshot Begin Object Log Tail Position: {snapshotStartObjLogTail}", snapshotStartObjectLogTail);
             logger?.LogInformation("Snapshot End Object Log Tail Position: {snapshotEndObjLogTail}", snapshotEndObjectLogTail);
+            if (databaseMapping?.Length > 0)
+                logger?.LogInformation("Database Mapping (slot -> logical): {databaseMapping}; Swap Epoch: {swapEpoch}", string.Join(",", databaseMapping), swapEpoch);
         }
     }
 
