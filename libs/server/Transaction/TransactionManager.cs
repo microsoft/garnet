@@ -139,6 +139,12 @@ namespace Garnet.server
         /// </para>
         /// </remarks>
         internal bool OwnsTransaction { get; private set; }
+
+        /// <summary>
+        /// Whether this transaction has appended its opening <see cref="AofEntryType.TxnStart"/> marker,
+        /// and so has a group in the log that something must terminate.
+        /// </summary>
+        bool txnStartPublished;
         private const int initialSliceBufferSize = 1 << 10;
         private const int initialKeyBufferSize = 1 << 10;
         readonly ILogger logger;
@@ -293,6 +299,7 @@ namespace Garnet.server
             this.operationCntTxn = 0;
             this.state = TxnState.None;
             this.OwnsTransaction = false;
+            this.txnStartPublished = false;
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
@@ -450,7 +457,7 @@ namespace Garnet.server
 
         internal void Commit(bool internal_txn = false)
         {
-            if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
+            if (txnStartPublished)
             {
                 ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
                 appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnCommit, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
@@ -473,12 +480,12 @@ namespace Garnet.server
         /// would otherwise leave them held with nothing to release them.
         /// </para>
         /// <para>
-        /// Running means <see cref="Run"/> reached the point where it writes the <see cref="AofEntryType.TxnStart"/>
-        /// marker, so the log holds an open group for this session. Replay attributes every subsequent record
-        /// to that group until something terminates it, and a later <c>TxnStart</c> on the same session fails
-        /// replay outright with "No nested transactions expected". Ending the group is as much a part of
-        /// abandoning the transaction as releasing its locks -- but only when there is a group to end, which
-        /// is why the marker is conditioned on <c>Running</c> while the release below is not.
+        /// Once <see cref="Run"/> has appended <see cref="AofEntryType.TxnStart"/>, the log holds an open
+        /// group for this session. Replay attributes every subsequent record to that group until something
+        /// terminates it, and a later <c>TxnStart</c> on the same session fails replay outright with
+        /// "No nested transactions expected". Ending the group is as much a part of abandoning the
+        /// transaction as releasing its locks -- but only when there is a group to end, which is why the
+        /// marker is conditioned on the opening append while the release below is not.
         /// </para>
         /// <para>
         /// The marker is <see cref="AofEntryType.TxnCommit"/>, not <see cref="AofEntryType.TxnAbort"/>, because
@@ -499,10 +506,15 @@ namespace Garnet.server
 
             try
             {
-                // Only when Run reached TxnState.Running, which is the point after the TxnStart append
-                // succeeded. Without an open group there is nothing to close, and an unmatched TxnCommit
-                // is itself a replay hazard.
-                if (state == TxnState.Running && PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
+                // Keyed off the opening marker rather than off state: Run appends TxnStart before it
+                // reaches TxnState.Running, so a failure in between leaves a published group that state
+                // says nothing about. The flag is also raised before the append rather than after, because
+                // the append publishes its record before the commit that can throw. Both choices err the
+                // same way, and the asymmetry justifies it: replay ignores a transaction end with no start
+                // outright -- a truncating checkpoint produces them routinely -- while a start with no end
+                // swallows every record after it, from every session, and fails the next transaction on
+                // this session with "No nested transactions expected".
+                if (txnStartPublished)
                 {
                     ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
                     appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnCommit, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
@@ -642,7 +654,14 @@ namespace Garnet.server
             if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
                 ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
+
+                // Before the append, not after: the append publishes the record and can then throw from
+                // the commit behind it, so a flag raised afterwards would miss a group that is already in
+                // the log. See Abandon for why erring this way is the safe direction.
+                txnStartPublished = true;
                 appendOnlyFile.Log.EnqueueTxn(AofEntryType.TxnStart, txnVersion, stringBasicContext.Session.ID, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
+
+                ExceptionInjectionHelper.TriggerRecoverableException(ExceptionInjectionType.Transaction_Fail_After_TxnStart_Append);
             }
 
             state = TxnState.Running;
