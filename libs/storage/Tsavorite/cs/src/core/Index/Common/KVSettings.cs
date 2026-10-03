@@ -32,6 +32,18 @@ namespace Tsavorite.core
         public IDevice ObjectLogDevice;
 
         /// <summary>
+        /// Device receiving up-converted object bytes when recovering a downlevel checkpoint. A downlevel object log stores records
+        /// headerless above the size that now requires a chunk header, so its object bytes cannot be rewritten in place and are
+        /// instead written here, in current format, while <see cref="ObjectLogDevice"/> is read as the source.
+        /// </summary>
+        /// <remarks>
+        /// Required to recover a downlevel checkpoint that has an <see cref="ObjectLogDevice"/>; recovery fails without it rather than
+        /// silently leaving the object log in a format that a later release cannot decode. Ignored when recovering a current-format
+        /// checkpoint, and unused once the up-converted log has replaced the original.
+        /// </remarks>
+        public IDevice UpgradeObjectLogDevice;
+
+        /// <summary>
         /// Size of a main-log page, in bytes
         /// </summary>
         public long PageSize = 1 << 25;
@@ -211,6 +223,7 @@ namespace Tsavorite.core
             {
                 LogDevice?.Dispose();
                 ObjectLogDevice?.Dispose();
+                UpgradeObjectLogDevice?.Dispose();
                 if (deleteDirOnDispose && baseDir != null)
                 {
                     try { new DirectoryInfo(baseDir).Delete(true); } catch { }
@@ -224,6 +237,8 @@ namespace Tsavorite.core
             var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(LogMemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
+            if (UpgradeObjectLogDevice != null)
+                retStr += $"; upgrade obj log device: {UpgradeObjectLogDevice.GetType().Name}";
             retStr += $"; mutable fraction: {MutableFraction};";
             retStr += $"; read cache (rc): {(ReadCacheEnabled ? "yes" : "no")}";
             retStr += $"; read copy options: {ReadCopyOptions}";
@@ -251,6 +266,7 @@ namespace Tsavorite.core
                 ReadCopyOptions = ReadCopyOptions,
                 LogDevice = LogDevice,
                 ObjectLogDevice = ObjectLogDevice,
+                UpgradeObjectLogDevice = UpgradeObjectLogDevice,
                 MemorySize = LogMemorySize,
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 PageCount = PageCount,

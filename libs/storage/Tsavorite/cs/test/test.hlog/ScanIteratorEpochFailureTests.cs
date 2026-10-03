@@ -43,8 +43,8 @@ namespace Tsavorite.test
             public readonly int OverflowPageCount => 0;
             public readonly void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo) => throw new NotSupportedException();
             public readonly void AllocatePage(int pageIndex) => throw new NotSupportedException();
-            public readonly void FreePage(long pageIndex) => throw new NotSupportedException();
-            public readonly long GetPageOfAddress(long logicalAddress, int logPageSizeBits) => logicalAddress >> logPageSizeBits;
+            public readonly void FreePage(int pageIndex) => throw new NotSupportedException();
+            public readonly int GetPageOfAddress(long logicalAddress, int logPageSizeBits) => (int)(logicalAddress >> logPageSizeBits);
         }
 
         /// <summary>Iterator that records page-read issuance and exposes the members the tests drive.</summary>

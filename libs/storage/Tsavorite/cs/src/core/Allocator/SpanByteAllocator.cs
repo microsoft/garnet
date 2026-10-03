@@ -109,14 +109,14 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
+        public readonly void FreePage(int pageIndex) => _this.FreePage(pageIndex);
 
         /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetPageOfAddress(long logicalAddress, int logPageSizeBits) => LogAddress.GetPageOfAddress(logicalAddress, logPageSizeBits);
+        public readonly int GetPageOfAddress(long logicalAddress, int logPageSizeBits) => LogAddress.GetPageOfAddress(logicalAddress, logPageSizeBits);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -133,11 +133,19 @@ namespace Tsavorite.core
         public readonly ObjectIdMap TransientObjectIdMap => default;
 
         /// <inheritdoc/>
-        public readonly ObjectIdMap GetPageObjectIdMap(long pageNumber) => default;
+        public readonly ObjectIdMap GetPageObjectIdMap(int pageNumber) => default;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void OnDispose(ref LogRecord logRecord, DisposeReason disposeReason) => _this.OnDispose(ref logRecord, disposeReason);
+
+        /// <summary>
+        /// Always false: this allocator's records have no heap fields and no object log, so disposal neither frees an
+        /// <see cref="ObjectIdMap"/> slot nor leaves an ObjectLogPosition referring to freed bytes. Flushing writes the
+        /// live page, but it only DMAs the record image; it never reads a record to resolve or re-serialize anything.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool IsFrozenForFlush(long logicalAddress) => false;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

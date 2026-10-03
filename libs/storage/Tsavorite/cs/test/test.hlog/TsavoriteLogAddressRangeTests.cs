@@ -43,30 +43,31 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public void TsavoriteLogPageIsNotReadCacheBitMaskedTest()
         {
-            const int pageSizeBits = 14;
+            // Page numbers are int, so the page size must be large enough that an address with bit 47 set still maps to a page
+            // within int range: 2^47 >> pageSizeBits must be < 2^31, i.e. pageSizeBits >= 17.
+            const int pageSizeBits = 17;
 
             device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "addr-range.log"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings
             {
                 LogDevice = device,
                 PageSizeBits = pageSizeBits,
-                MemorySizeBits = 16,
-                SegmentSizeBits = 16,
+                MemorySizeBits = 19,
+                SegmentSizeBits = 19,
                 LogCommitDir = MethodTestDir,
                 TryRecoverLatest = false
             });
 
-            const long lowPage = 5;
-            long lowAddr = (lowPage << pageSizeBits) | 0x100;   // an address whose read-cache bit (bit 47) is clear
-            long highAddr = (1L << 47) | lowAddr;               // the same address with the read-cache bit set
+            const int lowPage = 5;
+            long lowAddr = ((long)lowPage << pageSizeBits) | 0x100;   // an address whose read-cache bit (bit 47) is clear
+            long highAddr = (1L << 47) | lowAddr;                     // the same address with the read-cache bit set
 
-            // TsavoriteLog must NOT mask off bit 47: the computed page retains the high bit, exceeding the old 47-bit (and int) range.
-            long expectedUnmaskedPage = highAddr >> pageSizeBits;
+            // TsavoriteLog must NOT mask off bit 47: the computed page retains the high bit's contribution.
+            var expectedUnmaskedPage = (1 << (47 - pageSizeBits)) | lowPage;
             ClassicAssert.AreEqual(expectedUnmaskedPage, log.AllocatorGetPage(highAddr));
-            ClassicAssert.Greater(log.AllocatorGetPage(highAddr), (long)int.MaxValue);
 
             // The masked (main-store) computation that the SpanByte/Object wrappers delegate to would drop bit 47, collapsing to the low page.
-            long maskedPage = LogAddress.GetPageOfAddress(highAddr, pageSizeBits);
+            var maskedPage = LogAddress.GetPageOfAddress(highAddr, pageSizeBits);
             ClassicAssert.AreEqual(lowPage, maskedPage);
             ClassicAssert.AreNotEqual(maskedPage, log.AllocatorGetPage(highAddr));
 

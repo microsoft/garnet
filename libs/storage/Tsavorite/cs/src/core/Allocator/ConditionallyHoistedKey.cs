@@ -170,6 +170,14 @@ namespace Tsavorite.core
             this.namespaceLen = namespaceLen;
         }
 
+        /// <summary>
+        /// Wrap externally pinned key bytes (no copy, no allocation) as an <see cref="IKey"/>. The caller must keep
+        /// <paramref name="keyPtr"/> pinned for the lifetime of the returned struct. No namespace is set, so this is suitable for
+        /// hash-code computation (which uses key bytes only); it is used by recovery Pass 1 to hash an overflow key read from the
+        /// object log into a temporary pinned buffer.
+        /// </summary>
+        internal static ConditionallyHoistedKey CreatePinned(byte* keyPtr, int keyLen) => new(keyPtr, keyLen);
+
         /// <inheritdoc/>
         public bool KeysEqual<TOther>(TOther other) where TOther :
             IKey

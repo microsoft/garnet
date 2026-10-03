@@ -168,11 +168,18 @@ namespace Tsavorite.core
                 *(int*)fieldAddress = ObjectIdMap.InvalidObjectId;
             }
 
-            // We don't need to change the length; we'll keep the current length and just convert to inline.
+            // Convert the field to inline. The physical inline slot is the freed ObjectId slot (ObjectIdSize bytes), so set the RDH
+            // length to ObjectIdSize explicitly rather than trusting the current field.
             if (isKey)
+            {
                 dataHeader.SetKeyIsInline();
+                dataHeader.KeyLength = ObjectIdMap.ObjectIdSize;
+            }
             else
+            {
                 dataHeader.SetValueIsInline();
+                dataHeader.ValueLength = ObjectIdMap.ObjectIdSize;
+            }
         }
 
         /// <summary>
