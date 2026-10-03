@@ -13,8 +13,6 @@ namespace Garnet.common
     /// <remarks>
     /// A zero-byte capacity disables accounting and throttling. Applications compose this throttle with a
     /// <c>WaiterQueue&lt;int&gt;</c> to provide admission retries and waiting.
-    /// GarnetLightClient integration is intentionally reserved for a separate integration stage; this type
-    /// currently provides only the memory-backpressure infrastructure.
     /// </remarks>
     public readonly struct MemoryThrottle : IResourceThrottle<int>
     {

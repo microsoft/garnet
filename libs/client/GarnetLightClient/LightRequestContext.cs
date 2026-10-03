@@ -22,6 +22,8 @@ namespace Garnet.client
         internal PoolEntry poolEntry;
 
         int length;
+        WaiterQueue<MemoryThrottle, int> outOfLineRentedBytesWaiters;
+        int reservedBytes;
 
         /// <inheritdoc />
         public byte[] Buffer => poolEntry.entry;
@@ -29,13 +31,19 @@ namespace Garnet.client
         /// <inheritdoc />
         public readonly int Length => length;
 
-        internal LightRequestContext(PoolEntry poolEntry, int length)
+        internal LightRequestContext(
+            PoolEntry poolEntry,
+            int length,
+            WaiterQueue<MemoryThrottle, int> outOfLineRentedBytesWaiters,
+            int reservedBytes)
         {
             this.poolEntry = poolEntry;
             this.length = length;
+            this.outOfLineRentedBytesWaiters = outOfLineRentedBytesWaiters;
+            this.reservedBytes = reservedBytes;
         }
 
-        internal static LightRequestContext RentRequestBuffer(LimitedFixedBufferPool pool, int length)
+        internal static int GetRequestBufferAllocationSize(LimitedFixedBufferPool pool, int length)
         {
             var allocationSize = length;
             if (length <= pool.MaxAllocationSize)
@@ -46,9 +54,24 @@ namespace Garnet.client
                     allocationSize = (int)roundedSize;
             }
 
+            return allocationSize;
+        }
+
+        internal static LightRequestContext RentRequestBuffer(
+            LimitedFixedBufferPool pool,
+            int length,
+            WaiterQueue<MemoryThrottle, int> outOfLineRentedBytesWaiters = null,
+            int reservedBytes = 0)
+        {
+            var allocationSize = GetRequestBufferAllocationSize(pool, length);
+            if ((outOfLineRentedBytesWaiters == null) != (reservedBytes == 0))
+                throw new InvalidOperationException("Out-of-line rental admission and reserved bytes must be provided together.");
+            if (reservedBytes != 0 && reservedBytes != allocationSize)
+                throw new InvalidOperationException($"Reserved {reservedBytes} bytes for a {allocationSize}-byte request allocation.");
+
             var entry = pool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
             ObjectDisposedException.ThrowIf(entry is null, pool);
-            return new LightRequestContext(entry, length);
+            return new LightRequestContext(entry, length, outOfLineRentedBytesWaiters, reservedBytes);
         }
 
         /// <inheritdoc />
@@ -57,7 +80,16 @@ namespace Garnet.client
             if (poolEntry == null)
                 return;
 
-            poolEntry.Dispose();
+            var entry = poolEntry;
+            var waiters = outOfLineRentedBytesWaiters;
+            var bytes = reservedBytes;
+            poolEntry = null;
+            outOfLineRentedBytesWaiters = null;
+            reservedBytes = 0;
+
+            entry.Dispose();
+            waiters?.Release(bytes);
         }
     }
+
 }

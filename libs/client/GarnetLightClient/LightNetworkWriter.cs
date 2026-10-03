@@ -5,6 +5,8 @@ using System;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -21,12 +23,14 @@ namespace Garnet.client
     /// <param name="requestPageCount">Number of circular request-ring pages.</param>
     /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
     /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
+    /// <param name="maxOutOfLineRentedBytes">Maximum pooled out-of-line request bytes rented until local send completion. Zero disables throttling.</param>
     public readonly struct LightNetworkWriterOptions(
         int networkBufferSizeBytes,
         int requestPageSizeBytes,
         int requestPageCount,
         int maxOutstandingCompletions,
-        int maxConcurrentNetworkSends)
+        int maxConcurrentNetworkSends,
+        long maxOutOfLineRentedBytes = 0)
     {
         static int RequestSlotSizeBytes
             => Align(Unsafe.SizeOf<LightRequestContext>() + IntPtr.Size);
@@ -45,9 +49,10 @@ namespace Garnet.client
         /// The default uses two 1-KiB request pages. For inline requests, two pages outperform larger
         /// page counts, and 1 KiB is the only tested page-size increase over 512 bytes that improves
         /// per-request cost; larger pages regress. For out-of-line requests, total ring capacity rather
-        /// than page geometry determines the amortized per-request cost.
+        /// than page geometry determines the amortized per-request cost. Pooled out-of-line requests are
+        /// limited to 64 MiB awaiting local send completion.
         /// <para>
-        /// On a 64-bit process, the fixed request/completion ring footprint is approximately 12 KiB:
+        /// On a 64-bit process, the fixed request/completion ring footprint is approximately 14 KiB:
         /// </para>
         /// <list type="bullet">
         /// <item><description>
@@ -55,8 +60,8 @@ namespace Garnet.client
         /// </description></item>
         /// <item><description>
         /// Request side table: (2 * 1,024 bytes) / 8-byte record alignment = 256 slots;
-        /// each <c>LightRequestContext</c> plus flush-context reference is approximately 24 bytes,
-        /// for approximately 6 KiB.
+        /// each <c>LightRequestContext</c> plus flush-context reference is approximately 32 bytes,
+        /// for approximately 8 KiB.
         /// </description></item>
         /// <item><description>
         /// Completion lane: 64 slots * 64 bytes per cache-line-padded completion slot = 4 KiB.
@@ -65,14 +70,15 @@ namespace Garnet.client
         /// The total excludes array headers, 8 KiB network buffers, and pooled out-of-line request buffers.
         /// It also excludes reusable flush contexts from the fixed footprint because they are allocated lazily.
         /// After every physical request slot has been used, their approximate worst-case footprint is
-        /// 256 slots * 56 bytes = 14 KiB, keeping the fully warmed request/completion ring near 26 KiB.
+        /// 256 slots * 64 bytes = 16 KiB, keeping the fully warmed request/completion ring near 30 KiB.
         /// </remarks>
         public static LightNetworkWriterOptions Default => new(
             networkBufferSizeBytes: 1 << 13,
             requestPageSizeBytes: 1 << 10,
             requestPageCount: 2,
             maxOutstandingCompletions: 1 << 6,
-            maxConcurrentNetworkSends: 8);
+            maxConcurrentNetworkSends: 8,
+            maxOutOfLineRentedBytes: 64L << 20);
 
         /// <summary>
         /// Size of the fixed network send buffer and initial receive buffer.
@@ -101,6 +107,13 @@ namespace Garnet.client
         /// Maximum number of transport sends that may be in progress concurrently.
         /// </summary>
         public int MaxConcurrentNetworkSends { get; } = maxConcurrentNetworkSends;
+
+        /// <summary>
+        /// Maximum pooled bytes reserved by out-of-line requests that have not completed their local send.
+        /// Zero disables memory admission throttling. Inline requests allocate no pooled payload and do not
+        /// consume this capacity.
+        /// </summary>
+        public long MaxOutOfLineRentedBytes { get; } = maxOutOfLineRentedBytes;
 
         /// <summary>
         /// Estimates the fixed request-page, request-side-table, and completion-lane memory in bytes.
@@ -192,6 +205,7 @@ namespace Garnet.client
         readonly DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport> channel;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
+        readonly WaiterQueue<MemoryThrottle, int> memoryThrottle;
         readonly GarnetLightClientTcpNetworkHandler networkHandler;
         readonly ILogger logger;
 
@@ -219,6 +233,8 @@ namespace Garnet.client
             this.logger = logger;
             this.networkBufferSettings = new NetworkBufferSettings(options.NetworkBufferSizeBytes, options.NetworkBufferSizeBytes);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
+            var outOfLineRentedBytesThrottle = new MemoryThrottle(options.MaxOutOfLineRentedBytes);
+            this.memoryThrottle = new WaiterQueue<MemoryThrottle, int>(outOfLineRentedBytesThrottle);
 
             // The flush-completion callback is a static routine on the flush result and recovers its ring via
             // the result's sink, so the handler needs no ring instance at construction. That removes the
@@ -253,6 +269,7 @@ namespace Garnet.client
             channel.Dispose();
             networkHandler.Dispose();
             networkPool?.Dispose();
+            memoryThrottle.Dispose();
         }
 
         /// <summary>
@@ -262,6 +279,24 @@ namespace Garnet.client
         /// <returns></returns>
         internal LightRequestContext RentRequestBuffer(int length)
             => LightRequestContext.RentRequestBuffer(networkPool, length);
+
+        /// <summary>
+        /// Gets the actual pooled allocation size that an out-of-line request will reserve.
+        /// </summary>
+        internal int GetRequestBufferAllocationSize(int length)
+            => LightRequestContext.GetRequestBufferAllocationSize(networkPool, length);
+
+        internal ValueTask<bool> RentMemoryThrottle(int allocationSize, CancellationToken token)
+            => memoryThrottle.AdmitAsync(allocationSize, token);
+
+        internal bool AdmitOutOfLineRental(int allocationSize, CancellationToken token)
+            => memoryThrottle.Admit(allocationSize, token);
+
+        internal void ReleaseOutOfLineRental(int allocationSize)
+            => memoryThrottle.Release(allocationSize);
+
+        internal LightRequestContext RentAdmittedOutOfLineBuffer(int length, int reservedBytes)
+            => LightRequestContext.RentRequestBuffer(networkPool, length, memoryThrottle, reservedBytes);
 
         /// <summary>
         /// Attempts to reserve the paired request address and optional completion ticket for one send operation.

@@ -71,16 +71,6 @@ namespace Garnet.client
         public bool IsConnected => socket != null && socket.Connected && !Disposed;
 
         /// <summary>
-        /// Get the max number of allowed outstanding tasks.
-        /// </summary>
-        public int GetOutstandingTasksLimit => networkWriterOptions.MaxOutstandingCompletions;
-
-        /// <summary>
-        /// Get the send page size.
-        /// </summary>
-        public int SendPageSize => networkWriterOptions.RequestPageSizeBytes;
-
-        /// <summary>
         /// Create client instance
         /// </summary>
         /// <param name="endpoint">Endpoint of the server</param>
@@ -470,9 +460,17 @@ namespace Garnet.client
                 // Allocate side-buffer for payload because it cannot be inlined.
                 if (!inline)
                 {
+                    var allocationSize = 0;
+                    var admissionReserved = false;
                     try
                     {
-                        payload = networkWriter.RentRequestBuffer(totalLength);
+                        allocationSize = networkWriter.GetRequestBufferAllocationSize(totalLength);
+                        if (!await networkWriter.RentMemoryThrottle(allocationSize, token).ConfigureAwait(false))
+                            throw new InvalidOperationException("The out-of-line rental admission queue is full.");
+                        admissionReserved = true;
+
+                        payload = networkWriter.RentAdmittedOutOfLineBuffer(totalLength, allocationSize);
+                        admissionReserved = false;
 
                         unsafe
                         {
@@ -482,6 +480,8 @@ namespace Garnet.client
                     }
                     catch (Exception ex)
                     {
+                        if (admissionReserved)
+                            networkWriter.ReleaseOutOfLineRental(allocationSize);
                         CompleteOnFailure(tcs, ex);
                         return;
                     }
@@ -635,7 +635,24 @@ namespace Garnet.client
             {
                 if (!inline)
                 {
-                    payload = networkWriter.RentRequestBuffer(totalLength);
+                    var allocationSize = 0;
+                    var admissionReserved = false;
+                    try
+                    {
+                        allocationSize = networkWriter.GetRequestBufferAllocationSize(totalLength);
+                        if (!networkWriter.AdmitOutOfLineRental(allocationSize, token))
+                            throw new InvalidOperationException("The out-of-line rental admission queue is full.");
+                        admissionReserved = true;
+
+                        payload = networkWriter.RentAdmittedOutOfLineBuffer(totalLength, allocationSize);
+                        admissionReserved = false;
+                    }
+                    catch
+                    {
+                        if (admissionReserved)
+                            networkWriter.ReleaseOutOfLineRental(allocationSize);
+                        throw;
+                    }
 
                     unsafe
                     {

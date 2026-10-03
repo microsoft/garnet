@@ -222,8 +222,75 @@ namespace Garnet.test
         {
             var options = LightNetworkWriterOptions.Default;
 
-            ClassicAssert.AreEqual(12 * 1024, options.MinMemoryFootprint());
-            ClassicAssert.AreEqual(26 * 1024, options.MaxMemoryFootprint());
+            ClassicAssert.AreEqual(64L << 20, options.MaxOutOfLineRentedBytes);
+            ClassicAssert.AreEqual(14 * 1024, options.MinMemoryFootprint());
+            ClassicAssert.AreEqual(30 * 1024, options.MaxMemoryFootprint());
+        }
+
+        [Test]
+        public async Task RequestMemoryThrottleRejectsOversizedOutOfLineRequestWithoutLeak()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 512);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await db.ExecuteForStringResultAsync(ECHO, [new string('x', 700)]).ConfigureAwait(false));
+
+            StringAssert.Contains("1024 bytes exceeds the configured maximum of 512 bytes", exception.Message);
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+        }
+
+        [Test]
+        public async Task RequestMemoryThrottleStabilizesConcurrentOutOfLineRequests()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            const int capacityBytes = 2048;
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 16,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: capacityBytes);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            const int producers = 8;
+            const int requestsPerProducer = 50;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var tasks = new Task[producers];
+            for (var producer = 0; producer < producers; producer++)
+            {
+                var id = producer;
+                tasks[producer] = Task.Run(async () =>
+                {
+                    for (var request = 0; request < requestsPerProducer; request++)
+                    {
+                        var value = $"{id}:{request}:{new string((char)('a' + id), 700)}";
+                        var result = await db.ExecuteForStringResultWithCancellationAsync(ECHO, [value], cts.Token).ConfigureAwait(false);
+                        ClassicAssert.AreEqual(value, result);
+                    }
+                }, cts.Token);
+            }
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            var finalValue = new string('z', 700);
+            ClassicAssert.AreEqual(
+                finalValue,
+                await db.ExecuteForStringResultWithCancellationAsync(ECHO, [finalValue], cts.Token).ConfigureAwait(false));
         }
 
         [Test]
@@ -307,7 +374,8 @@ namespace Garnet.test
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
                 maxOutstandingCompletions: 1 << 12,
-                maxConcurrentNetworkSends: 8);
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 1024);
             using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
