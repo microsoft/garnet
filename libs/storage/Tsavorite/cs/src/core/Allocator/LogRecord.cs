@@ -228,7 +228,11 @@ namespace Tsavorite.core
         /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Key is not pinned; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
         /// <remarks>The setter restores the raw <see cref="RecordDataHeader.KeyLength"/> field to
         /// <see cref="ObjectIdMap.ObjectIdSize"/> if a flushed record used those bits for the overflow key's page-count hint. The effective
-        /// KeyLength is ObjectIdSize in either state. The restoration uses a local + <see cref="SetDataHeader"/> for atomicity.</remarks>
+        /// KeyLength is ObjectIdSize in either state. The restoration uses a local + <see cref="SetDataHeader"/> for atomicity.
+        /// <para>Deliberately leaves ObjectLogPosition alone, unlike the ValueObject setter, which clears it to
+        /// <see cref="ObjectLogFilePositionInfo.NotSet"/>. The read path assigns this property while materializing an overflow key and then
+        /// reads that word's flag bits to size the value read, so clearing it here would be an intermediate state the rest of the record
+        /// read still depends on. The flush restamps the word for the whole record.</para></remarks>
         public readonly OverflowByteArray KeyOverflow
         {
             get
@@ -253,6 +257,10 @@ namespace Tsavorite.core
                     localDataHeader.KeyLength = ObjectIdMap.ObjectIdSize;
                     SetDataHeader(localDataHeader);
                 }
+
+                // This key has no object-log bytes yet, so the slot must not describe any. Unstamping leaves the exact-size
+                // flags intact, so a read that assigns this property can still size the record's remaining components.
+                ObjectLogFilePositionInfo.Unstamp((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
             }
         }
 
@@ -315,14 +323,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// We track the deserialized length of an object value in the ObjectLogPosition field after deserialization is complete. This allows
-        /// flushes during recovery to both avoid re-serializing the object and know how to reset the ObjectLogPosition.
+        /// Set a value object deserialized from the object log, and unstamp the record's ObjectLogPosition.
         /// </summary>
         /// <param name="heapObject">The deserialized object</param>
-        /// <param name="deserializedLength">The deserialized length of the object</param>
-        /// <remarks>Also restores <see cref="RecordDataHeader.ValueLength"/> to <see cref="ObjectIdMap.ObjectIdSize"/> if the raw stored
-        /// length is not already ObjectIdSize (deserialization-time invariant restoration; atomic via local + <see cref="SetDataHeader"/>).</remarks>
-        internal readonly void SetDeserializedValueObject(IHeapObject heapObject, ulong deserializedLength)
+        /// <remarks>
+        /// The object is now in memory, so the position it was read from describes nothing the record still needs; leaving it
+        /// stamped would let a later flush that skips this record persist a position for object bytes it did not write. The flush
+        /// restamps when it writes the record.
+        /// <para>Also restores <see cref="RecordDataHeader.ValueLength"/> to <see cref="ObjectIdMap.ObjectIdSize"/> if the raw stored
+        /// length is not already ObjectIdSize (deserialization-time invariant restoration; atomic via local + <see cref="SetDataHeader"/>).</para>
+        /// </remarks>
+        internal readonly void SetDeserializedValueObject(IHeapObject heapObject)
         {
             var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
 
@@ -333,11 +344,7 @@ namespace Tsavorite.core
             *(int*)valueAddress = objectIdMap.AllocateAndSet(heapObject);
 
             // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
-            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-
-            // Store the deserialized length in the ObjectLogPosition slot for the recovery flush to reuse. Recovery selects the
-            // downlevel-vs-current decode from the checkpoint metadata version, so no per-record format flag is preserved here.
-            *objectLogPositionPtr = deserializedLength;
+            ObjectLogFilePositionInfo.Unstamp((ulong*)GetObjectLogPositionAddress(valueAddress + valueLength));
 
             // Restore raw ValueLength to ObjectIdSize for the in-memory invariant if needed (atomic via local + SetDataHeader).
             var localDataHeader = DataHeader;
@@ -402,6 +409,10 @@ namespace Tsavorite.core
                 if (!DataHeader.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     ThrowTsavoriteException("set_ValueOverflow should only be called when transferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
+
+                // This value has no object-log bytes yet, so the slot must not describe any. Unstamping leaves the exact-size
+                // flags intact, so a read that assigns this property can still size the record's remaining components.
+                ObjectLogFilePositionInfo.Unstamp((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
 
                 // Restore ValueLength to ObjectIdSize for the in-memory invariant (atomic single-write via local + SetDataHeader).
                 // No-op when already ObjectIdSize (the common in-memory path); only writes when called on a deserialized record
@@ -593,6 +604,14 @@ namespace Tsavorite.core
                     *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
                 }
             }
+
+            // A record with out-of-line components carries an ObjectLogPosition, and this one has no object-log bytes yet. The
+            // allocation may be recycled memory, so the word must be put into the unstamped state explicitly rather than left
+            // holding the previous occupant's position, which would otherwise read as real but unrelated object bytes. A flush
+            // that writes this record's components stamps it; one that carries the record to disk incidentally -- the sector
+            // round-up above a partial flush's end -- leaves it unstamped, which is what tells recovery to skip it.
+            if (DataHeader.RecordHasObjects)
+                ObjectLogFilePositionInfo.Unstamp((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
         }
 
         /// <summary>
@@ -1002,6 +1021,10 @@ namespace Tsavorite.core
 
             // Set the new object into the slot
             objectIdMap.Set(objectId, value);
+
+            // This value has no object-log bytes yet, so the slot must not describe any. A revivified or reused record would
+            // otherwise keep the previous occupant's position, which reads real but unrelated object bytes.
+            ObjectLogFilePositionInfo.Unstamp((ulong*)GetObjectLogPositionAddress(valueAddress + valueLength));
             return true;
         }
 
@@ -1623,6 +1646,23 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// This record's raw ObjectLogPosition word, including flag bits.
+        /// </summary>
+        /// <remarks>
+        /// Raw because <see cref="GetObjectLogRecordStartPositionAndLengths"/> masks the flag bits off, and the unstamped
+        /// markers are distinguished by the full word: <see cref="ObjectLogFilePositionInfo.NotSet"/> is all-ones, flag bits
+        /// included, and zero is the record-initialization value.
+        /// </remarks>
+        internal readonly ulong RawObjectLogPositionWord
+        {
+            get
+            {
+                Debug.Assert(DataHeader.RecordHasObjects, "RawObjectLogPositionWord is only meaningful for a record with out-of-line components");
+                return *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
+            }
+        }
+
         internal readonly bool KeyIsExactSize
         {
             get
@@ -1722,17 +1762,17 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Returns the object-log start position and key/value initial-read extents. For current-format records these are decoded from
-        /// each objectId slot's size hint and exact-size position flag. Downlevel (v2.1) records use the split RDH/objectId encoding.
+        /// each objectId slot's size hint and exact-size position flag. downlevel (cv7) records use the split RDH/objectId encoding.
         /// </summary>
         /// <param name="keyLength">Outputs the key initial-read extent.</param>
         /// <param name="valueObjectLength">Outputs the value initial-read extent.</param>
         /// <param name="checkpointVersion">The checkpoint metadata version whose object-log encoding is being decoded; the current version for a
-        /// live read. Recovery passes the recovered checkpoint version to select the downlevel v2.1 decode.</param>
+        /// live read. Recovery passes the recovered checkpoint version to select the downlevel cv7 decode.</param>
         /// <returns>The object log position word for this record, with flag bits masked off (segment+offset only).</returns>
         internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength, int checkpointVersion)
         {
             if (IsDownlevelObjectLogRecord(checkpointVersion))
-                return GetObjectLogRecordStartPositionAndLengths_v21(out keyLength, out valueObjectLength);
+                return GetObjectLogRecordStartPositionAndLengths_cv7(out keyLength, out valueObjectLength);
 
             var dataHeader = DataHeader;
             var word = *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
@@ -1762,7 +1802,7 @@ namespace Tsavorite.core
             return word & ObjectLogFilePositionInfo.SegmentAndOffsetMask;
         }
 
-        /// <summary>Whether this record's object log uses the downlevel (v2.1) split-length encoding. Recovery selects the decode from the
+        /// <summary>Whether this record's object log uses the downlevel (cv7) split-length encoding. Recovery selects the decode from the
         /// checkpoint metadata version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>); a live read never sees a downlevel
         /// record, because recovering a downlevel checkpoint up-converts every record before any page can be evicted.</summary>
         internal readonly bool IsDownlevelObjectLogRecord(int checkpointVersion)
@@ -1785,6 +1825,11 @@ namespace Tsavorite.core
                 "Expected raw KeyLength to be restored to ObjectIdSize after reading an overflow key");
             Debug.Assert(dataHeader.ValueIsInline || dataHeader.GetValueLengthRaw() == ObjectIdMap.ObjectIdSize,
                 "Expected raw ValueLength to be ObjectIdSize after reading an out-of-line value");
+
+            // The components are now in memory, so the position this record was read from describes nothing the record
+            // still needs. Leaving it stamped lets a later flush that skips this record (Invalid, lost capture) persist a
+            // position for object bytes it did not write.
+            ObjectLogFilePositionInfo.Unstamp((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
         }
 
         internal readonly void OnDeserializationError(bool keyWasSet)

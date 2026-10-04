@@ -25,7 +25,7 @@ namespace Tsavorite.core
         /// <param name="keyLength">Outputs key length; set for an overflow key.</param>
         /// <param name="valueObjectLength">Outputs value length; set for an overflow or object value.</param>
         /// <returns>The object-log position word for this record, with flag bits masked off (segment+offset only).</returns>
-        internal readonly ulong GetObjectLogRecordStartPositionAndLengths_v21(out int keyLength, out ulong valueObjectLength)
+        internal readonly ulong GetObjectLogRecordStartPositionAndLengths_cv7(out int keyLength, out ulong valueObjectLength)
         {
             var dataHeader = DataHeader;
             if (dataHeader.KeyIsOverflow)
@@ -51,7 +51,7 @@ namespace Tsavorite.core
                 valueObjectLength = 0;
                 if (dataHeader.RecordIsInline) // If the record is fully inline, we should not be called here
                 {
-                    Debug.Fail("Cannot call GetObjectLogRecordStartPositionAndLengths_v21 for an inline record");
+                    Debug.Fail("Cannot call GetObjectLogRecordStartPositionAndLengths_cv7 for an inline record");
                     return 0;
                 }
             }

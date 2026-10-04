@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -31,7 +31,7 @@ namespace Tsavorite.core
         public long headAddress;
 
         /// <summary>The checkpoint metadata version being recovered (<see cref="HybridLogRecoveryInfo.hybridLogRecoveryVersion"/>). Selects the
-        /// object-log record decode (downlevel v2.1 vs current chunk-framed) for pass-2 object loads and recovery flushes. Defaults to the current
+        /// object-log record decode (downlevel cv7 vs current chunk-framed) for pass-2 object loads and recovery flushes. Defaults to the current
         /// version so any path that does not set it never takes a downlevel decode.</summary>
         public int checkpointVersion = HybridLogRecoveryInfo.CheckpointVersion;
 
@@ -147,7 +147,7 @@ namespace Tsavorite.core
         internal readonly bool undoNextVersion;
 
         /// <summary>The checkpoint metadata version being recovered (<see cref="HybridLogRecoveryInfo.hybridLogRecoveryVersion"/>). Selects the
-        /// object-log record decode (downlevel v2.1 vs current chunk-framed) instead of a per-record position-word flag.</summary>
+        /// object-log record decode (downlevel cv7 vs current chunk-framed) instead of a per-record position-word flag.</summary>
         internal readonly int checkpointVersion;
 
         internal RecoveryOptions(long fuzzyRegionStartAddress, bool undoNextVersion, int checkpointVersion)

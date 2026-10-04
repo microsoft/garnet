@@ -639,7 +639,7 @@ The object deserializer self-terminates according to the object format. It never
 
 ### 6.5 Assignment to the objectId map
 
-After object deserialization, `LogRecord.SetDeserializedValueObject()`:
+After object deserialization, `LogRecord.SetDeserializedValueObjectForRecovery()`:
 
 1. allocates a slot in the selected `ObjectIdMap`;
 2. stores the `IHeapObject`;

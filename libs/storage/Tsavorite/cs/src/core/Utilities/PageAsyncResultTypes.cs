@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #define CALLOC
@@ -198,7 +198,7 @@ namespace Tsavorite.core
         internal long recoveryFormerFlushedUntilAddress;
 
         /// <summary>The checkpoint metadata version this recovery flush is rewriting (<see cref="HybridLogRecoveryInfo.hybridLogRecoveryVersion"/>). Selects
-        /// the object-log record decode (downlevel v2.1 vs current chunk-framed) for the records being flushed, instead of a per-record position-word flag.
+        /// the object-log record decode (downlevel cv7 vs current chunk-framed) for the records being flushed, instead of a per-record position-word flag.
         /// Defaults to the current version so non-recovery flushes never take a downlevel path.</summary>
         internal int checkpointVersion = HybridLogRecoveryInfo.CheckpointVersion;
 

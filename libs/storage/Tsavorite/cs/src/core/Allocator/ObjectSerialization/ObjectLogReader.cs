@@ -135,7 +135,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
             // GetObjectLogRecordStartPositionAndLengths returns initial read extents from objectId hints for a current record, or exact
-            // lengths from the split RDH+objectId-slot encoding for a downlevel (v2.1) record.
+            // lengths from the split RDH+objectId-slot encoding for a downlevel (cv7) record.
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
             var isLegacy = logRecord.IsDownlevelObjectLogRecord(checkpointVersion);
             recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
@@ -470,6 +470,12 @@ namespace Tsavorite.core
         {
             if (isExactSize)
             {
+                // A headerless component's hint is its exact byte count, so a zero hint is a genuinely zero-length component:
+                // materialize it but demand no bytes from the ring. This does not generalize to a headered component, whose
+                // zero hint is a zero 4 KB-page estimate that still has a ChunkHeader to read.
+                if (initialLength == 0)
+                    return new OverflowByteArray(0, startOffset: 0, endOffset: 0, zeroInit: false);
+
                 var exactOverflow = new OverflowByteArray(initialLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 if (Read(exactOverflow.Span) != initialLength)
                     throw new TsavoriteException($"Expected {initialLength} headerless overflow bytes");
@@ -617,7 +623,6 @@ namespace Tsavorite.core
         {
             deserializedLength = 0;
             inDeserialize = true;
-            var startConsumed = recordStreamConsumed;   // the object value's on-disk bytes begin here (after the key)
 
             // If we haven't yet instantiated the serializer do so now.
             if (valueObjectSerializer is null)
@@ -629,10 +634,7 @@ namespace Tsavorite.core
 
             valueObjectSerializer.Deserialize(out var valueObject);
 
-            // Store the object value's on-disk EXTENT (data + 8-align padding + ChunkHeaders for a headered object; == data length for a
-            // headerless one), not the deserialized data length, so recovery reconstructs the correct on-disk footprint and objectId size hint.
-            var objectExtent = recordStreamConsumed - startConsumed;
-            logRecord.SetDeserializedValueObject(valueObject, objectExtent);
+            logRecord.SetDeserializedValueObject(valueObject);
             OnDeserializeComplete(valueObject);
         }
 

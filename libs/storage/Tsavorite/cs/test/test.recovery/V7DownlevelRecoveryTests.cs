@@ -21,7 +21,7 @@ namespace Tsavorite.test.recovery
     /// <summary>
     /// Backward-compatibility tests that recover a downlevel "v7" (checkpoint version 7) object-store checkpoint with the current
     /// reader and verify every value byte-for-byte. The only released downlevel format is v7, whose object log uses the dense
-    /// split-length encoding decoded by <c>LogRecord.GetObjectLogRecordStartPositionAndLengths_v21</c>; recovery selects that decode
+    /// split-length encoding decoded by <c>LogRecord.GetObjectLogRecordStartPositionAndLengths_cv7</c>; recovery selects that decode
     /// from the checkpoint metadata version (not a per-record position-word flag).
     ///
     /// There is deliberately NO v7 page-generation code in production. This fixture synthesizes a v7 checkpoint as a TEST UTILITY: it

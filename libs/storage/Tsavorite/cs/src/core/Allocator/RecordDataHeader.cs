@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -276,7 +276,7 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Read the raw physical slot length without the inline check. Legacy v2.1 recovery also uses this as the low
+        /// <summary>Read the raw physical slot length without the inline check. Legacy cv7 recovery also uses this as the low
         /// <see cref="kValueLengthBits"/> bits of the historical split object-log length encoding.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetValueLengthRaw() => (int)((word >> kValueLengthShift) & kValueLengthLowBitsMask);

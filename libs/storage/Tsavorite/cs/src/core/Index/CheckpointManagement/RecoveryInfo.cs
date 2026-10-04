@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -13,11 +13,13 @@ namespace Tsavorite.core
     /// </summary>
     public struct HybridLogRecoveryInfo
     {
-        /// <summary>Current checkpoint version written by this build. v8 is the object-log chunk-framing format ("v2.2"); it carries the
+        /// <summary>Current checkpoint version written by this build. cv8 is the object-log chunk-framing format; it carries the
         /// hybrid-log <see cref="pageSize"/> and <see cref="segmentSize"/>, and the <see cref="databaseMapping"/> and <see cref="swapEpoch"/>,
-        /// in metadata. v7 is the only released downlevel version: it uses the split/objectId-slot object-log encoding ("v2.1", read via
-        /// <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>) and duplicates <see cref="recoveredTailAddress"/> in the
+        /// in metadata. cv7 is the only released downlevel version: it uses the split/objectId-slot object-log encoding (read via
+        /// <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_cv7"/>) and duplicates <see cref="recoveredTailAddress"/> in the
         /// fifth address slot.</summary>
+        /// <remarks>Checkpoint versions are independent of the product release version and are the only versioning the object-log
+        /// format keys off, so this documentation names them rather than the release that introduced them.</remarks>
         public const int CheckpointVersion = 8;
 
         /// <summary>First version whose metadata carries <see cref="pageSize"/>/<see cref="segmentSize"/> instead of duplicating
@@ -32,7 +34,7 @@ namespace Tsavorite.core
         public const int MinRecoverableCheckpointVersion = 7;
 
         /// <summary>First checkpoint version whose object log uses the chunk-framed length-hint encoding. Versions below this wrote the
-        /// object log in the downlevel v2.1 dense/split-length encoding (see <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_v21"/>).
+        /// object log in the downlevel cv7 dense/split-length encoding (see <see cref="LogRecord.GetObjectLogRecordStartPositionAndLengths_cv7"/>).
         /// Recovery selects the object-log decode from the checkpoint's metadata version (threaded via <see cref="RecoveryOptions"/> and
         /// <see cref="PageAsyncFlushResult{TContext}"/>), not from a per-record position-word flag.</summary>
         internal const int ChunkFramedObjectLogCheckpointVersion = 8;
@@ -46,7 +48,7 @@ namespace Tsavorite.core
         /// </summary>
         public const int DatabaseMappingCheckpointVersion = 8;
 
-        /// <summary>Whether a checkpoint of <paramref name="checkpointVersion"/> wrote its object log in the downlevel v2.1
+        /// <summary>Whether a checkpoint of <paramref name="checkpointVersion"/> wrote its object log in the downlevel cv7
         /// dense/split-length encoding rather than the current chunk-framed length-hint encoding.</summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
         internal static bool UsesDownlevelObjectLog(int checkpointVersion) => checkpointVersion < ChunkFramedObjectLogCheckpointVersion;

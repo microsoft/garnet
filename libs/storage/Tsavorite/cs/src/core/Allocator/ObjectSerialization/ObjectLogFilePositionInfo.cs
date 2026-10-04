@@ -65,6 +65,26 @@ namespace Tsavorite.core
         internal readonly bool IsSet => SegmentSizeBits != 0;
         internal readonly bool HasData => word != 0 && word != NotSet;
 
+        /// <summary>Set the ObjectLogPosition at <paramref name="wordPtr"/> to the unstamped marker, preserving its flag bits.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void Unstamp(ulong* wordPtr) => *wordPtr |= SegmentAndOffsetMask;
+
+        /// <summary>Whether <paramref name="word"/> is an ObjectLogPosition that no flush ever stamped with a position.</summary>
+        /// <remarks>
+        /// The single place that knows the unstamped encoding; callers must not compare against <see cref="NotSet"/> themselves.
+        /// <para>The marker lives entirely in the segment+offset bits -- all of them set, which no real position reaches because it
+        /// would be the last addressable byte of a 1 EB object log. Keeping it out of the flag bits is what lets a record be
+        /// unstamped without disturbing <c>KeyIsExactSize</c>/<c>ValueIsExactSize</c>, and leaves position 0 unambiguous: it is
+        /// offset 0 of segment 0, not "never stamped". The all-ones <see cref="NotSet"/> word satisfies this test too, so words
+        /// written before the flags were separated still read as unstamped.</para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool WordIsUnstamped(ulong word) => (word & SegmentAndOffsetMask) == SegmentAndOffsetMask;
+
+        /// <summary>Whether the ObjectLogPosition at <paramref name="wordPtr"/> was never stamped with a position.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe bool IsUnstamped(ulong* wordPtr) => WordIsUnstamped(*wordPtr);
+
         /// <summary>
         /// Default initialization; leaves IsSet false. ObjectLogFilePositionInfo must be instantiated by new(), not default; we don't have arrays of this,
         /// and fields are initalized with some overload of new().

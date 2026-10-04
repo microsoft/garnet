@@ -869,36 +869,16 @@ namespace Tsavorite.core
         /// Whether recovery must skip <paramref name="logRecord"/> because the flush wrote no object-log bytes for it.
         /// </summary>
         /// <remarks>
-        /// The flush skips a record whose out-of-line capture failed (see the page-write loop below), writing its inline image
-        /// but no object bytes; recovery must not then read object-log bytes that belong to a different record. The position word
-        /// cannot carry that signal, because object-log address 0 is the legitimate position of the first record in the address
-        /// space, so the skip is inferred from both read extents being zero.
-        /// <para>
-        /// This is an inference, not a stamped flag: a zero-length out-of-line component carrying the exact-size flag decodes to a
-        /// zero extent and reads back as skipped. <see cref="AssertStampedRecordIsDistinguishableFromSkipped"/> asserts on the
-        /// writer side that no record the flush actually stamps can collide. Both recovery passes must apply the identical test,
-        /// so they share this one.
-        /// </para>
+        /// The flush stamps a position into every record it writes object bytes for, and every other record carries the unstamped
+        /// marker from the moment its out-of-line components were introduced. An unstamped position is therefore the whole signal;
+        /// reading one would consume bytes belonging to a different record.
+        /// <para>Read extents play no part. A zero extent is a legitimate zero-length out-of-line value, which contributes no
+        /// object-log bytes but is still stamped and still materialized, and a zero position word is offset 0 of segment 0 -- a
+        /// real position -- because the unstamped marker lives in the segment+offset bits.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool RecordWasSkippedByFlush(in LogRecord logRecord, int checkpointVersion)
-        {
-            _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
-            return keyLength == 0 && valueLength == 0;
-        }
-
-        /// <summary>
-        /// Assert that a record the flush has just stamped cannot be mistaken by recovery for one the flush skipped.
-        /// See <see cref="RecordWasSkippedByFlush"/> for the inference this protects.
-        /// </summary>
-        [Conditional("DEBUG")]
-        private static void AssertStampedRecordIsDistinguishableFromSkipped(in LogRecord logRecord, int checkpointVersion)
-        {
-            _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
-            Debug.Assert(keyLength != 0 || valueLength != 0,
-                "A record the flush stamped decodes to zero key and value read extents, which recovery reads as 'flush wrote no object bytes'"
-                + " and skips, silently dropping the value. Expected a zero-length out-of-line component to be impossible here.");
-        }
+        private static bool RecordWasSkippedByFlush(in LogRecord logRecord)
+            => ObjectLogFilePositionInfo.WordIsUnstamped(logRecord.RawObjectLogPositionWord);
 
         protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
             => WriteAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
@@ -1039,12 +1019,12 @@ namespace Tsavorite.core
             // The write likewise rounds UP at the logical end, carrying live bytes above the endpoint to disk verbatim; see the write span
             // comment below for why those bytes are never read back.
             //
-            // Correctness also relies on the OnDispose contract
-            //    that a record stays READABLE (byte-consistent) throughout a flush -- OnDispose implementations copy off whatever they need for cleanup
-            //    rather than tearing the record's flush-critical bytes -- so the async device write always observes a consistent record even if a
-            //    concurrent op supersedes it. The stamping is non-destructive to in-memory readers (the ValueLength property masks the raw field to
-            //    ObjectIdSize; the objectId slot is untouched), and the page stays resident throughout the flush (HeadAddress <= FlushedUntilAddress
-            //    until this flush completes).
+            // Correctness also relies on the OnDispose contract that a record stays READABLE (byte-consistent) throughout a flush --
+            // OnDispose implementations copy off whatever they need for cleanup rather than tearing the record's flush-critical bytes
+            // -- so the async device write always observes a consistent record even if a concurrent op supersedes it. The stamping is
+            // non-destructive to in-memory readers (the ValueLength property masks the raw field to ObjectIdSize; the objectId slot is
+            // untouched), and the page stays resident throughout the flush (HeadAddress <= FlushedUntilAddress until it completes).
+            //
             // Recovery and Snapshot enter without epoch protection. Snapshot ordering prevents FlushedUntilAddress, and
             // therefore HeadAddress, from reaching the active page. ReadOnly enters protected from the epoch callback that
             // marked the range immutable; release that hold during serialization and IO, then restore it before returning.
@@ -1060,7 +1040,7 @@ namespace Tsavorite.core
             // epoch. TrySuspend reports whether it actually released a hold, so only ReadOnly Resumes in the finally.
             var protectEpochWhenDone = epoch.TrySuspend();
 
-            // Overflow Keys and Values are written to, and Object values are serialized to, this Stream, if we have flushBuffers.
+            // Overflow keys and values are written to, and object values are serialized to, this writer, if we have flushBuffers.
             ObjectLogWriter<TStoreFunctions> logWriter = null;
 
             // For a snapshot-region recovery flush, the reader over the snapshot object-log device from which each record's object bytes are
@@ -1091,9 +1071,9 @@ namespace Tsavorite.core
                 var endPhysicalAddress = (long)recordsBasePtr + startOffset + numBytesToWrite;
                 var physicalAddress = (long)recordsBasePtr + firstRecordOffset;
 
-                // Recovery does not reserialize current-format records. Hybrid-log records already point to durable main object-log bytes and are
-                // written unchanged. Snapshot records copy their framed bytes verbatim into the main object log and are repointed as the copy advances.
-                // The running page position remains for the guarded legacy conversion path.
+                // Recovery does not reserialize current-format records. Hybrid-log records already point to durable main object-log bytes and
+                // are written unchanged; snapshot-region records copy their framed bytes verbatim into the main object log and are repointed
+                // as the copy advances, tracked by recoveryOngoingPageHeader below.
                 ref var pageHeader = ref *(PageHeader*)recordsBasePtr;
 
                 var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
@@ -1104,16 +1084,18 @@ namespace Tsavorite.core
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
                     var logRecordSize = logRecord.AllocatedSize;
 
-                    // Do not write Invalid records. This includes IsNull records. By the time we get here, ReadOnlyAddress has been advanced, so the
-                    // record's state (IsValid, IsInNewVersion, inline data, etc.) will not change.
+                    // Skip object serialization for Invalid records, including IsNull; the page write below still carries their inline
+                    // image. ReadOnlyAddress has advanced, so a record's version and inline data are stable here, but elision can still
+                    // clear Valid concurrently -- the capture below re-reads Info to catch that.
                     if (logRecord.Info.Valid)
                     {
-                        // Do not write v+1 records (e.g. during a checkpoint). For non-Snapshot flushes, fuzzyStartLogicalAddress is long.MaxValue
-                        // so this condition is always true and the SetInvalid branch is unreachable.
+                        // Skip object serialization for v+1 records (e.g. during a checkpoint); the page write below still carries their
+                        // inline image verbatim. For non-Snapshot flushes fuzzyStartLogicalAddress is long.MaxValue, so this is always
+                        // true and the else branch is unreachable.
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
                         {
-                            // Do not write objects for fully-inline records. This should always be false if we don't have a logWriter (i.e. no flushBuffers),
-                            // which would be the case where we were created to be used for inline string records only.
+                            // Fully-inline records have nothing to serialize. This is always false when there is no logWriter (no
+                            // flushBuffers), i.e. an ObjectAllocator used for inline string records only.
                             if (logRecord.DataHeader.RecordHasObjects)
                             {
                                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
@@ -1141,13 +1123,6 @@ namespace Tsavorite.core
                                         var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
                                         logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow,
                                             logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
-
-                                        // Recovery distinguishes a record this flush wrote object bytes for from one it skipped by testing whether
-                                        // both of the read extents this stamping produces are zero (see DeserializeObjectsOnPage). That inference is
-                                        // only valid while a stamped record always yields a nonzero extent, so assert it at the point that makes it
-                                        // true. A zero-length out-of-line component carrying the exact-size flag would decode to zero and be read
-                                        // back as skipped, silently dropping the value.
-                                        AssertStampedRecordIsDistinguishableFromSkipped(in logRecord, asyncResult.checkpointVersion);
 
                                         // Only a record that actually wrote to the object log clears this; a skipped record advances no writer
                                         // position, so the next record with objects still verifies its start position against objectLogTail.
@@ -1193,7 +1168,7 @@ namespace Tsavorite.core
                                         // into the main object-log (appended at the current objectLogTail via logWriter) so the page becomes durable and
                                         // can be evicted, then repoint the disk-image record to that main object-log position. The objects are NOT
                                         // deserialized at this point, so read the position/lengths from the record's on-disk encoding (not from objectIdMap),
-                                        // and repoint (which preserves the record's unchanged lengths and format flag) rather than SetRecoveredObjectLogRecordStartPosition.
+                                        // and repoint, which preserves the record's unchanged lengths and format flag.
                                         var snapshotPositionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var copyKeyLength, out var copyValueLength, asyncResult.checkpointVersion);
 
                                         // Demand-load the snapshot object reader on the first valid record with objects, so pages with few or no object
@@ -1565,20 +1540,27 @@ namespace Tsavorite.core
             while (recordAddress < endAddress)
             {
                 var logRecord = new LogRecord(recordAddress);
-                recordAddress += logRecord.AllocatedSize;
+
+                // A record whose image does not lie wholly within the valid extent is not a record to parse. The device read is
+                // sector-aligned and a page's valid data can end mid-page, so the walk can reach bytes no flush wrote. A zeroed
+                // RecordDataHeader is the giveaway: every real record encodes lengths and inline flags there, and a zero word
+                // reports KeyIsOverflow/ValueIsOverflow set, because out-of-line is the absence of the inline flags.
+                var allocatedSize = logRecord.AllocatedSize;
+                if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordAddress + allocatedSize > endAddress)
+                    break;
+                recordAddress += allocatedSize;
 
                 if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                 {
+                    // Skip a record the flush wrote no object bytes for; see RecordWasSkippedByFlush. Reading its position would
+                    // consume bytes belonging to another record. A zero read extent is NOT this case: that is a legitimate
+                    // zero-length out-of-line value, which contributes no bytes to the range but is still materialized below.
+                    if (RecordWasSkippedByFlush(in logRecord))
+                        continue;
+
                     var position = new ObjectLogFilePositionInfo(
                         logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion),
                         objectLogTail.SegmentSizeBits);
-
-                    // Skip a record the flush wrote no object-log bytes for; see RecordWasSkippedByFlush. The lengths are needed below
-                    // regardless, so test them here rather than re-decoding through the helper.
-                    if (keyLength == 0 && valueLength == 0)
-                    {
-                        continue;
-                    }
 
                     if (!startPosition.IsSet)
                         startPosition = position;
@@ -1612,12 +1594,17 @@ namespace Tsavorite.core
                 while (recordAddress < endAddress)
                 {
                     var logRecord = new LogRecord(recordAddress, objectIdMap);
-                    recordAddress += logRecord.AllocatedSize;
+
+                    // Must match the first pass exactly; see the bounds check there.
+                    var allocatedSize = logRecord.AllocatedSize;
+                    if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordAddress + allocatedSize > endAddress)
+                        break;
+                    recordAddress += allocatedSize;
 
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
-                        // Skip the records the flush skipped; see RecordWasSkippedByFlush.
-                        if (RecordWasSkippedByFlush(in logRecord, checkpointVersion))
+                        // Skip the records the first pass skipped; see RecordWasSkippedByFlush.
+                        if (RecordWasSkippedByFlush(in logRecord))
                             continue;
 
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits, checkpointVersion);
