@@ -158,6 +158,12 @@
     "expected_MGet_None": 0,
     "expected_MSet_None": 0
   },
+  "BDN.benchmark.Cluster.EpochWakeBarrier.*": {
+    "expected_SessionEpochCycle_NoBump,S0": 0,
+    "expected_SessionEpochCycle_NoBump,S7": 0,
+    "expected_SessionEpochCycle_Bump,S0": 0,
+    "expected_SessionEpochCycle_Bump,S7": 0
+  },
   "BDN.benchmark.Lua.LuaScripts.*": {
     "expected_Script1_Managed,Limit": 0,
     "expected_Script2_Managed,Limit": 230,
