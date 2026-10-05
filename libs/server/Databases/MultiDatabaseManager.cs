@@ -198,6 +198,14 @@ namespace Garnet.server
                             ex.CandidateTokenCount, storageSlot, storeVersion);
                     }
                 }
+                catch (TsavoriteLogGeometryMismatchException ex)
+                {
+                    // A configuration mistake, not unreadable data: the checkpoint is intact and recovers once the store
+                    // is opened with the settings it was written with. Continuing would discard it, so this is fatal
+                    // whatever FailOnRecoveryError says.
+                    Logger?.LogError(ex, "Refusing to start: the log geometry of storage slot {storageSlot} does not match the checkpoint being recovered", storageSlot);
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     // Unless FailOnRecoveryError is set the server continues with whatever was recovered, so this

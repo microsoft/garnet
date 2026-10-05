@@ -27,7 +27,7 @@ Inline values never enter the object log. Migration and replication use an indep
 >
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/RecordDataHeader.cs` - hybrid-log field kinds and physical field lengths.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectIdMap.cs` - objectId index/hint bit allocation.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/LogRecord.cs` / `LogRecord_v21.cs` - metadata stamping/decoding,
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/LogRecord.cs` / `LogRecord_cv7.cs` - metadata stamping/decoding,
 >   objectId-map assignment, and legacy decoding.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectAllocatorImpl.cs` - page flush, disk read, scan, and recovery orchestration.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogWriter.cs` - overflow/object serialization.
@@ -147,9 +147,9 @@ component length prefixes outside the inline record image, but it leaves RDH len
 
 ### 2.3 Legacy exception
 
-Checkpoint v2.1 used an older split length encoding: the RDH raw field held the low length bits and the objectId slot
+Checkpoint cv7 used an older split length encoding: the RDH raw field held the low length bits and the objectId slot
 held the next 32 bits. `ReuseObjectIdForSize` (object-log position bit 63) selects that decoder in
-`LogRecord_v21.cs`.
+`LogRecord_cv7.cs`.
 
 The legacy decoder interprets both raw fields according to that older layout. Current-format code uses
 `GetKeyLengthRaw()` only for the overflow-key page-count high bits and does not use `GetValueLengthRaw()` as an
@@ -188,7 +188,7 @@ The optional 8-byte object-log position combines an address and format flags:
 ```text
 63             62                        61                 60                 59..0
 +--------------+-------------------------+------------------+------------------+------------------+
-| v2.1 reuse   | KeyHasExtendedSizeHint  | KeyIsExactSize   | ValueIsExactSize | segment + offset |
+| cv7 reuse   | KeyHasExtendedSizeHint  | KeyIsExactSize   | ValueIsExactSize | segment + offset |
 +--------------+-------------------------+------------------+------------------+------------------+
 ```
 
@@ -198,14 +198,28 @@ The optional 8-byte object-log position combines an address and format flags:
 | 60 | `ValueIsExactSize` |
 | 61 | `KeyIsExactSize` |
 | 62 | `KeyHasExtendedSizeHint`: a headered key's page count spans raw RDH KeyLength and the objectId hint |
-| 63 | Legacy v2.1 `ReuseObjectIdForSize` discriminator |
+| 63 | Legacy cv7 `ReuseObjectIdForSize` discriminator |
 
 The key and value flags are independent because one record can have, for example, a 100-byte headerless overflow key
 and a 5 MB framed object value.
 
-After an object value is deserialized during recovery, this optional word is temporarily repurposed in memory to hold
-the object's serialized on-disk extent, preserving bit 63 for a v2.1 source. A later recovery-state flush consumes that
-extent when converting a supported v2.1 record. It is no longer an object-log position while in this transient state.
+#### Stamped versus unstamped
+
+The low 60 bits carry a position, so there is no spare value that means "no position": offset 0 of segment 0 is a real
+location. The unstamped state is therefore encoded by setting *all* 60 address bits, which the flag bits survive
+unchanged. `ObjectLogFilePositionInfo` owns this encoding — `Unstamp` sets it, `WordIsUnstamped`/`IsUnstamped` test it,
+and callers must not compare against `NotSet` themselves. The legacy all-ones `NotSet` word satisfies the same test, so
+older words read as unstamped without a version check.
+
+A record is unstamped at every point where it gains components that have not been written to the object log
+(`InitializeRecord`, `TrySetValueObject`, and the overflow key/value setters), and again by
+`SetDeserializedValueObject` once the bytes have been read back into memory. Unstamping after deserialization matters
+because the position then describes nothing the record still needs; leaving it stamped would let a later flush that
+skips the record persist a position for bytes it never wrote. Flush restamps when it writes the record.
+
+Unstamped is consequently the *sole* test for "flush skipped this record, so there is nothing to read" — the reader no
+longer infers that from a zero extent, which could not distinguish a skipped record from a legitimately empty
+component.
 
 ### 3.3 Exact versus page-count interpretation
 
@@ -278,7 +292,7 @@ an exact logical byte length. Value hints are initial IO requirements and may no
 
 `LogRecord.GetObjectLogRecordStartPositionAndLengths()`:
 
-1. checks `ReuseObjectIdForSize`; if set, dispatches to the v2.1 exact-length decoder;
+1. checks `ReuseObjectIdForSize`; if set, dispatches to the cv7 exact-length decoder;
 2. reads the key/value objectId high bits and, for a non-exact key, raw RDH KeyLength;
 3. reads `KeyIsExactSize` / `ValueIsExactSize`;
 4. converts the key metadata to exact bytes or its full 19-bit page extent, and value metadata to exact bytes,
@@ -639,13 +653,13 @@ The object deserializer self-terminates according to the object format. It never
 
 ### 6.5 Assignment to the objectId map
 
-After object deserialization, `LogRecord.SetDeserializedValueObjectForRecovery()`:
+After object deserialization, `LogRecord.SetDeserializedValueObject()`:
 
 1. allocates a slot in the selected `ObjectIdMap`;
 2. stores the `IHeapObject`;
 3. writes the new low-bit objectId index into the value field;
 4. replaces the optional object-log position with the serialized extent needed by recovery bookkeeping, preserving
-   only the v2.1 bit-63 discriminator; and
+   only the cv7 bit-63 discriminator; and
 5. restores/asserts the RDH physical value length as `ObjectIdMap.ObjectIdSize`.
 
 Overflow key/value reads similarly assign owned `OverflowByteArray` instances to objectId-map slots. The flushed
@@ -693,12 +707,11 @@ boundary. If recovery has already rewritten the page, the whole requested range 
 The live page for a recovery-state flush may also contain records from the hybrid-log region whose object bytes are
 already durable in the main object log:
 
-- A current-format record is written verbatim. Its position, objectId hints, and exact-size flags already describe those durable
-  bytes. Calling `SetRecoveredObjectLogRecordStartPosition()` would incorrectly interpret its still-on-disk position
-  word as the transient deserialized extent and corrupt the rewritten record.
-- A v2.1 record is identified by bit 63. After Pass 2 has replaced an object value's optional position with its
-  serialized extent, `SetRecoveredObjectLogRecordStartPosition()` can convert a byte-compatible headerless record to
-  current-format metadata and advance the page's running object-log position. Conversions requiring header insertion fail fast.
+- A current-format record is written verbatim. Its position, objectId hints, and exact-size flags already describe those
+  durable bytes, so the flush leaves the position word untouched rather than restamping it.
+- A cv7 record is identified by bit 63. cv7 bytes are never rewritten in place: the dense headerless stream has no room
+  for the current format's per-component headers, so inserting them would shift every subsequent position on the
+  segment. Up-conversion is instead an explicit offline pass that writes to a separate device; see §7.5.
 
 Recovery has exclusive access to these pages, so the current-format branch writes the live page directly. This branch
 is separate from snapshot-region copying: hybrid-region object bytes remain at their existing main object-log positions
@@ -727,14 +740,17 @@ unreadable.
 Snapshot and main positions are never subtracted. `ObjectLogFilePositionInfo.operator -` validates segment-size and
 ordering, but address-space identity is a caller invariant.
 
-### 7.5 v2.1 recovery
+### 7.5 cv7 recovery
 
-Bit 63 selects v2.1's split exact-length decoder and dense, headerless object-log stream. Verbatim snapshot copies
+Bit 63 selects cv7's split exact-length decoder and dense, headerless object-log stream. Verbatim snapshot copies
 preserve that bit.
 
-`SetRecoveredObjectLogRecordStartPosition()` may convert a v2.1 record only when its bytes are also valid current
-headerless bytes. A large v2.1 key/value/object that would require inserting current-format headers fails fast; header insertion
-would shift subsequent positions and is not implemented without a validated v2.1 checkpoint fixture.
+Because header insertion changes each record's object-log footprint, a cv7 object log cannot be up-converted in place.
+Recovery reads cv7 records with the headerless decoder and rewrites them, with current-format headers, to the device
+supplied as `KVSettings.UpgradeObjectLogDevice`; the caller swaps that device in once recovery completes. Garnet drives
+this through the host's `--upgrade` option. Recovery fails fast when a cv7 checkpoint has an object log device but no
+upgrade object log device, so a conversion is never silently skipped. A checkpoint with no object log device needs no
+special handling — its next checkpoint is simply stamped with the current version.
 
 ---
 
@@ -882,13 +898,9 @@ Indentation is call depth. Component branches and lifetime changes are included 
   - current-format record
     - preserve its main object-log position, objectId hints, and flags verbatim
     - issue no object-log copy
-  - legacy v2.1 record
-    - `LogRecord.SetRecoveredObjectLogRecordStartPosition(...)`
-      - read recovered overflow lengths from `ObjectIdMap`
-      - read the recovered object extent from the repurposed optional word
-      - convert only byte-compatible headerless metadata
-      - fail if current framing would have to be inserted
-    - advance the running page object-log position
+  - Legacy cv7 record
+    - never rewritten in place; header insertion would shift every later position on the segment
+    - up-converted only by the offline `--upgrade` pass, which writes to `KVSettings.UpgradeObjectLogDevice`
 
 ### 9.7 Snapshot checkpoint no-copy ordering
 
@@ -948,7 +960,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
 - `OverflowByteArray` leading/trailing slack covers sector overlap; logical length excludes that slack.
 - Every recovery record is copied from its own exact hints and framing; successor positions are not consulted.
 - Speculative ring reads are drained before buffers are reused or disposed.
-- Any unsupported v2.1 conversion that would require inserting headers fails rather than guessing.
+- Any unsupported cv7 conversion that would require inserting headers fails rather than guessing.
 
 The object-size boundary suites exercise normal pending IO, Snapshot/FoldOver recovery, low-memory eviction, overflow
 keys, overflow/object values, direct-IO thresholds, 4 MB discovery boundaries, and object-log segment crossings.

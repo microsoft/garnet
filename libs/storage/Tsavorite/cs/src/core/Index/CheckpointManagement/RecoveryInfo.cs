@@ -428,9 +428,15 @@ namespace Tsavorite.core
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            var checksum = long1 ^ long2 ^ version ^ mainLogRecoveryEndAddress ^ snapshotFileLogicalStartAddress ^ fuzzyRegionStartAddress ^ recoveredTailAddress ^ addressSlotValue
-                ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word
-                ^ trailingSegmentSize ^ trailingObjectLogSegmentSize;
+            var checksum = long1 ^ long2 ^ version ^ mainLogRecoveryEndAddress ^ snapshotFileLogicalStartAddress ^ fuzzyRegionStartAddress ^ recoveredTailAddress
+                ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word;
+
+            // A downlevel checkpoint duplicated recoveredTailAddress into the fifth slot and appended no geometry, so xor the
+            // slot in as that version did and stop; folding would not reproduce the checksum it was written with.
+            if (cversion < LogGeometryCheckpointVersion)
+                return checksum ^ addressSlotValue;
+
+            checksum ^= LogGeometryChecksum(addressSlotValue, trailingSegmentSize, trailingObjectLogSegmentSize);
 
             // The host-supplied fields joined the checksum after MinRecoverableCheckpointVersion, so a
             // checkpoint at that version must be checksummed without them or it will not verify.
@@ -439,6 +445,27 @@ namespace Tsavorite.core
 
             return checksum;
         }
+
+        /// <summary>FNV-1a offset basis, for folding sequences and position-sensitive scalars.</summary>
+        private const long FnvOffsetBasis = unchecked((long)14695981039346656037);
+
+        /// <summary>FNV-1a prime, for folding sequences and position-sensitive scalars.</summary>
+        private const long FnvPrime = 1099511628211;
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private static long Fold(long hash, long value) => unchecked((hash ^ value) * FnvPrime);
+
+        /// <summary>
+        /// Checksum of the hybrid-log geometry recorded by this checkpoint.
+        /// </summary>
+        /// <remarks>
+        /// Folded (FNV-1a) rather than xored, for the same reason as <see cref="HostSuppliedFieldsChecksum"/>: xor is
+        /// position-blind, and <see cref="KVSettings.SegmentSize"/> and <see cref="KVSettings.ObjectLogSegmentSize"/> share a
+        /// default, so xoring both would cancel them and leave the geometry unprotected at stock configuration. Folding also
+        /// distinguishes the two from each other, so a checkpoint whose segment sizes were transposed does not verify.
+        /// </remarks>
+        private static long LogGeometryChecksum(long pageSizeValue, long segmentSizeValue, long objectLogSegmentSizeValue)
+            => Fold(Fold(Fold(FnvOffsetBasis, pageSizeValue), segmentSizeValue), objectLogSegmentSizeValue);
 
         /// <summary>
         /// Checksum of the host-supplied fields. These are sequences rather than scalars, so they are
@@ -449,12 +476,7 @@ namespace Tsavorite.core
         /// </summary>
         private readonly long HostSuppliedFieldsChecksum()
         {
-            const long FnvOffsetBasis = unchecked((long)14695981039346656037);
-            const long FnvPrime = 1099511628211;
-
             var hash = FnvOffsetBasis;
-
-            static long Fold(long hash, long value) => unchecked((hash ^ value) * FnvPrime);
 
             hash = Fold(hash, cookie?.Length ?? 0);
             if (cookie != null)

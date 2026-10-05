@@ -88,4 +88,23 @@ namespace Tsavorite.core
             UnreadableTokenCount = unreadableTokenCount;
         }
     }
+
+    /// <summary>
+    /// The store's log geometry does not match the geometry recorded in the checkpoint being recovered.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from the other recovery failures because it reports a configuration mistake rather than unreadable data.
+    /// The checkpoint is intact and recovers correctly once the store is opened with the settings it was written with, so
+    /// a host must not fall back to starting empty and discarding it.
+    /// </remarks>
+    public class TsavoriteLogGeometryMismatchException : TsavoriteException
+    {
+        /// <summary>
+        /// Report a geometry mismatch between the store's settings and the recovered checkpoint.
+        /// </summary>
+        /// <param name="message"></param>
+        public TsavoriteLogGeometryMismatchException(string message) : base(message)
+        {
+        }
+    }
 }
