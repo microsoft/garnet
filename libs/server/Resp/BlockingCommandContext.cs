@@ -122,7 +122,76 @@ namespace Garnet.server
         int starting;
         int disposeRequested;
         int disposed;
+        int disposeComplete;
+        int pendingCallbacks;
         bool startFailed;
+
+        /// <summary>
+        /// Registers a callback that can still reach this context after the operation ends -- a queued work
+        /// item, an armed timer. Must be paired with <see cref="CallbackCompleted"/> on every path.
+        /// </summary>
+        /// <remarks>
+        /// Reuse is what makes this necessary. A context is recycled only once nothing can still call into
+        /// it, because a stale callback from the previous park would otherwise win
+        /// <see cref="TryClaimOutcome"/> against the next one and complete a command that has not finished.
+        /// Counting registrations is what lets <see cref="TryBeginReuse"/> tell the two apart; a callback
+        /// that is cancelled rather than run simply never decrements, and the context is not reused.
+        /// </remarks>
+        protected void AddCallback() => Interlocked.Increment(ref pendingCallbacks);
+
+        /// <summary>
+        /// Records that a callback registered by <see cref="AddCallback"/> can no longer reach this context.
+        /// Call from a <c>finally</c>, after the last use of the context on that path.
+        /// </summary>
+        protected void CallbackCompleted() => Interlocked.Decrement(ref pendingCallbacks);
+
+        /// <summary>
+        /// Returns this context to its pristine state so the session can park on it again, or refuses if
+        /// anything can still reach it.
+        /// </summary>
+        /// <returns>
+        /// True if the context was reset and may be parked on again. False if it must not be reused, in
+        /// which case the caller allocates a fresh one.
+        /// </returns>
+        /// <remarks>
+        /// Refusing is always safe, which is what makes the conservative test the right one: a context is
+        /// reused only once the previous operation's disposal has run to completion -- so it is fully
+        /// published, released and torn down -- and no registered callback is outstanding. Anything else
+        /// allocates, including the ordinary case of a timer cancelled before it fired.
+        /// <para>
+        /// The writes below are plain because every path to this context is published afterwards by a
+        /// release barrier: <see cref="Attach"/> ends with a volatile write, and the session publishes the
+        /// context itself with another. A thread that can see the context therefore sees this reset.
+        /// </para>
+        /// </remarks>
+        internal bool TryBeginReuse()
+        {
+            if (Volatile.Read(ref disposeComplete) != 1 || Volatile.Read(ref pendingCallbacks) != 0)
+                return false;
+
+            owner = null;
+            startFailed = false;
+            state = StateStarting;
+            starting = 0;
+            disposeRequested = 0;
+            disposed = 0;
+            disposeComplete = 0;
+#if DEBUG
+            // Per-park, like everything else reset here: carrying it over would make the next park's single
+            // release look like a second one.
+            releaseCount = 0;
+#endif
+
+            OnReset();
+            CountReused();
+            return true;
+        }
+
+        /// <summary>
+        /// Clears command-specific state so the context can be parked on again. Called only from
+        /// <see cref="TryBeginReuse"/>, when nothing else can reach the context.
+        /// </summary>
+        protected virtual void OnReset() { }
 
 #if DEBUG
         int releaseCount;
@@ -163,6 +232,11 @@ namespace Garnet.server
         /// told about.
         /// </summary>
         internal bool StartFailed => startFailed;
+
+        /// <summary>
+        /// Counts the context against <see cref="AllocatedContexts"/>.
+        /// </summary>
+        protected BlockingCommandContext() => CountAllocated();
 
         /// <summary>
         /// Binds the context to its session. Called by <see cref="RespServerSession.TryParkSession"/>
@@ -612,6 +686,12 @@ namespace Garnet.server
             AssertNotInUse();
             CountAttachedAsDisposed();
             OnDispose();
+
+            // After OnDispose, not before: disposed is claimed up front to make disposal one-shot, so it is
+            // set while the command's own release is still running. Reuse keys off this instead, because
+            // resetting the context's fields underneath OnDispose would strand whatever it was releasing.
+            // Left clear if OnDispose throws, which only costs an allocation at the next park.
+            Volatile.Write(ref disposeComplete, 1);
         }
 
         static int liveContexts;
@@ -633,6 +713,51 @@ namespace Garnet.server
 
         [Conditional("DEBUG")]
         static void CountLive(int delta) => Interlocked.Add(ref liveContexts, delta);
+
+        static int reusedContexts;
+
+        /// <summary>
+        /// Number of times a context was parked on again instead of a fresh one being allocated. Always
+        /// zero in release builds, where the count is not maintained.
+        /// </summary>
+        /// <remarks>
+        /// A park is not required to allocate: a session parses no further commands while parked, so it has
+        /// at most one operation outstanding and can hold a single context for the life of the connection.
+        /// This counts the reuse actually achieved, so a test can assert that a burst of blocking commands
+        /// allocates per connection rather than per call.
+        /// </remarks>
+        internal static int ReusedContexts => Volatile.Read(ref reusedContexts);
+
+        /// <summary>
+        /// Clears <see cref="ReusedContexts"/>, so a test can attribute what it counts to itself.
+        /// </summary>
+        internal static void ResetReusedContexts() => Volatile.Write(ref reusedContexts, 0);
+
+        [Conditional("DEBUG")]
+        static void CountReused() => Interlocked.Increment(ref reusedContexts);
+
+        static int allocatedContexts;
+
+        /// <summary>
+        /// Contexts constructed across the process. Always zero in release builds, where the count is not
+        /// maintained.
+        /// </summary>
+        /// <remarks>
+        /// The two properties a test needs about context construction are both exact counts rather than
+        /// magnitudes, so they are read from here instead of being inferred from allocation measurements: a
+        /// command that cannot park must construct none at all, and a connection parking repeatedly must
+        /// construct one rather than one per call. Measured bytes can establish neither, because reuse
+        /// leaves both paths too close to zero to tell apart.
+        /// </remarks>
+        internal static int AllocatedContexts => Volatile.Read(ref allocatedContexts);
+
+        /// <summary>
+        /// Clears <see cref="AllocatedContexts"/>, so a test can attribute what it counts to itself.
+        /// </summary>
+        internal static void ResetAllocatedContexts() => Volatile.Write(ref allocatedContexts, 0);
+
+        [Conditional("DEBUG")]
+        static void CountAllocated() => Interlocked.Increment(ref allocatedContexts);
 
         /// <summary>
         /// Balances <see cref="CountLive"/> for a context that was attached. A park that is refused

@@ -1747,10 +1747,10 @@ namespace Garnet.test
             const int OkReplyLength = 5;
             const int PipelineDepth = 8;
 
-            // sizeof(DebugBlockCommandContext) is 80 in Debug, where it carries a release counter that
-            // exists only to trip the double-release assert. The margin covers allocator granularity, not
-            // another object.
-            const int BudgetBytesPerCommand = 88;
+            // Below the 24 bytes of the smallest object the runtime can allocate, so this passes only if
+            // parking and resuming allocate nothing at all per command -- the context is reused across a
+            // connection's parks rather than built per call. The margin covers measurement noise.
+            const int BudgetBytesPerCommand = 16;
 
             using var client = new RawRespClient(TestUtils.EndPoint);
             var block = RawRespClient.Command("DEBUG", "BLOCK", "0");
@@ -1818,9 +1818,13 @@ namespace Garnet.test
         /// </para>
         /// <para>
         /// Both halves are asserted, because an upper bound alone is satisfied by a build where the
-        /// measured command never parked either. The parking connection is required to be *above* a floor
-        /// and the refusing one below a fraction of it, so a run in which neither allocates fails rather
-        /// than passes.
+        /// measured command never parked either. The refusing connection is required to construct none and
+        /// the parking one at least one, so a run in which neither parks fails rather than passes.
+        /// </para>
+        /// <para>
+        /// Counted rather than measured in bytes. A context is reused across the parks of a connection, so
+        /// both paths sit near zero bytes per command and an allocation measurement can no longer tell them
+        /// apart; the count is exact and says directly what this test is about.
         /// </para>
         /// <para>
         /// Parking is refused here by starting an async GET processor against the session, which is a
@@ -1831,14 +1835,11 @@ namespace Garnet.test
         [Test]
         public void ACommandThatCannotParkAllocatesNoContext()
         {
-            const int Warmup = 1000;
-            const int Rounds = 8;
-            const int CommandsPerRound = 2000;
+#if !DEBUG
+            Assert.Ignore("Contexts are only counted in Debug builds.");
+#else
+            const int Commands = 2000;
             const int OkReplyLength = 5;
-
-            // sizeof(DebugBlockCommandContext) is 80. A parked connection must be seen paying it, or the
-            // comparison below is between two numbers that are both zero for the wrong reason.
-            const int ContextFloorBytes = 40;
 
             var endPoint = StartLowMemoryServer();
 
@@ -1867,49 +1868,101 @@ namespace Garnet.test
 
             var block = RawRespClient.Command("DEBUG", "BLOCK", "0");
 
-            double Measure(RawRespClient client)
+            int Measure(RawRespClient client)
             {
-                void Run(int commands)
+                BlockingCommandContext.ResetAllocatedContexts();
+
+                for (var i = 0; i < Commands; i++)
                 {
-                    for (var i = 0; i < commands; i++)
-                    {
-                        client.SendRaw(block);
-                        client.Consume(OkReplyLength);
-                    }
+                    client.SendRaw(block);
+                    client.Consume(OkReplyLength);
                 }
 
-                Run(Warmup);
-
-                // Allocation noise is additive, so the cheapest round is the one least polluted by whatever
-                // else the process was doing. Taking the minimum keeps this stable without a tolerance.
-                var best = double.MaxValue;
-                for (var round = 0; round < Rounds; round++)
-                {
-                    var before = GC.GetTotalAllocatedBytes(precise: true);
-                    Run(CommandsPerRound);
-                    var measured = (GC.GetTotalAllocatedBytes(precise: true) - before) / (double)CommandsPerRound;
-
-                    if (measured < best)
-                        best = measured;
-                }
-
-                return best;
+                return BlockingCommandContext.AllocatedContexts;
             }
 
             var parked = Measure(parking);
             var refused = Measure(refusing);
 
             TestContext.Out.WriteLine(
-                $"parked {parked:F1} bytes per command, refused {refused:F1}");
+                $"parking connection built {parked} contexts, refusing connection built {refused}");
 
-            ClassicAssert.Greater(parked, ContextFloorBytes,
-                $"The parking connection allocated only {parked:F1} bytes per command, so it was not "
-                + "parking and this test compares two refusal paths");
+            ClassicAssert.GreaterOrEqual(parked, 1,
+                "The parking connection built no context across "
+                + $"{Commands} commands, so it was not parking and this test compares two refusal paths");
 
-            ClassicAssert.Less(refused, parked / 2,
-                $"A command that cannot park allocated {refused:F1} bytes per command against {parked:F1} "
-                + "for one that can: the context is being constructed before the park is known to be "
-                + "possible, so every script and transaction call now pays for it");
+            ClassicAssert.AreEqual(0, refused,
+                $"A command that cannot park built {refused} contexts: the context is being constructed "
+                + "before the park is known to be possible, so every script and transaction call now pays "
+                + "for it");
+#endif
+        }
+
+        /// <summary>
+        /// A connection parking repeatedly must build one context, not one per call.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// A parked session parses no further commands, so it has at most one blocking operation
+        /// outstanding and the context describing it can live for the connection rather than for the call.
+        /// Without that, every blocking command allocates, which is the one place this design would
+        /// otherwise be at odds with the allocation-free rest of the server.
+        /// </para>
+        /// <para>
+        /// Reuse is conditional, and deliberately so: a context is recycled only once the callbacks from
+        /// its previous park have provably finished with it, because the callbacks carry the context itself
+        /// as their state and so cannot be stamped with the park they belong to. Declining is always safe --
+        /// it allocates a fresh context -- so this asserts a rate rather than an exact count. The bound is
+        /// loose enough that losing the race occasionally passes and tight enough that never reusing fails.
+        /// </para>
+        /// <para>
+        /// Asserted on the server's own count of contexts constructed rather than on bytes, so that an
+        /// unrelated allocation elsewhere on the resume path can neither mask a regression here nor fail
+        /// this test for something that is not its subject.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void RepeatedParksOnAConnectionReuseOneContext()
+        {
+#if !DEBUG
+            Assert.Ignore("Contexts are only counted in Debug builds.");
+#else
+            const int Commands = 2000;
+            const int OkReplyLength = 5;
+
+            // Reuse has to be the overwhelmingly common case to be worth having, but it is a race against
+            // the previous park's callbacks retiring, so a handful of misses is correct behaviour.
+            const int Budget = Commands / 20;
+
+            var endPoint = StartLowMemoryServer();
+
+            using var client = new RawRespClient(endPoint);
+
+            var block = RawRespClient.Command("DEBUG", "BLOCK", "0");
+
+            // The connection's first park has to build its context, and the session setup ahead of it is
+            // not what this measures, so the window opens after the connection is warm.
+            client.SendRaw(block);
+            client.Consume(OkReplyLength);
+
+            BlockingCommandContext.ResetAllocatedContexts();
+
+            for (var i = 0; i < Commands; i++)
+            {
+                client.SendRaw(block);
+                client.Consume(OkReplyLength);
+            }
+
+            var built = BlockingCommandContext.AllocatedContexts;
+
+            TestContext.Out.WriteLine($"{Commands} parks built {built} contexts");
+
+            ClassicAssert.LessOrEqual(built, Budget,
+                $"{Commands} parks on one connection built {built} contexts. A context is reusable because "
+                + "a parked session has at most one operation outstanding, so this connection should have "
+                + $"built close to none after its first; more than {Budget} means every blocking command is "
+                + "allocating again.");
+#endif
         }
 
         /// <summary>
@@ -1942,7 +1995,7 @@ namespace Garnet.test
         {
             const int Rounds = 6;
             const int OkReplyLength = 5;
-            const int BudgetBytesPerCommand = 88;
+            const int BudgetBytesPerCommand = 16;
             const int GateAttempts = 30_000;
             const int FewConnections = 8;
             const int ManyConnections = 64;

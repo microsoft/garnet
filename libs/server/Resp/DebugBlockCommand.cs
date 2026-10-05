@@ -13,6 +13,14 @@ namespace Garnet.server
     internal sealed partial class RespServerSession
     {
         /// <summary>
+        /// The context this session parks <c>DEBUG BLOCK</c> on, kept across calls so a burst of blocking
+        /// commands allocates once per connection rather than once per call. Only ever read and written by
+        /// the thread processing this session's commands, and only while it is not parked, so it needs no
+        /// synchronization.
+        /// </summary>
+        DebugBlockCommandContext cachedBlockContext;
+
+        /// <summary>
         /// Waits without holding a thread, by handing the wait to the timer queue and parking the session on
         /// it. Written as the template for real blocking commands: all state the reply needs is captured
         /// here before parking, and nothing session-owned is retained.
@@ -20,7 +28,18 @@ namespace Garnet.server
         sealed class DebugBlockCommandContext : BlockingCommandContext, IThreadPoolWorkItem
         {
             // Cached so arming the wait allocates only the timer itself.
-            static readonly TimerCallback OnElapsed = static state => ((DebugBlockCommandContext)state).Finish(aborted: false);
+            static readonly TimerCallback OnElapsed = static state =>
+            {
+                var context = (DebugBlockCommandContext)state;
+                try
+                {
+                    _ = context.Finish(aborted: false);
+                }
+                finally
+                {
+                    context.CallbackCompleted();
+                }
+            };
 
             // An intrusive stack, so registering a waiter allocates nothing: the link lives on the context
             // the caller already has. This is the shape a real broker takes -- BLPOP's per-key waiter list is
@@ -54,16 +73,36 @@ namespace Garnet.server
 
             DebugBlockCommandContext gateNext;
 
-            readonly int millisecondsDelay;
-            readonly StartMode startMode;
+            int millisecondsDelay;
+            StartMode startMode;
             Timer timer;
             object result;
             bool aborted;
 
             internal DebugBlockCommandContext(int millisecondsDelay, StartMode startMode = StartMode.Normal)
+                => Configure(millisecondsDelay, startMode);
+
+            /// <summary>
+            /// Sets the parameters for one park. Separate from the constructor so a recycled context can be
+            /// given a fresh command's arguments.
+            /// </summary>
+            /// <param name="millisecondsDelay">How long the operation should wait.</param>
+            /// <param name="startMode">Which of the command's start behaviours to run.</param>
+            internal void Configure(int millisecondsDelay, StartMode startMode)
             {
                 this.millisecondsDelay = millisecondsDelay;
                 this.startMode = startMode;
+            }
+
+            /// <inheritdoc />
+            protected override void OnReset()
+            {
+                // The timer is disposed by OnDispose; dropping the reference here keeps a recycled context
+                // from arming one that has already been disposed.
+                timer = null;
+                gateNext = null;
+                result = null;
+                aborted = false;
             }
 
             /// <summary>
@@ -128,7 +167,18 @@ namespace Garnet.server
                     var next = context.gateNext;
                     context.gateNext = null;
                     var victim = context;
-                    ThreadPool.UnsafeQueueUserWorkItem(static v => v.Abort(), victim, preferLocal: false);
+                    victim.AddCallback();
+                    ThreadPool.UnsafeQueueUserWorkItem(static v =>
+                    {
+                        try
+                        {
+                            v.Abort();
+                        }
+                        finally
+                        {
+                            v.CallbackCompleted();
+                        }
+                    }, victim, preferLocal: false);
                     aborted++;
                     context = next;
                 }
@@ -270,12 +320,14 @@ namespace Garnet.server
                     // in-flight read has, where OnAbort cannot un-produce a result that is already on its
                     // way -- which is what makes the deferred-abort path observable from a test.
                     Thread.Sleep(SlowStartMilliseconds);
+                    AddCallback();
                     ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
                     return;
                 }
 
                 if (startMode == StartMode.HoldClaim)
                 {
+                    AddCallback();
                     ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
                     return;
                 }
@@ -286,6 +338,7 @@ namespace Garnet.server
                 // the machinery's cost directly rather than inferring it.
                 if (millisecondsDelay == 0)
                 {
+                    AddCallback();
                     ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
                     return;
                 }
@@ -297,10 +350,21 @@ namespace Garnet.server
                     timer = new Timer(OnElapsed, this, Timeout.Infinite, Timeout.Infinite);
                 }
 
+                AddCallback();
                 _ = timer.Change(millisecondsDelay, Timeout.Infinite);
             }
 
-            void IThreadPoolWorkItem.Execute() => _ = Finish(aborted: false);
+            void IThreadPoolWorkItem.Execute()
+            {
+                try
+                {
+                    _ = Finish(aborted: false);
+                }
+                finally
+                {
+                    CallbackCompleted();
+                }
+            }
 
             /// <summary>
             /// Publishes the outcome and releases the session, but only if this caller won the race against
@@ -474,7 +538,17 @@ namespace Garnet.server
                 // allocating a context only to drop it. TryParkSession repeats the check as a cheap guard.
                 if (CanParkSession)
                 {
-                    var context = new DebugBlockCommandContext(milliseconds, startMode);
+                    // One context per connection rather than one per call. A parked session parses no
+                    // further commands, so it has at most one operation outstanding and the context it
+                    // parked on last time is free to be parked on again -- but only once nothing can still
+                    // reach it, which TryBeginReuse is what decides. A refusal costs an allocation and
+                    // nothing else.
+                    var context = cachedBlockContext;
+                    if (context != null && context.TryBeginReuse())
+                        context.Configure(milliseconds, startMode);
+                    else
+                        cachedBlockContext = context = new DebugBlockCommandContext(milliseconds, startMode);
+
                     if (TryParkSession(context))
                     {
                         // Stands in for anything that can throw between the park and the end of the batch --
