@@ -40,6 +40,7 @@ namespace BDN.benchmark.Cluster
     /// </summary>
     [CpuDiagnoser]
     [MemoryDiagnoser]
+    [Config(typeof(WaiterPenaltyConfig))]
     public class EpochBumpContention
     {
         /// <summary>Number of background threads concurrently acquiring/releasing their epoch.</summary>

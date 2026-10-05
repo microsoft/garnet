@@ -35,9 +35,11 @@ namespace BDN.benchmark.Diagnostics
     /// Measurement reads the child benchmark process's <c>UserProcessorTime</c> and
     /// <c>PrivilegedProcessorTime</c> at the actual-run boundaries
     /// (<see cref="HostSignal.BeforeActualRun"/> / <see cref="HostSignal.AfterActualRun"/>),
-    /// so warmup, pilot, and JIT phases are excluded. Each delta is divided by
-    /// <see cref="DiagnoserResults.TotalOperations"/> to yield per-op CPU time. Reading the child's
-    /// aggregate processor time is cross-platform and framework-agnostic (no <c>Environment.CpuUsage</c>
+    /// so warmup, pilot, and JIT phases are excluded. Each delta is divided by the number of
+    /// Workload/Actual operations (the same actual-run window the delta is sampled over, not
+    /// <see cref="DiagnoserResults.TotalOperations"/>, which also counts pilot and warmup) to yield
+    /// per-op CPU time. Reading the child's aggregate processor time is cross-platform and
+    /// framework-agnostic (no <c>Environment.CpuUsage</c>
     /// dependency), so it works identically on every target framework BDN.benchmark builds for.
     /// </summary>
     public sealed class CpuDiagnoser : IDiagnoser
@@ -134,8 +136,21 @@ namespace BDN.benchmark.Diagnostics
 
             if (results.TotalOperations > 0)
             {
+                // Normalize by only the Actual-run workload operations. DiagnoserResults.TotalOperations
+                // sums every workload measurement (pilot + warmup + actual), but the CPU delta above is
+                // captured solely across the actual run (BeforeActualRun -> AfterActualRun); dividing by
+                // the larger total would understate every CPU column. Match the measurement window to the
+                // sampling window by counting only Workload/Actual operations.
+                var ops = 0L;
+                foreach (var m in results.Measurements)
+                    if (m.IterationMode == IterationMode.Workload && m.IterationStage == IterationStage.Actual)
+                        ops += m.Operations;
+
+                // Fall back to the total if the actual-run measurements are unavailable for any reason.
+                if (ops <= 0)
+                    ops = results.TotalOperations;
+
                 // 1 tick == 100 ns; normalize the per-op CPU burn to nanoseconds.
-                var ops = results.TotalOperations;
                 yield return new Metric(KernelCpuDescriptor, sample.Kernel.Ticks * 100.0 / ops);
                 yield return new Metric(UserCpuDescriptor, sample.User.Ticks * 100.0 / ops);
                 yield return new Metric(TotalCpuDescriptor, (sample.User + sample.Kernel).Ticks * 100.0 / ops);
