@@ -29,8 +29,8 @@ namespace Garnet.client
     /// </summary>
     public sealed partial class GarnetLightClient : IServerHook, IMessageConsumer, IDisposable
     {
-        static readonly Memory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
-        static readonly Memory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
+        static readonly ReadOnlyMemory<byte> AUTH = "$4\r\nAUTH\r\n"u8.ToArray();
+        static readonly ReadOnlyMemory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
         static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetLightClient"u8.ToArray()];
 
         readonly LightNetworkWriterOptions networkWriterOptions;
@@ -404,7 +404,7 @@ namespace Garnet.client
         /// <summary>
         /// Issue a command whose response completes the provided <paramref name="tcs"/>.
         /// </summary>
-        async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        async ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
             var isArray = args != null;
             var arraySize = checked(1 + (isArray ? args.Count : 0));
@@ -598,7 +598,7 @@ namespace Garnet.client
         /// <summary>
         /// Issue a command for execution without expecting a response.
         /// </summary>
-        void InternalExecuteNoResponse(Memory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
+        void InternalExecuteNoResponse(ReadOnlyMemory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
             const int arraySize = 4;
             var totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);

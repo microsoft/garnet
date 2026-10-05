@@ -18,7 +18,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly SslClientAuthenticationOptions tlsOptions;
         readonly LightEpoch epoch;
-        GarnetClient gc;
+        GarnetLightClient gc;
         ClusterAuthContainer clientAuth;
         readonly ExponentialBackoff backoff;
         readonly object initializationSync = new();
@@ -48,9 +48,9 @@ namespace Garnet.cluster
         public long GossipSend => gossipSend;
 
         /// <summary>
-        /// GarnetClient connection
+        /// GarnetLightClient connection
         /// </summary>
-        public GarnetClient Client => Volatile.Read(ref gc);
+        public GarnetLightClient Client => Volatile.Read(ref gc);
 
         /// <summary>
         /// Whether the client connection has been initialized successfully.
@@ -68,21 +68,36 @@ namespace Garnet.cluster
         public EndPoint EndPoint;
 
         /// <summary>
-        /// Default size of each GarnetClient send page. In out-of-line mode, each page stores
+        /// Default size of each request-ring page. In out-of-line mode, each page stores
         /// fixed-size payload descriptors rather than payload bytes, so this controls how many
         /// requests can be queued before page reuse must wait for an earlier flush to complete.
         /// </summary>
         const int defaultSendPageSize = 1 << 10;
 
         /// <summary>
-        /// Default network send buffer size
+        /// Default network send buffer size. Also bounds the maximum request chunk sent in one transport operation.
         /// </summary>
         const int defaultNetworkSendBufferSize = 1 << 13;
 
         /// <summary>
-        /// Default max outstanding tasks for GarnetClient
+        /// Default number of pages in the request ring.
         /// </summary>
-        const int defaultMaxOutstandingTask = 8;
+        const int defaultRequestPageCount = 2;
+
+        /// <summary>
+        /// Default number of response-expecting requests whose replies have not yet been consumed.
+        /// </summary>
+        const int defaultMaxOutstandingCompletions = 1 << 6;
+
+        /// <summary>
+        /// Default number of transport sends that may be in progress concurrently.
+        /// </summary>
+        const int defaultMaxConcurrentNetworkSends = 8;
+
+        /// <summary>
+        /// Default cap on pooled bytes reserved by out-of-line gossip requests awaiting local send completion.
+        /// </summary>
+        const long defaultMaxOutOfLineRentedBytes = 64L << 20;
 
         internal static int GetClientTimeoutMilliseconds(int clusterTimeoutSeconds)
             => clusterTimeoutSeconds <= 0 ? 0 : (int)Math.Min((long)clusterTimeoutSeconds * 1000, int.MaxValue);
@@ -111,21 +126,24 @@ namespace Garnet.cluster
             ResetCts();
         }
 
-        GarnetClient CreateGarnetClient(ClusterAuthContainer auth)
+        GarnetLightClient CreateGarnetClient(ClusterAuthContainer auth)
             => new(
                 EndPoint,
                 tlsOptions,
-                sendPageSize: defaultSendPageSize,
-                bufferSize: defaultNetworkSendBufferSize,
-                maxOutstandingTasks: defaultMaxOutstandingTask,
-                timeoutMilliseconds: GetClientTimeoutMilliseconds(
-                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
                 authUsername: auth.ClusterUsername,
                 authPassword: auth.ClusterPassword,
-                epoch: epoch,
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
-                logger: logger,
-                useOutOfLineExecution: true);
+                networkWriterOptions: new LightNetworkWriterOptions(
+                    networkBufferSizeBytes: defaultNetworkSendBufferSize,
+                    requestPageSizeBytes: defaultSendPageSize,
+                    requestPageCount: defaultRequestPageCount,
+                    maxOutstandingCompletions: defaultMaxOutstandingCompletions,
+                    maxConcurrentNetworkSends: defaultMaxConcurrentNetworkSends,
+                    maxOutOfLineRentedBytes: defaultMaxOutOfLineRentedBytes),
+                timeoutMilliseconds: GetClientTimeoutMilliseconds(
+                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
+                epoch: epoch,
+                logger: logger);
 
         /// <summary>
         /// Attempts to initialize the connection when its reconnect backoff permits.
@@ -149,7 +167,7 @@ namespace Garnet.cluster
                 return new(initializationTask);
             }
 
-            async Task<bool> InitializeCoreAsync(GarnetClient client)
+            async Task<bool> InitializeCoreAsync(GarnetLightClient client)
             {
                 try
                 {

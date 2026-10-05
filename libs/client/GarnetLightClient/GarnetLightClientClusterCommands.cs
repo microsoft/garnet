@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -13,20 +14,26 @@ namespace Garnet.client
         /// <summary>
         /// CLUSTER command, resp formatted.
         /// </summary>
-        public static readonly Memory<byte> CLUSTER = "$7\r\nCLUSTER\r\n"u8.ToArray();
+        public static readonly ReadOnlyMemory<byte> CLUSTER = "$7\r\nCLUSTER\r\n"u8.ToArray();
 
         /// <summary>
         /// PING command, resp formatted.
         /// </summary>
-        public static readonly Memory<byte> PING = "$4\r\nPING\r\n"u8.ToArray();
+        public static readonly ReadOnlyMemory<byte> PING = "$4\r\nPING\r\n"u8.ToArray();
 
         /// <summary>
         /// PUBLISH command, resp formatted.
         /// </summary>
-        public static readonly Memory<byte> PUBLISH = "$7\r\nPUBLISH\r\n"u8.ToArray();
+        public static readonly ReadOnlyMemory<byte> PUBLISH = "$7\r\nPUBLISH\r\n"u8.ToArray();
 
         static readonly Memory<byte> GOSSIP = "GOSSIP"u8.ToArray();
         static readonly Memory<byte> WITHMEET = "WITHMEET"u8.ToArray();
+        static readonly Memory<byte> FAILOVER = "FAILOVER"u8.ToArray();
+
+        /// <summary>
+        /// REPLICAOF command, resp formatted.
+        /// </summary>
+        static readonly ReadOnlyMemory<byte> REPLICAOF = "$9\r\nREPLICAOF\r\n"u8.ToArray();
 
         /// <summary>
         /// PUBLISH sub-token used when forwarding messages inside a cluster.
@@ -96,5 +103,36 @@ namespace Garnet.client
         /// <param name="token">Cancellation token</param>
         public void ClusterSPublishNoResponse(Span<byte> channel, Span<byte> message, CancellationToken token = default)
             => ExecuteNoResponse(CLUSTER, SPUBLISH_SUB, channel, message, token);
+
+        /// <summary>
+        /// Issue a <c>CLUSTER FAILOVER</c> command to a replica node and return whether it was accepted.
+        /// </summary>
+        /// <param name="failoverOption">Failover option controlling the failover behavior.</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Task that completes with <c>true</c> when the server replied <c>OK</c>.</returns>
+        public async Task<bool> Failover(FailoverOption failoverOption = default, CancellationToken token = default)
+        {
+            var args = failoverOption == default
+                ? new Memory<byte>[] { FAILOVER }
+                : [FAILOVER, FailoverUtils.GetRespFormattedFailoverOption(failoverOption)];
+            return await ExecuteForStringResultWithCancellationAsync(CLUSTER, args, token).ConfigureAwait(false) == "OK";
+        }
+
+        /// <summary>
+        /// Make the receiving node a replica of the node at the given endpoint via <c>REPLICAOF</c>.
+        /// </summary>
+        /// <param name="address">Primary node address.</param>
+        /// <param name="port">Primary node port.</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Task that completes with the server reply (typically <c>OK</c>).</returns>
+        public Task<string> ReplicaOf(string address, int port, CancellationToken token = default)
+        {
+            var args = new Memory<byte>[]
+            {
+                Encoding.ASCII.GetBytes(address),
+                Encoding.ASCII.GetBytes(port.ToString())
+            };
+            return ExecuteForStringResultWithCancellationAsync(REPLICAOF, args, token);
+        }
     }
 }
