@@ -12,9 +12,9 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Component tests for the wake-based epoch barrier added to <see cref="GarnetEpoch{TObserverSource}"/>
+    /// Component tests for the wake-based epoch barrier added to <see cref="GarnetEpoch{TEpochObserver}"/>
     /// (<c>BumpAndWaitForEpochTransitionWakeAsync</c> + <c>NotifyEpochReleased</c>). The barrier is
-    /// exercised in isolation through an injected <see cref="IEpochObserverSource"/>, with no live
+    /// exercised in isolation through an injected <see cref="IEpochObserver"/>, with no live
     /// server or network, so these tests target the wake/park protocol itself: correctness, the
     /// lost-wake-safe reset/re-check race, cancellation, and the allocation-free waker hot path.
     /// </summary>
@@ -24,11 +24,11 @@ namespace Garnet.test.cluster
         /// <summary>
         /// Controllable observer source backing a list of per-session observed epochs (0 == idle).
         /// Mirrors <c>ServerEpochObserverSource</c>'s predicate while letting a test drive quiescence.
-        /// Declared as a struct to satisfy <see cref="GarnetEpoch{TObserverSource}"/>'s struct
+        /// Declared as a struct to satisfy <see cref="GarnetEpoch{TEpochObserver}"/>'s struct
         /// constraint; its reference-typed backing fields are shared across the value copy the epoch
         /// holds, so mutations made through the test's copy are observed by the barrier's scan.
         /// </summary>
-        struct ControllableObserverSource : IEpochObserverSource
+        struct ControllableObserverSource : IEpochObserver
         {
             readonly List<long> epochs;
             readonly object gate;
@@ -56,7 +56,7 @@ namespace Garnet.test.cluster
                 }
             }
 
-            public readonly bool AllObserversQuiesced(long targetEpoch)
+            public readonly bool AllSessionsQuiesced(long targetEpoch)
             {
                 lock (gate)
                 {
@@ -71,7 +71,7 @@ namespace Garnet.test.cluster
         }
 
         static GarnetEpoch<ControllableObserverSource> CreateEpoch(ControllableObserverSource source)
-            => new(storeWrapper: null, source);
+            => new(source);
 
         [Test, CancelAfter(10_000)]
         public async Task FastPathCompletesWhenAlreadyQuiesced()
@@ -80,7 +80,7 @@ namespace Garnet.test.cluster
             var source = new ControllableObserverSource();
             var epoch = CreateEpoch(source);
 
-            var completed = await epoch.BumpAndWaitForEpochTransitionWakeAsync();
+            var completed = await epoch.BumpAndWaitForEpochTransitionAsync();
 
             ClassicAssert.IsTrue(completed);
         }
@@ -95,7 +95,7 @@ namespace Garnet.test.cluster
             source.AddSession(0);
             source.AddSession(long.MaxValue);
 
-            var completed = await epoch.BumpAndWaitForEpochTransitionWakeAsync();
+            var completed = await epoch.BumpAndWaitForEpochTransitionAsync();
 
             ClassicAssert.IsTrue(completed);
         }
@@ -109,7 +109,7 @@ namespace Garnet.test.cluster
             // Session observed the current epoch; after the bump it is strictly behind the target.
             var idx = source.AddSession(epoch.GetCurrentEpoch());
 
-            var waitTask = epoch.BumpAndWaitForEpochTransitionWakeAsync();
+            var waitTask = epoch.BumpAndWaitForEpochTransitionAsync();
 
             // The bump cannot complete while the session remains behind.
             var raced = await Task.WhenAny(waitTask, Task.Delay(250));
@@ -131,7 +131,7 @@ namespace Garnet.test.cluster
             var start = epoch.GetCurrentEpoch();
             var idx = source.AddSession(start);
 
-            var waitTask = epoch.BumpAndWaitForEpochTransitionWakeAsync();
+            var waitTask = epoch.BumpAndWaitForEpochTransitionAsync();
 
             var raced = await Task.WhenAny(waitTask, Task.Delay(250));
             ClassicAssert.AreNotEqual(waitTask, raced);
@@ -153,7 +153,7 @@ namespace Garnet.test.cluster
             source.AddSession(epoch.GetCurrentEpoch());
 
             using var cts = new CancellationTokenSource();
-            var waitTask = epoch.BumpAndWaitForEpochTransitionWakeAsync(cts.Token);
+            var waitTask = epoch.BumpAndWaitForEpochTransitionAsync(token: cts.Token);
 
             var raced = await Task.WhenAny(waitTask, Task.Delay(250));
             ClassicAssert.AreNotEqual(waitTask, raced);
@@ -206,7 +206,7 @@ namespace Garnet.test.cluster
                     epoch.NotifyEpochReleased();
                 });
 
-                ClassicAssert.IsTrue(await epoch.BumpAndWaitForEpochTransitionWakeAsync(),
+                ClassicAssert.IsTrue(await epoch.BumpAndWaitForEpochTransitionAsync(),
                     $"wake was lost on iteration {i}");
                 await releaseTask;
             }

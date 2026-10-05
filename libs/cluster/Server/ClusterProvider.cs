@@ -50,7 +50,7 @@ namespace Garnet.cluster
             this.serverOptions = storeWrapper.serverOptions;
             this.rangeIndexManager = rangeIndexManager;
             this.loggerFactory = storeWrapper.loggerFactory;
-            this.garnetEpoch = new GarnetEpoch<ServerEpochObserverSource>(storeWrapper, new ServerEpochObserverSource(storeWrapper));
+            this.garnetEpoch = new GarnetEpoch<ServerEpochObserverSource>(new ServerEpochObserverSource(storeWrapper));
 
             authContainer = new ClusterAuthContainer
             {
@@ -360,7 +360,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <returns></returns>
         internal Task<bool> BumpAndWaitForEpochTransitionAsync()
-            => garnetEpoch.BumpAndWaitForEpochTransitionAsync();
+            => garnetEpoch.BumpAndSpinWaitForEpochTransitionAsync();
 
         /// <inheritdoc />
         public string GetRunId() => replicationManager.PrimaryReplId;

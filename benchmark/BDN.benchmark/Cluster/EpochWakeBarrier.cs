@@ -48,15 +48,15 @@ namespace BDN.benchmark.Cluster
         /// <summary>
         /// Benchmark-local observer over a flat array of per-session observed epochs (slot 0 is the
         /// measured session). Mirrors <c>ServerEpochObserverSource</c>'s predicate; a readonly struct so
-        /// <see cref="GarnetEpoch{TObserverSource}"/> specializes and the scan inlines.
+        /// <see cref="GarnetEpoch{TEpochObserver}"/> specializes and the scan inlines.
         /// </summary>
-        readonly struct ArrayObserverSource : IEpochObserverSource
+        readonly struct ArrayObserverSource : IEpochObserver
         {
             readonly long[] epochs;
 
             public ArrayObserverSource(long[] epochs) => this.epochs = epochs;
 
-            public bool AllObserversQuiesced(long targetEpoch)
+            public bool AllSessionsQuiesced(long targetEpoch)
             {
                 for (var i = 0; i < epochs.Length; i++)
                 {
@@ -81,7 +81,7 @@ namespace BDN.benchmark.Cluster
 
             // Slot 0 is the measured session; the remaining slots are background sessions.
             sessionEpochs = new long[1 + backgroundSessions];
-            epoch = new GarnetEpoch<ArrayObserverSource>(storeWrapper: null, new ArrayObserverSource(sessionEpochs));
+            epoch = new GarnetEpoch<ArrayObserverSource>(new ArrayObserverSource(sessionEpochs));
             cts = new CancellationTokenSource();
 
             backgroundThreads = new Thread[backgroundSessions];
@@ -149,7 +149,7 @@ namespace BDN.benchmark.Cluster
         {
             while (!token.IsCancellationRequested)
             {
-                _ = epoch.BumpAndWaitForEpochTransitionWakeAsync(token).GetAwaiter().GetResult();
+                _ = epoch.BumpAndWaitForEpochTransitionAsync(token: token).GetAwaiter().GetResult();
                 Thread.Sleep(BumpIntervalMs);
             }
         }
