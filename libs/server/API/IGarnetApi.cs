@@ -1376,12 +1376,12 @@ namespace Garnet.server
         /// <summary>
         /// Remove a member from a vector set, if it is present and the key exists.
         /// </summary>
-        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element);
+        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending);
 
         /// <summary>
         /// Update attribute for element in a Vector Set.
         /// </summary>
-        GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute);
+        GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending);
         #endregion
     }
 
@@ -2166,7 +2166,7 @@ namespace Garnet.server
         /// Count the number of vectors in a Vector Set.
         /// </summary>
         /// <remarks>When the status is OK, a negative <paramref name="card"/> indicates an internal index failure.</remarks>
-        GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card);
+        GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card, out bool importPending);
 
         /// <summary>
         /// Returns <see cref="GarnetStatus.OK"/> if the given element exists in the given Vector Set.
@@ -2175,14 +2175,14 @@ namespace Garnet.server
         /// 
         /// Returns <see cref="GarnetStatus.WRONGTYPE"/> if the given key exists, but is not a Vector set.
         /// </summary>
-        GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element);
+        GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element, out bool importPending);
 
         /// <summary>
         /// For a given element, find all neighbors and (optionally) the distance to those neighbors.
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names, and <paramref name="distanceResults"/> has a float for each of those elements.
         /// </summary>
-        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults);
+        GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults, out bool importPending);
 
         /// <summary>
         /// Fetch random elements from the given Vector Set.
@@ -2193,7 +2193,7 @@ namespace Garnet.server
         /// 
         /// On success, <paramref name="idResults"/> has length prefixed element names.
         /// </summary>
-        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount);
+        GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount, out bool importPending);
 
         /// <summary>
         /// Perform a similarity search given a vector and these parameters.
@@ -2214,43 +2214,30 @@ namespace Garnet.server
         /// <summary>
         /// Fetch the embedding of a given element in a Vector set.
         /// </summary>
-        GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances);
+        GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances, out bool importPending);
 
         /// <summary>
         /// Fetch RAW embedding of a given element in a Vector Set.
         /// </summary>
-        GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range);
+        GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range, out bool importPending);
 
         /// <summary>
         /// Fetch the dimensionality of the given Vector Set.
         /// 
         /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
         /// </summary>
-        GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions);
+        GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions, out bool importPending);
 
         /// <summary>
         /// Fetch debugging information about the Vector Set.
         /// </summary>
         /// <remarks>When the status is OK, a negative <paramref name="size"/> indicates an internal index failure.</remarks>
-        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
-
-        /// <summary>
-        /// Fetch debugging information, including whether import is pending.
-        /// </summary>
-        /// <remarks>
-        /// When the status is OK, <paramref name="size"/> is unavailable if <paramref name="importPending"/> is true;
-        /// otherwise a negative size indicates an internal index failure.
-        /// </remarks>
-        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending)
-        {
-            importPending = false;
-            return VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
-        }
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending);
 
         /// <summary>
         /// Get the attributes associated with an element in the Vector Set.
         /// </summary>
-        GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes);
+        GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes, out bool importPending);
 
         #endregion 
     }

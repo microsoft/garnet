@@ -720,10 +720,6 @@ namespace Garnet.server
                     }
                 }
 
-                if (res == GarnetStatus.VECTORSETNOTREADY)
-                {
-                    return AbortVectorSetNotReady();
-                }
                 if (res == GarnetStatus.OK)
                 {
                     if (result == VectorManagerResult.OK)
@@ -757,6 +753,15 @@ namespace Garnet.server
                         if (customErrMsg.IsEmpty)
                         {
                             return AbortWithErrorMessage("ERR asked quantization mismatch with existing vector set"u8);
+                        }
+
+                        return AbortWithErrorMessage(customErrMsg);
+                    }
+                    else if (result == VectorManagerResult.ImportingPending)
+                    {
+                        if (customErrMsg.IsEmpty)
+                        {
+                            return AbortVectorSetNotReady();
                         }
 
                         return AbortWithErrorMessage(customErrMsg);
@@ -1168,10 +1173,6 @@ namespace Garnet.server
                         customErrMsg = default;
                     }
 
-                    if (res == GarnetStatus.VECTORSETNOTREADY)
-                    {
-                        return AbortVectorSetNotReady();
-                    }
                     if (res == GarnetStatus.NOTFOUND)
                     {
                         // Vector Set does not exist
@@ -1202,6 +1203,15 @@ namespace Garnet.server
                             if (customErrMsg.IsEmpty)
                             {
                                 return AbortWithErrorMessage("ERR asked quantization mismatch with existing vector set"u8);
+                            }
+
+                            return AbortWithErrorMessage(customErrMsg);
+                        }
+                        else if (vectorRes == VectorManagerResult.ImportingPending)
+                        {
+                            if (customErrMsg.IsEmpty)
+                            {
+                                return AbortVectorSetNotReady();
                             }
 
                             return AbortWithErrorMessage(customErrMsg);
@@ -1568,12 +1578,13 @@ namespace Garnet.server
 
                 try
                 {
-                    var res = storageApi.VectorSetRawEmbedding(key, elem, ref quantizedResult, out var quantType, out var norm, out var range);
+                    var res = storageApi.VectorSetRawEmbedding(key, elem, ref quantizedResult, out var quantType, out var norm, out var range, out var importPending);
 
-                    if (res == GarnetStatus.VECTORSETNOTREADY)
+                    if (importPending)
                     {
                         return AbortVectorSetNotReady();
                     }
+
                     if (res == GarnetStatus.OK)
                     {
                         // Start array
@@ -1661,12 +1672,13 @@ namespace Garnet.server
 
                 try
                 {
-                    var res = storageApi.VectorSetEmbedding(key, elem, ref distanceResult);
+                    var res = storageApi.VectorSetEmbedding(key, elem, ref distanceResult, out bool importPending);
 
-                    if (res == GarnetStatus.VECTORSETNOTREADY)
+                    if (importPending)
                     {
                         return AbortVectorSetNotReady();
                     }
+
                     if (res == GarnetStatus.OK)
                     {
                         var distanceSpan = MemoryMarshal.Cast<byte, float>(distanceResult.ReadOnlySpan);
@@ -1725,12 +1737,13 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var res = storageApi.VectorSetCardinality(key, out var card);
+            var res = storageApi.VectorSetCardinality(key, out var card, out var importPending);
 
-            if (res == GarnetStatus.VECTORSETNOTREADY)
+            if (importPending)
             {
                 return AbortVectorSetNotReady();
             }
+
             switch (res)
             {
                 case GarnetStatus.WRONGTYPE:
@@ -1766,12 +1779,13 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var res = storageApi.VectorSetDimensions(key, out var dimensions);
+            var res = storageApi.VectorSetDimensions(key, out var dimensions, out var importPending);
 
-            if (res == GarnetStatus.VECTORSETNOTREADY)
+            if (importPending)
             {
                 return AbortVectorSetNotReady();
             }
+
             if (res == GarnetStatus.NOTFOUND)
             {
                 while (!RespWriteUtils.TryWriteError("ERR Key not found"u8, ref dcurr, dend))
@@ -1814,11 +1828,12 @@ namespace Garnet.server
 
             try
             {
-                var res = storageApi.VectorSetGetAttribute(key, element, ref attributesOutput);
-                if (res == GarnetStatus.VECTORSETNOTREADY)
+                var res = storageApi.VectorSetGetAttribute(key, element, ref attributesOutput, out var importPending);
+                if (importPending)
                 {
                     return AbortVectorSetNotReady();
                 }
+
                 if (res != GarnetStatus.OK)
                 {
                     if (res == GarnetStatus.NOTFOUND)
@@ -1858,10 +1873,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
             var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size, out var importPending);
-            if (res == GarnetStatus.VECTORSETNOTREADY)
-            {
-                return AbortVectorSetNotReady();
-            }
+            
             if (res != GarnetStatus.OK)
             {
                 if (res == GarnetStatus.NOTFOUND)
@@ -1943,12 +1955,13 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var element = parseState.GetArgSliceByRef(1);
 
-            var res = storageApi.VectorSetIsMember(key, element);
+            var res = storageApi.VectorSetIsMember(key, element, out var importPending);
 
-            if (res == GarnetStatus.VECTORSETNOTREADY)
+            if (importPending)
             {
                 return AbortVectorSetNotReady();
             }
+
             switch (res)
             {
                 case GarnetStatus.OK:
@@ -2020,12 +2033,13 @@ namespace Garnet.server
             var distanceResult = SpanByteAndMemory.FromPinnedSpan(distanceSpace);
             try
             {
-                var res = storageApi.VectorSetLinks(key, element, ref idResult, ref distanceResult);
+                var res = storageApi.VectorSetLinks(key, element, ref idResult, ref distanceResult, out var importPending);
 
-                if (res == GarnetStatus.VECTORSETNOTREADY)
+                if (importPending)
                 {
                     return AbortVectorSetNotReady();
                 }
+
                 switch (res)
                 {
                     case GarnetStatus.NOTFOUND:
@@ -2123,12 +2137,13 @@ namespace Garnet.server
             var idResult = SpanByteAndMemory.FromPinnedSpan(idSpace);
             try
             {
-                var res = storageApi.VectorSetRandomMembers(key, count, ref idResult, out var actualCount);
+                var res = storageApi.VectorSetRandomMembers(key, count, ref idResult, out var actualCount, out var importPending);
 
-                if (res == GarnetStatus.VECTORSETNOTREADY)
+                if (importPending)
                 {
                     return AbortVectorSetNotReady();
                 }
+
                 switch (res)
                 {
                     case GarnetStatus.NOTFOUND:
@@ -2206,12 +2221,13 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var elem = parseState.GetArgSliceByRef(1);
 
-            var res = storageApi.VectorSetRemove(key, elem);
+            var res = storageApi.VectorSetRemove(key, elem, out var importPending);
 
-            if (res == GarnetStatus.VECTORSETNOTREADY)
+            if (importPending)
             {
                 return AbortVectorSetNotReady();
             }
+
             if (res == GarnetStatus.WRONGTYPE)
             {
                 return AbortVectorSetWrongType();
@@ -2241,12 +2257,13 @@ namespace Garnet.server
             var elem = parseState.GetArgSliceByRef(1);
             var attr = parseState.GetArgSliceByRef(2);
 
-            var res = storageApi.VectorSetSetAttribute(key, elem, attr);
+            var res = storageApi.VectorSetSetAttribute(key, elem, attr, out var importPending);
 
-            if (res == GarnetStatus.VECTORSETNOTREADY)
+            if (importPending)
             {
                 return AbortVectorSetNotReady();
             }
+
             switch (res)
             {
                 case GarnetStatus.NOTFOUND:

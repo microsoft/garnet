@@ -355,7 +355,7 @@ namespace Garnet.server
                 StringInput input = default;
                 input.header.cmd = RespCommand.VSIM;
 
-                using (ReadVectorIndex(storageSession, key.ReadOnlySpan, ref input, indexSpan, out var status))
+                using (ReadVectorIndex(storageSession, key.ReadOnlySpan, ref input, indexSpan, out var status, out _))
                 {
                     if (status != GarnetStatus.OK)
                     {

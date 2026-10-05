@@ -26,6 +26,8 @@ namespace Garnet.server
         BadParams,
         Duplicate,
         MissingElement,
+
+        ImportingPending,
     }
 
     /// <summary>

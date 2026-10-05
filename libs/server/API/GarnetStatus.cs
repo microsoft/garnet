@@ -24,9 +24,5 @@ namespace Garnet.server
         /// Wrong type
         /// </summary>
         WRONGTYPE,
-        /// <summary>
-        /// Vector Set import requires successful finalization.
-        /// </summary>
-        VECTORSETNOTREADY,
     }
 }

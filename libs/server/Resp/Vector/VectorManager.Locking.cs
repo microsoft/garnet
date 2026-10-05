@@ -69,8 +69,8 @@ namespace Garnet.server
         /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
-        internal VectorSetLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
-            => ReadVectorIndexCore(storageSession, key, ref input, indexSpan, nonBlocking: false, out status, out _);
+        internal VectorSetLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status, out bool importPending)
+            => ReadVectorIndexCore(storageSession, key, ref input, indexSpan, nonBlocking: false, out status, out _, out importPending);
 
         /// <summary>
         /// Core of <see cref="ReadVectorIndex"/>. When <paramref name="nonBlocking"/> is <c>true</c>, the per-set
@@ -81,7 +81,7 @@ namespace Garnet.server
         /// their pool thread and retry asynchronously rather than consuming the pool and starving the disk-IO
         /// completion that releases the lock.
         /// </summary>
-        private VectorSetLock ReadVectorIndexCore(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, bool nonBlocking, out GarnetStatus status, out bool wouldBlock)
+        private VectorSetLock ReadVectorIndexCore(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, bool nonBlocking, out GarnetStatus status, out bool wouldBlock, out bool importPending)
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
@@ -112,6 +112,7 @@ namespace Garnet.server
                             {
                                 status = default;
                                 wouldBlock = true;
+                                importPending = false;
                                 return default;
                             }
                         }
@@ -131,6 +132,7 @@ namespace Garnet.server
                             {
                                 status = default;
                                 wouldBlock = true;
+                                importPending = false;
                                 return default;
                             }
                         }
@@ -159,6 +161,7 @@ namespace Garnet.server
                         if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
                         {
                             status = GarnetStatus.OK;
+                            importPending = false;
                             return new(in vectorSetLocks, lockToken);
                         }
                         if (IsImportPending(indexSpan))
@@ -166,11 +169,13 @@ namespace Garnet.server
                             if (readCmd == RespCommand.VINFO)
                             {
                                 status = GarnetStatus.OK;
+                                importPending = false;
                                 return new(in vectorSetLocks, lockToken);
                             }
                             if (readCmd != RespCommand.XVIMPORT)
                             {
-                                status = GarnetStatus.VECTORSETNOTREADY;
+                                status = GarnetStatus.WRONGTYPE;
+                                importPending = true;
                                 vectorSetLocks.ReleaseLock(lockToken);
                                 return default;
                             }
@@ -208,6 +213,7 @@ namespace Garnet.server
                                 // the caller yields its pool thread and retries.
                                 status = default;
                                 wouldBlock = true;
+                                importPending = false;
                                 return default;
                             }
 
@@ -294,6 +300,7 @@ namespace Garnet.server
                         {
                             status = writeRes;
                             vectorSetLocks.ReleaseLock(lockToken);
+                            importPending = false;
 
                             return default;
                         }
@@ -302,6 +309,7 @@ namespace Garnet.server
                     {
                         status = readRes;
                         vectorSetLocks.ReleaseLock(lockToken);
+                        importPending = false;
 
                         return default;
                     }
@@ -314,6 +322,7 @@ namespace Garnet.server
                     }
 
                     status = GarnetStatus.OK;
+                    importPending = false;
                     return new(in vectorSetLocks, lockToken);
                 }
             }
@@ -341,6 +350,7 @@ namespace Garnet.server
             ref StringInput input,
             scoped Span<byte> indexSpan,
             out GarnetStatus status,
+            out bool importPending,
             bool demandCreate = false
         )
         {
@@ -394,13 +404,15 @@ namespace Garnet.server
                             // WRONGTYPE is close enough - we wanted an empty key and we found a non-empty key
                             status = GarnetStatus.WRONGTYPE;
                             vectorSetLocks.ReleaseLock(lockToken);
+                            importPending = false;
                             return default;
                         }
 
                         if (IsImportPending(indexSpan))
                         {
-                            status = GarnetStatus.VECTORSETNOTREADY;
+                            status = GarnetStatus.WRONGTYPE;
                             vectorSetLocks.ReleaseLock(lockToken);
+                            importPending = true;
                             return default;
                         }
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
@@ -553,6 +565,7 @@ namespace Garnet.server
                         {
                             status = writeRes;
                             vectorSetLocks.ReleaseLock(lockToken);
+                            importPending = false;
 
                             return default;
                         }
@@ -560,12 +573,14 @@ namespace Garnet.server
                     else if (readRes != GarnetStatus.OK)
                     {
                         vectorSetLocks.ReleaseLock(lockToken);
-
+                        importPending = false;
                         status = readRes;
+
                         return default;
                     }
 
                     status = GarnetStatus.OK;
+                    importPending = false;
                     return new(in vectorSetLocks, lockToken);
                 }
             }

@@ -53,7 +53,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VADD, ref reusableParseState);
 
-            using (ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var indexRes, demandCreate: true))
+            using (ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var indexRes, out _, demandCreate: true))
             {
                 if (indexRes == GarnetStatus.WRONGTYPE)
                 {

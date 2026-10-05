@@ -659,11 +659,16 @@ namespace Garnet.server
                         //
                         // We still need locking here because the replays may proceed in parallel
 
-                        using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var status))
+                        using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var status, out var importPending))
                         {
                             if (status != GarnetStatus.OK)
                             {
                                 throw new GarnetException($"Could not read Vector Set during VADD replay: {status}");
+                            }
+
+                            if (importPending)
+                            {
+                                throw new GarnetException("Vector Set is importing during VADD replay");
                             }
 
                             var addRes = self.TryAdd(key, indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
@@ -746,13 +751,14 @@ namespace Garnet.server
             var inputCopy = input;
             inputCopy.arg1 = default;
 
-            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
+            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status, out var importPending))
             {
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
+                Debug.Assert(!importPending, "Replication should only occur when a remove is successful, so index should not be importing");
 
-                var addRes = TryRemove(indexSpan, element.ReadOnlySpan);
+                var remRes = TryRemove(indexSpan, element.ReadOnlySpan);
 
-                if (addRes != VectorManagerResult.OK)
+                if (remRes != VectorManagerResult.OK)
                 {
                     throw new GarnetException("Failed to remove from vector set index during AOF sync, this should never happen but will cause data loss if it does");
                 }
@@ -775,9 +781,10 @@ namespace Garnet.server
             var inputCopy = input;
             inputCopy.arg1 = default;
 
-            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
+            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status, out var importPending))
             {
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");
+                Debug.Assert(!importPending, "Replication should only occur when a setattr is successful, so index should not be importing");
 
                 if (!TrySetAttribute(indexSpan, element, attribute))
                 {

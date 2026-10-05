@@ -159,7 +159,7 @@ namespace Garnet.server
 
                             Span<byte> indexSpan = indexArray;
 
-                            using (self.ReadVectorIndexCore(session.storageSession, keySpan, ref input, indexSpan, nonBlocking: true, out var res, out var contended))
+                            using (self.ReadVectorIndexCore(session.storageSession, keySpan, ref input, indexSpan, nonBlocking: true, out var res, out var contended, out var importPending))
                             {
                                 // The lock is held by another thread (often a network VADD blocked on a pending disk
                                 // read during index recreate). Report back so the caller yields and retries rather
@@ -167,7 +167,7 @@ namespace Garnet.server
                                 if (contended)
                                     return false;
 
-                                if (res is not (GarnetStatus.OK or GarnetStatus.VECTORSETNOTREADY))
+                                if (res != GarnetStatus.OK && !importPending)
                                 {
                                     // Index was dropped before quantization request could be processed, ignore request
                                     return true;
