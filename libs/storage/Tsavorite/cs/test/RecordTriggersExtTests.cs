@@ -42,8 +42,6 @@ namespace Tsavorite.test
             public bool CallOnTruncateFlag;
             public bool CallPostCopyToTailFlag;
             public bool CallOnDiskReadFlag;
-            public bool CallOnMutateFlag;
-            public int MutationCount;
 
             public int FlushCount => FlushAddresses.Count;
             public int TruncateCount => TruncateAddresses.Count;
@@ -60,9 +58,6 @@ namespace Tsavorite.test
             public readonly bool CallOnDiskRead => events?.CallOnDiskReadFlag ?? false;
             public readonly bool CallPostCopyToTail => events?.CallPostCopyToTailFlag ?? false;
             public readonly bool CallOnTruncate => events?.CallOnTruncateFlag ?? false;
-            public readonly bool CallOnMutate => events?.CallOnMutateFlag ?? false;
-
-            public readonly void OnMutate() => Interlocked.Increment(ref events.MutationCount);
 
             public readonly void OnFlush(ref LogRecord logRecord, long logicalAddress)
             {
@@ -126,67 +121,6 @@ namespace Tsavorite.test
             log?.Dispose(); log = null;
             objlog?.Dispose(); objlog = null;
             OnTearDown();
-        }
-
-        [TestCase(false, false)]
-        [TestCase(true, false)]
-        [TestCase(false, true)]
-        [TestCase(true, true)]
-        public void CopyUpdaterPreservesMutationSuppression(bool suppressDuringCopy, bool suppressDuringPostCopy)
-        {
-            events.CallOnMutateFlag = true;
-            var functions = new MutationSuppressionFunctions
-            {
-                SuppressDuringCopy = suppressDuringCopy,
-                SuppressDuringPostCopy = suppressDuringPostCopy
-            };
-            using var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, MutationSuppressionFunctions>(functions);
-            var context = session.BasicContext;
-            var key = new TestObjectKey { key = 1 };
-            context.Upsert(key, new TestObjectValue { value = 10 }, 0);
-            events.MutationCount = 0;
-
-            var input = new TestObjectInput { value = 0 };
-            Assert.That(context.RMW(key, ref input, 0).Record.CopyUpdated, Is.True);
-            Assert.That(events.MutationCount, Is.EqualTo(suppressDuringCopy || suppressDuringPostCopy ? 0 : 1));
-
-            functions.SuppressDuringCopy = false;
-            functions.SuppressDuringPostCopy = false;
-            input.value = 1;
-            events.MutationCount = 0;
-            Assert.That(context.RMW(key, ref input, 0).Record.CopyUpdated, Is.True);
-            Assert.That(events.MutationCount, Is.EqualTo(1));
-
-            TestObjectOutput output = default;
-            Assert.That(context.Read(key, ref input, ref output, 0).Found, Is.True);
-            Assert.That(output.value.value, Is.EqualTo(11));
-        }
-
-        sealed class MutationSuppressionFunctions : TestObjectFunctionsDelete
-        {
-            internal bool SuppressDuringCopy;
-            internal bool SuppressDuringPostCopy;
-
-            public override bool InPlaceUpdater(ref LogRecord logRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            {
-                rmwInfo.SuppressOnMutate = true;
-                return false;
-            }
-
-            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            {
-                Assert.That(rmwInfo.SuppressOnMutate, Is.False, "Each copy attempt must reset suppression before calling the updater");
-                rmwInfo.SuppressOnMutate = SuppressDuringCopy;
-                return base.CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
-            }
-
-            public override bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            {
-                Assert.That(rmwInfo.SuppressOnMutate, Is.EqualTo(SuppressDuringCopy));
-                if (SuppressDuringPostCopy)
-                    rmwInfo.SuppressOnMutate = true;
-                return base.PostCopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
-            }
         }
 
         private void InsertN(int n)

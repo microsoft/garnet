@@ -127,8 +127,6 @@ namespace Tsavorite.core
 
                         srcLogRecord.InfoRef.SetTombstone();
                         srcLogRecord.InfoRef.SetModified();
-                        if (storeFunctions.CallOnMutate)
-                            storeFunctions.OnMutate();
 
                         // Try to transfer the record from the tag chain to the free record pool iff previous address points to invalid address.
                         // Otherwise an earlier record for this key could be reachable again.

@@ -429,11 +429,10 @@ namespace Garnet
                 () => Provider.GetSession(WireFormat.ASCII, null),
                 loggerFactory
             );
-            var checkpointDirtyState = new CheckpointDirtyState();
-            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, vectorManager, checkpointDirtyState, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
+            var store = CreateStore(dbId, clusterFactory, customCommandManager, storeEpoch, rangeIndexManager, vectorManager, out var stateMachineDriver, out var sizeTracker, out var kvSettings);
             var aof = CreateAOF(dbId);
 
-            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager, checkpointDirtyState);
+            return new GarnetDatabase(dbId, store, kvSettings, storeEpoch, stateMachineDriver, sizeTracker, aof, serverOptions.AdjustedIndexMaxCacheLines == 0, vectorManager, rangeIndexManager);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -472,8 +471,7 @@ namespace Garnet
         }
 
         private TsavoriteKV<StoreFunctions, StoreAllocator> CreateStore(int dbId, IClusterFactory clusterFactory, CustomCommandManager customCommandManager,
-            LightEpoch epoch, RangeIndexManager rangeIndexManager, VectorManager vectorManager, CheckpointDirtyState checkpointDirtyState,
-            out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
+            LightEpoch epoch, RangeIndexManager rangeIndexManager, VectorManager vectorManager, out StateMachineDriver stateMachineDriver, out CacheSizeTracker sizeTracker, out KVSettings kvSettings)
         {
             sizeTracker = null;
 
@@ -498,7 +496,7 @@ namespace Garnet
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
                 , Tsavorite.core.StoreFunctions.Create(new GarnetKeyComparer(),
                     () => new GarnetObjectSerializer(customCommandManager),
-                    new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager, vectorManager, checkpointDirtyState))
+                    new GarnetRecordTriggers(cacheSizeTracker, rangeIndexManager, vectorManager))
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)

@@ -21,8 +21,6 @@ namespace Garnet.server
         /// </summary>
         internal readonly CacheSizeTracker cacheSizeTracker;
 
-        readonly CheckpointDirtyState checkpointDirtyState;
-
         /// <summary>
         /// Reference to the RangeIndexManager for BfTree lifecycle management.
         /// May be <c>null</c> if RangeIndex is not enabled.
@@ -39,24 +37,11 @@ namespace Garnet.server
         /// Creates a GarnetRecordTriggers with a cache size tracker and optional RangeIndexManager.
         /// </summary>
         public GarnetRecordTriggers(CacheSizeTracker cacheSizeTracker, RangeIndexManager rangeIndexManager, VectorManager vectorManager)
-            : this(cacheSizeTracker, rangeIndexManager, vectorManager, null) { }
-
-        /// <summary>
-        /// Creates record triggers with write tracking for scheduled checkpoints.
-        /// </summary>
-        public GarnetRecordTriggers(CacheSizeTracker cacheSizeTracker, RangeIndexManager rangeIndexManager, VectorManager vectorManager, CheckpointDirtyState checkpointDirtyState)
         {
             this.cacheSizeTracker = cacheSizeTracker;
             this.rangeIndexManager = rangeIndexManager;
             this.vectorManager = vectorManager;
-            this.checkpointDirtyState = checkpointDirtyState;
         }
-
-        /// <inheritdoc/>
-        public bool CallOnMutate => checkpointDirtyState != null && checkpointDirtyState.IsTrackingEnabled;
-
-        /// <inheritdoc/>
-        public void OnMutate() => checkpointDirtyState.MarkDirty();
 
         // Trigger gates: when EnableRangeIndexPreview=false (the default), GarnetServer
         // passes null in place of a manager, so these gates return false → Tsavorite skips

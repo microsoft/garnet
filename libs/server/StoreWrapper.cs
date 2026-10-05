@@ -224,12 +224,7 @@ namespace Garnet.server
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
             this.loggerFactory = loggerFactory;
-            this.databaseManager = databaseManager ?? DatabaseManagerFactory.CreateDatabaseManager(serverOptions, dbId =>
-            {
-                var db = createDatabaseDelegate(dbId);
-                db.CheckpointDirtyState.Initialize(this.runtimeConfig);
-                return db;
-            }, this);
+            this.databaseManager = databaseManager ?? DatabaseManagerFactory.CreateDatabaseManager(serverOptions, createDatabaseDelegate, this);
             this.monitor = serverOptions.MetricsSamplingFrequency > 0 || serverOptions.CommandStatsMonitor || serverOptions.LatencyMonitor
                 ? new GarnetServerMonitor(this, serverOptions, servers,
                     loggerFactory?.CreateLogger("GarnetServerMonitor"))
@@ -430,9 +425,6 @@ namespace Garnet.server
 
             return databaseManager.TakeCheckpointAsync(background, dbId, token, logger);
         }
-
-        internal Task<CheckpointStatus> TakeScheduledCheckpointAsync(CancellationToken token = default, ILogger logger = null)
-            => databaseManager.TakeScheduledCheckpointAsync(token, logger);
 
         /// <summary>
         /// Take a checkpoint if no checkpoint was taken after the provided time offset
@@ -722,14 +714,14 @@ namespace Garnet.server
                         continue;
 
                     if (token.IsCancellationRequested || runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) <= 0 ||
-                        (clusterProvider?.IsReplica() ?? false) || !AnyDatabaseDirty())
+                        (clusterProvider?.IsReplica() ?? false))
                         continue;
 
-                    var status = await TakeScheduledCheckpointAsync(token, logger).ConfigureAwait(false);
+                    var status = await TakeCheckpointAsync(false, dbId: -1, token: token, logger: logger).ConfigureAwait(false);
                     if (status != CheckpointStatus.Success)
                     {
                         if (status == CheckpointStatus.AlreadyInProgress)
-                            logger?.LogDebug("Scheduled checkpoint skipped: a checkpoint is already in progress.");
+                            logger?.LogDebug("Scheduled checkpoint skipped for at least one database: a checkpoint is already in progress.");
                         else
                             logger?.LogWarning("Scheduled checkpoint did not complete; will retry on the next interval.");
                     }
@@ -766,29 +758,36 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Wake the scheduler to observe a new interval without waiting for a running checkpoint.
+        /// Make the scheduler observe a CONFIG SET of the checkpoint interval without waiting for a running checkpoint.
         /// </summary>
-        internal void NotifyCheckpointFrequencyChanged()
+        /// <param name="intervalChanged">Whether the interval differs from the previous value.</param>
+        internal void NotifyCheckpointFrequencyChanged(bool intervalChanged)
         {
+            // A role change can leave a primary without its primary tasks; start the scheduler here like the
+            // other runtime-adjustable tasks do when they are reconciled.
+            lock (taskLifecycleLock)
+            {
+                if (!(clusterProvider?.IsReplica() ?? false))
+                    TryStartScheduledCheckpointTask();
+            }
+
+            if (!intervalChanged)
+                return;
+
             try
             {
-                checkpointFrequencyChanged.Release();
+                // A pending notification already wakes the scheduler to read the latest value.
+                if (checkpointFrequencyChanged.CurrentCount == 0)
+                    checkpointFrequencyChanged.Release();
             }
             catch (SemaphoreFullException)
             {
-                // A pending notification already wakes the scheduler to read the latest value.
+                // A concurrent CONFIG SET released first.
             }
-        }
-
-        bool AnyDatabaseDirty()
-        {
-            foreach (var db in databaseManager.GetDatabasesSnapshot())
+            catch (ObjectDisposedException)
             {
-                if (db.CheckpointDirtyState.IsDirty)
-                    return true;
+                // The server is shutting down.
             }
-
-            return false;
         }
 
         async Task CommitTaskAsync(int commitFrequencyMs, CancellationToken token = default, ILogger logger = null)
@@ -1124,9 +1123,12 @@ namespace Garnet.server
                 taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTaskAsync(commitFrequencyMs, token, logger));
         }
 
+        // Start the scheduled checkpoint task. It runs even when checkpoint-freq is 0, parked until a
+        // CONFIG SET enables it, so enabling at runtime does not need a task restart.
         void TryStartScheduledCheckpointTask()
         {
-            taskManager.RegisterAndRun(TaskType.ScheduledCheckpointTask, ScheduledCheckpointTaskAsync);
+            if (!taskManager.IsRegistered(TaskType.ScheduledCheckpointTask))
+                taskManager.RegisterAndRun(TaskType.ScheduledCheckpointTask, ScheduledCheckpointTaskAsync);
         }
 
         // Start the background object-collection task if enabled by the current runtime config.

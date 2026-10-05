@@ -962,10 +962,9 @@ namespace Garnet.server
 
         private void SortedSetCollect(ref ObjectInput input, ref ObjectOutput output)
         {
-            var countBefore = sortedSetDict.Count;
             DeleteExpiredItems();
 
-            output.result1 = countBefore - sortedSetDict.Count;
+            output.result1 = 1;
         }
 
         #region CommonMethods

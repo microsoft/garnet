@@ -162,13 +162,6 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public override Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null)
-            => TakeCheckpointAsync(background, dbId, token, logger, requireAllDatabases: false);
-
-        /// <inheritdoc/>
-        public override Task<CheckpointStatus> TakeScheduledCheckpointAsync(CancellationToken token = default, ILogger logger = null)
-            => TakeCheckpointAsync(false, -1, token, logger, requireAllDatabases: true);
-
-        Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId, CancellationToken token, ILogger logger, bool requireAllDatabases)
         {
             // Acquire databasesContentLock (read) so a concurrent swap-db can't move GarnetDatabase
             // wrappers out from under us mid-checkpoint (which would mis-attribute LASTSAVE to the
@@ -209,19 +202,6 @@ namespace Garnet.server
                         var id = activeDbIdsMapSnapshot[i];
                         if (TryPauseCheckpoints(id))
                             pausedDbIds[pausedCount++] = id;
-                        else if (requireAllDatabases)
-                        {
-                            for (var j = 0; j < pausedCount; j++)
-                                ResumeCheckpoints(pausedDbIds[j]);
-
-                            if (multiDbLockHeld)
-                                multiDbCheckpointingLock.WriteUnlock();
-
-                            databasesContentLock.ReadUnlock();
-                            return Task.FromResult(CheckpointStatus.AlreadyInProgress);
-                        }
-                        else
-                            logger?.LogWarning("Checkpoint skipped database {dbId}: another checkpoint is in progress", id);
                     }
                 }
                 else
@@ -740,8 +720,6 @@ namespace Garnet.server
                 var enableAof = StoreWrapper.serverOptions.EnableAOF;
                 databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
                 databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
-                db1.CheckpointDirtyState.MarkDirty();
-                db2.CheckpointDirtyState.MarkDirty();
 
                 var activeSessions = 0;
                 foreach (var server in StoreWrapper.Servers)

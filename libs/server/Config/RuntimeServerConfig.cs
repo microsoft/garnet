@@ -44,14 +44,6 @@ namespace Garnet.server
 
         readonly long[] values = new long[TableSize];
 
-        readonly object checkpointFrequencyLock = new();
-        long checkpointTrackingGeneration;
-
-        internal bool CheckpointWriteTrackingEnabled => Volatile.Read(ref values[(int)ServerConfigType.CHECKPOINT_FREQ]) > 0;
-
-        // Enabling invalidates each database's clean state without touching databases or taking their locks.
-        internal long CheckpointTrackingGeneration => Volatile.Read(ref checkpointTrackingGeneration);
-
         // Startup options are retained only to resolve read-only parameters that derive from live server
         // state. Runtime-adjustable values are seeded into the table at construction and are thereafter
         // read exclusively through the typed accessors so a CONFIG SET is observed everywhere.
@@ -209,6 +201,11 @@ namespace Garnet.server
             Set(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY, "aof-size-limit-enforce-frequency",
                 ConfigKind.Int32, 0, int.MaxValue);
 
+            // checkpoint-freq (seconds): 0 = disabled, > 0 = gap between scheduled checkpoints. The scheduler
+            // re-reads this each iteration; the UpdateAction only wakes it so a change is observed promptly.
+            Set(ServerConfigType.CHECKPOINT_FREQ, "checkpoint-freq", ConfigKind.Int32, 0, int.MaxValue,
+                updateAction: ApplyCheckpointFrequencyUpdate);
+
             // Background-task frequencies whose change is enacted by restarting / killing the owning task
             // through the UpdateAction: the tasks capture their interval at start, so a runtime change
             // requires a kill+restart rather than a re-read.
@@ -219,8 +216,6 @@ namespace Garnet.server
             // when the server started at 0.
             Set(ServerConfigType.AOF_COMMIT_FREQ, "aof-commit-freq", ConfigKind.Int32, -1, int.MaxValue,
                 updateAction: ApplyCommitFrequencyUpdate);
-            Set(ServerConfigType.CHECKPOINT_FREQ, "checkpoint-freq", ConfigKind.Int32, 0, int.MaxValue,
-                updateAction: ApplyCheckpointFrequencyUpdate);
             // expired-object-collection-freq (seconds): <= 0 = disabled (no task), > 0 = collection interval.
             Set(ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ, "expired-object-collection-freq",
                 ConfigKind.Int32, 0, int.MaxValue, updateAction: ApplyExpiredObjectCollectionUpdate);
@@ -463,21 +458,6 @@ namespace Garnet.server
                     return false;
             }
 
-            // Serialize frequency transitions so concurrent CONFIG SET requests cannot miss a re-enable.
-            // This lock never waits for a checkpoint or takes a database lock.
-            if (type == ServerConfigType.CHECKPOINT_FREQ)
-            {
-                lock (checkpointFrequencyLock)
-                    return ApplyParsedValue(type, parsed, out error);
-            }
-
-            return ApplyParsedValue(type, parsed, out error);
-        }
-
-        bool ApplyParsedValue(ServerConfigType type, long parsed, out string error)
-        {
-            error = null;
-            ref readonly var meta = ref Meta[(int)type];
             // Publish the new value first so any task an update action restarts observes it, then run the
             // action. On rejection, roll the slot back so the option is left unchanged.
             var oldValue = Volatile.Read(ref values[(int)type]);
@@ -557,14 +537,13 @@ namespace Garnet.server
             return true;
         }
 
+        // Enacts a checkpoint-freq change by waking the scheduler so it observes the new interval. The task
+        // is not restarted, so a CONFIG SET never waits for a checkpoint that is already running. Setting
+        // the current value again leaves the pending interval untouched.
         static bool ApplyCheckpointFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
         {
             error = null;
-            // Tracking is already enabled by the published value. Writes from the disabled period
-            // require one save, even if no new write arrives after enabling.
-            if (oldValue <= 0 && newValue > 0)
-                Interlocked.Increment(ref config.checkpointTrackingGeneration);
-            config.owner?.NotifyCheckpointFrequencyChanged();
+            config.owner?.NotifyCheckpointFrequencyChanged(intervalChanged: oldValue != newValue);
             return true;
         }
 

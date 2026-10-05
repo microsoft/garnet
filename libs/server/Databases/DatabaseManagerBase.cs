@@ -41,10 +41,6 @@ namespace Garnet.server
         public abstract Task<CheckpointStatus> TakeCheckpointAsync(bool background, int dbId = -1, CancellationToken token = default, ILogger logger = null);
 
         /// <inheritdoc/>
-        public virtual Task<CheckpointStatus> TakeScheduledCheckpointAsync(CancellationToken token = default, ILogger logger = null)
-            => TakeCheckpointAsync(false, token: token, logger: logger);
-
-        /// <inheritdoc/>
         public abstract Task TakeOnDemandCheckpointAsync(DateTimeOffset entryTime, int dbId = 0);
 
         /// <inheritdoc/>
@@ -258,8 +254,6 @@ namespace Garnet.server
         /// </remarks>
         protected async Task<CheckpointResult> TakeCheckpointAsync(GarnetDatabase db, ILogger logger = null, CancellationToken token = default)
         {
-            var succeeded = false;
-            db.CheckpointDirtyState.Clear();
             try
             {
                 await DoCompactionAsync(db, isFromCheckpoint: true, logger).ConfigureAwait(false);
@@ -272,7 +266,6 @@ namespace Garnet.server
                 if (!await InitiateCheckpointAsync(db, full, checkpointType, logger).ConfigureAwait(false))
                     return CheckpointResult.Failed;
 
-                succeeded = true;
                 return CheckpointResult.Succeeded(full ? lastSaveStoreTailAddress : null);
             }
             catch (Exception ex)
@@ -280,11 +273,6 @@ namespace Garnet.server
                 // The caller's logger is optional, so fall back to this manager's logger; otherwise a failed
                 // checkpoint leaves no trace at all.
                 (logger ?? Logger)?.LogError(ex, "Checkpointing threw exception, DB ID: {id}", db.Id);
-            }
-            finally
-            {
-                if (!succeeded)
-                    db.CheckpointDirtyState.MarkDirty();
             }
 
             return CheckpointResult.Failed;
@@ -380,7 +368,6 @@ namespace Garnet.server
 
                 var lastSave = DateTimeOffset.FromUnixTimeSeconds(0);
                 db.LastSaveTime = lastSave;
-                db.CheckpointDirtyState.MarkDirty();
             }
             catch (Exception ex)
             {
@@ -412,7 +399,6 @@ namespace Garnet.server
             using (db.VectorManager?.BeginFlush())
             {
                 db.Store.Log.ShiftBeginAddress(db.Store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-                db.CheckpointDirtyState.MarkDirty();
 
                 if (truncateAof)
                     db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.Log.TailAddress);

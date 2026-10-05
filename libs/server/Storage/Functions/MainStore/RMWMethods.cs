@@ -441,8 +441,6 @@ namespace Garnet.server
                         rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                     return true;
                 case IPUResult.NotUpdated:
-                    rmwInfo.SuppressOnMutate = true;
-                    return true;
                 default:
                     return true;
             }

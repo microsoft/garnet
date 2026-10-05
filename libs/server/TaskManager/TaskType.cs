@@ -20,7 +20,7 @@ namespace Garnet.server
         AofSizeLimitTask,
 
         /// <summary>
-        /// Takes periodic checkpoints when a database has changed.
+        /// Takes periodic checkpoints of all active databases.
         /// </summary>
         ScheduledCheckpointTask,
 

@@ -265,7 +265,7 @@ namespace Garnet
         public int CompactionFrequencySecs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("checkpoint-freq", Required = false, HelpText = "Frequency in seconds at which the server automatically takes a background checkpoint of all active databases. 0 = disabled. A checkpoint is skipped if nothing has been written since the last one. The interval is the gap between checkpoints, not a fixed period.")]
+        [Option("checkpoint-freq", Required = false, HelpText = "Frequency in seconds at which the server automatically takes a background checkpoint of all active databases. 0 = disabled. The interval is the gap between checkpoints, not a fixed period.")]
         public int CheckpointFrequencySecs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]

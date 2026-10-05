@@ -54,16 +54,29 @@ namespace Garnet.test
             Assert.That(LastSave, Is.GreaterThan(prior));
         }
 
-        [Test]
-        public void IdleServerSkipsScheduledCheckpoints()
+        // Disabling the scheduler does not interrupt a checkpoint that already started, so let it finish before sampling LASTSAVE.
+        void WaitForRunningCheckpoint()
         {
-            StartServer(1);
-            Thread.Sleep(2500);
-            Assert.That(LastSave, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(0)));
+            var store = server.Provider.StoreWrapper;
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (!store.TryPauseCheckpoints())
+            {
+                Assert.That(DateTime.UtcNow, Is.LessThan(deadline), "Checkpoint did not finish");
+                Thread.Sleep(25);
+            }
+            store.ResumeCheckpoints();
         }
 
         [Test]
-        public void DisabledSchedulerDoesNotCheckpointWrites()
+        public void ScheduledCheckpointsRepeatWithoutWrites()
+        {
+            StartServer(1);
+            WaitForCheckpointAfter(DateTimeOffset.FromUnixTimeSeconds(0));
+            WaitForCheckpointAfter(LastSave);
+        }
+
+        [Test]
+        public void DisabledSchedulerTakesNoCheckpoints()
         {
             StartServer(0);
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -72,43 +85,12 @@ namespace Garnet.test
             db.StringIncrement("counter");
             db.HashSet("hash", "field", "value");
             db.KeyDelete("hash");
-            var store = server.Provider.StoreWrapper.DefaultDatabase;
-            Assert.That(store.Store.StoreFunctions.CallOnMutate, Is.False);
-            Assert.That(store.CheckpointDirtyState.IsDirty, Is.False);
             Thread.Sleep(2500);
             Assert.That(LastSave, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(0)));
         }
 
         [Test]
-        public void ReenablingTrackingInvalidatesCleanStateWithoutAnotherWrite()
-        {
-            var config = new RuntimeServerConfig(new GarnetServerOptions());
-            var state = new CheckpointDirtyState();
-            state.Initialize(config);
-            state.MarkDirty();
-            Assert.That(state.IsDirty, Is.False);
-            Assert.That(state.IsTrackingEnabled, Is.False);
-
-            Assert.That(config.TrySet(ServerConfigType.CHECKPOINT_FREQ, "1", out _), Is.True);
-            Assert.That(state.IsTrackingEnabled, Is.True);
-            Assert.That(state.IsDirty, Is.True);
-            state.Clear();
-            Assert.That(state.IsDirty, Is.False);
-            Assert.That(config.TrySet(ServerConfigType.CHECKPOINT_FREQ, "2", out _), Is.True);
-            Assert.That(state.IsDirty, Is.False, "Retuning an enabled scheduler does not force a save");
-            state.MarkDirty();
-            Assert.That(state.IsDirty, Is.True);
-
-            Assert.That(config.TrySet(ServerConfigType.CHECKPOINT_FREQ, "0", out _), Is.True);
-            state.Clear();
-            state.MarkDirty();
-            Assert.That(state.IsDirty, Is.False);
-            Assert.That(config.TrySet(ServerConfigType.CHECKPOINT_FREQ, "1", out _), Is.True);
-            Assert.That(state.IsDirty, Is.True);
-        }
-
-        [Test]
-        public void EnablingCheckpointsSavesWritesAndDatabasesCreatedWhileDisabled()
+        public void EnablingCheckpointsAtRuntimeSavesExistingData()
         {
             StartServer(0);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -119,16 +101,8 @@ namespace Garnet.test
                 var prior = LastSave;
                 db.StringIncrement("counter");
                 redis.GetDatabase(1).HashSet("hash", "field", "value");
-                foreach (var store in server.Provider.StoreWrapper.GetDatabasesSnapshot())
-                {
-                    Assert.That(store.Store.StoreFunctions.CallOnMutate, Is.False);
-                    Assert.That(store.CheckpointDirtyState.IsDirty, Is.False);
-                }
 
                 Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "1").ToString(), Is.EqualTo("OK"));
-                Assert.That(server.Provider.StoreWrapper.TryGetOrAddDatabase(2, out var enabledStore, out _), Is.True);
-                Assert.That(enabledStore.Store.StoreFunctions.CallOnMutate, Is.True,
-                    "New databases must use the runtime interval, not the disabled startup value");
                 WaitForCheckpointAfter(prior);
                 Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "0").ToString(), Is.EqualTo("OK"));
             }
@@ -156,29 +130,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InPlaceIncrementTriggersAnotherCheckpoint()
-        {
-            StartServer(1);
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            var db = redis.GetDatabase();
-            db.StringSet("counter", 0);
-            WaitForCheckpointAfter(DateTimeOffset.FromUnixTimeSeconds(0));
-
-            var prior = LastSave;
-            var tailBefore = server.Provider.StoreWrapper.store.Log.TailAddress;
-            db.StringIncrement("counter");
-            var tailAfter = server.Provider.StoreWrapper.store.Log.TailAddress;
-            Assert.That(tailAfter, Is.EqualTo(tailBefore), "INCR should exercise the in-place write path");
-
-            WaitForCheckpointAfter(prior);
-
-            var saved = LastSave;
-            Thread.Sleep(2500);
-            Assert.That(LastSave, Is.EqualTo(saved), "Unchanged data should not be checkpointed again");
-        }
-
-        [Test]
-        public void WriteToOneDatabaseCheckpointsAllActiveDatabases()
+        public void ScheduledCheckpointCoversAllActiveDatabases()
         {
             StartServer(1);
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -191,58 +143,6 @@ namespace Garnet.test
                 Thread.Sleep(25);
             Assert.That((long)db0.Execute("LASTSAVE", 0), Is.GreaterThan(0));
             Assert.That((long)db1.Execute("LASTSAVE", 1), Is.GreaterThan(0));
-        }
-
-        [TestCase(0)]
-        [TestCase(1)]
-        [TestCase(2)]
-        public async Task ScheduledCheckpointSkipsAllDatabasesWhenOneIsBusyAsync(int busyDbId)
-        {
-            StartServer(int.MaxValue);
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            var store = server.Provider.StoreWrapper;
-            for (var id = 0; id < 3; id++)
-                redis.GetDatabase(id).StringSet("key", "value");
-
-            Assert.That(await store.TakeScheduledCheckpointAsync().ConfigureAwait(false), Is.EqualTo(CheckpointStatus.Success));
-            var databases = store.GetDatabasesSnapshot();
-            var lastSaveTimes = Array.ConvertAll(databases, db => db.LastSaveTime);
-            redis.GetDatabase(busyDbId).StringSet("key", "updated");
-            Assert.That(store.TryPauseCheckpoints(busyDbId), Is.True);
-            try
-            {
-                Assert.That(await store.TakeScheduledCheckpointAsync().ConfigureAwait(false), Is.EqualTo(CheckpointStatus.AlreadyInProgress));
-                for (var i = 0; i < databases.Length; i++)
-                {
-                    Assert.That(databases[i].LastSaveTime, Is.EqualTo(lastSaveTimes[i]));
-                    Assert.That(databases[i].CheckpointDirtyState.IsDirty, Is.EqualTo(databases[i].Id == busyDbId));
-                    if (databases[i].Id == busyDbId)
-                        continue;
-
-                    Assert.That(store.TryPauseCheckpoints(databases[i].Id), Is.True, "Skipped attempts must release acquired locks");
-                    store.ResumeCheckpoints(databases[i].Id);
-                }
-
-                Assert.That(await store.TakeCheckpointAsync(false).ConfigureAwait(false), Is.EqualTo(CheckpointStatus.AlreadyInProgress));
-                for (var i = 0; i < databases.Length; i++)
-                {
-                    if (databases[i].Id == busyDbId)
-                        Assert.That(databases[i].LastSaveTime, Is.EqualTo(lastSaveTimes[i]));
-                    else
-                        Assert.That(databases[i].LastSaveTime, Is.GreaterThan(lastSaveTimes[i]), "Manual saves still checkpoint available databases");
-                }
-            }
-            finally
-            {
-                store.ResumeCheckpoints(busyDbId);
-            }
-
-            Assert.That(await store.TakeScheduledCheckpointAsync().ConfigureAwait(false), Is.EqualTo(CheckpointStatus.Success));
-            for (var i = 0; i < databases.Length; i++)
-            {
-                Assert.That(databases[i].LastSaveTime, Is.GreaterThan(lastSaveTimes[i]));
-                Assert.That(databases[i].CheckpointDirtyState.IsDirty, Is.False);
-            }
         }
 
         [Test]
@@ -290,6 +190,7 @@ namespace Garnet.test
             WaitForCheckpointAfter(DateTimeOffset.FromUnixTimeSeconds(0));
 
             Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "0").ToString(), Is.EqualTo("OK"));
+            WaitForRunningCheckpoint();
             var prior = LastSave;
             db.StringIncrement("counter");
             Thread.Sleep(2500);
@@ -301,67 +202,36 @@ namespace Garnet.test
         }
 
         [Test]
-        public void InPlaceDeleteTriggersAnotherCheckpoint()
+        public async Task ConfigSetStartsSchedulerThatIsNotRunningAsync()
         {
-            StartServer(1);
+            StartServer(0);
+            var store = server.Provider.StoreWrapper;
+            await store.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
+            Assert.That(store.TaskManager.IsRunning(TaskType.ScheduledCheckpointTask), Is.False);
+
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase();
-            db.StringSet("key", "value");
+            Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "1").ToString(), Is.EqualTo("OK"));
+            Assert.That(store.TaskManager.IsRunning(TaskType.ScheduledCheckpointTask), Is.True);
             WaitForCheckpointAfter(DateTimeOffset.FromUnixTimeSeconds(0));
-
-            var prior = LastSave;
-            var tailBefore = server.Provider.StoreWrapper.store.Log.TailAddress;
-            Assert.That(db.KeyDelete("key"), Is.True);
-            Assert.That(server.Provider.StoreWrapper.store.Log.TailAddress, Is.EqualTo(tailBefore));
-            WaitForCheckpointAfter(prior);
         }
 
         [Test]
-        public void FlushTriggersCheckpointOfEmptyDatabase()
+        public void SettingTheSameIntervalDoesNotPostponeTheCheckpoint()
         {
-            StartServer(1);
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
-            {
-                var db = redis.GetDatabase();
-                db.StringSet("key", "value");
-                WaitForCheckpointAfter(DateTimeOffset.FromUnixTimeSeconds(0));
+            StartServer(3);
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase();
 
-                var prior = LastSave;
-                Assert.That(db.Execute("FLUSHDB").ToString(), Is.EqualTo("OK"));
-                WaitForCheckpointAfter(prior);
+            // Re-applying the value more often than the interval would starve the scheduler if each call restarted the wait.
+            var deadline = DateTime.UtcNow.AddSeconds(15);
+            while (LastSave == DateTimeOffset.FromUnixTimeSeconds(0) && DateTime.UtcNow < deadline)
+            {
+                Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "3").ToString(), Is.EqualTo("OK"));
+                Thread.Sleep(250);
             }
 
-            server.Dispose(false);
-            server = null;
-            StartServer(0, recover: true);
-            using var recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            Assert.That(recovered.GetDatabase().KeyExists("key"), Is.False);
-        }
-
-        [Test]
-        public void RejectedWritesAndUnchangedCollectionSkipCheckpoints()
-        {
-            StartServer(1);
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            var db = redis.GetDatabase();
-            db.StringSet("string", "value");
-            db.HashSet("hash", "field", "value");
-            db.SortedSetAdd("sorted-set", "member", 1);
-            WaitForCheckpointAfter(DateTimeOffset.FromUnixTimeSeconds(0));
-            var prior = LastSave;
-
-            var deadline = DateTime.UtcNow.AddSeconds(3);
-            do
-            {
-                Assert.That(db.StringSet("string", "replacement", when: When.NotExists), Is.False);
-                Assert.Throws<RedisServerException>(() => db.ListLeftPush("hash", "wrong-type"));
-                Assert.That(db.Execute("HCOLLECT", "*").ToString(), Is.EqualTo("OK"));
-                Assert.That(db.Execute("ZCOLLECT", "*").ToString(), Is.EqualTo("OK"));
-                Thread.Sleep(100);
-            } while (DateTime.UtcNow < deadline);
-
-            Assert.That(LastSave, Is.EqualTo(prior));
-            Assert.That(db.StringGet("string").ToString(), Is.EqualTo("value"));
+            Assert.That(LastSave, Is.GreaterThan(DateTimeOffset.FromUnixTimeSeconds(0)));
         }
 
         [TestCase(false)]
@@ -379,13 +249,15 @@ namespace Garnet.test
                 db.StringSet("expiring", "value");
                 WaitForCheckpointAfter(DateTimeOffset.FromUnixTimeSeconds(0));
 
-                var prior = LastSave;
                 db.StringIncrement("counter");
                 db.HashSet("hash", "field", "updated");
                 Assert.That(db.ListLeftPop("list").ToString(), Is.EqualTo("only-member"));
                 Assert.That(db.SortedSetRemove("sorted-set", "only-member"), Is.True);
                 Assert.That(db.KeyExpire("expiring", TimeSpan.FromMinutes(10)), Is.True);
-                WaitForCheckpointAfter(prior);
+
+                // A checkpoint may already be running during the updates, so only the one after it is guaranteed to include them all.
+                WaitForCheckpointAfter(LastSave);
+                WaitForCheckpointAfter(LastSave);
                 Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "0").ToString(), Is.EqualTo("OK"));
             }
 
@@ -399,24 +271,6 @@ namespace Garnet.test
             Assert.That(recoveredDb.KeyExists("list"), Is.False);
             Assert.That(recoveredDb.KeyExists("sorted-set"), Is.False);
             Assert.That(recoveredDb.KeyTimeToLive("expiring"), Is.GreaterThan(TimeSpan.Zero));
-        }
-
-        [Test]
-        public void ExpiredObjectRemovalTriggersCheckpoint()
-        {
-            StartServer(0);
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            var db = redis.GetDatabase();
-            db.SortedSetAdd("sorted-set", "member", 1);
-            Assert.That(db.KeyExpire("sorted-set", TimeSpan.FromSeconds(1)), Is.True);
-            Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", int.MaxValue).ToString(), Is.EqualTo("OK"));
-            Assert.That(db.Execute("SAVE").ToString(), Is.EqualTo("OK"));
-            var prior = LastSave;
-            Thread.Sleep(1100);
-
-            Assert.That(db.SortedSetRemove("sorted-set", "member"), Is.False);
-            Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "1").ToString(), Is.EqualTo("OK"));
-            WaitForCheckpointAfter(prior);
         }
 
         [Test]
