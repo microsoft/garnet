@@ -181,6 +181,58 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(0, allocated, "waker hot path must not allocate when no waiter is parked");
         }
 
+        [Test, CancelAfter(15_000)]
+        public async Task ConcurrentBumpsCoalesceOnASingleRelease()
+        {
+            // Two bumps park behind the shared signal at the same time. A single release must wake
+            // both: AsyncManualResetSignal coalesces one Set across every parked waiter. The park
+            // backstop is set far longer than the fixture timeout so this exercises the wake path and
+            // not the re-scan fallback -- if one Set failed to wake both, the second waiter would sit
+            // until the backstop and trip CancelAfter.
+            var source = new ControllableObserverSource();
+            var epoch = CreateEpoch(source);
+            var idx = source.AddSession(epoch.GetCurrentEpoch());
+
+            var backstop = TimeSpan.FromSeconds(60);
+            var first = epoch.BumpAndWaitForEpochTransitionAsync(waitSleep: backstop);
+            var second = epoch.BumpAndWaitForEpochTransitionAsync(waitSleep: backstop);
+
+            // Let both bumps pass the adaptive spin and park; neither can complete while the session blocks.
+            var both = Task.WhenAll(first, second);
+            var raced = await Task.WhenAny(both, Task.Delay(250));
+            ClassicAssert.AreNotEqual(both, raced, "a bump completed before the blocking session released");
+
+            // One release, one signal: the single Set must satisfy both parked bumps.
+            source.SetEpoch(idx, 0);
+            epoch.NotifyEpochReleased();
+
+            ClassicAssert.IsTrue(await first);
+            ClassicAssert.IsTrue(await second);
+        }
+
+        [Test, CancelAfter(15_000)]
+        public async Task TimeoutRescanCompletesWithoutNotification()
+        {
+            // The bounded park is a liveness backstop: even if a session clears its epoch without
+            // ever calling NotifyEpochReleased (a theoretically missed wake), the next re-scan after
+            // the park interval must still observe quiescence and complete the bump.
+            var source = new ControllableObserverSource();
+            var epoch = CreateEpoch(source);
+            var idx = source.AddSession(epoch.GetCurrentEpoch());
+
+            // Short backstop so the re-scan path is reached quickly.
+            var slice = TimeSpan.FromMilliseconds(50);
+            var waitTask = epoch.BumpAndWaitForEpochTransitionAsync(waitSleep: slice);
+
+            var raced = await Task.WhenAny(waitTask, Task.Delay(250));
+            ClassicAssert.AreNotEqual(waitTask, raced, "bump completed before the blocking session cleared");
+
+            // Clear the session WITHOUT signaling: only the bounded park's re-scan can discover this.
+            source.SetEpoch(idx, 0);
+
+            ClassicAssert.IsTrue(await waitTask);
+        }
+
         [Test, CancelAfter(60_000)]
         public async Task LostWakeSoak()
         {
