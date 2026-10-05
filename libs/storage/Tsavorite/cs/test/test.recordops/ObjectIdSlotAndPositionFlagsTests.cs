@@ -99,13 +99,6 @@ namespace Tsavorite.test.Objects
         public void DecodeOverflowKeyPageCountUsesRdhHighBits(int rdhKeyLengthBits, int objectIdHint, bool isExact, ulong expected)
             => Assert.That(RecordDataHeader.DecodeOverflowKeyInitialReadExtent(rdhKeyLengthBits, objectIdHint, isExact), Is.EqualTo(expected));
 
-        [TestCase(4, 1, 1UL * RecordDataHeader.kFlushPageSize)]
-        [TestCase(4, 510, 510UL * RecordDataHeader.kFlushPageSize)]
-        [TestCase(4, 511, (ulong)IStreamBuffer.BufferSize)]
-        public void DecodeEarlierOverflowKeyHintIgnoresRdhBits(int rdhKeyLengthBits, int objectIdHint, ulong expected)
-            => Assert.That(RecordDataHeader.DecodeOverflowKeyInitialReadExtent(rdhKeyLengthBits, objectIdHint, isExactSize: false,
-                hasExtendedSizeHint: false), Is.EqualTo(expected));
-
         [TestCase(0, 0, 0, 4, true)]
         [TestCase(511, 511, 511, 4, true)]
         [TestCase(512, 520, 1, 0, false)]
@@ -189,17 +182,6 @@ namespace Tsavorite.test.Objects
 
         [Test]
         [Category("Smoke")]
-        public unsafe void KeyHasExtendedSizeHintFlagSetsAndClears()
-        {
-            ulong word = 0;
-            Assert.That(ObjectLogFilePositionInfo.GetKeyHasExtendedSizeHint(&word), Is.False);
-            ObjectLogFilePositionInfo.SetKeyHasExtendedSizeHint(&word);
-            Assert.That(ObjectLogFilePositionInfo.GetKeyHasExtendedSizeHint(&word), Is.True);
-            Assert.That(word, Is.EqualTo(ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask));
-        }
-
-        [Test]
-        [Category("Smoke")]
         public unsafe void ExactSizeFlagsAreIndependentAndDoNotDisturbOtherBits()
         {
             // Start with a realistic segment+offset payload plus the (bit-63) ReuseObjectIdForSize flag set.
@@ -226,8 +208,6 @@ namespace Tsavorite.test.Objects
             Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(0UL));
             Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask, Is.EqualTo(0UL));
             Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask, Is.EqualTo(0UL));
-            Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask, Is.EqualTo(0UL));
-            Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask, Is.EqualTo(0UL));
         }
 
         [TestCase(50UL, 3, 4050UL)]

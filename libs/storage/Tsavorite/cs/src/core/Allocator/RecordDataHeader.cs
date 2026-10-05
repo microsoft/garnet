@@ -346,14 +346,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>Decode an overflow key's initial read extent. Exact-size keys use only the objectId hint as a byte length.
-        /// Headered keys with an extended hint combine the raw RDH KeyLength high bits with the objectId hint low bits to recover the exact
-        /// 4 KB page count. Earlier headered keys use the objectId-only page-count/sentinel encoding.</summary>
-        internal static ulong DecodeOverflowKeyInitialReadExtent(int rdhKeyLengthBits, int objectIdSizeHint, bool isExactSize, bool hasExtendedSizeHint = true)
+        /// Headered keys combine the raw RDH KeyLength high bits with the objectId hint low bits to recover the exact 4 KB page count.</summary>
+        internal static ulong DecodeOverflowKeyInitialReadExtent(int rdhKeyLengthBits, int objectIdSizeHint, bool isExactSize)
         {
             if (isExactSize)
                 return (ulong)(uint)objectIdSizeHint;
-            if (!hasExtendedSizeHint)
-                return DecodeObjectIdValueInitialReadExtent(objectIdSizeHint, isExactSize: false);
             var pageCount = ((ulong)(uint)rdhKeyLengthBits << ObjectIdMap.ObjectIdSizeHintBits) | (uint)objectIdSizeHint;
             return pageCount * kFlushPageSize;
         }

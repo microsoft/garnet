@@ -1372,7 +1372,6 @@ namespace Tsavorite.test.recovery
                         ClassicAssert.AreNotEqual(0UL, word & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask, "ReuseObjectIdForSize (bit 63) should be set on a v7 record");
                         ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kKeyIsExactSizeMask, "KeyIsExactSize should be clear on a v7 record");
                         ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kValueIsExactSizeMask, "ValueIsExactSize should be clear on a v7 record");
-                        ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask, "KeyHasExtendedSizeHint should be clear on a v7 record");
                         ++objectRecordCount;
                     }
                 }

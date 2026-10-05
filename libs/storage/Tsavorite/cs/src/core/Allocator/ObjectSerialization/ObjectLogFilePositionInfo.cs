@@ -50,11 +50,8 @@ namespace Tsavorite.core
         internal const int kValueIsExactSizeBit = 60;
         internal const ulong kValueIsExactSizeMask = 1UL << kValueIsExactSizeBit;
 
-        /// <summary>Bit position of the <c>KeyHasExtendedSizeHint</c> flag in <see cref="word"/>.
-        /// When set on a headered overflow key, raw RDH KeyLength contains the high 10 bits and the objectId hint contains the low 9 bits
-        /// of the exact 4 KB-page-count read extent. When clear, the key uses the earlier objectId-only page-count/sentinel encoding.</summary>
-        internal const int kKeyHasExtendedSizeHintBit = 62;
-        internal const ulong kKeyHasExtendedSizeHintMask = 1UL << kKeyHasExtendedSizeHintBit;
+        // Bit 62 is unused and available. A headered overflow key always splits its exact 4 KB-page-count read extent across raw RDH
+        // KeyLength (high bits) and the objectId hint (low bits), so no flag is needed to select that encoding.
 
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
@@ -133,12 +130,6 @@ namespace Tsavorite.core
         /// <summary>Read the <c>KeyIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe bool GetKeyIsExactSize(ulong* wordPtr) => (*wordPtr & kKeyIsExactSizeMask) != 0;
-
-        /// <summary>Set the <c>KeyHasExtendedSizeHint</c> flag on a headered overflow key.</summary>
-        public static unsafe void SetKeyHasExtendedSizeHint(ulong* wordPtr) => *wordPtr |= kKeyHasExtendedSizeHintMask;
-
-        /// <summary>Read the <c>KeyHasExtendedSizeHint</c> flag from an overflow key.</summary>
-        public static unsafe bool GetKeyHasExtendedSizeHint(ulong* wordPtr) => (*wordPtr & kKeyHasExtendedSizeHintMask) != 0;
 
         /// <summary>Set the <c>ValueIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

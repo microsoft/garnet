@@ -1616,8 +1616,6 @@ namespace Tsavorite.core
                 SetDataHeader(dataHeader);
                 if (keyIsExact)
                     ObjectLogFilePositionInfo.SetKeyIsExactSize(objectLogPositionPtr);
-                else
-                    ObjectLogFilePositionInfo.SetKeyHasExtendedSizeHint(objectLogPositionPtr);
             }
 
             // An object's hint covers its headerless prefix and first framed chunk; continuation headers drive later discovery windows.
@@ -1682,20 +1680,8 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Whether a headered overflow key carries its exact page count across raw RDH KeyLength and the objectId hint.
-        /// When false, the key uses the earlier objectId-only page-count/sentinel encoding.</summary>
-        internal readonly bool KeyHasExtendedSizeHint
-        {
-            get
-            {
-                Debug.Assert(DataHeader.KeyIsOverflow, "KeyHasExtendedSizeHint is only meaningful for an overflow key");
-                return ObjectLogFilePositionInfo.GetKeyHasExtendedSizeHint((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
-            }
-        }
-
         /// <summary>The overflow key's initial object-log read extent. A headerless key uses the exact byte count from its objectId hint.
-        /// A current headered key combines that hint with raw RDH KeyLength to recover its exact rounded-up 4 KB page extent; an earlier
-        /// headered key uses the objectId-only page-count/sentinel encoding.</summary>
+        /// A headered key combines that hint with raw RDH KeyLength to recover its exact rounded-up 4 KB page extent.</summary>
         internal readonly ulong KeyInitialReadExtent
         {
             get
@@ -1704,7 +1690,7 @@ namespace Tsavorite.core
                 var dataHeader = DataHeader;
                 var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
                 return RecordDataHeader.DecodeOverflowKeyInitialReadExtent(dataHeader.GetKeyLengthRaw(),
-                    ObjectIdMap.GetSizeHint(*(int*)keyAddress), KeyIsExactSize, KeyHasExtendedSizeHint);
+                    ObjectIdMap.GetSizeHint(*(int*)keyAddress), KeyIsExactSize);
             }
         }
 
@@ -1742,7 +1728,7 @@ namespace Tsavorite.core
         /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log
         /// verbatim and repoints the live record to the main position before writing it. The record's objects are NOT deserialized at this point,
         /// so unlike the setters this does not read lengths from objectIdMap; the copied lengths and encoding are unchanged, so ALL existing
-        /// position-word flag bits are preserved (ReuseObjectIdForSize, KeyHasExtendedSizeHint, Key/ValueIsExactSize) — only the segment+offset is taken from
+        /// position-word flag bits are preserved (ReuseObjectIdForSize, Key/ValueIsExactSize) — only the segment+offset is taken from
         /// the new position. A downlevel record copied verbatim stays downlevel; a hint-format record keeps its size-hint flags to match its
         /// verbatim-copied objectId-slot stamp.
         /// </remarks>

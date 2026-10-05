@@ -25,9 +25,8 @@ namespace Tsavorite.core
         // reclaimable to carry an out-of-line component's read-size HINT on the flushed/on-disk record. The hint's meaning is
         // selected by the per-component ObjectLogFilePositionInfo.Key/ValueIsExactSize flag:
         //   flag SET   -> the 9 bits are the EXACT byte length (0..511) of the out-of-line component; NO leading ChunkHeader.
-        //   flag CLEAR -> for a VALUE, the 9 bits are a 4 KB-page count whose max value is the discovery sentinel; for a KEY with
-        //                 KeyHasExtendedSizeHint set, they are the low 9 bits of an exact page count whose high 10 bits are in raw RDH
-        //                 KeyLength. Earlier keys without that flag use the value-style page-count/sentinel interpretation.
+        //   flag CLEAR -> for a VALUE, the 9 bits are a 4 KB-page count whose max value is the discovery sentinel; for a KEY they are the
+        //                 low 9 bits of an exact page count whose high 10 bits are in raw RDH KeyLength.
         //                 A leading ChunkHeader carries the exact logical payload length.
         // Either way the hint lets IO for Read/RMW and recovery size the initial object-log read without an RDH length field
         // (those are reserved for hybrid values). The stamp is applied to the disk image (and, on the no-copy live-page flush,
@@ -50,8 +49,8 @@ namespace Tsavorite.core
 
         /// <summary>Largest value the 9-bit objectId read-size hint can hold. When the record's exact-size flag is SET this is the
         /// largest out-of-line byte length encodable as an exact size (one below the 512-byte sector size, so an exact-size component
-        /// never needs a leading ChunkHeader). For a non-exact value or earlier-format key this is the page-count sentinel; for a non-exact
-        /// key with <see cref="ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask"/> it is an ordinary low-9-bit page-count value.</summary>
+        /// never needs a leading ChunkHeader). For a non-exact value this is the page-count sentinel; for a non-exact key it is an
+        /// ordinary low-9-bit page-count value.</summary>
         internal const int MaxObjectIdSizeHint = ObjectIdSizeHintMask;            // 511
 
         /// <summary>Extract the ObjectIdMap index from a (possibly size-hint-stamped) objectId slot value; passes <see cref="InvalidObjectId"/> through unchanged.</summary>
@@ -60,8 +59,7 @@ namespace Tsavorite.core
 
         /// <summary>Extract the out-of-line read-size hint from the top bits of an objectId slot. Its meaning depends on the record's
         /// <see cref="ObjectLogFilePositionInfo.kKeyIsExactSizeMask"/> / <see cref="ObjectLogFilePositionInfo.kValueIsExactSizeMask"/> flag:
-        /// flag set -&gt; exact byte length; flag clear -&gt; page count/sentinel, or the low bits of a key page count when
-        /// <see cref="ObjectLogFilePositionInfo.kKeyHasExtendedSizeHintMask"/> is set.</summary>
+        /// flag set -&gt; exact byte length; flag clear -&gt; page count/sentinel for a value, or the low bits of an exact key page count.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int GetSizeHint(int slot) => (slot >> ObjectIdSizeHintShift) & ObjectIdSizeHintMask;
 
