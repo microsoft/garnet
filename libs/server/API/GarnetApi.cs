@@ -395,9 +395,9 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
-            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
-        => storageSession.VectorSetCreate(key, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, quantState, out result, out errorMsg);
+        => storageSession.VectorSetCreate(key, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, quantState, startPointId, out result, out errorMsg);
 
         /// <inheritdoc />
         public GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,

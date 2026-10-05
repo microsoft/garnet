@@ -8410,6 +8410,14 @@
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START_POINT",
+        "DisplayText": "id",
+        "Type": "Integer",
+        "Token": "START_POINT",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "DISTANCE_METRIC",
         "DisplayText": "metric",
         "Type": "String",

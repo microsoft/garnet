@@ -146,6 +146,7 @@ namespace Garnet.server
             input.arg1 = CreateIndexArg;
 
             ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var flags, out var indexPtr);
+            var startPointId = ReadStartPointId(value);
 
             Debug.Assert(indexPtr == 0, "Shouldn't receive an index pointer during a migration");
 
@@ -194,7 +195,7 @@ namespace Garnet.server
                 {
                     unsafe
                     {
-                        newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                        newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, startPointId, out requestQuantization);
                     }
                 }
 
@@ -203,8 +204,9 @@ namespace Garnet.server
 
                 var expirationTicks = expiration?.Ticks ?? 0;
                 var expirationArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateSpan(ref expirationTicks, 1)));
+                var startPointArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref startPointId, 1)));
 
-                input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg, expirationArg]);
+                input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg, expirationArg, startPointArg]);
 
                 Span<byte> indexSpan = stackalloc byte[Index.Size];
                 var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);

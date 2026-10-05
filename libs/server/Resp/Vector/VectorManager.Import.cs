@@ -31,6 +31,7 @@ namespace Garnet.server
             VectorDistanceMetricType distanceMetric,
             bool hasQuantState,
             ReadOnlySpan<byte> quantState,
+            uint startPointId,
             out VectorManagerResult result,
             out ReadOnlySpan<byte> errorMsg
         )
@@ -53,7 +54,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VADD, ref reusableParseState);
 
-            using (ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var indexRes, out _, demandCreate: true))
+            using (ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, startPointId, out var indexRes, out _, demandCreate: true))
             {
                 if (indexRes == GarnetStatus.WRONGTYPE)
                 {
@@ -79,7 +80,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                ReplicateVectorSetCreate(key, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, hasQuantState, quantState);
+                ReplicateVectorSetCreate(key, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, hasQuantState, quantState, startPointId);
             }
 
             result = VectorManagerResult.OK;
