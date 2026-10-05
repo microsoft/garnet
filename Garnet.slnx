@@ -49,7 +49,6 @@
     <Project Path="playground/Bitmap/Bitmap.csproj" />
     <Project Path="playground/CommandInfoUpdater/CommandInfoUpdater.csproj" />
     <Project Path="playground/Embedded.perftest/Embedded.perftest.csproj" />
-    <Project Path="playground/EpochBarrierLitmus/EpochBarrierLitmus.csproj" />
     <Project Path="playground/GarnetClientStress/GarnetClientStress.csproj" />
     <Project Path="playground/LightEpochLitmus/LightEpochLitmus.csproj" />
     <Project Path="playground/MigrateBench/MigrateBench.csproj" />
