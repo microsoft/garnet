@@ -35,14 +35,34 @@ namespace Garnet.cluster
         public string Nodeid;
 
         /// <summary>
-        /// IP address
+        /// Client IP address
         /// </summary>
         public string Address;
 
         /// <summary>
-        /// Port
+        /// Client port
         /// </summary>
         public int Port;
+
+        /// <summary>
+        /// Cluster IP address; null when a legacy relay has not supplied it.
+        /// </summary>
+        public string ClusterAddress;
+
+        /// <summary>
+        /// Cluster port; zero when a legacy relay has not supplied it.
+        /// </summary>
+        public int ClusterPort;
+
+        /// <summary>
+        /// Effective peer IP address, falling back to the client address when peer metadata is absent.
+        /// </summary>
+        internal string PeerAddress => ClusterAddress ?? Address;
+
+        /// <summary>
+        /// Effective peer port, falling back to the client port when peer metadata is absent.
+        /// </summary>
+        internal int PeerPort => ClusterAddress == null ? Port : ClusterPort;
 
         /// <summary>
         /// Configuration epoch.

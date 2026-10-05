@@ -291,6 +291,31 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Get 64-bit hash code for a byte span, avalanched so that every output bit depends on every
+        /// input bit. <see cref="HashBytes"/> is a multiply-accumulate, and multiplication propagates
+        /// information only toward higher bits, so its low bits carry almost no entropy. The finalizer's
+        /// right shifts are what move entropy back down, making it safe to slice an index out of any
+        /// part of the result. Use this in preference to <see cref="HashBytes"/> when taking the low
+        /// bits of the hash, such as when reducing it modulo a power of two.
+        /// </summary>
+        /// <param name="byteSpan">Bytes to hash.</param>
+        /// <returns>A 64-bit hash code with full-width avalanche.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long GetHashCodeWithMix(ReadOnlySpan<byte> byteSpan)
+        {
+            var hash = (ulong)HashBytes(byteSpan);
+
+            // MurmurHash3 fmix64 finalizer.
+            hash ^= hash >> 33;
+            hash *= 0xff51afd7ed558ccdUL;
+            hash ^= hash >> 33;
+            hash *= 0xc4ceb9fe1a85ec53UL;
+            hash ^= hash >> 33;
+
+            return (long)hash;
+        }
+
+        /// <summary>
         /// Compute XOR of all provided bytes
         /// </summary>
         /// <param name="src"></param>

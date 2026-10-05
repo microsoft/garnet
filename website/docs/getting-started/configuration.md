@@ -284,6 +284,18 @@ when no valid checkpoint could be selected.
 
 ---
 
+## Cluster configuration compatibility
+
+:::warning Breaking change
+
+Garnet 2.2.0 writes persisted cluster configuration in format version two. After `nodes.conf`
+has been rewritten, the node cannot be rolled back to a Garnet version earlier than 2.2.0
+that only supports format version one. Back up the cluster configuration before upgrading.
+
+:::
+
+---
+
 ## Native device IO tuning (Linux)
 
 When `--device-type Native` is used on Linux (the default on x64 Linux), four orthogonal knobs

@@ -106,7 +106,7 @@ namespace Garnet.server
         {
             expiredKeyDeletionScanFuncs ??= new();
             expiredKeyDeletionScanFuncs.Initialize(this);
-            _ = unifiedBasicContext.Session.ScanCursor(ref fromAddress, untilAddress, expiredKeyDeletionScanFuncs);
+            _ = unifiedBasicContext.Session.ScanCursor(ref fromAddress, count: long.MaxValue, expiredKeyDeletionScanFuncs, endAddress: untilAddress);
             return (expiredKeyDeletionScanFuncs.deletedCount, expiredKeyDeletionScanFuncs.totalCount);
         }
 
