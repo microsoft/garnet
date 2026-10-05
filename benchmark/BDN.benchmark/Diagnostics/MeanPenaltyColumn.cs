@@ -79,20 +79,4 @@ namespace BDN.benchmark.Diagnostics
             HideColumns("Mean");
         }
     }
-
-    /// <summary>
-    /// Config that renders the Mean column as "Waker penalty" — the per-cycle wall-clock latency a
-    /// session (waker) pays for its acquire/release while a background bump load competes for CPU.
-    /// </summary>
-    public sealed class WakerPenaltyConfig : ManualConfig
-    {
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        public WakerPenaltyConfig()
-        {
-            AddColumn(new MeanPenaltyColumn("Waker penalty"));
-            HideColumns("Mean");
-        }
-    }
 }

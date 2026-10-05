@@ -12,14 +12,15 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test.cluster
 {
     /// <summary>
-    /// Component tests for the wake-based epoch barrier added to <see cref="GarnetEpoch{TEpochObserver}"/>
-    /// (<c>BumpAndWaitForEpochTransitionWakeAsync</c> + <c>NotifyEpochReleased</c>). The barrier is
-    /// exercised in isolation through an injected <see cref="IEpochObserver"/>, with no live
-    /// server or network, so these tests target the wake/park protocol itself: correctness, the
-    /// lost-wake-safe reset/re-check race, cancellation, and the allocation-free waker hot path.
+    /// Component tests for the self-poll epoch barrier in <see cref="GarnetEpoch{TEpochObserver}"/>
+    /// (<c>BumpAndWaitForEpochTransitionAsync</c>). The barrier is exercised in isolation through an
+    /// injected <see cref="IEpochObserver"/>, with no live server or network, so these tests target the
+    /// wait protocol itself: fast-path quiescence, the jittered backoff re-scan that discovers a
+    /// released session without any waker, concurrent bumps each converging independently, and
+    /// cancellation.
     /// </summary>
     [TestFixture, NonParallelizable]
-    internal class GarnetEpochWakeBarrierTests
+    internal class GarnetEpochBarrierTests
     {
         /// <summary>
         /// Controllable observer source backing a list of per-session observed epochs (0 == idle).
@@ -70,8 +71,12 @@ namespace Garnet.test.cluster
             }
         }
 
+        // Small park slices so the backoff re-scan path is reached quickly in tests.
+        static readonly TimeSpan BaseParkDelay = TimeSpan.FromMilliseconds(1);
+        static readonly TimeSpan MaxParkDelay = TimeSpan.FromMilliseconds(10);
+
         static GarnetEpoch<ControllableObserverSource> CreateEpoch(ControllableObserverSource source)
-            => new(source);
+            => new(source, BaseParkDelay, MaxParkDelay);
 
         [Test, CancelAfter(10_000)]
         public async Task FastPathCompletesWhenAlreadyQuiesced()
@@ -101,8 +106,10 @@ namespace Garnet.test.cluster
         }
 
         [Test, CancelAfter(15_000)]
-        public async Task WakeCompletesWhenBlockingSessionReleases()
+        public async Task PollCompletesWhenBlockingSessionReleases()
         {
+            // The bump parks on the backoff poll while the session is behind the target, and the next
+            // re-scan after the session clears must complete it -- no notification is involved.
             var source = new ControllableObserverSource();
             var epoch = CreateEpoch(source);
 
@@ -115,9 +122,9 @@ namespace Garnet.test.cluster
             var raced = await Task.WhenAny(waitTask, Task.Delay(250));
             ClassicAssert.AreNotEqual(waitTask, raced, "bump completed before the blocking session released");
 
-            // Release: clear the session then signal, exactly as ReleaseCurrentEpoch will in Stage 3.
+            // Release: clear the session, exactly as ReleaseCurrentEpoch does. A self-poll re-scan
+            // discovers it without any waker.
             source.SetEpoch(idx, 0);
-            epoch.NotifyEpochReleased();
 
             ClassicAssert.IsTrue(await waitTask);
         }
@@ -138,7 +145,6 @@ namespace Garnet.test.cluster
 
             // A session that re-acquires at the new (or higher) epoch is also quiesced.
             source.SetEpoch(idx, epoch.GetCurrentEpoch());
-            epoch.NotifyEpochReleased();
 
             ClassicAssert.IsTrue(await waitTask);
         }
@@ -153,7 +159,7 @@ namespace Garnet.test.cluster
             source.AddSession(epoch.GetCurrentEpoch());
 
             using var cts = new CancellationTokenSource();
-            var waitTask = epoch.BumpAndWaitForEpochTransitionAsync(token: cts.Token);
+            var waitTask = epoch.BumpAndWaitForEpochTransitionAsync(cts.Token);
 
             var raced = await Task.WhenAny(waitTask, Task.Delay(250));
             ClassicAssert.AreNotEqual(waitTask, raced);
@@ -163,83 +169,36 @@ namespace Garnet.test.cluster
             ClassicAssert.IsFalse(await waitTask);
         }
 
-        [Test, CancelAfter(10_000)]
-        public void NotifyWithoutWaiterIsAllocationFreeNoOp()
-        {
-            var source = new ControllableObserverSource();
-            var epoch = CreateEpoch(source);
-
-            // Warm up the JIT so the measurement reflects steady-state behavior.
-            for (var i = 0; i < 16; i++)
-                epoch.NotifyEpochReleased();
-
-            var before = GC.GetAllocatedBytesForCurrentThread();
-            for (var i = 0; i < 100_000; i++)
-                epoch.NotifyEpochReleased();
-            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-            ClassicAssert.AreEqual(0, allocated, "waker hot path must not allocate when no waiter is parked");
-        }
-
         [Test, CancelAfter(15_000)]
-        public async Task ConcurrentBumpsCoalesceOnASingleRelease()
+        public async Task ConcurrentBumpsEachConvergeOnRelease()
         {
-            // Two bumps park behind the shared signal at the same time. A single release must wake
-            // both: AsyncManualResetSignal coalesces one Set across every parked waiter. The park
-            // backstop is set far longer than the fixture timeout so this exercises the wake path and
-            // not the re-scan fallback -- if one Set failed to wake both, the second waiter would sit
-            // until the backstop and trip CancelAfter.
+            // Two bumps park on their own independent backoff schedules at the same time. With no waker
+            // and no shared coordination, each must observe the single release on its next re-scan.
             var source = new ControllableObserverSource();
             var epoch = CreateEpoch(source);
             var idx = source.AddSession(epoch.GetCurrentEpoch());
 
-            var backstop = TimeSpan.FromSeconds(60);
-            var first = epoch.BumpAndWaitForEpochTransitionAsync(waitSleep: backstop);
-            var second = epoch.BumpAndWaitForEpochTransitionAsync(waitSleep: backstop);
+            var first = epoch.BumpAndWaitForEpochTransitionAsync();
+            var second = epoch.BumpAndWaitForEpochTransitionAsync();
 
             // Let both bumps pass the adaptive spin and park; neither can complete while the session blocks.
             var both = Task.WhenAll(first, second);
             var raced = await Task.WhenAny(both, Task.Delay(250));
             ClassicAssert.AreNotEqual(both, raced, "a bump completed before the blocking session released");
 
-            // One release, one signal: the single Set must satisfy both parked bumps.
+            // One release: both parked bumps must independently converge on their next poll.
             source.SetEpoch(idx, 0);
-            epoch.NotifyEpochReleased();
 
             ClassicAssert.IsTrue(await first);
             ClassicAssert.IsTrue(await second);
         }
 
-        [Test, CancelAfter(15_000)]
-        public async Task TimeoutRescanCompletesWithoutNotification()
-        {
-            // The bounded park is a liveness backstop: even if a session clears its epoch without
-            // ever calling NotifyEpochReleased (a theoretically missed wake), the next re-scan after
-            // the park interval must still observe quiescence and complete the bump.
-            var source = new ControllableObserverSource();
-            var epoch = CreateEpoch(source);
-            var idx = source.AddSession(epoch.GetCurrentEpoch());
-
-            // Short backstop so the re-scan path is reached quickly.
-            var slice = TimeSpan.FromMilliseconds(50);
-            var waitTask = epoch.BumpAndWaitForEpochTransitionAsync(waitSleep: slice);
-
-            var raced = await Task.WhenAny(waitTask, Task.Delay(250));
-            ClassicAssert.AreNotEqual(waitTask, raced, "bump completed before the blocking session cleared");
-
-            // Clear the session WITHOUT signaling: only the bounded park's re-scan can discover this.
-            source.SetEpoch(idx, 0);
-
-            ClassicAssert.IsTrue(await waitTask);
-        }
-
         [Test, CancelAfter(60_000)]
-        public async Task LostWakeSoak()
+        public async Task ReleaseRaceSoak()
         {
-            // Stress the reset -> re-check -> await race between a parked waiter and a releasing
-            // session across many iterations. Every bump must complete; a lost wake would stall the
-            // loop until the 50ms park backstop re-scans, so a regression shows up as the fixture
-            // timeout rather than a silent pass.
+            // Stress the race between a parked bump's backoff re-scan and a releasing session across
+            // many iterations. Every bump must complete; a regression that failed to observe the
+            // release would stall the loop until the fixture timeout rather than pass silently.
             var source = new ControllableObserverSource();
             var epoch = CreateEpoch(source);
             var idx = source.AddSession(epoch.GetCurrentEpoch());
@@ -252,14 +211,10 @@ namespace Garnet.test.cluster
 
                 // Start the releaser first so it races the bump's spin/park window, exactly as a live
                 // session releasing its epoch would overlap an in-flight bump.
-                var releaseTask = Task.Run(() =>
-                {
-                    source.SetEpoch(idx, 0);
-                    epoch.NotifyEpochReleased();
-                });
+                var releaseTask = Task.Run(() => source.SetEpoch(idx, 0));
 
                 ClassicAssert.IsTrue(await epoch.BumpAndWaitForEpochTransitionAsync(),
-                    $"wake was lost on iteration {i}");
+                    $"bump stalled on iteration {i}");
                 await releaseTask;
             }
         }

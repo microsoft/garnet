@@ -15,16 +15,16 @@ namespace BDN.benchmark.Cluster
         /// <summary>Legacy cooperative busy-spin (<c>BumpAndSpinWaitForEpochTransitionAsync</c>).</summary>
         Spin,
 
-        /// <summary>Wake-based park (<c>BumpAndWaitForEpochTransitionAsync</c>).</summary>
-        Wake
+        /// <summary>Jittered exponential-backoff self-poll (<c>BumpAndWaitForEpochTransitionAsync</c>).</summary>
+        Poll
     }
 
     /// <summary>
     /// Contended bump benchmark: a configurable number of background threads repeatedly acquire and
     /// release their observed epoch while the single measured thread bumps the epoch and waits for the
-    /// barrier to converge. It contrasts the legacy busy-spin waiter against the wake-based waiter under
+    /// barrier to converge. It contrasts the legacy busy-spin waiter against the self-poll waiter under
     /// identical contention; pair it with <see cref="CpuDiagnoserAttribute"/> so the spin path's CPU
-    /// burn (largely kernel-mode scheduler churn from <c>Task.Yield</c>) shows up against the wake
+    /// burn (largely kernel-mode scheduler churn from <c>Task.Yield</c>) shows up against the poll
     /// path's near-idle wait, which the wall-clock Mean column alone cannot distinguish.
     ///
     /// Every thread paces itself with a <em>pre-computed</em> random delay: the per-thread delay
@@ -34,9 +34,9 @@ namespace BDN.benchmark.Cluster
     /// session busy on a long operation such as a migration scan. Sleeping keeps the acquirers' own CPU
     /// out of the diagnoser's whole-process measurement, so Total CPU reflects the bumper's wait strategy
     /// alone. Holds dominate the (negligible) idle, so simultaneous quiescence is rare and the bump
-    /// thread must genuinely wait: the spin variant then burns a hot core for the wait while the wake
-    /// variant parks at ~0 CPU, and the two converge in comparable wall-clock because the releasing
-    /// session both clears its slot and signals the parked waiter.
+    /// thread must genuinely wait: the spin variant then burns a hot core for the wait while the poll
+    /// variant idles at the capped backoff rate, and the two converge in comparable wall-clock because
+    /// the poll re-scans observe the releasing session within a bounded slice.
     /// </summary>
     [CpuDiagnoser]
     [MemoryDiagnoser]
@@ -48,7 +48,7 @@ namespace BDN.benchmark.Cluster
         public int AcquiringThreads { get; set; }
 
         /// <summary>Bump-wait strategy exercised by the measured thread.</summary>
-        [Params(BumpWaitMode.Spin, BumpWaitMode.Wake)]
+        [Params(BumpWaitMode.Spin, BumpWaitMode.Poll)]
         public BumpWaitMode WaitMode { get; set; }
 
         /// <summary>Bumps performed per measured invocation.</summary>
@@ -163,9 +163,9 @@ namespace BDN.benchmark.Cluster
 
         /// <summary>
         /// Background session: acquire the observed epoch, hold it for a pre-computed low-CPU sleep
-        /// (modeling a session busy on a long operation), release it (invoking the waker hook exactly as
-        /// <c>ClusterSession.ReleaseCurrentEpoch</c> will once wired), then yield briefly before the next
-        /// cycle. Sleeping rather than spinning keeps the acquirer's CPU out of the whole-process figure.
+        /// (modeling a session busy on a long operation), release it (clearing its slot exactly as
+        /// <c>ClusterSession.ReleaseCurrentEpoch</c> does), then yield briefly before the next cycle.
+        /// Sleeping rather than spinning keeps the acquirer's CPU out of the whole-process figure.
         /// </summary>
         void AcquireLoop(int slot, int[] holdMs, CancellationToken token)
         {
@@ -177,7 +177,6 @@ namespace BDN.benchmark.Cluster
                 Thread.Sleep(holdMs[i & mask]);
 
                 Volatile.Write(ref sessionEpochs[slot], 0);
-                epoch.NotifyEpochReleased();
 
                 // Negligible idle so holds dominate and simultaneous quiescence stays rare.
                 Thread.Yield();

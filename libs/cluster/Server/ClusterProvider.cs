@@ -360,7 +360,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <returns></returns>
         internal Task<bool> BumpAndWaitForEpochTransitionAsync()
-            => garnetEpoch.BumpAndSpinWaitForEpochTransitionAsync();
+            => garnetEpoch.BumpAndWaitForEpochTransitionAsync();
 
         /// <inheritdoc />
         public string GetRunId() => replicationManager.PrimaryReplId;
