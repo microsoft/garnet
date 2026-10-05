@@ -242,7 +242,7 @@ namespace Garnet.server
                         bool requestQuantization;
                         unsafe
                         {
-                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, ReadStartPointId(indexSpan), out requestQuantization);
                         }
 
                         input.header.cmd = RespCommand.VADD;
@@ -349,6 +349,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> key,
             ref StringInput input,
             scoped Span<byte> indexSpan,
+            uint startPointId,
             out GarnetStatus status,
             out bool importPending,
             bool demandCreate = false
@@ -446,6 +447,7 @@ namespace Garnet.server
                         ulong indexContext;
                         nint newlyAllocatedIndex;
                         bool requestQuantization;
+                        long expirationTicks = 0;
                         if (needsRecreate)
                         {
                             // If we need to recreate the index, BUT we haven't finished drop from the last time
@@ -468,7 +470,7 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, ReadStartPointId(indexSpan), out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);
@@ -500,14 +502,17 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, startPointId, out requestQuantization);
                             }
 
-                            input.parseState.EnsureCapacity(12);
+                            expirationTicks = input.parseState.Count >= 13 ? MemoryMarshal.Read<long>(input.parseState.GetArgSliceByRef(12).Span) : 0;
+                            input.parseState.EnsureCapacity(14);
 
                             // Save off for insertion
                             input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1))));
                             input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
+                            input.parseState.SetArgument(12, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateSpan(ref expirationTicks, 1))));
+                            input.parseState.SetArgument(13, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref startPointId, 1))));
                         }
 
                         GarnetStatus writeRes;

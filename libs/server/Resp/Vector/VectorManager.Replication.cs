@@ -180,10 +180,10 @@ namespace Garnet.server
 
         private static void ReplicateVectorSetCreate(ReadOnlySpan<byte> key, uint dimensions, uint reduceDims,
             VectorQuantType quantizer, uint buildExplorationFactor, uint numLinks, VectorDistanceMetricType distanceMetric,
-            bool hasQuantState, ReadOnlySpan<byte> quantState)
+            bool hasQuantState, ReadOnlySpan<byte> quantState, uint startPointId)
         {
 #pragma warning disable IDE0302
-            Span<uint> configuration = stackalloc uint[] { dimensions, reduceDims, (uint)quantizer, buildExplorationFactor, numLinks, (uint)distanceMetric };
+            Span<uint> configuration = stackalloc uint[] { dimensions, reduceDims, (uint)quantizer, buildExplorationFactor, numLinks, (uint)distanceMetric, startPointId };
 #pragma warning restore IDE0302
             var input = new StringInput(RespCommand.XVCREATE);
             var configurationArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(configuration));
@@ -229,14 +229,14 @@ namespace Garnet.server
             ReadOnlySpan<byte> error;
             if (input.header.cmd == RespCommand.XVCREATE)
             {
-                if (input.parseState.Count is not (1 or 2) || input.parseState.GetArgSliceByRef(0).Length != 6 * sizeof(uint))
+                if (input.parseState.Count is not (1 or 2) || input.parseState.GetArgSliceByRef(0).Length != 7 * sizeof(uint))
                 {
                     throw new GarnetException("Invalid XVCREATE AOF payload");
                 }
                 var configuration = MemoryMarshal.Cast<byte, uint>(input.parseState.GetArgSliceByRef(0).ReadOnlySpan);
                 status = session.VectorSetCreate(PinnedSpanByte.FromPinnedSpan(key), (int)configuration[0], (int)configuration[1],
                     (VectorQuantType)configuration[2], (int)configuration[3], (int)configuration[4], (VectorDistanceMetricType)configuration[5],
-                    input.parseState.Count == 2 ? input.parseState.GetArgSliceByRef(1) : null, out result, out error);
+                    input.parseState.Count == 2 ? input.parseState.GetArgSliceByRef(1) : null, configuration[6], out result, out error);
             }
             else if (input.parseState.Count == 0)
             {
@@ -659,7 +659,7 @@ namespace Garnet.server
                         //
                         // We still need locking here because the replays may proceed in parallel
 
-                        using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var status, out var importPending))
+                        using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, DefaultStartPointId, out var status, out var importPending))
                         {
                             if (status != GarnetStatus.OK)
                             {

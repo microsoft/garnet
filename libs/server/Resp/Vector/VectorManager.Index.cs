@@ -20,6 +20,7 @@ namespace Garnet.server
     public sealed partial class VectorManager
     {
         public const int IndexSize = Index.Size;
+        public const uint DefaultStartPointId = uint.MaxValue;
 
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
@@ -45,11 +46,10 @@ namespace Garnet.server
             [FieldOffset(40)]
             public VectorSetFlags Flags;
 
-            // These used to be allocated for a GUID and can be reclaimed as necessary
             [FieldOffset(44)]
-            private uint unused0;
+            public uint StartPointId;
             [FieldOffset(48)]
-            private ulong unused1;
+            private ulong unused0;
         }
 
         /// <summary>
@@ -64,7 +64,8 @@ namespace Garnet.server
             VectorDistanceMetricType distanceMetric,
             ulong newContext,
             nint newIndexPtr,
-            Span<byte> indexSpan)
+            Span<byte> indexSpan,
+            uint startPointId)
         {
             AssertHaveStorageSession();
 
@@ -85,6 +86,7 @@ namespace Garnet.server
             asIndex.BuildExplorationFactor = buildExplorationFactor;
             asIndex.NumLinks = numLinks;
             asIndex.DistanceMetric = distanceMetric;
+            asIndex.StartPointId = startPointId;
             asIndex.Flags = VectorSetFlags.None;
             asIndex.IndexPtr = (ulong)newIndexPtr;
         }
@@ -158,6 +160,12 @@ namespace Garnet.server
             indexPtr = (nint)asIndex.IndexPtr;
 
             Debug.Assert((context % ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
+        }
+
+        public static uint ReadStartPointId(ReadOnlySpan<byte> indexValue)
+        {
+            Debug.Assert(indexValue.Length == Index.Size, "Index size is incorrect");
+            return Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue)).StartPointId;
         }
 
         /// <summary>

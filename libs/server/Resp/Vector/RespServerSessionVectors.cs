@@ -28,6 +28,7 @@ namespace Garnet.server
             int? reduceDims = null;
             int? numLinks = null;
             int? buildExplorationFactor = null;
+            uint? startPointId = null;
             VectorQuantType? quantizer = null;
             VectorDistanceMetricType? distanceMetric = null;
             PinnedSpanByte? quantState = null;
@@ -123,6 +124,18 @@ namespace Garnet.server
                         metric.EqualsUpperCaseSpanIgnoringCase("XCOSINE_NORMALIZED"u8, allowNonAlphabeticChars: true) ? VectorDistanceMetricType.XCosine_Normalized :
                         VectorDistanceMetricType.Invalid;
                 }
+                else if (option.EqualsUpperCaseSpanIgnoringCase("START_POINT"u8, allowNonAlphabeticChars: true))
+                {
+                    if (startPointId.HasValue)
+                    {
+                        return AbortWithErrorMessage("ERR START_POINT specified multiple times"u8);
+                    }
+                    if (!parseState.TryGetLong(optionIndex, out var parsedStartPointId) || parsedStartPointId is < 0 or > uint.MaxValue)
+                    {
+                        return AbortWithErrorMessage("ERR START_POINT must be an integer between 0 and 4294967295"u8);
+                    }
+                    startPointId = (uint)parsedStartPointId;
+                }
                 else if (option.EqualsUpperCaseSpanIgnoringCase("QUANT_STATE"u8, allowNonAlphabeticChars: true))
                 {
                     if (quantState.HasValue)
@@ -150,6 +163,7 @@ namespace Garnet.server
             buildExplorationFactor ??= 200;
             numLinks ??= 16;
             distanceMetric ??= VectorDistanceMetricType.L2;
+            startPointId ??= VectorManager.DefaultStartPointId;
 
             if (dimensions.Value is <= 0 or > VectorManager.MaxVectorDimensions)
             {
@@ -178,7 +192,7 @@ namespace Garnet.server
 
             var status = storageApi.VectorSetCreate(parseState.GetArgSliceByRef(0), dimensions.Value, reduceDims.Value,
                 quantizer.Value, buildExplorationFactor.Value, numLinks.Value, distanceMetric.Value,
-                quantState, out var result, out var errorMsg);
+                quantState, startPointId.Value, out var result, out var errorMsg);
 
             if (status == GarnetStatus.WRONGTYPE)
             {

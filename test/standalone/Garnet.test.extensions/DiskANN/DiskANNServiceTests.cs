@@ -66,7 +66,6 @@ namespace Garnet.test
 
             ConcurrentDictionary<(ulong Context, byte[] Key), byte[]> data = new(new ContextAndKeyComparer());
             var failWrites = false;
-            var failStartPointWrite = false;
 
             unsafe void ReadCallback(
                 ulong context,
@@ -103,7 +102,7 @@ namespace Garnet.test
 
             unsafe byte WriteCallback(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
             {
-                if (failWrites || (failStartPointWrite && context == (ImportContext | DiskANNService.FullVector)))
+                if (failWrites)
                 {
                     return 0;
                 }
@@ -196,9 +195,12 @@ namespace Garnet.test
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
             var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
             ClassicAssert.AreNotEqual(nint.Zero, rawIndex);
             var service = new DiskANNService();
+            var startPointKey = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
+            ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.FullVector, startPointKey, new byte[75]));
+            ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.NeighborList, startPointKey, new byte[11 * sizeof(uint)]));
             failWrites = true;
             ClassicAssert.AreEqual(ulong.MaxValue, NativeDiskANNMethods.card(Context, rawIndex));
             ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.TaskFailed, service.FinishImport(Context, rawIndex, 0, 1));
@@ -244,7 +246,7 @@ namespace Garnet.test
             }
 
             service.DropIndex(Context, rawIndex);
-            var importIndex = NativeDiskANNMethods.create_index(ImportContext, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            var importIndex = NativeDiskANNMethods.create_index(ImportContext, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
             ClassicAssert.AreNotEqual(nint.Zero, importIndex);
             try
             {
@@ -254,7 +256,6 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.InternalIdMap, id, importId));
                 ClassicAssert.IsTrue(service.ImportTerm(ImportContext, importIndex, DiskANNService.ExternalIdMap, importId, id));
 
-                failStartPointWrite = true;
                 ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.FinishFailed, service.FinishImport(ImportContext, importIndex, 0, 1));
             }
             finally
@@ -437,7 +438,7 @@ namespace Garnet.test
             var filterFuncPtr = Marshal.GetFunctionPointerForDelegate(filterDel);
             var logFuncPtr = Marshal.GetFunctionPointerForDelegate(logDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -483,7 +484,7 @@ namespace Garnet.test
             {
                 NativeDiskANNMethods.drop_index(Context, rawIndex);
 
-                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
+                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XNoQuant_U8, VectorDistanceMetricType.L2, 10, 10, VectorManager.DefaultStartPointId, readFuncPtr, writeFuncPtr, deleteFuncPtr, rmwFuncPtr, filterFuncPtr, logFuncPtr, out _);
             }
 
             // Search value

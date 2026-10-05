@@ -149,27 +149,31 @@ namespace Garnet.test
 
         [Test]
         [CancelAfter(30_000)]
-        public async Task XVIMPORTBinaryTermsAsync([Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol)
+        public async Task XVIMPORTBinaryTermsAsync([Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol, [Values(uint.MaxValue, 0u, 42u)] uint startPointId)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
             var db = redis.GetDatabase();
             var vector = MemoryMarshal.AsBytes(new float[] { 1, -2, 0.5f }.AsSpan()).ToArray();
-            byte[] internalId = [1, 0, 0, 0];
             byte[] externalId = [0, 255, 13, 10, 128, 1];
             ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "source", "FP32", vector, externalId, "Q8", "M", 4));
             var stateKey = BitConverter.GetBytes(BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
             var state = ReadRawVectorTerm("source", DiskANNService.Metadata, stateKey);
-            var quantized = ReadRawVectorTerm("source", DiskANNService.QuantizedVector, internalId);
-            ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "target", "DIM", 3, "M", 4, "Q8", "QUANT_STATE", state));
+            var quantized = ReadRawVectorTerm("source", DiskANNService.QuantizedVector, BitConverter.GetBytes(0u));
+            var startPointKey = BitConverter.GetBytes(startPointId);
+            var startNeighbors = MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray();
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "target", "DIM", 3, "M", 4, "Q8", "QUANT_STATE", state, "START_POINT", startPointId));
 
             (string Name, byte Tag, byte[] Id, byte[] Value)[] terms =
             [
-                ("VECTOR", DiskANNService.FullVector, internalId, vector),
-                ("NEIGHBORS", DiskANNService.NeighborList, internalId, MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray()),
-                ("QUANT", DiskANNService.QuantizedVector, internalId, quantized),
-                ("ATTRS", DiskANNService.Attributes, internalId, externalId),
-                ("INTMAP", DiskANNService.InternalIdMap, externalId, internalId),
-                ("EXTMAP", DiskANNService.ExternalIdMap, internalId, externalId),
+                ("VECTOR", DiskANNService.FullVector, BitConverter.GetBytes(1u), vector),
+                ("NEIGHBORS", DiskANNService.NeighborList, BitConverter.GetBytes(1u), new byte[5 * sizeof(uint)]),
+                ("QUANT", DiskANNService.QuantizedVector, BitConverter.GetBytes(1u), quantized),
+                ("ATTRS", DiskANNService.Attributes, BitConverter.GetBytes(1u), externalId),
+                ("INTMAP", DiskANNService.InternalIdMap, externalId, BitConverter.GetBytes(1u)),
+                ("EXTMAP", DiskANNService.ExternalIdMap, BitConverter.GetBytes(1u), externalId),
+                ("VECTOR", DiskANNService.FullVector, startPointKey, vector),
+                ("NEIGHBORS", DiskANNService.NeighborList, startPointKey, startNeighbors),
+                ("QUANT", DiskANNService.QuantizedVector, startPointKey, quantized),
             ];
             foreach (var term in terms)
             {
@@ -183,6 +187,9 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "target", term.Name, term.Id, term.Value));
             }
             CollectionAssert.AreEqual(state, ReadRawVectorTerm("target", DiskANNService.Metadata, stateKey));
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "target", "ATTRS", startPointKey, externalId));
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "target", "EXTMAP", startPointKey, externalId));
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "target", "INTMAP", "start", startPointKey));
 
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "target", "FINISH"));
 
@@ -191,11 +198,12 @@ namespace Garnet.test
             var finishedInfo = ((string[])db.Execute("VINFO", "target")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
             ClassicAssert.AreEqual("0", finishedInfo["import-pending"]);
             ClassicAssert.AreEqual("1", finishedInfo["size"]);
+            CollectionAssert.AreEqual(startNeighbors, ReadRawVectorTerm("target", DiskANNService.NeighborList, startPointKey));
             ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "target"));
             var results = (byte[][])db.Execute("VSIM", "target", "FP32", vector, "COUNT", 1);
             ClassicAssert.AreEqual(1, results.Length);
             CollectionAssert.AreEqual(externalId, results[0]);
-            ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "target", "VECTOR", internalId, vector));
+            ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "target", "VECTOR", BitConverter.GetBytes(1u), vector));
         }
 
         [Test]
@@ -205,15 +213,18 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             ClassicAssert.IsTrue(redis.GetDatabase(0).StringSet("imported", "db-zero"));
             byte[] id = [1, 0, 0, 0];
+            var startPointKey = BitConverter.GetBytes(42u);
             foreach (var databaseId in new[] { 1, 2 })
             {
                 var db = redis.GetDatabase(databaseId);
-                ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "imported", "DIM", 3, "NOQUANT", "M", 4));
+                var vector = MemoryMarshal.AsBytes(new float[] { databaseId, 2, 3 }.AsSpan()).ToArray();
+                var neighbors = MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray();
+                ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "imported", "DIM", 3, "NOQUANT", "M", 4, "START_POINT", 42));
                 foreach (var term in new (string Name, object Id, object Value)[]
                 {
-                    ("VECTOR", id, MemoryMarshal.AsBytes(new float[] { databaseId, 2, 3 }.AsSpan()).ToArray()),
-                    ("NEIGHBORS", id, MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray()),
+                    ("VECTOR", id, vector), ("NEIGHBORS", id, neighbors),
                     ("INTMAP", "member", id), ("EXTMAP", id, "member"),
+                    ("VECTOR", startPointKey, vector), ("NEIGHBORS", startPointKey, neighbors),
                 })
                 {
                     ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", term.Name, term.Id, term.Value));
@@ -245,6 +256,7 @@ namespace Garnet.test
 
                 ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "imported"));
                 CollectionAssert.AreEqual(new[] { (float)databaseId, 2f, 3f }, ((string[])db.Execute("VEMB", "imported", "member")).Select(float.Parse).ToArray());
+                CollectionAssert.AreEqual(new[] { "member" }, (string[])db.Execute("VSIM", "imported", "VALUES", 3, databaseId, 2, 3, "COUNT", 1));
                 ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "imported", "VECTOR", id, new byte[12]));
             }
         }
@@ -262,20 +274,23 @@ namespace Garnet.test
             var vector = MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray();
             var attributes = chunked ? new string('x', 3 * 1024 * 1024) : "{\"id\":1}";
             byte[] id = [1, 0, 0, 0];
-            object[] create = ["imported", "DIM", 3, quantizer, "M", 4, "EF", 37];
+            var startPointKey = BitConverter.GetBytes(42u);
+            var neighbors = MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray();
+            object[] create = ["imported", "DIM", 3, quantizer, "M", 4, "EF", 37, "START_POINT", 42];
             byte[] quantized = null;
             if (quantizer == "Q8")
             {
                 _ = db.Execute("VADD", "source", "FP32", vector, "member", "Q8", "M", 4);
                 var stateKey = BitConverter.GetBytes(BinaryPrimitives.ReadUInt32BigEndian("_qnt"u8));
                 create = [.. create, "QUANT_STATE", ReadRawVectorTerm("source", DiskANNService.Metadata, stateKey)];
-                quantized = ReadRawVectorTerm("source", DiskANNService.QuantizedVector, id);
+                quantized = ReadRawVectorTerm("source", DiskANNService.QuantizedVector, BitConverter.GetBytes(0u));
             }
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", create));
             foreach (var term in new (string Name, object Key, object Value)[]
             {
-                ("VECTOR", id, vector), ("NEIGHBORS", id, MemoryMarshal.AsBytes(new uint[] { 1, 0, 0, 0, 1 }.AsSpan()).ToArray()),
+                ("VECTOR", id, vector), ("NEIGHBORS", id, neighbors),
                 ("INTMAP", "member", id), ("EXTMAP", id, "member"), ("ATTRS", id, attributes),
+                ("VECTOR", startPointKey, vector), ("NEIGHBORS", startPointKey, neighbors),
             })
             {
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", term.Name, term.Key, term.Value));
@@ -283,6 +298,7 @@ namespace Garnet.test
             if (quantized != null)
             {
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "QUANT", id, quantized));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "QUANT", startPointKey, quantized));
             }
             if (finish)
             {
@@ -293,7 +309,9 @@ namespace Garnet.test
 
                 ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "imported", "VALUES", 3, 4, 5, 6, "after", quantizer, "M", 4));
             }
-            ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "empty", "DIM", 3, "NOQUANT"));
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "empty", "DIM", 3, "NOQUANT", "M", 4, "START_POINT", 42));
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "VECTOR", startPointKey, vector));
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "NEIGHBORS", startPointKey, new byte[5 * sizeof(uint)]));
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "empty", "FINISH"));
 
             await WaitForXVIMPORTCompletionAsync(db, "empty").ConfigureAwait(false);
@@ -315,6 +333,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(finish ? "0" : "1", info["import-pending"]);
             ClassicAssert.AreEqual("37", info["build-exploration-factor"]);
             CollectionAssert.AreEqual(vector, ReadRawVectorTerm("imported", DiskANNService.FullVector, id));
+            CollectionAssert.AreEqual(vector, ReadRawVectorTerm("imported", DiskANNService.FullVector, startPointKey));
             if (finish)
             {
                 ClassicAssert.AreEqual("2", info["size"]);
@@ -392,7 +411,7 @@ namespace Garnet.test
             ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "", "VECTOR", id, vector));
             ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "target", "VECTOR", Array.Empty<byte>(), vector));
             ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "target", "VECTOR", id, Array.Empty<byte>()));
-            foreach (var badId in new[] { new byte[3], new byte[4] })
+            foreach (var badId in new[] { new byte[3], new byte[5] })
             {
                 ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "target", "VECTOR", badId, vector));
             }
@@ -402,6 +421,7 @@ namespace Garnet.test
             }
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "target", "VECTOR", id, vector));
             CollectionAssert.AreEqual(vector, ReadRawVectorTerm("target", DiskANNService.FullVector, id));
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "target", "VECTOR", BitConverter.GetBytes(0u), vector));
         }
 
         [Test]
@@ -415,7 +435,10 @@ namespace Garnet.test
             CollectionAssert.AreEqual(new[] { "FINISH" }, (string[])db.Execute("COMMAND", "GETKEYS", "XVIMPORT", "FINISH", "VECTOR", "id", "value"));
             foreach (var finish in new[] { "FINISH", "finish", "FiNiSh" })
             {
-                ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", finish, "DIM", 3, "NOQUANT"));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", finish, "DIM", 3, "NOQUANT", "M", 4));
+                var startPointKey = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
+                ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", finish, "VECTOR", startPointKey, new byte[12]));
+                ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", finish, "NEIGHBORS", startPointKey, new byte[5 * sizeof(uint)]));
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", finish, finish));
             }
             StringAssert.StartsWith("OK", (string)db.Execute("DEBUG", "FLUSHANDEVICT"));
@@ -446,7 +469,7 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db.KeyExists("missing"));
 
             ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "FINISH", "VECTOR", new byte[] { 1, 0, 0, 0 }, new byte[12]));
-            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "FINISH", "FP32", new byte[12], "first", "NOQUANT"));
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "FINISH", "FP32", new byte[12], "first", "NOQUANT", "M", 4));
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "FINISH", "FINISH"));
             ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "FINISH"));
             ClassicAssert.IsTrue(db.KeyDelete("FINISH"));
@@ -633,6 +656,13 @@ namespace Garnet.test
         [TestCase(new[] { "DIM", "3", "EF", "1.5" }, "ERR EF must be an integer between 1 and 1000000")]
         [TestCase(new[] { "DIM", "3", "EF", "bad" }, "ERR EF must be an integer between 1 and 1000000")]
         [TestCase(new[] { "DIM", "3", "EF", "37", "EF", "37" }, "ERR EF specified multiple times")]
+        [TestCase(new[] { "DIM", "3", "START_POINT" }, "ERR missing XVCREATE option value")]
+        [TestCase(new[] { "DIM", "3", "START_POINT", "-1" }, "ERR START_POINT must be an integer between 0 and 4294967295")]
+        [TestCase(new[] { "DIM", "3", "START_POINT", "4294967296" }, "ERR START_POINT must be an integer between 0 and 4294967295")]
+        [TestCase(new[] { "DIM", "3", "START_POINT", "18446744073709551615" }, "ERR START_POINT must be an integer between 0 and 4294967295")]
+        [TestCase(new[] { "DIM", "3", "START_POINT", "1.5" }, "ERR START_POINT must be an integer between 0 and 4294967295")]
+        [TestCase(new[] { "DIM", "3", "START_POINT", "bad" }, "ERR START_POINT must be an integer between 0 and 4294967295")]
+        [TestCase(new[] { "DIM", "3", "START_POINT", "0", "start_point", "42" }, "ERR START_POINT specified multiple times")]
         [TestCase(new[] { "M", "16" }, "ERR DIM is required")]
         [TestCase(new[] { "DIM", "0" }, "ERR DIM must be between 1 and 65536")]
         [TestCase(new[] { "DIM", "-1" }, "ERR DIM must be between 1 and 65536")]
@@ -741,7 +771,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, (int)db.Execute("VCARD", "target"));
             ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "target", "FP32", values, "first", "Q8"));
 
-            byte[] internalId = [1, 0, 0, 0];
+            byte[] internalId = [0, 0, 0, 0];
             CollectionAssert.AreEqual(
                 ReadRawVectorTerm("source", DiskANNService.QuantizedVector, internalId),
                 ReadRawVectorTerm("target", DiskANNService.QuantizedVector, internalId));

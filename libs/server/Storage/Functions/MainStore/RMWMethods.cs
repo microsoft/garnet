@@ -333,7 +333,9 @@ namespace Garnet.server
                         // because otherwise a replica might observe a Vector Set missing its expiration briefly
                         var expirationTicks = input.parseState.Count >= 13 ? MemoryMarshal.Read<long>(input.parseState.GetArgSliceByRef(12).Span) : 0;
 
-                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan);
+                        var startPointId = input.parseState.Count >= 14 ? MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(13).Span) : VectorManager.DefaultStartPointId;
+
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan, startPointId);
 
                         if (expirationTicks != 0)
                         {

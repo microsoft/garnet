@@ -211,7 +211,7 @@ namespace Garnet.server
     {
         /// <inheritdoc cref="IGarnetApi.VectorSetCreate"/>
         public GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
-            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             result = VectorManagerResult.BadParams;
@@ -231,7 +231,7 @@ namespace Garnet.server
             }
 
             return vectorManager.CreateEmptyVectorSet(this, key.ReadOnlySpan, (uint)dimensions, (uint)reduceDims, quantizer,
-                (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, quantState.HasValue, quantState.GetValueOrDefault().ReadOnlySpan, out result, out errorMsg);
+                (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, quantState.HasValue, quantState.GetValueOrDefault().ReadOnlySpan, startPointId, out result, out errorMsg);
         }
 
         /// <inheritdoc cref="IGarnetApi.VectorSetImport"/>
@@ -353,7 +353,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VADD, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadOrCreateVectorIndex(this, key, ref input, indexSpan, out var status, out var importPending))
+            using (vectorManager.ReadOrCreateVectorIndex(this, key, ref input, indexSpan, VectorManager.DefaultStartPointId, out var status, out var importPending))
             {
                 if (status != GarnetStatus.OK)
                 {

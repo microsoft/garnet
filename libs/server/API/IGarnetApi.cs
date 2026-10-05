@@ -1342,10 +1342,11 @@ namespace Garnet.server
         /// <param name="numLinks">Maximum graph degree.</param>
         /// <param name="distanceMetric">Distance metric to use.</param>
         /// <param name="quantState">Optional opaque quantizer state; null means no supplied state.</param>
+        /// <param name="startPointId">Internal ID reserved for the start point.</param>
         /// <param name="result">Creation result.</param>
         /// <param name="errorMsg">Error details when creation fails.</param>
         GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
-            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
 
         /// <summary>

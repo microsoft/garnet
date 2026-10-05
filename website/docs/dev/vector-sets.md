@@ -91,6 +91,7 @@ DiskANN index creation must be serialized, so this requires holding an exclusive
 
 `XVCREATE` requires `DIM` and stores the same configuration as implicit creation through `VADD`.
 Its optional `EF` (default `200`, range `1` to `1000000`) is passed to native creation and stored in the index stub for recreation.
+Its optional `START_POINT` (default `4294967295`, range `0` to `4294967295`) is stored in the index stub and creation replay payload, so recreation and recovery use the same internal ID.
 It holds the existing exclusive per-set lock while checking that the key is absent, allocating a context,
 calling `create_index`, and optionally calling `set_quant_state` with the supplied opaque bytes.
 Native calls occur outside Tsavorite session functions because they can re-enter Garnet through storage callbacks.
@@ -106,6 +107,7 @@ operations, except `VINFO`, reject this flag until `FINISH` succeeds. The flag s
 eviction, and checkpoint recovery; an empty set with no imported terms remains usable.
 
 The six public term names map to native tags `0`, `1`, `2`, `3`, `5`, and `6`; metadata tag `4` is excluded.
+The start point accepts only vector, neighbor-list, and quantized-vector terms. It has no attributes or ID mappings.
 DiskANN owns eligibility and its persisted `_imp` marker, including restoration when the native handle is
 recreated. Garnet does not maintain a competing eligibility flag in the index stub.
 
@@ -492,7 +494,7 @@ This log message is enriched on the Garnet side with:
 
 Garnet calls into the following DiskANN functions:
 
- - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, nint logCallback, out bool quantizationNeeded)`
+ - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, uint startPointId, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, nint logCallback, out bool quantizationNeeded)`
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
    * `vector_data` must be aligned for the quantizers underlying type (i.e. 4-byte for NOQUANT, 1-byte for XBIN_U8, etc.)
@@ -549,15 +551,15 @@ Field access uses dot notation (for example, `.year`, `.rating`, `.genre`).
 
 Precedence matches the internal `OpTable` and determines evaluation order:
 
-| Precedence | Operators | Description |
-|-----------|-----------|-------------|
-| 0 | `or`, `\|\|` | Logical OR |
-| 1 | `and`, `&&` | Logical AND |
-| 2 | `>`, `>=`, `<`, `<=`, `==`, `!=`, `in` | Comparison and containment |
-| 3 | `+`, `-` | Addition and subtraction |
-| 4 | `*`, `/`, `%` | Multiplication, division, modulo |
-| 5 | `**` | Power (right-associative) |
-| 6 | `not`, `!` | Logical NOT (unary) |
+| Precedence | Operators                              | Description                      |
+|------------|----------------------------------------|----------------------------------|
+| 0          | `or`, `\|\|`                           | Logical OR                       |
+| 1          | `and`, `&&`                            | Logical AND                      |
+| 2          | `>`, `>=`, `<`, `<=`, `==`, `!=`, `in` | Comparison and containment       |
+| 3          | `+`, `-`                               | Addition and subtraction         |
+| 4          | `*`, `/`, `%`                          | Multiplication, division, modulo |
+| 5          | `**`                                   | Power (right-associative)        |
+| 6          | `not`, `!`                             | Logical NOT (unary)              |
 
 #### `in` operator
 
@@ -571,14 +573,14 @@ The `in` operator supports three use cases:
 
 Filter expressions are compiled and evaluated entirely on the thread stack (~9 KB) with zero heap allocation. This imposes fixed upper bounds:
 
-| Limit | Value | What it means | On overflow |
-|-------|-------|---------------|-------------|
-| Max tokens | 128 | Total number of operands + operators in the expression. A typical `.a > 1 and .b < 2` uses 7 tokens. 128 supports ~18 AND/OR clauses. | Compile error — filter returns no results |
-| Max tuple elements | 64 | Total elements across all `[...]` literals (e.g. `.x in [1,2,...,64]`) | Compile error |
-| Max runtime array elements | 64 | Total elements extracted from JSON array fields (for `in .tags`) across all candidates. Reset per candidate. | Array treated as null — `in` returns false |
-| Max unique selectors | 32 | Unique field names referenced (e.g. `.year`, `.rating`). 32 supports very complex filters. | Extra selectors silently ignored |
-| Max eval stack depth | 16 | Postfix evaluation stack depth. Typical expressions use 3–4. | Candidate excluded |
-| Max parenthesis nesting | 128 | Currently bounded by token buffer size | Compile error |
+| Limit                      | Value | What it means                                                                                                                         | On overflow                                |
+|----------------------------|-------|---------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
+| Max tokens                 | 128   | Total number of operands + operators in the expression. A typical `.a > 1 and .b < 2` uses 7 tokens. 128 supports ~18 AND/OR clauses. | Compile error — filter returns no results  |
+| Max tuple elements         | 64    | Total elements across all `[...]` literals (e.g. `.x in [1,2,...,64]`)                                                                | Compile error                              |
+| Max runtime array elements | 64    | Total elements extracted from JSON array fields (for `in .tags`) across all candidates. Reset per candidate.                          | Array treated as null — `in` returns false |
+| Max unique selectors       | 32    | Unique field names referenced (e.g. `.year`, `.rating`). 32 supports very complex filters.                                            | Extra selectors silently ignored           |
+| Max eval stack depth       | 16    | Postfix evaluation stack depth. Typical expressions use 3–4.                                                                          | Candidate excluded                         |
+| Max parenthesis nesting    | 128   | Currently bounded by token buffer size                                                                                                | Compile error                              |
 
 #### Notes
 
