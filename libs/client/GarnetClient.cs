@@ -45,7 +45,6 @@ namespace Garnet.client
         static readonly Memory<byte> CLIENT = "$6\r\nCLIENT\r\n"u8.ToArray();
         static readonly Memory<byte>[] SETINFO = ["SETINFO"u8.ToArray(), "LIB-NAME"u8.ToArray(), "GarnetClient"u8.ToArray()];
         static readonly MemoryResult<byte> RESP_OK = new(default(OK_MEM));
-        const int PayloadDescriptorSize = sizeof(long);
 
         readonly int sendPageSize;
         readonly int bufferSize;
@@ -82,12 +81,6 @@ namespace Garnet.client
         /// Max outstanding network sends allowed
         /// </summary>
         readonly int networkSendThrottleMax;
-
-        /// <summary>
-        /// Whether requests use out-of-line execution
-        /// </summary>
-        readonly bool useChunkedSend;
-        readonly SemaphoreSlim chunkedExecutionGate = new(1, 1);
 
         /// <summary>
         /// Username to authenticate client on server.
@@ -147,7 +140,6 @@ namespace Garnet.client
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="epoch">Shared epoch instance for thread protection; if null, a new instance is created and owned by this client</param>
         /// <param name="logger">Logger instance</param>
-        /// <param name="useOutOfLineExecution">Whether requests use out-of-line execution</param>
         public GarnetClient(
             EndPoint endpoint,
             SslClientAuthenticationOptions tlsOptions = null,
@@ -163,8 +155,7 @@ namespace Garnet.client
             bool useTimeoutChecker = true,
             int networkSendThrottleMax = 8,
             LightEpoch epoch = null,
-            ILogger logger = null,
-            bool useOutOfLineExecution = false)
+            ILogger logger = null)
         {
             EndPoint = endpoint;
             this.sendPageSize = (int)Utility.PreviousPowerOf2(sendPageSize);
@@ -194,7 +185,6 @@ namespace Garnet.client
             if (timeoutMilliseconds > 0 && useTimeoutChecker)
                 timeoutCheckerCts = new();
             this.networkSendThrottleMax = networkSendThrottleMax;
-            this.useChunkedSend = useOutOfLineExecution;
             for (int i = 0; i < maxOutstandingTasks; i++)
                 tcsArray[i].nextTaskId = i;
             if (epoch == null)
@@ -220,7 +210,7 @@ namespace Garnet.client
         public void Connect(CancellationToken token = default)
         {
             socket = ConnectSendSocket();
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, useChunkedSend, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
             networkHandler.Start(sslOptions, EndPoint.ToString(), token);
 
             if (timeoutMilliseconds > 0)
@@ -272,7 +262,7 @@ namespace Garnet.client
         public async Task ConnectAsync(CancellationToken token = default)
         {
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
-            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, useChunkedSend, logger);
+            networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
 
             if (timeoutMilliseconds > 0)
@@ -647,7 +637,6 @@ namespace Garnet.client
 
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> op, string param1 = null, string param2 = null, CancellationToken token = default)
         {
-            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             int totalLen = 0;
             int arraySize = 1;
@@ -761,7 +750,6 @@ namespace Garnet.client
 
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> op, Memory<byte> param1, Memory<byte> param2, CancellationToken token = default)
         {
-            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             int totalLen = 0;
             int arraySize = 1;
@@ -876,7 +864,6 @@ namespace Garnet.client
 
         void InternalExecuteNoResponse(Memory<byte> op, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
-            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             var totalLen = 0;
             var arraySize = 4;
 
@@ -971,7 +958,6 @@ namespace Garnet.client
         /// <param name="tcs"></param>
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, string op, ICollection<string> args = null, CancellationToken token = default)
         {
-            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
@@ -1090,7 +1076,6 @@ namespace Garnet.client
         /// <returns></returns>
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
-            Debug.Assert(!useChunkedSend, "Legacy InternalExecute methods cannot be used in out-of-line mode.");
             tcs.timestamp = GetTimestamp();
             bool isArray = args != null;
             int arraySize = 1 + (isArray ? args.Count : 0);
@@ -1194,256 +1179,6 @@ namespace Garnet.client
                 networkWriter.epoch.Suspend();
             }
             return;
-        }
-
-        /// <summary>
-        /// Issue an out-of-line command for execution
-        /// </summary>
-        /// <param name="tcs">Response completion source</param>
-        /// <param name="respOp">Operation in RESP format</param>
-        /// <param name="args">Command arguments</param>
-        /// <param name="token">Cancellation token</param>
-        async ValueTask InternalExecuteChunkedAsync(TcsWrapper tcs, Memory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
-        {
-            Debug.Assert(useChunkedSend, "Chunked InternalExecute methods require out-of-line mode.");
-            tcs.timestamp = GetTimestamp();
-            var isArray = args != null;
-            var arraySize = checked(1 + (isArray ? args.Count : 0));
-            var totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
-
-            if (isArray)
-            {
-                foreach (var arg in args)
-                {
-                    var length = arg.Length;
-                    totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
-                }
-            }
-
-            await chunkedExecutionGate.WaitAsync(token).ConfigureAwait(false);
-            try
-            {
-                await InputGateAsync(token).ConfigureAwait(false);
-                var payload = networkWriter.RentPayloadBuffer(totalLength);
-                var payloadRegistered = false;
-
-                try
-                {
-                    unsafe
-                    {
-                        fixed (byte* payloadPtr = payload.Buffer)
-                        {
-                            var curr = payloadPtr;
-                            var end = payloadPtr + payload.Length;
-
-                            if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
-                                !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end))
-                            {
-                                throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
-                            }
-
-                            if (isArray)
-                            {
-                                foreach (var arg in args)
-                                {
-                                    if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end))
-                                        throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
-                                }
-                            }
-
-                            if (curr != end)
-                                throw new InvalidOperationException("The serialized out-of-line command did not fill its reserved buffer.");
-                        }
-                    }
-
-                    try
-                    {
-                        networkWriter.epoch.Resume();
-
-                        int taskId;
-                        long address;
-                        while (true)
-                        {
-                            token.ThrowIfCancellationRequested();
-                            if (!IsConnected)
-                            {
-                                payload.Dispose();
-                                payload = default;
-                                Dispose();
-                                ThrowException(disposeException);
-                            }
-
-                            (taskId, address) = networkWriter.TryAllocate(PayloadDescriptorSize, out var flushEvent);
-                            if (address >= 0)
-                                break;
-
-                            try
-                            {
-                                networkWriter.epoch.Suspend();
-                                await flushEvent.WaitAsync(token).ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                networkWriter.epoch.Resume();
-                            }
-                        }
-
-                        tcs.nextTaskId = taskId;
-
-                        // Hand of payload for flush preparation.
-                        networkWriter.EnqueuePayload(address, payload);
-                        payloadRegistered = true;
-                        unsafe
-                        {
-                            // Signal payload is ready to be flushed.
-                            *(long*)networkWriter.GetPhysicalAddress(address) = address;
-                        }
-
-                        var shortTaskId = taskId & (maxOutstandingTasks - 1);
-                        var oldTcs = tcsArray[shortTaskId];
-                        if (oldTcs.taskType != TaskType.None || !oldTcs.IsNext(taskId))
-                        {
-                            networkWriter.epoch.ProtectAndDrain();
-                            networkWriter.DoAggressiveShiftReadOnly();
-                            try
-                            {
-                                networkWriter.epoch.Suspend();
-                                await AwaitPreviousTaskAsync(taskId).ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                networkWriter.epoch.Resume();
-                            }
-                        }
-
-                        tcsArray[shortTaskId].LoadFrom(tcs);
-                        if (Disposed)
-                        {
-                            DisposeOffset(shortTaskId);
-                            ThrowException(disposeException);
-                        }
-
-                        networkWriter.epoch.ProtectAndDrain();
-                        networkWriter.DoAggressiveShiftReadOnly();
-                    }
-                    finally
-                    {
-                        networkWriter.epoch.Suspend();
-                    }
-                }
-                finally
-                {
-                    if (!payloadRegistered)
-                        payload.Dispose();
-                }
-            }
-            finally
-            {
-                chunkedExecutionGate.Release();
-            }
-        }
-
-        /// <summary>
-        /// Issue an out-of-line command for execution without expecting a response
-        /// </summary>
-        /// <param name="respOp">Operation in RESP format</param>
-        /// <param name="subop">Subcommand</param>
-        /// <param name="param1">First parameter</param>
-        /// <param name="param2">Second parameter</param>
-        /// <param name="token">Cancellation token</param>
-        void InternalExecuteChunkedNoResponse(Memory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
-        {
-            Debug.Assert(useChunkedSend, "Chunked InternalExecute methods require out-of-line mode.");
-            const int arraySize = 4;
-            int totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
-
-            int length = subop.Length;
-            totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
-            length = param1.Length;
-            totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
-            length = param2.Length;
-            totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
-
-            var payload = networkWriter.RentPayloadBuffer(totalLength);
-            var payloadRegistered = false;
-
-            try
-            {
-                unsafe
-                {
-                    fixed (byte* payloadPtr = payload.Buffer)
-                    {
-                        byte* curr = payloadPtr;
-                        byte* end = payloadPtr + payload.Length;
-
-                        if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
-                            !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(subop, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(param1, ref curr, end) ||
-                            !RespWriteUtils.TryWriteBulkString(param2, ref curr, end))
-                        {
-                            throw new InvalidOperationException("Unable to serialize the out-of-line command into its reserved buffer.");
-                        }
-
-                        if (curr != end)
-                            throw new InvalidOperationException("The serialized out-of-line command did not fill its reserved buffer.");
-                    }
-                }
-
-                try
-                {
-                    networkWriter.epoch.Resume();
-
-                    long address;
-                    while (true)
-                    {
-                        token.ThrowIfCancellationRequested();
-                        if (!IsConnected)
-                        {
-                            payload.Dispose();
-                            payload = default;
-                            Dispose();
-                            ThrowException(disposeException);
-                        }
-
-                        (_, address) = networkWriter.TryAllocate(PayloadDescriptorSize, out var flushEvent, skipTaskIdIncrement: true);
-                        if (address >= 0)
-                            break;
-
-                        try
-                        {
-                            networkWriter.epoch.Suspend();
-                            flushEvent.Wait(token);
-                        }
-                        finally
-                        {
-                            networkWriter.epoch.Resume();
-                        }
-                    }
-
-                    networkWriter.EnqueuePayload(address, payload);
-                    payloadRegistered = true;
-                    unsafe
-                    {
-                        *(long*)networkWriter.GetPhysicalAddress(address) = address;
-                    }
-
-                    if (Disposed)
-                        ThrowException(disposeException);
-
-                    networkWriter.epoch.ProtectAndDrain();
-                    networkWriter.DoAggressiveShiftReadOnly();
-                }
-                finally
-                {
-                    networkWriter.epoch.Suspend();
-                }
-            }
-            finally
-            {
-                if (!payloadRegistered)
-                    payload.Dispose();
-            }
         }
 
         static void ThrowException(Exception e) => throw e;

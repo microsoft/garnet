@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Net.Security;
 using System.Net.Sockets;
-using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -17,21 +16,6 @@ using Tsavorite.core;
 
 namespace Garnet.client
 {
-    struct Payload : IDisposable
-    {
-        internal PoolEntry Entry;
-        internal int Length;
-
-        internal byte[] Buffer => Entry.entry;
-
-        internal Payload(PoolEntry entry, int length)
-        {
-            this.Entry = entry;
-            this.Length = length;
-        }
-
-        public void Dispose() => Entry?.Dispose();
-    }
 
     [StructLayout(LayoutKind.Explicit)]
     struct FullPageStatus
@@ -41,7 +25,6 @@ namespace Garnet.client
         [FieldOffset(8)]
         public long LastClosedUntilAddress;
     }
-
     unsafe struct Page
     {
         public readonly byte[] value;
@@ -63,10 +46,6 @@ namespace Garnet.client
     /// </summary>
     internal sealed class NetworkWriter : IDisposable
     {
-        /// <summary>
-        /// Size of descriptor used for chunked send.
-        /// </summary>
-        const int PayloadDescriptorSize = sizeof(long);
         const long PageWrapDistance = 1L << (PageOffset.kPageBits - 1);
 
         public readonly LightEpoch epoch;
@@ -74,7 +53,7 @@ namespace Garnet.client
         // Circular buffer definition
         readonly Page[] values;
         readonly ILogger logger;
-        readonly int BufferSize = 2, LogPageSizeBits, PageSizeMask;
+        readonly int BufferSize = 4, LogPageSizeBits, PageSizeMask;
         internal readonly int PageSize;
         readonly long WrapDistance;
 
@@ -97,15 +76,11 @@ namespace Garnet.client
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         readonly GarnetClientTcpNetworkHandler networkHandler;
-        readonly bool useOutOfLineExecution;
-
-        // Each physical descriptor maps to one slot; the entry reference transfers ownership atomically.
-        readonly Payload[] pendingNetworkSendPayloads;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        public NetworkWriter(GarnetClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetClientTcpNetworkHandler networkHandler, int sendPageSize, int networkSendThrottleMax, LightEpoch epoch, PoolOwnerType ownerType, bool useOutOfLineExecution, ILogger logger = null)
+        public NetworkWriter(GarnetClient serverHook, Socket socket, int messageBufferSize, SslClientAuthenticationOptions sslOptions, out GarnetClientTcpNetworkHandler networkHandler, int sendPageSize, int networkSendThrottleMax, LightEpoch epoch, PoolOwnerType ownerType, ILogger logger = null)
         {
             this.networkBufferSettings = new NetworkBufferSettings(messageBufferSize, messageBufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
@@ -118,12 +93,6 @@ namespace Garnet.client
             this.epoch = epoch;
             this.PageSize = sendPageSize;
             this.logger = logger;
-            this.useOutOfLineExecution = useOutOfLineExecution;
-            if (useOutOfLineExecution)
-            {
-                var payloadSlotCount = BufferSize * sendPageSize / PayloadDescriptorSize;
-                this.pendingNetworkSendPayloads = new Payload[payloadSlotCount];
-            }
             this.LogPageSizeBits = Utility.NumBitsPreviousPowerOf2(sendPageSize);
             this.WrapDistance = PageWrapDistance << LogPageSizeBits;
 
@@ -139,76 +108,10 @@ namespace Garnet.client
         /// <inheritdoc />
         public void Dispose()
         {
-            Volatile.Write(ref disposed, true);
-            if (pendingNetworkSendPayloads != null)
-            {
-                for (var i = 0; i < pendingNetworkSendPayloads.Length; i++)
-                {
-                    var entry = Interlocked.Exchange(ref pendingNetworkSendPayloads[i].Entry, null);
-                    entry?.Dispose();
-                }
-            }
+            disposed = true;
             FlushEvent.Dispose();
             networkHandler.Dispose();
             networkPool?.Dispose();
-        }
-
-        internal Payload RentPayloadBuffer(int length)
-        {
-            var allocationSize = length;
-            if (length <= networkPool.MaxAllocationSize)
-            {
-                var minimumSize = Math.Max(length, networkPool.MinAllocationSize);
-                var roundedSize = BitOperations.RoundUpToPowerOf2((uint)minimumSize);
-                if (roundedSize <= (uint)networkPool.MaxAllocationSize)
-                    allocationSize = (int)roundedSize;
-            }
-
-            var entry = networkPool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
-            ObjectDisposedException.ThrowIf(entry is null, this);
-            return new(entry, length);
-        }
-
-        internal void EnqueuePayload(long address, Payload payload)
-        {
-            Debug.Assert(epoch.ThisInstanceProtected());
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
-
-            var slot = GetPayloadSlot(address);
-            // Ring reuse waits for flush to clear this slot and advance FlushedUntilAddress, so the new address maps to an empty slot.
-            if (Interlocked.CompareExchange(ref pendingNetworkSendPayloads[slot].Entry, payload.Entry, null) != null)
-                throw new InvalidOperationException($"An out-of-line payload is already registered at address {address}.");
-
-            Volatile.Write(ref pendingNetworkSendPayloads[slot].Length, payload.Length);
-
-            if (Volatile.Read(ref disposed))
-            {
-                var entry = Interlocked.Exchange(ref pendingNetworkSendPayloads[slot].Entry, null);
-                entry?.Dispose();
-            }
-        }
-
-        internal bool DequeuePayload(long address, out Payload payload)
-        {
-            var slot = GetPayloadSlot(address);
-            var entry = Interlocked.Exchange(ref pendingNetworkSendPayloads[slot].Entry, null);
-            if (entry == null)
-            {
-                payload = default;
-                return false;
-            }
-
-            payload = new(entry, Volatile.Read(ref pendingNetworkSendPayloads[slot].Length));
-            Volatile.Write(ref pendingNetworkSendPayloads[slot].Length, 0);
-            return true;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int GetPayloadSlot(long address)
-        {
-            var pageIndex = (int)((address >> LogPageSizeBits) & (BufferSize - 1));
-            var offset = (int)(address & PageSizeMask);
-            return ((pageIndex * PageSize) + offset) / PayloadDescriptorSize;
         }
 
         /// <summary>
@@ -366,14 +269,7 @@ namespace Garnet.client
 
         void OnPagesMarkedReadOnly(long oldReadOnlyAddress, long newReadOnlyAddress)
         {
-            if (useOutOfLineExecution)
-            {
-                AsyncFlushPayloads(oldReadOnlyAddress, newReadOnlyAddress);
-            }
-            else
-            {
-                AsyncFlushPages(oldReadOnlyAddress, newReadOnlyAddress);
-            }
+            AsyncFlushPages(oldReadOnlyAddress, newReadOnlyAddress);
         }
 
         /// <summary>
@@ -384,7 +280,6 @@ namespace Garnet.client
         /// <param name="untilAddress"></param>
         public void AsyncFlushPages(long fromAddress, long untilAddress)
         {
-            Debug.Assert(!useOutOfLineExecution, "Inline page flushing cannot be used in out-of-line mode.");
             long startPage = fromAddress >> LogPageSizeBits;
             long endPage = untilAddress >> LogPageSizeBits;
 
@@ -450,156 +345,25 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Flush an address range containing out-of-line payload keys
-        /// </summary>
-        /// <param name="fromAddress">Start address</param>
-        /// <param name="untilAddress">End address</param>
-        public unsafe void AsyncFlushPayloads(long fromAddress, long untilAddress)
-        {
-            Debug.Assert(useOutOfLineExecution, "Out-of-line page flushing requires out-of-line mode.");
-            var startPage = fromAddress >> LogPageSizeBits;
-            var endPage = untilAddress >> LogPageSizeBits;
-            var count = new CountWrapper
-            {
-                count = 1,
-                untilAddress = untilAddress
-            };
-            var flushFailed = false;
-
-            var flushPage = startPage;
-            while (true)
-            {
-                long startOffset = 0, endOffset = 1L << LogPageSizeBits;
-                if (flushPage == startPage) startOffset = GetOffsetInPage(fromAddress);
-                if (flushPage == endPage) endOffset = GetOffsetInPage(untilAddress);
-
-                var realEndOffset = endOffset;
-                ref var page = ref values[flushPage % BufferSize];
-                if (page.lastOffset > 0 && endOffset > page.lastOffset)
-                {
-                    realEndOffset = page.lastOffset;
-                    page.lastOffset = 0;
-                }
-
-                if ((startOffset & (PayloadDescriptorSize - 1)) != 0 || (realEndOffset & (PayloadDescriptorSize - 1)) != 0)
-                {
-                    FailOnPayloadFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {PayloadDescriptorSize}-byte records.");
-                    realEndOffset -= (realEndOffset - startOffset) & (PayloadDescriptorSize - 1);
-                }
-
-                for (var offset = startOffset; offset < realEndOffset; offset += PayloadDescriptorSize)
-                {
-                    var address = (flushPage << LogPageSizeBits) | (uint)offset;
-                    var key = *(long*)(page.pointer + offset);
-
-                    if (key != address)
-                    {
-                        FailOnPayloadFlush(ref flushFailed, $"Out-of-line payload key {key} does not match its log address {address}.");
-                        if (DequeuePayload(address, out var mismatchedPayload))
-                            mismatchedPayload.Dispose();
-                        continue;
-                    }
-
-                    if (!DequeuePayload(key, out var payload))
-                    {
-                        FailOnPayloadFlush(ref flushFailed, $"No out-of-line payload is registered for address {address}.");
-                        continue;
-                    }
-
-                    if (flushFailed)
-                    {
-                        payload.Dispose();
-                        continue;
-                    }
-
-                    SendPayload(ref payload, count, ref flushFailed);
-                }
-
-                if (flushPage == endPage) break;
-                flushPage = (flushPage + 1) & PageOffset.kPageMask;
-            }
-
-            CompleteFlush(count);
-
-            void SendPayload(ref Payload payload, CountWrapper count, ref bool flushFailed)
-            {
-                var chunkSize = Math.Max(1, networkBufferSettings.sendBufferSize);
-                var chunkCount = ((payload.Length - 1) / chunkSize) + 1;
-                var result = new PayloadAsyncFlushResult
-                {
-                    count = count,
-                    payload = payload,
-                    remainingChunks = chunkCount
-                };
-                _ = Interlocked.Increment(ref count.count);
-
-                var dispatchedChunks = 0;
-                try
-                {
-                    for (var offset = 0; offset < payload.Length; offset += chunkSize)
-                    {
-                        var length = Math.Min(chunkSize, payload.Length - offset);
-                        networkSender.SendResponse(payload.Buffer, offset, length, result);
-                        dispatchedChunks++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogError(ex, "Exception sending an out-of-line payload");
-                    flushFailed = true;
-                    networkHandler.Dispose();
-
-                    for (var i = dispatchedChunks; i < chunkCount; i++)
-                        AsyncFlushPageCallback(result);
-                }
-            }
-
-            void FailOnPayloadFlush(ref bool flushFailed, string message)
-            {
-                if (flushFailed)
-                    return;
-
-                flushFailed = true;
-                logger?.LogError("{Message}", message);
-                networkHandler.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// Completion callback for network flush
+        /// Completion callback for page flush
         /// </summary>
         /// <param name="context"></param>
         private void AsyncFlushPageCallback(object context)
         {
-            switch (context)
-            {
-                case PageAsyncFlushResult pageResult:
-                    CompleteFlush(pageResult.count);
-                    break;
-
-                case PayloadAsyncFlushResult payloadResult:
-                    if (Interlocked.Decrement(ref payloadResult.remainingChunks) == 0)
-                    {
-                        payloadResult.payload.Dispose();
-                        CompleteFlush(payloadResult.count);
-                    }
-                    break;
-
-                default:
-                    Debug.Fail($"Unexpected network flush context type {context?.GetType().FullName ?? "null"}.");
-                    break;
-            }
-        }
-
-        void CompleteFlush(CountWrapper count)
-        {
             try
             {
-                if (Interlocked.Decrement(ref count.count) == 0)
+
+                // Set the page status to flushed
+                var result = (PageAsyncFlushResult)context;
+
+                if (Interlocked.Decrement(ref result.count.count) == 0)
                 {
-                    long endAddress = count.untilAddress;
+                    long endAddress = result.count.untilAddress;
+                    //Console.WriteLine($"Flushing until {endAddress}");
+
                     if (Utility.MonotonicUpdate(ref FlushedUntilAddress, endAddress, WrapDistance, out _))
                     {
+                        //Console.WriteLine($"Flushed until {endAddress}");
                         FlushEvent.Set();
                     }
                     AggressiveShiftReadOnlyRunner(true);

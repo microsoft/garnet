@@ -3,7 +3,6 @@
 using System;
 using System.Linq;
 using System.Net;
-using System.Net.Security;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
@@ -571,114 +570,6 @@ namespace Garnet.test
 
             result = await db.ExecuteForStringResultAsync("PING").ConfigureAwait(false);
             ClassicAssert.AreEqual("PONG", result);
-        }
-
-        [Test]
-        public async Task ChunkedSendVariablePayloadSizes([Values] bool useTls)
-        {
-            const int sendPageSize = 16;
-            const int bufferSize = 256;
-            int[] payloadSizes = [0, 1, 7, 8, 31, 32, 127, 255, 256, 257, 511, 512, 513, 4097];
-
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTls);
-            server.Start();
-
-            SslClientAuthenticationOptions tlsOptions = null;
-            if (useTls)
-            {
-                tlsOptions = new SslClientAuthenticationOptions
-                {
-                    ClientCertificates = [TestUtils.GetClientCertificate()],
-                    TargetHost = "GarnetTest",
-                    AllowRenegotiation = false,
-                    RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
-                };
-            }
-
-            using var db = new GarnetClient(
-                TestUtils.EndPoint,
-                tlsOptions,
-                sendPageSize: sendPageSize,
-                bufferSize: bufferSize,
-                maxOutstandingTasks: 8,
-                useOutOfLineExecution: true);
-            await db.ConnectAsync().ConfigureAwait(false);
-
-            Memory<byte> set = "$3\r\nSET\r\n"u8.ToArray();
-            Memory<byte> get = "$3\r\nGET\r\n"u8.ToArray();
-
-            var tasks = payloadSizes.Select(async payloadSize =>
-            {
-                Memory<byte> key = Encoding.ASCII.GetBytes($"chunked-send-{payloadSize}");
-                Memory<byte> value = new byte[payloadSize];
-                for (int i = 0; i < value.Length; i++)
-                    value.Span[i] = (byte)((i * 31 + payloadSize) & 0xFF);
-
-                var setResult = await db.ExecuteForStringResultAsync(set, [key, value]).ConfigureAwait(false);
-                ClassicAssert.AreEqual("OK", setResult);
-
-                using var getResult = await db.ExecuteForMemoryResultWithCancellationAsync(get, [key]).ConfigureAwait(false);
-                ClassicAssert.AreEqual(payloadSize, getResult.Length);
-                ClassicAssert.IsTrue(getResult.Span.SequenceEqual(value.Span));
-            });
-
-            await Task.WhenAll(tasks).ConfigureAwait(false);
-        }
-
-        [Test]
-        public void ChunkedPayloadBuffersReuseNetworkPool()
-        {
-            const int bufferSize = 256;
-
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
-            server.Start();
-
-            using var db = new GarnetClient(
-                TestUtils.EndPoint,
-                bufferSize: bufferSize,
-                useOutOfLineExecution: true);
-            db.Connect();
-
-            var networkWriter = (NetworkWriter)typeof(GarnetClient)
-                .GetField("networkWriter", BindingFlags.NonPublic | BindingFlags.Instance)
-                .GetValue(db);
-            var networkPool = (LimitedFixedBufferPool)typeof(NetworkWriter)
-                .GetField("networkPool", BindingFlags.NonPublic | BindingFlags.Instance)
-                .GetValue(networkWriter);
-
-            var reusableLength = networkPool.MinAllocationSize + 1;
-            var first = networkWriter.RentPayloadBuffer(reusableLength);
-            var firstBuffer = first.Buffer;
-            Array.Fill(firstBuffer, (byte)0xA5);
-            first.Dispose();
-
-            var second = networkWriter.RentPayloadBuffer(reusableLength);
-            try
-            {
-                ClassicAssert.AreSame(firstBuffer, second.Buffer);
-                ClassicAssert.AreEqual(networkPool.MinAllocationSize * 2, second.Buffer.Length);
-                ClassicAssert.IsTrue(second.Buffer.All(static value => value == 0));
-            }
-            finally
-            {
-                second.Dispose();
-            }
-
-            var oversizedLength = networkPool.MaxAllocationSize + 1;
-            var oversized = networkWriter.RentPayloadBuffer(oversizedLength);
-            var oversizedBuffer = oversized.Buffer;
-            oversized.Dispose();
-
-            var nextOversized = networkWriter.RentPayloadBuffer(oversizedLength);
-            try
-            {
-                ClassicAssert.AreEqual(oversizedLength, nextOversized.Buffer.Length);
-                ClassicAssert.AreNotSame(oversizedBuffer, nextOversized.Buffer);
-            }
-            finally
-            {
-                nextOversized.Dispose();
-            }
         }
 
         /// <summary>
