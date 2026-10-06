@@ -199,8 +199,24 @@ namespace Garnet.cluster
         {
             this.userHandle = userHandle;
         }
-        public void AcquireCurrentEpoch() => localCurrentEpoch = clusterProvider.garnetEpoch.GetCurrentEpoch();
-        public void ReleaseCurrentEpoch() => localCurrentEpoch = 0;
+        /// <summary>
+        /// Announces this session as active at a stable current Garnet epoch.
+        /// </summary>
+        public void AcquireCurrentEpoch()
+        {
+            while (true)
+            {
+                var epoch = clusterProvider.garnetEpoch.GetCurrentEpoch();
+                Interlocked.Exchange(ref localCurrentEpoch, epoch);
+                if (epoch == clusterProvider.garnetEpoch.GetCurrentEpoch())
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// Announces this session as idle after all epoch-protected work is complete.
+        /// </summary>
+        public void ReleaseCurrentEpoch() => Volatile.Write(ref localCurrentEpoch, 0);
 
         /// <summary>
         /// Release epoch, wait for config transition and re-acquire the epoch
