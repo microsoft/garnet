@@ -115,7 +115,7 @@ namespace Garnet.test.cluster
         [Test]
         public async Task BasicVADDReplicatesAsync(
             [Values("XU8", "XI8", "FP32", "VALUES")] string vectorFormat,
-            [Values("NOQUANT", "BIN", "Q8", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_U8", "XBIN_I8")] string quantizer
+            [Values("NOQUANT", "BIN", "Q8", "XNOQUANT_U8", "XNOQUANT_I8", "XBIN_U8", "XBIN_I8", "XSPHERICAL2", "XSPHERICAL2_I8", "XSPHERICAL2_U8", "XSPHERICAL4", "XSPHERICAL4_I8", "XSPHERICAL4_U8")] string quantizer
         )
         {
             const int PrimaryIndex = 0;

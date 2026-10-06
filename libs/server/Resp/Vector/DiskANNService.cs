@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -62,7 +63,10 @@ namespace Garnet.server
             {
                 var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, startPointId, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, out quantizationRequested);
 
-                Debug.Assert(ret != 0, "create_index failed, returning a null pointer - this shouldn't be possible");
+                if (ret == 0)
+                {
+                    throw new GarnetException("Native DiskANN index creation failed", disposeSession: false);
+                }
 
                 return ret;
             }

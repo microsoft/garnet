@@ -37,15 +37,7 @@ namespace Garnet.server
             while (optionIndex < parseState.Count)
             {
                 var option = parseState.GetArgSliceByRef(optionIndex++).ReadOnlySpan;
-                var optionQuantizer =
-                    option.EqualsUpperCaseSpanIgnoringCase("NOQUANT"u8) ? VectorQuantType.NoQuant :
-                    option.EqualsUpperCaseSpanIgnoringCase("Q8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.Q8 :
-                    option.EqualsUpperCaseSpanIgnoringCase("BIN"u8) ? VectorQuantType.Bin :
-                    option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XNoQuant_U8 :
-                    option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XNoQuant_I8 :
-                    option.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_U8 :
-                    option.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_I8 :
-                    VectorQuantType.Invalid;
+                var optionQuantizer = ParseVectorQuantizer(option);
 
                 if (optionQuantizer != VectorQuantType.Invalid)
                 {
@@ -209,6 +201,23 @@ namespace Garnet.server
 
             return true;
         }
+
+        private static VectorQuantType ParseVectorQuantizer(ReadOnlySpan<byte> option, bool allowLegacyAlias = false) =>
+            option.EqualsUpperCaseSpanIgnoringCase("NOQUANT"u8) ? VectorQuantType.NoQuant :
+            option.EqualsUpperCaseSpanIgnoringCase("Q8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.Q8 :
+            option.EqualsUpperCaseSpanIgnoringCase("BIN"u8) ? VectorQuantType.Bin :
+            option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true)
+                || (allowLegacyAlias && option.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8, allowNonAlphabeticChars: true)) ? VectorQuantType.XNoQuant_U8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XNoQuant_I8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_I8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XBin_U8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL2"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical2 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL2_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical2_I8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL2_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical2_U8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL4"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical4 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL4_I8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical4_I8 :
+            option.EqualsUpperCaseSpanIgnoringCase("XSPHERICAL4_U8"u8, allowNonAlphabeticChars: true) ? VectorQuantType.XSpherical4_U8 :
+            VectorQuantType.Invalid;
 
         private bool NetworkXVIMPORT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
@@ -493,86 +502,15 @@ namespace Garnet.server
                     }
 
                     // Look for quantizer specs
-                    if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("NOQUANT"u8))
+                    var optionQuantizer = ParseVectorQuantizer(parseState.GetArgSliceByRef(curIx).ReadOnlySpan, allowLegacyAlias: true);
+                    if (optionQuantizer != VectorQuantType.Invalid)
                     {
                         if (quantType != null)
                         {
                             return AbortWithErrorMessage("Quantization specified multiple times");
                         }
 
-                        quantType = VectorQuantType.NoQuant;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("Q8"u8))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.Q8;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("BIN"u8))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.Bin;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_U8"u8, allowNonAlphabeticChars: true) || parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XPREQ8"u8)) // XPREQ8 kept for backwards compatability, prefer XNOQUANT_U8
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.XNoQuant_U8;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XNOQUANT_I8"u8, allowNonAlphabeticChars: true))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.XNoQuant_I8;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_I8"u8, allowNonAlphabeticChars: true))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.XBin_I8;
-                        curIx++;
-
-                        continue;
-                    }
-                    else if (parseState.GetArgSliceByRef(curIx).Span.EqualsUpperCaseSpanIgnoringCase("XBIN_U8"u8, allowNonAlphabeticChars: true))
-                    {
-                        if (quantType != null)
-                        {
-                            return AbortWithErrorMessage("Quantization specified multiple times");
-                        }
-
-                        quantType = VectorQuantType.XBin_U8;
+                        quantType = optionQuantizer;
                         curIx++;
 
                         continue;
@@ -712,7 +650,7 @@ namespace Garnet.server
                 GarnetStatus res;
                 VectorManagerResult result;
                 ReadOnlySpan<byte> customErrMsg;
-                if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 && reduceDim != 0)
+                if (quantType is VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 or VectorQuantType.XSpherical2_I8 or VectorQuantType.XSpherical2_U8 or VectorQuantType.XSpherical4_I8 or VectorQuantType.XSpherical4_U8 && reduceDim != 0)
                 {
                     result = VectorManagerResult.BadParams;
                     res = GarnetStatus.OK;
@@ -1577,6 +1515,8 @@ namespace Garnet.server
                 //
                 // The quantization map (which is written as first element) is as:
                 //  BIN, XBIN_I8, XBIN_U8  -> bin
+                //  XSPHERICAL2, XSPHERICAL2_I8, XSPHERICAL2_U8 -> spherical2
+                //  XSPHERICAL4, XSPHERICAL4_I8, XSPHERICAL4_U8 -> spherical4
                 //  Q8, XNOQUANT_I8, XNOQUANT_U8 -> q8
                 //  NOQUANT -> fp32
                 //
@@ -1623,6 +1563,14 @@ namespace Garnet.server
                         else if (quantType == VectorQuantType.NoQuant)
                         {
                             WriteSimpleString("fp32");
+                        }
+                        else if (quantType is VectorQuantType.XSpherical2 or VectorQuantType.XSpherical2_I8 or VectorQuantType.XSpherical2_U8)
+                        {
+                            WriteSimpleString("spherical2"u8);
+                        }
+                        else if (quantType is VectorQuantType.XSpherical4 or VectorQuantType.XSpherical4_I8 or VectorQuantType.XSpherical4_U8)
+                        {
+                            WriteSimpleString("spherical4"u8);
                         }
                         else
                         {
@@ -1917,6 +1865,12 @@ namespace Garnet.server
                 VectorQuantType.XNoQuant_I8 => "xnoquant_i8"u8,
                 VectorQuantType.XBin_I8 => "xbin_i8"u8,
                 VectorQuantType.XBin_U8 => "xbin_u8"u8,
+                VectorQuantType.XSpherical2 => "xspherical2"u8,
+                VectorQuantType.XSpherical2_I8 => "xspherical2_i8"u8,
+                VectorQuantType.XSpherical2_U8 => "xspherical2_u8"u8,
+                VectorQuantType.XSpherical4 => "xspherical4"u8,
+                VectorQuantType.XSpherical4_I8 => "xspherical4_i8"u8,
+                VectorQuantType.XSpherical4_U8 => "xspherical4_u8"u8,
                 _ => throw new GarnetException($"Invalid VectorQuantType: {quantType}"),
             };
 

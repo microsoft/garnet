@@ -1523,25 +1523,31 @@ namespace Garnet.server
                 // Internal vector format differs depend on the selected quantizer, so do that mapping as needed
                 switch (quantType)
                 {
-                    // All Redis quantizers store F32s
+                    // All Redis quantizers and untyped extensions store F32s
                     case VectorQuantType.Bin:
                     case VectorQuantType.Q8:
                     case VectorQuantType.NoQuant:
+                    case VectorQuantType.XSpherical2:
+                    case VectorQuantType.XSpherical4:
                         MemoryMarshal.Cast<byte, float>(from).CopyTo(into);
                         break;
 
-                    // XNoQuant_I8 & XBin_I8 stores _signed_ bytes
+                    // Quantizers with an _I8 suffix store signed bytes
                     case VectorQuantType.XNoQuant_I8:
                     case VectorQuantType.XBin_I8:
+                    case VectorQuantType.XSpherical2_I8:
+                    case VectorQuantType.XSpherical4_I8:
                         for (var i = 0; i < from.Length; i++)
                         {
                             into[i] = (sbyte)from[i];
                         }
                         break;
 
-                    // XNoQuant_I8 & NoQuant_U8 stores unsigned bytes
+                    // Quantizers with a _U8 suffix store unsigned bytes
                     case VectorQuantType.XNoQuant_U8:
                     case VectorQuantType.XBin_U8:
+                    case VectorQuantType.XSpherical2_U8:
+                    case VectorQuantType.XSpherical4_U8:
                         for (var i = 0; i < from.Length; i++)
                         {
                             into[i] = from[i];

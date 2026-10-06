@@ -60,6 +60,42 @@ namespace Garnet.server
         /// eXtension Binary quantized Unsigned integer 8 bits
         /// </summary>
         XBin_U8 = 7,
+
+        /// <summary>
+        /// Vectors stored as floats (32 bits). XSpherical2 is a non-Redis extension, stands for:
+        /// eXtension Spherical 2-bit quantized
+        /// </summary>
+        XSpherical2 = 8,
+
+        /// <summary>
+        /// Vectors stored as bytes (8 bits signed). XSpherical2_I8 is a non-Redis extension, stands for:
+        /// eXtension Spherical 2-bit quantized Integer 8 bits
+        /// </summary>
+        XSpherical2_I8 = 9,
+
+        /// <summary>
+        /// Vectors stored as bytes (8 bits unsigned). XSpherical2_U8 is a non-Redis extension, stands for:
+        /// eXtension Spherical 2-bit quantized Unsigned integer 8 bits
+        /// </summary>
+        XSpherical2_U8 = 10,
+
+        /// <summary>
+        /// Vectors stored as floats (32 bits). XSpherical4 is a non-Redis extension, stands for:
+        /// eXtension Spherical 4-bit quantized
+        /// </summary>
+        XSpherical4 = 11,
+
+        /// <summary>
+        /// Vectors stored as bytes (8 bits signed). XSpherical4_I8 is a non-Redis extension, stands for:
+        /// eXtension Spherical 4-bit quantized Integer 8 bits
+        /// </summary>
+        XSpherical4_I8 = 12,
+
+        /// <summary>
+        /// Vectors stored as bytes (8 bits unsigned). XSpherical4_U8 is a non-Redis extension, stands for:
+        /// eXtension Spherical 4-bit quantized Unsigned integer 8 bits
+        /// </summary>
+        XSpherical4_U8 = 13,
     }
 
     /// <summary>
@@ -217,7 +253,7 @@ namespace Garnet.server
             result = VectorManagerResult.BadParams;
             errorMsg = default;
 
-            if (reduceDims != 0 && quantizer is VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 or VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8)
+            if (reduceDims != 0 && quantizer is VectorQuantType.XNoQuant_U8 or VectorQuantType.XNoQuant_I8 or VectorQuantType.XBin_U8 or VectorQuantType.XBin_I8 or VectorQuantType.XSpherical2_I8 or VectorQuantType.XSpherical2_U8 or VectorQuantType.XSpherical4_I8 or VectorQuantType.XSpherical4_U8)
             {
                 errorMsg = "ERR REDUCE is not supported with this quantization"u8;
                 result = VectorManagerResult.BadParams;
