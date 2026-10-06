@@ -168,6 +168,48 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ObjectIdMapCategory)]
+        public void WriteFailureIsSurfacedAndDoesNotStallAllocation([Values] bool synchronous)
+        {
+            // A failed flush pins FlushedUntilAddress, so the buffer page an allocation needs reclaimed is never freed.
+            // Both allocation retry paths must surface that rather than wait on it: RETRY_NOW polls flushEvent in
+            // WaitToRetryNow, and RETRY_LATER parks on it indefinitely in HandleRetryStatus's ALLOCATE_FAILED case.
+            CreateStore(useLargeObjects: true, captureFlushFailures: true);
+
+            // Run everything on a worker so a regression fails this test instead of hanging the whole run, and so the
+            // session is used from a single thread. The insert count must outrun the 32-page buffer that LogMemorySize
+            // gives us, so allocation is forced to reclaim the page the failed flush pinned.
+            var threw = false;
+            var inserts = Task.Run(() =>
+            {
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var context = session.BasicContext;
+
+                for (var key = 0; key < 8; ++key)
+                    _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+                objectLogDevice.FailWriteNumber(objectLogDevice.WriteCount + 1, synchronous);
+
+                try
+                {
+                    for (var key = 8; key < 20_000; ++key)
+                        _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+                }
+                catch (TsavoriteException)
+                {
+                    threw = true;
+                }
+            });
+
+            var returned = inserts.Wait(TimeSpan.FromSeconds(60));
+
+            Assert.That(returned, Is.True, "allocation must not wait forever for a page that a failed flush can never free");
+            Assert.That(objectLogDevice.FailedWriteCount, Is.EqualTo(1), "the injected write failure must have been taken");
+            Assert.That(threw, Is.True, "the allocation must observe the failure as an exception rather than retrying forever");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
         public void ReadOnlyIssuanceRacingCutoffCaptureIsClassifiedCorrectly()
         {
             // Snapshot samples the ReadOnly cutoff while coordination is in CapturingCutoff. A ReadOnly worker that publishes

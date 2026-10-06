@@ -1379,6 +1379,26 @@ namespace Tsavorite.core
                     error.Exception);
         }
 
+        /// <summary>Throw if a recorded flush error blocks the minimum progress an allocation retry needs.</summary>
+        /// <remarks>
+        /// An allocation that cannot proceed is waiting for a buffer page to be flushed and closed, which requires
+        /// <see cref="FlushedUntilAddress"/> to advance by at least one page. An error below that boundary makes the
+        /// advance impossible, so the retry would spin or park forever.
+        /// <para>
+        /// Call this only from a retry loop outside <see cref="HandlePageOverflow"/>. The thread that owns a page
+        /// overflow publishes an unstable <see cref="TailPageOffset"/> (Offset &gt; PageSize) and every
+        /// <see cref="GetTailAddress()"/> caller spins until that thread restores it, so a throw from inside the
+        /// overflow would wedge the allocator permanently. By the time a retry status has been returned, the owner
+        /// has already restored a stable value and holds no such obligation.
+        /// </para>
+        /// </remarks>
+        internal void ThrowIfFlushFailedForAllocation()
+        {
+            if (errorList.Empty)
+                return;
+            ThrowIfFlushFailedBelow(GetLogicalAddressOfStartOfPage(GetPage(FlushedUntilAddress) + 1));
+        }
+
         /// <summary>
         /// Shift log readonly and head addresses, with an optional wait on the head address shift
         /// </summary>
@@ -1755,6 +1775,10 @@ namespace Tsavorite.core
             // Disposal permanently signals flushEvent, so without this the wait above would stop blocking and
             // this loop would spin on a flush and page close that will never come.
             ThrowIfDisposed();
+
+            // A failed flush likewise never frees the page this retry is waiting for. Checked here, after the finally,
+            // so the epoch is resumed exactly once before the throw unwinds.
+            ThrowIfFlushFailedForAllocation();
 
             localFlushEvent = flushEvent;
             spins = 0;
