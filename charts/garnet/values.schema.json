@@ -120,11 +120,17 @@
                 },
                 "minAvailable": {
                     "description": "Minimum number/percentage of pods that must be available (used when maxUnavailable is empty)",
-                    "type": ["integer", "string"]
+                    "oneOf": [
+                        { "type": "integer", "minimum": 0 },
+                        { "type": "string", "pattern": "^(|[0-9]+|(100|[1-9]?[0-9])%)$" }
+                    ]
                 },
                 "maxUnavailable": {
                     "description": "Maximum number/percentage of pods that may be unavailable; when set, it is rendered instead of minAvailable",
-                    "type": ["integer", "string"]
+                    "oneOf": [
+                        { "type": "integer", "minimum": 0 },
+                        { "type": "string", "pattern": "^(|[0-9]+|(100|[1-9]?[0-9])%)$" }
+                    ]
                 }
             }
         },
