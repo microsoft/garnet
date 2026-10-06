@@ -18,7 +18,7 @@ function updateClarityConsent() {
 
   window.clarity('consentv2', {
     ad_Storage: 'denied',
-    analytics_Storage: getAnalyticsConsent() ? 'granted' : 'denied',
+    analytics_Storage: !siteConsent.isConsentRequired || getAnalyticsConsent() ? 'granted' : 'denied',
   });
 }
 
