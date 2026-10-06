@@ -11,6 +11,8 @@
 
     NOTE: The expected values are specific for the CI Machine. If you run these on your machine, you will need to change the expected values.
 
+    NOTE: Expected values are shared by all frameworks, so an entry must accommodate the highest-allocating framework. A run is gated only against the framework given by the $framework parameter.
+
     NOTE: If adding a new BDN perf test to the BDN_Benchmark_Config.json, then need to add to the "test: [..." line in the ci-bdnbenchmark.yml
     
 .EXAMPLE
@@ -189,8 +191,11 @@ $filter = $currentTest
 $exporter = "json" 
 
 Write-Output " "
-Write-Output "** Start:  dotnet run -c $configuration -f $framework --project $BDNbenchmarkPath --filter $filter --exporters $exporter -e BDNRUNPARAM=$framework > $resultsFile 2> $BDNbenchmarkErrorFile"
-dotnet run -c $configuration -f $framework --project $BDNbenchmarkPath --filter $filter --exporters $exporter -e BDNRUNPARAM=$framework > $resultsFile 2> $BDNbenchmarkErrorFile
+# -f selects the framework the BDN host process itself runs on; --fw is BDN.benchmark's own option that selects
+# which framework jobs it launches. Both are needed: without --fw, BDN defaults to launching every framework job,
+# so each CI matrix entry would run (and be gated on) all frameworks rather than just its own.
+Write-Output "** Start:  dotnet run -c $configuration -f $framework --project $BDNbenchmarkPath --filter $filter --exporters $exporter --fw $framework > $resultsFile 2> $BDNbenchmarkErrorFile"
+dotnet run -c $configuration -f $framework --project $BDNbenchmarkPath --filter $filter --exporters $exporter --fw $framework > $resultsFile 2> $BDNbenchmarkErrorFile
 
 Write-Output "** BDN Benchmark for $filter finished"
 Write-Output " "

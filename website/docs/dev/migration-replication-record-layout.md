@@ -193,8 +193,8 @@ from `DiskLogRecord.GetChunkedRecordInlineSize`; the component kinds are read on
 - **Overflow key / value:** the 4-byte length prefix is read, a single `OverflowByteArray` is allocated up front, and
   each incoming chunk is copied **straight into it** (no intermediate list) — populating
   `ChunkedRecordReassembler.keyOverflow` / `valueOverflow`.
-- **Object value:** accumulated as a chunk list (`ChunkedRecordReassembler.objectValueChunks`, `List<byte[]>`) and
-  exposed as a `ReadOnlySequence<byte>` for streaming deserialize — so it may exceed 2 GB.
+- **Object value:** accumulated into a `PooledChunkList` (`ChunkedRecordReassembler.objectValueChunks`) and exposed as a
+  `ReadOnlySequence<byte>` for streaming deserialize — so it may exceed 2 GB.
 - **Fully-inline record:** the whole record is the contiguous inline buffer.
 
 On completion:
@@ -216,7 +216,7 @@ conditionally as commands; **replication** streams the whole store through a sna
 The source retrieves each key being migrated and captures its pieces **in-epoch** (`HandleMigrate` → a
 `MigrationChunkWriterAccumulator`): the inline portion is copied into `output.SpanByteAndMemory`, while the
 overflow key (a **shallow reference** — store keys are immutable), the overflow value (a **deep copy** — the store value
-may be mutated once the epoch is released), or an object value (serialized into a **chunk list**, so it may exceed 2 GB)
+may be mutated once the epoch is released), or an object value (serialized into **pooled chunk buffers**, so it may exceed 2 GB)
 go into the accumulator. Out of epoch the caller assembles `[inline][int keyLen][overflow key][int valueLen][overflow value | object chunks]`
 (each overflow key/value preceded by its 4-byte length) and
 sends it under a `CLUSTER MIGRATE` command — whole (`LogRecord`) if the record fits a send buffer, else as
@@ -319,7 +319,7 @@ review focused on minimizing allocations and copies. Three constraints drive the
 2. **Replication sends synchronously in-epoch** (it flushes via `BlockingWait` and never awaits), so it can stream a
    record straight from the record's native log memory into the send buffer, with no per-record heap copy.
 3. **An overflow key/value has a known length** and lands in a single owned buffer, while **an object value has an
-   unknown, possibly larger-than-2 GB length** and is held as a list of chunks (`List<byte[]>`), never one array.
+   unknown, possibly larger-than-2 GB length** and is held in a `PooledChunkList`, never one array.
 
 **Inline portion - when it is copied.** The inline portion (RecordInfo + RDH + inline key/value + optionals, padded to
 `RoundUp(ActualSize)`) is copied only under these conditions:
@@ -350,19 +350,26 @@ In short, the inline portion is copied once when the bytes must outlive the prod
 identically to multiple replicas (replication fast path); it is streamed with no extra allocation when a single
 synchronous consumer drains it in-epoch (replication chunked path, through the reused ring).
 
-**Chunk accumulation - where and why.** Chunks are accumulated as a `List<byte[]>` in exactly two places, both only for
-an **object value**:
+**Chunk accumulation - where and why.** Chunks are accumulated into a `PooledChunkList` in exactly two places, both only
+for an **object value**. The list packs arriving spans into uniform buffers rented from a `SectorAlignedBufferPool`, so
+the allocation shape is not dictated by transport framing and the blocks are reused rather than reallocated per record:
 
 - **Migration send** (`MigrationChunkWriterAccumulator.objectValueChunks`). The object is serialized in-epoch through a
-  reused 4 MB ring; each drain is copied into an owned chunk. Required because (a) the live object may change once the
-  epoch is released, so it must be snapshotted in-epoch, and (b) a serialized object may exceed 2 GB, which a single
-  `byte[]` cannot hold. The ring is allocated once per migration (reused across keys); only the per-object chunk arrays
-  are per-record. An **overflow value** on this path is instead a single deep-copy array (`SetValueOverflowDeepCopy`),
-  and an **overflow key** is a shallow reference to the store's immutable array (no copy).
+  reused 4 MB ring; each drain is copied into the pooled buffers. Required because (a) the live object may change once
+  the epoch is released, so it must be snapshotted in-epoch, and (b) a serialized object may exceed 2 GB, which a single
+  `byte[]` cannot hold. The ring is allocated once per migration (reused across keys). This is the **send** side, so
+  there is no deserializer to feed incrementally — the pieces are assembled and written to the network from here. An
+  **overflow value** on this path is instead a single deep-copy array (`SetValueOverflowDeepCopy`), and an **overflow
+  key** is a shallow reference to the store's immutable array (no copy).
 - **Receive** (`ChunkedRecordReassembler.objectValueChunks`). Each arriving object chunk is copied once from the
-  transient network buffer into an owned array, because the object length is not known up front (no single array can be
-  pre-sized) and may exceed 2 GB. The chunks are wrapped as a `ReadOnlySequence<byte>` (no further copy) and streamed to
-  the object deserializer.
+  transient network buffer into the pooled buffers, because the object length is not known up front (no single array can
+  be pre-sized) and may exceed 2 GB. The chunks are wrapped as a `ReadOnlySequence<byte>` (no further copy) and streamed
+  to the object deserializer once the record is complete.
+
+  It is deliberately *not* deserialized as the chunks arrive. Deserialization is synchronous, so doing so would need a
+  second thread fed by the receive thread — and a record's chunks span multiple network commands, so that same thread is
+  the one that must read the remaining chunks off the socket. Blocking it to hand off a chunk would deadlock the
+  connection, and the network buffer holding a chunk is recycled once the command returns.
 
 Everything else avoids accumulation. On **receive**, an overflow key/value is a single up-front `OverflowByteArray`
 (sized from its 4-byte length prefix) that chunk bytes are copied **directly** into (`FillOverflow`), never staged in an
@@ -377,14 +384,14 @@ materialized whole on the sender.
 | Migration send | inline portion | reused output buffer | 1 to detach (+1 more if assembled whole, below) | native memory invalid after epoch release |
 | Migration send | overflow key | none | 0 (shallow ref) | store keys are immutable and stable across epoch release |
 | Migration send | overflow value | 1 (`ToArray`) | 1 to detach | store value may be mutated after epoch release |
-| Migration send | object value | per-object chunks (ring reused per migration) | 1 per drain to detach | must snapshot in-epoch; may exceed 2 GB |
+| Migration send | object value | pooled chunk buffers (ring reused per migration) | 1 per drain to detach | must snapshot in-epoch; may exceed 2 GB |
 | Migration send | whole-record assembly | reused assemble buffer (grows to high-water) | 1 (pieces into one span) | `TryWriteRecordSpan` needs one contiguous entry [1] |
 | Migration send | backpressure retry only [2] | 1 (`span.ToArray`) | 1 | the reused span may not survive the flush `await` [2] |
 | Replication send | inline record | reused `serializationOutput` | 1, then 1 per replica | fan one stable, compacted image to N replicas |
 | Replication send | chunked (inline/overflow/object) | none (ring reused) | 1 into ring, then 1 per replica | streaming send; no whole-record materialization |
 | Receive | inline portion | reused `inlineBuffer` (grows to high-water) | 1 (chunks into one span) | header/inline may split across chunks; must be contiguous to read the layout |
 | Receive | overflow key/value | 1 `OverflowByteArray` each | 1 (chunk into final buffer) | store-owned; the network receive buffer is transient/reused |
-| Receive | object value | per-object chunks | 1 per chunk | length unknown up front; may exceed 2 GB; then wrapped as `ReadOnlySequence` (no copy) |
+| Receive | object value | pooled chunk buffers | 1 per chunk | length unknown up front; may exceed 2 GB; then wrapped as `ReadOnlySequence` (no copy) |
 
 [1] Assembled whole (rather than chunked) so the receiver reads one type-1 `LogRecord` entry instead of reassembling
 multiple chunks; the trade-off is detailed in **One extra copy, called out** below.
@@ -426,7 +433,7 @@ Migration and replication differ on write; they share the receive path. The reco
       - `acc.SetValueOverflowDeepCopy(ValueOverflow)`
         - *overflow value → deep copy (the value may change once the epoch is released); populates `MigrationChunkWriterAccumulator.valueOverflow`*
       - `acc.SerializeObjectValue(ValueObject)` → `ChunkedObjectSerializer` → `acc.Consume(first, second)`
-        - *object value → serialized chunks; populates `MigrationChunkWriterAccumulator.objectValueChunks` (`List<byte[]>`, supports values over 2 GB). The serializer is reused across records, so its ring is allocated once per migration, not per object*
+        - *object value → serialized chunks; populates `MigrationChunkWriterAccumulator.objectValueChunks` (`PooledChunkList`, supports values over 2 GB). The serializer is reused across records, so its ring is allocated once per migration, not per object*
     - `WriteOrSendAccumulatedRecordAsync(inline, acc)`
       - *out of epoch: assemble the captured pieces and send*
       - `gcs.TryWriteRecordSpan(record, LogRecord)`
@@ -455,7 +462,7 @@ Migration and replication differ on write; they share the receive path. The reco
   - `type == LogRecord` → `DiskLogRecord.Deserialize(recordSpan)`
     - *whole record: inline + any overflow key/value (each preceded by its 4-byte length) or a small object value (length derived from the record span), restored/deserialized directly from the contiguous span*
   - `type == ChunkedLogRecord` → `ChunkedRecordReassembler.Append(chunk, moreFollow)`
-    - *route bytes by component (may span commands): inline → `inlineBuffer`; overflow key/value → a single `OverflowByteArray` (`keyOverflow`/`valueOverflow`) populated directly from the chunks; object value → `objectValueChunks` (`List<byte[]>`)*
+    - *route bytes by component (may span commands): inline → `inlineBuffer`; overflow key/value → a single `OverflowByteArray` (`keyOverflow`/`valueOverflow`) populated directly from the chunks; object value → `objectValueChunks` (`PooledChunkList`)*
     - `CompleteChunkedRecordReassembly(headerPtr)`
       - *component kinds read from the record header in `inlineBuffer`; a fully-inline record → `DiskLogRecord.Deserialize(inlineBuffer)`*
       - `GarnetObjectSerializer.Deserialize(ObjectValueSequence())` → `DiskLogRecord.CompleteDeserializeChunkedRecord(header, keyOverflow, valueOverflow, valueObject)`
