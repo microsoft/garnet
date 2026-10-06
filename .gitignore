@@ -159,7 +159,6 @@ ClientBin/
 *.key
 *.crt
 !test/testcerts/testcert.pfx
-!test/testcerts/garnet.key
 !test/testcerts/garnet-ca.crt
 !test/testcerts/garnet-cert.crt
 *.publishsettings

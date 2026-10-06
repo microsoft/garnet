@@ -9,6 +9,6 @@ namespace Garnet.test
     public class TestProjectSetup
     {
         [OneTimeSetUp]
-        public void SetPort() => TestUtils.SetTestPort(TestPortAssignment.GarnetTestScripting);
+        public void SetPort() => TestUtils.ReserveTestPorts(System.Reflection.Assembly.GetExecutingAssembly());
     }
 }
