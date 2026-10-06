@@ -1872,7 +1872,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size, out var importPending);
+            var res = storageApi.VectorSetInfo(key, out var quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size, out var importPending);
 
             if (res != GarnetStatus.OK)
             {

@@ -164,14 +164,16 @@ namespace Garnet.server
                             importPending = false;
                             return new(in vectorSetLocks, lockToken);
                         }
+
                         if (IsImportPending(indexSpan))
                         {
                             if (readCmd == RespCommand.VINFO)
                             {
                                 status = GarnetStatus.OK;
-                                importPending = false;
+                                importPending = true;
                                 return new(in vectorSetLocks, lockToken);
                             }
+
                             if (readCmd != RespCommand.XVIMPORT)
                             {
                                 status = GarnetStatus.WRONGTYPE;
@@ -180,6 +182,7 @@ namespace Garnet.server
                                 return default;
                             }
                         }
+
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
