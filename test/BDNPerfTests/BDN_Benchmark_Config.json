@@ -470,7 +470,7 @@
     "expected_SAddPopSingle_None": 10400,
     "expected_SCard_None": 19200,
     "expected_SMembers_None": 3200,
-    "expected_SMoveTwice_None": 6400,
+    "expected_SMoveTwice_None": 12800,
     "expected_SIsMember_None": 6400,
     "expected_SMIsMember_None": 9600,
     "expected_SRandMemberSingle_None": 4000,

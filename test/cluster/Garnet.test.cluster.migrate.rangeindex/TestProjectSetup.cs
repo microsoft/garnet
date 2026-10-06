@@ -8,5 +8,5 @@ using NUnit.Framework;
 public class TestProjectSetup
 {
     [OneTimeSetUp]
-    public void SetPort() => ClusterTestContext.SetPort(ClusterPortAssignment.ClusterMigrateRangeIndex);
+    public void SetPort() => ClusterTestContext.ReservePorts(System.Reflection.Assembly.GetExecutingAssembly());
 }

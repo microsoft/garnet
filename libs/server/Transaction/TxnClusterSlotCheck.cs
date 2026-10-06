@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -9,11 +8,19 @@ namespace Garnet.server
     sealed unsafe partial class TransactionManager
     {
         readonly bool clusterEnabled;
-        internal byte* saveKeyRecvBufferPtr;
 
         /// <summary>
-        /// Keep track of actual key accessed by command
+        /// Record a key accessed by a queued command, for the cluster slot verification performed at EXEC.
         /// </summary>
+        /// <remarks>
+        /// The key bytes are copied into <see cref="txnScratchBufferAllocator"/> as they are recorded, rather than
+        /// referenced where they sit in the network receive buffer. A queued transaction spans however many network
+        /// reads its commands take, and a receive buffer that fills is grown by <c>DoubleNetworkReceiveBuffer</c>,
+        /// which copies the bytes into a larger buffer and then <b>disposes</b> the old one back to its pool — so a
+        /// retained pointer is left reading recycled memory. <c>ShrinkNetworkReceiveBuffer</c> disposes the old buffer
+        /// the same way, and <c>ShiftNetworkReceiveBuffer</c> compacts in place, moving the bytes without the buffer's
+        /// address changing at all. Copying while the bytes are still live is independent of all three.
+        /// </remarks>
         /// <param name="keySlice"></param>
         public void SaveKeyArgSlice(PinnedSpanByte keySlice)
         {
@@ -26,22 +33,7 @@ namespace Garnet.server
             txnKeysParseState.EnsureCapacity(count + 1);
 
             txnKeysParseState.Count = count + 1;
-            txnKeysParseState.SetArgument(count, keySlice);
-        }
-
-        /// <summary>
-        /// Copy all existing keys into <see cref="txnScratchBufferAllocator"/> so they are independent of the old receive buffer.
-        /// Called when the receive buffer has been reallocated since keys were last stored.
-        /// </summary>
-        public void CopyExistingKeysToScratchBuffer()
-        {
-            Debug.Assert(clusterEnabled);
-
-            for (var i = 0; i < txnKeysParseState.Count; i++)
-            {
-                ref var key = ref txnKeysParseState.GetArgSliceByRef(i);
-                key = txnScratchBufferAllocator.CreateArgSlice(key.ReadOnlySpan);
-            }
+            txnKeysParseState.SetArgument(count, txnScratchBufferAllocator.CreateArgSlice(keySlice.ReadOnlySpan));
         }
     }
 }

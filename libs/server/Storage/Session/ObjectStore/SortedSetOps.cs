@@ -1740,12 +1740,12 @@ namespace Garnet.server
                 return ObjectCollect(keys[0], CmdStrings.ZSET, _zcollectTaskLock, ref input, ref objectContext);
             }
 
-            var output = new ObjectOutput();
-
             // Attempt collection on all keys, but remember if we operated on a WRONGTYPE key
             var res = GarnetStatus.OK;
             foreach (var key in keys)
             {
+                // A new output for each key: a flag one key sets (RemoveKey, WrongType) must not carry over to the next
+                var output = new ObjectOutput();
                 if (RMWObjectStoreOperation(key.ToArray(), ref input, ref objectContext, ref output) == GarnetStatus.WRONGTYPE)
                 {
                     res = GarnetStatus.WRONGTYPE;

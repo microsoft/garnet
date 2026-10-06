@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -31,7 +30,7 @@ namespace Garnet.cluster
     /// <see cref="DiskLogRecord.CompleteDeserializeChunkedRecord"/> (out-of-line components) or <see cref="DiskLogRecord.Deserialize"/>
     /// (a fully-inline record).
     /// </remarks>
-    internal sealed class ChunkedRecordReassembler
+    internal sealed class ChunkedRecordReassembler : IDisposable
     {
         // The component the router is currently consuming bytes for.
         enum Phase
@@ -67,8 +66,11 @@ namespace Garnet.cluster
         OverflowByteArray valueOverflow;
         int valueLength, valueFilled;
 
-        // Object value: accumulated as chunks (length not known up front; may exceed 2 GB).
-        readonly List<byte[]> objectValueChunks = [];
+        // Object value: accumulated into pooled buffers (length not known up front; may exceed 2 GB). Accumulated rather than
+        // deserialized as chunks arrive: deserialization is synchronous, so streaming would need a second thread fed by this
+        // one, and chunks of a record span multiple network commands — the feeding thread is the same one that must read the
+        // remaining chunks off the socket, so blocking it to hand off a chunk would deadlock the connection.
+        readonly PooledChunkList objectValueChunks = new();
         long objectValueLength;
 
         // Staging for a 4-byte length prefix that may arrive split across chunks.
@@ -132,7 +134,7 @@ namespace Garnet.cluster
                         break;
                     case Phase.ObjectData:
                         // All remaining bytes are object-value bytes; accumulate and track the total for the RDH length update.
-                        objectValueChunks.Add(data.ToArray());
+                        objectValueChunks.Append(data);
                         objectValueLength += data.Length;
                         data = default;
                         break;
@@ -264,8 +266,9 @@ namespace Garnet.cluster
         /// <summary>Actual overflow value or serialized object length (0 if the value is inline); used for the RDH length update.</summary>
         public long ValueLength => RecordHeader.ValueIsObject ? objectValueLength : valueLength;
 
-        /// <summary>Wrap the streamed object-value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy).</summary>
-        public ReadOnlySequence<byte> ObjectValueSequence() => ReadOnlySequenceBuilder.FromChunks(objectValueChunks);
+        /// <summary>Wrap the streamed object-value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy). Valid until
+        /// the next <see cref="Reset"/>, which returns the pooled buffers.</summary>
+        public ReadOnlySequence<byte> ObjectValueSequence() => objectValueChunks.AsSequence();
 
         /// <summary>Reset for the next record (keeps the inline-buffer capacity and chunk-list capacity for reuse).</summary>
         public void Reset()
@@ -277,9 +280,13 @@ namespace Garnet.cluster
             keyLength = keyFilled = 0;
             valueOverflow = default;
             valueLength = valueFilled = 0;
-            objectValueChunks.Clear();
+            objectValueChunks.Reset();
             objectValueLength = 0;
             prefixFilled = 0;
         }
+
+        /// <summary>Release the pooled chunk buffers of a record left partially reassembled (a connection torn down or a
+        /// protocol error mid-record), which <see cref="Reset"/> would otherwise only reclaim on the next completed record.</summary>
+        public void Dispose() => Reset();
     }
 }

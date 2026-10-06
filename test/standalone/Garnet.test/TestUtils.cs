@@ -11,11 +11,12 @@ using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Security;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -77,572 +78,189 @@ namespace Garnet.test
         UseReviv = 1,
     }
 
-    /// <summary>
-    /// Unique base port for each test sub-project, enabling parallel test runs without port conflicts.
-    /// </summary>
-    public enum TestPortAssignment
-    {
-        GarnetTest = 33278,
-        GarnetTestAlternate = 34278,    // Alternate port for GarnetTest; used by NetworkTests.cs
-        GarnetTestAcl = 34300,
-        GarnetTestCollections = 34400,
-        GarnetTestComplexString = 34500,
-        GarnetTestExtensions = 34600,
-        GarnetTestRangeIndex = 34700,
-        GarnetTestScripting = 34800,
-        GarnetTestVectorSet = 34900,
-        GarnetTestBfTreeInterop = 35000,
-    }
-
     internal static class TestUtils
     {
         // Use 4KB page size for tests, independent of device sector size
         public const int MinKvLogPageSizeBits = 12; // TODO: Same as LogSettings.kMinPageSizeBits; need to centralize
         public const int MinKvLogPageSize = 1 << MinKvLogPageSizeBits;
         public const int MinKvLogPageSizeInKB = MinKvLogPageSize / 1024;
-
-        /// <summary>
-        /// Environment variable selecting a port slot, so checkouts sharing a machine do not bind the same
-        /// ports. Unset or empty yields offset 0, which is identical to upstream behavior and is what CI uses.
-        /// Accepts <c>auto</c> to claim a slot for this checkout, or an integer in [0, <see cref="MaxPortSlot"/>].
-        /// </summary>
-        internal const string PortSlotEnvVar = "GARNET_TEST_PORT_SLOT";
-
-        /// <summary>
-        /// Distance between consecutive port slots. Must exceed the width of both port bands, otherwise slot n
-        /// overlaps slot n+1. A stride of 1000 would be actively wrong: 33278 + 1000 is
-        /// <see cref="TestPortAssignment.GarnetTestAlternate"/>.
-        /// </summary>
-        internal const int PortSlotStride = 2000;
-
-        /// <summary>
-        /// Highest selectable port slot. <see cref="ValidatePortBands"/> verifies the resulting ports stay below
-        /// <see cref="EphemeralPortFloor"/>.
-        /// </summary>
-        internal const int MaxPortSlot = 7;
-
-        /// <summary>
-        /// Lowest slot <c>auto</c> will claim. Slot 0 is excluded because its offset is 0, which is the port
-        /// every checkout that does not set <see cref="PortSlotEnvVar"/> already uses, so claiming it would leave
-        /// the run exposed to exactly the collisions slots exist to prevent. Slot 0 stays reachable explicitly,
-        /// since pinning the upstream ports is occasionally useful.
-        /// </summary>
-        internal const int MinAutoPortSlot = 1;
-
         /// <summary>
         /// Ports a cluster sub-project can bind, one per node from its base. The largest cluster test today
-        /// creates 5 nodes; the headroom stays well inside <see cref="PortsPerAssignment"/>.
+        /// creates five nodes; the headroom costs nothing because a whole block is leased either way.
         /// </summary>
         internal const int MaxClusterNodesPerSubProject = 8;
 
         /// <summary>
-        /// Ports reserved per assignment, matching the spacing convention of <see cref="TestPortAssignment"/> and
-        /// ClusterPortAssignment. The bands are validated against this reserved width rather than against current
-        /// usage, so a test that grows to use more of its range does not silently invalidate the slot arithmetic.
+        /// Ports a standalone test project reserves: the one its servers bind, plus the alternate that
+        /// NetworkTests uses for a second server while the shared one from SetUp is still bound.
         /// </summary>
-        internal const int PortsPerAssignment = 100;
+        internal const int StandalonePortCount = 2;
+
+        private static int testPort;
+        private static EndPoint endPoint;
 
         /// <summary>
-        /// Default lower bound of the Windows ephemeral port range. Binds at or above this collide intermittently
-        /// with the OS handing the same port to an outbound socket, which presents as flaky tests.
-        /// </summary>
-        internal const int EphemeralPortFloor = 49152;
-
-        /// <summary>
-        /// Lowest cluster port assignment. Mirrored from ClusterPortAssignment, which lives in Garnet.test.cluster
-        /// and is not compiled into Garnet.test; ClusterPortBandTests keeps these in sync with the enum.
-        /// </summary>
-        internal const int ClusterPortBandBase = 7000;
-
-        /// <summary>
-        /// Top of the cluster port band: the highest cluster assignment plus its reserved width.
-        /// </summary>
-        internal const int ClusterPortBandTop = 8100 + PortsPerAssignment;
-
-        /// <summary>
-        /// Amount added to every test port so concurrent checkouts do not collide. Declared before
-        /// <see cref="TestPort"/> because static field initializers run in textual order.
+        /// Base port for this test host, assigned once per process by <see cref="ReserveTestPorts"/>, which
+        /// every test project's <c>TestProjectSetup</c> calls from an assembly-level <c>[OneTimeSetUp]</c>.
         /// <para>
-        /// Resolving this can fail — an unparseable <see cref="PortSlotEnvVar"/>, every slot held by another
-        /// checkout, or the bookkeeping files being unwritable. The failure is deliberately left to propagate
-        /// rather than falling back to offset 0: that fallback would put the run on the shared default ports and
-        /// reintroduce exactly the silent cross-checkout corruption slots exist to prevent. Because the
-        /// initializer is forced from an assembly-level <c>[OneTimeSetUp]</c> by
-        /// <see cref="EnsurePortSlotResolved"/>, the effect is that NUnit fails that fixture, every test in the
-        /// assembly is reported as errored, none of them run, and the process exits non-zero. The CLR also caches
-        /// a failed type initializer, so every later use of this class rethrows; there is no path on which some
-        /// tests proceed against unknown ports.
+        /// Reading this before that runs means a missing or misordered setup fixture, not a port problem, so it
+        /// throws rather than quietly allocating. Allocating here instead would attribute the block to the
+        /// wrong project in the lease directory and in every diagnostic that follows, which is precisely the
+        /// kind of misattribution that makes a port conflict expensive to diagnose.
         /// </para>
         /// </summary>
-        internal static readonly int PortOffset = ResolvePortOffset();
-
-        public static int TestPort = GetTestPort(TestPortAssignment.GarnetTest);    // No OneTimeSetUp needed for "Garnet.test" to set this
-
-        /// <summary>
-        /// Test server end point
-        /// </summary>
-        public static EndPoint EndPoint = new IPEndPoint(IPAddress.Loopback, TestPort);
-
-        /// <summary>
-        /// Resolves an assignment to the port this test host should actually use.
-        /// </summary>
-        /// <param name="port">The sub-project's port assignment.</param>
-        /// <returns>The assigned port shifted by <see cref="PortOffset"/>.</returns>
-        internal static int GetTestPort(TestPortAssignment port) => (int)port + PortOffset;
+        public static int TestPort =>
+            testPort != 0
+                ? testPort
+                : throw new InvalidOperationException(
+                    $"Test ports have not been reserved for this assembly. Every test project needs a " +
+                    $"[SetUpFixture] whose [OneTimeSetUp] calls {nameof(TestUtils)}.{nameof(ReserveTestPorts)}, " +
+                    $"which is what claims the port block this host binds.");
 
         /// <summary>
-        /// Sets the test port for the current sub-project, updating both <see cref="TestPort"/> and <see cref="EndPoint"/>.
-        /// Call from a <c>[SetUpFixture]</c> in each sub-project.
+        /// Second port for this test host, part of the same reserved run and so covered by the same lease.
+        /// Used where a test needs its own server while the shared one is still listening.
         /// </summary>
-        public static void SetTestPort(TestPortAssignment port)
+        public static int AlternateTestPort => TestPort + 1;
+
+        /// <summary>
+        /// Test server end point. Settable because the cluster harness repoints it at the node under test.
+        /// </summary>
+        public static EndPoint EndPoint
         {
-            TestPort = GetTestPort(port);
-            EndPoint = new IPEndPoint(IPAddress.Loopback, TestPort);
-            EnsurePortAvailable(TestPort, port.ToString());
+            get => endPoint ??= new IPEndPoint(IPAddress.Loopback, TestPort);
+            set => endPoint = value;
         }
 
         /// <summary>
-        /// Forces the port slot to be resolved now, at the point of this call.
-        /// <para>
-        /// The slot is claimed by the <see cref="PortOffset"/> field initializer, which the CLR runs as part of
-        /// this class's static constructor the first time anything touches the class. <c>RunClassConstructor</c>
-        /// is the mechanism: it runs that static constructor on demand, so <see cref="ResolvePortOffset"/>
-        /// executes here rather than at some arbitrary later point. Nothing else pulls it forward — projects
-        /// that rely on the static port defaults have no <c>[SetUpFixture]</c> calling
-        /// <see cref="SetTestPort"/>, and the remaining members read only constants — so without this the slot
-        /// would be claimed lazily and any failure would surface from whichever test first touched a port. See
-        /// <see cref="PortOffset"/> for what a failure does to the run.
-        /// </para>
-        /// <para>
-        /// The underlying exception is rethrown in place of the type initializer wrapper, so the actionable
-        /// message is the one reported rather than "the type initializer threw an exception".
-        /// </para>
+        /// Reserves this test project's ports and holds them for the life of the process. Call from a
+        /// <c>[SetUpFixture]</c> in each standalone sub-project.
         /// </summary>
-        internal static void EnsurePortSlotResolved()
+        /// <param name="projectAssembly">
+        /// The test project's own assembly, normally <c>typeof(TestProjectSetup).Assembly</c>. Its name
+        /// identifies the project, so adding a sub-project requires no central registration and cannot collide
+        /// with an existing entry.
+        /// </param>
+        public static void ReserveTestPorts(Assembly projectAssembly)
         {
-            try
-            {
-                // Runs the static constructor, evaluating the PortOffset initializer and claiming the slot.
-                RuntimeHelpers.RunClassConstructor(typeof(TestUtils).TypeHandle);
-            }
-            catch (TypeInitializationException e) when (e.InnerException is not null)
-            {
-                ExceptionDispatchInfo.Capture(e.InnerException).Throw();
-            }
+            testPort = TestPortAllocator.Reserve(StandalonePortCount, projectAssembly.GetName().Name);
+            endPoint = new IPEndPoint(IPAddress.Loopback, testPort);
         }
 
         /// <summary>
-        /// Reads <see cref="PortSlotEnvVar"/> and converts it to a port offset.
-        /// </summary>
-        /// <returns>The offset to add to every assigned port; 0 when no slot is selected.</returns>
-        private static int ResolvePortOffset()
-        {
-            var raw = Environment.GetEnvironmentVariable(PortSlotEnvVar);
-            if (string.IsNullOrWhiteSpace(raw))
-                return 0;
-
-            // Only validated when slots are in use, so the unset path cannot be broken by a band regression.
-            ValidatePortBands();
-
-            return raw.Trim().Equals("auto", StringComparison.OrdinalIgnoreCase)
-                ? ClaimCheckoutPortSlot() * PortSlotStride
-                : ParseExplicitPortSlot(raw) * PortSlotStride;
-        }
-
-        /// <summary>
-        /// Parses an explicit slot number.
-        /// </summary>
-        /// <param name="raw">The raw environment variable value.</param>
-        /// <returns>The slot number.</returns>
-        internal static int ParseExplicitPortSlot(string raw)
-        {
-            if (int.TryParse(raw.Trim(), out var slot) && slot >= 0 && slot <= MaxPortSlot)
-                return slot;
-
-            throw new InvalidOperationException(
-                $"{PortSlotEnvVar} must be 'auto' or an integer in [0, {MaxPortSlot}]; got '{raw}'.");
-        }
-
-        /// <summary>
-        /// Verifies that the port bands still satisfy the invariants the slot arithmetic depends on. Every value
-        /// is derived from the assignment enums, so adding an assignment that breaks a slot fails here loudly
-        /// instead of silently reintroducing cross-checkout port collisions.
-        /// </summary>
-        internal static void ValidatePortBands()
-        {
-            var standalone = Enum.GetValues<TestPortAssignment>().Select(p => (int)p).ToArray();
-            var standaloneBase = standalone.Min();
-            var standaloneTop = standalone.Max() + PortsPerAssignment;
-
-            ValidateBandWidth("standalone", standaloneBase, standaloneTop);
-            ValidateBandWidth("cluster", ClusterPortBandBase, ClusterPortBandTop);
-
-            var highestStandalone = standaloneTop + (MaxPortSlot * PortSlotStride);
-            if (highestStandalone >= EphemeralPortFloor)
-            {
-                throw new InvalidOperationException(
-                    $"Port slot {MaxPortSlot} puts the top of the standalone test port band at {highestStandalone}, " +
-                    $"at or above the ephemeral port floor ({EphemeralPortFloor}), where binds fail intermittently. " +
-                    $"Lower {nameof(MaxPortSlot)} to {(EphemeralPortFloor - 1 - standaloneTop) / PortSlotStride}, or " +
-                    $"relocate the band into the unused range between {ClusterPortBandTop} and {standaloneBase}.");
-            }
-
-            var highestCluster = ClusterPortBandTop + (MaxPortSlot * PortSlotStride);
-            if (highestCluster >= standaloneBase)
-            {
-                throw new InvalidOperationException(
-                    $"Port slot {MaxPortSlot} puts the top of the cluster test port band at {highestCluster}, which " +
-                    $"reaches the standalone band's slot 0 base ({standaloneBase}). Lower {nameof(MaxPortSlot)} to " +
-                    $"{(standaloneBase - 1 - ClusterPortBandTop) / PortSlotStride}, or move the two bands apart.");
-            }
-        }
-
-        /// <summary>
-        /// Verifies one band is narrower than the slot stride.
-        /// </summary>
-        /// <param name="name">Band name, used in the failure message.</param>
-        /// <param name="bandBase">Lowest port in the band.</param>
-        /// <param name="bandTop">Highest port in the band, inclusive of its reserved width.</param>
-        private static void ValidateBandWidth(string name, int bandBase, int bandTop)
-        {
-            var width = bandTop - bandBase;
-            if (width > PortSlotStride)
-            {
-                throw new InvalidOperationException(
-                    $"The {name} test port band spans {width} ports ({bandBase}-{bandTop}), which exceeds " +
-                    $"{nameof(PortSlotStride)} ({PortSlotStride}), so port slot n would overlap slot n+1. Raise " +
-                    $"{nameof(PortSlotStride)} to at least {width} and re-check {nameof(MaxPortSlot)}, or move the " +
-                    $"band's outlying assignments closer together.");
-            }
-        }
-
-        /// <summary>
-        /// This process's claim on its port slot, one of possibly several held against the same slot by test
-        /// hosts from this checkout. The field exists to root the stream for the lifetime of the test host: the
-        /// lock lives in the open handle, so letting this be collected and finalized would silently release the
-        /// slot mid-run. It is never read and must not be removed or replaced with a local. Deliberately never
-        /// disposed either — the OS releases it on exit, crash, or kill, which is exactly how a slot becomes free.
-        /// </summary>
-        private static FileStream portSlotHolder;
-
-        /// <summary>
-        /// Claims a port slot for this checkout, or rejoins the one it already holds. Claiming per checkout rather
-        /// than per process lets one checkout run all of its test projects in parallel on a single slot: their
-        /// base ports already differ, so the slot only has to move the whole checkout clear of other checkouts.
-        /// <para>
-        /// Two kinds of file track a slot, and they identify different things. <c>slot{n}.owner</c> names a
-        /// <em>directory</em>: the checkout the slot belongs to, recorded as text and kept indefinitely, so a
-        /// checkout keeps returning to the same slot. <c>slot{n}.holder-{pid}</c> names a <em>process</em>: one
-        /// per live test host, empty because the lock on it is the whole point, released by the OS when that
-        /// process dies. So a slot has exactly one owner and any number of holders — one per concurrent
-        /// <c>dotnet test</c> from that checkout, which the parallel test-project runsettings makes routine.
-        /// </para>
-        /// <para>
-        /// Because holders are per live process, the supply limits how many checkouts can run tests
-        /// simultaneously, not how many checkouts may exist. Exhaustion therefore means either more than
-        /// <see cref="MaxPortSlot"/> concurrent runs, or servers stranded by earlier runs that still hold ports
-        /// while holding no lock. Both are reported per slot so they can be told apart, and the throw stops the
-        /// run outright — see <see cref="PortOffset"/>.
-        /// </para>
-        /// </summary>
-        /// <returns>The claimed slot number.</returns>
-        private static int ClaimCheckoutPortSlot()
-        {
-            var dir = Path.Combine(Path.GetTempPath(), "garnet-test-port-slots");
-            _ = Directory.CreateDirectory(dir);
-
-            var checkoutKey = GetCheckoutKey();
-            using var claimLock = AcquireClaimLock(dir);
-
-            // Rejoin a slot this checkout already owns. While another test host from this checkout still holds
-            // the slot, its ports are legitimately in use by that host, so they are not probed. Once no holder
-            // is left the ownership record is only a hint: another checkout may have taken those ports with an
-            // explicit slot in the meantime, so they have to be re-checked before trusting it.
-            for (var slot = MinAutoPortSlot; slot <= MaxPortSlot; slot++)
-            {
-                if (!string.Equals(ReadSlotOwner(dir, slot), checkoutKey, StringComparison.Ordinal))
-                    continue;
-
-                if (HasLiveHolder(dir, slot) || ArePortsFree(slot))
-                    return TakeSlot(dir, slot, checkoutKey, "rejoined");
-            }
-            // Otherwise take a slot that no live test host is using and whose ports are actually free. The owner
-            // record is not consulted here: a slot with no live holder is available whoever used it last.
-            var blockedBy = new List<string>();
-            for (var slot = MinAutoPortSlot; slot <= MaxPortSlot; slot++)
-            {
-                if (HasLiveHolder(dir, slot))
-                {
-                    blockedBy.Add($"slot {slot}: in use by {ReadSlotOwner(dir, slot) ?? "an unrecorded checkout"}");
-                    continue;
-                }
-
-                if (!ArePortsFree(slot))
-                {
-                    // No lock, but something is on the ports: typically a server stranded by a crashed run.
-                    blockedBy.Add($"slot {slot}: ports in use with no test host holding the slot");
-                    continue;
-                }
-
-                return TakeSlot(dir, slot, checkoutKey, "claimed");
-            }
-
-            throw new InvalidOperationException(
-                $"No Garnet test port slot is available; all {MaxPortSlot - MinAutoPortSlot + 1} are taken." +
-                Environment.NewLine + string.Join(Environment.NewLine, blockedBy) + Environment.NewLine +
-                $"Slots are only held while test hosts are running, so this means that many concurrent runs, or " +
-                $"stray servers left by earlier ones. Wait for a run to finish, terminate stray processes by PID " +
-                $"(never by name), or set {PortSlotEnvVar} to an explicit slot. Bookkeeping lives in '{dir}'.");
-        }
-
-        /// <summary>
-        /// The ports a slot reserves. Enumerated from <see cref="TestPortAssignment"/> rather than listed here,
-        /// so every assignment a project can bind is probed at claim time and a new one is covered without a
-        /// second edit: claim time and bind time have to see the same set of ports.
-        /// <para>
-        /// Standalone assignments are probed at their base alone because no standalone project binds past it;
-        /// one that starts to must widen this. The cluster band is probed across its whole node range, because
-        /// a run can die leaving a non-base node listening while its base node is disposed, which a base-only
-        /// probe would read as free.
-        /// </para>
-        /// </summary>
-        /// <param name="slot">Slot whose ports to enumerate.</param>
-        /// <returns>Every port the slot hands out.</returns>
-        internal static IEnumerable<int> SlotPorts(int slot)
-        {
-            var offset = slot * PortSlotStride;
-
-            foreach (var assignment in Enum.GetValues<TestPortAssignment>())
-                yield return (int)assignment + offset;
-
-            for (var node = 0; node < MaxClusterNodesPerSubProject; node++)
-                yield return ClusterPortBandBase + offset + node;
-        }
-
-        /// <summary>
-        /// Probes the ports a slot hands out. A server stranded by a crashed run holds no slot lock at all, so
-        /// binding is the authority on whether a slot is actually usable.
-        /// </summary>
-        /// <param name="slot">Slot to probe.</param>
-        /// <returns>True when every port the slot reserves is free.</returns>
-        internal static bool ArePortsFree(int slot) => SlotPorts(slot).All(IsPortFree);
-
-        /// <summary>
-        /// Records the owning checkout and registers this process as a holder of the slot.
-        /// </summary>
-        /// <param name="dir">Slot bookkeeping directory.</param>
-        /// <param name="slot">Slot being taken.</param>
-        /// <param name="checkoutKey">Key identifying this checkout.</param>
-        /// <param name="verb">Whether the slot was claimed or rejoined, for the progress message.</param>
-        /// <returns>The slot number.</returns>
-        private static int TakeSlot(string dir, int slot, string checkoutKey, string verb)
-        {
-            WriteSlotOwner(dir, slot, checkoutKey);
-            portSlotHolder = new FileStream(
-                Path.Combine(dir, $"slot{slot}.holder-{Environment.ProcessId}"),
-                FileMode.Create, FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
-
-            TestContext.Progress.WriteLine(
-                $"Garnet test port slot {slot} {verb} (port offset {slot * PortSlotStride}) for '{checkoutKey}'.");
-            return slot;
-        }
-
-        private static string SlotOwnerPath(string dir, int slot) => Path.Combine(dir, $"slot{slot}.owner");
-
-        /// <summary>
-        /// Records the checkout a slot belongs to. Failure propagates: continuing without the record would let a
-        /// later run treat this slot as unowned and hand it to another checkout while this one is still on it.
-        /// </summary>
-        /// <param name="dir">Slot bookkeeping directory.</param>
-        /// <param name="slot">Slot to record.</param>
-        /// <param name="checkoutKey">Key identifying the owning checkout.</param>
-        private static void WriteSlotOwner(string dir, int slot, string checkoutKey)
-            => File.WriteAllText(SlotOwnerPath(dir, slot), checkoutKey);
-
-        /// <summary>
-        /// Reads the checkout key recorded against a slot.
-        /// </summary>
-        /// <param name="dir">Slot bookkeeping directory.</param>
-        /// <param name="slot">Slot to read.</param>
-        /// <returns>The owning checkout key, or null when the slot is unowned or unreadable.</returns>
-        private static string ReadSlotOwner(string dir, int slot)
-        {
-            try
-            {
-                var path = SlotOwnerPath(dir, slot);
-                return File.Exists(path) ? File.ReadAllText(path) : null;
-            }
-            catch (IOException)
-            {
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Determines whether any live test host still holds a slot. A holder lock is released by the kernel when
-        /// its process dies, including on crash or kill, so a file that can now be opened exclusively belonged to
-        /// a dead host and is removed.
-        /// </summary>
-        /// <param name="dir">Slot bookkeeping directory.</param>
-        /// <param name="slot">Slot to test.</param>
-        /// <returns>True when at least one live process still holds the slot.</returns>
-        private static bool HasLiveHolder(string dir, int slot)
-        {
-            var live = false;
-            foreach (var path in Directory.GetFiles(dir, $"slot{slot}.holder-*"))
-            {
-                try
-                {
-                    using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
-                    {
-                    }
-
-                    TryDeleteHolder(path);
-                }
-                catch (FileNotFoundException)
-                {
-                    // Removed by its owner between enumeration and opening.
-                }
-                catch (IOException)
-                {
-                    live = true;
-                }
-            }
-
-            return live;
-        }
-
-        private static void TryDeleteHolder(string path)
-        {
-            try
-            {
-                File.Delete(path);
-            }
-            catch (IOException)
-            {
-                // Another test host reclaimed it first.
-            }
-        }
-
-        /// <summary>
-        /// Serializes slot claiming across processes. Without it two checkouts can both observe the same slot as
-        /// free and both record themselves as its owner. Held only for the duration of a claim.
-        /// </summary>
-        /// <param name="dir">Slot bookkeeping directory.</param>
-        /// <returns>The held lock, to be released once the claim completes.</returns>
-        private static FileStream AcquireClaimLock(string dir)
-        {
-            var path = Path.Combine(dir, "claim.lock");
-            var deadline = DateTime.UtcNow.AddSeconds(10);
-
-            while (true)
-            {
-                try
-                {
-                    return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-                }
-                catch (IOException) when (DateTime.UtcNow < deadline)
-                {
-                    Thread.Sleep(50);
-                }
-                catch (IOException e)
-                {
-                    throw new InvalidOperationException(
-                        $"Timed out acquiring the Garnet test port slot claim lock at '{path}'.", e);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Identifies the checkout — one working copy of the repo, meaning the directory containing
-        /// <c>Garnet.slnx</c>, which is the worktree root under <c>git worktree</c> and the clone root otherwise.
-        /// Every test host launched from that directory resolves the same key and so shares one slot. Uses
-        /// <see cref="AppContext.BaseDirectory"/> rather than the NUnit test directory because the value is
-        /// needed during static initialization. The solution file is the marker because in a worktree .git is a
-        /// hidden file rather than a directory.
-        /// </summary>
-        /// <returns>A normalized key identifying this checkout.</returns>
-        private static string GetCheckoutKey()
-        {
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Garnet.slnx")))
-                dir = dir.Parent;
-
-            // Falling back to the assembly directory stays correct; it just narrows sharing to one sub-project.
-            var root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir?.FullName ?? AppContext.BaseDirectory));
-            return OperatingSystem.IsWindows() ? root.ToLowerInvariant() : root;
-        }
-
-        /// <summary>
-        /// Reports whether a port can currently be bound. Both wildcards are probed, and exclusively, so that a
-        /// listener is detected wherever it sits: tests bind the IPv4 and IPv6 loopbacks, every address
-        /// <see cref="Dns.GetHostAddresses(string)"/> returns, and <see cref="IPAddress.Any"/>, and a wildcard
-        /// bind conflicts with a specific-address one only when it asks for exclusive use.
-        /// <para>
-        /// Each family is bound separately rather than through one dual-mode socket, whose handling of
-        /// IPv4-mapped addresses is platform-dependent. <see cref="IPAddress.Any"/> covers IPv4 alone, so a
-        /// listener on <see cref="IPAddress.IPv6Loopback"/> needs the second bind to be seen.
-        /// </para>
+        /// Whether a port can currently be bound.
         /// </summary>
         /// <param name="port">Port to test.</param>
         /// <returns>True when the port is free.</returns>
-        internal static bool IsPortFree(int port)
-            => CanBindExclusively(IPAddress.Any, port)
-                && (!Socket.OSSupportsIPv6 || CanBindExclusively(IPAddress.IPv6Any, port));
+        internal static bool IsPortFree(int port) => TestPortAllocator.IsPortFree(port);
 
         /// <summary>
-        /// Binds one address exclusively and releases it again. Exclusivity is what makes this a probe: a shared
-        /// bind succeeds alongside a listener on a specific address under that wildcard and would report the
-        /// port free. A port in <c>TIME_WAIT</c> is still reported free, since no listener can be there.
+        /// Adds port-allocation context to a test that failed because a server could not bind, so the reader
+        /// can tell an environment conflict on this machine from a defect in Garnet or in the test.
+        /// <para>
+        /// This runs from <see cref="OnTearDown"/>, which every fixture calls, rather than at the throw site:
+        /// the bind happens inside <c>GarnetServer.Start</c> and the exception travels through hundreds of
+        /// call sites that would otherwise each need wrapping. The failure is matched on the message
+        /// <c>GarnetServerTcp</c> produces, which is authored here in the repository rather than supplied by
+        /// the platform, so it is neither locale-dependent nor liable to drift.
+        /// </para>
         /// </summary>
-        /// <param name="address">Address to bind, normally a wildcard.</param>
-        /// <param name="port">Port to bind.</param>
-        /// <returns>True when the bind succeeded.</returns>
-        private static bool CanBindExclusively(IPAddress address, int port)
+        private static void ReportPortConflictIfBindFailed()
         {
-            try
-            {
-                var listener = new TcpListener(address, port) { ExclusiveAddressUse = true };
-                listener.Start();
-                listener.Stop();
-                return true;
-            }
-            catch (SocketException)
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Fails immediately when a resolved test port is already taken, so a port conflict surfaces as an
-        /// actionable error rather than as wrong results from another checkout's server or a SocketFailure
-        /// partway through the run.
-        /// </summary>
-        /// <param name="port">The resolved port.</param>
-        /// <param name="assignment">Name of the assignment that produced it.</param>
-        internal static void EnsurePortAvailable(int port, string assignment)
-        {
-            if (IsPortFree(port))
+            var result = TestContext.CurrentContext.Result;
+            if (result.Outcome.Status != TestStatus.Failed)
                 return;
 
-            throw new InvalidOperationException(
-                $"Test port {port} ({assignment}) is already in use. Likely causes: a server stranded by a crashed " +
-                $"run; another checkout running this test project without {PortSlotEnvVar}; or this test project " +
-                $"already running from this checkout. Set {PortSlotEnvVar}=auto in every checkout that shares this " +
-                $"machine, and terminate stray processes by PID rather than by name.");
+            var report = BuildPortConflictReport(result.Message);
+            if (report is not null)
+                TestContext.Progress.WriteLine(report);
         }
 
         /// <summary>
-        /// Fails when any port a cluster sub-project can bind is already taken. Cluster tests bind one port per
-        /// node from their base, so checking the base alone would miss a node stranded by a crashed run and let
-        /// the conflict surface later as a cluster that never forms.
+        /// Builds the port-allocation context for a failed test, or returns null when the failure is not one
+        /// this context explains. Separated from <see cref="ReportPortConflictIfBindFailed"/> so the decision
+        /// and the wording can be asserted without having to make a real test fail.
         /// </summary>
-        /// <param name="basePort">The sub-project's resolved base port.</param>
-        /// <param name="assignment">Name of the assignment that produced it.</param>
-        internal static void EnsureClusterPortsAvailable(int basePort, string assignment)
+        /// <param name="failureMessage">The failed test's message.</param>
+        /// <returns>The report to emit, or null when this failure is unrelated.</returns>
+        internal static string BuildPortConflictReport(string failureMessage)
         {
-            for (var node = 0; node < MaxClusterNodesPerSubProject; node++)
-                EnsurePortAvailable(basePort + node, assignment);
+            if (failureMessage is null)
+                return null;
+
+            // Matches the message GarnetServerTcp produces. That string is authored in this repository rather
+            // than supplied by the platform, so it is neither locale-dependent nor liable to drift.
+            var match = BindFailurePattern.Match(failureMessage);
+            if (!match.Success)
+                return null;
+
+            // Only an occupied port is explained by how ports were allocated. GarnetServerTcp already reports
+            // AccessDenied as a platform-reserved range and AddressNotAvailable as an address absent from the
+            // machine; neither is another process taking the port, so repeating this reasoning for them would
+            // state a confident diagnosis that is simply wrong.
+            if (match.Groups["error"].Value != nameof(SocketError.AddressAlreadyInUse))
+                return null;
+
+            var endpoint = match.Groups["endpoint"].Value;
+            var reservation = TryParsePort(endpoint, out var port) ? TestPortAllocator.FindReservation(port) : null;
+            var occupant =
+                $"Identify the occupant with 'Get-NetTCPConnection -LocalPort {(reservation is null ? "<port>" : port.ToString())}' " +
+                $"on Windows or 'ss -ltnp' on Linux, and stop it by process id rather than by name.";
+
+            if (reservation is null)
+            {
+                // Covers an endpoint the test constructed itself, which the allocator never promised anything
+                // about - saying otherwise would send the reader looking for an external process that does not
+                // exist.
+                return $"A Garnet test server failed to bind {endpoint}. That port was not reserved by this " +
+                    $"test host, so it carries none of the allocator's guarantees: the test supplied the " +
+                    $"endpoint directly. {occupant}";
+            }
+
+            var held = $"This host holds {reservation.BasePort}-{reservation.BasePort + reservation.PortCount - 1} " +
+                $"for '{reservation.Purpose}', probed free at startup.";
+
+            if (!reservation.IsWhollyInUniverse)
+            {
+                // A pinned run may sit anywhere, including inside the ephemeral range, where the kernel can
+                // hand the port to an outbound connection between the probe and the bind. That is the one case
+                // the allocator cannot rule out, so it must not be described as external software.
+                return $"A Garnet test server failed to bind {endpoint}. {held} Those ports were pinned with " +
+                    $"{TestPortAllocator.PinnedBaseEnvVar} and lie outside " +
+                    $"{TestPortAllocator.UniverseBase}-{TestPortAllocator.UniverseBase + TestPortAllocator.UniverseSize - 1}, " +
+                    $"so the operating system may itself have assigned one to an outbound connection - the " +
+                    $"collision pinning opts out of. Re-run without the pin, or pin inside that range, before " +
+                    $"treating this as a conflict with other software. {occupant}";
+            }
+
+            return $"A Garnet test server failed to bind {endpoint}. {held} Reserved ports lie below " +
+                $"{TestPortAllocator.UniverseBase + TestPortAllocator.UniverseSize}, beneath every supported " +
+                $"platform's ephemeral range, so the operating system cannot have assigned one to an outbound " +
+                $"connection, and the lease excludes every other Garnet test host. A conflict here is therefore " +
+                $"software outside this suite taking the port mid-run, not a defect in Garnet or in this test. " +
+                $"{occupant} Set {TestPortAllocator.PinnedBaseEnvVar} to pin a known-free base port if it recurs.";
+        }
+
+        /// <summary>
+        /// Recognizes the bind failure <c>GarnetServerTcp</c> reports, capturing the endpoint and the socket
+        /// error so the two can be judged separately.
+        /// </summary>
+        private static readonly Regex BindFailurePattern =
+            new(@"Could not bind (?<endpoint>\S+) \((?<error>\w+)\)", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Reads the port from an endpoint as rendered by <see cref="IPEndPoint.ToString"/>, which is
+        /// <c>address:port</c> for IPv4 and <c>[address]:port</c> for IPv6 - so the port follows the last
+        /// colon in both forms.
+        /// </summary>
+        /// <param name="endpoint">Endpoint text captured from the failure message.</param>
+        /// <param name="port">The parsed port.</param>
+        /// <returns>True when a port could be read.</returns>
+        private static bool TryParsePort(string endpoint, out int port)
+        {
+            port = 0;
+            var colon = endpoint.LastIndexOf(':');
+            return colon >= 0 && int.TryParse(endpoint.AsSpan(colon + 1), out port);
         }
 
         /// <summary>
@@ -1844,7 +1462,7 @@ namespace Garnet.test
             if (sslPolicyErrors == SslPolicyErrors.None)
                 return true;
 
-            if (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors)
+            if (sslPolicyErrors.HasFlag(SslPolicyErrors.RemoteCertificateChainErrors))
             {
                 // Check chain elements
                 foreach (var itemInChain in chain.ChainElements)
@@ -1971,6 +1589,8 @@ using System.Threading.Tasks;
 
         internal static void OnTearDown(bool waitForDelete = false, ILogger logger = null, bool suppressFailure = false)
         {
+            ReportPortConflictIfBindFailed();
+
             var failTestOnLeak = !suppressFailure && TestContext.CurrentContext.Result.Outcome.Status == TestStatus.Passed;
 
             DeleteDirectory(MethodTestDir, wait: waitForDelete);
