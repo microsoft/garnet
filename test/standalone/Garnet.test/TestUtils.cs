@@ -1462,7 +1462,7 @@ namespace Garnet.test
             if (sslPolicyErrors == SslPolicyErrors.None)
                 return true;
 
-            if (sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors)
+            if (sslPolicyErrors.HasFlag(SslPolicyErrors.RemoteCertificateChainErrors))
             {
                 // Check chain elements
                 foreach (var itemInChain in chain.ChainElements)
