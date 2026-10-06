@@ -280,10 +280,9 @@ namespace Garnet.cluster
                 var initTask = gsn.TryInitializeAsync();
                 if (initTask.IsCompletedSuccessfully)
                 {
-                    if (!AsyncUtils.BlockingWait(initTask))
-                        continue;
-
-                    // Can stay sync, so proceed
+                    // Initialization is best-effort for publish forwarding. A live connection may still be
+                    // available while gossip initialization is held back by reconnect backoff.
+                    _ = AsyncUtils.BlockingWait(initTask);
                     gsn.TryClusterPublish(cmd, channel, message);
                 }
                 else
@@ -304,15 +303,11 @@ namespace Garnet.cluster
                     (_, lastGsn) = await getOrAddTask.ConfigureAwait(false);
 
                     if (lastGsn != null)
-                    {
-                        if (!await lastGsn.TryInitializeAsync().ConfigureAwait(false))
-                            lastGsn = null;
-                    }
+                        _ = await lastGsn.TryInitializeAsync().ConfigureAwait(false);
                 }
                 else
                 {
-                    if (!await initTask.ConfigureAwait(false))
-                        lastGsn = null;
+                    _ = await initTask.ConfigureAwait(false);
                 }
 
                 if (lastGsn != null)
@@ -330,9 +325,8 @@ namespace Garnet.cluster
                     if (gsn == null)
                         continue;
 
-                    // Initialize or reconnect the GarnetServerNode.
-                    if (!await gsn.TryInitializeAsync().ConfigureAwait(false))
-                        continue;
+                    // Initialization is best-effort; TryClusterPublish verifies the connection is live.
+                    _ = await gsn.TryInitializeAsync().ConfigureAwait(false);
 
                     // Publish to remote nodes
                     gsn.TryClusterPublish(cmd, channel.Span, message.Span);
