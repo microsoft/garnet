@@ -229,6 +229,10 @@ namespace Garnet.cluster
         {
             rangeIndexMigrationState?.Dispose();
 
+            // A record whose chunks were still arriving when the connection went away holds pooled buffers that no Reset
+            // will reach.
+            chunkedRecordReassembler?.Dispose();
+
             // Call dispose on ref of this session if this session is a replication task
             if (IsReplicating)
                 replicaReplayDriverStore?.Dispose();

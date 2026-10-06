@@ -403,9 +403,6 @@ namespace Garnet.server
                 case AofEntryType.StoredProcedure:
                     aofReplayCoordinator.ReplayStoredProc(virtualSublogIdx, header.procedureId, ptr, logAddressSequenceNumber);
                     break;
-                case AofEntryType.TxnCommit:
-                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(virtualSublogIdx, ptr, asReplica, logAddressSequenceNumber);
-                    break;
                 default:
                     _ = ReplayOpDispatch(
                         virtualSublogIdx,
@@ -451,6 +448,11 @@ namespace Garnet.server
         /// proceed with dispatch (<paramref name="bufferPtr"/>/<paramref name="bufferLength"/> set); false if the op was skipped
         /// or buffered and the caller should stop.
         /// </summary>
+        /// <remarks>
+        /// This may throw: it waits on the vector-replication event. Callers holding a resource for the record must therefore
+        /// call it from within whatever scope releases that resource, rather than relying on it to return. The chunked
+        /// <c>ReplayOp</c> overload does exactly that for its accumulator's pooled chunk buffers.
+        /// </remarks>
         private bool BeginReplayOp(AofReplayContext replayContext, AofEntryType opType, bool skip, out byte* bufferPtr, out int bufferLength)
         {
             // StoreRMW can queue VADDs onto different threads; everything else must wait for those to complete first for consistency.
@@ -774,14 +776,19 @@ namespace Garnet.server
         => unifiedContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
         /// <summary>
-        /// On recovery apply records with header.version greater than CurrentVersion.
+        /// Decide what replay should do with a record: dispatch it, skip it, or buffer it for later replay. Returns true
+        /// for BOTH of the cases in which the caller must not dispatch — the record belongs to a prior checkpoint version
+        /// and is dropped, or it is a new-version record inside the fuzzy region, which is <b>buffered</b> here and
+        /// replayed at the end of the region. This overload's caller cannot tell the two apart and does not need to: a
+        /// non-chunked record is buffered as a copy of its bytes and owns nothing that must be released. The chunked
+        /// overload reports the distinction via its <c>isBuffered</c> parameter because its record does.
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="inFuzzyRegion"></param>
         /// <param name="entryPtr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
-        /// <returns></returns>
+        /// <returns>True if the caller must not dispatch this record now.</returns>
         /// <exception cref="GarnetException"></exception>
         bool ShouldSkipRecord(int sublogIdx, bool inFuzzyRegion, byte* entryPtr, int length, bool asReplica)
         {
