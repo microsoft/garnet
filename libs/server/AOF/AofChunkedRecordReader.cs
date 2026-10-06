@@ -49,9 +49,10 @@ namespace Garnet.server
         public byte[] value;
         /// <summary>Bytes of <see cref="value"/> filled so far.</summary>
         public int valueOffset;
-        /// <summary>Value chunks for streamed object values (length not known up front); wrapped as a <see cref="ReadOnlySequence{T}"/>
-        /// by <see cref="GetValueSequence"/> for streaming deserialize with no contiguous copy.</summary>
-        public List<byte[]> valueChunks;
+        /// <summary>Value chunks for streamed object values (length not known up front), accumulated into pooled buffers and
+        /// wrapped as a <see cref="ReadOnlySequence{T}"/> by <see cref="GetValueSequence"/> for streaming deserialize with no
+        /// contiguous copy. Released by <see cref="ReturnValueChunks"/> once the value has been deserialized.</summary>
+        public PooledChunkList valueChunks;
         /// <summary>Input buffer, pre-allocated to the header's full input length.</summary>
         public byte[] input;
         /// <summary>Bytes of <see cref="input"/> filled so far.</summary>
@@ -77,7 +78,12 @@ namespace Garnet.server
         public ReadOnlySpan<byte> InputSpan => new(input, 0, inputOffset);
 
         /// <summary>Wrap the streamed object value chunks as a <see cref="ReadOnlySequence{T}"/> (no data copy).</summary>
-        public ReadOnlySequence<byte> GetValueSequence() => ReadOnlySequenceBuilder.FromChunks(valueChunks);
+        public ReadOnlySequence<byte> GetValueSequence() => valueChunks.AsSequence();
+
+        /// <summary>Return the streamed object value's pooled buffers. Call once the value has been deserialized and the
+        /// sequence from <see cref="GetValueSequence"/> is no longer referenced. Idempotent, so it is safe to call on every
+        /// path that discards the accumulator.</summary>
+        public void ReturnValueChunks() => valueChunks?.Reset();
 
         /// <summary>Verify each component's accumulated length matches the chunk header's declared full length.</summary>
         public void Verify()
@@ -122,8 +128,18 @@ namespace Garnet.server
     /// <remarks>
     /// The full length of each overflow/span component (key, span value, input) is known up front and stored in the chunk
     /// header, so the reader allocates ONE buffer per such component (on the first chunk) and copies the chunks directly into
-    /// it. Streamed object values (whose length is not known up front) are accumulated as a chunk list. The completed
+    /// it. Streamed object values (whose length is not known up front) are accumulated into pooled buffers. The completed
     /// accumulator is dispatched directly (no contiguous record image).
+    /// <para>
+    /// The value is accumulated and then deserialized, rather than deserialized as its chunks arrive. Streaming would hold
+    /// only a bounded window of serialized bytes instead of the whole value, but it cannot be applied to the records that
+    /// would benefit: whole-object upserts come from RENAME, which wraps itself in an internal transaction, so replay is
+    /// inside a transaction when the chunks arrive and the record is buffered until commit rather than dispatched. A buffered
+    /// record must hold its value in whichever form it was accumulated, and the materialized object is several times the size
+    /// of the bytes for a collection. Deserialization is also synchronous, so streaming needs a second thread fed by the
+    /// replay thread, which cannot block where the replay thread holds the log epoch or is the thread servicing the data
+    /// source. Between them these exclude every path a chunked object value currently arrives on.
+    /// </para>
     /// </remarks>
     internal sealed unsafe class AofChunkedRecordReader
     {
@@ -193,7 +209,7 @@ namespace Garnet.server
                 if (hasValue)
                 {
                     if (isObjectValue)
-                        acc.valueChunks = [];
+                        acc.valueChunks = new PooledChunkList();
                     else
                         acc.value = new byte[chunkHeader.overflowValueLength];
                 }
@@ -247,6 +263,18 @@ namespace Garnet.server
             return true;
         }
 
+        /// <summary>
+        /// Discard every partially-accumulated record, returning its pooled chunk buffers. Called when replay ends: a
+        /// truncated AOF tail (the normal outcome of a crash) leaves the last record's chunks in <see cref="inProgress"/>,
+        /// and those rentals would otherwise never be returned to the shared pool.
+        /// </summary>
+        internal void DiscardInProgressAccumulations()
+        {
+            foreach (var acc in inProgress.Values)
+                acc.ReturnValueChunks();
+            inProgress.Clear();
+        }
+
         // Copy a chunk's bytes into the current component's pre-sized buffer (or accumulate for a streamed object value).
         static void AppendChunk(ChunkedAccumulator acc, byte* src, int dataLen)
         {
@@ -257,7 +285,7 @@ namespace Garnet.server
                     break;
                 case ChunkedAccumulator.Component.Value:
                     if (acc.isObjectValue)
-                        acc.valueChunks.Add(new ReadOnlySpan<byte>(src, dataLen).ToArray());
+                        acc.valueChunks.Append(new ReadOnlySpan<byte>(src, dataLen));
                     else
                         CopyInto(acc.value, ref acc.valueOffset, src, dataLen);
                     break;
