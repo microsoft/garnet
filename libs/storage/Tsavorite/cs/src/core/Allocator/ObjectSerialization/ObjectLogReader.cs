@@ -47,6 +47,15 @@ namespace Tsavorite.core
         ulong recordStreamConsumed;
         /// <summary>True while reading a headered object: <see cref="Read"/> strips ChunkHeaders/padding and follows continuation.</summary>
         bool objectChunked;
+        /// <summary>Remaining object-log DATA bytes the value deserializer may still consume for the current record.
+        /// <para><c>-1</c> means framing-bounded: a headered object's length is not known up front (its objectId hint saturates at the
+        /// discovery sentinel), so the ChunkHeader chain bounds it instead. <c>0</c> means there is nothing to read -- either the record
+        /// has no object-log bytes at all, or the component is genuinely zero length -- and <see cref="Read"/> then reports end-of-stream
+        /// without touching the read-ahead ring. A positive value is an exact remaining byte count that <see cref="Read"/> clamps to.</para>
+        /// <para>This is what keeps a deserializer that asks for more than it wrote from consuming the following record's bytes, and it
+        /// replaces any reliance on the record's stamp: a page walked a second time has had its stamps cleared in the live buffer by
+        /// <c>SetDeserializedValueObject</c>, so the stamp cannot be used to decide whether bytes are available.</para></summary>
+        long objectDataBudget = -1;
         /// <summary>Current record's object-log start position, used to convert framing-relative offsets to absolute read endpoints.</summary>
         ObjectLogFilePositionInfo recordStartPosition;
         /// <summary>Headerless-prefix DATA bytes still to serve before the first ChunkHeader.</summary>
@@ -58,13 +67,9 @@ namespace Tsavorite.core
         /// <summary>Low 3 bits of the record's object-log start offset, for the first-header 8-align.</summary>
         int objectRecordStartOffsetLow3;
         /// <summary>Continuation flag of the most recently entered data-bearing chunk. Only the writer's serialize-completion back-fills a
-        /// non-continuing header, so a data chunk with this clear is provably the object's final chunk. Consulted only in copy-to-end mode.</summary>
+        /// non-continuing header, so a data chunk with this clear is provably the object's final chunk, which is what lets
+        /// <see cref="ReadObjectData"/> terminate without reading the next record's bytes as a header.</summary>
         bool objectCurrentChunkContinues;
-        /// <summary>When set (a recovery verbatim copy via <see cref="CopyRecordObjectsFollowingFraming"/>, which has no deserializer to
-        /// self-terminate on), <see cref="ReadObjectData"/> ends the object after consuming a final (non-continuing) data chunk rather than
-        /// reading another header. Clear on the normal deserialize path, which is driven to completion by the serializer's requested lengths.</summary>
-        bool objectFollowToEnd;
-
         /// <summary>When set (a recovery verbatim copy via <see cref="CopyRecordObjectsFollowingFraming"/>), every raw byte consumed from the
         /// read-ahead ring is also written to this sink, so a framing walk that discards the deserialized data still produces a byte-exact
         /// copy of the record's object-log extent into the main object-log. Null during normal reads.</summary>
@@ -194,9 +199,18 @@ namespace Tsavorite.core
                         objectPrefixRemaining = ObjectLogWriter<TStoreFunctions>.ObjectHeaderlessPrefixLen;
                         objectChunkRemaining = 0;
                         objectFirstHeaderRead = false;
+
+                        // A headered object's length is not known up front, so the ChunkHeader chain bounds it rather than a byte budget.
+                        objectDataBudget = -1;
+                    }
+                    else
+                    {
+                        // A headerless object's hint is its exact byte count, so bound the deserializer to exactly that.
+                        objectDataBudget = isLegacy ? (long)valueLength : logRecord.ValueObjectIdSizeHint;
                     }
                     DoDeserialize(ref logRecord);
                     objectChunked = false;
+                    objectDataBudget = -1;
                 }
 
                 // Restore non-inline length fields to ObjectIdSize for in-memory record length correctness.
@@ -207,6 +221,51 @@ namespace Tsavorite.core
             {
                 logRecord.OnDeserializationError(keyWasSet);
                 throw;
+            }
+        }
+
+        /// <summary>Materialize a record's out-of-line components without reading any object-log bytes, then unstamp it like a normal read.</summary>
+        /// <param name="logRecord">The record to materialize.</param>
+        /// <remarks>
+        /// Used for a record that has out-of-line components but no bytes in the object log: one the flush skipped, or one whose only
+        /// out-of-line component is zero length. Reading such a record's position would consume bytes belonging to a different record,
+        /// but simply skipping it would leave its components unmaterialized and would never tell the value serializer the record existed.
+        /// <para>Every component is therefore materialized empty and the value deserializer is still invoked with
+        /// <see cref="objectDataBudget"/> at zero, so <see cref="Read(Span{byte}, CancellationToken)"/> reports end-of-stream and it
+        /// receives no data. That lets an <c>ISessionFunctions</c> implementation audit these records, and lets a deliberately empty
+        /// object round-trip.</para>
+        /// </remarks>
+        public void MaterializeRecordObjectsWithoutReading(ref LogRecord logRecord)
+        {
+            Debug.Assert(logRecord.DataHeader.RecordHasObjects, "Inline records have no out-of-line components to materialize");
+
+            recordStreamConsumed = 0;
+            objectChunked = false;
+            objectDataBudget = 0;
+            var keyWasSet = false;
+            try
+            {
+                if (logRecord.DataHeader.KeyIsOverflow)
+                {
+                    logRecord.KeyOverflow = new OverflowByteArray(0, startOffset: 0, endOffset: 0, zeroInit: false);
+                    keyWasSet = true;
+                }
+
+                if (logRecord.DataHeader.ValueIsOverflow)
+                    logRecord.ValueOverflow = new OverflowByteArray(0, startOffset: 0, endOffset: 0, zeroInit: false);
+                else if (logRecord.DataHeader.ValueIsObject)
+                    DoDeserialize(ref logRecord);
+
+                logRecord.OnObjectReadComplete();
+            }
+            catch
+            {
+                logRecord.OnDeserializationError(keyWasSet);
+                throw;
+            }
+            finally
+            {
+                objectDataBudget = -1;
             }
         }
 
@@ -295,7 +354,6 @@ namespace Tsavorite.core
                     else
                     {
                         objectChunked = true;
-                        objectFollowToEnd = true;
                         objectCurrentChunkContinues = true;   // "not yet at the final chunk"; overwritten as each data chunk's header is read
                         objectPrefixRemaining = ObjectLogWriter<TStoreFunctions>.ObjectHeaderlessPrefixLen;
                         objectChunkRemaining = 0;
@@ -310,7 +368,6 @@ namespace Tsavorite.core
                         finally
                         {
                             objectChunked = false;
-                            objectFollowToEnd = false;
                         }
                     }
                 }
@@ -395,11 +452,24 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public int Read(Span<byte> destinationSpan, CancellationToken cancellationToken = default)
         {
+            // Nothing left for this component: report end-of-stream rather than consuming another record's bytes from the ring.
+            if (objectDataBudget == 0)
+                return 0;
+
+            // An exact-length component cannot serve more than it wrote; clamp so an over-reading deserializer sees end-of-stream
+            // at its own boundary instead of bleeding into the next record.
+            if (objectDataBudget > 0 && destinationSpan.Length > objectDataBudget)
+                destinationSpan = destinationSpan.Slice(0, (int)objectDataBudget);
+
             // A headered value object is read through the chunk-stripping path; everything else (overflow, headerless object, ChunkHeader
             // reads, padding skips) reads raw stream bytes.
-            if (objectChunked)
-                return ReadObjectData(destinationSpan, cancellationToken);
-            return ReadRawStream(destinationSpan, cancellationToken);
+            var bytesRead = objectChunked
+                ? ReadObjectData(destinationSpan, cancellationToken)
+                : ReadRawStream(destinationSpan, cancellationToken);
+
+            if (objectDataBudget > 0)
+                objectDataBudget -= bytesRead;
+            return bytesRead;
         }
 
         /// <summary>Read up to <paramref name="destinationSpan"/>.Length raw bytes from the object-log read-ahead ring, extending the ring in
@@ -550,10 +620,12 @@ namespace Tsavorite.core
                 }
                 if (objectChunkRemaining == 0)
                 {
-                    // Copy-to-end mode has no deserializer to stop it: once the final (non-continuing) data chunk is fully consumed, the object
-                    // is complete -- ending here avoids reading the next record's bytes as a spurious header. The exact-buffer-boundary case,
-                    // where the last data chunk continues into a trailing zero-length terminal chunk, still stops via AdvanceToNextObjectChunk.
-                    if (objectFollowToEnd && objectFirstHeaderRead && !objectCurrentChunkContinues)
+                    // Once the final (non-continuing) data chunk is fully consumed the object is complete, so stop rather than reading the
+                    // next record's bytes as a spurious header. Copy-to-end mode has no deserializer to stop it; the normal deserialize path
+                    // relies on this too, because a deserializer that asks for more than it wrote would otherwise walk off this record.
+                    // The exact-buffer-boundary case, where the last data chunk continues into a trailing zero-length terminal chunk, still
+                    // stops via AdvanceToNextObjectChunk.
+                    if (objectFirstHeaderRead && !objectCurrentChunkContinues)
                         break;
                     if (!AdvanceToNextObjectChunk())
                         break;

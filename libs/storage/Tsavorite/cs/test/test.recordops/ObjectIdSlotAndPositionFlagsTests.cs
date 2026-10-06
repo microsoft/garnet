@@ -184,16 +184,16 @@ namespace Tsavorite.test.Objects
         [Category("Smoke")]
         public unsafe void ExactSizeFlagsAreIndependentAndDoNotDisturbOtherBits()
         {
-            // Start with a realistic segment+offset payload plus the (bit-63) ReuseObjectIdForSize flag set.
+            // Start with a realistic segment+offset payload plus the (bit-63) unused flag set.
             ulong segmentAndOffset = 0x0ABCDEF012345UL & ObjectLogFilePositionInfo.SegmentAndOffsetMask;
-            ulong word = segmentAndOffset | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+            ulong word = segmentAndOffset | ObjectLogFilePositionInfo.kUnusedBit63Mask;
 
             ObjectLogFilePositionInfo.SetKeyIsExactSize(&word);
             ObjectLogFilePositionInfo.SetValueIsExactSize(&word);
 
             Assert.That(ObjectLogFilePositionInfo.GetKeyIsExactSize(&word), Is.True);
             Assert.That(ObjectLogFilePositionInfo.GetValueIsExactSize(&word), Is.True);
-            Assert.That(ObjectLogFilePositionInfo.GetReuseObjectIdForSize(&word), Is.True, "existing flag preserved");
+            Assert.That(word & ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.Not.EqualTo(0UL), "existing flag preserved");
             // The segment+offset payload is untouched by the flag bits.
             Assert.That(word & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(segmentAndOffset));
         }
@@ -203,11 +203,34 @@ namespace Tsavorite.test.Objects
         public void ExactSizeFlagBitsAreDistinctAndAboveTheSegmentOffsetRange()
         {
             Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask, Is.Not.EqualTo(ObjectLogFilePositionInfo.kValueIsExactSizeMask));
-            // Both flags live above the 60-bit segment+offset range and below the bit-63 ReuseObjectIdForSize flag.
+            // Both flags live above the 60-bit segment+offset range and below the unused bit 63.
             Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(0UL));
             Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(0UL));
-            Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask, Is.EqualTo(0UL));
-            Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
+        }
+
+        [Test]
+        [Category("Smoke")]
+        public unsafe void UnusedPositionBitsAreAvailableAndDistinct()
+        {
+            // The two spare flag bits must not collide with each other, with the in-use flags, or with the segment+offset payload,
+            // so either is available for a future format discriminator.
+            Assert.That(ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.Not.EqualTo(ObjectLogFilePositionInfo.kUnusedBit62Mask));
+            Assert.That(ObjectLogFilePositionInfo.kUnusedBit63Mask & ObjectLogFilePositionInfo.kUnusedBit62Mask, Is.EqualTo(0UL));
+
+            foreach (var unusedMask in new[] { ObjectLogFilePositionInfo.kUnusedBit63Mask, ObjectLogFilePositionInfo.kUnusedBit62Mask })
+            {
+                Assert.That(unusedMask & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(0UL));
+                Assert.That(unusedMask & ObjectLogFilePositionInfo.kKeyIsExactSizeMask, Is.EqualTo(0UL));
+                Assert.That(unusedMask & ObjectLogFilePositionInfo.kValueIsExactSizeMask, Is.EqualTo(0UL));
+            }
+
+            // An unstamped word leaves both spare bits untouched, so stamping one survives unstamping.
+            ulong word = 0;
+            ObjectLogFilePositionInfo.Unstamp(&word);
+            Assert.That(word & ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
+            Assert.That(word & ObjectLogFilePositionInfo.kUnusedBit62Mask, Is.EqualTo(0UL));
         }
 
         [TestCase(50UL, 3, 4050UL)]

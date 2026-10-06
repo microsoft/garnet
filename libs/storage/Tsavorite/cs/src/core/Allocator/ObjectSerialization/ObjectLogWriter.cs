@@ -532,6 +532,8 @@ namespace Tsavorite.core
 
         /// <summary>At the end of the headerless prefix: 8-align the object-log position (padding through the buffer) and write the first chunk's
         /// placeholder <see cref="ChunkHeader"/>, entering the headered phase.</summary>
+        /// <remarks>The 8-alignment is what keeps an 8-byte header from straddling a page, sector or buffer boundary, so the placeholder
+        /// written here stays addressable as one contiguous unit for the later back-fill. See <see cref="ChunkHeader"/>.</remarks>
         void StartObjectHeaderedPhase()
         {
             var padLen = (int)((8 - (flushBuffers.GetNextRecordStartPosition().Offset & 7)) & 7);

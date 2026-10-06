@@ -170,7 +170,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual((0, 0), MissingCounts(NumKeys, extraKeys), "data was lost across checkpoint-after-replay (checkpointed, aof-only)");
         }
 
-        /// <summary>Count out-of-line main-log records still carrying the downlevel ReuseObjectIdForSize flag (bit 63).</summary>
+        /// <summary>Count out-of-line main-log records still carrying the downlevel marker in unused bit 63.</summary>
         static int CountDownlevelRecordsOnMainLog() => V7CheckpointFixture.CountDownlevelRecordsOnMainLog(new DirectoryInfo(TestUtils.MethodTestDir).FullName);
 
         /// <summary>Recover normally and report how many checkpointed and how many AOF-only keys are missing.</summary>

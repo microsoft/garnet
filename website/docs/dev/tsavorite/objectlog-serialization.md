@@ -148,7 +148,7 @@ component length prefixes outside the inline record image, but it leaves RDH len
 ### 2.3 Legacy exception
 
 Checkpoint cv7 used an older split length encoding: the RDH raw field held the low length bits and the objectId slot
-held the next 32 bits. `ReuseObjectIdForSize` (object-log position bit 63) selects that decoder in
+held the next 32 bits. The cv7 marker in object-log position bit 63 accompanies that decoder in
 `LogRecord_cv7.cs`.
 
 The legacy decoder interprets both raw fields according to that older layout. Current-format code uses
@@ -198,7 +198,7 @@ The optional 8-byte object-log position combines an address and format flags:
 | 60 | `ValueIsExactSize` |
 | 61 | `KeyIsExactSize` |
 | 62 | Unused and available |
-| 63 | Legacy cv7 `ReuseObjectIdForSize` discriminator |
+| 63 | Unused and available; cv7 images carry a marker here that cv8 recovery ignores and clears |
 
 The key and value flags are independent because one record can have, for example, a 100-byte headerless overflow key
 and a 5 MB framed object value.
@@ -220,6 +220,31 @@ skips the record persist a position for bytes it never wrote. Flush restamps whe
 Unstamped is consequently the *sole* test for "flush skipped this record, so there is nothing to read" — the reader no
 longer infers that from a zero extent, which could not distinguish a skipped record from a legitimately empty
 component.
+
+Such a record is not simply dropped. `ObjectLogReader.MaterializeRecordObjectsWithoutReading` materializes its
+out-of-line components as empty and still invokes the value deserializer, with the stream reporting end-of-stream so it
+receives no data. The same path serves a record whose only out-of-line component is zero length, which likewise
+contributes no object-log bytes. See the `IObjectSerializer<T>.Deserialize` contract: a serializer is handed back
+exactly the bytes it wrote, so an empty stream never means "this object serialized to nothing" — it means the record
+has no bytes in the object log.
+
+#### Bounding the deserializer
+
+That contract is enforced rather than assumed. `ObjectLogReader` carries a per-record `objectDataBudget`:
+
+| Value | Meaning |
+|---|---|
+| `0` | Nothing to read — the record has no object-log bytes, or the component is zero length. `Read` reports end-of-stream without touching the ring |
+| `> 0` | Exact remaining byte count for a headerless object, whose objectId hint *is* its length. `Read` clamps to it |
+| `-1` | Framing-bounded: a headered object's length is not known up front because its hint saturates at the discovery sentinel, so the `ChunkHeader` chain bounds it |
+
+In the framing-bounded case `ReadObjectData` stops once the final (non-continuing) data chunk is consumed, rather than
+reading the following record's bytes as a spurious header. A deserializer that asks for more than it wrote therefore
+sees end-of-stream at its own component boundary on every path.
+
+This also removes a dependence on the record's stamp. Deserialization unstamps the record in the **live buffer**
+(`SetDeserializedValueObject`), so a page that is walked again reads as entirely unstamped; "is there anything to read"
+is decided from the component extent, which that in-memory mutation cannot affect.
 
 ### 3.3 Exact versus page-count interpretation
 
@@ -252,6 +277,47 @@ For a non-exact overflow or object value:
 
 For values only, 511 is the sentinel meaning "issue a 4 MB discovery read and follow framing." It is not
 `511 * 4 KB`.
+
+#### How exactly a length is derivable
+
+Keys and values differ here, and the difference is deliberate:
+
+| Component | Derivable from the flushed indicators? |
+|---|---|
+| Overflow key | **Exactly**, always. `ComputeOverflowKeySizeHint` throws above `kMaxOverflowKeyPageCount`, so the RDH-high-bits + objectId-low-bits split always encodes an exact 19-bit page count |
+| Out-of-line value, below the sentinel | **Exactly** — exact bytes when `ValueIsExactSize` is set, else page count × 4 KB |
+| Out-of-line value, at the sentinel | **Only as a hint.** The authoritative length comes from the `ChunkHeader` chain |
+
+What *is* always derivable for a stamped record is whether a component is empty, which is what the reader needs:
+`ValueIsExactSize` set with hint 0 means a genuinely zero-length value, and that combination is unambiguous,
+because a headered value has `dataLength > 511` and therefore a page count of at least 1. Hint 0 with the flag
+clear only ever means unstamped.
+
+#### What the stamp does and does not tell you
+
+A stamped position means "these object-log bytes are at this location". An **unstamped** position arises from two
+different situations, and the reader treats them identically:
+
+1. The flush wrote no object-log bytes for the record, so it never stamped a position.
+2. An earlier walk of the same in-memory page already deserialized the record. `SetDeserializedValueObject` unstamps in
+   the **live buffer**, so every record on a re-walked page reads as unstamped even though its bytes were written
+   normally. Garnet's object-log upgrade flow does exactly this.
+
+Because of (2), an unstamped position is **not** evidence of a flush defect and cannot be asserted against. It is also
+why "is there anything to read" is decided from the component extent (see *Bounding the deserializer*) rather than from
+the stamp: an in-memory deserialization cannot affect an extent, but it does destroy a stamp.
+
+What the stamp still decides is whether a *position* may be used: reading from an unstamped position would consume
+bytes belonging to a different record, so the walk must not seek there.
+
+The one place the stamp is still treated as an invariant is the single-record pending read, which fails fast on an
+unstamped record. Situation (2) cannot arise there because that path uses a dedicated per-IO buffer rather than a
+shared page, so an unstamped record genuinely means one reached disk without its object bytes.
+
+Two cases are excluded from all of this by construction: a v+1 record, which a Snapshot flush writes verbatim while
+deliberately leaving its objects out of the snapshot object log and which recovery rejects at the persisted fuzzy
+boundary; and an elided record, whose lost capture leaves the live record `Invalid` so the `Info.Valid` test filters it
+first.
 
 ### 3.4 Computing and stamping a hint
 
@@ -291,7 +357,7 @@ an exact logical byte length. Value hints are initial IO requirements and may no
 
 `LogRecord.GetObjectLogRecordStartPositionAndLengths()`:
 
-1. checks `ReuseObjectIdForSize`; if set, dispatches to the cv7 exact-length decoder;
+1. selects the cv7 exact-length decoder from the checkpoint metadata version;
 2. reads the key/value objectId high bits and, for a non-exact key, raw RDH KeyLength;
 3. reads `KeyIsExactSize` / `ValueIsExactSize`;
 4. converts the key metadata to exact bytes or its full 19-bit page extent, and value metadata to exact bytes,
@@ -462,8 +528,18 @@ serializer. Serializer writes call `ObjectLogWriter.Write()`, which routes objec
 6. flush the buffer and reserve the next header; and
 7. when serialization ends, backfill the final header without continuation.
 
-Headers are backfilled only while their containing buffer is still mutable. An 8-byte-aligned header cannot straddle
-the 4 MB buffer or segment boundary because both are multiples of 8.
+**Why headers are 8-byte aligned.** A chunk's length is not known until its data has been produced, so the header is
+written as a placeholder and backfilled afterwards — and a backfill can only reach a header that is still addressable as
+eight contiguous bytes in a single mutable buffer. Aligning the header to an absolute 8-byte object-log boundary
+guarantees exactly that: every container the bytes pass through — the 4 MB write buffer, the segment, the 4 KB flush
+page and the 512-byte sector — has a size that is a multiple of 8, so an 8-aligned 8-byte header always lies wholly
+within one of them and can never straddle a boundary. A straddling header could have its first half already flushed and
+therefore be unpatchable. The same property lets the reader consume a header as a unit rather than reassembling it
+across two buffers.
+
+The alignment is absolute within the object log, not relative to the record, which is why a record's start offset
+modulo 8 is carried through the read path and why a verbatim snapshot copy pads to preserve the source's modulo-8
+offset.
 
 ### 5.6 Buffer and callback lifetime
 
@@ -647,8 +723,10 @@ For a framed object, `ReadObjectData()`:
 7. skips zero-length continuing chunks; and
 8. stops interpreting framing when continuation clears.
 
-The object deserializer self-terminates according to the object format. It never sees object-log padding or
-`ChunkHeader` bytes.
+The object deserializer self-terminates according to the object format, and the reader no longer relies on that alone:
+it stops once the final non-continuing chunk is consumed, and clamps to the component's exact byte count where one is
+known, so a deserializer that asks for more than it wrote sees end-of-stream rather than the next record's bytes. See
+*Bounding the deserializer*. It never sees object-log padding or `ChunkHeader` bytes.
 
 ### 6.5 Assignment to the objectId map
 
@@ -657,8 +735,11 @@ After object deserialization, `LogRecord.SetDeserializedValueObject()`:
 1. allocates a slot in the selected `ObjectIdMap`;
 2. stores the `IHeapObject`;
 3. writes the new low-bit objectId index into the value field;
-4. replaces the optional object-log position with the serialized extent needed by recovery bookkeeping, preserving
-   only the cv7 bit-63 discriminator; and
+4. unstamps the optional object-log position, preserving its flag bits. The bytes are now in memory, so the position
+   describes nothing the record still needs; leaving it stamped would let a later flush that skips the record persist a
+   position for bytes it never wrote. Flush restamps when it writes the record. Note this mutates the **live buffer**,
+   which is why a page walked a second time reads as entirely unstamped — see *What the stamp does and does not tell
+   you*; and
 5. restores/asserts the RDH physical value length as `ObjectIdMap.ObjectIdSize`.
 
 Overflow key/value reads similarly assign owned `OverflowByteArray` instances to objectId-map slots. The flushed
@@ -835,13 +916,16 @@ Indentation is call depth. Component branches and lifetime changes are included 
 - `ObjectAllocatorImpl.VerifyRecordFromDiskCallback(...)`
   - `GetObjectLogRecordStartPositionAndLengths(...)`
   - create `CircularDiskReadBuffer`
+  - throw if the record has no readable position — a dedicated per-IO buffer excludes in-memory unstamping, so this
+    means a record reached disk without its object bytes
+  - if the total read extent is zero -> `MaterializeRecordObjectsWithoutReading(...)` and return
   - `ObjectLogReader.OnBeginReadRecords(start, keyHint + valueHint, objectLogTail)`
   - `ObjectLogReader.ReadRecordObjects(...)`
     - `OnBeginRecord(start)`
     - overflow key -> `ReadOverflow()`
     - rebase value requirement at actual key end
     - overflow value -> `ReadOverflow()`
-    - object value -> `DoDeserialize()` -> `ReadObjectData()`
+    - object value -> set `objectDataBudget` (exact count, or -1 when framing-bounded) -> `DoDeserialize()` -> `ReadObjectData()`
     - `OnObjectReadComplete()`
   - `OnEndReadRecords()`
 
@@ -863,11 +947,14 @@ Indentation is call depth. Component branches and lifetime changes are included 
 - `Recovery.RecoveryLoadObjectsPass2(...)`
   - `ObjectAllocatorImpl.LoadObjectsForRecoveryPass2(...)`
     - `DeserializeObjectsOnPage(...)`
-      - scan same-device object-bearing records until one read-ring capacity is covered
+      - stop the walk at the page-extent guard (zeroed `RecordDataHeader`, non-positive or overrunning allocated size)
+      - first pass: scan same-device object-bearing records until one read-ring capacity is covered, contributing no
+        range for a record with no readable position
       - include the final scanned record's first-component hint
       - `OnBeginReadRecords(...)`
       - second pass, each valid object record
-        - `ReadRecordObjects(...)`
+        - no readable position -> `MaterializeRecordObjectsWithoutReading(...)`, no recovered-object accounting
+        - otherwise `ReadRecordObjects(...)`
         - record hints set initial component demand
         - parsed framing rebases following components and sets authoritative endpoints
         - `TrackRecoveredObjectRecord(...)`

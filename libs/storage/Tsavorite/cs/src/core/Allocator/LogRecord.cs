@@ -1601,7 +1601,7 @@ namespace Tsavorite.core
 
             var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
 
-            // Write ObjectLogPosition with the ReuseObjectIdForSize flag cleared, marking the objectId-hint format.
+            // Write ObjectLogPosition, which clears any stale flag bits and marks the objectId-hint format.
             var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
             *objectLogPositionPtr = objectLogFilePosition.word;
 
@@ -1728,7 +1728,7 @@ namespace Tsavorite.core
         /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log
         /// verbatim and repoints the live record to the main position before writing it. The record's objects are NOT deserialized at this point,
         /// so unlike the setters this does not read lengths from objectIdMap; the copied lengths and encoding are unchanged, so ALL existing
-        /// position-word flag bits are preserved (ReuseObjectIdForSize, Key/ValueIsExactSize) — only the segment+offset is taken from
+        /// position-word flag bits are preserved (the unused bit 63, Key/ValueIsExactSize) — only the segment+offset is taken from
         /// the new position. A downlevel record copied verbatim stays downlevel; a hint-format record keeps its size-hint flags to match its
         /// verbatim-copied objectId-slot stamp.
         /// </remarks>
@@ -1793,11 +1793,6 @@ namespace Tsavorite.core
         /// record, because recovering a downlevel checkpoint up-converts every record before any page can be evicted.</summary>
         internal readonly bool IsDownlevelObjectLogRecord(int checkpointVersion)
             => HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion);
-
-        /// <summary>Set the <c>ReuseObjectIdForSize</c> flag on this record's ObjectLogPosition slot, marking the downlevel split length
-        /// encoding. No production writer sets this flag; it is retained for tests that synthesize v7 record images.</summary>
-        internal readonly void SetReuseObjectIdForSize()
-            => ObjectLogFilePositionInfo.SetReuseObjectIdForSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
 
         /// <summary>
         /// Called after <see cref="ObjectLogReader{TStoreFunctions}"/> completes deserialization of a record's objects.

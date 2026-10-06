@@ -326,6 +326,116 @@ namespace Tsavorite.test.LogRecordTests
             RestoreToOriginal(value, ref sizeInfo, ref logRecord, expectedFillerLength, eTag, expiration);
         }
 
+        /// <summary>A serializer that implements the empty-stream contract: it reports what it saw and yields an object either way.</summary>
+        sealed class EmptyTolerantSerializer : BinaryObjectSerializer<IHeapObject>
+        {
+            internal static int DeserializeCallCount;
+            internal static bool SawEmptyStream;
+
+            public override void Deserialize(out IHeapObject obj)
+            {
+                ++DeserializeCallCount;
+                var first = reader.BaseStream.ReadByte();
+                SawEmptyStream = first < 0;
+                obj = new TestObjectValue() { value = first < 0 ? 0 : first };
+            }
+
+            public override void Serialize(IHeapObject obj) => writer.Write((byte)1);
+        }
+
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public unsafe void MaterializeWithoutReadingDeserializesFromAnEmptyStream()
+        {
+            Span<byte> key = stackalloc byte[initialKeyLen];
+            Span<byte> value = stackalloc byte[initialValueLen];
+            key.Fill(0x42);
+            value.Fill(0x43);
+
+            var sizeInfo = new RecordSizeInfo();
+            InitializeRecord(TestSpanByteKey.FromPinnedSpan(key), value, ref sizeInfo, out var logRecord, out var expectedFillerLength, out var eTag, out var expiration);
+
+            var offset = value.Length - 4 - LogRecord.ObjectLogPositionSize;
+            ConvertToObject(ref sizeInfo, ref logRecord, expectedFillerLength, eTag, expiration, offset);
+
+            // Stamp a position so the unstamping below is observable rather than vacuous.
+            var positionPtr = (ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
+            *positionPtr = 0x1234;
+            Assert.That(ObjectLogFilePositionInfo.IsUnstamped(positionPtr), Is.False);
+
+            EmptyTolerantSerializer.DeserializeCallCount = 0;
+            EmptyTolerantSerializer.SawEmptyStream = false;
+
+            // readBuffers is never touched in materialize-only mode, so no device or ring is needed.
+            var storeFunctions = StoreFunctions.Create(new SpanByteComparer(), () => (IObjectSerializer<IHeapObject>)new EmptyTolerantSerializer(), DefaultRecordTriggers.Instance);
+            var logReader = new ObjectLogReader<StoreFunctions<SpanByteComparer, DefaultRecordTriggers>>(readBuffers: null, storeFunctions);
+
+            logReader.MaterializeRecordObjectsWithoutReading(ref logRecord);
+
+            Assert.That(EmptyTolerantSerializer.DeserializeCallCount, Is.EqualTo(1), "the deserializer must still be called so it can observe the record");
+            Assert.That(EmptyTolerantSerializer.SawEmptyStream, Is.True, "the stream must report end-of-stream, not another record's bytes");
+            Assert.That(logRecord.ValueObject, Is.Not.Null, "the value must be materialized");
+            Assert.That(ObjectLogFilePositionInfo.IsUnstamped(positionPtr), Is.True, "materializing must unstamp like a normal read");
+        }
+
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public unsafe void ZeroLengthKeyStaysInlineAndIsNotMistakenForUnwrittenSpace()
+        {
+            // A zero-length key is always inline -- it cannot exceed maxInlineKeySize -- so KeyIsInline (RecordDataHeader bit 0)
+            // is set and the header word is nonzero. The page-extent guard in ObjectAllocatorImpl.DeserializeObjectsOnPage breaks
+            // on word == 0, so a zero-length key must never produce that value or the walk would stop at a real record.
+            Span<byte> keyStorage = stackalloc byte[1];
+            var key = keyStorage.Slice(0, 0);
+            Span<byte> value = stackalloc byte[initialValueLen];
+            value.Fill(0x43);
+
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = new() { KeySize = 0, ValueSize = initialValueLen } };
+            UpdateRecordSizeInfo(ref sizeInfo);
+            Assert.That(sizeInfo.KeyIsInline, Is.True, "a zero-length key is always inline");
+
+            nativePointer = (long)NativeMemory.AlignedAlloc((nuint)sizeInfo.AllocatedInlineRecordSize, Constants.kCacheLineBytes);
+            var logRecord = new LogRecord(nativePointer, objectIdMap) { InfoRef = RecordInfo.InitialValid };
+            logRecord.InitializeRecord(TestSpanByteKey.FromPinnedSpan(key), in sizeInfo);
+
+            Assert.That(logRecord.DataHeader.word, Is.Not.EqualTo(0UL),
+                "a zero-length-key record must not look like unwritten page space to the page-extent guard");
+            Assert.That(logRecord.DataHeader.KeyIsInline, Is.True);
+            Assert.That(logRecord.DataHeader.KeyLength, Is.EqualTo(0));
+            Assert.That(logRecord.Key.Length, Is.EqualTo(0));
+            Assert.That(logRecord.AllocatedSize, Is.GreaterThan(0));
+        }
+
+        [Test]
+        [Category(LogRecordCategory), Category(SmokeTestCategory)]
+        public unsafe void ZeroLengthKeyWithObjectValueRoundTrips()
+        {
+            Span<byte> keyStorage = stackalloc byte[1];
+            var key = keyStorage.Slice(0, 0);
+            Span<byte> value = stackalloc byte[initialValueLen];
+            value.Fill(0x43);
+
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = new() { KeySize = 0, ValueSize = initialValueLen } };
+            UpdateRecordSizeInfo(ref sizeInfo);
+
+            nativePointer = (long)NativeMemory.AlignedAlloc((nuint)sizeInfo.AllocatedInlineRecordSize, Constants.kCacheLineBytes);
+            var logRecord = new LogRecord(nativePointer, objectIdMap) { InfoRef = RecordInfo.InitialValid };
+            logRecord.InitializeRecord(TestSpanByteKey.FromPinnedSpan(key), in sizeInfo);
+            Assert.That(logRecord.TrySetValueSpanAndPrepareOptionals(value, in sizeInfo), Is.True);
+
+            // Convert the value to an object, which allocates the objectId slot; the key stays zero-length and inline.
+            sizeInfo.FieldInfo.ValueSize = ObjectIdMap.ObjectIdSize;
+            sizeInfo.FieldInfo.ValueIsObject = true;
+            UpdateRecordSizeInfo(ref sizeInfo);
+            Assert.That(logRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue() { value = 0x64646464 }, in sizeInfo), Is.True);
+
+            // The record has out-of-line data, so the walk inspects it; it must still be distinguishable from unwritten space.
+            Assert.That(logRecord.DataHeader.RecordHasObjects, Is.True);
+            Assert.That(logRecord.DataHeader.word, Is.Not.EqualTo(0UL));
+            Assert.That(logRecord.Key.Length, Is.EqualTo(0));
+            Assert.That(((TestObjectValue)logRecord.ValueObject).value, Is.EqualTo(0x64646464));
+        }
+
         // ── Max inline key/value size limit tests ─────────────────────────────────────
         //
         // These verify the boundary between inline (key/value bytes stored directly in the record) and overflow

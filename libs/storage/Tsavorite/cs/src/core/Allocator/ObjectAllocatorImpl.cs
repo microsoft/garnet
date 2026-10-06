@@ -395,9 +395,9 @@ namespace Tsavorite.core
             Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be resused");
 
             // Object allocator may have Inline or Overflow Keys or Values; additionally, Values may be Object. Both non-inline cases are an objectId in the record.
-            // Key
-            if (sizeInfo.FieldInfo.KeySize <= 0)
-                ThrowTsavoriteException($"Key length must be greater than zero (got {sizeInfo.FieldInfo.KeySize})");
+            // Key. A zero-length key is inline by definition, so it never takes the overflow path.
+            if (sizeInfo.FieldInfo.KeySize < 0)
+                ThrowTsavoriteException($"Key length cannot be negative (got {sizeInfo.FieldInfo.KeySize})");
             if (sizeInfo.FieldInfo.KeySize <= maxInlineKeySize)
                 sizeInfo.SetKeyIsInline();
             var keySize = sizeInfo.KeyIsInline ? sizeInfo.FieldInfo.KeySize : ObjectIdMap.ObjectIdSize;
@@ -866,18 +866,28 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Whether recovery must skip <paramref name="logRecord"/> because the flush wrote no object-log bytes for it.
+        /// Whether <paramref name="logRecord"/> has no object-log position that can be read from, so its components must be
+        /// materialized rather than fetched.
         /// </summary>
         /// <remarks>
-        /// The flush stamps a position into every record it writes object bytes for, and every other record carries the unstamped
-        /// marker from the moment its out-of-line components were introduced. An unstamped position is therefore the whole signal;
-        /// reading one would consume bytes belonging to a different record.
-        /// <para>Read extents play no part. A zero extent is a legitimate zero-length out-of-line value, which contributes no
+        /// Two distinct situations produce an unstamped position, and the reader treats them identically:
+        /// <list type="number">
+        /// <item>The flush wrote no object-log bytes for the record, so it never stamped a position.</item>
+        /// <item>An earlier walk of this same in-memory page already deserialized the record. <c>SetDeserializedValueObject</c>
+        /// unstamps in the live buffer, so every record on a re-walked page reads as unstamped even though its bytes were written
+        /// normally. Garnet's object-log upgrade flow does exactly this.</item>
+        /// </list>
+        /// Because of (2) an unstamped position is NOT evidence of a flush defect, and this condition cannot be asserted against.
+        /// It is also why "is there anything to read" is decided from the component extent -- see <c>ObjectLogReader.objectDataBudget</c> --
+        /// rather than from the stamp: an in-memory deserialization cannot affect an extent.
+        /// <para>What the stamp still decides is whether a <i>position</i> may be used. Reading from an unstamped position would consume
+        /// bytes belonging to a different record, so the walk must not seek there.</para>
+        /// <para>Read extents play no part in this test. A zero extent is a legitimate zero-length out-of-line value, which contributes no
         /// object-log bytes but is still stamped and still materialized, and a zero position word is offset 0 of segment 0 -- a
         /// real position -- because the unstamped marker lives in the segment+offset bits.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool RecordWasSkippedByFlush(in LogRecord logRecord)
+        private static bool RecordHasNoReadablePosition(in LogRecord logRecord)
             => ObjectLogFilePositionInfo.WordIsUnstamped(logRecord.RawObjectLogPositionWord);
 
         protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
@@ -1441,6 +1451,22 @@ namespace Tsavorite.core
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
+
+            // A record read back from disk was necessarily written by a flush, so it must carry a position. The in-memory unstamping
+            // that RecordHasNoReadablePosition describes cannot apply here: this is a dedicated single-record IO buffer, not a shared
+            // page that an earlier walk could have deserialized in place. So an unstamped record means a Valid record reached disk
+            // without its object bytes, which is a flush defect rather than something to recover from.
+            if (RecordHasNoReadablePosition(in diskLogRecord.logRecord))
+                throw new TsavoriteException($"Record read from disk at {ctx.logicalAddress} has out-of-line components but an unstamped object-log position");
+
+            // Nothing to read: the only out-of-line component is zero length. Materialize it rather than opening a zero-length read range.
+            if (totalBytesToRead == 0)
+            {
+                logReader.MaterializeRecordObjectsWithoutReading(ref diskLogRecord.logRecord);
+                prevAddressToRead = 0;
+                return true;
+            }
+
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers));
             if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits, HybridLogRecoveryInfo.CheckpointVersion))
             {
@@ -1541,10 +1567,12 @@ namespace Tsavorite.core
             {
                 var logRecord = new LogRecord(recordAddress);
 
-                // A record whose image does not lie wholly within the valid extent is not a record to parse. The device read is
-                // sector-aligned and a page's valid data can end mid-page, so the walk can reach bytes no flush wrote. A zeroed
-                // RecordDataHeader is the giveaway: every real record encodes lengths and inline flags there, and a zero word
-                // reports KeyIsOverflow/ValueIsOverflow set, because out-of-line is the absence of the inline flags.
+                // PAGE-EXTENT GUARD -- not a record-validity or stamping test. The device read is sector-aligned, so endAddress
+                // over-estimates the page's valid extent by up to a sector and this walk can reach bytes no flush ever wrote.
+                // A zeroed RecordDataHeader marks that boundary: every real record sets at least one inline flag, and bit 0
+                // (KeyIsInline) is set even for a zero-length key, so word == 0 means "no record here". Parsing those bytes
+                // would report KeyIsOverflow/ValueIsOverflow set -- out-of-line is the absence of the inline flags -- and yield
+                // a bogus minimum AllocatedSize, stepping the walk off the record boundary.
                 var allocatedSize = logRecord.AllocatedSize;
                 if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordAddress + allocatedSize > endAddress)
                     break;
@@ -1552,10 +1580,10 @@ namespace Tsavorite.core
 
                 if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                 {
-                    // Skip a record the flush wrote no object bytes for; see RecordWasSkippedByFlush. Reading its position would
-                    // consume bytes belonging to another record. A zero read extent is NOT this case: that is a legitimate
-                    // zero-length out-of-line value, which contributes no bytes to the range but is still materialized below.
-                    if (RecordWasSkippedByFlush(in logRecord))
+                    // Contribute no read range for a record with no readable position; see RecordHasNoReadablePosition. Reading its
+                    // position would consume bytes belonging to another record. A zero read extent is NOT this case: that is a
+                    // legitimate zero-length out-of-line value, which contributes no bytes but is still materialized below.
+                    if (RecordHasNoReadablePosition(in logRecord))
                         continue;
 
                     var position = new ObjectLogFilePositionInfo(
@@ -1603,9 +1631,14 @@ namespace Tsavorite.core
 
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
-                        // Skip the records the first pass skipped; see RecordWasSkippedByFlush.
-                        if (RecordWasSkippedByFlush(in logRecord))
+                        // The first pass contributed no read range for these; see RecordHasNoReadablePosition. Materialize the
+                        // components without reading, so the value deserializer still sees the record, then leave the recovered-object
+                        // accounting alone because the record added no object-log bytes.
+                        if (RecordHasNoReadablePosition(in logRecord))
+                        {
+                            logReader.MaterializeRecordObjectsWithoutReading(ref logRecord);
                             continue;
+                        }
 
                         _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits, checkpointVersion);
                         TrackRecoveredObjectRecord(in logRecord);

@@ -23,16 +23,20 @@ namespace Tsavorite.core
 
         // ── Flag bits in the top 4 bits of word (bits 60-63) ─────────────────────────
 
-        /// <summary>Bit position of the <c>ReuseObjectIdForSize</c> flag in <see cref="word"/>.
-        /// v7 records set it to mark the downlevel split length encoding: (RDH KeyLength/ValueLength field low bits) +
-        /// (objectId slot at keyAddress/valueAddress high 32 bits), with no length framing in the object-log stream. Current records leave it
-        /// clear and use the objectId-hint format (the authoritative length comes from the object-log stream framing).
-        /// Nothing in production reads this bit: recovery selects the downlevel-vs-current decode from the checkpoint metadata version
-        /// (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>), and recovering a downlevel checkpoint up-converts every record --
-        /// clearing the bit -- before any page can be evicted, so a live read never encounters a downlevel record. The bit is therefore free for
-        /// reuse; it is read and written only by tests that synthesize v7 record images.</summary>
-        internal const int kReuseObjectIdForSizeBit = 63;
-        internal const ulong kReuseObjectIdForSizeMask = 1UL << kReuseObjectIdForSizeBit;
+        /// <summary>Bit position of an unused flag in <see cref="word"/>, available for a future format discriminator.
+        /// <para>cv7 records set this bit to mark the downlevel split length encoding, but nothing in production reads it: recovery selects
+        /// the downlevel-vs-current decode from the checkpoint metadata version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>),
+        /// and recovering a downlevel checkpoint up-converts every record -- clearing the bit, because flush rewrites the whole position word --
+        /// before any page can be evicted, so a live read never encounters a downlevel record. It is written only by the test fixtures that
+        /// synthesize cv7 record images, which also assert that cv8 recovery ignores and clears it; that keeps the bit proven available.</para></summary>
+        internal const int kUnusedBit63 = 63;
+        internal const ulong kUnusedBit63Mask = 1UL << kUnusedBit63;
+
+        /// <summary>Bit position of an unused flag in <see cref="word"/>, available for a future format discriminator.
+        /// A headered overflow key always splits its exact 4 KB-page-count read extent across raw RDH KeyLength (high bits) and the objectId
+        /// hint (low bits), so no flag is needed to select that encoding.</summary>
+        internal const int kUnusedBit62 = 62;
+        internal const ulong kUnusedBit62Mask = 1UL << kUnusedBit62;
 
         /// <summary>Bit position of the <c>KeyIsExactSize</c> flag in <see cref="word"/>.
         /// When set, the out-of-line KEY's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is stored in the top
@@ -49,9 +53,6 @@ namespace Tsavorite.core
         /// value bytes). When clear, the value is headered/chunked and its length comes from the object-log stream framing.</summary>
         internal const int kValueIsExactSizeBit = 60;
         internal const ulong kValueIsExactSizeMask = 1UL << kValueIsExactSizeBit;
-
-        // Bit 62 is unused and available. A headered overflow key always splits its exact 4 KB-page-count read extent across raw RDH
-        // KeyLength (high bits) and the objectId hint (low bits), so no flag is needed to select that encoding.
 
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
@@ -114,14 +115,6 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             word = ulong.Parse(value);
         }
-
-        /// <summary>Set the <c>ReuseObjectIdForSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe void SetReuseObjectIdForSize(ulong* wordPtr) => *wordPtr |= kReuseObjectIdForSizeMask;
-
-        /// <summary>Read the <c>ReuseObjectIdForSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe bool GetReuseObjectIdForSize(ulong* wordPtr) => (*wordPtr & kReuseObjectIdForSizeMask) != 0;
 
         /// <summary>Set the <c>KeyIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

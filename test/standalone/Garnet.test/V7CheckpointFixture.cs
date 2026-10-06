@@ -92,7 +92,7 @@ namespace Garnet.test
             return newest;
         }
 
-        /// <summary>Count out-of-line main-log records still carrying the downlevel ReuseObjectIdForSize flag (bit 63).</summary>
+        /// <summary>Count out-of-line main-log records still carrying the downlevel marker in unused bit 63.</summary>
         /// <param name="storeRoot">The directory containing the store's <c>Store</c> folder.</param>
         public static unsafe int CountDownlevelRecordsOnMainLog(string storeRoot)
         {
@@ -117,7 +117,7 @@ namespace Garnet.test
                     if (!logRecord.Info.Valid || logRecord.DataHeader.RecordIsInline)
                         continue;
                     var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
-                    if ((word & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask) != 0)
+                    if ((word & ObjectLogFilePositionInfo.kUnusedBit63Mask) != 0)
                         ++downlevel;
                 }
             }
@@ -191,8 +191,8 @@ namespace Garnet.test
             }
             logRecord.SetDataHeader(dataHeader);
 
-            // Keep the segment+offset; set the ReuseObjectIdForSize flag (bit 63); clear the current size-hint flags.
-            *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+            // Keep the segment+offset; set the unused bit 63; clear the current size-hint flags.
+            *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kUnusedBit63Mask;
         }
 
         /// <summary>

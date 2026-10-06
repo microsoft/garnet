@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <see cref="RecordDataHeader.kKeyLengthBits"/> / <see cref="RecordDataHeader.kValueLengthBits"/> bits live in the RDH
     /// KeyLength/ValueLength field, and the next 32 bits are in the objectId slot at keyAddress/valueAddress. The object-log stream
     /// carries no length framing. v7 records set the record's ObjectLogPosition
-    /// <see cref="ObjectLogFilePositionInfo.kReuseObjectIdForSizeBit"/> flag, which nothing in production reads. Recovery selects this decode
+    /// <see cref="ObjectLogFilePositionInfo.kUnusedBit63"/> flag, which nothing in production reads. Recovery selects this decode
     /// solely from the checkpoint metadata version (<see cref="HybridLogRecoveryInfo.UsesDownlevelObjectLog(int)"/>, threaded via
     /// <see cref="RecoveryOptions"/> and <see cref="PageAsyncFlushResult{TContext}"/>), and up-converts every record it decodes, so a live read
     /// never reaches this path.</para>

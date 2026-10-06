@@ -60,19 +60,21 @@ namespace Tsavorite.test.Objects
         }
 
         /// <summary>
-        /// A zero-length key is rejected at sizing time. Recovery and the object-log reader both treat a zero key read
-        /// extent as "this record has an inline key", so a zero-length overflow key would be indistinguishable from one.
+        /// A zero-length key is accepted and is always inline: it cannot exceed the max inline key size, so it never takes the
+        /// overflow path. That keeps the ambiguity the old rejection guarded against from arising -- there is no such thing as a
+        /// zero-length overflow key -- while still allowing an empty key.
         /// </summary>
         [Test, Category(TsavoriteKVTestCategory), Category(ObjectIdMapCategory)]
-        public void ZeroLengthKeyIsRejected()
+        public void ZeroLengthKeyIsAcceptedAndInline()
         {
-            Assert.Throws<TsavoriteException>(PopulateWithZeroLengthKey);
+            Assert.DoesNotThrow(PopulateWithZeroLengthKey);
             Assert.DoesNotThrow(PopulateWithOneByteKey);
 
             void PopulateWithZeroLengthKey()
             {
                 var sizeInfo = new RecordSizeInfo() { FieldInfo = new RecordFieldInfo() { KeySize = 0, ValueSize = sizeof(long) } };
                 store.hlog.PopulateRecordSizeInfo(ref sizeInfo);
+                Assert.That(sizeInfo.KeyIsInline, Is.True, "a zero-length key is always inline");
             }
 
             void PopulateWithOneByteKey()

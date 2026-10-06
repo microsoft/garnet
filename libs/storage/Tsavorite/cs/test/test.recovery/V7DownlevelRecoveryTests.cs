@@ -29,7 +29,7 @@ namespace Tsavorite.test.recovery
     /// therefore byte-identical to the v7 dense encoding — and then rewrites, on disk, only what distinguishes v7 from the current
     /// format:
     ///   * each non-inline record's length encoding is re-stamped into the v7 split form (RDH low bits + objectId-slot high bits) and
-    ///     its ObjectLogPosition word gets the ReuseObjectIdForSize flag (bit 63) with the current size-hint flags cleared, and
+    ///     its ObjectLogPosition word gets the unused bit 63 with the current size-hint flags cleared, and
     ///   * the checkpoint metadata is re-serialized through <see cref="HybridLogRecoveryInfo.ToByteArray(int)"/> at target version 7.
     /// The object-log bytes and record positions are left untouched, so no v7 object-log writer is needed.
     /// </summary>
@@ -372,8 +372,8 @@ namespace Tsavorite.test.recovery
             }
             logRecord.SetDataHeader(dataHeader);
 
-            // Keep the segment+offset; set the ReuseObjectIdForSize flag (bit 63); clear the current size-hint flags (bits 60-62).
-            *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+            // Keep the segment+offset; set the unused bit 63; clear the current size-hint flags (bits 60-62).
+            *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kUnusedBit63Mask;
         }
 
         // Build a Snapshot checkpoint of inline-key + object-value records, transformed to a DENSE v7 snapshot object log so the
@@ -722,7 +722,7 @@ namespace Tsavorite.test.recovery
             }
             logRecord.SetDataHeader(dataHeader);
 
-            *objectLogPositionPtr = (denseOffset & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask;
+            *objectLogPositionPtr = (denseOffset & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kUnusedBit63Mask;
         }
 
         // The bytes TestLargeObjectValue.Serializer writes: a 4-byte little-endian length followed by the payload.
@@ -888,7 +888,7 @@ namespace Tsavorite.test.recovery
         public async Task RecoverV7SnapshotUpConvertsMainLogOnDisk([Values(400, 20000)] int valueSize)
         {
             // The snapshot region's records must reach the main log in current format. Flush and evict everything after recovery, then
-            // inspect the main-log image directly: a record still carrying the v7 ReuseObjectIdForSize flag (bit 63) was copied verbatim
+            // inspect the main-log image directly: a record still carrying the v7 marker in unused bit 63 was copied verbatim
             // from the downlevel snapshot object log instead of being re-serialized.
             const int numRecords = 150;
             var token = BuildV7DenseSnapshotFixture(numRecords, valueSize);
@@ -1241,7 +1241,7 @@ namespace Tsavorite.test.recovery
         public async Task RecoverV7UpConvertsMainLogOnDisk([Values(400, 20000)] int valueSize)
         {
             // Proves the up-conversion actually rewrote the log rather than leaving the records readable only through the downlevel
-            // decode path. After recovery flushes every page, no main-log record may still carry the v7 ReuseObjectIdForSize flag
+            // decode path. After recovery flushes every page, no main-log record may still carry the v7 marker in unused bit 63
             // (bit 63): the current format never sets it, so any record left set is one the conversion pass missed.
             // Enough records to span several main-log pages, so the per-page object-log position stamps are exercised.
             const int numRecords = 150;
@@ -1309,8 +1309,8 @@ namespace Tsavorite.test.recovery
                     if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
                     {
                         var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
-                        ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask,
-                            $"record at {offset} was not up-converted: ReuseObjectIdForSize (bit 63) is still set");
+                        ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kUnusedBit63Mask,
+                            $"record at {offset} was not up-converted: unused bit 63 is still set");
 
                         // The page header stamps where the page's objects begin, so it must agree with the first record that has objects.
                         // A page left carrying its downlevel stamp would point into the replaced device and mis-drive object-log truncation.
@@ -1355,7 +1355,7 @@ namespace Tsavorite.test.recovery
             info.Recover(token, checkpointManager);
             ClassicAssert.AreEqual(7, info.hybridLogRecoveryVersion, "recovered metadata version should be 7");
 
-            // Every out-of-line record on the main-log page must have the ReuseObjectIdForSize flag (bit 63) set and none of the
+            // Every out-of-line record on the main-log page must have the unused bit 63 set and none of the
             // current size-hint flags (bits 60-62). Read the raw position word directly rather than via the production decoder.
             var mainLogSegment = FindLogSegmentZero(MethodTestDir, MainLogName);
             var pageBytes = File.ReadAllBytes(mainLogSegment);
@@ -1369,7 +1369,7 @@ namespace Tsavorite.test.recovery
                     if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
                     {
                         var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
-                        ClassicAssert.AreNotEqual(0UL, word & ObjectLogFilePositionInfo.kReuseObjectIdForSizeMask, "ReuseObjectIdForSize (bit 63) should be set on a v7 record");
+                        ClassicAssert.AreNotEqual(0UL, word & ObjectLogFilePositionInfo.kUnusedBit63Mask, "unused bit 63 should be set on a v7 record");
                         ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kKeyIsExactSizeMask, "KeyIsExactSize should be clear on a v7 record");
                         ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kValueIsExactSizeMask, "ValueIsExactSize should be clear on a v7 record");
                         ++objectRecordCount;
