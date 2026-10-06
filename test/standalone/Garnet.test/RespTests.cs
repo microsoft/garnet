@@ -5704,5 +5704,92 @@ namespace Garnet.test
             db.StringSet("testkey", "testvalue");
             ClassicAssert.AreEqual("testvalue", db.StringGet("testkey").ToString());
         }
+
+
+        [Test]
+        public async Task StoreScanningCommandsInTransactionAsync()
+        {
+            using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(allowAdmin: true)).ConfigureAwait(false);
+            var db = redis.GetDatabase(0);
+
+            // DBSIZE in transaction
+            {
+                var startTran = (string)await db.ExecuteAsync("MULTI").ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", startTran);
+                var setTran = (string)await db.ExecuteAsync("SET", ["a", "x"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("QUEUED", setTran);
+
+                var sizeTran = (string)await db.ExecuteAsync("DBSIZE").ConfigureAwait(false);
+                ClassicAssert.AreEqual("QUEUED", sizeTran);
+
+                var execTran = (RedisResult[])await db.ExecuteAsync("EXEC").ConfigureAwait(false);
+                ClassicAssert.AreEqual(2, execTran.Length);
+                ClassicAssert.AreEqual("OK", (string)execTran[0]);
+                ClassicAssert.AreEqual(1, (int)execTran[1]);
+            }
+
+            _ = await db.ExecuteAsync("FLUSHDB").ConfigureAwait(false);
+
+            // KEYS * in transaction
+            {
+                var startTran = (string)await db.ExecuteAsync("MULTI").ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", startTran);
+                var setTran = (string)await db.ExecuteAsync("SET", ["a", "x"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("QUEUED", setTran);
+
+                var keysTran = (string)await db.ExecuteAsync("KEYS", ["*"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("QUEUED", keysTran);
+
+                var execTran = (RedisResult[])await db.ExecuteAsync("EXEC").ConfigureAwait(false);
+                ClassicAssert.AreEqual(2, execTran.Length);
+                ClassicAssert.AreEqual("OK", (string)execTran[0]);
+
+                var keysRes = (string[])execTran[1];
+                ClassicAssert.AreEqual(1, keysRes.Length);
+                ClassicAssert.AreEqual("a", (string)keysRes[0]);
+            }
+
+            _ = await db.ExecuteAsync("FLUSHDB").ConfigureAwait(false);
+
+            // SCAN 0 in transaction
+            {
+                var startTran = (string)await db.ExecuteAsync("MULTI").ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", startTran);
+                var setTran = (string)await db.ExecuteAsync("SET", ["a", "x"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("QUEUED", setTran);
+
+                var scanTran = (string)await db.ExecuteAsync("SCAN", ["0"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("QUEUED", scanTran);
+
+                var execTran = (RedisResult[])await db.ExecuteAsync("EXEC").ConfigureAwait(false);
+                ClassicAssert.AreEqual(2, execTran.Length);
+                ClassicAssert.AreEqual("OK", (string)execTran[0]);
+
+                var scanRes = (RedisResult[])execTran[1];
+                ClassicAssert.AreEqual(2, scanRes.Length);
+                ClassicAssert.AreEqual(0, (long)scanRes[0]);
+                ClassicAssert.AreEqual("a", (string)scanRes[1]);
+            }
+
+            _ = await db.ExecuteAsync("FLUSHDB").ConfigureAwait(false);
+
+            // INFO in transaction
+            {
+                var startTran = (string)await db.ExecuteAsync("MULTI").ConfigureAwait(false);
+                ClassicAssert.AreEqual("OK", startTran);
+                var setTran = (string)await db.ExecuteAsync("SET", ["a", "x"]).ConfigureAwait(false);
+                ClassicAssert.AreEqual("QUEUED", setTran);
+
+                var scanTran = (string)await db.ExecuteAsync("INFO").ConfigureAwait(false);
+                ClassicAssert.AreEqual("QUEUED", scanTran);
+
+                var execTran = (RedisResult[])await db.ExecuteAsync("EXEC").ConfigureAwait(false);
+                ClassicAssert.AreEqual(2, execTran.Length);
+                ClassicAssert.AreEqual("OK", (string)execTran[0]);
+
+                var infoRes = (string)execTran[1];
+                ClassicAssert.IsNotNull(infoRes);
+            }
+        }
     }
 }
