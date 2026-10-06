@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.client
 {

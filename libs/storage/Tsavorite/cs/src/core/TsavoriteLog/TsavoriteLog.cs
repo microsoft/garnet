@@ -1455,6 +1455,10 @@ namespace Tsavorite.core
                     epoch.Resume();
                     BeginInflightEnqueue();
                 }
+
+                // Disposal permanently signals flushEvent, so the wait above stops blocking and this loop would
+                // spin on an allocation no flush can satisfy.
+                allocator.ThrowIfDisposed();
             }
         }
 
@@ -1497,6 +1501,10 @@ namespace Tsavorite.core
                     epoch.Resume();
                     BeginInflightEnqueue();
                 }
+
+                // Disposal permanently signals flushEvent, so the wait above stops blocking and this loop would
+                // spin on an allocation no flush can satisfy.
+                allocator.ThrowIfDisposed();
             }
         }
 
@@ -1691,6 +1699,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                @this.allocator.ThrowIfDisposed();
             }
 
             return logicalAddress;
@@ -1726,6 +1738,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                @this.allocator.ThrowIfDisposed();
             }
 
             return logicalAddress;
@@ -1761,6 +1777,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                @this.allocator.ThrowIfDisposed();
             }
 
             return logicalAddress;
@@ -1798,6 +1818,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                @this.allocator.ThrowIfDisposed();
             }
 
             return logicalAddress;
@@ -1835,6 +1859,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                @this.allocator.ThrowIfDisposed();
             }
 
             return logicalAddress;
@@ -2201,6 +2229,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                allocator.ThrowIfDisposed();
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -2253,6 +2285,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                allocator.ThrowIfDisposed();
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -2305,6 +2341,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                allocator.ThrowIfDisposed();
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -2358,6 +2398,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                allocator.ThrowIfDisposed();
             }
 
             // Phase 2: wait for commit/flush to storage
@@ -2412,6 +2456,10 @@ namespace Tsavorite.core
                     await flushEvent.WaitAsync(token).ConfigureAwait(false);
                 }
                 catch when (!token.IsCancellationRequested) { }
+
+                // Disposal permanently signals flushEvent, so the await above completes synchronously and never
+                // yields; without this the loop would spin at full CPU on an enqueue no flush can satisfy.
+                allocator.ThrowIfDisposed();
             }
 
             // Phase 2: wait for commit/flush to storage

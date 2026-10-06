@@ -355,6 +355,14 @@ namespace Garnet.test
             resp = db.Execute("ZADD", [key + '2', "NX", .. testArgs]);
             ClassicAssert.AreEqual(3.5, double.Parse(resp.ToString(), CultureInfo.InvariantCulture));
 
+            // Test XX option: a missing member is not added and the reply is null.
+            resp = db.Execute("ZADD", [key, "XX", "INCR", "3.5", "z"]);
+            ClassicAssert.IsTrue(resp.IsNull);
+            ClassicAssert.IsNull(db.SortedSetScore(key, "z"));
+
+            resp = db.Execute("ZADD", [key + '4', "XX", .. testArgs]);
+            ClassicAssert.IsTrue(resp.IsNull);
+
             // INCR + LT/GT combination should prevent update when condition fails and key exists.
             resp = db.Execute("ZADD", [key, "LT", .. testArgs]);
             ClassicAssert.IsTrue(resp.IsNull);
@@ -481,6 +489,20 @@ namespace Garnet.test
             args = [key, "XX", "CH"];
             ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", args));
             ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_SYNTAX_ERROR), ex.Message);
+        }
+
+        [Test]
+        public void AddWithXXOnMissingKeyDoesNotCreateKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "SortedSet_AddXX";
+            ClassicAssert.IsFalse(db.SortedSetAdd(key, "m1", 1, SortedSetWhen.Exists));
+            ClassicAssert.IsFalse(db.KeyExists(key));
+
+            ClassicAssert.AreEqual(0, (int)db.Execute("ZADD", key, "XX", "CH", "1", "m1"));
+            ClassicAssert.IsFalse(db.KeyExists(key));
         }
 
         [Test]
@@ -2095,6 +2117,41 @@ namespace Garnet.test
 
             newMemory = (long)db.Execute("MEMORY", "USAGE", "mysortedset");
             ClassicAssert.Less(newMemory, orginalMemory);
+        }
+
+        [Test]
+        public async Task SortedSetCollectKeepsLiveMembersOfEveryKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Each "emptied" sorted set loses its only member, each "partial" sorted set keeps member2
+            for (var i = 0; i < 3; i++)
+            {
+                db.SortedSetAdd($"emptied{i}", [new SortedSetEntry("member1", 1)]);
+                db.SortedSetAdd($"partial{i}", [new SortedSetEntry("member1", 1), new SortedSetEntry("member2", 2)]);
+            }
+
+            var deadline = MemberExpiry.Imminent();
+            for (var i = 0; i < 3; i++)
+            {
+                db.Execute("ZPEXPIREAT", $"emptied{i}", deadline, "MEMBERS", "1", "member1");
+                db.Execute("ZPEXPIREAT", $"partial{i}", deadline, "MEMBERS", "1", "member1");
+            }
+            await MemberExpiry.WaitUntilPastAsync(deadline).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("ZCOLLECT", "emptied0", "partial0"));
+            ClassicAssert.IsFalse(db.KeyExists("emptied0"));
+            ClassicAssert.AreEqual(1, db.SortedSetLength("partial0"));
+            ClassicAssert.AreEqual(2, db.SortedSetScore("partial0", "member2"));
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("ZCOLLECT", "*"));
+            for (var i = 1; i < 3; i++)
+            {
+                ClassicAssert.IsFalse(db.KeyExists($"emptied{i}"));
+                ClassicAssert.AreEqual(1, db.SortedSetLength($"partial{i}"));
+                ClassicAssert.AreEqual(2, db.SortedSetScore($"partial{i}", "member2"));
+            }
         }
 
         [Test]

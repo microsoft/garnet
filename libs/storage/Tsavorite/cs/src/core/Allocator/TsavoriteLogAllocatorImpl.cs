@@ -201,7 +201,7 @@ namespace Tsavorite.core
                                         DeviceIOCompletionCallback callback,
                                         TContext context,
                                         BlittableFrame frame,
-                                        out CountdownEvent completed,
+                                        ref CountdownEvent completed,
                                         long devicePageOffset = 0,
                                         IDevice device = null,
                                         IDevice objectLogDevice = null,
@@ -209,7 +209,7 @@ namespace Tsavorite.core
         {
             var usedDevice = device ?? this.device;
 
-            completed = new CountdownEvent(1);
+            PrepareFrameLoadCompletionEvent(ref completed);
 
             int pageIndex = (int)(readPage % frame.frameSize);
             if (!frame.IsAllocated(pageIndex))

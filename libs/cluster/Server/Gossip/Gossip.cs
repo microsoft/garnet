@@ -192,13 +192,13 @@ namespace Garnet.cluster
                 }
 
                 // Send full config in Gossip
-                resp = await gsn.TryMeetAsync(conf.ToByteArray()).ConfigureAwait(false);
+                resp = await gsn.TryMeetAsync(conf.ToByteArray(ClusterConfig.OutboundGossipVersion)).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     var respArray = resp.Span.ToArray();
 
                     // Validate config version before full deserialization
-                    if (!ClusterConfig.TryPeekVersion(respArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                    if (!ClusterConfig.TryPeekVersion(respArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
                     {
                         logger?.LogWarning("MEET response has incompatible config version: {version}", version);
                         if (created) gsn?.Dispose();
@@ -415,23 +415,36 @@ namespace Garnet.cluster
                     var address = a.Item2;
                     var port = a.Item3;
 
-                    if (!workerBanList.ContainsKey(nodeId))
+                    if (workerBanList.ContainsKey(nodeId))
+                        continue;
+
+                    try
                     {
-                        var (_, gsn) = await clusterConnectionStore.GetOrAddAsync(
-                            clusterProvider,
-                            new IPEndPoint(IPAddress.Parse(address), port),
-                            tlsOptions,
-                            nodeId,
-                            logger: logger).ConfigureAwait(false);
+                        var endpoint = new IPEndPoint(IPAddress.Parse(address), port);
+                        if (clusterConnectionStore.GetConnection(nodeId, out var existing))
+                        {
+                            if (endpoint.Equals(existing.EndPoint))
+                                continue;
+                            _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
+                        }
+
+                        var (success, gsn) = await clusterConnectionStore.GetOrAddAsync(clusterProvider, endpoint, tlsOptions, nodeId, logger: logger).ConfigureAwait(false);
 
                         if (gsn == null)
                         {
-                            logger?.LogWarning("InitConnections: Could not create connection to remote node [{nodeId} {address}:{port}]",
-                                nodeId, address, port);
+                            logger?.LogWarning("InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+
+                            _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
+
                             continue;
                         }
 
                         _ = await gsn.TryInitializeAsync().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "InitConnections: Could not establish connection to remote node [{nodeId} {address}:{port}] failed", nodeId, address, port);
+                        _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
                     }
                 }
 

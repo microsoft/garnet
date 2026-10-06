@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.client
 {

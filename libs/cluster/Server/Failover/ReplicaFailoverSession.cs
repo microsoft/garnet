@@ -206,7 +206,7 @@ namespace Garnet.cluster
                         var returnedConfigArray = resp.Span.ToArray();
 
                         // Validate config version before full deserialization
-                        if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                        if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
                         {
                             logger?.LogWarning("Received failover gossip response with incompatible config version: {version}", version);
                         }
@@ -231,8 +231,7 @@ namespace Garnet.cluster
                     resp.Dispose();
                 }
 
-                var localAddress = oldConfig.LocalNodeIp;
-                var localPort = oldConfig.LocalNodePort;
+                var (localAddress, localPort) = oldConfig.GetWorkerAddress(ClusterConfig.LOCAL_WORKER_ID);
 
                 // Ask replica to attach and sync
                 var replicaOfResp = await client.ReplicaOf(localAddress, localPort).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
@@ -258,7 +257,7 @@ namespace Garnet.cluster
             // Get replica ids for old primary from old configuration
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var replicaIds = newConfig.GetReplicaIds(oldPrimaryId);
-            var configByteArray = newConfig.ToByteArray();
+            var configByteArray = newConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
             var attachReplicaTasks = new List<Task>();
 
             // If DEFAULT failover try to make old primary replica of this new primary

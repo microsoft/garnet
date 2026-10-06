@@ -10,6 +10,6 @@ namespace BfTreeInterop.test
     public class TestProjectSetup
     {
         [OneTimeSetUp]
-        public void SetPort() => TestUtils.SetTestPort(TestPortAssignment.GarnetTestBfTreeInterop);
+        public void SetPort() => TestUtils.ReserveTestPorts(System.Reflection.Assembly.GetExecutingAssembly());
     }
 }

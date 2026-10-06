@@ -26,15 +26,30 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Serialize config to byte array
+        /// Check whether a cluster config serialization version can be read.
         /// </summary>
-        public byte[] ToByteArray()
+        /// <param name="version">Serialization version.</param>
+        public static bool IsSupportedVersion(byte version) => version >= MinimumSupportedClusterConfigVersion && version <= MaximumSupportedClusterConfigVersion;
+
+        /// <summary>
+        /// Serialize config for persistence, including peer endpoints.
+        /// </summary>
+        public byte[] ToByteArray() => ToByteArray(MaximumSupportedClusterConfigVersion);
+
+        /// <summary>
+        /// Serialize config using the specified format version.
+        /// </summary>
+        /// <param name="version">Serialization version.</param>
+        public byte[] ToByteArray(byte version)
         {
+            if (!IsSupportedVersion(version))
+                throw new ArgumentOutOfRangeException(nameof(version), version, "Unsupported ClusterConfig version");
+
             var ms = new MemoryStream();
             var writer = new BinaryWriter(ms);
 
             // Write serialization format version
-            writer.Write(ClusterConfigVersion);
+            writer.Write(version);
 
             SerializeSlotMap(ref ms, ref writer);
 
@@ -69,6 +84,13 @@ namespace Garnet.cluster
                 if (worker.hostname != null)
                     //256 bytes
                     writer.Write(worker.hostname);
+
+                if (version >= 2)
+                {
+                    // An empty address preserves missing metadata across upgraded relays and recovery.
+                    writer.Write(worker.ClusterAddress ?? "");
+                    writer.Write(worker.ClusterPort);
+                }
             }
 
             byte[] byteArray = ms.ToArray();
@@ -133,8 +155,8 @@ namespace Garnet.cluster
             if (other.Length < 1)
                 throw new InvalidDataException("Invalid ClusterConfig payload: too short to contain a version");
             var version = reader.ReadByte();
-            if (version != ClusterConfigVersion)
-                throw new InvalidDataException($"Incompatible ClusterConfig version: expected {ClusterConfigVersion}, got {version}");
+            if (!IsSupportedVersion(version))
+                throw new InvalidDataException($"Incompatible ClusterConfig version: expected {MinimumSupportedClusterConfigVersion} through {MaximumSupportedClusterConfigVersion}, got {version}");
 
             var newSlotMap = DeserializeSlotMap(ref reader);
 
@@ -157,6 +179,13 @@ namespace Garnet.cluster
                 isNull = reader.ReadByte();
                 if (isNull > 0)
                     newWorkers[i].hostname = reader.ReadString();
+
+                if (version >= 2)
+                {
+                    var clusterAddress = reader.ReadString();
+                    newWorkers[i].ClusterAddress = clusterAddress.Length == 0 ? null : clusterAddress;
+                    newWorkers[i].ClusterPort = reader.ReadInt32();
+                }
             }
 
             reader.Dispose();
