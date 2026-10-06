@@ -265,18 +265,29 @@ namespace Garnet.test
             {
                 var ownBlock = TestPortAllocator.PortBlock(TestUtils.TestPort);
                 var contended = new List<string>();
+                var attempts = 0;
 
-                for (var candidate = 0; candidate < StraddleCandidates; candidate++)
+                // Walks the whole block range rather than a fixed window just above the host's own block.
+                // That window can run off the end when the host sits near the top of the range, or fall
+                // entirely inside the Docker reservation, and in either case the test would report nothing
+                // tried on a completely idle host. Ineligible boundaries are stepped over without spending an
+                // attempt, so the budget counts only boundaries actually reserved against.
+                for (var step = 1; step < TestPortAllocator.BlockCount && attempts < StraddleCandidates; step++)
                 {
-                    // Far enough above this host's own block that the two never collide, and walked forward
-                    // on each attempt so a contended boundary is not retried.
-                    var secondBlock = ownBlock + 4 + candidate;
+                    var secondBlock = (ownBlock + step) % TestPortAllocator.BlockCount;
                     var firstBlock = secondBlock - 1;
-                    if (secondBlock >= TestPortAllocator.BlockCount)
-                        break;
+
+                    // Block 0 has no predecessor to straddle from.
+                    if (firstBlock < 0)
+                        continue;
+                    // This host's own block is already reserved by this process, so it is never free to pin.
+                    if (firstBlock == ownBlock || secondBlock == ownBlock)
+                        continue;
                     if (TestPortAllocator.OverlapsDockerReservation(firstBlock) ||
                         TestPortAllocator.OverlapsDockerReservation(secondBlock))
                         continue;
+
+                    attempts++;
 
                     // One port below a block boundary, so a two-port run straddles it.
                     var basePort = TestPortAllocator.BlockBasePort(secondBlock) - 1;
@@ -312,8 +323,8 @@ namespace Garnet.test
                 }
 
                 Assert.Ignore(
-                    $"No straddling port pair could be reserved on this host after {StraddleCandidates} " +
-                    $"attempts: {string.Join("; ", contended)}");
+                    $"No straddling port pair could be reserved on this host after {attempts} attempt(s): " +
+                    $"{string.Join("; ", contended)}");
             });
         }
 

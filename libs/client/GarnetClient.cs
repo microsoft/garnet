@@ -59,6 +59,13 @@ namespace Garnet.client
         GarnetClientTcpNetworkHandler networkHandler;
         int tcsOffset;
 
+        /// <summary>
+        /// Serializes <see cref="DrainOutstandingTasks"/>. Connection teardown and the client's own disposal
+        /// both drain, and neither waits for the other: <c>NetworkHandler.DisposeImpl</c> returns as soon as
+        /// its guard is already held, so a drain can still be in progress when the second path starts one.
+        /// </summary>
+        readonly object drainLock = new();
+
         Socket socket;
         int disposed;
 
@@ -601,6 +608,13 @@ namespace Garnet.client
             var oldTcs = tcsArray[shortTaskId];
             while (oldTcs.taskType != TaskType.None || !oldTcs.IsNext(taskId))
             {
+                // Disposal can retire this slot before the request publishes into it, which advances the
+                // slot's nextTaskId past this task so IsNext can never come true again. The TaskType.None
+                // branch below only yields and never throws, so the catch cannot end the wait; it has to end
+                // here or the caller spins until the process exits.
+                if (Disposed)
+                    ThrowException(disposeException);
+
                 logger?.LogDebug("Task {taskId} waiting for slot of task {oldTaskId}", taskId, oldTcs.nextTaskId);
                 try
                 {
@@ -1207,53 +1221,73 @@ namespace Garnet.client
         /// </remarks>
         void DrainOutstandingTasks()
         {
-            int c = tcsOffset;
-            while (networkWriter != null && c != networkWriter.GetNextTaskId())
+            lock (drainLock)
             {
-                DisposeOffset(c & (maxOutstandingTasks - 1));
-                c = (c + 1) & (int)PageOffset.kTaskMask;
+                // The shared cursor is re-read each turn rather than copied into a local. A completion below
+                // is user code that may dispose the client and re-enter this drain; a local cursor would then
+                // be stale on return and walk slots the inner drain had already retired, advancing the cursor
+                // past requests that are still outstanding.
+                while (networkWriter != null && tcsOffset != networkWriter.GetNextTaskId())
+                    DisposeOffset(tcsOffset & (maxOutstandingTasks - 1));
             }
         }
 
+        /// <summary>
+        /// Completes the request holding <paramref name="shortTaskId"/> as abandoned, and retires the slot.
+        /// </summary>
         private void DisposeOffset(int shortTaskId)
         {
             var tcs = tcsArray[shortTaskId];
-            switch (tcs.taskType)
-            {
-                case TaskType.StringCallback:
-                    tcs.stringCallback?.Invoke(-1, null);
-                    break;
-                case TaskType.MemoryByteCallback:
-                    tcs.memoryByteCallback?.Invoke(-1, default);
-                    break;
-                case TaskType.StringAsync:
-                    tcs.stringTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.StringArrayAsync:
-                    tcs.stringArrayTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.MemoryByteAsync:
-                    tcs.memoryByteTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.MemoryByteArrayAsync:
-                    tcs.memoryByteArrayTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.LongAsync:
-                    tcs.longTcs?.TrySetException(disposeException);
-                    break;
-                case TaskType.StringArrayCallback:
-                    tcs.stringArrayCallback?.Invoke(-1, default, default);
-                    break;
-                case TaskType.MemoryByteArrayCallback:
-                    tcs.memoryByteArrayCallback?.Invoke(-1, default, default);
-                    break;
-                case TaskType.LongCallback:
-                    tcs.longCallback?.Invoke(-1, default, default);
-                    break;
-                case TaskType.None:
-                    break;
-            }
+
+            // Retire the slot before completing it, as reply processing does. Completion runs user callbacks,
+            // which may dispose the client and re-enter the drain; a slot still live at that point would be
+            // completed twice and its cursor advanced twice for the one request.
             ConsumeTcsOffset(shortTaskId);
+
+            try
+            {
+                switch (tcs.taskType)
+                {
+                    case TaskType.StringCallback:
+                        tcs.stringCallback?.Invoke(-1, null);
+                        break;
+                    case TaskType.MemoryByteCallback:
+                        tcs.memoryByteCallback?.Invoke(-1, default);
+                        break;
+                    case TaskType.StringAsync:
+                        tcs.stringTcs?.TrySetException(disposeException);
+                        break;
+                    case TaskType.StringArrayAsync:
+                        tcs.stringArrayTcs?.TrySetException(disposeException);
+                        break;
+                    case TaskType.MemoryByteAsync:
+                        tcs.memoryByteTcs?.TrySetException(disposeException);
+                        break;
+                    case TaskType.MemoryByteArrayAsync:
+                        tcs.memoryByteArrayTcs?.TrySetException(disposeException);
+                        break;
+                    case TaskType.LongAsync:
+                        tcs.longTcs?.TrySetException(disposeException);
+                        break;
+                    case TaskType.StringArrayCallback:
+                        tcs.stringArrayCallback?.Invoke(-1, default, default);
+                        break;
+                    case TaskType.MemoryByteArrayCallback:
+                        tcs.memoryByteArrayCallback?.Invoke(-1, default, default);
+                        break;
+                    case TaskType.LongCallback:
+                        tcs.longCallback?.Invoke(-1, default, default);
+                        break;
+                    case TaskType.None:
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                // A throwing callback must not strand the requests queued behind it, and must not abandon the
+                // rest of teardown when the drain is running under Dispose. Report it and carry on.
+                logger?.LogError(ex, "Callback threw while completing a request abandoned by disposal");
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
