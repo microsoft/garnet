@@ -1344,14 +1344,39 @@ namespace Tsavorite.core
 
                 // Wait for flush to complete
                 while (wait && !disposed && FlushedUntilAddress < newReadOnlyAddress)
+                {
+                    ThrowIfFlushFailedBelow(newReadOnlyAddress);
                     _ = Thread.Yield();
+                }
                 return;
             }
 
             // Epoch already protected, so launch the shift and wait for flush to complete
             _ = ShiftReadOnlyAddress(newReadOnlyAddress);
             while (wait && !disposed && FlushedUntilAddress < newReadOnlyAddress)
+            {
+                ThrowIfFlushFailedBelow(newReadOnlyAddress);
                 epoch.ProtectAndDrain();
+            }
+        }
+
+        /// <summary>Throw if a recorded flush error makes <paramref name="untilAddress"/> unreachable.</summary>
+        /// <param name="untilAddress">The address a caller is waiting for <see cref="FlushedUntilAddress"/> to reach.</param>
+        /// <remarks>
+        /// A failed flush deliberately does not set <c>LastFlushedUntilAddress</c>, which is what stops later ranges being marked
+        /// flushed -- so <see cref="FlushedUntilAddress"/> can never advance past the failure. Without this check a caller waiting on
+        /// that address waits forever, and the error is visible only to a registered flush callback. Mirrors the error handling in
+        /// <c>SnapshotFlushCoordination</c>.
+        /// </remarks>
+        private void ThrowIfFlushFailedBelow(long untilAddress)
+        {
+            if (errorList.Empty)
+                return;
+            var error = errorList.GetEarliestError();
+            if (error.FromAddress < untilAddress)
+                throw new TsavoriteException(
+                    $"Flush [{error.FromAddress}, {error.UntilAddress}) failed with error code {error.ErrorCode}; FlushedUntilAddress cannot reach {untilAddress}",
+                    error.Exception);
         }
 
         /// <summary>
@@ -1841,6 +1866,9 @@ namespace Tsavorite.core
                     if (FlushedUntilAddress >= newBeginAddress)
                         break;
 
+                    // A failed flush can never advance FlushedUntilAddress to the target, so waiting on it would never end.
+                    ThrowIfFlushFailedBelow(newBeginAddress);
+
                     // Disposal permanently signals flushEvent, so the wait below would stop blocking and no
                     // further flush can advance FlushedUntilAddress; stop waiting rather than spin.
                     if (IsDisposed)
@@ -2151,7 +2179,11 @@ namespace Tsavorite.core
                     // All requests before error range has finished successfully -- this is the earliest error and we can invoke callback on it.
                     FlushCallback?.Invoke(info);
                 }
-                // Otherwise, do nothing and wait for the next invocation.
+
+                // Wake anyone parked on flushEvent. A failed flush never advances FlushedUntilAddress, so the success path above --
+                // and its Set() -- is skipped; without this a waiter sleeps until some unrelated flush happens to signal, or forever.
+                // Waiters re-check errorList on wake and throw, so this only makes the failure observable promptly.
+                flushEvent.Set();
             }
         }
 

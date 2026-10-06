@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -123,16 +124,13 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ObjectIdMapCategory)]
-        public void WriteFailureIsSurfaced([Values] bool synchronous)
+        public void WriteFailureIsSurfacedAndDoesNotHangTheWaiter([Values] bool synchronous)
         {
             // A device write can fail two ways: rejected at submission, so the completion callback runs INLINE on the submitting
             // thread before WriteAsync returns (LocalMemoryDevice's ENOENT/EINVAL paths, ShardedStorageDevice's inline countdown);
-            // or accepted and then failed, so the completion is posted from another thread. Both must surface the error rather than
-            // swallow it, which would let FlushedUntilAddress advance past bytes that never reached storage.
-            //
-            // NOTE: the flush is issued with wait: false deliberately. A failed write never advances FlushedUntilAddress, and
-            // Flush(wait: true) waits on exactly that, so it does not return after a failed write in EITHER mode -- the failure is
-            // observable only through the commit callback. Waiting here would hang the run rather than test anything.
+            // or accepted and then failed, so the completion is posted from another thread. Both must surface the error, and both
+            // must let a caller waiting on the flush make progress: a failed flush never advances FlushedUntilAddress, which is
+            // exactly what Flush(wait: true) waits on, so without an error check the waiter spins forever.
             CreateStore(useLargeObjects: true, captureFlushFailures: true);
 
             using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
@@ -143,20 +141,98 @@ namespace Tsavorite.test
 
             objectLogDevice.FailWriteNumber(objectLogDevice.WriteCount + 1, synchronous);
 
-            try
+            // Run the waiting flush on a worker so a regression fails this test instead of hanging the whole run.
+            var threw = false;
+            var flush = Task.Run(() =>
             {
-                store.Log.Flush(wait: false);
-            }
-            catch (TsavoriteException)
-            {
-                // Propagating the failure to the caller is an acceptable surfacing.
-            }
+                try
+                {
+                    store.Log.Flush(wait: true);
+                }
+                catch (TsavoriteException)
+                {
+                    threw = true;
+                }
+            });
 
-            var surfaced = flushFailureEvent.Wait(TimeSpan.FromSeconds(30));
+            var returned = flush.Wait(TimeSpan.FromSeconds(30));
+            var surfaced = flushFailureEvent.Wait(TimeSpan.FromSeconds(5));
 
             Assert.That(objectLogDevice.FailedWriteCount, Is.EqualTo(1), "the injected write failure must have been taken");
             Assert.That(surfaced, Is.True, "the write failure must be surfaced, not swallowed");
             Assert.That(flushFailure.ErrorCode, Is.Not.Zero, "the surfaced failure must carry the device error code");
+            Assert.That(returned, Is.True, "Flush(wait: true) must not wait forever for an address a failed flush can never reach");
+            Assert.That(threw, Is.True, "the waiter must observe the failure as an exception rather than returning as though the flush succeeded");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void ReadOnlyIssuanceRacingCutoffCaptureIsClassifiedCorrectly()
+        {
+            // Snapshot samples the ReadOnly cutoff while coordination is in CapturingCutoff. A ReadOnly worker that publishes
+            // LastIssuedFlushedUntilAddress inside that window must still land on one side of the cutoff or the other: either it
+            // is in the cohort Snapshot drains, or it is post-cutoff and waits for Flushing. The memory barrier pairing is what
+            // guarantees that, and this races a real ReadOnly flush into the window rather than hoping the timing reproduces.
+            CreateStore(useLargeObjects: true, captureFlushFailures: false);
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var context = session.BasicContext;
+
+            for (var key = 0; key < 32; ++key)
+                _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+            var hookFired = 0;
+            Exception raceFailure = null;
+            var racers = new List<Task>();
+            ObjectFlushInjection.Hook = (phase, cutoffCandidate) =>
+            {
+                if (phase != ObjectFlushPhase.SnapshotCutoffCapturing)
+                    return;
+                _ = Interlocked.Increment(ref hookFired);
+
+                // This hook runs INSIDE lock (snapshotFlushSync), so it must not issue the flush itself -- doing so re-enters the
+                // coordination path and deadlocks. Start the racing ReadOnly flush on a worker and return immediately, which is
+                // what actually puts a LastIssuedFlushedUntilAddress publication into the capture window.
+                lock (racers)
+                {
+                    racers.Add(Task.Run(() =>
+                    {
+                        try
+                        {
+                            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: false);
+                        }
+                        catch (Exception ex)
+                        {
+                            raceFailure = ex;
+                        }
+                    }));
+                }
+            };
+
+            try
+            {
+                for (var key = 32; key < 48; ++key)
+                    _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+                _ = store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+                Task[] pending;
+                lock (racers)
+                    pending = racers.ToArray();
+                _ = Task.WaitAll(pending, TimeSpan.FromSeconds(30));
+            }
+
+            Assert.That(hookFired, Is.GreaterThan(0), "the cutoff-capture window must have been entered, or this test proves nothing");
+            Assert.That(raceFailure, Is.Null, $"a ReadOnly flush issued inside the cutoff-capture window must be classified, not rejected: {raceFailure}");
+
+            // Reaching here means the checkpoint completed: the raced ReadOnly range was classified on one side of the cutoff
+            // rather than deadlocking the drain or tripping the state-machine guards in PublishReadOnlyFlushCutoff/BeginFlushing.
+            Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThan(0), "the checkpoint must have flushed through the raced range");
         }
 
         [Test]

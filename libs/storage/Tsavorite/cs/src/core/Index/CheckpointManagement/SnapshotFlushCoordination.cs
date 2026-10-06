@@ -62,6 +62,12 @@ namespace Tsavorite.core
             {
                 Volatile.Write(ref snapshotStartAddress, IsNullDevice ? HeadAddress : FlushedUntilAddress);
                 coordination.BeginCutoffCapture(GetPage(Volatile.Read(ref snapshotStartAddress)));
+
+                // Test-only interleave point: coordination is in CapturingCutoff but the cutoff has not been sampled yet, so this
+                // is the precise window in which a ReadOnly worker can publish LastIssuedFlushedUntilAddress and must still be
+                // classified correctly by the pairing below.
+                ObjectFlushInjection.At(ObjectFlushPhase.SnapshotCutoffCapturing, GetLastIssuedReadOnlyFlushAddress());
+
                 // Pair CapturingCutoff publication with the ReadOnly worker's interlocked LastIssued publication.
                 // Either the cutoff includes the range, or the worker classifies itself as post-cutoff.
                 Interlocked.MemoryBarrier();

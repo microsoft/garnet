@@ -15,11 +15,16 @@ namespace Tsavorite.core
 
         /// <summary>The record's object bytes have been written and its object-log position stamped. The record is inside the
         /// flush window here, so <c>IsFrozenForFlush</c> holds for its address.</summary>
-        AfterRecordWritten
+        AfterRecordWritten,
+
+        /// <summary>Snapshot coordination has entered <c>CapturingCutoff</c> but has not yet sampled the ReadOnly cutoff. This is
+        /// the window in which a ReadOnly worker can publish <c>LastIssuedFlushedUntilAddress</c> and must still be classified
+        /// correctly, either inside the cutoff cohort or as post-cutoff. The address passed is the cutoff candidate at entry.</summary>
+        SnapshotCutoffCapturing
     }
 
     /// <summary>
-    /// Test-only interleave points in the object-log flush, letting a test run an operation at a precise moment inside a flush
+    /// Test-only interleave points in the flush paths, letting a test run an operation at a precise moment inside a flush
     /// rather than hoping a background race reproduces.
     /// </summary>
     /// <remarks>
