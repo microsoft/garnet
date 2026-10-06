@@ -38,9 +38,6 @@ namespace Garnet.cluster
         /// <summary>Default cap on the self-poll slice; a genuinely stuck bump re-scans no slower than this.</summary>
         static readonly TimeSpan DefaultMaxParkDelay = TimeSpan.FromMilliseconds(50);
 
-        /// <summary>Adaptive spin iterations on the fast path before a bump falls back to self-polling.</summary>
-        const int SpinIterations = 40;
-
         readonly TEpochObserver epochObserver;
         readonly TimeSpan baseParkDelay;
         readonly TimeSpan maxParkDelay;
@@ -100,15 +97,17 @@ namespace Garnet.cluster
         {
             var target = Interlocked.Increment(ref currentEpoch);
 
-            // Fast path: brief adaptive spin for the common case where sessions drain immediately.
-            var spinner = new SpinWait();
-            for (var i = 0; i < SpinIterations; i++)
+            // Bumps are infrequent control-plane operations, so enter asynchronous backoff once
+            // the CPU-local spin budget is exhausted instead of occupying the caller while yielding.
+            var spinner = ConfiguredSpinWait.CpuLocal();
+            while (true)
             {
                 if (epochObserver.AllSessionsQuiesced(target))
                     return true;
                 if (token.IsCancellationRequested)
                     return false;
-                spinner.SpinOnce();
+                if (!spinner.TryWait())
+                    break;
             }
 
             // Slow path: jittered, capped exponential-backoff self-poll. No locking or allocation on the
