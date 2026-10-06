@@ -526,6 +526,9 @@ namespace Garnet.client
             timeoutCheckerCts?.Cancel();
             socket?.Dispose();
             networkWriter?.Dispose();
+            // The socket is down, so no further replies can arrive. Fail the requests still holding a slot
+            // rather than leaving their callers awaiting a reply forever.
+            DrainOutstandingTasks();
             // Released rather than pooled: reply processing on the network thread records through this
             // histogram and is not drained by the socket dispose above.
             latency?.Release();
@@ -1189,6 +1192,20 @@ namespace Garnet.client
 
         /// <inheritdoc />
         public void DisposeMessageConsumer(INetworkHandler session)
+            => DrainOutstandingTasks();
+
+        /// <summary>
+        /// Completes every task that has been assigned a slot but not yet answered, so that no caller is
+        /// left awaiting a reply that can no longer arrive.
+        /// </summary>
+        /// <remarks>
+        /// Runs both when the connection is torn down and when the client itself is disposed. The two are
+        /// independent: a connection can die while <see cref="Disposed"/> is still false, and a request
+        /// issued after that drain would otherwise own a slot nobody completes. A request that acquires its
+        /// slot concurrently with this drain is covered by the <see cref="Disposed"/> check that follows
+        /// slot assignment, so the request either is drained here or faults itself.
+        /// </remarks>
+        void DrainOutstandingTasks()
         {
             int c = tcsOffset;
             while (networkWriter != null && c != networkWriter.GetNextTaskId())
@@ -1221,11 +1238,17 @@ namespace Garnet.client
                 case TaskType.MemoryByteArrayAsync:
                     tcs.memoryByteArrayTcs?.TrySetException(disposeException);
                     break;
+                case TaskType.LongAsync:
+                    tcs.longTcs?.TrySetException(disposeException);
+                    break;
                 case TaskType.StringArrayCallback:
                     tcs.stringArrayCallback?.Invoke(-1, default, default);
                     break;
                 case TaskType.MemoryByteArrayCallback:
                     tcs.memoryByteArrayCallback?.Invoke(-1, default, default);
+                    break;
+                case TaskType.LongCallback:
+                    tcs.longCallback?.Invoke(-1, default, default);
                     break;
                 case TaskType.None:
                     break;

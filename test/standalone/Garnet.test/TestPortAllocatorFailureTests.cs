@@ -246,6 +246,14 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Straddle points tried before the test gives up. The ports are probed and only then reserved, and
+        /// this fixture leases from a private directory, so a concurrent test host is invisible to the probe
+        /// and is free to bind or lease the chosen blocks in between. Trying another boundary keeps the
+        /// property under test exercised rather than surrendering the run to whichever host got there first.
+        /// </summary>
+        private const int StraddleCandidates = 8;
+
+        /// <summary>
         /// A pinned base need not be block-aligned, so a run can span two blocks. Leasing only the block
         /// holding the first port would leave the tail unclaimed, and another host could lease the next block
         /// and be handed an overlapping run - both probes passing because neither has bound yet.
@@ -255,26 +263,57 @@ namespace Garnet.test
         {
             TestPortAllocator.WithIsolatedLeases(leaseDirectory, () =>
             {
-                // One port below a block boundary, so a two-port run straddles it.
-                var boundary = TestPortAllocator.BlockBasePort(TestPortAllocator.PortBlock(TestUtils.TestPort) + 4);
-                var basePort = boundary - 1;
+                var ownBlock = TestPortAllocator.PortBlock(TestUtils.TestPort);
+                var contended = new List<string>();
 
-                var firstBlock = TestPortAllocator.PortBlock(basePort);
-                var secondBlock = TestPortAllocator.PortBlock(basePort + 1);
-                ClassicAssert.AreNotEqual(firstBlock, secondBlock, "The run does not straddle a boundary.");
+                for (var candidate = 0; candidate < StraddleCandidates; candidate++)
+                {
+                    // Far enough above this host's own block that the two never collide, and walked forward
+                    // on each attempt so a contended boundary is not retried.
+                    var secondBlock = ownBlock + 4 + candidate;
+                    var firstBlock = secondBlock - 1;
+                    if (secondBlock >= TestPortAllocator.BlockCount)
+                        break;
+                    if (TestPortAllocator.OverlapsDockerReservation(firstBlock) ||
+                        TestPortAllocator.OverlapsDockerReservation(secondBlock))
+                        continue;
 
-                if (!TestPortAllocator.PortsAreFree(basePort, 2))
-                    Assert.Ignore($"Ports {basePort}-{basePort + 1} are in use on this host.");
+                    // One port below a block boundary, so a two-port run straddles it.
+                    var basePort = TestPortAllocator.BlockBasePort(secondBlock) - 1;
+                    ClassicAssert.AreNotEqual(firstBlock, secondBlock, "The run does not straddle a boundary.");
 
-                Environment.SetEnvironmentVariable(TestPortAllocator.PinnedBaseEnvVar, basePort.ToString());
-                ClassicAssert.AreEqual(basePort, TestPortAllocator.Reserve(2, "pinned-straddle"));
+                    if (!TestPortAllocator.PortsAreFree(basePort, 2))
+                    {
+                        contended.Add($"{basePort}-{basePort + 1}: in use");
+                        continue;
+                    }
 
-                // The second block must now be unavailable to anyone else. Taking its lease from here stands
-                // in for another test host trying to claim it.
-                using var stolen = TestPortAllocator.HoldLeaseForTest(secondBlock);
-                Assert.That(stolen, Is.Null,
-                    $"Block {secondBlock} holds the tail of pinned run {basePort}-{basePort + 1} but was " +
-                    $"still available, so another host could reserve an overlapping run.");
+                    Environment.SetEnvironmentVariable(TestPortAllocator.PinnedBaseEnvVar, basePort.ToString());
+                    try
+                    {
+                        ClassicAssert.AreEqual(basePort, TestPortAllocator.Reserve(2, "pinned-straddle"));
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        // Another host bound the ports or took a block lease between the probe above and the
+                        // reservation. Reserve releases everything it took before throwing, so the next
+                        // candidate starts from a clean state.
+                        contended.Add($"{basePort}-{basePort + 1}: {ex.Message}");
+                        continue;
+                    }
+
+                    // The second block must now be unavailable to anyone else. Taking its lease from here stands
+                    // in for another test host trying to claim it.
+                    using var stolen = TestPortAllocator.HoldLeaseForTest(secondBlock);
+                    Assert.That(stolen, Is.Null,
+                        $"Block {secondBlock} holds the tail of pinned run {basePort}-{basePort + 1} but was " +
+                        $"still available, so another host could reserve an overlapping run.");
+                    return;
+                }
+
+                Assert.Ignore(
+                    $"No straddling port pair could be reserved on this host after {StraddleCandidates} " +
+                    $"attempts: {string.Join("; ", contended)}");
             });
         }
 
