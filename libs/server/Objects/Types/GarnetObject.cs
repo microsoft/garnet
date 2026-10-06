@@ -58,6 +58,7 @@ namespace Garnet.server
                     ListOperation.LINSERT => false,
                     ListOperation.LPUSHX => false,
                     ListOperation.RPUSHX => false,
+                    ListOperation.LSET => false,
                     _ => true,
                 },
                 GarnetObjectType.Set => header.SetOp switch
@@ -72,6 +73,8 @@ namespace Garnet.server
                 {
                     HashOperation.HEXPIRE => false,
                     HashOperation.HCOLLECT => false,
+                    HashOperation.HDEL => false,
+                    HashOperation.HPERSIST => false,
                     _ => true,
                 },
                 _ => true,

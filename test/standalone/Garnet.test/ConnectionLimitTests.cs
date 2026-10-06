@@ -446,7 +446,7 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
             first = TestUtils.EndPoint;
-            second = new IPEndPoint(IPAddress.Loopback, TestUtils.TestPort + 1);
+            second = new IPEndPoint(IPAddress.Loopback, TestUtils.AlternateTestPort);
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
                 endpoints: [first, second], networkConnectionLimit: Limit);

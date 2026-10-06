@@ -592,13 +592,13 @@ namespace Garnet.server
             if (keys[0].ReadOnlySpan.SequenceEqual("*"u8))
                 return ObjectCollect(keys[0], CmdStrings.HASH, _hcollectTaskLock, ref input, ref objectContext);
 
-            var output = new ObjectOutput();
-
             var res = GarnetStatus.OK;
 
             // Attempt to collect on all keys, but remember if we collected not-a-hash
             foreach (var key in keys)
             {
+                // A new output for each key: a flag one key sets (RemoveKey, WrongType) must not carry over to the next
+                var output = new ObjectOutput();
                 if (RMWObjectStoreOperation(key, ref input, ref objectContext, ref output) == GarnetStatus.WRONGTYPE)
                 {
                     res = GarnetStatus.WRONGTYPE;

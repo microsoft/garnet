@@ -11,16 +11,16 @@ Garnet is a high-performance remote cache-store from Microsoft Research implemen
 dotnet build
 
 # Run all Garnet tests
-GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug -l "console;verbosity=detailed"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Run all cluster tests
-GARNET_TEST_PORT_SLOT=auto dotnet test test/cluster/Garnet.test.cluster -f net10.0 -c Debug -l "console;verbosity=detailed"
+dotnet test test/cluster/Garnet.test.cluster -f net10.0 -c Debug -l "console;verbosity=detailed"
 
 # Run a single test by fully qualified name
-GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests.PingTest"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests.PingTest"
 
 # Run all tests in a single test class
-GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
+dotnet test test/standalone/Garnet.test -f net10.0 -c Debug --filter "FullyQualifiedName~RespTests"
 
 # Build and test Tsavorite independently (has its own solution)
 dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj
@@ -34,100 +34,64 @@ dotnet format libs/storage/Tsavorite/cs/Tsavorite.slnx --verify-no-changes
 cd main/GarnetServer && dotnet run -c Debug -f net10.0 -- --logger-level Trace -m 4g -i 64m
 ```
 
-`GARNET_TEST_PORT_SLOT=auto` keeps this working copy's test ports clear of other working copies on the same
-machine; see [Running tests when several checkouts share a machine](#running-tests-when-several-checkouts-share-a-machine)
-for what it does, the PowerShell form, and why CI leaves it unset. Tsavorite has no Garnet servers and needs no slot.
+Test ports are claimed automatically per test host, so several checkouts can run tests on one machine with no
+setup; see [Test ports](#test-ports).
 
 Target frameworks are `net8.0` and `net10.0`. CI runs tests on both, in Debug and Release, on Ubuntu and Windows.
 
 Test projects live under `test/standalone/` and `test/cluster/` — there is no bare `test/Garnet.test`.
 
-### Running tests when several checkouts share a machine
+### Test ports
 
-Throughout this section a **checkout** means one working copy of the repo — the directory containing
-`Garnet.slnx`. That is the worktree root when you are in a `git worktree`, or the clone root otherwise. A slot is
-claimed per checkout, so every test host launched from the same working copy shares one slot.
+Every test host claims its own TCP ports at startup, so several checkouts can run tests on one machine without
+coordinating. Nothing needs to be set: `dotnet test` works as-is, and the same mechanism runs in CI.
 
-Garnet's test ports are hardcoded per sub-project (`TestUtils.TestPortAssignment`,
-`ClusterTestContext.ClusterPortAssignment`), so two test hosts running the same sub-project from different
-checkouts bind the same port. The symptom is not a clean failure: your client connects to the other checkout's
-server and returns plausible but wrong results, or the run dies mid-test with `SocketFailure`. Both look exactly
-like real regressions, so this can cost hours before it is even recognized as a port conflict.
+Each test project reserves one aligned block of 32 ports for the life of the process. Standalone projects use
+the first two (`TestUtils.TestPort` and `TestUtils.AlternateTestPort`); cluster projects use a contiguous run,
+since node *n* binds `ClusterTestContext.Port + n`. The reservation is made from the project's
+`TestProjectSetup`, which calls `TestUtils.ReserveTestPorts` or `ClusterTestContext.ReservePorts`. Adding a test
+project needs no central registration - the allocator identifies a project by its assembly name.
 
-Set `GARNET_TEST_PORT_SLOT` on **every** `dotnet test` invocation. Each shell command is a fresh process, so it
-has to be on the same command line:
+Two properties make this safe, and both matter:
 
-```bash
-# PowerShell
-$env:GARNET_TEST_PORT_SLOT = 'auto'; dotnet test test/standalone/Garnet.test -f net10.0 -c Debug
+- **Ports come from `[16384, 32768)`.** Linux assigns outbound connections from 32768-60999 by default
+  (`net.ipv4.ip_local_port_range`), and Windows and macOS from 49152-65535. A listening port inside those ranges
+  can be taken by the kernel between the moment it is observed free and the moment the server binds it. No
+  amount of probing closes that window, so the allocatable range stays below all of them. The range also stays
+  above the crowded region below 16384, which holds both ports a Garnet developer is likely to be running
+  (6379 Redis, 5432, 11211, 8080) and ports the suite itself uses (10000-10002 Azurite).
+- **A block is leased by an exclusively locked file** in the temp directory for the life of the test host. That
+  is what stops two test hosts choosing the same block. The OS releases the lock on exit, crash, or kill, so a
+  block frees itself without cleanup. The lease is checked first and the ports are then probed, because a
+  service unrelated to the suite - or a server stranded by a killed run - holds ports while holding no lease.
 
-# bash
-GARNET_TEST_PORT_SLOT=auto dotnet test test/standalone/Garnet.test -f net10.0 -c Debug
-```
+Ports 30000-30999 are reserved for `test/docker-tests/validate_docker_images.py`, which allocates container
+ports from its own fixed base and can run alongside the managed suite. `TestPortAllocatorTests` reads that base
+out of the Python file, so moving either side without the other fails as a test rather than as an intermittent
+container start failure.
 
-`auto` claims a free port slot for the checkout you are in and shifts every test port by a fixed offset, so all
-of that checkout's test projects can run in parallel on one slot while other checkouts stay out of the way.
-Sharing one slot across them is safe because sub-projects already have distinct base ports; the slot only has to
-move a whole checkout clear of other checkouts. Running the *same* sub-project twice at once from one checkout
-does still conflict, and fails immediately with a diagnostic rather than corrupting the run. The slot is released
-when the last test host exits, including on crash or kill, because the OS drops the lock the host was holding.
-Leaving the variable unset keeps the upstream ports unchanged, which is what CI does.
+`GARNET_TEST_PORT_BASE` pins an explicit base port, for reproducing a failure on a known port or for a host
+whose firewall only opens a fixed range. The pinned ports are still leased and probed, so pinning cannot
+silently reintroduce a collision.
 
-| Value | Behavior |
-|-------|----------|
-| unset or empty | Upstream ports, unchanged. The CI path. |
-| `auto` | Claim (or rejoin) this checkout's slot. Use this locally. |
-| `1`-`7` | A specific slot, for debugging or a pinned port. |
-| `0` | Upstream ports. `auto` never selects it, because a checkout that sets no slot is already there — see below. |
-| anything else | Fails immediately with a diagnostic. |
+#### When a port conflict happens anyway
 
-Note that slot 0 gives *no* isolation: its offset is zero, so it lands on the same ports as any checkout that
-does not set the variable at all. `auto` skips it for that reason. Only set `GARNET_TEST_PORT_SLOT=0` when you
-deliberately want the upstream ports.
+A failed bind reports the endpoint and the operating system's reason, and `TestUtils.OnTearDown` adds the
+allocation context. Because reserved ports are leased, were probed free at startup, and sit below every
+ephemeral range, an occupant can be neither the kernel nor another Garnet test host - so the message says
+plainly that it is software outside the suite, not a defect in Garnet or in the test.
 
-Explicit slots are not coordinated with each other — nothing stops two checkouts from both picking `3`. Prefer
-`auto`, which reserves the slot it hands out. Coordination is per machine and relies on all runs seeing the same
-temp directory, so it does not span users or containers with separate `TEMP`/`TMPDIR` values.
+Find the occupant with `Get-NetTCPConnection -LocalPort <port>` on Windows or `ss -ltnp` on Linux, and **stop it
+by process id**. Never terminate by name (`Stop-Process -Name dotnet`, `taskkill /IM testhost.exe`): that kills
+other checkouts' test hosts and builds, which surfaces as a test host vanishing with no .NET fault event.
 
-#### Running out of slots
+If the allocator cannot find a free block it fails before any test runs, reporting per-block why: leased by a
+running host, ports in use with no lease, or reserved for the Docker harness. NUnit then reports every test in
+the assembly as errored, zero tests run, and the process exits non-zero.
 
-There are 7 slots for `auto` (1-7; slot 0 is excluded as above). A slot is held only while a test host is
-actually running, not by the checkout itself, so the limit is **7 checkouts running tests at the same moment**,
-not 7 checkouts on disk. Any number of checkouts can exist, and any number can run tests one after another. A
-checkout running ten test projects in parallel still uses one slot.
-
-In practice you hit the limit one of two ways:
-
-- More than 7 checkouts genuinely running tests at once.
-- Stray servers from earlier runs. A process killed between binding a port and releasing it leaves the port
-  occupied but holds no slot lock, so `auto` sees the ports busy and skips that slot. Enough of these and the
-  slots are gone while nothing is really running.
-
-The failure is immediate and loud, never silent: slot resolution throws before any test executes, so NUnit
-reports every test in the assembly as errored, **zero tests run**, and the process exits non-zero. The message
-lists each slot and why it was unavailable, distinguishing a live test host from ports held with no lock, which
-is what tells the two causes above apart:
-
-```
-No Garnet test port slot is available; all 7 are taken.
-slot 1: in use by d:\src\garnet-worktree-a
-slot 2: ports in use with no test host holding the slot
-...
-```
-
-The second line is the stray-server case: find the process with `Get-NetTCPConnection -LocalPort <port>` (or
-`ss -ltnp` / `lsof -i :<port>`) and kill it **by PID**. Slots free themselves as runs finish, so waiting also
-works. Setting `GARNET_TEST_PORT_SLOT` to an explicit slot bypasses the check, but only do that once you know
-the slot is genuinely free — explicit slots are not coordinated.
-
-Two further cautions when sharing a machine:
-
-- **Never terminate processes by name** (`Stop-Process -Name dotnet`, `taskkill /IM testhost.exe`). That kills
-  other checkouts' test hosts and builds, which surfaces as a test host vanishing with no .NET fault event. Kill
-  by PID only.
-- **Check test output for `error CS` before trusting a result.** With `--no-build`, and when a compile error
-  surfaces in a project that is not rebuilt, `dotnet test` runs the previously built assembly and can report a
-  pass for code that never compiled.
+One further caution when sharing a machine: **check test output for `error CS` before trusting a result.** With
+`--no-build`, and when a compile error surfaces in a project that is not rebuilt, `dotnet test` runs the
+previously built assembly and can report a pass for code that never compiled.
 
 
 ## Architecture

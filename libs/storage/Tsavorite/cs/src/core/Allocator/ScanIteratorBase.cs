@@ -207,8 +207,15 @@ namespace Tsavorite.core
                     // try to atomically exchange it with the endAddress we need. If successful, issue the load.
                     if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPages[nextFrame], pageEndAddress, val) == val)
                     {
-                        Debug.Assert(loadCompletionEvents[nextFrame] is null || loadCompletionEvents[nextFrame].IsSet,
-                            $"i {i}, currentAddress {currentIterationAddress}, currentFrame {currentFrame}, nextFrame {nextFrame} overwriting unset completion event");
+                        // Only currentFrame is awaited before this method returns, so a read-ahead issued into nextFrame
+                        // by an earlier call may still be in flight when the scan reaches a page that maps back to it
+                        // without having consumed the prefetched one (BeginAddress advancing past the prefetched page is
+                        // one way in). Reusing the buffer now would leave two device reads writing the same memory and
+                        // orphan the completion event this load replaces, so drain the prior load first. The hazard is
+                        // specific to read-ahead: with frameSize 1, nextFrame is always currentFrame, which is awaited
+                        // before every return, so this is then a no-op.
+                        WaitForPriorFrameLoad(nextFrame, val);
+
                         var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
 
                         var frameIndex = i;
@@ -246,7 +253,7 @@ namespace Tsavorite.core
                             try
                             {
                                 AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + allocator.GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
-                                    context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
+                                    context: Empty.Default, ref loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             }
                             catch (Exception ex)
                             {
@@ -307,7 +314,7 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
+        internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
         /// <summary>
@@ -327,9 +334,14 @@ namespace Tsavorite.core
             try
             {
                 // Leave the frame as an asynchronously failed load does: an unset completion event and a cancelled
-                // token, so WaitForFrameLoad's wait throws immediately and its catch makes the frame reusable. A fresh
-                // event keeps that state unambiguous when the device threw before assigning the out parameter.
-                loadCompletionEvents[frame] = new CountdownEvent(1);
+                // token, so WaitForFrameLoad's wait throws immediately and its catch makes the frame reusable.
+                // Resetting rather than replacing the event keeps the frame on a single event for its lifetime; no
+                // completion callback can still reference it, because either the read was never issued or the failing
+                // callback has already run.
+                if (loadCompletionEvents[frame] is null)
+                    loadCompletionEvents[frame] = new CountdownEvent(1);
+                else
+                    loadCompletionEvents[frame].Reset();
             }
             catch { }
 
@@ -382,6 +394,57 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Prepare <paramref name="frame"/> for reuse by this thread's claim: wait for any load previously claimed on it
+        /// to finish, and renew its cancellation source if a failed load left that cancelled.
+        /// </summary>
+        /// <param name="frame">The frame whose buffer is about to be reused.</param>
+        /// <param name="priorClaim">The <see cref="nextLoadedPages"/> value this thread's claim replaced, or a negative
+        /// value if the frame has never been claimed. The prior load has been issued once <see cref="loadedPages"/>
+        /// reaches it.</param>
+        /// <remarks>
+        /// The caller holds the epoch, so the prior claim's deferred read may not have been issued yet; drain until it
+        /// has, then release the epoch across the wait so the drain list can continue to make progress. A prior load
+        /// that failed or was canceled leaves the frame reusable and its page is skipped by whoever awaits it as
+        /// currentFrame, so nothing here depends on its outcome.
+        /// </remarks>
+        private void WaitForPriorFrameLoad(long frame, long priorClaim)
+        {
+            if (priorClaim >= 0)
+            {
+                while (loadedPages[frame] < priorClaim)
+                    epoch?.ProtectAndDrain();
+
+                var completionEvent = loadCompletionEvents[frame];
+                if (completionEvent is not null && !completionEvent.IsSet)
+                {
+                    try
+                    {
+                        epoch?.Suspend();
+                        _ = completionEvent.Wait(Timeout.Infinite, loadCTSs[frame].Token);
+                    }
+                    catch (Exception e)
+                    {
+                        logger?.LogWarning(e, "Prior page load did not complete successfully before its frame was reused. Frame: {frame}", frame);
+                    }
+                    finally
+                    {
+                        epoch?.Resume();
+                    }
+                }
+            }
+
+            // A failed load cancels the frame's token without replacing it, and only WaitForFrameLoad's failure path
+            // installs a fresh one -- which a frame re-claimed without first being awaited as currentFrame never reaches.
+            // Issuing the replacement read under the cancelled token would make the next WaitForFrameLoad throw at once:
+            // it would skip a page that is genuinely being read, and signal the frame reusable while that read is still
+            // writing into its buffer, which is the concurrent-reads-into-one-buffer hazard this method exists to prevent.
+            // Renew it here, where the frame is prepared for reuse. The old source is left for Dispose rather than
+            // disposed now, since a token handed to an in-flight wait may still reference it.
+            if (loadCTSs[frame].IsCancellationRequested)
+                loadCTSs[frame] = new CancellationTokenSource();
+        }
+
+        /// <summary>
         /// Wait for the current frame to complete loading
         /// </summary>
         /// <param name="currentAddress"></param>
@@ -404,8 +467,12 @@ namespace Tsavorite.core
                 // The exception may have been an OperationCanceledException.
                 // A load that fails asynchronously cancels the token without signaling the completion event, so signal
                 // it here to leave the frame reusable.
+                // Both page vectors are reset together: leaving nextLoadedPages at the failed claim while loadedPages
+                // is cleared puts the frame in a state the CAS loop in BufferAndLoad can neither satisfy nor re-claim,
+                // so a later pass over a page ending at or below the failed claim would spin.
                 SignalFrameLoadCompletion(currentFrame);
                 loadedPages[currentFrame] = -1;
+                nextLoadedPages[currentFrame] = -1;
                 loadCTSs[currentFrame] = new CancellationTokenSource();
                 _ = Utility.MonotonicUpdate(ref nextAddress, GetLogicalAddressOfStartOfPage(1 + allocator.GetPageOfAddress(currentAddress, logPageSizeBits), logPageSizeBits), out _);
 

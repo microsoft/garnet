@@ -170,7 +170,7 @@ namespace Garnet.cluster
                     // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
                     // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
                     lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
-                byteArray = lastConfig.ToByteArray();
+                byteArray = lastConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
             }
             else
             {
@@ -195,7 +195,7 @@ namespace Garnet.cluster
                     var returnedConfigArray = resp.Span.ToArray();
 
                     // Validate config version before full deserialization
-                    if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || version != ClusterConfig.ClusterConfigVersion)
+                    if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
                     {
                         logger?.LogWarning("Received gossip response with incompatible config version: {version}", version);
                         return;
@@ -238,7 +238,7 @@ namespace Garnet.cluster
             if (task == null)
             {
                 // Issue first time gossip
-                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray();
+                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
                 gossipTask = GossipAsync(configArray);
                 UpdateGossipSend();
                 clusterProvider.clusterManager.gossipStats.gossip_full_send++;

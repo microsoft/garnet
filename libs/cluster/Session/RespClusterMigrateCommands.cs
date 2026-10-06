@@ -136,7 +136,7 @@ namespace Garnet.cluster
 
                                 var payload = payloadRaw.ReadOnlySpan;
 
-                                VectorManager.DeserializeMigratedIndexKey(payload, out var keyBytes, out var valueBytes);
+                                VectorManager.DeserializeMigratedIndexKey(payload, out var keyBytes, out var valueBytes, out var expiration);
 
                                 // An error has occurred
                                 if (migrateState > 0)
@@ -145,7 +145,7 @@ namespace Garnet.cluster
                                     continue;
                                 }
 
-                                clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedIndexKey(clusterProvider.storeWrapper.DefaultDatabase, clusterProvider.storeWrapper, keyBytes, valueBytes);
+                                clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedIndexKey(clusterProvider.storeWrapper.DefaultDatabase, clusterProvider.storeWrapper, keyBytes, valueBytes, expiration);
                                 i++;
                             }
                         }
