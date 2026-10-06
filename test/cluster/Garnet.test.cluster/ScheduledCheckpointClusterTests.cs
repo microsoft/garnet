@@ -35,6 +35,12 @@ namespace Garnet.test.cluster
             Assert.That(LastSave(nodeIndex), Is.GreaterThan(prior));
         }
 
+        void WaitForScheduledCheckpointTaskToStop(int nodeIndex)
+        {
+            var taskManager = context.nodes[nodeIndex].Provider.StoreWrapper.TaskManager;
+            Assert.That(SpinWait.SpinUntil(() => !taskManager.IsRegistered(TaskType.ScheduledCheckpointTask), TimeSpan.FromSeconds(15)), Is.True);
+        }
+
         [Test, CancelAfter(120_000)]
         public void ScheduledCheckpointFollowsPrimaryAndReplicates()
         {
@@ -42,6 +48,7 @@ namespace Garnet.test.cluster
             context.MeetAndAssignSlotsAllNodes(2);
             context.clusterTestUtils.AttachReplicaToPrimary(1, 0, waitForRecovery: true, logger: context.logger);
 
+            Assert.That(context.nodes[0].Provider.StoreWrapper.TaskManager.IsRegistered(TaskType.ScheduledCheckpointTask), Is.False);
             context.clusterTestUtils.ConfigSet(0, "checkpoint-freq", "1", context.logger);
             context.clusterTestUtils.ConfigSet(1, "checkpoint-freq", "1", context.logger);
             Assert.That(context.nodes[0].Provider.StoreWrapper.TaskManager.IsRunning(TaskType.ScheduledCheckpointTask), Is.True);
@@ -62,6 +69,9 @@ namespace Garnet.test.cluster
             Assert.That(context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(1), "SET", ["{checkpoint}key", "2"]).ToString(), Is.EqualTo("OK"));
             WaitForCheckpointAfter(1, primaryBefore);
             WaitForCheckpointAfter(0, replicaBefore);
+
+            context.clusterTestUtils.ConfigSet(1, "checkpoint-freq", "0", context.logger);
+            WaitForScheduledCheckpointTaskToStop(1);
         }
 
         [Test, CancelAfter(120_000)]

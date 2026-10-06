@@ -537,9 +537,9 @@ namespace Garnet.server
             return true;
         }
 
-        // Enacts a checkpoint-freq change by waking the scheduler so it observes the new interval. The task
-        // is not restarted, so a CONFIG SET never waits for a checkpoint that is already running. Setting
-        // the current value again leaves the pending interval untouched.
+        // Enacts a checkpoint-freq change by starting or waking the scheduler so it observes the new interval.
+        // Disabling lets the task unregister itself after any running checkpoint finishes, so a CONFIG SET
+        // never waits for that checkpoint. Setting the current value again leaves the pending interval untouched.
         static bool ApplyCheckpointFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
         {
             error = null;

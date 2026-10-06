@@ -710,6 +710,9 @@ namespace Garnet.server
             {
                 try
                 {
+                    if (TryStopDisabledScheduledCheckpointTask())
+                        break;
+
                     if (!await WaitForScheduledCheckpointAsync(token).ConfigureAwait(false))
                         continue;
 
@@ -763,8 +766,6 @@ namespace Garnet.server
         /// <param name="intervalChanged">Whether the interval differs from the previous value.</param>
         internal void NotifyCheckpointFrequencyChanged(bool intervalChanged)
         {
-            // A role change can leave a primary without its primary tasks; start the scheduler here like the
-            // other runtime-adjustable tasks do when they are reconciled.
             lock (taskLifecycleLock)
             {
                 if (!(clusterProvider?.IsReplica() ?? false))
@@ -787,6 +788,18 @@ namespace Garnet.server
             catch (ObjectDisposedException)
             {
                 // The server is shutting down.
+            }
+        }
+
+        bool TryStopDisabledScheduledCheckpointTask()
+        {
+            lock (taskLifecycleLock)
+            {
+                if (runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) > 0)
+                    return false;
+
+                taskManager.TryUnregister(TaskType.ScheduledCheckpointTask);
+                return true;
             }
         }
 
@@ -1123,11 +1136,10 @@ namespace Garnet.server
                 taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTaskAsync(commitFrequencyMs, token, logger));
         }
 
-        // Start the scheduled checkpoint task. It runs even when checkpoint-freq is 0, parked until a
-        // CONFIG SET enables it, so enabling at runtime does not need a task restart.
         void TryStartScheduledCheckpointTask()
         {
-            if (!taskManager.IsRegistered(TaskType.ScheduledCheckpointTask))
+            if (runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) > 0 &&
+                !taskManager.IsRegistered(TaskType.ScheduledCheckpointTask))
                 taskManager.RegisterAndRun(TaskType.ScheduledCheckpointTask, ScheduledCheckpointTaskAsync);
         }
 

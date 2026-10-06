@@ -180,17 +180,21 @@ namespace Garnet.test
         public void ConfigSetStartsAndStopsScheduledCheckpoints()
         {
             StartServer(0);
+            var store = server.Provider.StoreWrapper;
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase();
             db.StringSet("counter", 0);
 
+            Assert.That(store.TaskManager.IsRegistered(TaskType.ScheduledCheckpointTask), Is.False);
             Assert.That(((RedisResult[])db.Execute("CONFIG", "GET", "checkpoint-freq"))[1].ToString(), Is.EqualTo("0"));
             Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "1").ToString(), Is.EqualTo("OK"));
+            Assert.That(store.TaskManager.IsRunning(TaskType.ScheduledCheckpointTask), Is.True);
             Assert.That(((RedisResult[])db.Execute("CONFIG", "GET", "checkpoint-freq"))[1].ToString(), Is.EqualTo("1"));
             WaitForCheckpointAfter(DateTimeOffset.FromUnixTimeSeconds(0));
 
             Assert.That(db.Execute("CONFIG", "SET", "checkpoint-freq", "0").ToString(), Is.EqualTo("OK"));
             WaitForRunningCheckpoint();
+            Assert.That(SpinWait.SpinUntil(() => !store.TaskManager.IsRegistered(TaskType.ScheduledCheckpointTask), TimeSpan.FromSeconds(15)), Is.True);
             var prior = LastSave;
             db.StringIncrement("counter");
             Thread.Sleep(2500);
@@ -202,12 +206,11 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ConfigSetStartsSchedulerThatIsNotRunningAsync()
+        public void ConfigSetStartsSchedulerThatIsNotRunning()
         {
             StartServer(0);
             var store = server.Provider.StoreWrapper;
-            await store.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
-            Assert.That(store.TaskManager.IsRunning(TaskType.ScheduledCheckpointTask), Is.False);
+            Assert.That(store.TaskManager.IsRegistered(TaskType.ScheduledCheckpointTask), Is.False);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase();
