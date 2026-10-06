@@ -59,6 +59,11 @@ namespace Garnet.server
         /// eXtension Binary quantized Unsigned integer 8 bits
         /// </summary>
         XBin_U8 = 7,
+
+        /// <summary>
+        /// Signed 8-bit full vectors with 2-bit spherical quantization for graph search.
+        /// </summary>
+        XSpherical2_I8 = 8,
     }
 
     /// <summary>
@@ -282,7 +287,7 @@ namespace Garnet.server
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMsg, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, int beamWidth, int? rerankDepth, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMsg, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
             parseState.InitializeWithArgument(key);
 
@@ -299,7 +304,7 @@ namespace Garnet.server
                     return status;
                 }
 
-                result = vectorManager.ValueSimilarity(indexSpan, valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, out errorMsg, ref outputDistances, ref outputAttributes, ref filterBitmap);
+                result = vectorManager.ValueSimilarity(indexSpan, valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, beamWidth, rerankDepth, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, out errorMsg, ref outputDistances, ref outputAttributes, ref filterBitmap);
 
                 return GarnetStatus.OK;
             }
@@ -309,7 +314,7 @@ namespace Garnet.server
         /// Perform a similarity search on an existing Vector Set given an element that is already in the Vector Set.
         /// </summary>
         [SkipLocalsInit]
-        public GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
+        public GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, int beamWidth, int? rerankDepth, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
         {
             parseState.InitializeWithArgument(key);
 
@@ -324,7 +329,7 @@ namespace Garnet.server
                     return status;
                 }
 
-                result = vectorManager.ElementSimilarity(indexSpan, element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, ref filterBitmap);
+                result = vectorManager.ElementSimilarity(indexSpan, element, count, delta, searchExplorationFactor, beamWidth, rerankDepth, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, ref filterBitmap);
                 return GarnetStatus.OK;
             }
         }

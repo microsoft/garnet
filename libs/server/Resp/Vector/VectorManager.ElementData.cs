@@ -82,6 +82,7 @@ namespace Garnet.server
         ///   <item><see cref="VectorQuantType.XBin_U8"/> -&gt; <see cref="VectorValueType.XU8"/></item>
         ///   <item><see cref="VectorQuantType.XNoQuant_I8"/> -&gt; <see cref="VectorValueType.XI8"/></item>
         ///   <item><see cref="VectorQuantType.XBin_I8"/> -&gt; <see cref="VectorValueType.XI8"/></item>
+        ///   <item><see cref="VectorQuantType.XSpherical2_I8"/> -&gt; <see cref="VectorValueType.XI8"/></item>
         /// </list>
         /// 
         /// Even if the formats match, the data must also be aligned to the element's native alignment (i.e. for <see cref="VectorValueType.FP32"/> that's 4 bytes, for <see cref="VectorValueType.XU8"/> it's 1 byte).
@@ -118,9 +119,10 @@ namespace Garnet.server
                         case VectorValueType.Invalid:
                         default: throw new InvalidOperationException($"Unexpected VectorValueType: {valueType}");
                     }
-                // XNoQuant_I8 and XBin_I8 expects I8 vectors
+                // Signed-byte quantizers expect I8 vectors.
                 case VectorQuantType.XNoQuant_I8:
                 case VectorQuantType.XBin_I8:
+                case VectorQuantType.XSpherical2_I8:
                     switch (valueType)
                     {
                         case VectorValueType.FP32: return ConvertF32ToI8(providedData, out error);
