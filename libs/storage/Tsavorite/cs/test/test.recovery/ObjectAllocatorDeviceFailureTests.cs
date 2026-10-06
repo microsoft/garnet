@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Threading;
@@ -74,6 +75,88 @@ namespace Tsavorite.test
             Assert.That(logDevice.WriteCount, Is.GreaterThan(writeCountBeforeFlush));
             Assert.That(store.Log.FlushedUntilAddress, Is.EqualTo(expectedFlushUntilAddress));
             Assert.That(flushFailureEvent.IsSet, Is.False);
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void EveryRecordTheFlushWritesIsFrozenWhileItIsWritten()
+        {
+            // The deferred-cleanup design rests on this: while the object-log flush is writing a record, that record's address must
+            // report IsFrozenForFlush, because that is what makes a concurrent dispose decline and defer its release to eviction.
+            // The injection hook lets this be asserted at the exact moment of the write instead of inferred.
+            CreateStore(useLargeObjects: true, captureFlushFailures: false);
+
+            var observed = 0;
+            var notFrozen = new List<long>();
+            ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+            {
+                if (phase != ObjectFlushPhase.AfterRecordWritten)
+                    return;
+                _ = Interlocked.Increment(ref observed);
+                if (!store.hlog.IsFrozenForFlush(logicalAddress))
+                {
+                    lock (notFrozen)
+                        notFrozen.Add(logicalAddress);
+                }
+            };
+
+            try
+            {
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var context = session.BasicContext;
+
+                for (var key = 0; key < 16; ++key)
+                    _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+                store.Log.Flush(wait: true);
+            }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+            }
+
+            Assert.That(observed, Is.GreaterThan(0), "the injection hook must fire for records the flush writes, or this test proves nothing");
+            Assert.That(notFrozen, Is.Empty, $"records written by the flush must be frozen at that moment; unfrozen addresses: {string.Join(", ", notFrozen)}");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void WriteFailureIsSurfaced([Values] bool synchronous)
+        {
+            // A device write can fail two ways: rejected at submission, so the completion callback runs INLINE on the submitting
+            // thread before WriteAsync returns (LocalMemoryDevice's ENOENT/EINVAL paths, ShardedStorageDevice's inline countdown);
+            // or accepted and then failed, so the completion is posted from another thread. Both must surface the error rather than
+            // swallow it, which would let FlushedUntilAddress advance past bytes that never reached storage.
+            //
+            // NOTE: the flush is issued with wait: false deliberately. A failed write never advances FlushedUntilAddress, and
+            // Flush(wait: true) waits on exactly that, so it does not return after a failed write in EITHER mode -- the failure is
+            // observable only through the commit callback. Waiting here would hang the run rather than test anything.
+            CreateStore(useLargeObjects: true, captureFlushFailures: true);
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var context = session.BasicContext;
+
+            for (var key = 0; key < 8; ++key)
+                _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+            objectLogDevice.FailWriteNumber(objectLogDevice.WriteCount + 1, synchronous);
+
+            try
+            {
+                store.Log.Flush(wait: false);
+            }
+            catch (TsavoriteException)
+            {
+                // Propagating the failure to the caller is an acceptable surfacing.
+            }
+
+            var surfaced = flushFailureEvent.Wait(TimeSpan.FromSeconds(30));
+
+            Assert.That(objectLogDevice.FailedWriteCount, Is.EqualTo(1), "the injected write failure must have been taken");
+            Assert.That(surfaced, Is.True, "the write failure must be surfaced, not swallowed");
+            Assert.That(flushFailure.ErrorCode, Is.Not.Zero, "the surfaced failure must carry the device error code");
         }
 
         [Test]
@@ -215,6 +298,9 @@ namespace Tsavorite.test
 
         private readonly IDevice underlying;
         private int failNextRead;
+        private int failWriteNumber;
+        private int failWriteSynchronously;
+        private int failedWriteCount;
         private int readCount;
         private int writeCount;
         private int failedReadCount;
@@ -229,10 +315,12 @@ namespace Tsavorite.test
         internal int ReadCount => Volatile.Read(ref readCount);
         internal int WriteCount => Volatile.Read(ref writeCount);
         internal int FailedReadCount => Volatile.Read(ref failedReadCount);
+        internal int FailedWriteCount => Volatile.Read(ref failedWriteCount);
         internal int TruncateUntilAddressCount => Volatile.Read(ref truncateUntilAddressCount);
         internal int RemoveSegmentCount => Volatile.Read(ref removeSegmentCount);
         internal ulong LastFailedReadAddress { get; private set; }
         internal uint LastFailedReadLength { get; private set; }
+        internal ulong LastFailedWriteAddress { get; private set; }
 
         internal ControlledReadFailureDevice(IDevice underlying)
             : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
@@ -244,6 +332,17 @@ namespace Tsavorite.test
         {
             failureMode = mode;
             _ = Interlocked.Exchange(ref failNextRead, 1);
+        }
+
+        /// <summary>Fail the <paramref name="writeNumber"/>'th write (1-based). When <paramref name="synchronous"/> the completion callback
+        /// is invoked with an error inline on the submitting thread, which is the shape a device uses when it rejects a request outright
+        /// (see LocalMemoryDevice's ENOENT/EINVAL paths and ShardedStorageDevice's inline countdown completion). Otherwise the error is
+        /// posted to the thread pool, matching a request that was accepted and then failed asynchronously. Neither case touches the
+        /// underlying device, so no bytes for the failed write reach storage.</summary>
+        internal void FailWriteNumber(int writeNumber, bool synchronous = true)
+        {
+            Volatile.Write(ref failWriteSynchronously, synchronous ? 1 : 0);
+            Volatile.Write(ref failWriteNumber, writeNumber);
         }
 
         public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
@@ -279,7 +378,24 @@ namespace Tsavorite.test
         public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
             DeviceIOCompletionCallback callback, object context)
         {
-            _ = Interlocked.Increment(ref writeCount);
+            var thisWrite = Interlocked.Increment(ref writeCount);
+            if (Volatile.Read(ref failWriteNumber) == thisWrite)
+            {
+                _ = Interlocked.Increment(ref failedWriteCount);
+                LastFailedWriteAddress = destinationAddress;
+
+                if (Volatile.Read(ref failWriteSynchronously) == 1)
+                {
+                    // Submission failure: complete inline on the caller's thread, before WriteAsync returns.
+                    callback(InjectedErrorCode, 0, context, ioException: null);
+                }
+                else
+                {
+                    // Accepted-then-failed: complete from a different thread, as a posted IO completion would.
+                    _ = ThreadPool.UnsafeQueueUserWorkItem(_ => callback(InjectedErrorCode, 0, context, ioException: null), null);
+                }
+                return;
+            }
             underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
         }
 

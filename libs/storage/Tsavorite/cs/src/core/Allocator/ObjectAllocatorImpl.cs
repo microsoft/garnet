@@ -1116,6 +1116,10 @@ namespace Tsavorite.core
                                     // already-freed or already-cleared slot, losing the race is observable rather than fatal to the flush thread.
                                     var captureIsComplete = logRecord.TryGetOutOfLineComponents(out var keyOverflow, out var valueOverflow, out var valueObject);
 
+                                    // Test-only interleave point: the window between capturing the components and re-reading the live
+                                    // RecordInfo is exactly where a concurrent elision can land, so a test runs its racing operation here.
+                                    ObjectFlushInjection.At(ObjectFlushPhase.AfterCapture, logicalAddress);
+
                                     // Re-read the LIVE RecordInfo after the capture. Elision CASes the record out of its tag chain, then
                                     // SealAndInvalidate()s it, and only then frees its heap through OnDispose(Elided) -- so a capture that lost
                                     // its heap surfaces here as an Invalid live record. Skipping such a record is equivalent to it having been
@@ -1137,6 +1141,10 @@ namespace Tsavorite.core
                                         // Only a record that actually wrote to the object log clears this; a skipped record advances no writer
                                         // position, so the next record with objects still verifies its start position against objectLogTail.
                                         isFirstRecordOnPage = false;
+
+                                        // Test-only interleave point: the record's bytes are now in the object log and its position is stamped,
+                                        // so a test can assert the freeze invariant or race a dispose against the in-flight write.
+                                        ObjectFlushInjection.At(ObjectFlushPhase.AfterRecordWritten, logicalAddress);
                                     }
                                     else
                                     {

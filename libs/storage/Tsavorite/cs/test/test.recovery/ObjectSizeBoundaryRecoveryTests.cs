@@ -116,11 +116,17 @@ namespace Tsavorite.test.recovery
         {
             ClassicAssert.IsNotNull(actual, $"key {key} (size {size}) read back null");
             ClassicAssert.AreEqual(size, actual.Length, $"key {key} wrong length");
-            // Spot-check first, middle, and last bytes (a full compare over every record is O(size*records) and unnecessary given the deterministic fill).
-            ClassicAssert.AreEqual((byte)((key * 31) + 0), actual[0], $"key {key} byte[0] mismatch");
-            var mid = size / 2;
-            ClassicAssert.AreEqual((byte)((key * 31) + mid), actual[mid], $"key {key} byte[{mid}] mismatch");
-            ClassicAssert.AreEqual((byte)((key * 31) + (size - 1)), actual[size - 1], $"key {key} byte[{size - 1}] mismatch");
+
+            // Compare EVERY byte. SequenceEqual is vectorized, so a full compare costs far less than the per-byte
+            // assertions it replaces, and a torn or swapped interior that a first/middle/last spot-check would miss
+            // is exactly the failure these boundary tests exist to catch.
+            var expected = MakePayload(key, size);
+            if (actual.AsSpan().SequenceEqual(expected))
+                return;
+
+            // Report the first divergence rather than dumping the whole payload.
+            var firstDiff = actual.AsSpan().CommonPrefixLength(expected);
+            Assert.Fail($"key {key} (size {size}) payload mismatch at byte {firstDiff}: expected {expected[firstDiff]}, got {actual[firstDiff]}");
         }
 
         // Write numRecords object values of the given size, checkpoint, recover into a fresh store, and read every record back byte-for-byte.
