@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
@@ -30,9 +31,9 @@ namespace Garnet.cluster
 
         SessionParseState parseState;
         unsafe byte* dcurr, dend;
-        long _localCurrentEpoch = 0;
+        long localCurrentEpoch = 0;
 
-        public long LocalCurrentEpoch => _localCurrentEpoch;
+        public long LocalCurrentEpoch => Volatile.Read(ref localCurrentEpoch);
 
         bool readOnlySession;
         bool internalWriteSession;
@@ -198,17 +199,18 @@ namespace Garnet.cluster
         {
             this.userHandle = userHandle;
         }
-        public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.garnetEpoch.GetCurrentEpoch();
-        public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
+        public void AcquireCurrentEpoch() => localCurrentEpoch = clusterProvider.garnetEpoch.GetCurrentEpoch();
+        public void ReleaseCurrentEpoch() => localCurrentEpoch = 0;
 
         /// <summary>
         /// Release epoch, wait for config transition and re-acquire the epoch
         /// </summary>
-        public async Task UnsafeBumpAndWaitForEpochTransitionAsync()
+        public async ValueTask<bool> UnsafeBumpAndWaitForEpochTransitionAsync()
         {
             ReleaseCurrentEpoch();
-            _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+            var result = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
             AcquireCurrentEpoch();
+            return result;
         }
 
         /// <summary>

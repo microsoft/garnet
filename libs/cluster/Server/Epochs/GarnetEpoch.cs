@@ -76,7 +76,7 @@ namespace Garnet.cluster
         /// how they wait, not in what they wait for.
         /// </summary>
         /// <returns>True when all active cluster sessions have transitioned.</returns>
-        internal async Task<bool> BumpAndSpinWaitForEpochTransitionAsync()
+        internal async ValueTask<bool> BumpAndSpinWaitForEpochTransitionAsync()
         {
             var target = Interlocked.Increment(ref currentEpoch);
             while (!epochObserver.AllSessionsQuiesced(target))
@@ -96,7 +96,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="token">Cancellation token. When canceled, returns false without further waiting.</param>
         /// <returns>True when all active cluster sessions have transitioned; false if canceled.</returns>
-        internal async Task<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default)
+        internal async ValueTask<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default)
         {
             var target = Interlocked.Increment(ref currentEpoch);
 

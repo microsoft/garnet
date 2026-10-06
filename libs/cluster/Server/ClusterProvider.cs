@@ -359,7 +359,7 @@ namespace Garnet.cluster
         /// Wait for config transition
         /// </summary>
         /// <returns></returns>
-        internal Task<bool> BumpAndWaitForEpochTransitionAsync()
+        internal ValueTask<bool> BumpAndWaitForEpochTransitionAsync()
             => garnetEpoch.BumpAndWaitForEpochTransitionAsync();
 
         /// <inheritdoc />

@@ -119,8 +119,8 @@ namespace Garnet.test.cluster
             var waitTask = epoch.BumpAndWaitForEpochTransitionAsync();
 
             // The bump cannot complete while the session remains behind.
-            var raced = await Task.WhenAny(waitTask, Task.Delay(250));
-            ClassicAssert.AreNotEqual(waitTask, raced, "bump completed before the blocking session released");
+            await Task.Delay(250);
+            ClassicAssert.IsFalse(waitTask.IsCompleted, "bump completed before the blocking session released");
 
             // Release: clear the session, exactly as ReleaseCurrentEpoch does. A self-poll re-scan
             // discovers it without any waker.
@@ -140,8 +140,8 @@ namespace Garnet.test.cluster
 
             var waitTask = epoch.BumpAndWaitForEpochTransitionAsync();
 
-            var raced = await Task.WhenAny(waitTask, Task.Delay(250));
-            ClassicAssert.AreNotEqual(waitTask, raced);
+            await Task.Delay(250);
+            ClassicAssert.IsFalse(waitTask.IsCompleted);
 
             // A session that re-acquires at the new (or higher) epoch is also quiesced.
             source.SetEpoch(idx, epoch.GetCurrentEpoch());
@@ -161,8 +161,8 @@ namespace Garnet.test.cluster
             using var cts = new CancellationTokenSource();
             var waitTask = epoch.BumpAndWaitForEpochTransitionAsync(cts.Token);
 
-            var raced = await Task.WhenAny(waitTask, Task.Delay(250));
-            ClassicAssert.AreNotEqual(waitTask, raced);
+            await Task.Delay(250);
+            ClassicAssert.IsFalse(waitTask.IsCompleted);
 
             cts.Cancel();
 
@@ -182,9 +182,9 @@ namespace Garnet.test.cluster
             var second = epoch.BumpAndWaitForEpochTransitionAsync();
 
             // Let both bumps pass the adaptive spin and park; neither can complete while the session blocks.
-            var both = Task.WhenAll(first, second);
-            var raced = await Task.WhenAny(both, Task.Delay(250));
-            ClassicAssert.AreNotEqual(both, raced, "a bump completed before the blocking session released");
+            await Task.Delay(250);
+            ClassicAssert.IsFalse(first.IsCompleted, "first bump completed before the blocking session released");
+            ClassicAssert.IsFalse(second.IsCompleted, "second bump completed before the blocking session released");
 
             // One release: both parked bumps must independently converge on their next poll.
             source.SetEpoch(idx, 0);
