@@ -20,7 +20,10 @@ namespace Garnet.client
     /// Creates a complete set of network writer capacity and buffer options.
     /// </remarks>
     /// <param name="networkBufferSizeBytes">Fixed send-buffer size, initial receive-buffer size, and maximum send chunk size.</param>
-    /// <param name="requestPageSizeBytes">Size of each request-ring page, rounded down to a power of two.</param>
+    /// <param name="requestPageSizeBytes">
+    /// Size of each request-ring page, rounded down to a power of two. Must be at least
+    /// <see cref="DuplexRingRecordFormat.HeaderSize"/>.
+    /// </param>
     /// <param name="requestPageCount">Number of circular request-ring pages.</param>
     /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
     /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
@@ -91,7 +94,7 @@ namespace Garnet.client
         /// Size of each request-ring page. This controls the maximum inline request size and,
         /// together with <see cref="RequestPageCount"/>, the request capacity awaiting local send completion.
         /// </summary>
-        public int RequestPageSizeBytes { get; } = (int)Utility.PreviousPowerOf2(requestPageSizeBytes);
+        public int RequestPageSizeBytes { get; } = GetRequestPageSizeBytes(requestPageSizeBytes);
 
         /// <summary>
         /// Number of circular pages in the request ring.
@@ -155,6 +158,15 @@ namespace Garnet.client
 
         static int Align(int size)
             => (size + (IntPtr.Size - 1)) & ~(IntPtr.Size - 1);
+
+        static int GetRequestPageSizeBytes(int requestPageSizeBytes)
+        {
+            if (requestPageSizeBytes < DuplexRingRecordFormat.HeaderSize)
+                throw new ArgumentOutOfRangeException(nameof(requestPageSizeBytes), requestPageSizeBytes,
+                    $"Request page size must be at least {DuplexRingRecordFormat.HeaderSize} bytes.");
+
+            return (int)Utility.PreviousPowerOf2(requestPageSizeBytes);
+        }
     }
 
     /// <summary>

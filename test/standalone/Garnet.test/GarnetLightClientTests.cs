@@ -228,6 +228,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public void RequestPageSizeMustFitRecordHeader()
+        {
+            var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: DuplexRingRecordFormat.HeaderSize - 1,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8));
+
+            ClassicAssert.AreEqual("requestPageSizeBytes", exception.ParamName);
+
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: DuplexRingRecordFormat.HeaderSize,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8);
+            ClassicAssert.AreEqual(DuplexRingRecordFormat.HeaderSize, options.RequestPageSizeBytes);
+        }
+
+        [Test]
         public async Task RequestMemoryThrottleRejectsOversizedOutOfLineRequestWithoutLeak()
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
@@ -396,6 +417,19 @@ namespace Garnet.test
             }
 
             ClassicAssert.IsNotNull(delivered, "No fire-and-forget publish reached the subscriber.");
+        }
+
+        [Test]
+        public async Task DisabledClusterPublishProducesNoResponse()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true, disablePubSub: true);
+            server.Start();
+
+            using var db = TestUtils.GetGarnetLightClient();
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            db.ClusterPublishNoResponse("channel"u8.ToArray(), "message"u8.ToArray());
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
         }
 
         [Test]
