@@ -217,7 +217,11 @@ namespace Garnet.common
                         Dispose(e);
                         break;
                     }
-                    OnNetworkReceiveWithoutTLS(e.BytesTransferred);
+                    var pending = OnNetworkReceiveWithoutTLSAsync(e.BytesTransferred);
+                    if (pending.IsCompletedSuccessfully)
+                        pending.GetAwaiter().GetResultGuarded();
+                    else
+                        AsyncUtils.BlockingWait(pending);
                     e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
                 } while (!e.AcceptSocket.ReceiveAsync(e));
             }

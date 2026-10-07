@@ -23,6 +23,18 @@ namespace Garnet.common
         => t.GetAwaiter().GetResult();
 
         /// <summary>
+        /// Reads the result of a value task the caller has already proven complete via
+        /// <c>IsCompletedSuccessfully</c>. This is the synchronous arm of the dual-path idiom, where no
+        /// blocking can occur; the name distinguishes it from a genuine blocking wait.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static void GetResultGuarded(this ValueTaskAwaiter awaiter) => awaiter.GetResult();
+
+        /// <inheritdoc cref="GetResultGuarded(ValueTaskAwaiter)"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static T GetResultGuarded<T>(this ValueTaskAwaiter<T> awaiter) => awaiter.GetResult();
+
+        /// <summary>
         /// Block on a given <see cref="Task{TResult}"/>.
         /// 
         /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.

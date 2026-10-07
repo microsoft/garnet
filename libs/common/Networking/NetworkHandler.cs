@@ -335,7 +335,7 @@ namespace Garnet.networking
             }
         }
 
-        public unsafe void OnNetworkReceiveWithoutTLS(int bytesTransferred)
+        public unsafe ValueTask OnNetworkReceiveWithoutTLSAsync(int bytesTransferred)
         {
             networkBytesRead += bytesTransferred;
             transportReceiveBuffer = networkReceiveBuffer;
@@ -347,8 +347,19 @@ namespace Garnet.networking
             var demand = networkBytesRead;
 
             // Process non-TLS code on the synchronous thread
-            Process();
+            var pending = ProcessAsync();
+            if (!pending.IsCompletedSuccessfully)
+                return AwaitReceiveWithoutTLSAsync(pending, demand);
+            pending.GetAwaiter().GetResultGuarded();
 
+            EndTransformNetworkToTransport();
+            UpdateNetworkBuffers(demand);
+            return default;
+        }
+
+        async ValueTask AwaitReceiveWithoutTLSAsync(ValueTask pending, int demand)
+        {
+            await pending;
             EndTransformNetworkToTransport();
             UpdateNetworkBuffers(demand);
         }
@@ -532,14 +543,22 @@ namespace Garnet.networking
         static void ThrowInvalidOperationException(string message)
             => throw new InvalidOperationException(message);
 
-        unsafe void Process()
+        unsafe ValueTask ProcessAsync()
         {
             if (transportBytesRead > 0)
             {
                 if (session != null || serverHook.TryCreateMessageConsumer(new Span<byte>(transportReceiveBufferPtr, transportBytesRead), GetNetworkSender(), out session))
-                    TryProcessRequest();
+                {
+                    var pending = TryProcessRequestAsync();
+                    if (!pending.IsCompletedSuccessfully)
+                        return AwaitProcessAsync(pending);
+                    _ = pending.GetAwaiter().GetResultGuarded();
+                }
             }
+            return default;
         }
+
+        static async ValueTask AwaitProcessAsync(ValueTask<bool> pending) => _ = await pending;
 
         /// <summary>
         /// Get network sender for this handler
@@ -562,7 +581,7 @@ namespace Garnet.networking
                     var transportDemand = transportBytesRead;
 
                     // Read task has control, process the decrypted transport bytes
-                    Process();
+                    AsyncUtils.BlockingWait(ProcessAsync());
 
                     // Shift bytes in transport buffer
                     if (transportReadHead > 0)
@@ -605,7 +624,7 @@ namespace Garnet.networking
                 var transportDemand = transportBytesRead;
 
                 // Read task has control, process the decrypted transport bytes
-                Process();
+                AsyncUtils.BlockingWait(ProcessAsync());
 
                 // Shift bytes in transport buffer, Process would not have shifted
                 // as we are in active state
@@ -667,7 +686,7 @@ namespace Garnet.networking
                     var transportDemand = transportBytesRead;
 
                     // Read task has control, process the decrypted transport bytes
-                    Process();
+                    AsyncUtils.BlockingWait(ProcessAsync());
 
                     // Shift bytes in transport buffer, Process would not have shifted
                     // as we are in active state
@@ -709,9 +728,13 @@ namespace Garnet.networking
             }
         }
 
-        unsafe bool TryProcessRequest()
+        unsafe ValueTask<bool> TryProcessRequestAsync()
         {
-            transportReadHead += session.TryConsumeMessages(transportReceiveBufferPtr + transportReadHead, transportBytesRead - transportReadHead);
+            var consumed = session.TryConsumeMessagesAsync(transportReceiveBufferPtr + transportReadHead, transportBytesRead - transportReadHead);
+            if (!consumed.IsCompletedSuccessfully)
+                return AwaitTryProcessRequestAsync(consumed);
+
+            transportReadHead += consumed.GetAwaiter().GetResultGuarded();
 
             // We cannot shift or double transport buffer if a read may be waiting on
             // the old transport buffer and offset.
@@ -719,6 +742,14 @@ namespace Garnet.networking
             {
                 ShiftTransportReceiveBuffer();
             }
+            return new ValueTask<bool>(true);
+        }
+
+        async ValueTask<bool> AwaitTryProcessRequestAsync(ValueTask<int> consumed)
+        {
+            transportReadHead += await consumed;
+            if (readerStatus == TlsReaderStatus.Rest)
+                ShiftTransportReceiveBuffer();
             return true;
         }
 

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Garnet.networking;
@@ -537,6 +538,9 @@ namespace Garnet.server
 
         bool txnSkip = false;
         bool consistentReadActive = false;
+
+        public unsafe ValueTask<int> TryConsumeMessagesAsync(byte* reqBuffer, int bytesReceived)
+            => new(TryConsumeMessages(reqBuffer, bytesReceived));
 
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {

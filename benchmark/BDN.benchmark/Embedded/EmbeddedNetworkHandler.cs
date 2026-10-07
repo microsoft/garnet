@@ -42,7 +42,13 @@ namespace Embedded.server
             if (useTLS)
                 await OnNetworkReceiveWithTLSAsync(request.buffer.Length);
             else
-                OnNetworkReceiveWithoutTLS(request.buffer.Length);
+            {
+                var pending = OnNetworkReceiveWithoutTLSAsync(request.buffer.Length);
+                if (pending.IsCompletedSuccessfully)
+                    pending.GetAwaiter().GetResultGuarded();
+                else
+                    AsyncUtils.BlockingWait(pending);
+            }
 
             Debug.Assert(networkBytesRead == 0);
             Debug.Assert(networkReadHead == 0);
