@@ -323,7 +323,6 @@ namespace Garnet.client
             var count = new CountWrapper
             {
                 count = 1,
-                fromAddress = fromAddress,
                 untilAddress = untilAddress
             };
             var flushFailed = false;

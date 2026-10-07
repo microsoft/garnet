@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -41,8 +40,6 @@ namespace Garnet.client
         readonly LightEpoch epoch;
         readonly Action<int, long> setPageLastOffset;
         readonly Action<long, long> onPagesMarkedReadOnly;
-        readonly Dictionary<long, long> completedFlushRanges = [];
-        readonly object completedFlushRangesLock = new();
 
         PageOffset tailPageOffset;
         long flushedUntilAddress;
@@ -245,26 +242,7 @@ namespace Garnet.client
             {
                 if (Interlocked.Decrement(ref count.count) == 0)
                 {
-                    var advanced = false;
-                    lock (completedFlushRangesLock)
-                    {
-                        if (count.fromAddress == flushedUntilAddress)
-                        {
-                            var endAddress = count.untilAddress;
-                            while (completedFlushRanges.Remove(endAddress, out var nextEndAddress))
-                                endAddress = nextEndAddress;
-                            Volatile.Write(ref flushedUntilAddress, endAddress);
-                            advanced = true;
-                        }
-                        else
-                        {
-                            completedFlushRanges.Add(count.fromAddress, count.untilAddress);
-                        }
-                    }
-
-                    if (!advanced)
-                        return;
-
+                    _ = Utility.MonotonicUpdate(ref flushedUntilAddress, count.untilAddress, wrapDistance, out _);
                     requestFreed.Set();
                     AggressiveShiftReadOnlyRunner(true);
                 }
