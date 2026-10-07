@@ -497,6 +497,10 @@ namespace Tsavorite.core
             if (!GetInitialRecoveryAddress(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 await RecoverFuzzyIndexAsync(recoveredICInfo, cancellationToken).ConfigureAwait(false);
 
+            // The restored index holds memory charged against the log budget, and the resizer that would otherwise sample it
+            // does not run during recovery. Sample it here so the page ranges below size the log against the reduced budget.
+            hlogBase.logSizeTracker?.SampleExternalMemorySizeWithoutSignal();
+
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
             RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
@@ -722,6 +726,10 @@ namespace Tsavorite.core
         {
             if (hlogBase.logSizeTracker is null)
                 return;
+
+            // Recovery rebuilds the index as it replays the log, so re-sample per batch rather than relying on the sample
+            // taken before the hybrid log was read.
+            hlogBase.logSizeTracker.SampleExternalMemorySizeWithoutSignal();
 
             var headPage = hlogBase.GetPage(recoveryStatus.headAddress);
             var loadedPages = tailPage - headPage + 1;
@@ -1083,6 +1091,7 @@ namespace Tsavorite.core
             }
 
             // With a size tracker, iterate pages from highest (untilAddress) to lowest (fromAddress) with budget control, evicting pages (and moving headAddress up) as needed.
+            hlogBase.logSizeTracker.SampleExternalMemorySizeWithoutSignal();
             var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
 
             for (var page = endPage - 1; page >= startPage; page--)
