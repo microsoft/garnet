@@ -43,8 +43,8 @@ namespace BDN.benchmark.Operations
         /// </summary>
         public new IEnumerable<OperationParams> OperationParamsProvider()
         {
-            yield return new(false, false);
-            yield return new(false, true);
+            yield return new(useACLs: false, useAof: false, useAad: false);
+            yield return new(useACLs: false, useAof: true, useAad: false);
         }
 
         public override void GlobalSetup()

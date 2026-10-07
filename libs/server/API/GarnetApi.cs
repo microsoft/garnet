@@ -393,7 +393,6 @@ namespace Garnet.server
         public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount, out bool importPending)
         => storageSession.VectorSetRandomMembers(key, count, ref idResults, out actualCount, out importPending);
 
-        /// <inheritdoc />
         public GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
             int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
             out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
@@ -447,7 +446,6 @@ namespace Garnet.server
         /// <inheritdoc/>
         public GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes, out bool importPending)
         => storageSession.VectorSetGetAttribute(key, element, ref outputAttributes, out importPending);
-
         #endregion
 
         #region RangeIndex

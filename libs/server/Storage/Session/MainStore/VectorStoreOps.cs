@@ -353,7 +353,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VADD, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadOrCreateVectorIndex(this, key, ref input, indexSpan, VectorManager.DefaultStartPointId, out var status, out var importPending))
+            using (vectorManager.ReadOrCreateVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status, out var importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -366,7 +366,7 @@ namespace Garnet.server
                 // That lock prevents deletion, but everything else can proceed in parallel
                 result = vectorManager.TryAdd(key, indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, out errorMsg);
 
-                if (result == VectorManagerResult.OK)
+                if (result is VectorManagerResult.OK or VectorManagerResult.Duplicate)
                 {
                     // On successful addition, we need to manually replicate the write
                     vectorManager.ReplicateVectorSetAdd(key, ref input, ref stringBasicContext);
@@ -386,7 +386,8 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VREM, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
+            
+            using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {
@@ -423,7 +424,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VSETATTR, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            using (vectorManager.ReadVectorIndex(this, key, ref input, indexSpan, out var status, out importPending))
+            using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
                 {

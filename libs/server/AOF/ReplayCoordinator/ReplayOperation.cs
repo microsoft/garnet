@@ -16,28 +16,25 @@ namespace Garnet.server
         /// <summary>Completed chunked-record accumulator; null when this is a non-chunked operation.</summary>
         public readonly ChunkedAccumulator Chunk;
 
-        /// <summary>Original log address or sharded sequence number used to order transaction operations.</summary>
+        /// <summary>Log address sequence number of the record, for operations that still need it when they are
+        /// replayed later. Currently only the fuzzy-region TxnCommit marker, whose value drives the multi-log commit
+        /// barrier in <see cref="AofProcessor.AofReplayCoordinator.ProcessTransactionGroup"/>.</summary>
         public readonly long SequenceNumber;
 
-        /// <summary>Replay task that owns the operation's key, or -1 when supplied by the caller.</summary>
-        public readonly int VirtualSublogIdx;
-
         /// <summary>Create a non-chunked (raw record) operation.</summary>
-        public ReplayOperation(byte[] record, long sequenceNumber = 0, int virtualSublogIdx = -1)
+        public ReplayOperation(byte[] record, long sequenceNumber = 0)
         {
             Record = record;
             Chunk = null;
             SequenceNumber = sequenceNumber;
-            VirtualSublogIdx = virtualSublogIdx;
         }
 
         /// <summary>Create a chunked operation from a completed accumulator.</summary>
-        public ReplayOperation(ChunkedAccumulator chunk, long logAddressSequenceNumber = 0, int virtualSublogIdx = -1)
+        public ReplayOperation(ChunkedAccumulator chunk)
         {
             Record = null;
             Chunk = chunk;
-            SequenceNumber = chunk.headerType == AofHeaderType.ShardedHeader ? chunk.sequenceNumber : logAddressSequenceNumber;
-            VirtualSublogIdx = virtualSublogIdx;
+            SequenceNumber = 0;
         }
 
         /// <summary>Whether this operation is a completed chunked record.</summary>
