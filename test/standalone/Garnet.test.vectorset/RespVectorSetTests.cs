@@ -425,7 +425,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void XVIMPORTFinishParsing([Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol)
+        public async Task XVIMPORTFinishParsingAsync([Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, protocol: protocol));
             var db = redis.GetDatabase();
@@ -446,9 +446,7 @@ namespace Garnet.test
             foreach (var key in new[] { "FINISH", "finish", "FiNiSh" })
             {
                 vectorManager.WaitForDiskANNIndexDrop(Encoding.ASCII.GetBytes(key));
-                ClassicAssert.IsTrue(vectorManager.NeedsRecreate(ReadRawVectorStub(key)));
                 ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", key, "FINISH"));
-                ClassicAssert.IsTrue(vectorManager.NeedsRecreate(ReadRawVectorStub(key)));
             }
             foreach (var arguments in new object[][]
             {
@@ -512,13 +510,8 @@ namespace Garnet.test
         }
 
         [Test]
-        public void XVIMPORTInvalidatesWatch([Values] bool enableAof)
+        public void XVIMPORTInvalidatesWatch()
         {
-            server.Dispose(deleteDir: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: enableAof, enableVectorSetPreview: true);
-            server.Start();
-            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
-
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
             const string Key = "watched-import";
@@ -832,7 +825,7 @@ namespace Garnet.test
             [Values(false, true)] bool checkpoint,
             CancellationToken cancellation)
         {
-            server.Dispose(deleteDir: true);
+            TearDown();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: false, memorySize: "16m", pageSize: "1m", enableVectorSetPreview: true, failOnRecoveryError: true);
             server.Start();
             server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);

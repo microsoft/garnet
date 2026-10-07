@@ -226,32 +226,35 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
-                        if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
-                        {
-                            status = GarnetStatus.OK;
-                            importPending = false;
-                            return new(in vectorSetLocks, lockToken);
-                        }
+                        needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
 
-                        if (IsImportPending(indexSpan))
+                        if (!needsRecreate)
                         {
-                            if (readCmd == RespCommand.VINFO)
+                            if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
                             {
                                 status = GarnetStatus.OK;
-                                importPending = true;
+                                importPending = false;
                                 return new(in vectorSetLocks, lockToken);
                             }
 
-                            if (readCmd != RespCommand.XVIMPORT)
+                            if (IsImportPending(indexSpan))
                             {
-                                status = GarnetStatus.WRONGTYPE;
-                                importPending = true;
-                                vectorSetLocks.ReleaseLock(lockToken);
-                                return default;
+                                if (readCmd == RespCommand.VINFO)
+                                {
+                                    status = GarnetStatus.OK;
+                                    importPending = true;
+                                    return new(in vectorSetLocks, lockToken);
+                                }
+
+                                if (readCmd != RespCommand.XVIMPORT)
+                                {
+                                    status = GarnetStatus.WRONGTYPE;
+                                    importPending = true;
+                                    vectorSetLocks.ReleaseLock(lockToken);
+                                    return default;
+                                }
                             }
                         }
-
-                        needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
                     {
