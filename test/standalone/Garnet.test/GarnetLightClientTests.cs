@@ -381,6 +381,49 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task ClientMemoryUsageTracksOutOfLineReservations()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            const int maxOutOfLineRentedBytes = 512;
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: maxOutOfLineRentedBytes);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+
+            ClassicAssert.AreEqual(0, db.ActiveMemoryUsageBytes);
+            ClassicAssert.AreEqual(
+                options.MaxMemoryFootprint() + maxOutOfLineRentedBytes,
+                db.MaxMemoryUsageBytes);
+
+            await db.ConnectAsync().ConfigureAwait(false);
+            ClassicAssert.AreEqual(options.MinMemoryFootprint(), db.ActiveMemoryUsageBytes);
+
+            var writer = GetNetworkWriter(db);
+            ClassicAssert.IsTrue(writer.AdmitOutOfLineRental(maxOutOfLineRentedBytes, CancellationToken.None));
+            try
+            {
+                ClassicAssert.AreEqual(
+                    options.MinMemoryFootprint() + maxOutOfLineRentedBytes,
+                    db.ActiveMemoryUsageBytes);
+            }
+            finally
+            {
+                writer.ReleaseOutOfLineRental(maxOutOfLineRentedBytes);
+            }
+
+            ClassicAssert.AreEqual(options.MinMemoryFootprint(), db.ActiveMemoryUsageBytes);
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+            ClassicAssert.Greater(db.ActiveMemoryUsageBytes, options.MinMemoryFootprint());
+            ClassicAssert.LessOrEqual(db.ActiveMemoryUsageBytes, options.MaxMemoryFootprint());
+        }
+
+        [Test]
         public void RequestPageSizeMustFitRecordHeader()
         {
             var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new LightNetworkWriterOptions(

@@ -39,7 +39,7 @@ namespace Garnet.client
         static int RequestSlotSizeBytes
             => Align(Unsafe.SizeOf<LightRequestContext>() + IntPtr.Size);
 
-        static int FlushContextSizeBytes
+        internal static int FlushContextSizeBytes
             => Align(
                 (2 * IntPtr.Size) +
                 Unsafe.SizeOf<LightRequestContext>() +
@@ -218,9 +218,12 @@ namespace Garnet.client
         readonly DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport> channel;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
+        readonly MemoryThrottle outOfLineRentedBytesThrottle;
         readonly WaiterQueue<MemoryThrottle, int> memoryThrottle;
         readonly GarnetLightClientTcpNetworkHandler networkHandler;
         readonly ILogger logger;
+        readonly long minMemoryFootprintBytes;
+        readonly long maxMemoryFootprintBytes;
 
         int closed;
         int disposed;
@@ -231,6 +234,18 @@ namespace Garnet.client
         public LightEpoch epoch => channel.epoch;
 
         internal bool Closed => Volatile.Read(ref closed) != 0;
+
+        internal long ActiveMemoryUsageBytes
+            => SaturatingAdd(
+                SaturatingAdd(
+                    minMemoryFootprintBytes,
+                    (long)channel.AllocatedFlushContextCount * LightNetworkWriterOptions.FlushContextSizeBytes),
+                outOfLineRentedBytesThrottle.InUseBytes);
+
+        internal long MaxMemoryUsageBytes
+            => outOfLineRentedBytesThrottle.CapacityBytes == 0
+                ? long.MaxValue
+                : SaturatingAdd(maxMemoryFootprintBytes, outOfLineRentedBytesThrottle.CapacityBytes);
 
         /// <summary>Number of completion tickets issued so far (task-space).</summary>
         public int CompletionTail => channel.CompletionTail;
@@ -251,8 +266,10 @@ namespace Garnet.client
             this.logger = logger;
             this.networkBufferSettings = new NetworkBufferSettings(options.NetworkBufferSizeBytes, options.NetworkBufferSizeBytes);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
-            var outOfLineRentedBytesThrottle = new MemoryThrottle(options.MaxOutOfLineRentedBytes);
-            this.memoryThrottle = new WaiterQueue<MemoryThrottle, int>(outOfLineRentedBytesThrottle);
+            this.outOfLineRentedBytesThrottle = new MemoryThrottle(options.MaxOutOfLineRentedBytes);
+            this.memoryThrottle = new WaiterQueue<MemoryThrottle, int>(this.outOfLineRentedBytesThrottle);
+            this.minMemoryFootprintBytes = options.MinMemoryFootprint();
+            this.maxMemoryFootprintBytes = options.MaxMemoryFootprint();
 
             // The flush-completion callback is a static routine on the flush result and recovers its ring via
             // the result's sink, so the handler needs no ring instance at construction. That removes the
@@ -300,6 +317,9 @@ namespace Garnet.client
             channel.Dispose();
             memoryThrottle.Dispose();
         }
+
+        static long SaturatingAdd(long left, long right)
+            => left > long.MaxValue - right ? long.MaxValue : left + right;
 
         /// <summary>
         /// Rent request buffer for out-of-line operation

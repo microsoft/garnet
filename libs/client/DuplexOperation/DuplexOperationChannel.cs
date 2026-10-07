@@ -105,6 +105,8 @@ namespace Garnet.client
         /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
         internal int CompletionTail => controller.CompletionTail;
 
+        internal int AllocatedFlushContextCount => store.AllocatedFlushContextCount;
+
         /// <summary>
         /// Create a duplex back-pressured ring over a single connection.
         /// <para>

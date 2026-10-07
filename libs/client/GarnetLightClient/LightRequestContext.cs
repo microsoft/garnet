@@ -21,9 +21,8 @@ namespace Garnet.client
         /// </summary>
         internal PoolEntry poolEntry;
 
-        int length;
+        readonly int length;
         WaiterQueue<MemoryThrottle, int> outOfLineRentedBytesWaiters;
-        int reservedBytes;
 
         /// <inheritdoc />
         public byte[] Buffer => poolEntry.entry;
@@ -34,13 +33,11 @@ namespace Garnet.client
         internal LightRequestContext(
             PoolEntry poolEntry,
             int length,
-            WaiterQueue<MemoryThrottle, int> outOfLineRentedBytesWaiters,
-            int reservedBytes)
+            WaiterQueue<MemoryThrottle, int> outOfLineRentedBytesWaiters)
         {
             this.poolEntry = poolEntry;
             this.length = length;
             this.outOfLineRentedBytesWaiters = outOfLineRentedBytesWaiters;
-            this.reservedBytes = reservedBytes;
         }
 
         internal static int GetRequestBufferAllocationSize(LimitedFixedBufferPool pool, int length)
@@ -71,7 +68,7 @@ namespace Garnet.client
 
             var entry = pool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
             ObjectDisposedException.ThrowIf(entry is null, pool);
-            return new LightRequestContext(entry, length, outOfLineRentedBytesWaiters, reservedBytes);
+            return new LightRequestContext(entry, length, outOfLineRentedBytesWaiters);
         }
 
         /// <inheritdoc />
@@ -82,10 +79,9 @@ namespace Garnet.client
 
             var entry = poolEntry;
             var waiters = outOfLineRentedBytesWaiters;
-            var bytes = reservedBytes;
+            var bytes = entry.entry.Length;
             poolEntry = null;
             outOfLineRentedBytesWaiters = null;
-            reservedBytes = 0;
 
             entry.Dispose();
             waiters?.Release(bytes);

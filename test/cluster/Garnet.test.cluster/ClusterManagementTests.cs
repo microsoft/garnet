@@ -10,6 +10,7 @@ using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -460,6 +461,19 @@ namespace Garnet.test.cluster
             var server = context.clusterTestUtils.GetServer(0);
             var gossipConnections = GetStat(server, "Stats", "gossip_open_connections");
             ClassicAssert.AreEqual(node_count - 1, int.Parse(gossipConnections), "Expected one gossip connection per node.");
+            var gossipActiveMemoryBytes = long.Parse(GetStat(server, "Stats", "gossip_active_memory_bytes"));
+            var gossipMaxMemoryBytes = long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes"));
+            var clientOptions = LightNetworkWriterOptions.Default;
+            var expectedMaxMemoryBytes = (node_count - 1) *
+                (clientOptions.MaxMemoryFootprint() + clientOptions.MaxOutOfLineRentedBytes);
+            ClassicAssert.GreaterOrEqual(
+                gossipActiveMemoryBytes,
+                (node_count - 1) * clientOptions.MinMemoryFootprint(),
+                "Each gossip client should report its allocated request/completion ring.");
+            ClassicAssert.AreEqual(
+                expectedMaxMemoryBytes,
+                gossipMaxMemoryBytes,
+                "Gossip maximum memory should reflect every client's configured capacity.");
 
             context.clusterTestUtils.ClusterReset(0, soft: true);
 
@@ -467,6 +481,8 @@ namespace Garnet.test.cluster
 
             gossipConnections = GetStat(server, "Stats", "gossip_open_connections");
             ClassicAssert.AreEqual("0", gossipConnections, "All gossip connections should be closed after a reset.");
+            ClassicAssert.AreEqual("0", GetStat(server, "Stats", "gossip_active_memory_bytes"));
+            ClassicAssert.AreEqual("0", GetStat(server, "Stats", "gossip_max_memory_bytes"));
             ClassicAssert.AreEqual(1, context.clusterTestUtils.ClusterNodes(0).Nodes.Count(), "Expected the node to only know about itself after a reset.");
         }
 

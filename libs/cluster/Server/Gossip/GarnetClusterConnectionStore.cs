@@ -29,6 +29,41 @@ namespace Garnet.cluster
         public LightEpoch Epoch => epoch;
 
         /// <summary>
+        /// Aggregates current and configured-maximum accounted memory across all gossip clients.
+        /// </summary>
+        /// <returns>Active and maximum accounted memory in bytes.</returns>
+        public (long ActiveMemoryUsageBytes, long MaxMemoryUsageBytes) GetMemoryUsage()
+        {
+            long activeMemoryUsageBytes = 0;
+            long maxMemoryUsageBytes = 0;
+            try
+            {
+                _lock.ReadLock();
+                if (_disposed)
+                    return default;
+
+                for (var i = 0; i < numConnection; i++)
+                {
+                    var client = connections[i].Client;
+                    if (client == null)
+                        continue;
+
+                    activeMemoryUsageBytes = SaturatingAdd(activeMemoryUsageBytes, client.ActiveMemoryUsageBytes);
+                    maxMemoryUsageBytes = SaturatingAdd(maxMemoryUsageBytes, client.MaxMemoryUsageBytes);
+                }
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+
+            return (activeMemoryUsageBytes, maxMemoryUsageBytes);
+
+            static long SaturatingAdd(long left, long right)
+                => left > long.MaxValue - right ? long.MaxValue : left + right;
+        }
+
+        /// <summary>
         /// Connection store for cluster gossip connections.
         /// </summary>
         /// <param name="initialSize">Size for array of connection (auto-grows as connections are added).</param>

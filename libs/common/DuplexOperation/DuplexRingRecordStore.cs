@@ -128,10 +128,31 @@ namespace Garnet.client
         readonly CompletionSlot[] completions;
         readonly int completionMask;
         int closed;
+        int allFlushContextsAllocated;
 
         internal PageShape Shape { get; }
         internal int CompletionCapacity { get; }
         internal int MaxInlinePayloadSize => Shape.PageSizeBytes - DuplexRingRecordFormat.HeaderSize;
+        internal int AllocatedFlushContextCount
+        {
+            get
+            {
+                if (Volatile.Read(ref allFlushContextsAllocated) != 0)
+                    return requestSlots.Length;
+
+                var count = 0;
+                for (var i = 0; i < requestSlots.Length; i++)
+                {
+                    if (Volatile.Read(ref requestSlots[i].flushContext) != null)
+                        count++;
+                }
+
+                if (count == requestSlots.Length)
+                    Volatile.Write(ref allFlushContextsAllocated, 1);
+
+                return count;
+            }
+        }
 
         internal DuplexRingRecordStore(
             int ringPageSizeBytes,
@@ -281,7 +302,7 @@ namespace Garnet.client
         }
 
         internal void SetFlushContext(long address, TFlushContext flushContext)
-            => requestSlots[ComputeSlot(address)].flushContext = flushContext;
+            => Volatile.Write(ref requestSlots[ComputeSlot(address)].flushContext, flushContext);
 
         internal void RegisterCompletion(int ticket, TCompletionContext completion)
         {

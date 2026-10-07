@@ -71,6 +71,44 @@ namespace Garnet.client
         public bool IsConnected => socket != null && socket.Connected && !Disposed;
 
         /// <summary>
+        /// Accounted memory currently used by this client's request/completion ring and admitted out-of-line
+        /// request buffers.
+        /// </summary>
+        /// <remarks>
+        /// Uses the ring's minimum allocated footprint plus current out-of-line byte reservations. As with
+        /// <see cref="LightNetworkWriterOptions.MinMemoryFootprint"/>, this estimate excludes array headers and
+        /// network buffers.
+        /// </remarks>
+        public long ActiveMemoryUsageBytes
+            => Volatile.Read(ref networkWriter)?.ActiveMemoryUsageBytes ?? 0;
+
+        /// <summary>
+        /// Maximum accounted memory allowed by this client's fully warmed request/completion ring and configured
+        /// out-of-line request-byte capacity.
+        /// </summary>
+        /// <remarks>
+        /// Uses the same exclusions as <see cref="LightNetworkWriterOptions.MaxMemoryFootprint"/>: array headers
+        /// and network buffers are not included.
+        /// <para>
+        /// Returns <see cref="long.MaxValue"/> when out-of-line memory admission is disabled (configured capacity
+        /// is zero), because that portion of the footprint is unbounded.
+        /// </para>
+        /// </remarks>
+        public long MaxMemoryUsageBytes
+        {
+            get
+            {
+                var maxOutOfLineRentedBytes = networkWriterOptions.MaxOutOfLineRentedBytes;
+                return maxOutOfLineRentedBytes == 0
+                    ? long.MaxValue
+                    : SaturatingAdd(networkWriterOptions.MaxMemoryFootprint(), maxOutOfLineRentedBytes);
+            }
+        }
+
+        static long SaturatingAdd(long left, long right)
+            => left > long.MaxValue - right ? long.MaxValue : left + right;
+
+        /// <summary>
         /// Create client instance
         /// </summary>
         /// <param name="endpoint">Endpoint of the server</param>
