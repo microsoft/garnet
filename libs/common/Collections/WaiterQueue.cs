@@ -153,6 +153,7 @@ namespace Garnet.common
         readonly int spinCount;
 
         int drainWork;
+        int pendingWaiterCount;
         int disposed;
 
         /// <summary>
@@ -207,6 +208,7 @@ namespace Garnet.common
                 var disposeException = new ObjectDisposedException(nameof(WaiterQueue<TThrottle, TContext>));
                 while (waiterQueue.TryDequeue(out var waiter))
                 {
+                    DecrementPendingWaiterCount();
                     try
                     {
                         waiter.TryDispose(disposeException);
@@ -292,7 +294,7 @@ namespace Garnet.common
 
         bool TryReserveFast(in TContext context, CancellationToken token)
         {
-            if (throttle.TryReserve(context))
+            if (TryReserveWithoutBacklog(context))
                 return true;
 
             var spinner = new SpinWait();
@@ -302,35 +304,59 @@ namespace Garnet.common
                 token.ThrowIfCancellationRequested();
                 ThrowIfDisposed();
                 spinner.SpinOnce();
-                if (throttle.TryReserve(context))
+                if (TryReserveWithoutBacklog(context))
                     return true;
             }
 
             return false;
         }
 
+        bool TryReserveWithoutBacklog(in TContext context)
+        {
+            if (Volatile.Read(ref pendingWaiterCount) != 0 || !throttle.TryReserve(context))
+                return false;
+
+            if (Volatile.Read(ref pendingWaiterCount) == 0)
+                return true;
+
+            // A waiter declared its intent to enqueue while this reservation was in flight. Return the
+            // capacity and let the FIFO drain preserve arrival order.
+            throttle.Release(context);
+            Drain();
+            return false;
+        }
+
         Task<bool> TryEnqueueWaiterAsync(in TContext context, CancellationToken token)
         {
-            ThrowIfDisposed();
-            token.ThrowIfCancellationRequested();
-
-            var waiter = new Waiter(this, context, token);
-            var waitTask = waiter.Task;
+            Interlocked.Increment(ref pendingWaiterCount);
+            var enqueued = false;
+            Waiter waiter = null;
             try
             {
+                ThrowIfDisposed();
+                token.ThrowIfCancellationRequested();
+
+                waiter = new Waiter(this, context, token);
+                var waitTask = waiter.Task;
                 if (!waiterQueue.TryEnqueue(waiter))
                 {
                     waiter.Abort();
                     return null;
                 }
+
+                enqueued = true;
+                return waitTask;
             }
             catch
             {
-                waiter.Abort();
+                waiter?.Abort();
                 throw;
             }
-
-            return waitTask;
+            finally
+            {
+                if (!enqueued)
+                    DecrementPendingWaiterCount();
+            }
         }
 
         /// <summary>
@@ -379,7 +405,10 @@ namespace Garnet.common
                         // Cancellation completes the caller immediately, but its slot is reclaimed only when it
                         // reaches the FIFO head.
                         if (waiterQueue.TryDequeue(out waiter))
+                        {
+                            DecrementPendingWaiterCount();
                             waiter.Release();
+                        }
                         continue;
                     }
 
@@ -403,6 +432,7 @@ namespace Garnet.common
                         throttle.Release(context);
                         continue;
                     }
+                    DecrementPendingWaiterCount();
 
                     // Cancellation can win after the initial state check and before this grant transition.
                     if (!waiter.TryCompleteGrant())
@@ -412,6 +442,12 @@ namespace Garnet.common
                     waiter.Release();
                 }
             }
+        }
+
+        void DecrementPendingWaiterCount()
+        {
+            var remaining = Interlocked.Decrement(ref pendingWaiterCount);
+            System.Diagnostics.Debug.Assert(remaining >= 0, "Pending waiter count underflow.");
         }
 
         void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);

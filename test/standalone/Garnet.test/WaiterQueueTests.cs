@@ -25,6 +25,7 @@ namespace Garnet.test
                 internal int peakInUse;
                 internal int reservationAttempts;
                 internal int pauseNextReservation;
+                internal int failPausedReservation;
                 internal ManualResetEventSlim reservationPaused;
                 internal ManualResetEventSlim resumeReservation;
             }
@@ -46,10 +47,11 @@ namespace Garnet.test
             internal int PeakInUse => Volatile.Read(ref state.peakInUse);
             internal int ReservationAttempts => Volatile.Read(ref state.reservationAttempts);
 
-            internal void PauseNextReservation(ManualResetEventSlim paused, ManualResetEventSlim resume)
+            internal void PauseNextReservation(ManualResetEventSlim paused, ManualResetEventSlim resume, bool failAfterPause = true)
             {
                 state.reservationPaused = paused;
                 state.resumeReservation = resume;
+                Volatile.Write(ref state.failPausedReservation, failAfterPause ? 1 : 0);
                 Volatile.Write(ref state.pauseNextReservation, 1);
             }
 
@@ -68,7 +70,8 @@ namespace Garnet.test
                 {
                     state.reservationPaused.Set();
                     state.resumeReservation.Wait();
-                    return false;
+                    if (Volatile.Read(ref state.failPausedReservation) != 0)
+                        return false;
                 }
 
                 while (true)
@@ -123,11 +126,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task NewArrivalCanReserveWithoutInspectingBacklog()
+        public async Task NewArrivalWaitsBehindQueuedHead()
         {
             var throttle = new ResourceThrottle(4);
             using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: 0);
             var four = new ResourceRequest(4);
+            var three = new ResourceRequest(3);
             var one = new ResourceRequest(1);
             queue.Admit(four);
 
@@ -135,15 +139,50 @@ namespace Garnet.test
             queue.Release(one);
             var second = queue.AdmitAsync(one).AsTask();
 
-            ClassicAssert.AreEqual(1, queue.WaiterCount);
+            ClassicAssert.AreEqual(2, queue.WaiterCount);
             ClassicAssert.IsFalse(first.IsCompleted);
-            ClassicAssert.IsTrue(await second.ConfigureAwait(false));
+            ClassicAssert.IsFalse(second.IsCompleted);
+
+            queue.Release(three);
+            await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            ClassicAssert.IsFalse(second.IsCompleted);
 
             queue.Release(four);
-            await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
-            queue.Release(four);
+            await second.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            queue.Release(one);
             ClassicAssert.AreEqual(0, throttle.InUse);
             ClassicAssert.AreEqual(4, throttle.PeakInUse);
+        }
+
+        [Test]
+        public async Task FastReservationRacingWithBacklogIsRolledBack()
+        {
+            var throttle = new ResourceThrottle(1);
+            using var queue = new WaiterQueue<ResourceThrottle, ResourceRequest>(throttle, spinCount: 0);
+            using var reservationPaused = new ManualResetEventSlim();
+            using var resumeReservation = new ManualResetEventSlim();
+            var request = new ResourceRequest(1);
+
+            throttle.PauseNextReservation(reservationPaused, resumeReservation, failAfterPause: false);
+            var first = Task.Run(() => queue.Admit(request));
+            ClassicAssert.IsTrue(reservationPaused.Wait(TimeSpan.FromSeconds(5)), "The fast reservation did not pause.");
+
+            throttle.Blocked = true;
+            var second = queue.AdmitAsync(request).AsTask();
+            ClassicAssert.IsTrue(
+                SpinWait.SpinUntil(() => queue.WaiterCount == 1, TimeSpan.FromSeconds(5)),
+                "The second request did not enter the waiter queue.");
+
+            throttle.Blocked = false;
+            resumeReservation.Set();
+
+            ClassicAssert.IsTrue(await second.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+            ClassicAssert.IsFalse(first.IsCompleted);
+
+            queue.Release(request);
+            ClassicAssert.IsTrue(await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+            queue.Release(request);
+            ClassicAssert.AreEqual(0, throttle.InUse);
         }
 
         [Test]

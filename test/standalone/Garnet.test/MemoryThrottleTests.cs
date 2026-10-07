@@ -101,7 +101,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task NewArrivalCanReserveWithoutInspectingBacklog()
+        public async Task NewArrivalWaitsBehindQueuedHead()
         {
             var throttle = new MemoryThrottle(4);
             using var queue = new WaiterQueue<MemoryThrottle, int>(throttle, spinCount: 0);
@@ -111,13 +111,17 @@ namespace Garnet.test
             queue.Release(1);
             var second = queue.AdmitAsync(1).AsTask();
 
-            ClassicAssert.AreEqual(1, queue.WaiterCount);
+            ClassicAssert.AreEqual(2, queue.WaiterCount);
             ClassicAssert.IsFalse(first.IsCompleted);
-            ClassicAssert.IsTrue(await second.ConfigureAwait(false));
+            ClassicAssert.IsFalse(second.IsCompleted);
+
+            queue.Release(3);
+            ClassicAssert.IsTrue(await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+            ClassicAssert.IsFalse(second.IsCompleted);
 
             queue.Release(4);
-            ClassicAssert.IsTrue(await first.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
-            queue.Release(4);
+            ClassicAssert.IsTrue(await second.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+            queue.Release(1);
             ClassicAssert.AreEqual(0, throttle.InUseBytes);
         }
 
