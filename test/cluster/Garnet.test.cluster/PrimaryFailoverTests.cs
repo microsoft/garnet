@@ -47,7 +47,7 @@ namespace Garnet.test.cluster
 
         [TestCase(1)]
         [TestCase(2)]
-        public void PrimaryFailoverPreservesDataTest(int sublogCount)
+        public void PrimaryFailoverPromotesWritableReplicaWithExistingDataTest(int sublogCount)
         {
             CreatePrimaryAndReplica(sublogCount);
             string primaryId = ExecuteNode(0, "CLUSTER", "MYID").ToString();
@@ -59,6 +59,8 @@ namespace Garnet.test.cluster
             Assert.That(ExecuteNode(1, "GET", Key).ToString(), Is.EqualTo("value"));
             Assert.That(ExecuteNode(1, "CLUSTER", "MYID").ToString(), Is.EqualTo(replicaId));
             Assert.That(ExecuteNode(1, "CLUSTER", "MYID").ToString(), Is.Not.EqualTo(primaryId));
+            Assert.That(ExecuteNode(1, "SET", Key, "updated").ToString(), Is.EqualTo("OK"));
+            Assert.That(ExecuteNode(1, "GET", Key).ToString(), Is.EqualTo("updated"));
         }
 
         private void CreatePrimaryAndReplica(int sublogCount)
@@ -71,6 +73,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, cancellation: context.cts.Token);
             string replicaId = ExecuteNode(1, "CLUSTER", "MYID").ToString();
             string primaryId = ExecuteNode(0, "CLUSTER", "MYID").ToString();
+            context.clusterTestUtils.WaitForSlotOwnership(1, primaryId, [0, 16383]);
             while (!((RedisResult[])ExecuteNode(0, "CLUSTER", "REPLICAS", primaryId)).Any(replica => replica.ToString().StartsWith(replicaId, StringComparison.Ordinal)))
             {
                 context.cts.Token.ThrowIfCancellationRequested();
