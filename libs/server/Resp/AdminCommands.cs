@@ -827,9 +827,19 @@ namespace Garnet.server
                 return NetworkDebugBlock();
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKASYNC))
+            {
+                return NetworkDebugAsyncBlock();
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKGET))
             {
                 return NetworkDebugBlockGet(ref storageApi);
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKGETASYNC))
+            {
+                return NetworkDebugAsyncBlockGet(ref storageApi);
             }
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.HELP))

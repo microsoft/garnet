@@ -59,7 +59,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> MIGRATE => "MIGRATE"u8;
         public static ReadOnlySpan<byte> PURGEBP => "PURGEBP"u8;
         public static ReadOnlySpan<byte> BLOCK => "BLOCK"u8;
+        public static ReadOnlySpan<byte> BLOCKASYNC => "BLOCKASYNC"u8;
         public static ReadOnlySpan<byte> BLOCKGET => "BLOCKGET"u8;
+        public static ReadOnlySpan<byte> BLOCKGETASYNC => "BLOCKGETASYNC"u8;
         public static ReadOnlySpan<byte> FAILOVER => "FAILOVER"u8;
         public static ReadOnlySpan<byte> HISTOGRAM => "HISTOGRAM"u8;
         public static ReadOnlySpan<byte> histogram => "histogram"u8;
