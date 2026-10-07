@@ -12,14 +12,14 @@ namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
-        private async Task<string> CheckReplicaSyncAsync(GarnetClient gclient)
+        private async Task<string> CheckReplicaSyncAsync(GarnetClient gclient, AofAddress primaryReplicationOffset)
         {
             try
             {
                 if (!gclient.IsConnected)
                     await gclient.ConnectAsync().ConfigureAwait(false);
 
-                return await gclient.ExecuteClusterFailReplicationOffsetAsync(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
+                return await gclient.ExecuteClusterFailReplicationOffsetAsync(primaryReplicationOffset).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -28,7 +28,7 @@ namespace Garnet.cluster
             }
         }
 
-        private async Task<GarnetClient> WaitForFirstReplicaSyncAsync()
+        private async Task<GarnetClient> WaitForFirstReplicaSyncAsync(AofAddress primaryReplicationOffset)
         {
             if (clients.Length > 1)
             {
@@ -36,7 +36,7 @@ namespace Garnet.cluster
 
                 var tcount = 0;
                 foreach (var _gclient in clients)
-                    tasks[tcount++] = CheckReplicaSyncAsync(_gclient);
+                    tasks[tcount++] = CheckReplicaSyncAsync(_gclient, primaryReplicationOffset);
 
                 tasks[clients.Length] = DelayToDefaultAsync(failoverTimeout);
                 var completedTask = await Task.WhenAny(tasks).ConfigureAwait(false);
@@ -52,14 +52,14 @@ namespace Garnet.cluster
                 for (var i = 0; i < tasks.Length; i++)
                 {
                     var replicationOffset = AofAddress.FromString(await tasks[i].ConfigureAwait(false));
-                    if (completedTask == tasks[i] && replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
+                    if (completedTask == tasks[i] && !replicationOffset.AnyLesser(primaryReplicationOffset))
                         return clients[i];
                 }
                 return null;
             }
             else
             {
-                var syncTask = CheckReplicaSyncAsync(clients[0]);
+                var syncTask = CheckReplicaSyncAsync(clients[0], primaryReplicationOffset);
                 var timeoutTask = Task.Delay(failoverTimeout, cts.Token);
                 var completedTask = await Task.WhenAny(syncTask, timeoutTask).ConfigureAwait(false);
 
@@ -71,7 +71,7 @@ namespace Garnet.cluster
                 }
 
                 var replicationOffset = AofAddress.FromString(await syncTask.ConfigureAwait(false));
-                if (!replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
+                if (replicationOffset.AnyLesser(primaryReplicationOffset))
                     return null;
                 else
                     return clients[0];
@@ -114,7 +114,9 @@ namespace Garnet.cluster
                 _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 status = FailoverStatus.WAITING_FOR_SYNC;
-                var newPrimary = await WaitForFirstReplicaSyncAsync().ConfigureAwait(false);
+                // Stopping writes changes the local role, so use the paused log's final address.
+                AofAddress primaryReplicationOffset = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
+                var newPrimary = await WaitForFirstReplicaSyncAsync(primaryReplicationOffset).ConfigureAwait(false);
                 if (newPrimary == null) return false;
 
                 status = FailoverStatus.TAKING_OVER_AS_PRIMARY;

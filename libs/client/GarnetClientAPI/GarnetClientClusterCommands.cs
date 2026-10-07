@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -36,7 +37,7 @@ namespace Garnet.client
         {
             var args = failoverOption == default ?
                 new Memory<byte>[] { FAILOVER } :
-                [FAILOVER, FailoverUtils.GetRespFormattedFailoverOption(failoverOption)];
+                [FAILOVER, Encoding.ASCII.GetBytes(failoverOption.ToString())];
             return await ExecuteForStringResultWithCancellationAsync(CLUSTER, args, token: cancellationToken).ConfigureAwait(false) == "OK";
         }
     }
