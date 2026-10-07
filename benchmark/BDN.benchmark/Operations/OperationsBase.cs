@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.IdentityModel.Tokens.Jwt;
@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using Embedded.server;
+using Garnet.common;
 using Garnet.server;
 using Garnet.server.Auth.Aad;
 using Garnet.server.Auth.Settings;
@@ -204,7 +205,12 @@ namespace BDN.benchmark.Operations
 
         protected void Send(Request request)
         {
-            _ = session.TryConsumeMessages(request.bufferPtr, request.buffer.Length);
+            // Exercise the dual-path session entry point so the direct path measures the same boundary
+            // the network path crosses, minus the handler frames.
+            var pending = session.TryConsumeMessagesAsync(request.bufferPtr, request.buffer.Length);
+            _ = pending.IsCompletedSuccessfully
+                ? pending.GetAwaiter().GetResultGuarded()
+                : AsyncUtils.BlockingWait(pending);
         }
 
         protected unsafe void SetupOperation(ref Request request, ReadOnlySpan<byte> operation, int batchSize = batchSize)
