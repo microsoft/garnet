@@ -579,9 +579,9 @@ namespace Garnet.server
 
                             var addRes = self.TryAdd(key, indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
 
-                            if (addRes != VectorManagerResult.OK)
+                            if (addRes is not (VectorManagerResult.OK or VectorManagerResult.Duplicate))
                             {
-                                throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                                throw new GarnetException("Failed to add or update vector set index during AOF sync, this should never happen but will cause data loss if it does");
                             }
                         }
                     }

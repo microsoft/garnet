@@ -120,7 +120,7 @@ namespace Garnet.server
             else if (res == NativeDiskANNMethods.DiskANNInsertResult.SuccessUpdate)
             {
                 needsQuantization = false;
-                return InsertResult.SuccessInsert;
+                return InsertResult.SuccessUpdate;
             }
             else
             {

@@ -202,7 +202,7 @@ namespace Garnet.server
                 // That lock prevents deletion, but everything else can proceed in parallel
                 result = vectorManager.TryAdd(key, indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, out errorMsg);
 
-                if (result == VectorManagerResult.OK)
+                if (result is VectorManagerResult.OK or VectorManagerResult.Duplicate)
                 {
                     // On successful addition, we need to manually replicate the write
                     vectorManager.ReplicateVectorSetAdd(key, ref input, ref stringBasicContext);

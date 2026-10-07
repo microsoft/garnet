@@ -1858,7 +1858,7 @@ namespace Garnet.test.cluster
                                 // Force async
                                 await Task.Yield();
 
-                                var ix = 0;
+                                var ix = -1;
 
                                 while (!writeCancel.IsCancellationRequested)
                                 {
@@ -1871,11 +1871,16 @@ namespace Garnet.test.cluster
                                     var attr = new byte[100];
                                     writeTaskRandom.NextBytes(attr);
 
+                                    var firstAttempt = true;
+
                                     while (true)
                                     {
                                         try
                                         {
                                             var vaddRes = readWriteDB.Execute("VADD", [new RedisKey(key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+
+                                            // Retries may results in updates (depending on what SE.Redis's map of the cluster currently is), so track that for result validation
+                                            firstAttempt = false;
 
                                             // During slot migration the raw command can transiently come back as a
                                             // nil/null result (e.g., routing resolves to a node mid-migration) rather
@@ -1893,7 +1898,15 @@ namespace Garnet.test.cluster
                                             }
 
                                             var addRes = (int)vaddRes;
-                                            ClassicAssert.AreEqual(1, addRes);
+                                            if (firstAttempt)
+                                            {
+                                                ClassicAssert.AreEqual(1, addRes);
+                                            }
+                                            else
+                                            {
+                                                ClassicAssert.IsTrue(addRes is 0 or 1);
+                                            }
+
                                             break;
                                         }
                                         // Catch Exception (not RedisException) because RedisTimeoutException extends
@@ -2456,7 +2469,7 @@ namespace Garnet.test.cluster
                                         var json = $"{{\"data\": {rawVal} }}";
 
                                         var updateRes = await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, buff, json)).ConfigureAwait(false);
-                                        //ClassicAssert.IsFalse(updateRes);
+                                        ClassicAssert.IsFalse(updateRes);
                                     }
                                 }
                             );
@@ -2466,7 +2479,7 @@ namespace Garnet.test.cluster
 
                     await Task.WhenAll(writeTasks).ConfigureAwait(false);
 
-                    await Task.Delay(1_000).ConfigureAwait(false);
+                    context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
                     var onPrimaryData = (double[])await cons[0].GetServer(primary).ExecuteAsync(database: 0, "VEMB", [Key, Element]).ConfigureAwait(false);
                     var onPrimaryAttr = (string)await cons[0].GetServer(primary).ExecuteAsync(database: 0, "VGETATTR", [Key, Element]).ConfigureAwait(false);
@@ -2675,7 +2688,7 @@ namespace Garnet.test.cluster
 
                     await Task.WhenAll(writeTasks).ConfigureAwait(false);
 
-                    await Task.Delay(1_000).ConfigureAwait(false);
+                    context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
                     // Check that state is consistent between primary and secondary
                     foreach (var element in allElements)

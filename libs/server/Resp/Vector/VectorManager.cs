@@ -253,7 +253,7 @@ namespace Garnet.server
             Array.Fill(quantizationTasks, Task.CompletedTask);
 
             // Exclusive locks for potential updates to Vector Set data
-            var unroundedElementSetSize = Environment.ProcessorCount * 2;
+            var unroundedElementSetSize = Math.Min(Environment.ProcessorCount, 192) * 2; // 192 cores is a reasonable maximum number of cores to expect - so impose as an upper bound for now
             unroundedElementSetSize *= unroundedElementSetSize;
             unroundedElementSetSize *= 2;
             vectorSetElementSelectMask = (int)BitOperations.RoundUpToPowerOf2((uint)unroundedElementSetSize) - 1;
@@ -772,7 +772,6 @@ namespace Garnet.server
             }
             else if (insert == DiskANNService.InsertResult.SuccessUpdate)
             {
-
                 return VectorManagerResult.Duplicate;
             }
 
