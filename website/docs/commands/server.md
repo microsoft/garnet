@@ -173,6 +173,9 @@ Subcommands:
 
 * `ERROR <string>`: Return a RESP error reply with `<string>` as the message.
 * `LOG <message>`: Write `<message>` to the server log.
+* `BLOCK <seconds> [key]`: Suspend the calling connection for `<seconds>`, then reply `+OK`, or the value of `<key>` if one is given. The connection is released back to the network while it waits, so the number of connections that can wait at once does not depend on the size of the thread pool.
+* `BLOCKON <name>`: Suspend the calling connection until another connection runs `DEBUG SIGNAL <name>`.
+* `SIGNAL <name>`: Release every connection suspended on `<name>`. Returns the number released.
 * `FLUSHANDEVICT`: Flush the store's in-memory log to disk and evict it (shifts HeadAddress to TailAddress) so subsequent reads are served from disk.
 * `FORCEGC [generation]`: Force a blocking garbage collection of the given generation (default: max). See [GC.Collect](https://learn.microsoft.com/en-us/dotnet/api/system.gc.collect).
 * `PURGEBP <manager-type>`: Purge the network buffer pool held by the given manager (`MigrationManager`, `ReplicationManager`, or `ServerListener`) and force a blocking GC, returning freed memory to the OS.

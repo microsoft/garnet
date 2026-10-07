@@ -769,6 +769,21 @@ namespace Garnet.server
                 return true;
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCK))
+            {
+                return NetworkDebugBlock();
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKON))
+            {
+                return NetworkDebugBlockOn();
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SIGNAL))
+            {
+                return NetworkDebugSignal();
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FLUSHANDEVICT))
             {
                 if (parseState.Count != 1)
@@ -831,6 +846,14 @@ namespace Garnet.server
                     "\tunit tests to simulate Redis errors.",
                     "LOG <message>",
                     "\tWrite <message> to the server log.",
+                    "BLOCK <seconds> [key]",
+                    "\tSuspend this connection for <seconds>, then reply +OK, or the value of <key> if one",
+                    "\tis given. The connection is released back to the network while it waits, so the",
+                    "\tnumber of connections that can wait at once does not depend on the thread pool.",
+                    "BLOCKON <name>",
+                    "\tSuspend this connection until another connection runs DEBUG SIGNAL <name>.",
+                    "SIGNAL <name>",
+                    "\tRelease every connection suspended on <name>, and reply with how many were released.",
                     "FLUSHANDEVICT",
                     "\tFlush the main store's in-memory log to disk and evict it (shifts HeadAddress to",
                     "\tTailAddress) so subsequent reads are served from disk.",

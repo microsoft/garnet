@@ -209,17 +209,80 @@ namespace Garnet.common
         {
             try
             {
-                do
+                var pending = ReceiveLoopWithoutTLS(e, out var demand);
+                if (pending.HasValue)
                 {
-                    if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || serverHook.Disposed)
-                    {
-                        // No more things to receive
-                        Dispose(e);
-                        break;
-                    }
-                    OnNetworkReceiveWithoutTLS(e.BytesTransferred);
+                    // A command in this batch suspended. Hand the rest of the loop to a continuation and
+                    // release this IO thread. No receive is outstanding, so the connection stays idle until
+                    // the batch finishes, which is what parks the session.
+                    _ = ResumeReceiveWithoutTLSAsync(pending.Value, demand, e);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleReceiveFailure(ex, e);
+            }
+        }
+
+        /// <summary>
+        /// Drains whatever the socket delivers synchronously.
+        /// </summary>
+        /// <param name="e">Receive event args for this connection.</param>
+        /// <param name="demand">
+        /// Buffer occupancy of the unfinished pass, meaningful only when this returns a pending consume.
+        /// </param>
+        /// <returns>
+        /// Null once the loop is finished -- the connection was torn down, or a receive is outstanding and its
+        /// completion will re-enter here. Otherwise the consume that must finish before the loop continues.
+        /// </returns>
+        private ValueTask<int>? ReceiveLoopWithoutTLS(SocketAsyncEventArgs e, out int demand)
+        {
+            demand = 0;
+            do
+            {
+                if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || serverHook.Disposed)
+                {
+                    // No more things to receive
+                    Dispose(e);
+                    return null;
+                }
+
+                var pending = BeginNetworkReceiveWithoutTLS(e.BytesTransferred, out demand);
+                if (!pending.IsCompletedSuccessfully)
+                    return pending;
+
+                e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
+            } while (!e.AcceptSocket.ReceiveAsync(e));
+
+            return null;
+        }
+
+        /// <summary>
+        /// Finishes a suspended batch and then resumes the synchronous receive loop, staying asynchronous only
+        /// for as long as batches keep suspending.
+        /// </summary>
+        /// <remarks>
+        /// One asynchronous frame covers the entire suspension path, so a park boxes a single state machine
+        /// rather than one per network layer.
+        /// </remarks>
+        private async FireAndForget ResumeReceiveWithoutTLSAsync(ValueTask<int> pending, int demand, SocketAsyncEventArgs e)
+        {
+            try
+            {
+                while (true)
+                {
+                    CompleteNetworkReceiveWithoutTLS(await pending.ConfigureAwait(false), demand);
+
                     e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
-                } while (!e.AcceptSocket.ReceiveAsync(e));
+                    if (e.AcceptSocket.ReceiveAsync(e))
+                        return;
+
+                    var next = ReceiveLoopWithoutTLS(e, out demand);
+                    if (!next.HasValue)
+                        return;
+
+                    pending = next.Value;
+                }
             }
             catch (Exception ex)
             {

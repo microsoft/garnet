@@ -335,20 +335,54 @@ namespace Garnet.networking
             }
         }
 
-        public unsafe void OnNetworkReceiveWithoutTLS(int bytesTransferred)
+        /// <summary>
+        /// Starts a non-TLS receive pass: hands the received bytes to the session and, if the session consumes
+        /// them without suspending, finishes the pass inline.
+        /// </summary>
+        /// <param name="bytesTransferred">Bytes the socket just delivered.</param>
+        /// <param name="demand">
+        /// Buffer occupancy before processing, which is the capacity this pass needed. Must be passed back to
+        /// <see cref="CompleteNetworkReceiveWithoutTLS"/>.
+        /// </param>
+        /// <returns>
+        /// A completed task if the pass is already finished, otherwise the session's pending consume. The
+        /// caller owns driving that to completion and then calling
+        /// <see cref="CompleteNetworkReceiveWithoutTLS"/>.
+        /// </returns>
+        /// <remarks>
+        /// Split from its completion half so that the whole suspension path costs a single asynchronous frame.
+        /// Nesting one <c>async</c> method per layer would box a state machine per layer on every park.
+        /// </remarks>
+#pragma warning disable VSTHRD200 // Paired Begin/Complete halves of one receive pass; an "Async" suffix would
+        // imply the method itself is awaited to completion, which it is not.
+        public unsafe ValueTask<int> BeginNetworkReceiveWithoutTLS(int bytesTransferred, out int demand)
         {
             networkBytesRead += bytesTransferred;
             transportReceiveBuffer = networkReceiveBuffer;
             transportReceiveBufferPtr = networkReceiveBufferPtr;
             transportBytesRead = networkBytesRead;
 
-            // Occupancy before processing is the capacity this pass needed. Process consumes and compacts the
-            // buffer in place, so sampling afterwards reads a fully consumed request as a zero-byte one.
-            var demand = networkBytesRead;
+            // Process consumes and compacts the buffer in place, so sampling afterwards would read a fully
+            // consumed request as a zero-byte one.
+            demand = networkBytesRead;
 
-            // Process non-TLS code on the synchronous thread
-            Process();
+            var consumed = BeginProcess();
+            if (!consumed.IsCompletedSuccessfully)
+                return consumed;
 
+            CompleteNetworkReceiveWithoutTLS(consumed.GetAwaiter().GetResultGuarded(), demand);
+            return default;
+        }
+#pragma warning restore VSTHRD200
+
+        /// <summary>
+        /// Finishes a non-TLS receive pass once the session has consumed the batch.
+        /// </summary>
+        /// <param name="consumed">Bytes the session consumed.</param>
+        /// <param name="demand">Value produced by <see cref="BeginNetworkReceiveWithoutTLS"/>.</param>
+        public void CompleteNetworkReceiveWithoutTLS(int consumed, int demand)
+        {
+            CompleteProcess(consumed);
             EndTransformNetworkToTransport();
             UpdateNetworkBuffers(demand);
         }
@@ -532,14 +566,64 @@ namespace Garnet.networking
         static void ThrowInvalidOperationException(string message)
             => throw new InvalidOperationException(message);
 
-        unsafe void Process()
+        /// <summary>
+        /// Result of <see cref="BeginProcess"/> when no session saw the bytes, so there is nothing to account
+        /// for and the transport buffer must be left exactly as it was.
+        /// </summary>
+        const int NothingProcessed = -1;
+
+        /// <summary>
+        /// Hands the buffered transport bytes to the session.
+        /// </summary>
+        /// <returns>
+        /// The bytes consumed, or <see cref="NothingProcessed"/>, if the session finished inline; otherwise the
+        /// session's pending consume. Either way the result must be passed to <see cref="CompleteProcess"/>
+        /// exactly once -- this method performs no bookkeeping of its own.
+        /// </returns>
+#pragma warning disable VSTHRD200 // See BeginNetworkReceiveWithoutTLS.
+        unsafe ValueTask<int> BeginProcess()
         {
-            if (transportBytesRead > 0)
+            if (transportBytesRead > 0 &&
+                (session != null || serverHook.TryCreateMessageConsumer(new Span<byte>(transportReceiveBufferPtr, transportBytesRead), GetNetworkSender(), out session)))
             {
-                if (session != null || serverHook.TryCreateMessageConsumer(new Span<byte>(transportReceiveBufferPtr, transportBytesRead), GetNetworkSender(), out session))
-                    TryProcessRequest();
+                return session.TryConsumeMessagesAsync(transportReceiveBufferPtr + transportReadHead, transportBytesRead - transportReadHead);
             }
+
+            return new ValueTask<int>(NothingProcessed);
         }
+#pragma warning restore VSTHRD200
+
+        /// <summary>
+        /// Accounts for what the session consumed and compacts the transport buffer.
+        /// </summary>
+        /// <param name="consumed">Bytes the session consumed, or <see cref="NothingProcessed"/>.</param>
+        void CompleteProcess(int consumed)
+        {
+            if (consumed == NothingProcessed)
+                return;
+
+            transportReadHead += consumed;
+
+            // We cannot shift or double the transport buffer if a read may be waiting on
+            // the old transport buffer and offset.
+            if (readerStatus == TlsReaderStatus.Rest)
+                ShiftTransportReceiveBuffer();
+        }
+
+        /// <summary>
+        /// Processes the buffered transport bytes, suspending if a command in the batch does.
+        /// </summary>
+        unsafe ValueTask ProcessAsync()
+        {
+            var consumed = BeginProcess();
+            if (!consumed.IsCompletedSuccessfully)
+                return AwaitProcessAsync(consumed);
+
+            CompleteProcess(consumed.GetAwaiter().GetResultGuarded());
+            return default;
+        }
+
+        async ValueTask AwaitProcessAsync(ValueTask<int> consumed) => CompleteProcess(await consumed.ConfigureAwait(false));
 
         /// <summary>
         /// Get network sender for this handler
@@ -556,28 +640,23 @@ namespace Garnet.networking
                 if (result.IsCompletedSuccessfully)
                 {
                     // blocking is unavoidable here, but safe since we've checked IsCompletedSuccessfully
-                    transportBytesRead += AsyncUtils.BlockingWait(result);
+                    transportBytesRead += result.GetAwaiter().GetResultGuarded();
 
                     // Occupancy before processing is the capacity this pass needed; the residual after it is not.
                     var transportDemand = transportBytesRead;
 
                     // Read task has control, process the decrypted transport bytes
-                    Process();
-
-                    // Shift bytes in transport buffer
-                    if (transportReadHead > 0)
-                        ShiftTransportReceiveBuffer();
-
-                    // Double the transport buffer if needed
-                    if (transportBytesRead == transportReceiveBuffer.Length)
+                    var processing = ProcessAsync();
+                    if (!processing.IsCompletedSuccessfully)
                     {
-                        DoubleTransportReceiveBuffer();
-                        retry = true;
+                        // Rare case: a command in this batch suspended. Finish this pass, and the rest of the
+                        // loop, asynchronously. The reader stays Active, so the receive loop keeps waiting.
+                        _ = SslReaderResumeAsync(processing, transportDemand, cancellationTokenSource.Token);
+                        return;
                     }
-                    else
-                    {
-                        TryShrinkTransportReceiveBuffer(transportDemand);
-                    }
+                    processing.GetAwaiter().GetResultGuarded();
+
+                    retry = FinishTransportPass(transportDemand);
                 }
                 else
                 {
@@ -588,6 +667,61 @@ namespace Garnet.networking
             }
             readerStatus = TlsReaderStatus.Rest;
             // We do not release expectingData here because it is the synchronous code path (i.e., there is no waiter)
+        }
+
+        /// <summary>
+        /// Bookkeeping that follows every pass of the TLS reader over the transport buffer: compact what was
+        /// consumed, then grow the buffer if the pass filled it or shrink it if the traffic no longer needs
+        /// the capacity. Shared by the synchronous reader and both asynchronous ones.
+        /// </summary>
+        /// <param name="transportDemand">
+        /// Transport bytes buffered before this pass consumed any, which is the capacity the pass needed.
+        /// </param>
+        /// <returns>True if the buffer was grown and the reader should immediately read again.</returns>
+        bool FinishTransportPass(int transportDemand)
+        {
+            // Shift bytes in transport buffer. Process would not have shifted, as we are in active state.
+            if (transportReadHead > 0)
+                ShiftTransportReceiveBuffer();
+
+            if (transportBytesRead == transportReceiveBuffer.Length)
+            {
+                DoubleTransportReceiveBuffer();
+                return true;
+            }
+
+            TryShrinkTransportReceiveBuffer(transportDemand);
+            return false;
+        }
+
+        /// <summary>
+        /// Finishes a synchronous TLS reader pass whose processing suspended, then hands back to the
+        /// asynchronous reader loop.
+        /// </summary>
+        async Task SslReaderResumeAsync(ValueTask processing, int transportDemand, CancellationToken token)
+        {
+            try
+            {
+                await processing.ConfigureAwait(false);
+
+                var retry = FinishTransportPass(transportDemand);
+                if (networkBytesRead > networkReadHead || retry)
+                {
+                    _ = SslReaderLoopAsync(retry, token);
+                    return;
+                }
+
+                readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception has occurred during SslReaderResumeAsync");
+                // Wake the receive-loop waiter BEFORE Dispose() tears down the semaphore.
+                readerStatus = TlsReaderStatus.Rest;
+                if (expectingData.CurrentCount == 0) expectingData.Release();
+                Dispose();
+            }
         }
 
         async Task SslReaderAsync(Task<int> readTask, CancellationToken token = default)
@@ -605,23 +739,9 @@ namespace Garnet.networking
                 var transportDemand = transportBytesRead;
 
                 // Read task has control, process the decrypted transport bytes
-                Process();
+                await ProcessAsync().ConfigureAwait(false);
 
-                // Shift bytes in transport buffer, Process would not have shifted
-                // as we are in active state
-                if (transportReadHead > 0)
-                    ShiftTransportReceiveBuffer();
-
-                // Double the transport buffer if needed
-                if (transportBytesRead == transportReceiveBuffer.Length)
-                {
-                    DoubleTransportReceiveBuffer();
-                    retry = true;
-                }
-                else
-                {
-                    TryShrinkTransportReceiveBuffer(transportDemand);
-                }
+                retry = FinishTransportPass(transportDemand);
                 // If more work, passthrough to the general SslReaderAsync, else this task is done.
                 // NOTE: we must propagate the `retry` flag (which signals "the transport buffer was just doubled,
                 // attempt another read into the freshly-enlarged buffer"). If we chained without it, the new
@@ -667,23 +787,9 @@ namespace Garnet.networking
                     var transportDemand = transportBytesRead;
 
                     // Read task has control, process the decrypted transport bytes
-                    Process();
+                    await ProcessAsync().ConfigureAwait(false);
 
-                    // Shift bytes in transport buffer, Process would not have shifted
-                    // as we are in active state
-                    if (transportReadHead > 0)
-                        ShiftTransportReceiveBuffer();
-
-                    // Double the transport buffer if needed
-                    if (transportBytesRead == transportReceiveBuffer.Length)
-                    {
-                        DoubleTransportReceiveBuffer();
-                        retry = true;
-                    }
-                    else
-                    {
-                        TryShrinkTransportReceiveBuffer(transportDemand);
-                    }
+                    retry = FinishTransportPass(transportDemand);
                 }
 
                 // Normal exit: hand control back to OnNetworkReceiveWithTLSAsync.
@@ -707,19 +813,6 @@ namespace Garnet.networking
             {
                 networkBytesRead = transportBytesRead;
             }
-        }
-
-        unsafe bool TryProcessRequest()
-        {
-            transportReadHead += session.TryConsumeMessages(transportReceiveBufferPtr + transportReadHead, transportBytesRead - transportReadHead);
-
-            // We cannot shift or double transport buffer if a read may be waiting on
-            // the old transport buffer and offset.
-            if (readerStatus == TlsReaderStatus.Rest)
-            {
-                ShiftTransportReceiveBuffer();
-            }
-            return true;
         }
 
         unsafe void DoubleNetworkReceiveBuffer()

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.common.Parsing;
 using Garnet.networking;
@@ -409,6 +410,9 @@ namespace Garnet.server
         {
             logger?.LogDebug("Disposing RespServerSession Id={id}", this.Id);
 
+            // First, so a parked command stops waiting before the state it would resume into is torn down.
+            CancelAsyncCommands();
+
             if (recvBufferPtr != null)
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
@@ -538,21 +542,59 @@ namespace Garnet.server
         bool txnSkip = false;
         bool consistentReadActive = false;
 
+        /// <summary>
+        /// Consumes a received batch, parking the session instead of returning if a command suspends.
+        /// </summary>
+        /// <param name="reqBuffer">Start of the session's receive buffer.</param>
+        /// <param name="bytesReceived">Bytes available in that buffer.</param>
+        /// <returns>
+        /// Bytes consumed. The result is produced only once the batch is fully processed, so a caller that
+        /// awaits it leaves the receive buffer untouched -- and issues no further receive -- for as long as a
+        /// command in the batch stays suspended.
+        /// </returns>
+        public override unsafe ValueTask<int> TryConsumeMessagesAsync(byte* reqBuffer, int bytesReceived)
+        {
+            var consumed = ConsumeCore(reqBuffer, bytesReceived, resume: null);
+            return asyncSuspended ? PublishSuspension() : new ValueTask<int>(consumed);
+        }
+
+        /// <inheritdoc />
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {
+            var consumed = ConsumeCore(reqBuffer, bytesReceived, resume: null);
+            if (!asyncSuspended)
+                return consumed;
+
+            // A consumer with no receive loop to unwind to -- the embedded and in-process transports -- cannot
+            // park, so the suspended command is waited out here. Every transport that can park calls
+            // TryConsumeMessagesAsync and never reaches this.
+            return AsyncUtils.BlockingWait(PublishSuspension().AsTask());
+        }
+
+        /// <param name="reqBuffer">Start of the session's receive buffer.</param>
+        /// <param name="bytesReceived">Bytes available in that buffer.</param>
+        /// <param name="resume">
+        /// Box of a suspended command body to drive before the rest of the batch, or null for a fresh batch.
+        /// </param>
+        /// <returns>Bytes consumed, or zero if a command suspended and the batch is unfinished.</returns>
+        unsafe int ConsumeCore(byte* reqBuffer, int bytesReceived, RespAsyncBox resume)
+        {
             bytesRead = bytesReceived;
-            if (!txnSkip)
+            if (resume is null && !txnSkip)
                 readHead = 0;
             try
             {
-                LatencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
-                // Refresh the slow log threshold from the runtime config so CONFIG SET slowlog-log-slower-than
-                // takes effect on already-connected sessions at the next batch.
-                var slowLogThresholdConfig = storeWrapper.runtimeConfig.GetInt(ServerConfigType.SLOWLOG_LOG_SLOWER_THAN);
-                slowLogThreshold = slowLogThresholdConfig > 0 ? (long)(slowLogThresholdConfig * OutputScalingFactor.TimeStampToMicroseconds) : 0;
-                if (slowLogThreshold > 0)
+                if (resume is null)
                 {
-                    slowLogStartTime = LatencyMetrics != null ? LatencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
+                    LatencyMetrics?.Start(LatencyMetricsType.NET_RS_LAT);
+                    // Refresh the slow log threshold from the runtime config so CONFIG SET slowlog-log-slower-than
+                    // takes effect on already-connected sessions at the next batch.
+                    var slowLogThresholdConfig = storeWrapper.runtimeConfig.GetInt(ServerConfigType.SLOWLOG_LOG_SLOWER_THAN);
+                    slowLogThreshold = slowLogThresholdConfig > 0 ? (long)(slowLogThresholdConfig * OutputScalingFactor.TimeStampToMicroseconds) : 0;
+                    if (slowLogThreshold > 0)
+                    {
+                        slowLogStartTime = LatencyMetrics != null ? LatencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
+                    }
                 }
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
@@ -570,7 +612,10 @@ namespace Garnet.server
                         SwitchActiveDatabaseSession(consistentReadDBSession);
                         consistentReadActive = true;
                     }
-                    ProcessMessages(ref consistentReadGarnetApi, ref txnConsistentReadApi);
+                    if (resume is not null)
+                        ResumeBody(resume);
+                    if (!asyncSuspended)
+                        ProcessMessages(ref consistentReadGarnetApi, ref txnConsistentReadApi);
                     txnSkip = txnManager.IsSkippingOperations();
                 }
                 else
@@ -581,7 +626,10 @@ namespace Garnet.server
                         consistentReadActive = false;
                     }
                     txnSkip = false;
-                    ProcessMessages(ref basicGarnetApi, ref transactionalGarnetApi);
+                    if (resume is not null)
+                        ResumeBody(resume);
+                    if (!asyncSuspended)
+                        ProcessMessages(ref basicGarnetApi, ref transactionalGarnetApi);
                     txnSkip = txnManager.IsSkippingOperations();
                 }
                 recvBufferPtr = null;
@@ -652,7 +700,9 @@ namespace Garnet.server
                     TrimSessionBuffers();
             }
 
-            if (txnSkip)
+            // A suspended batch is unfinished: report nothing consumed so the network stack neither shifts
+            // the receive buffer nor issues another receive while the command is parked.
+            if (asyncSuspended || txnSkip)
                 return 0; // so that network does not try to shift the byte array
 
             // If server processed input data successfully, update tracked metrics
@@ -705,7 +755,9 @@ namespace Garnet.server
 
             var _origReadHead = readHead;
 
-            while (bytesRead - readHead >= 4)
+            // Re-checked each iteration: a command that suspends must stop the batch here, after its own
+            // frame has been accounted for below, so the rest of the batch runs when the session resumes.
+            while (!asyncSuspended && bytesRead - readHead >= 4)
             {
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
