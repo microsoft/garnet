@@ -169,7 +169,7 @@ namespace Garnet.test.cluster
             }
             catch (Exception ex)
             {
-                failure ??= ex;
+                failure = failure is null ? ex : new AggregateException(failure, ex);
             }
 
             if (failure is not null)
