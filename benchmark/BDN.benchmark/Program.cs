@@ -133,6 +133,10 @@ public class BaseConfig : ManualConfig
             _ => throw new ApplicationException($"Should never encounter a situation where all frameworks are excluded"),
         };
 
+        // Applies --opparams by excluding benchmark cases. It is added unconditionally because the params
+        // default to all-enabled, in which case the filter admits everything.
+        _ = AddFilter(new BDN.benchmark.Operations.OperationParamsFilter());
+
         if (!string.IsNullOrEmpty(Program.bdnOpParam))
         {
             BDN.benchmark.Operations.OperationsBase.SetAllParams(false);

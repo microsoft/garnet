@@ -44,6 +44,12 @@ namespace Garnet.server
         public bool inFuzzyRegion = false;
 
         /// <summary>
+        /// Replayed records remaining before the next scratch-allocator trim. Replay has no network batch
+        /// boundary, so the interval is counted here, mirroring the session's own countdown.
+        /// </summary>
+        internal int trimCountdown = RespServerSession.SessionTrimInterval;
+
+        /// <summary>
         /// AOF replay context constructor
         /// </summary>
         public AofReplayContext(RespServerSession respServerSession)
@@ -56,6 +62,18 @@ namespace Garnet.server
 
         public void Dispose()
         {
+            // Release the pooled chunk buffers held by anything replay did not consume: partially-accumulated records (a
+            // truncated AOF tail is the normal outcome of a crash) and any operation still buffered. These rentals are
+            // otherwise never returned, and a rental that is never returned permanently consumes the pool's cacheable
+            // budget rather than merely going unreused. Nothing here is replayed after this point, so all of it is
+            // discarded. A group is removed from activeTxns when it is enqueued to txnGroupBuffer, so the two hold
+            // disjoint sets and no group is discarded twice.
+            chunkedReader.DiscardInProgressAccumulations();
+            DiscardFuzzyRegionBuffer();
+            foreach (var txn in activeTxns.Values)
+                txn.Discard();
+            activeTxns.Clear();
+
             var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
             foreach (var dbSession in databaseSessionsSnapshot)
             {
@@ -64,6 +82,27 @@ namespace Garnet.server
             }
             respServerSession?.Dispose();
             output.MemoryOwner?.Dispose();
+        }
+
+        /// <summary>
+        /// Discard the fuzzy-region buffer, returning the pooled chunk buffers of any chunked operation it holds. Only for
+        /// a buffer that will not be replayed: either it has just been replayed (returning a chunked operation's buffers a
+        /// second time is a no-op, since the operation released them as it was dispatched) or replay is tearing down or
+        /// abandoning the region.
+        /// </summary>
+        /// <remarks>
+        /// The buffered transaction groups go with the operations, because a group is only reachable through the commit
+        /// marker recorded alongside it: dropping the markers while leaving the groups queued would put the two out of
+        /// step, and the next region's markers would dequeue the wrong groups.
+        /// </remarks>
+        internal void DiscardFuzzyRegionBuffer()
+        {
+            foreach (var op in fuzzyRegionOps)
+                op.Chunk?.ReturnValueChunks();
+            fuzzyRegionOps.Clear();
+
+            while (txnGroupBuffer.Count > 0)
+                txnGroupBuffer.Dequeue().Discard();
         }
 
         /// <summary>
@@ -79,12 +118,15 @@ namespace Garnet.server
         /// <summary>
         /// Add transaction group to fuzzy region buffer
         /// </summary>
-        /// <param name="group"></param>
-        /// <param name="commitMarker"></param>
-        public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker)
+        /// <param name="group">The transaction group, whose ownership passes to this buffer.</param>
+        /// <param name="commitMarker">The TxnCommit record bytes, which mark where in the buffered stream the group
+        /// is replayed.</param>
+        /// <param name="commitSequenceNumber">Log address sequence number of the commit record, needed for the
+        /// multi-log commit barrier when the group is eventually replayed.</param>
+        internal void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker, long commitSequenceNumber = 0)
         {
             // Add commit marker operation
-            fuzzyRegionOps.Add(new ReplayOperation(commitMarker.ToArray()));
+            fuzzyRegionOps.Add(new ReplayOperation(commitMarker.ToArray(), commitSequenceNumber));
             // Enqueue transaction group
             txnGroupBuffer.Enqueue(group);
         }

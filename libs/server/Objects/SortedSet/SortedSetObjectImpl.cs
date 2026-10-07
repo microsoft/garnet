@@ -134,7 +134,15 @@ namespace Garnet.server
                     if (!sortedSetDict.TryGetValue(member, out var scoreStored))
                     {
                         // Don't add new member if XX flag is set
-                        if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
+                        if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX)
+                        {
+                            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                            {
+                                writer.WriteNull();
+                                return;
+                            }
+                            continue;
+                        }
 
                         incrResult = score;
                         sortedSetDict.Add(member, score);

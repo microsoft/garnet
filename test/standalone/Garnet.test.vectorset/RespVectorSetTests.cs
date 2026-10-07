@@ -757,11 +757,11 @@ namespace Garnet.test
                 }
                 else if (id.SequenceEqual(new byte[] { 0, 0, 0, 2 }))
                 {
-                    ClassicAssert.AreEqual(0, attr.Length);
+                    ClassicAssert.IsNull(attr);
                 }
                 else if (id.SequenceEqual(new byte[] { 0, 0, 0, 3 }))
                 {
-                    ClassicAssert.AreEqual(0, attr.Length);
+                    ClassicAssert.IsNull(attr);
                 }
                 else if (id.SequenceEqual(new byte[] { 0, 0, 0, 4 }))
                 {
@@ -794,11 +794,11 @@ namespace Garnet.test
                 }
                 else if (id.SequenceEqual(new byte[] { 0, 0, 0, 2 }))
                 {
-                    ClassicAssert.AreEqual(0, attr.Length);
+                    ClassicAssert.IsNull(attr);
                 }
                 else if (id.SequenceEqual(new byte[] { 0, 0, 0, 3 }))
                 {
-                    ClassicAssert.AreEqual(0, attr.Length);
+                    ClassicAssert.IsNull(attr);
                 }
                 else if (id.SequenceEqual(new byte[] { 0, 0, 0, 4 }))
                 {

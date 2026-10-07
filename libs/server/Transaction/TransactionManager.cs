@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -175,8 +175,9 @@ namespace Garnet.server
 
             this.respSession = respSession;
 
-            txnScratchBufferAllocator = new ScratchBufferAllocator();
-            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap, txnScratchBufferAllocator);
+            txnScratchBufferAllocator = new ScratchBufferAllocator(
+                maxInitialCapacity: storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
+            watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
             keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
@@ -207,6 +208,43 @@ namespace Garnet.server
         }
 
         internal void Reset() => Reset(state == TxnState.Running);
+
+        /// <summary>
+        /// Releases the transaction scratch allocator if it is over its cap, idle, and holds nothing live.
+        /// Driven from the session's batch boundary; WATCHed key slices span batches, so the allocator
+        /// itself declines to shrink while anything is outstanding.
+        /// </summary>
+        internal void TrimScratchBuffer() => txnScratchBufferAllocator.Trim();
+
+        /// <summary>
+        /// Releases both scratch allocators on the AOF replay path. The caller counts the interval, so this
+        /// trims every time it is called.
+        /// </summary>
+        /// <remarks>
+        /// AOF replay reaches this manager through replayed transaction procedures, which grow both scratch
+        /// allocators: the prepare phase runs against the watch API, copying every watched key into the
+        /// transaction allocator, and the procedure itself builds arguments from the session allocator. The
+        /// replay session never enters the network batch boundary, so without this the buffers one wide
+        /// procedure grew stay pinned for the lifetime of a replica.
+        /// <para>
+        /// The transaction allocator is safe to trim while a transaction is in flight, because it
+        /// shrinks only when nothing is outstanding. The session allocator has no such guard and is reset at
+        /// the start of every procedure rather than at the end, so it is quiescent only between
+        /// procedures: it is reset here, as the network batch boundary does, and only outside a transaction.
+        /// </para>
+        /// </remarks>
+        internal void TrimReplayBuffers()
+        {
+            txnScratchBufferAllocator.Trim();
+
+            // Between records nothing the previous one allocated is live, so the reset that makes the
+            // trim effective is safe. A transaction still running owns live slices, so skip it.
+            if (state != TxnState.Running)
+            {
+                scratchBufferAllocator.Reset();
+                scratchBufferAllocator.Trim();
+            }
+        }
 
         internal void Reset(bool isRunning)
         {
@@ -240,7 +278,6 @@ namespace Garnet.server
             if (clusterEnabled)
             {
                 txnKeysParseState.Count = 0;
-                saveKeyRecvBufferPtr = null;
                 txnScratchBufferAllocator.Reset();
             }
         }
@@ -431,15 +468,8 @@ namespace Garnet.server
 
         internal string GetLockset() => keyEntries.GetLockset();
 
-        internal void GetSlotVerificationInput(byte* recvBufferPtr, byte sessionAsking, out ClusterSlotVerificationInput clusterSlotVerificationInput)
+        internal void GetSlotVerificationInput(byte sessionAsking, out ClusterSlotVerificationInput clusterSlotVerificationInput)
         {
-            // Copy keys if buffer changed since last queued command
-            if (recvBufferPtr != saveKeyRecvBufferPtr)
-            {
-                CopyExistingKeysToScratchBuffer();
-                saveKeyRecvBufferPtr = recvBufferPtr;
-            }
-
             watchContainer.SaveKeysToKeyList(this);
             clusterSlotVerificationInput = new ClusterSlotVerificationInput
             {

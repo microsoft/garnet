@@ -102,10 +102,10 @@ namespace Garnet.server
             internal int FuzzyRegionBufferCount(int sublogIdx) => aofReplayContext[sublogIdx].fuzzyRegionOps.Count;
 
             /// <summary>
-            /// Clear fuzzy region buffer
+            /// Discard the fuzzy region buffer, returning the pooled chunk buffers of any chunked operation it holds.
             /// </summary>
             /// <param name="sublogIdx"></param>
-            internal void ClearFuzzyRegionBuffer(int sublogIdx) => aofReplayContext[sublogIdx].fuzzyRegionOps.Clear();
+            internal void ClearFuzzyRegionBuffer(int sublogIdx) => aofReplayContext[sublogIdx].DiscardFuzzyRegionBuffer();
 
             /// <summary>
             /// Add single operation to fuzzy region buffer
@@ -150,21 +150,31 @@ namespace Garnet.server
                             UpdateMaxSequenceNumberFromHeader();
                             break;
                         case AofEntryType.TxnCommit:
-                            if (replayContext.inFuzzyRegion)
+                            // Mirror the single-record decision in ShouldSkipRecord: inside the fuzzy region a replica
+                            // defers only the records of the NEW version, because the checkpoint being taken captures
+                            // the old one. A transaction is atomic, so the whole group is deferred or replayed as a
+                            // unit, keyed on the version of its commit record. Deferring an old-version group instead
+                            // loses it: the replica takes its own checkpoint at the end marker, and the group's
+                            // operations are then stale and skipped when it replays what it buffered.
+                            if (asReplica && replayContext.inFuzzyRegion
+                                && header.storeVersion > aofProcessor.storeWrapper.store.CurrentVersion)
                             {
-                                // If in fuzzy region we want to record the commit marker and
-                                // buffer the transaction group for later replay
+                                // Record the commit marker, which fixes where in the buffered stream the group is
+                                // replayed, and buffer the group itself for later replay
                                 var commitMarker = new ReadOnlySpan<byte>(ptr, length);
-                                aofReplayContext[virtualSublogIdx].AddToFuzzyRegionBuffer(group, commitMarker);
+                                aofReplayContext[virtualSublogIdx].AddToFuzzyRegionBuffer(group, commitMarker, logAddressSequenceNumber);
+
+                                // The group's operations are still needed: the fuzzy-region buffer now owns them and
+                                // replays them at the end of the region. Drop this session's reference WITHOUT
+                                // discarding them, and make space for the session's next transaction.
+                                _ = aofReplayContext[virtualSublogIdx].activeTxns.Remove(header.sessionID);
                             }
                             else
                             {
-                                // Otherwise process transaction group immediately
+                                // Otherwise process transaction group immediately, then release it
                                 ProcessTransactionGroup(virtualSublogIdx, ptr, asReplica, group, logAddressSequenceNumber);
+                                ClearSessionTxn();
                             }
-
-                            // We want to clear and remove in both cases to make space for next txn from session
-                            ClearSessionTxn();
                             break;
                         case AofEntryType.StoredProcedure:
                             throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
@@ -173,9 +183,12 @@ namespace Garnet.server
                             break;
                     }
 
+                    // Discard, rather than merely drop, the group's operations: a chunked one holds pooled buffers that
+                    // are returned to the pool here. A committed group's operations have already been dispatched, which
+                    // returns those buffers, and returning an already-returned chunk list is a no-op.
                     void ClearSessionTxn()
                     {
-                        aofReplayContext[virtualSublogIdx].activeTxns[header.sessionID].Clear();
+                        aofReplayContext[virtualSublogIdx].activeTxns[header.sessionID].Discard();
                         _ = aofReplayContext[virtualSublogIdx].activeTxns.Remove(header.sessionID);
                     }
 
@@ -298,6 +311,18 @@ namespace Garnet.server
                         fixed (byte* entryPtr = entry.Record)
                         {
                             var header = *(AofHeader*)entryPtr;
+
+                            // A buffered TxnCommit is a marker, not a replayable op: the operations it commits were
+                            // set aside as a transaction group when the commit arrived inside the fuzzy region. Replay
+                            // the group here, at the marker's position in the buffered stream, so the transaction is
+                            // applied in the order it was committed. Dispatching the marker itself would instead fall
+                            // through ReplayOp's switch, which has no case for it.
+                            if (header.opType == AofEntryType.TxnCommit)
+                            {
+                                ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica, entry.SequenceNumber);
+                                continue;
+                            }
+
                             _ = aofProcessor.ReplayOpDispatch(
                                 sublogIdx,
                                 header,
@@ -314,18 +339,35 @@ namespace Garnet.server
             }
 
             /// <summary>
-            /// Process fuzzy region transaction groups
+            /// Replay the next buffered fuzzy-region transaction group, in the order the groups were buffered. Called
+            /// when the buffered stream reaches the commit marker that was recorded alongside the group.
             /// </summary>
             /// <param name="sublogIdx"></param>
-            /// <param name="ptr"></param>
+            /// <param name="ptr">The TxnCommit record the group is committed by.</param>
             /// <param name="asReplica"></param>
             /// <param name="entryAddress">Log address of the commit entry</param>
             internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, byte* ptr, bool asReplica, long entryAddress = 0)
             {
-                Debug.Assert(aofReplayContext[sublogIdx].txnGroupBuffer != null);
+                var txnGroupBuffer = aofReplayContext[sublogIdx].txnGroupBuffer;
+                Debug.Assert(txnGroupBuffer != null);
+
+                // Every buffered commit marker is recorded together with its group, so the two stay in step. If they
+                // do not, a transaction's operations have been lost; fail loudly rather than silently skipping them.
+                if (txnGroupBuffer.Count == 0)
+                    throw new GarnetException($"Fuzzy region commit marker on sublog {sublogIdx} has no buffered transaction group");
+
                 // Process transaction groups in FIFO order
-                var txnGroup = aofReplayContext[sublogIdx].txnGroupBuffer.Dequeue();
-                ProcessTransactionGroup(sublogIdx, ptr, asReplica, txnGroup, entryAddress);
+                var txnGroup = txnGroupBuffer.Dequeue();
+                try
+                {
+                    ProcessTransactionGroup(sublogIdx, ptr, asReplica, txnGroup, entryAddress);
+                }
+                finally
+                {
+                    // The group has been replayed (or abandoned by a throw) and is owned by nobody else, so release
+                    // what its operations hold.
+                    txnGroup.Discard();
+                }
             }
 
             /// <summary>

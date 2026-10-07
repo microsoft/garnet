@@ -943,8 +943,7 @@ namespace Garnet.server
 
                 if (!stringOutput.HasError)
                 {
-                    while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
-                        SendAndReset();
+                    WriteBulkString(output.ReadOnlySpan);
                 }
                 else
                 {
@@ -1379,8 +1378,7 @@ namespace Garnet.server
 
             foreach (var key in keys)
             {
-                while (!RespWriteUtils.TryWriteBulkString(key.Span, ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(key.Span);
             }
 
             return true;
@@ -1419,16 +1417,14 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
 
-                while (!RespWriteUtils.TryWriteBulkString(keysAndFlags[i].Item1.Span, ref dcurr, dend))
-                    SendAndReset();
+                WriteBulkString(keysAndFlags[i].Item1.Span);
 
                 var flags = EnumUtils.GetEnumDescriptions(keysAndFlags[i].Item2);
                 WriteSetLength(flags.Length);
 
                 foreach (var flag in flags)
                 {
-                    while (!RespWriteUtils.TryWriteBulkString(Encoding.ASCII.GetBytes(flag), ref dcurr, dend))
-                        SendAndReset();
+                    WriteBulkString(Encoding.ASCII.GetBytes(flag));
                 }
             }
 

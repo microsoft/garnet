@@ -737,6 +737,23 @@ namespace Garnet.test
             ClassicAssert.IsTrue(expected.SequenceEqual(strResult));
         }
 
+        [Test]
+        public void LSETOnMissingKeyDoesNotCreateKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "mylist";
+            var ex = Assert.Throws<RedisServerException>(() => db.ListSetByIndex(key, 0, "one"));
+            ClassicAssert.AreEqual("ERR no such key", ex.Message);
+
+            ClassicAssert.IsFalse(db.KeyExists(key));
+            ClassicAssert.AreEqual(0, db.ListLeftPush(key, "one", When.Exists));
+            ClassicAssert.AreEqual(0, db.ListRightPush(key, "one", When.Exists));
+            ClassicAssert.AreEqual(0, db.ListInsertBefore(key, "pivot", "one"));
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
         #region GarnetClientTests
 
         [Test]
