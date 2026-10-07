@@ -95,6 +95,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> FLUSHALL => "FLUSHALL"u8;
         public static ReadOnlySpan<byte> FLUSHDB => "FLUSHDB"u8;
         public static ReadOnlySpan<byte> FORCEGC => "FORCEGC"u8;
+        public static ReadOnlySpan<byte> BLOCK => "BLOCK"u8;
+        public static ReadOnlySpan<byte> BLOCKON => "BLOCKON"u8;
+        public static ReadOnlySpan<byte> SIGNAL => "SIGNAL"u8;
         public static ReadOnlySpan<byte> MATCH => "MATCH"u8;
         public static ReadOnlySpan<byte> COUNT => "COUNT"u8;
         public static ReadOnlySpan<byte> count => "count"u8;
