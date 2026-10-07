@@ -325,7 +325,12 @@ namespace Garnet.common
             var diagnosed = false;
 #endif
             while (totalReferences > int.MinValue &&
-                Interlocked.CompareExchange(ref totalReferences, int.MinValue, 0) != 0)
+                Interlocked.CompareExchange(ref totalReferences, int.MinValue, 0) != 0
+#if DEBUG
+                // If we diagnose a leak, abort dispose
+                && !diagnosed
+#endif
+                )
             {
 #if DEBUG
                 if (!diagnosed && sw.ElapsedMilliseconds > DisposeWaitDiagnosticMs)
