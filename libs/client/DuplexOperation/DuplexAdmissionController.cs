@@ -47,12 +47,15 @@ namespace Garnet.client
         long completionUntil;
         int completionReservations;
         int ongoingAggressiveShiftReadOnly;
+        int activePerOperationFlushResults;
         int disposed;
 
         CompletionEvent requestFreed;
         CompletionEvent completionFreed;
 
         internal int CompletionTail => tailPageOffset.TaskId;
+
+        internal int ActivePerOperationFlushResultCount => Volatile.Read(ref activePerOperationFlushResults);
 
         internal DuplexAdmissionController(
             PageShape shape,
@@ -248,6 +251,15 @@ namespace Garnet.client
             catch when (Volatile.Read(ref disposed) != 0)
             {
             }
+        }
+
+        internal void RegisterPerOperationFlushResult()
+            => Interlocked.Increment(ref activePerOperationFlushResults);
+
+        internal void CompletePerOperationFlushResult()
+        {
+            var active = Interlocked.Decrement(ref activePerOperationFlushResults);
+            Debug.Assert(active >= 0);
         }
 
         /// <summary>

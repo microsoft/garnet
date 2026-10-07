@@ -273,7 +273,7 @@ namespace Garnet.client
             var slot = ComputeSlot(address);
             request = requestSlots[slot].request;
             requestSlots[slot].request = default;
-            flushContext = requestSlots[slot].flushContext;
+            flushContext = Volatile.Read(ref requestSlots[slot].flushContext);
             return true;
         }
 

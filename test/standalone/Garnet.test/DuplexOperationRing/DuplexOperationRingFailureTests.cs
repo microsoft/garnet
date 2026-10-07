@@ -30,10 +30,16 @@ namespace Garnet.test
         }
 
         /// <summary>1c — a transport that throws must surface via onFlushError, not hang, and leak no buffers.</summary>
-        [Test]
-        public async Task SendThrows_ReportsErrorNoHangNoLeak()
+        [TestCase(FlushResultAllocationMode.Buffered)]
+        [TestCase(FlushResultAllocationMode.PerOperation)]
+        public async Task SendThrows_ReportsErrorNoHangNoLeak(FlushResultAllocationMode allocationMode)
         {
-            var h = new RingTestHarness(pageSize: 256, pageCount: 4, completionCapacity: 32, maxChunkSize: 128);
+            var h = new RingTestHarness(
+                pageSize: 256,
+                pageCount: 4,
+                completionCapacity: 32,
+                maxChunkSize: 128,
+                flushResultAllocationMode: allocationMode);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             try
             {

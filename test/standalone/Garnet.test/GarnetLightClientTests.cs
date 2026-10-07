@@ -378,6 +378,27 @@ namespace Garnet.test
             ClassicAssert.AreEqual(64L << 20, options.MaxOutOfLineRentedBytes);
             ClassicAssert.AreEqual(14 * 1024, options.MinMemoryFootprint());
             ClassicAssert.AreEqual(30 * 1024, options.MaxMemoryFootprint());
+
+            var perOperationOptions = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 1 << 13,
+                requestPageSizeBytes: 1 << 10,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 1 << 6,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 64L << 20,
+                flushResultAllocationMode: FlushResultAllocationMode.PerOperation);
+            ClassicAssert.AreEqual(14 * 1024, perOperationOptions.MinMemoryFootprint());
+            ClassicAssert.AreEqual(30 * 1024, perOperationOptions.MaxMemoryFootprint());
+
+            var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 1 << 13,
+                requestPageSizeBytes: 1 << 10,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 1 << 6,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 64L << 20,
+                flushResultAllocationMode: (FlushResultAllocationMode)(-1)));
+            ClassicAssert.AreEqual("flushResultAllocationMode", exception.ParamName);
         }
 
         [Test]
@@ -421,6 +442,30 @@ namespace Garnet.test
             ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
             ClassicAssert.Greater(db.ActiveMemoryUsageBytes, options.MinMemoryFootprint());
             ClassicAssert.LessOrEqual(db.ActiveMemoryUsageBytes, options.MaxMemoryFootprint());
+        }
+
+        [Test]
+        public async Task PerOperationFlushResultMemoryReturnsToBaseline()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 512,
+                flushResultAllocationMode: FlushResultAllocationMode.PerOperation);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+
+            await db.ConnectAsync().ConfigureAwait(false);
+            var baseline = options.MinMemoryFootprint();
+            ClassicAssert.AreEqual(baseline, db.ActiveMemoryUsageBytes);
+
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+            ClassicAssert.AreEqual(baseline, db.ActiveMemoryUsageBytes);
         }
 
         [Test]

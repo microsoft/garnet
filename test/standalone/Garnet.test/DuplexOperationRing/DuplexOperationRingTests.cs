@@ -31,12 +31,45 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
+        [TestCase(FlushResultAllocationMode.Buffered)]
+        [TestCase(FlushResultAllocationMode.PerOperation)]
+        public async Task FlushResultAllocationModeControlsRetention(FlushResultAllocationMode allocationMode)
+        {
+            using var h = new RingTestHarness(
+                pageSize: 256,
+                pageCount: 2,
+                completionCapacity: 8,
+                maxChunkSize: 256,
+                flushResultAllocationMode: allocationMode);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            h.DeferCompletions();
+
+            await h.EnqueueAsync(RingPayload.Create(1, 64), expectCompletion: false, cts.Token).ConfigureAwait(false);
+            await h.PumpUntilAsync(() => h.DeferredCompletionCount == 1, DrainTimeout, cts.Token).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(1, h.AllocatedFlushContextCount);
+            ClassicAssert.IsTrue(h.CompleteOneDeferredChunk());
+            await h.DrainUntilAsync(1, DrainTimeout, cts.Token).ConfigureAwait(false);
+
+            var expectedRetainedCount = allocationMode == FlushResultAllocationMode.Buffered ? 1 : 0;
+            ClassicAssert.AreEqual(expectedRetainedCount, h.AllocatedFlushContextCount);
+            h.AssertNoBufferLeaks();
+        }
+
         /// <summary>1a — single producer, full inline/out-of-line size matrix, single-chunk and multi-chunk.</summary>
-        [Test]
-        public async Task SizeMatrix_SingleProducer([Values(1 << 20, 64)] int maxChunkSize)
+        [TestCase(1 << 20, FlushResultAllocationMode.Buffered)]
+        [TestCase(64, FlushResultAllocationMode.Buffered)]
+        [TestCase(1 << 20, FlushResultAllocationMode.PerOperation)]
+        [TestCase(64, FlushResultAllocationMode.PerOperation)]
+        public async Task SizeMatrix_SingleProducer(int maxChunkSize, FlushResultAllocationMode allocationMode)
         {
             const int pageSize = 4096;
-            using var h = new RingTestHarness(pageSize, pageCount: 8, completionCapacity: 64, maxChunkSize: maxChunkSize);
+            using var h = new RingTestHarness(
+                pageSize,
+                pageCount: 8,
+                completionCapacity: 64,
+                maxChunkSize: maxChunkSize,
+                flushResultAllocationMode: allocationMode);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 
             var maxInline = h.MaxInlinePayloadSize;

@@ -14,6 +14,22 @@ using Tsavorite.core;
 namespace Garnet.client
 {
     /// <summary>
+    /// Controls whether request-flush completion contexts are retained for reuse or allocated per operation.
+    /// </summary>
+    public enum FlushResultAllocationMode
+    {
+        /// <summary>
+        /// Lazily allocate one completion context per physical request slot and retain it for reuse.
+        /// </summary>
+        Buffered,
+
+        /// <summary>
+        /// Allocate a completion context for each flushed operation and release it after send completion.
+        /// </summary>
+        PerOperation
+    }
+
+    /// <summary>
     /// Capacity and buffer settings for a <see cref="LightNetworkWriter"/>.
     /// </summary>
     /// <remarks>
@@ -28,14 +44,70 @@ namespace Garnet.client
     /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
     /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
     /// <param name="maxOutOfLineRentedBytes">Maximum pooled out-of-line request bytes rented until local send completion. Zero disables throttling.</param>
+    /// <param name="flushResultAllocationMode">Controls whether request-flush completion contexts are retained per request slot or allocated per operation.</param>
     public readonly struct LightNetworkWriterOptions(
         int networkBufferSizeBytes,
         int requestPageSizeBytes,
         int requestPageCount,
         int maxOutstandingCompletions,
         int maxConcurrentNetworkSends,
-        long maxOutOfLineRentedBytes = 0)
+        long maxOutOfLineRentedBytes,
+        FlushResultAllocationMode flushResultAllocationMode)
     {
+        /// <summary>
+        /// Creates network-writer options using buffered flush-result allocation.
+        /// </summary>
+        /// <param name="networkBufferSizeBytes">Fixed send-buffer size, initial receive-buffer size, and maximum send chunk size.</param>
+        /// <param name="requestPageSizeBytes">Size of each request-ring page.</param>
+        /// <param name="requestPageCount">Number of circular request-ring pages.</param>
+        /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
+        /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
+        /// <param name="maxOutOfLineRentedBytes">Maximum pooled out-of-line request bytes awaiting local send completion.</param>
+        public LightNetworkWriterOptions(
+            int networkBufferSizeBytes,
+            int requestPageSizeBytes,
+            int requestPageCount,
+            int maxOutstandingCompletions,
+            int maxConcurrentNetworkSends,
+            long maxOutOfLineRentedBytes = 0)
+            : this(
+                networkBufferSizeBytes,
+                requestPageSizeBytes,
+                requestPageCount,
+                maxOutstandingCompletions,
+                maxConcurrentNetworkSends,
+                maxOutOfLineRentedBytes,
+                global::Garnet.client.FlushResultAllocationMode.Buffered)
+        {
+        }
+
+        /// <summary>
+        /// Creates network-writer options with the specified flush-result allocation mode and no out-of-line byte limit.
+        /// </summary>
+        /// <param name="networkBufferSizeBytes">Fixed send-buffer size, initial receive-buffer size, and maximum send chunk size.</param>
+        /// <param name="requestPageSizeBytes">Size of each request-ring page.</param>
+        /// <param name="requestPageCount">Number of circular request-ring pages.</param>
+        /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
+        /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
+        /// <param name="flushResultAllocationMode">Flush-result allocation mode.</param>
+        public LightNetworkWriterOptions(
+            int networkBufferSizeBytes,
+            int requestPageSizeBytes,
+            int requestPageCount,
+            int maxOutstandingCompletions,
+            int maxConcurrentNetworkSends,
+            FlushResultAllocationMode flushResultAllocationMode)
+            : this(
+                networkBufferSizeBytes,
+                requestPageSizeBytes,
+                requestPageCount,
+                maxOutstandingCompletions,
+                maxConcurrentNetworkSends,
+                0,
+                flushResultAllocationMode)
+        {
+        }
+
         static int RequestSlotSizeBytes
             => Align(Unsafe.SizeOf<LightRequestContext>() + IntPtr.Size);
 
@@ -82,7 +154,8 @@ namespace Garnet.client
             requestPageCount: 2,
             maxOutstandingCompletions: 1 << 6,
             maxConcurrentNetworkSends: 8,
-            maxOutOfLineRentedBytes: 64L << 20);
+            maxOutOfLineRentedBytes: 64L << 20,
+            flushResultAllocationMode: global::Garnet.client.FlushResultAllocationMode.Buffered);
 
         /// <summary>
         /// Size of the fixed network send buffer and initial receive buffer.
@@ -120,6 +193,11 @@ namespace Garnet.client
         public long MaxOutOfLineRentedBytes { get; } = maxOutOfLineRentedBytes;
 
         /// <summary>
+        /// Controls whether request-flush completion contexts are retained per request slot or allocated per operation.
+        /// </summary>
+        public FlushResultAllocationMode FlushResultAllocationMode { get; } = ValidateFlushResultAllocationMode(flushResultAllocationMode);
+
+        /// <summary>
         /// Estimates the fixed request-page, request-side-table, and completion-lane memory in bytes.
         /// </summary>
         /// <remarks>
@@ -142,9 +220,9 @@ namespace Garnet.client
         /// Estimates the fully warmed request/completion ring memory in bytes.
         /// </summary>
         /// <remarks>
-        /// Adds one lazily allocated reusable flush context for every physical request slot to
-        /// <see cref="MinMemoryFootprint"/>. Excludes array headers, network buffers, and pooled
-        /// out-of-line payloads.
+        /// Adds one flush context for every physical request slot to <see cref="MinMemoryFootprint"/>. In buffered
+        /// mode this is the fully warmed retained footprint; in per-operation mode it is a conservative bound
+        /// on transient contexts. Excludes array headers, network buffers, and pooled out-of-line payloads.
         /// </remarks>
         public long MaxMemoryFootprint()
         {
@@ -158,6 +236,9 @@ namespace Garnet.client
 
         static int Align(int size)
             => (size + (IntPtr.Size - 1)) & ~(IntPtr.Size - 1);
+
+        static FlushResultAllocationMode ValidateFlushResultAllocationMode(FlushResultAllocationMode mode)
+            => Enum.IsDefined(mode) ? mode : throw new ArgumentOutOfRangeException(nameof(flushResultAllocationMode), mode, null);
 
         static int GetRequestPageSizeBytes(int requestPageSizeBytes)
         {
@@ -295,6 +376,7 @@ namespace Garnet.client
                 networkBufferSettings.sendBufferSize,
                 new RingTransport(tcpSender, handler, useTls),
                 epoch,
+                options.FlushResultAllocationMode,
                 logger);
         }
 

@@ -99,13 +99,17 @@ namespace Garnet.client
         readonly TTransport transport;
         readonly ILogger logger;
         readonly int maxChunkSizeBytes;
+        readonly FlushResultAllocationMode flushResultAllocationMode;
 
         bool disposed;
 
         /// <summary>Number of completion tickets issued so far (task-space, wraps at 2^kTaskBits).</summary>
         internal int CompletionTail => controller.CompletionTail;
 
-        internal int AllocatedFlushContextCount => store.AllocatedFlushContextCount;
+        internal int AllocatedFlushContextCount
+            => flushResultAllocationMode == FlushResultAllocationMode.Buffered
+                ? store.AllocatedFlushContextCount
+                : controller.ActivePerOperationFlushResultCount;
 
         /// <summary>
         /// Create a duplex back-pressured ring over a single connection.
@@ -127,6 +131,7 @@ namespace Garnet.client
         /// <param name="maxChunkSizeBytes">Size of a single network send buffer; caps the per-send chunk length.</param>
         /// <param name="transport">Struct-specialized transport used to send chunks and handle flush failures.</param>
         /// <param name="epoch">Shared epoch protecting the page allocator and flush machinery.</param>
+        /// <param name="flushResultAllocationMode">Controls whether flush completion contexts are retained per request slot or allocated per operation.</param>
         /// <param name="logger">Logger instance.</param>
         public DuplexOperationChannel(
             int ringPageSizeBytes,
@@ -135,14 +140,17 @@ namespace Garnet.client
             int maxChunkSizeBytes,
             TTransport transport,
             LightEpoch epoch,
+            FlushResultAllocationMode flushResultAllocationMode = FlushResultAllocationMode.Buffered,
             ILogger logger = null)
         {
             if (ringPageCount > PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
+            if (!Enum.IsDefined(flushResultAllocationMode)) throw new ArgumentOutOfRangeException(nameof(flushResultAllocationMode));
 
             this.epoch = epoch;
             this.maxChunkSizeBytes = maxChunkSizeBytes;
             this.transport = transport;
             this.logger = logger;
+            this.flushResultAllocationMode = flushResultAllocationMode;
 
             store = new DuplexRingRecordStore<TRequestContext, TCompletionContext, DuplexOperationAsyncFlushResult<TRequestContext>>(
                 ringPageSizeBytes,
@@ -407,12 +415,19 @@ namespace Garnet.client
                 var chunkSize = Math.Max(1, maxChunkSizeBytes);
                 var chunkCount = ((length - 1) / chunkSize) + 1;
                 var result = flushContext;
+                var perOperationAllocation = false;
                 if (result == null)
                 {
                     result = new DuplexOperationAsyncFlushResult<TRequestContext>();
-                    store.SetFlushContext(address, result);
+                    if (flushResultAllocationMode == FlushResultAllocationMode.Buffered)
+                        store.SetFlushContext(address, result);
+                    else
+                    {
+                        controller.RegisterPerOperationFlushResult();
+                        perOperationAllocation = true;
+                    }
                 }
-                result.Initialize(count, request, chunkCount, controller);
+                result.Initialize(count, request, chunkCount, controller, perOperationAllocation);
                 _ = Interlocked.Increment(ref count.count);
 
                 var dispatchedChunks = 0;
