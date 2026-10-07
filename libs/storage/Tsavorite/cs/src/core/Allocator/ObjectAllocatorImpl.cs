@@ -940,10 +940,16 @@ namespace Tsavorite.core
             {
                 // While up-converting, the page's stamp is a position on the downlevel device the conversion is replacing, so it must be
                 // overwritten with the position on the upgrade device where this page's objects are about to be written.
+                //
+                // A recovery flush of a snapshot-region page is the same situation in a different address space: the page carries the header
+                // it was checkpointed with, whose position is in the SNAPSHOT object log, while this flush copies its objects into the MAIN
+                // object log and repoints its records there. Without the overwrite the stamp stays in the snapshot's address space, and
+                // GetLowestObjectLogSegmentInUse would feed that unrelated segment id to the main device's TruncateUntilSegment.
+                var forceStamp = isUpgradingObjectLog || asyncResult.flushRequestState == FlushRequestState.Recovery;
                 if (isUpgradingObjectLog)
                     ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(upgradeObjectLogTail, force: true);
                 else
-                    ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail);
+                    ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail, force: forceStamp);
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
@@ -1741,6 +1747,15 @@ namespace Tsavorite.core
             }
             nextRecordAddress = -1L;
             return true;
+        }
+
+        /// <inheritdoc/>
+        internal override void ResetRecoveredResidentPageHeader(int page)
+        {
+            var pageIndex = GetPageIndexForPage(page);
+            if (!IsAllocated(pageIndex))
+                return;
+            ((PageHeader*)pagePointers[pageIndex])->objectLogLowestPositionWord = ObjectLogFilePositionInfo.NotSet;
         }
 
         /// <inheritdoc/>

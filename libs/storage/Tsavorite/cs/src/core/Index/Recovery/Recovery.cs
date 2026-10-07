@@ -1450,6 +1450,11 @@ namespace Tsavorite.core
                 if (pageFromAddress < pageUntilAddress)
                     hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, snapshotObjectLogDevice,
                         recoveryStatus.checkpointVersion, recoveryStatus.objectLogRecoveryReadEnd);
+
+                // This page was never flushed to main, so its header still holds the snapshot object-log position it was checkpointed with
+                // while its objects are now resident and will be re-serialized into the main object log by the next flush. Return the header
+                // to the freshly-allocated state so that flush stamps the main position itself.
+                hlogBase.ResetRecoveredResidentPageHeader(page);
             }
 
             long CalculatePageObjectSizes(int page, long pageFromAddress, long pageUntilAddress)

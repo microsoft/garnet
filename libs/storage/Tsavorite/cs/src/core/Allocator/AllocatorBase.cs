@@ -57,6 +57,16 @@ namespace Tsavorite.core
             ObjectLogFilePositionInfo hardReadEndPosition = default)
         { }
 
+        /// <summary>Return a recovered snapshot-region page that stays resident to the state a freshly allocated page would have, so a
+        /// later flush stamps its object-log position itself. Only implemented by ObjectAllocator.</summary>
+        /// <remarks>
+        /// Such a page carries the header it was checkpointed with, whose position is in the snapshot object log. Its objects are now
+        /// resident and the next flush re-serializes them into the main object log, so the stale stamp must not survive to be read as a
+        /// main-log position. Only for pages that were NOT flushed to main during recovery: a flushed page's header already holds the
+        /// correct main position, and clearing it would let a later flush stamp a higher one and truncate segments still in use.
+        /// </remarks>
+        internal virtual void ResetRecoveredResidentPageHeader(int page) { }
+
         /// <summary>Return the first object-log position recorded in the header of <paramref name="page"/>, or an unset position when
         /// this allocator has no object log or the page contains no out-of-line records.</summary>
         internal virtual ObjectLogFilePositionInfo GetLowestObjectLogPositionForPage(int page) => new();
