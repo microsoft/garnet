@@ -155,13 +155,15 @@ namespace Garnet.test
         internal RingTestHarness(
             int pageSize,
             int pageCount,
+            int maxOutstandingRequests,
             int completionCapacity,
             int maxChunkSize,
             FlushResultAllocationMode flushResultAllocationMode = FlushResultAllocationMode.Buffered)
         {
             epoch = new LightEpoch();
             Ring = new DuplexOperationChannel<TestRequest, int, RingTransport>(
-                pageSize, pageCount, completionCapacity, maxChunkSize, new RingTransport(this), epoch, flushResultAllocationMode);
+                pageSize, pageCount, maxOutstandingRequests, completionCapacity, maxChunkSize, new RingTransport(this), epoch,
+                flushResultAllocationMode);
         }
 
         internal int CompletedCount => Volatile.Read(ref completedCount);
@@ -170,6 +172,8 @@ namespace Garnet.test
         internal int MaxInlinePayloadSize => Ring.MaxInlinePayloadSize;
         internal int DeferredCompletionCount => deferredCompletions.Count;
         internal int AllocatedFlushContextCount => Ring.AllocatedFlushContextCount;
+        internal int RequestAllocationQuantumBytes => Ring.RequestAllocationQuantumBytes;
+        internal int RequestSlotCount => Ring.RequestSlotCount;
 
         /// <summary>Number of completion tickets the ring has issued so far (response-expecting claims).</summary>
         internal int CompletionTail => Ring.CompletionTail;

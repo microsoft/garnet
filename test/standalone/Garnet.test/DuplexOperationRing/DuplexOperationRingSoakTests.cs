@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using NUnit.Framework;
 
 namespace Garnet.test
@@ -68,7 +69,12 @@ namespace Garnet.test
                         $"chunk={maxChunkSize} producers={producers} perProducer={perProducer} resp={expectsResponse} " +
                         $"fail={injectFailure}";
 
-            var h = new RingTestHarness(pageSizeBytes, pageCount, completionCapacity, maxChunkSize);
+            var h = new RingTestHarness(
+                pageSize: pageSizeBytes,
+                pageCount: pageCount,
+                maxOutstandingRequests: pageSizeBytes * pageCount / DuplexRingRecordFormat.HeaderSize,
+                completionCapacity: completionCapacity,
+                maxChunkSize: maxChunkSize);
             using var producerCts = new CancellationTokenSource();
             using var guardCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             var readerDone = new CancellationTokenSource();

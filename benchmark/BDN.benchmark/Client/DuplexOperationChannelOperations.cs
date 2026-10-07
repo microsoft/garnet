@@ -131,6 +131,7 @@ namespace BDN.benchmark.Client
                 RingPageSize,
                 RingPageCount,
                 CompletionCapacity,
+                CompletionCapacity,
                 MaxChunkSize,
                 new NoOpTransport(transportState),
                 epoch);

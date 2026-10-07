@@ -175,6 +175,7 @@ namespace BDN.benchmark.Client
                 RingPageSize,
                 RingPageCount,
                 outOfLineRequestsPerBurst,
+                outOfLineRequestsPerBurst,
                 MaxChunkSize,
                 new DeferredTransport(transportState),
                 epoch);

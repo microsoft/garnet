@@ -137,7 +137,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(producers * perProducer, final);
         }
 
-        [Test]
+        [Test, NonParallelizable]
         public async Task CompletionBackpressureStressTest([Values] bool useTLS)
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
@@ -148,8 +148,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 16,
                 maxOutstandingCompletions: completionCapacity,
-                maxConcurrentNetworkSends: 8);
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 0,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = TestUtils.GetGarnetLightClient(
                 useTLS: useTLS,
                 networkWriterOptions: options);
@@ -221,9 +224,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 8,
                 maxOutstandingCompletions: 8,
                 maxConcurrentNetworkSends: 8,
-                maxOutOfLineRentedBytes: memoryCapacity);
+                maxOutOfLineRentedBytes: memoryCapacity,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
@@ -260,9 +265,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 8,
                 maxOutstandingCompletions: 8,
                 maxConcurrentNetworkSends: 8,
-                maxOutOfLineRentedBytes: memoryCapacity);
+                maxOutOfLineRentedBytes: memoryCapacity,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
@@ -305,8 +312,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 2,
                 maxOutstandingCompletions: 1,
-                maxConcurrentNetworkSends: 8);
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 0,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
@@ -376,29 +386,55 @@ namespace Garnet.test
             var options = LightNetworkWriterOptions.Default;
 
             ClassicAssert.AreEqual(64L << 20, options.MaxOutOfLineRentedBytes);
-            ClassicAssert.AreEqual(14 * 1024, options.MinMemoryFootprint());
-            ClassicAssert.AreEqual(30 * 1024, options.MaxMemoryFootprint());
+            ClassicAssert.AreEqual(options.MaxOutstandingCompletions, options.MaxOutstandingRequests);
+            ClassicAssert.AreEqual(16, options.MaxOutstandingRequests);
+            ClassicAssert.AreEqual(4096, options.RequestPageSizeBytes);
+            ClassicAssert.AreEqual(512, options.RequestAllocationQuantumBytes);
+            ClassicAssert.AreEqual(9_728, options.MinMemoryFootprint());
+            ClassicAssert.AreEqual(10_752, options.MaxMemoryFootprint());
 
             var perOperationOptions = new LightNetworkWriterOptions(
                 networkBufferSizeBytes: 1 << 13,
-                requestPageSizeBytes: 1 << 10,
+                requestPageSizeBytes: 1 << 12,
                 requestPageCount: 2,
-                maxOutstandingCompletions: 1 << 6,
+                maxOutstandingRequests: 1 << 4,
+                maxOutstandingCompletions: 1 << 4,
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 64L << 20,
                 flushResultAllocationMode: FlushResultAllocationMode.PerOperation);
-            ClassicAssert.AreEqual(14 * 1024, perOperationOptions.MinMemoryFootprint());
-            ClassicAssert.AreEqual(30 * 1024, perOperationOptions.MaxMemoryFootprint());
+            ClassicAssert.AreEqual(9_728, perOperationOptions.MinMemoryFootprint());
+            ClassicAssert.AreEqual(10_752, perOperationOptions.MaxMemoryFootprint());
 
             var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new LightNetworkWriterOptions(
                 networkBufferSizeBytes: 1 << 13,
-                requestPageSizeBytes: 1 << 10,
+                requestPageSizeBytes: 1 << 12,
                 requestPageCount: 2,
-                maxOutstandingCompletions: 1 << 6,
+                maxOutstandingRequests: 1 << 4,
+                maxOutstandingCompletions: 1 << 4,
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 64L << 20,
                 flushResultAllocationMode: (FlushResultAllocationMode)(-1)));
             ClassicAssert.AreEqual("flushResultAllocationMode", exception.ParamName);
+
+            var boundedRequestOptions = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 1 << 13,
+                requestPageSizeBytes: 1 << 10,
+                requestPageCount: 2,
+                maxOutstandingRequests: 8,
+                maxOutstandingCompletions: 1 << 6,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 64L << 20,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
+            ClassicAssert.AreEqual(256, boundedRequestOptions.RequestAllocationQuantumBytes);
+            ClassicAssert.AreEqual(6_400, boundedRequestOptions.MinMemoryFootprint());
+            ClassicAssert.AreEqual(6_912, boundedRequestOptions.MaxMemoryFootprint());
+
+            var positionalOptions = new LightNetworkWriterOptions(
+                1 << 13, 1 << 10, 2, 64, 64, 8, 1024, FlushResultAllocationMode.Buffered);
+            ClassicAssert.AreEqual(64, positionalOptions.MaxOutstandingRequests);
+            ClassicAssert.AreEqual(64, positionalOptions.MaxOutstandingCompletions);
+            ClassicAssert.AreEqual(8, positionalOptions.MaxConcurrentNetworkSends);
+            ClassicAssert.AreEqual(1024, positionalOptions.MaxOutOfLineRentedBytes);
         }
 
         [Test]
@@ -412,9 +448,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 8,
                 maxOutstandingCompletions: 8,
                 maxConcurrentNetworkSends: 8,
-                maxOutOfLineRentedBytes: maxOutOfLineRentedBytes);
+                maxOutOfLineRentedBytes: maxOutOfLineRentedBytes,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
 
             ClassicAssert.AreEqual(0, db.ActiveMemoryUsageBytes);
@@ -454,6 +492,7 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 8,
                 maxOutstandingCompletions: 8,
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 512,
@@ -475,8 +514,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: DuplexRingRecordFormat.HeaderSize - 1,
                 requestPageCount: 2,
+                maxOutstandingRequests: 2,
                 maxOutstandingCompletions: 8,
-                maxConcurrentNetworkSends: 8));
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 0,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered));
 
             ClassicAssert.AreEqual("requestPageSizeBytes", exception.ParamName);
 
@@ -484,9 +526,31 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: DuplexRingRecordFormat.HeaderSize,
                 requestPageCount: 2,
+                maxOutstandingRequests: 2,
                 maxOutstandingCompletions: 8,
-                maxConcurrentNetworkSends: 8);
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 0,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             ClassicAssert.AreEqual(DuplexRingRecordFormat.HeaderSize, options.RequestPageSizeBytes);
+        }
+
+        [TestCase(0)]
+        [TestCase(3)]
+        [TestCase(10)]
+        [TestCase(512)]
+        public void MaxOutstandingRequestsMustProduceAlignedPerPageCapacity(int maxOutstandingRequests)
+        {
+            var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingRequests: maxOutstandingRequests,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 512,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered));
+
+            ClassicAssert.AreEqual("maxOutstandingRequests", exception.ParamName);
         }
 
         [Test]
@@ -499,9 +563,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 8,
                 maxOutstandingCompletions: 8,
                 maxConcurrentNetworkSends: 8,
-                maxOutOfLineRentedBytes: 512);
+                maxOutOfLineRentedBytes: 512,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
@@ -523,9 +589,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 16,
                 maxOutstandingCompletions: 16,
                 maxConcurrentNetworkSends: 8,
-                maxOutOfLineRentedBytes: capacityBytes);
+                maxOutOfLineRentedBytes: capacityBytes,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
@@ -566,8 +634,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 1 << 17,
                 requestPageSizeBytes: 1 << 12,
                 requestPageCount: 2,
+                maxOutstandingRequests: 64,
                 maxOutstandingCompletions: 1 << 19,
-                maxConcurrentNetworkSends: 8);
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 0,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = new GarnetLightClient(TestUtils.EndPoint, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
@@ -635,9 +706,11 @@ namespace Garnet.test
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
+                maxOutstandingRequests: 64,
                 maxOutstandingCompletions: 1 << 12,
                 maxConcurrentNetworkSends: 8,
-                maxOutOfLineRentedBytes: 1024);
+                maxOutOfLineRentedBytes: 1024,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 

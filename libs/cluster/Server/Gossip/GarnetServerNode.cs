@@ -72,7 +72,7 @@ namespace Garnet.cluster
         /// fixed-size payload descriptors rather than payload bytes, so this controls how many
         /// requests can be queued before page reuse must wait for an earlier flush to complete.
         /// </summary>
-        const int defaultSendPageSize = 1 << 10;
+        const int defaultSendPageSize = 1 << 12;
 
         /// <summary>
         /// Default network send buffer size. Also bounds the maximum request chunk sent in one transport operation.
@@ -87,7 +87,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Default number of response-expecting requests whose replies have not yet been consumed.
         /// </summary>
-        const int defaultMaxOutstandingCompletions = 1 << 6;
+        const int defaultMaxOutstandingCompletions = 1 << 4;
 
         /// <summary>
         /// Default number of transport sends that may be in progress concurrently.
@@ -137,9 +137,11 @@ namespace Garnet.cluster
                     networkBufferSizeBytes: defaultNetworkSendBufferSize,
                     requestPageSizeBytes: defaultSendPageSize,
                     requestPageCount: defaultRequestPageCount,
+                    maxOutstandingRequests: defaultMaxOutstandingCompletions,
                     maxOutstandingCompletions: defaultMaxOutstandingCompletions,
                     maxConcurrentNetworkSends: defaultMaxConcurrentNetworkSends,
-                    maxOutOfLineRentedBytes: defaultMaxOutOfLineRentedBytes),
+                    maxOutOfLineRentedBytes: defaultMaxOutOfLineRentedBytes,
+                    flushResultAllocationMode: FlushResultAllocationMode.Buffered),
                 timeoutMilliseconds: GetClientTimeoutMilliseconds(
                     clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
                 epoch: epoch,

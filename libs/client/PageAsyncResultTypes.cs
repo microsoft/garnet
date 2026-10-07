@@ -6,6 +6,7 @@ namespace Garnet.client
     class CountWrapper
     {
         public int count;
+        public long fromAddress;
         public long untilAddress;
     }
 

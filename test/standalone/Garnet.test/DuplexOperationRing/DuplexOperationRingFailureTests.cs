@@ -37,6 +37,7 @@ namespace Garnet.test
             var h = new RingTestHarness(
                 pageSize: 256,
                 pageCount: 4,
+                maxOutstandingRequests: 8,
                 completionCapacity: 32,
                 maxChunkSize: 128,
                 flushResultAllocationMode: allocationMode);
@@ -71,7 +72,12 @@ namespace Garnet.test
         [Test]
         public async Task DisposeMidFlight_NoHangNoLeak([Values(2, 6)] int producers)
         {
-            var h = new RingTestHarness(pageSize: 256, pageCount: 4, completionCapacity: 32, maxChunkSize: 64);
+            var h = new RingTestHarness(
+                pageSize: 256,
+                pageCount: 4,
+                maxOutstandingRequests: 8,
+                completionCapacity: 32,
+                maxChunkSize: 64);
             using var producerCts = new CancellationTokenSource();
             using var guardCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
@@ -133,7 +139,7 @@ namespace Garnet.test
         {
             const int count = 256;          // == completion capacity, so ticket->slot is a bijection here
             const int claimers = 8;
-            var h = new RingTestHarness(pageSize: 64, pageCount: 2, completionCapacity: count, maxChunkSize: 64);
+            var h = new RingTestHarness(pageSize: 64, pageCount: 2, maxOutstandingRequests: 16, completionCapacity: count, maxChunkSize: 64);
             try
             {
                 for (var t = 0; t < count; t++)

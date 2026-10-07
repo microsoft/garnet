@@ -110,6 +110,8 @@ namespace Garnet.client
             => flushResultAllocationMode == FlushResultAllocationMode.Buffered
                 ? store.AllocatedFlushContextCount
                 : controller.ActivePerOperationFlushResultCount;
+        internal int RequestAllocationQuantumBytes => store.RequestAllocationQuantumBytes;
+        internal int RequestSlotCount => store.RequestSlotCount;
 
         /// <summary>
         /// Create a duplex back-pressured ring over a single connection.
@@ -126,6 +128,7 @@ namespace Garnet.client
         /// bounds how many requests can be queued before page reuse waits for an earlier flush.</param>
         /// <param name="ringPageCount">Number of circular pages backing the request lane. Must not exceed
         /// <see cref="PageOffset.kPageMask"/>.</param>
+        /// <param name="maxOutstandingRequests">Maximum number of minimum-allocation requests awaiting local send completion. Zero derives the current header-granularity capacity.</param>
         /// <param name="completionCapacity">Maximum number of outstanding response-expecting requests; rounds
         /// up to a power of two and bounds the completion lane before producers back-pressure on replies.</param>
         /// <param name="maxChunkSizeBytes">Size of a single network send buffer; caps the per-send chunk length.</param>
@@ -136,6 +139,7 @@ namespace Garnet.client
         public DuplexOperationChannel(
             int ringPageSizeBytes,
             int ringPageCount,
+            int maxOutstandingRequests,
             int completionCapacity,
             int maxChunkSizeBytes,
             TTransport transport,
@@ -143,7 +147,7 @@ namespace Garnet.client
             FlushResultAllocationMode flushResultAllocationMode = FlushResultAllocationMode.Buffered,
             ILogger logger = null)
         {
-            if (ringPageCount > PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
+            if (ringPageCount is <= 0 or > (int)PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
             if (!Enum.IsDefined(flushResultAllocationMode)) throw new ArgumentOutOfRangeException(nameof(flushResultAllocationMode));
 
             this.epoch = epoch;
@@ -155,6 +159,7 @@ namespace Garnet.client
             store = new DuplexRingRecordStore<TRequestContext, TCompletionContext, DuplexOperationAsyncFlushResult<TRequestContext>>(
                 ringPageSizeBytes,
                 ringPageCount,
+                maxOutstandingRequests,
                 completionCapacity);
             controller = new DuplexAdmissionController(
                 store.Shape,
@@ -318,6 +323,7 @@ namespace Garnet.client
             var count = new CountWrapper
             {
                 count = 1,
+                fromAddress = fromAddress,
                 untilAddress = untilAddress
             };
             var flushFailed = false;

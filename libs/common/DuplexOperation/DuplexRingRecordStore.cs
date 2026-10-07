@@ -127,12 +127,16 @@ namespace Garnet.client
         readonly RequestSlot[] requestSlots;
         readonly CompletionSlot[] completions;
         readonly int completionMask;
+        readonly int requestAllocationQuantumBytes;
+        readonly int requestSlotsPerPage;
         int closed;
         int allFlushContextsAllocated;
 
         internal PageShape Shape { get; }
         internal int CompletionCapacity { get; }
         internal int MaxInlinePayloadSize => Shape.PageSizeBytes - DuplexRingRecordFormat.HeaderSize;
+        internal int RequestAllocationQuantumBytes => requestAllocationQuantumBytes;
+        internal int RequestSlotCount => requestSlots.Length;
         internal int AllocatedFlushContextCount
         {
             get
@@ -157,12 +161,22 @@ namespace Garnet.client
         internal DuplexRingRecordStore(
             int ringPageSizeBytes,
             int ringPageCount,
+            int maxOutstandingRequests,
             int completionCapacity)
         {
             Shape = new PageShape(ringPageSizeBytes, ringPageCount);
+            if (maxOutstandingRequests == 0)
+                maxOutstandingRequests = checked(ringPageCount * Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize);
+            if (maxOutstandingRequests < ringPageCount || maxOutstandingRequests % ringPageCount != 0)
+                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests));
 
-            var ringSlotCount = ringPageCount * ringPageSizeBytes / DuplexRingRecordFormat.HeaderSize;
-            requestSlots = new RequestSlot[ringSlotCount];
+            requestSlotsPerPage = maxOutstandingRequests / ringPageCount;
+            requestAllocationQuantumBytes = Shape.PageSizeBytes / requestSlotsPerPage;
+            if (requestSlotsPerPage > Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize ||
+                Shape.PageSizeBytes % requestSlotsPerPage != 0 ||
+                requestAllocationQuantumBytes % DuplexRingRecordFormat.HeaderSize != 0)
+                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests));
+            requestSlots = new RequestSlot[maxOutstandingRequests];
 
             // Hold the per-page records in a single-page ring whose slots are the ring's pages, so page lookups
             // reuse the buffer's wrap-around indexer instead of a hand-written modulo.
@@ -176,8 +190,15 @@ namespace Garnet.client
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int AlignedInlineRecordSize(int payloadLength)
-            => (DuplexRingRecordFormat.HeaderSize + payloadLength + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
+        private int AlignedRecordSize(int size)
+        {
+            var alignedSize = (size + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
+            return ((alignedSize + requestAllocationQuantumBytes - 1) / requestAllocationQuantumBytes) * requestAllocationQuantumBytes;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int AlignedInlineRecordSize(int payloadLength)
+            => AlignedRecordSize(DuplexRingRecordFormat.HeaderSize + payloadLength);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static long EncodeDescriptor(RequestKind kind, long meta)
@@ -191,7 +212,7 @@ namespace Garnet.client
         {
             var pageIndex = Shape.GetPhysicalPageIndex(address);
             var offset = (int)Shape.GetOffsetInPage(address);
-            return ((pageIndex * Shape.PageSizeBytes) + offset) / DuplexRingRecordFormat.HeaderSize;
+            return (pageIndex * requestSlotsPerPage) + (offset / requestAllocationQuantumBytes);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -204,13 +225,14 @@ namespace Garnet.client
         /// <summary>
         /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline.
         /// An inline record packs its whole payload into one page after an 8-byte header; otherwise the record
-        /// is just the 8-byte out-of-line descriptor pointing at a separately rented payload buffer.
+        /// contains an 8-byte out-of-line descriptor pointing at a separately rented payload buffer. Both record
+        /// forms reserve whole request-allocation quanta.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int GetRecordSize(int payloadLength, out bool isInline)
         {
             isInline = (uint)payloadLength <= (uint)MaxInlinePayloadSize;
-            return isInline ? AlignedInlineRecordSize(payloadLength) : DuplexRingRecordFormat.HeaderSize;
+            return isInline ? AlignedInlineRecordSize(payloadLength) : requestAllocationQuantumBytes;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -247,7 +269,7 @@ namespace Garnet.client
             if (tag == (byte)RequestKind.Uninitialized)
             {
                 kind = RequestKind.Uninitialized;
-                recordSize = DuplexRingRecordFormat.HeaderSize;
+                recordSize = requestAllocationQuantumBytes;
                 key = default;
                 return false;
             }
@@ -262,7 +284,7 @@ namespace Garnet.client
             else
             {
                 kind = RequestKind.OutOfLine;
-                recordSize = DuplexRingRecordFormat.HeaderSize;
+                recordSize = requestAllocationQuantumBytes;
             }
 
             // Preserve metadata while claiming so a losing walker can still recover the record stride.

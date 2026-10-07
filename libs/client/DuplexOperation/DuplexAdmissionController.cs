@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -40,6 +41,8 @@ namespace Garnet.client
         readonly LightEpoch epoch;
         readonly Action<int, long> setPageLastOffset;
         readonly Action<long, long> onPagesMarkedReadOnly;
+        readonly Dictionary<long, long> completedFlushRanges = [];
+        readonly object completedFlushRangesLock = new();
 
         PageOffset tailPageOffset;
         long flushedUntilAddress;
@@ -207,7 +210,7 @@ namespace Garnet.client
 
             bool NeedToWait(int nextPage)
             {
-                var limit = (shape.PageCount + (int)shape.GetUnwrappedPageIndex(flushedUntilAddress)) & (int)PageOffset.kPageMask;
+                var limit = (shape.PageCount + (int)shape.GetUnwrappedPageIndex(Volatile.Read(ref flushedUntilAddress))) & (int)PageOffset.kPageMask;
                 return nextPage >= limit && nextPage - limit < PageWrapDistance;
             }
         }
@@ -242,8 +245,26 @@ namespace Garnet.client
             {
                 if (Interlocked.Decrement(ref count.count) == 0)
                 {
-                    var endAddress = count.untilAddress;
-                    _ = Utility.MonotonicUpdate(ref flushedUntilAddress, endAddress, wrapDistance, out _);
+                    var advanced = false;
+                    lock (completedFlushRangesLock)
+                    {
+                        if (count.fromAddress == flushedUntilAddress)
+                        {
+                            var endAddress = count.untilAddress;
+                            while (completedFlushRanges.Remove(endAddress, out var nextEndAddress))
+                                endAddress = nextEndAddress;
+                            Volatile.Write(ref flushedUntilAddress, endAddress);
+                            advanced = true;
+                        }
+                        else
+                        {
+                            completedFlushRanges.Add(count.fromAddress, count.untilAddress);
+                        }
+                    }
+
+                    if (!advanced)
+                        return;
+
                     requestFreed.Set();
                     AggressiveShiftReadOnlyRunner(true);
                 }
