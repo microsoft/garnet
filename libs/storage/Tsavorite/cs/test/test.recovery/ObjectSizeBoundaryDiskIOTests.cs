@@ -34,12 +34,23 @@ namespace Tsavorite.test.recovery
         static readonly int[] BoundarySizes =
         [
             1, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536,
-            131071, 131072, 131073, 262144, 2 * 1024 * 1024, 3 * 1024 * 1024,
+            131071, 131072, 131073, 262144,
+            // Bracket the value sentinel seam: the objectId hint stops being an exact 4 KB page count and saturates to the
+            // 511 sentinel at page count 511. The crossing data length is not fixed, because the extent adds a ChunkHeader
+            // plus runtime sector-alignment padding, so these stay below it, sit on it, and clear it for any padding.
+            (509 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            (510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            (511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            2 * 1024 * 1024, 3 * 1024 * 1024,
             (4 * 1024 * 1024) - 1, 4 * 1024 * 1024, (4 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
 
         // Large object-log segment: no single value spans a segment boundary (isolating pure size-boundary behavior).
         const long NoSplitObjectLogSegmentSize = 1L << 30;      // 1 GB
+
+        // Object-log segment small enough that one DMA'd overflow value spans several segments, so WriteOverflowDma's per-segment
+        // write loop must iterate more than twice (a single device write cannot cross an object-log segment).
+        const long DmaMultiSegmentObjectLogSegmentSize = 1L << 22;   // 4 MB
 
         [SetUp]
         public void Setup() => RecreateDirectory(MethodTestDir);
@@ -172,12 +183,58 @@ namespace Tsavorite.test.recovery
             }
         }
 
+        // A single overflow value large enough to take the DMA path (> MaxCopySpanLen) whose sector-aligned interior spans THREE
+        // object-log segments, so WriteOverflowDma's per-segment write loop runs more than twice. Every other test here uses a
+        // segment large enough that an interior crosses at most one boundary, which cannot distinguish a correctly iterating loop
+        // from one that fails to reduce its remaining count.
+        [Test]
+        [Category("TsavoriteKV"), Category("ObjectIdMap")]
+        public void ReadOverflowValueSpanningMultipleObjectLogSegments()
+        {
+            const int valueSize = 10 * 1024 * 1024;   // > 2 * DmaMultiSegmentObjectLogSegmentSize, so the interior needs 3+ writes
+            const int numRecords = 2;
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "dmaseg.log"), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "dmaseg.obj.log"), deleteOnClose: false);
+            try
+            {
+                using var store = CreateOverflowStore(log, objlog, DmaMultiSegmentObjectLogSegmentSize);
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+
+                for (var key = 0; key < numRecords; key++)
+                    _ = bContext.Upsert(new TestObjectKey { key = key }, MakePayload(key, valueSize).AsSpan(), Empty.Default);
+
+                store.Log.FlushAndEvict(wait: true);
+
+                for (var key = 0; key < numRecords; key++)
+                {
+                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = valueSize };
+                    TestLargeObjectOutput output = new();
+                    var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output, Empty.Default);
+                    ClassicAssert.IsTrue(status.IsPending, $"key {key} expected to fault from disk");
+                    (status, output) = bContext.GetSinglePendingResult();
+                    ClassicAssert.IsTrue(status.Found, $"key {key} not found");
+                    VerifyPayload(key, valueSize, output.valueArray);
+                }
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
         // Overflow KEY sizes across the same encoding boundaries. All are well above the small MaxInlineKeySize below, so every key
         // is forced out of line into the object log. (The default inline-key cutoff is 1022, so a dedicated small cutoff is required
         // to exercise the sub-1 KB boundaries as overflow keys.)
         static readonly int[] KeyBoundarySizes =
         [
             17, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536, 131071, 131072, 131073,
+            // Bracket the page-count seam, where the count outgrows the 9-bit objectId hint and its high bits move into the raw
+            // RDH KeyLength field. The crossing data length is not fixed, because the extent adds a ChunkHeader plus runtime
+            // sector-alignment padding, so these stay below it, sit on it, and clear it for any padding.
+            (510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            (511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
             (2 * 1024 * 1024) - 1, 2 * 1024 * 1024, (2 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
 

@@ -45,7 +45,14 @@ namespace Tsavorite.test.recovery
         static readonly int[] BoundarySizes =
         [
             1, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536,
-            131071, 131072, 131073, 262144, 2 * 1024 * 1024, 3 * 1024 * 1024,
+            131071, 131072, 131073, 262144,
+            // Bracket the value sentinel seam: the objectId hint stops being an exact 4 KB page count and saturates to the
+            // 511 sentinel at page count 511. The crossing data length is not fixed, because the extent adds a ChunkHeader
+            // plus runtime sector-alignment padding, so these stay below it, sit on it, and clear it for any padding.
+            (509 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            (510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            (511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            2 * 1024 * 1024, 3 * 1024 * 1024,
             (4 * 1024 * 1024) - 1, 4 * 1024 * 1024, (4 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
 
@@ -453,11 +460,22 @@ namespace Tsavorite.test.recovery
         // hashes every record's key. An overflow key's bytes live in the object log and are not in the transient objectIdMap during that
         // pass, so the hash is computed by reading the key bytes on demand from the object log (ComputeRecoveryOverflowKeyHash) — the main
         // object log for FoldOver/hybrid-log pages, the snapshot object log for snapshot pages. Inline-key recovery is unaffected.
+        //
+        // The sizes cross both encoding seams of ComputeOverflowKeySizeHint. 512 bytes is the first size past kOutOfLineExactSizeCutoff,
+        // where the objectId hint stops being an exact byte count and becomes a 4 KB page count. The second seam is page count 512, the
+        // first count too large for the 9-bit objectId hint, whose high bits then move into the raw RDH KeyLength field. The data length
+        // at which that crossing happens is not fixed, because the extent adds a ChunkHeader plus runtime sector-alignment padding, so
+        // the seam is bracketed rather than named: 510 pages' worth stays below it for any padding, 511 pages' worth sits on it, and
+        // 2 MB is above it for any padding. ObjectIdSlotAndPositionFlagsTests pins the exact transition at the encoder.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverOverflowKey(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values(512, 5 * 1024 * 1024)] int keySize)
+            [Values(512,
+                    (510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+                    (511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+                    2 * 1024 * 1024,
+                    5 * 1024 * 1024)] int keySize)
             => RunOverflowKeyRecovery(checkpointType, keySize, numRecords: RecordCountForSize(keySize));
     }
 }

@@ -66,17 +66,6 @@ namespace Tsavorite.core
         /// <summary>The maximum number of key or value bytes to copy into the buffer rather than enqueue a DirectWrite.</summary>
         internal const int MaxCopySpanLen = 128 * 1024;
 
-        /// <summary>
-        /// Enables the zero-copy direct-DMA write of large overflow key/value spans (> <see cref="MaxCopySpanLen"/>) in
-        /// <see cref="WriteOverflowDma(in OverflowByteArray)"/>: the ChunkHeader + alignment padding + a small source-alignment initial
-        /// fragment are copied through the buffer so the DMA disk offset lands on a sector boundary while the DMA source (the pinned byte[]
-        /// data) is also sector-aligned; the sector-aligned interior is DMA'd straight from the byte[], and a small end fragment (plus any
-        /// remainder past a 1 GB segment boundary) is copied through the buffer. Set to <c>false</c> to route all overflow spans through the
-        /// sector-aligned buffered <see cref="Write(ReadOnlySpan{byte}, System.Threading.CancellationToken)"/> path (identical on-disk output).
-        /// Deliberately <c>static readonly</c> (not <c>const</c>) so both branches of the gate stay reachable under <c>TreatWarningsAsErrors</c>.
-        /// </summary>
-        static readonly bool EnableDirectObjectLogWrite = true;
-
         /// <summary>If true, we are in the Serialize call. If not we ignore things like <see cref="valueObjectBytesWritten"/> etc.</summary>
         bool inSerialize;
 
@@ -183,7 +172,7 @@ namespace Tsavorite.core
         /// applied (0 for the buffered path).</summary>
         int WriteOverflowComponent(in OverflowByteArray overflow, bool hasHeader)
         {
-            if (EnableDirectObjectLogWrite && overflow.Length > MaxCopySpanLen)
+            if (overflow.Length > MaxCopySpanLen)
             {
                 Debug.Assert(hasHeader, $"A DMA-eligible overflow (length {overflow.Length} > {MaxCopySpanLen}) must always have a header");
                 return WriteOverflowDma(overflow);
@@ -307,8 +296,13 @@ namespace Tsavorite.core
                     flushBuffers.FlushCurrentBuffer();
                 Debug.Assert(IsAligned(flushBuffers.filePosition.Offset, sectorSize), $"DMA filePosition.Offset ({flushBuffers.filePosition.Offset}) must be sector-aligned");
 
-                // DMA the whole sector-aligned interior straight from the pinned byte[]. filePosition.Offset and RemainingSizeInSegment are both
-                // sector-aligned, so each per-segment chunk is sector-aligned; only the sub-sector end fragment is left for the buffered path.
+                // DMA the whole sector-aligned interior straight from the pinned byte[]. O_DIRECT requires the source address, the disk
+                // offset, and the length to all be sector-aligned: Compute above aligned the source (dataPtr + sourceFragment) and the
+                // disk offset (via headerPadding), and dmaTotal rounds the length down to a sector multiple. Each per-segment chunk
+                // preserves all three, because RemainingSizeInSegment is itself a sector multiple -- the object-log segment is at least
+                // LogSettings.kMinObjectLogSegmentSizeBits (4 MB, enforced in the ObjectAllocatorImpl constructor) and both it and the
+                // sector size are powers of two -- and Offset stays sector-aligned because every chunk is a sector multiple. Only the
+                // final sub-sector end fragment is left for the buffered path.
                 var interior = length - sourceFragment;
                 var dmaTotal = RoundDown(interior, sectorSize);
                 if (dmaTotal > 0)
@@ -328,6 +322,8 @@ namespace Tsavorite.core
                         // stale). We must detect the fill from this pre-write remainder, not from RemainingSizeInSegment afterward.
                         var remainingInSegment = flushBuffers.filePosition.RemainingSizeInSegment;
                         var chunk = (int)Math.Min((long)dmaRemaining, (long)remainingInSegment);
+                        Debug.Assert(IsAligned(flushBuffers.filePosition.Offset, sectorSize) && IsAligned(chunk, sectorSize),
+                            $"Every DMA chunk must keep both the disk offset ({flushBuffers.filePosition.Offset}) and the length ({chunk}) sector-aligned");
                         var writeCallback = spansSegment
                             ? flushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle)
                             : flushBuffers.CreateDiskWriteCallbackContext(gcHandle);
