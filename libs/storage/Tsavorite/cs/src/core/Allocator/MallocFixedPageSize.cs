@@ -28,8 +28,16 @@ namespace Tsavorite.core
         private const int LevelSizeBits = 12;
         private const int LevelSize = 1 << LevelSizeBits;
 
-        private readonly T[][] values = new T[LevelSize][];
-        private readonly IntPtr[] pointers = new IntPtr[LevelSize];
+        /// <summary>Number of levels (pages) this instance can address. Always <see cref="LevelSize"/> in production; tests
+        /// use a smaller value to exercise the exhaustion path without allocating the full capacity.</summary>
+        private readonly int levelCount;
+
+        private readonly T[][] values;
+        private readonly IntPtr[] pointers;
+
+        /// <summary>Maximum number of records this allocator can hand out, after which <see cref="Allocate"/> and
+        /// <see cref="BulkAllocate"/> throw. This is a structural limit of the two-level page table, not a configured one.</summary>
+        internal long MaxAllocationCount => (long)levelCount * PageSize;
 
         private volatile int writeCacheLevel;
 
@@ -62,8 +70,20 @@ namespace Tsavorite.core
         /// <summary>
         /// Create new instance
         /// </summary>
-        public unsafe MallocFixedPageSize(ILogger logger = null)
+        public MallocFixedPageSize(ILogger logger = null) : this(LevelSize, logger) { }
+
+        /// <summary>
+        /// Create new instance with an explicit level count. Only tests pass a value other than <see cref="LevelSize"/>.
+        /// </summary>
+        internal unsafe MallocFixedPageSize(int levelCount, ILogger logger = null)
         {
+            // Level 0 is allocated below and every level-0 allocation pre-allocates level 1, so two levels are the minimum.
+            Debug.Assert(levelCount >= 2, "levelCount must be at least 2");
+
+            this.levelCount = levelCount;
+            values = new T[levelCount][];
+            pointers = new IntPtr[levelCount];
+
             this.logger = logger;
             freeList = new ConcurrentQueue<long>();
 
@@ -172,13 +192,36 @@ namespace Tsavorite.core
             return InternalAllocate(1);
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void ThrowAllocatorFull()
+            => throw new TsavoriteException(
+                $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> is full: its page table addresses at most {levelCount} pages of {PageSize} records"
+                + $" ({MaxAllocationCount} records, {MaxAllocationCount * RecordSize} bytes), and that capacity is exhausted."
+                + " For the hash index overflow buckets this means too many hash entries have spilled out of the main bucket array;"
+                + " raise the index size (IndexMaxMemorySize) so more entries fit in the main array, or reduce the number of distinct keys on this node.");
+
         private unsafe long InternalAllocate(int blockSize)
         {
             if (freeList.TryDequeue(out long result))
                 return result;
 
-            // Determine insertion index.
-            int index = Interlocked.Add(ref count, blockSize) - blockSize;
+            // Reserve the block without ever letting count exceed capacity. A rejected allocation must leave no trace:
+            // count is also the high-water mark reported by GetMaxValidAddress and the level count BeginCheckpoint
+            // derives its page-table indices from, both of which index values/pointers directly. Reserving the whole
+            // block also keeps a BulkAllocate from straddling the end of the last page.
+            int index;
+            while (true)
+            {
+                var reserved = count;
+                if (reserved + (long)blockSize > MaxAllocationCount)
+                    ThrowAllocatorFull();
+                if (Interlocked.CompareExchange(ref count, reserved + blockSize, reserved) == reserved)
+                {
+                    index = reserved;
+                    break;
+                }
+            }
+
             int offset = index & PageSizeMask;
             int baseAddr = index >> PageSizeBits;
 
@@ -236,11 +279,15 @@ namespace Tsavorite.core
                 // Allocate for next page
                 int newBaseAddr = baseAddr + 1;
 
-                var tmp = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
-                if (IsBlittable)
-                    pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
+                // The last level has no successor to pre-allocate; the next allocation past it throws in ThrowAllocatorFull.
+                if (newBaseAddr < levelCount)
+                {
+                    var tmp = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
+                    if (IsBlittable)
+                        pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
-                values[newBaseAddr] = tmp;
+                    values[newBaseAddr] = tmp;
+                }
 
                 Interlocked.MemoryBarrier();
             }

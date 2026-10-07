@@ -774,6 +774,18 @@ namespace Garnet.server
         /// <summary>Max size of hash index (cache lines) after rounding down size in bytes to power of 2.</summary>
         public int AdjustedIndexMaxCacheLines;
 
+        /// <summary>
+        /// Bytes of hash-index memory the configuration declares a budget for: the larger of <c>IndexMemorySize</c>
+        /// and <c>IndexMaxMemorySize</c>. Set by <see cref="GetSettings"/>.
+        /// </summary>
+        /// <remarks>
+        /// Those settings bound only the main bucket array. The index holds an entry per distinct key -- including keys
+        /// whose records live only on disk -- so beyond this budget it keeps growing into overflow buckets, at one 64-byte
+        /// bucket per 7 keys. That excess is charged against the log memory budget so the store as a whole stays within
+        /// its configured memory limit rather than growing with record count until the process is OOM-killed.
+        /// </remarks>
+        public long IndexMemoryBudgetBytes;
+
         /// <summary>Max size of object store hash index (cache lines) after rounding down size in bytes to power of 2.</summary>
         public int AdjustedObjectStoreIndexMaxCacheLines;
 
@@ -1036,6 +1048,9 @@ namespace Garnet.server
                 logger?.LogInformation("[Store] Using hash index max size of {MaxSize}, ({CacheLines} cache lines)", PrettySize(AdjustedIndexMaxCacheLines * 64L), PrettySize(AdjustedIndexMaxCacheLines));
                 logger?.LogInformation("[Store] Hash index max size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(AdjustedIndexMaxCacheLines * 4L));
             }
+
+            IndexMemoryBudgetBytes = Math.Max(kvSettings.IndexSize, AdjustedIndexMaxCacheLines * 64L);
+            logger?.LogInformation("[Store] Hash index memory budget is {IndexMemoryBudget}; index memory beyond it (overflow buckets) is charged against the log memory size", PrettySize(IndexMemoryBudgetBytes));
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
             if (DeviceType == DeviceType.Default)
