@@ -222,10 +222,15 @@ namespace Garnet.client
         readonly GarnetLightClientTcpNetworkHandler networkHandler;
         readonly ILogger logger;
 
+        int closed;
+        int disposed;
+
         /// <summary>
         /// Shared epoch protecting the ring's page allocator and flush machinery.
         /// </summary>
         public LightEpoch epoch => channel.epoch;
+
+        internal bool Closed => Volatile.Read(ref closed) != 0;
 
         /// <summary>Number of completion tickets issued so far (task-space).</summary>
         public int CompletionTail => channel.CompletionTail;
@@ -279,9 +284,20 @@ namespace Garnet.client
         /// <inheritdoc />
         public void Dispose()
         {
-            channel.Dispose();
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+                return;
+
+            Close();
             networkHandler.Dispose();
             networkPool?.Dispose();
+        }
+
+        internal void Close()
+        {
+            if (Interlocked.Exchange(ref closed, 1) != 0)
+                return;
+
+            channel.Dispose();
             memoryThrottle.Dispose();
         }
 

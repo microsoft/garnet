@@ -406,6 +406,7 @@ namespace Garnet.client
         /// </summary>
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
+            var writer = networkWriter;
             var isArray = args != null;
             var arraySize = checked(1 + (isArray ? args.Count : 0));
             var totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
@@ -424,7 +425,7 @@ namespace Garnet.client
             // automatic and driven solely by whether the whole command fits in a single ring page. The decision
             // depends only on totalLength versus fixed page geometry, not on the current page fill, so it is
             // loop-invariant and made once here rather than re-evaluated per allocation attempt.
-            var recordSize = networkWriter.GetRecordSize(totalLength, out var inline);
+            var recordSize = writer.GetRecordSize(totalLength, out var inline);
 
             // Out-of-line rents its payload buffer and serializes into it up front, outside the epoch. Inline
             // rents nothing and defers serialization until it owns a page slot (written under the epoch below).
@@ -464,12 +465,12 @@ namespace Garnet.client
                     var admissionReserved = false;
                     try
                     {
-                        allocationSize = networkWriter.GetRequestBufferAllocationSize(totalLength);
-                        if (!await networkWriter.RentMemoryThrottle(allocationSize, token).ConfigureAwait(false))
+                        allocationSize = writer.GetRequestBufferAllocationSize(totalLength);
+                        if (!await writer.RentMemoryThrottle(allocationSize, token).ConfigureAwait(false))
                             throw new InvalidOperationException("The out-of-line rental admission queue is full.");
                         admissionReserved = true;
 
-                        payload = networkWriter.RentAdmittedOutOfLineBuffer(totalLength, allocationSize);
+                        payload = writer.RentAdmittedOutOfLineBuffer(totalLength, allocationSize);
                         admissionReserved = false;
 
                         unsafe
@@ -481,7 +482,7 @@ namespace Garnet.client
                     catch (Exception ex)
                     {
                         if (admissionReserved)
-                            networkWriter.ReleaseOutOfLineRental(allocationSize);
+                            writer.ReleaseOutOfLineRental(allocationSize);
                         CompleteOnFailure(tcs, ex);
                         return;
                     }
@@ -489,25 +490,25 @@ namespace Garnet.client
 
                 try
                 {
-                    networkWriter.epoch.Resume();
+                    writer.epoch.Resume();
 
                     int taskId;
                     long address;
                     while (true)
                     {
                         token.ThrowIfCancellationRequested();
-                        if (!IsConnected)
+                        if (Disposed || writer.Closed || !ReferenceEquals(writer, Volatile.Read(ref networkWriter)) || !IsConnected)
                         {
                             if (!inline)
                             {
                                 payload.Dispose();
                                 payload = default;
                             }
-                            Dispose();
-                            ThrowException(disposeException);
+                            CompleteOnFailure(tcs, disposeException);
+                            return;
                         }
 
-                        if (networkWriter.TryScheduleSend(
+                        if (writer.TryScheduleSend(
                             recordSize,
                             expectsResponse: true,
                             out var reservation,
@@ -520,19 +521,19 @@ namespace Garnet.client
 
                         try
                         {
-                            networkWriter.epoch.Suspend();
+                            writer.epoch.Suspend();
                             await flushEvent.WaitAsync(token).ConfigureAwait(false);
                         }
                         finally
                         {
-                            networkWriter.epoch.Resume();
+                            writer.epoch.Resume();
                         }
                     }
 
                     // Register the completion in its own reply-gated lane, keyed by the ticket the combined
                     // allocator handed out alongside the request address, before the request becomes flushable so
                     // the completion is visible to the reply reader by the time any reply can arrive.
-                    networkWriter.RegisterCompletion(taskId, tcs);
+                    writer.RegisterCompletion(taskId, tcs);
 
                     try
                     {
@@ -545,13 +546,13 @@ namespace Garnet.client
                             // Do not introduce an await between the reserve and the completed payload write.
                             unsafe
                             {
-                                var curr = networkWriter.RegisterInlineRecord(address, totalLength);
+                                var curr = writer.RegisterInlineRecord(address, totalLength);
                                 SerializeCommand(curr, curr + totalLength);
                             }
                         }
                         else
                         {
-                            networkWriter.RegisterOfflineRecord(address, payload);
+                            writer.RegisterOfflineRecord(address, payload);
                         }
                     }
                     catch (ObjectDisposedException)
@@ -563,7 +564,7 @@ namespace Garnet.client
                         // never hang; if the drain already claimed it, this is a no-op. Lane accounting
                         // (tcsOffset/repliedUntil) is owned by the receive side (ProcessReplies /
                         // DisposeMessageConsumer); do not advance it here.
-                        CompletionOnFault(taskId);
+                        CompletionOnFault(writer, taskId);
                         throw;
                     }
                     payloadRegistered = true;
@@ -572,18 +573,18 @@ namespace Garnet.client
                     // registered but the send will never happen, and the receive-side drain may have passed this
                     // ticket before RegisterCompletion became visible. Fault it here (single-claim, a no-op if the
                     // drain already faulted it) before throwing so the caller can never hang.
-                    if (Disposed)
+                    if (Disposed || writer.Closed || !ReferenceEquals(writer, Volatile.Read(ref networkWriter)))
                     {
-                        CompletionOnFault(taskId);
+                        CompletionOnFault(writer, taskId);
                         ThrowException(disposeException);
                     }
 
-                    networkWriter.epoch.ProtectAndDrain();
-                    networkWriter.DrainRequests();
+                    writer.epoch.ProtectAndDrain();
+                    writer.DrainRequests();
                 }
                 finally
                 {
-                    networkWriter.epoch.Suspend();
+                    writer.epoch.Suspend();
                 }
             }
             finally
@@ -600,6 +601,7 @@ namespace Garnet.client
         /// </summary>
         void InternalExecuteNoResponse(ReadOnlyMemory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
+            var writer = networkWriter;
             const int arraySize = 4;
             var totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
 
@@ -610,7 +612,7 @@ namespace Garnet.client
             length = param2.Length;
             totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
 
-            var recordSize = networkWriter.GetRecordSize(totalLength, out var inline);
+            var recordSize = writer.GetRecordSize(totalLength, out var inline);
 
             LightRequestContext payload = default;
             var payloadRegistered = false;
@@ -639,18 +641,18 @@ namespace Garnet.client
                     var admissionReserved = false;
                     try
                     {
-                        allocationSize = networkWriter.GetRequestBufferAllocationSize(totalLength);
-                        if (!networkWriter.AdmitOutOfLineRental(allocationSize, token))
+                        allocationSize = writer.GetRequestBufferAllocationSize(totalLength);
+                        if (!writer.AdmitOutOfLineRental(allocationSize, token))
                             throw new InvalidOperationException("The out-of-line rental admission queue is full.");
                         admissionReserved = true;
 
-                        payload = networkWriter.RentAdmittedOutOfLineBuffer(totalLength, allocationSize);
+                        payload = writer.RentAdmittedOutOfLineBuffer(totalLength, allocationSize);
                         admissionReserved = false;
                     }
                     catch
                     {
                         if (admissionReserved)
-                            networkWriter.ReleaseOutOfLineRental(allocationSize);
+                            writer.ReleaseOutOfLineRental(allocationSize);
                         throw;
                     }
 
@@ -663,24 +665,23 @@ namespace Garnet.client
 
                 try
                 {
-                    networkWriter.epoch.Resume();
+                    writer.epoch.Resume();
 
                     long address;
                     while (true)
                     {
                         token.ThrowIfCancellationRequested();
-                        if (!IsConnected)
+                        if (Disposed || writer.Closed || !ReferenceEquals(writer, Volatile.Read(ref networkWriter)) || !IsConnected)
                         {
                             if (!inline)
                             {
                                 payload.Dispose();
                                 payload = default;
                             }
-                            Dispose();
                             ThrowException(disposeException);
                         }
 
-                        if (networkWriter.TryScheduleSend(
+                        if (writer.TryScheduleSend(
                             recordSize,
                             expectsResponse: false,
                             out var reservation,
@@ -692,12 +693,12 @@ namespace Garnet.client
 
                         try
                         {
-                            networkWriter.epoch.Suspend();
+                            writer.epoch.Suspend();
                             flushEvent.Wait(token);
                         }
                         finally
                         {
-                            networkWriter.epoch.Resume();
+                            writer.epoch.Resume();
                         }
                     }
 
@@ -708,25 +709,25 @@ namespace Garnet.client
                     {
                         unsafe
                         {
-                            var curr = networkWriter.RegisterInlineRecord(address, totalLength);
+                            var curr = writer.RegisterInlineRecord(address, totalLength);
                             SerializeCommand(curr, curr + totalLength, arraySize, respOp.Span, subop, param1, param2);
                         }
                     }
                     else
                     {
-                        networkWriter.RegisterOfflineRecord(address, payload);
+                        writer.RegisterOfflineRecord(address, payload);
                     }
                     payloadRegistered = true;
 
-                    if (Disposed)
+                    if (Disposed || writer.Closed || !ReferenceEquals(writer, Volatile.Read(ref networkWriter)))
                         ThrowException(disposeException);
 
-                    networkWriter.epoch.ProtectAndDrain();
-                    networkWriter.DrainRequests();
+                    writer.epoch.ProtectAndDrain();
+                    writer.DrainRequests();
                 }
                 finally
                 {
-                    networkWriter.epoch.Suspend();
+                    writer.epoch.Suspend();
                 }
             }
             finally
@@ -805,18 +806,24 @@ namespace Garnet.client
         /// <inheritdoc />
         public void DisposeMessageConsumer(INetworkHandler session)
         {
+            if (!ReferenceEquals(session, networkHandler))
+                return;
+
+            var writer = networkWriter;
+            writer?.Close();
+
             var c = tcsOffset;
-            while (networkWriter != null && c != networkWriter.CompletionTail)
+            while (writer != null && c != writer.CompletionTail)
             {
-                DisposeOffset(c);
+                DisposeOffset(writer, c);
                 c = (c + 1) & (int)PageOffset.kTaskMask;
             }
         }
 
-        private void DisposeOffset(int taskId)
+        private void DisposeOffset(LightNetworkWriter writer, int taskId)
         {
-            CompletionOnFault(taskId);
-            ConsumeTcsOffset();
+            CompletionOnFault(writer, taskId);
+            ConsumeTcsOffset(writer);
         }
 
         /// <summary>
@@ -826,9 +833,9 @@ namespace Garnet.client
         /// producer whose request failed to publish is faulted exactly once — safe for both the async and
         /// callback types. No-op if the completion was not published or was already claimed by the other path.
         /// </summary>
-        private void CompletionOnFault(int taskId)
+        private static void CompletionOnFault(LightNetworkWriter writer, int taskId)
         {
-            if (!networkWriter.TryClaimCompletionTicket(taskId, out var tcs))
+            if (!writer.TryClaimCompletionTicket(taskId, out var tcs))
                 return;
             CompleteOnFailure(tcs, disposeException);
         }
@@ -838,6 +845,13 @@ namespace Garnet.client
         {
             tcsOffset = (tcsOffset + 1) & (int)PageOffset.kTaskMask;
             networkWriter.AdvanceReplied(1);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        void ConsumeTcsOffset(LightNetworkWriter writer)
+        {
+            tcsOffset = (tcsOffset + 1) & (int)PageOffset.kTaskMask;
+            writer.AdvanceReplied(1);
         }
 
         async Task TimeoutChecker()

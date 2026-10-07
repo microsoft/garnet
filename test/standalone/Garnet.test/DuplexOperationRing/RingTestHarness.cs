@@ -150,6 +150,7 @@ namespace Garnet.test
         volatile Func<int, bool> failPredicate;
         volatile bool deferCompletions;
         int sendCallIndex;
+        int closed;
 
         internal RingTestHarness(int pageSize, int pageCount, int completionCapacity, int maxChunkSize)
         {
@@ -263,6 +264,7 @@ namespace Garnet.test
                 while (true)
                 {
                     token.ThrowIfCancellationRequested();
+                    ObjectDisposedException.ThrowIf(Volatile.Read(ref closed) != 0, this);
                     if (Ring.TryScheduleOperation(
                         size,
                         expectCompletion,
@@ -328,6 +330,12 @@ namespace Garnet.test
             {
                 epoch.Suspend();
             }
+        }
+
+        internal void Close()
+        {
+            if (Interlocked.Exchange(ref closed, 1) == 0)
+                Ring.Dispose();
         }
 
         /// <summary>Pump and poll until <paramref name="expected"/> payloads have flushed, or time out.</summary>
@@ -399,7 +407,7 @@ namespace Garnet.test
 
         public void Dispose()
         {
-            Ring.Dispose();
+            Close();
             epoch.Dispose();
         }
     }

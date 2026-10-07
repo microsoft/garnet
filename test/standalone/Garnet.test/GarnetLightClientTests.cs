@@ -4,6 +4,9 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -179,6 +182,156 @@ namespace Garnet.test
             }
 
             await Task.WhenAll(producerTasks).ConfigureAwait(false);
+        }
+
+        [Test]
+        public async Task PeerDisconnectFaultsPublishedCompletion()
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, TestUtils.TestPort);
+            listener.Start();
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var acceptTask = listener.AcceptSocketAsync(cts.Token).AsTask();
+            using var db = new GarnetLightClient(new IPEndPoint(IPAddress.Loopback, TestUtils.TestPort));
+            var connectTask = db.ConnectAsync(cts.Token);
+            using var peer = await acceptTask.ConfigureAwait(false);
+            await connectTask.ConfigureAwait(false);
+
+            var pending = db.ExecuteForStringResultWithCancellationAsync(ECHO, ["pending"], cts.Token);
+            var receiveBuffer = new byte[256];
+            ClassicAssert.Greater(
+                await peer.ReceiveAsync(receiveBuffer, SocketFlags.None, cts.Token).ConfigureAwait(false),
+                0,
+                "The request was not published before the peer disconnected.");
+
+            peer.Dispose();
+
+            Assert.ThrowsAsync<GarnetClientDisposedException>(async () =>
+                await pending.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false));
+        }
+
+        [Test]
+        public async Task ReconnectFaultsOperationWaitingOnMemoryAdmission()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            const int memoryCapacity = 512;
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: memoryCapacity);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var writer = GetNetworkWriter(db);
+            var allocationSize = writer.GetRequestBufferAllocationSize(300);
+            ClassicAssert.AreEqual(memoryCapacity, allocationSize);
+            ClassicAssert.IsTrue(writer.AdmitOutOfLineRental(allocationSize, CancellationToken.None));
+
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var pending = db.ExecuteForStringResultWithCancellationAsync(ECHO, [new string('x', 300)], cts.Token);
+                var memoryThrottle = GetMemoryThrottle(writer);
+                ClassicAssert.IsTrue(
+                    SpinWait.SpinUntil(() => memoryThrottle.WaiterCount == 1, TimeSpan.FromSeconds(5)),
+                    "The operation did not wait for out-of-line memory admission.");
+
+                await AssertReconnectUnblocksPendingOperation(db, pending, cts.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                writer.ReleaseOutOfLineRental(allocationSize);
+            }
+        }
+
+        [Test]
+        public async Task ReconnectFaultsNoResponseOperationWaitingOnMemoryAdmission()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            server.Start();
+
+            const int memoryCapacity = 512;
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: memoryCapacity);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var writer = GetNetworkWriter(db);
+            var allocationSize = writer.GetRequestBufferAllocationSize(300);
+            ClassicAssert.AreEqual(memoryCapacity, allocationSize);
+            ClassicAssert.IsTrue(writer.AdmitOutOfLineRental(allocationSize, CancellationToken.None));
+
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var pending = Task.Run(
+                    () => db.ClusterPublishNoResponse("channel"u8.ToArray(), Encoding.ASCII.GetBytes(new string('x', 300))),
+                    cts.Token);
+                var memoryThrottle = GetMemoryThrottle(writer);
+                ClassicAssert.IsTrue(
+                    SpinWait.SpinUntil(() => memoryThrottle.WaiterCount == 1, TimeSpan.FromSeconds(5)),
+                    "The no-response operation did not wait for out-of-line memory admission.");
+
+                await db.ReconnectAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(5), cts.Token).ConfigureAwait(false);
+                Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+                    await pending.WaitAsync(TimeSpan.FromSeconds(5), cts.Token).ConfigureAwait(false));
+                ClassicAssert.AreEqual(
+                    "PONG",
+                    await db.PingAsync(cts.Token).WaitAsync(TimeSpan.FromSeconds(5), cts.Token).ConfigureAwait(false));
+            }
+            finally
+            {
+                writer.ReleaseOutOfLineRental(allocationSize);
+            }
+        }
+
+        [Test]
+        public async Task ReconnectFaultsOperationWaitingOnCompletionCapacity()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingCompletions: 1,
+                maxConcurrentNetworkSends: 8);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var writer = GetNetworkWriter(db);
+            var recordSize = writer.GetRecordSize(1, out _);
+            writer.epoch.Resume();
+            try
+            {
+                ClassicAssert.IsTrue(writer.TryScheduleSend(
+                    recordSize,
+                    expectsResponse: true,
+                    out _,
+                    out _));
+            }
+            finally
+            {
+                writer.epoch.Suspend();
+            }
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var pending = db.PingAsync(cts.Token);
+            await Task.Delay(50, cts.Token).ConfigureAwait(false);
+            ClassicAssert.IsFalse(pending.IsCompleted, "The operation did not wait for completion-lane capacity.");
+
+            await AssertReconnectUnblocksPendingOperation(db, pending, cts.Token).ConfigureAwait(false);
         }
 
         [Test]
@@ -445,6 +598,36 @@ namespace Garnet.test
             // binary-safe (MemoryResult) reply path even with an empty outbound payload.
             using var response = await db.GossipWithMeetAsync(Memory<byte>.Empty).ConfigureAwait(false);
             ClassicAssert.Greater(response.Length, 0);
+        }
+
+        static LightNetworkWriter GetNetworkWriter(GarnetLightClient client)
+            => (LightNetworkWriter)typeof(GarnetLightClient)
+                .GetField("networkWriter", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(client);
+
+        static WaiterQueue<MemoryThrottle, int> GetMemoryThrottle(LightNetworkWriter writer)
+            => (WaiterQueue<MemoryThrottle, int>)typeof(LightNetworkWriter)
+                .GetField("memoryThrottle", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(writer);
+
+        static async Task AssertReconnectUnblocksPendingOperation(
+            GarnetLightClient client,
+            Task<string> pending,
+            CancellationToken token)
+        {
+            await client.ReconnectAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
+
+            try
+            {
+                _ = await pending.WaitAsync(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
+            ClassicAssert.AreEqual(
+                "PONG",
+                await client.PingAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token).ConfigureAwait(false));
         }
     }
 }

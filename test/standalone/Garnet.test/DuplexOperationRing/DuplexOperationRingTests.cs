@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -201,6 +202,91 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A teardown drain can observe an allocated completion ticket before its producer publishes the
+        /// completion. The producer must still be able to publish and claim that completion afterward so the
+        /// caller is faulted instead of stranded.
+        /// </summary>
+        [Test]
+        public void CompletionPublishedAfterTeardownScanCanBeClaimed()
+        {
+            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, completionCapacity: 1, maxChunkSize: 256);
+
+            h.epoch.Resume();
+            DuplexOperationReservation reservation;
+            try
+            {
+                ClassicAssert.IsTrue(h.Ring.TryScheduleOperation(
+                    DuplexRingRecordFormat.HeaderSize,
+                    expectsCompletion: true,
+                    out reservation,
+                    out _));
+            }
+            finally
+            {
+                h.epoch.Suspend();
+            }
+
+            h.Close();
+
+            // The receive-side teardown reached this ticket before its producer published the completion.
+            ClassicAssert.IsFalse(h.Ring.TryClaimCompletionTicket(reservation.completionTicket, out _));
+            h.AdvanceCompletions(1);
+
+            // The producer publishes after the teardown scan and performs the fallback fault claim.
+            const int completion = 42;
+            h.Ring.RegisterCompletion(reservation.completionTicket, completion);
+            ClassicAssert.IsTrue(h.Ring.TryClaimCompletionTicket(reservation.completionTicket, out var claimed));
+            ClassicAssert.AreEqual(completion, claimed);
+            ClassicAssert.IsFalse(h.Ring.TryClaimCompletionTicket(reservation.completionTicket, out _));
+            ClassicAssert.IsFalse(h.Ring.TryReadCompletion(reservation.completionTicket, out _));
+        }
+
+        /// <summary>
+        /// When teardown and the producer fault path target the same published completion concurrently, exactly
+        /// one path claims it for delivery.
+        /// </summary>
+        [Test]
+        public void ConcurrentCompletionFaultClaimsDeliverOnce()
+        {
+            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, completionCapacity: 1, maxChunkSize: 256);
+
+            h.epoch.Resume();
+            DuplexOperationReservation reservation;
+            try
+            {
+                ClassicAssert.IsTrue(h.Ring.TryScheduleOperation(
+                    DuplexRingRecordFormat.HeaderSize,
+                    expectsCompletion: true,
+                    out reservation,
+                    out _));
+            }
+            finally
+            {
+                h.epoch.Suspend();
+            }
+
+            const int completion = 42;
+            h.Ring.RegisterCompletion(reservation.completionTicket, completion);
+
+            var claimCount = 0;
+            var claimedValue = 0;
+            Parallel.Invoke(ClaimCompletion, ClaimCompletion);
+
+            ClassicAssert.AreEqual(1, claimCount);
+            ClassicAssert.AreEqual(completion, claimedValue);
+            ClassicAssert.IsFalse(h.Ring.TryReadCompletion(reservation.completionTicket, out _));
+
+            void ClaimCompletion()
+            {
+                if (!h.Ring.TryClaimCompletionTicket(reservation.completionTicket, out var claimed))
+                    return;
+
+                Interlocked.Increment(ref claimCount);
+                Interlocked.Add(ref claimedValue, claimed);
+            }
+        }
+
+        /// <summary>
         /// 1c (flush lane) — with transport completions deferred out of band, producers must park on request-lane
         /// back-pressure and then make forward progress only as completions are released one at a time, with no
         /// lost wakeups, full and intact delivery, and exactly-once disposal.
@@ -280,6 +366,37 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, h.DeferredCompletionCount, "All deferred completions should have been released.");
             h.AssertReceived(expectedIds);
             h.AssertNoBufferLeaks();
+        }
+
+        /// <summary>
+        /// Reconnect disposes the old request channel. A producer parked because that channel is awaiting local
+        /// send completion must wake and fault rather than remain blocked on its retired capacity event.
+        /// </summary>
+        [Test]
+        public async Task DisposeWakesOperationWaitingOnRequestCapacity()
+        {
+            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, completionCapacity: 16, maxChunkSize: 64);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            h.DeferCompletions();
+
+            var tasks = new Task[128];
+            for (var i = 0; i < tasks.Length; i++)
+                tasks[i] = h.EnqueueAsync(RingPayload.Create(i + 1, 512), expectCompletion: false, cts.Token);
+
+            ClassicAssert.IsTrue(
+                SpinWait.SpinUntil(
+                    () => h.DeferredCompletionCount > 0 && tasks.Any(task => !task.IsCompleted),
+                    TimeSpan.FromSeconds(5)),
+                "No producer waited for request-ring capacity.");
+
+            h.Close();
+
+            var allTasks = Task.WhenAll(tasks);
+            var completed = await Task.WhenAny(allTasks, Task.Delay(TimeSpan.FromSeconds(5), cts.Token)).ConfigureAwait(false);
+            ClassicAssert.AreSame(allTasks, completed, "A request-capacity waiter remained blocked after disposal.");
+            ClassicAssert.IsTrue(tasks.Any(task => task.IsFaulted), "At least one parked producer should observe channel disposal.");
+            foreach (var task in tasks.Where(task => task.IsFaulted))
+                ClassicAssert.IsInstanceOf<ObjectDisposedException>(task.Exception?.GetBaseException());
         }
 
         /// <summary>1d — allocated-but-unpublished descriptors decode as empty and stride by one descriptor on teardown.</summary>
