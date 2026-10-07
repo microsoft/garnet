@@ -386,7 +386,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.VREM, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-            
+
             using (vectorManager.ReadVectorIndexWithElement(this, key, element, ref input, indexSpan, out var status, out importPending))
             {
                 if (status != GarnetStatus.OK)
