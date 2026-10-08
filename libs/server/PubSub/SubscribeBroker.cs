@@ -315,6 +315,12 @@ namespace Garnet.server
             // that exceeds the page size is delivered synchronously (exactly as a local PUBLISH is via
             // PublishNow) rather than enqueued, so large messages reach subscribers instead of faulting
             // the receiving session.
+            //
+            // This synchronous path can let an oversized forwarded message overtake a smaller one still
+            // queued in the log, i.e. deliver out of order. That is acceptable: Redis pub/sub is
+            // best-effort with no cross-node ordering guarantee for cluster-forwarded messages, so
+            // subscribers cannot rely on forwarding order anyway. Local publishes still flow entirely
+            // through the ordered queue, preserving single-node fan-out order.
             var totalLength = key.Length + value.Length + (2 * sizeof(int));
             if (!aof.EntryFitsOnPage(totalLength))
             {
