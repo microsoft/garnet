@@ -226,8 +226,12 @@ namespace Tsavorite.core
         /// Pull-scan the log given address range; returns all records with address less than endAddress
         /// </summary>
         /// <remarks>
-        /// <paramref name="endAddress"/> need not be a record boundary. A record that starts below it is returned whole even if it
-        /// ends above it, so the iterator's <see cref="ITsavoriteScanIterator.NextAddress"/> can exceed <paramref name="endAddress"/>.
+        /// <para><paramref name="endAddress"/> need not be a record boundary. A record that starts below it is returned whole even if it
+        /// ends above it, so the iterator's <see cref="ITsavoriteScanIterator.NextAddress"/> can exceed <paramref name="endAddress"/>.</para>
+        /// <para>This is a physical walk of the log, so it returns every version of a key that the range contains, not just the live one:
+        /// an updated key appears once per surviving version, and so does a key whose record was copied to the tail by a compaction that
+        /// did not go on to shift BeginAddress past the original. Callers that need one record per key should use
+        /// <c>ClientSession.Iterate</c>, which filters to the latest version, or apply their own liveness check.</para>
         /// </remarks>
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -246,7 +250,9 @@ namespace Tsavorite.core
         /// Push-scan the log given address range; returns all records with address less than endAddress
         /// </summary>
         /// <remarks>
-        /// <paramref name="endAddress"/> need not be a record boundary; a record that starts below it is returned whole even if it ends above it.
+        /// <para><paramref name="endAddress"/> need not be a record boundary; a record that starts below it is returned whole even if it ends above it.</para>
+        /// <para>This is a physical walk of the log, so it pushes every version of a key that the range contains, not just the live one.
+        /// Callers that need one record per key should use <c>ClientSession.Iterate</c> or apply their own liveness check.</para>
         /// </remarks>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering)
