@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
@@ -30,9 +31,9 @@ namespace Garnet.cluster
 
         SessionParseState parseState;
         unsafe byte* dcurr, dend;
-        long _localCurrentEpoch = 0;
+        long localCurrentEpoch = 0;
 
-        public long LocalCurrentEpoch => _localCurrentEpoch;
+        public long LocalCurrentEpoch => Volatile.Read(ref localCurrentEpoch);
 
         bool readOnlySession;
         bool internalWriteSession;
@@ -198,17 +199,34 @@ namespace Garnet.cluster
         {
             this.userHandle = userHandle;
         }
-        public void AcquireCurrentEpoch() => _localCurrentEpoch = clusterProvider.GarnetCurrentEpoch;
-        public void ReleaseCurrentEpoch() => _localCurrentEpoch = 0;
+        /// <summary>
+        /// Announces this session as active at a stable current Garnet epoch.
+        /// </summary>
+        public void AcquireCurrentEpoch()
+        {
+            while (true)
+            {
+                var epoch = clusterProvider.garnetEpoch.GetCurrentEpoch();
+                Interlocked.Exchange(ref localCurrentEpoch, epoch);
+                if (epoch == clusterProvider.garnetEpoch.GetCurrentEpoch())
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// Announces this session as idle after all epoch-protected work is complete.
+        /// </summary>
+        public void ReleaseCurrentEpoch() => Volatile.Write(ref localCurrentEpoch, 0);
 
         /// <summary>
         /// Release epoch, wait for config transition and re-acquire the epoch
         /// </summary>
-        public async Task UnsafeBumpAndWaitForEpochTransitionAsync()
+        public async ValueTask<bool> UnsafeBumpAndWaitForEpochTransitionAsync()
         {
             ReleaseCurrentEpoch();
-            _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+            var result = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
             AcquireCurrentEpoch();
+            return result;
         }
 
         /// <summary>
@@ -228,6 +246,10 @@ namespace Garnet.cluster
         public void Dispose()
         {
             rangeIndexMigrationState?.Dispose();
+
+            // A record whose chunks were still arriving when the connection went away holds pooled buffers that no Reset
+            // will reach.
+            chunkedRecordReassembler?.Dispose();
 
             // Call dispose on ref of this session if this session is a replication task
             if (IsReplicating)

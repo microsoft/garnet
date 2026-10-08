@@ -31,3 +31,11 @@ write operations in the same input operation sequence.
 6. You can disable support for data-structure objects if your workload only consists of raw string operations, using the option `DisableObjects [--no-obj]`. The
    storage tier is disabled by default, and you can enable it using `EnableStorageTier [--storage-tier]`. You can disable the pub-sub feature
    using the option `DisablePubSub [--no-pubsub]`.
+
+## GUI tools
+
+The following GUI tools have been tested with Garnet:
+
+- [LibreDB Studio](https://github.com/libredb/libredb-studio), an open source web-based database IDE, which connects
+  to Garnet as a Redis connection. Its key browser, command editor and session list work with Garnet, and its overview
+  shows the Garnet version beside the Redis version Garnet advertises.

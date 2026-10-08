@@ -154,6 +154,8 @@ namespace Garnet.server
         /// </summary>
         internal readonly TaskManager taskManager;
 
+        readonly SemaphoreSlim checkpointFrequencyChanged = new(0, 1);
+
         private IDatabaseManager databaseManager;
         SingleWriterMultiReaderLock databaseManagerLock;
 
@@ -702,6 +704,105 @@ namespace Garnet.server
             }
         }
 
+        async Task ScheduledCheckpointTaskAsync(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                try
+                {
+                    if (TryStopDisabledScheduledCheckpointTask())
+                        break;
+
+                    if (!await WaitForScheduledCheckpointAsync(token).ConfigureAwait(false))
+                        continue;
+
+                    if (token.IsCancellationRequested || runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) <= 0 ||
+                        (clusterProvider?.IsReplica() ?? false))
+                        continue;
+
+                    var status = await TakeCheckpointAsync(false, dbId: -1, token: token, logger: logger).ConfigureAwait(false);
+                    if (status != CheckpointStatus.Success)
+                    {
+                        if (status == CheckpointStatus.AlreadyInProgress)
+                            logger?.LogDebug("Scheduled checkpoint skipped for at least one database: a checkpoint is already in progress.");
+                        else
+                            logger?.LogWarning("Scheduled checkpoint did not complete; will retry on the next interval.");
+                    }
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Scheduled checkpoint failed; will retry on the next interval.");
+                }
+            }
+        }
+
+        async Task<bool> WaitForScheduledCheckpointAsync(CancellationToken token)
+        {
+            var remainingSecs = runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ);
+            if (remainingSecs <= 0)
+            {
+                await checkpointFrequencyChanged.WaitAsync(token).ConfigureAwait(false);
+                return false;
+            }
+
+            while (remainingSecs > 0)
+            {
+                var delaySecs = Math.Min(remainingSecs, 86400);
+                if (await checkpointFrequencyChanged.WaitAsync(TimeSpan.FromSeconds(delaySecs), token).ConfigureAwait(false))
+                    return false;
+                remainingSecs -= delaySecs;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Make the scheduler observe a CONFIG SET of the checkpoint interval without waiting for a running checkpoint.
+        /// </summary>
+        /// <param name="intervalChanged">Whether the interval differs from the previous value.</param>
+        internal void NotifyCheckpointFrequencyChanged(bool intervalChanged)
+        {
+            lock (taskLifecycleLock)
+            {
+                if (!(clusterProvider?.IsReplica() ?? false))
+                    TryStartScheduledCheckpointTask();
+            }
+
+            if (!intervalChanged)
+                return;
+
+            try
+            {
+                // A pending notification already wakes the scheduler to read the latest value.
+                if (checkpointFrequencyChanged.CurrentCount == 0)
+                    checkpointFrequencyChanged.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // A concurrent CONFIG SET released first.
+            }
+            catch (ObjectDisposedException)
+            {
+                // The server is shutting down.
+            }
+        }
+
+        bool TryStopDisabledScheduledCheckpointTask()
+        {
+            lock (taskLifecycleLock)
+            {
+                if (runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) > 0)
+                    return false;
+
+                taskManager.TryUnregister(TaskType.ScheduledCheckpointTask);
+                return true;
+            }
+        }
+
         async Task CommitTaskAsync(int commitFrequencyMs, CancellationToken token = default, ILogger logger = null)
         {
             try
@@ -968,6 +1069,7 @@ namespace Garnet.server
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
             taskManager.Dispose();
+            checkpointFrequencyChanged.Dispose();
             rangeIndexManager?.Dispose();
             databaseManager.Dispose();
 
@@ -1013,6 +1115,7 @@ namespace Garnet.server
                 }
 
                 TryStartCommitTask();
+                TryStartScheduledCheckpointTask();
 
                 if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
                 {
@@ -1031,6 +1134,13 @@ namespace Garnet.server
             var commitFrequencyMs = runtimeConfig.GetInt(ServerConfigType.AOF_COMMIT_FREQ);
             if (commitFrequencyMs > 0 && serverOptions.EnableAOF)
                 taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTaskAsync(commitFrequencyMs, token, logger));
+        }
+
+        void TryStartScheduledCheckpointTask()
+        {
+            if (runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) > 0 &&
+                !taskManager.IsRegistered(TaskType.ScheduledCheckpointTask))
+                taskManager.RegisterAndRun(TaskType.ScheduledCheckpointTask, ScheduledCheckpointTaskAsync);
         }
 
         // Start the background object-collection task if enabled by the current runtime config.

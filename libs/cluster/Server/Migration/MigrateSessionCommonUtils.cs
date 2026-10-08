@@ -153,9 +153,10 @@ namespace Garnet.cluster
                 }
                 else if (acc.HasObjectValue)
                 {
-                    foreach (var chunk in acc.ObjectValueChunks)
+                    for (var i = 0; i < acc.ChunkCount; i++)
                     {
-                        chunk.CopyTo(span.Slice(off));
+                        var chunk = acc.GetChunk(i);
+                        chunk.Span.CopyTo(span.Slice(off));
                         off += chunk.Length;
                     }
                 }
@@ -182,8 +183,8 @@ namespace Garnet.cluster
             else if (acc.HasObjectValue)
             {
                 // Object value: streamed with no length prefix (the receiver derives its length from the reassembled stream).
-                foreach (var chunk in acc.ObjectValueChunks)
-                    sendPieces.Add(chunk);
+                for (var i = 0; i < acc.ChunkCount; i++)
+                    sendPieces.Add(acc.GetChunk(i));
             }
 
             // Recompute the total across the pieces so the continuation flag clears exactly on the record's last byte.
