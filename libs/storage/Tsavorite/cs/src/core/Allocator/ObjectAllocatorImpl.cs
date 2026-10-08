@@ -1692,11 +1692,19 @@ namespace Tsavorite.core
 
             var totalBytesToRead = initialEndPosition - startPosition;
 
+            // Every out-of-line component on this page is zero length. That is legitimate and reachable: a component of 511 bytes or
+            // fewer is stamped exact-size with its byte count as the hint (ComputeObjectIdValueSizeHint), so a zero-length one decodes
+            // to a zero extent while still being stamped and still counted into startPosition by the first pass. There is nothing to
+            // read, and opening a zero-length read range trips the reader's "TotalLength cannot be 0" assert. Materialize instead,
+            // exactly as the single-record disk path does for the same case.
+            var hasBytesToRead = totalBytesToRead > 0;
+
             // Second pass: deserialize objects
             readBuffers.nextFileReadPosition = startPosition;
             recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
+            if (hasBytesToRead)
+                logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
 
             try
             {
@@ -1713,9 +1721,9 @@ namespace Tsavorite.core
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
                         // The first pass contributed no read range for these; see RecordHasNoReadablePosition. Materialize the
-                        // components without reading, so the value deserializer still sees the record, then leave the recovered-object
+                        // components without reading, so the record is still accounted for, then leave the recovered-object
                         // accounting alone because the record added no object-log bytes.
-                        if (RecordHasNoReadablePosition(in logRecord))
+                        if (!hasBytesToRead || RecordHasNoReadablePosition(in logRecord))
                         {
                             logReader.MaterializeRecordObjectsWithoutReading(ref logRecord);
                             continue;
@@ -1728,7 +1736,8 @@ namespace Tsavorite.core
             }
             finally
             {
-                logReader.OnEndReadRecords();
+                if (hasBytesToRead)
+                    logReader.OnEndReadRecords();
             }
         }
 
