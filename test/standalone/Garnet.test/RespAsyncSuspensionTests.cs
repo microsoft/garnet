@@ -28,6 +28,7 @@ namespace Garnet.test
     {
         const string Ok = "+OK\r\n";
         const string Pong = "+PONG\r\n";
+        const string Queued = "+QUEUED\r\n";
 
         /// <summary>
         /// Whether the server under test terminates TLS. The two transports take entirely separate paths
@@ -178,6 +179,46 @@ namespace Garnet.test
             ClassicAssert.Less(sw.Elapsed.TotalMilliseconds, 1500,
                 "A parked session delayed an unrelated session, so the receive thread was not released.");
             ClassicAssert.AreEqual(Ok, blocked.ReadReply());
+        }
+
+        /// <summary>
+        /// A suspension releases the session's per-batch resources -- response object, cluster epoch, scratch
+        /// buffers -- but deliberately not its transaction. This pins that: while a command parks inside
+        /// <c>MULTI</c>/<c>EXEC</c> the keys the transaction locked stay locked, so another session touching
+        /// them waits for the park to finish. The existing blocking list commands do the same, joining the
+        /// running transaction rather than declining to block inside one, so this is the pattern's behaviour
+        /// and not a property of <c>DEBUG BLOCK</c>. A blocking command built on it must therefore bound its
+        /// wait, or refuse to park while <c>txnManager.state == TxnState.Running</c>.
+        /// </summary>
+        [Test]
+        public void ASuspensionInsideATransactionHoldsItsLocks()
+        {
+            using var txn = new RawRespSession(useTls);
+            using var other = new RawRespSession(useTls);
+
+            ClassicAssert.AreEqual(Ok, txn.Execute("SET", "txnkey", "before"));
+            ClassicAssert.AreEqual(Ok, txn.Execute("MULTI"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("SET", "txnkey", "after"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("DEBUG", "BLOCK", "1"));
+
+            txn.Send("EXEC");
+
+            // Long enough that EXEC is certainly inside the park, short enough to leave most of it to wait on.
+            Thread.Sleep(250);
+
+            var sw = Stopwatch.StartNew();
+            var read = other.Execute("GET", "txnkey");
+            sw.Stop();
+
+            ClassicAssert.AreEqual("*2\r\n+OK\r\n+OK\r\n", txn.ReadReply(),
+                "The transaction did not complete after its parked command resumed.");
+
+            ClassicAssert.GreaterOrEqual(sw.Elapsed.TotalMilliseconds, 300,
+                "A reader of a key locked by the parked transaction was not made to wait, so the suspension " +
+                "released the transaction's locks.");
+
+            ClassicAssert.AreEqual("$5\r\nafter\r\n", read,
+                "The reader observed a value from inside the transaction.");
         }
 
         [Test]
@@ -563,6 +604,14 @@ namespace Garnet.test
         [Test]
         public void SteadyStateSuspensionsDoNotAllocate()
         {
+#if DEBUG
+            // Roslyn emits an async state machine as a class in Debug and as a struct in Release, so in Debug
+            // every park heap-allocates its state machine at the call site, before the pooled builder runs.
+            // That cost is the compiler's, not the suspension path's, and it cannot be pooled away; the
+            // Release leg of CI is what holds this invariant.
+            Assert.Ignore("Async state machines are classes in DEBUG builds, so a park always allocates one.");
+#endif
+
             // SslStream allocates a buffer and a read state per pass regardless of what the session does, so
             // under TLS this measures the TLS stack rather than the suspension machinery.
             Assume.That(!useTls, "Allocation on the TLS receive path is dominated by SslStream.");
@@ -586,9 +635,13 @@ namespace Garnet.test
             var perPark = withPark - withoutPark;
             TestContext.Out.WriteLine($"park={withPark:F0} B  no-park={withoutPark:F0} B  per park={perPark:F0} B");
 
-            // An unpooled implementation adds a state-machine box and a completion source per park, which is
-            // several hundred bytes; this is process-wide, so it has to leave room for incidental churn.
-            ClassicAssert.Less(perPark, 48,
+            // Calibrated by removing [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))] from the command
+            // bodies and re-measuring: pooled costs 45 B per park on net8 and under 20 B on net10, unpooled
+            // costs 195 B. The floor is not zero because the network handler's own continuation frame
+            // (AwaitProcessAsync) uses the default builder, which boxes its state machine on .NET 8; that is
+            // one allocation on the park path only, and the no-park path stays at zero. The bound sits
+            // between the two so it still catches a lost pool without tracking the runtime's own box churn.
+            ClassicAssert.Less(perPark, 128,
                 "Parking allocates per command: a pool on the suspension path is being missed.");
         }
 
