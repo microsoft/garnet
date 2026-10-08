@@ -20,6 +20,11 @@ namespace Garnet.server
         AofSizeLimitTask,
 
         /// <summary>
+        /// Takes periodic checkpoints of all active databases.
+        /// </summary>
+        ScheduledCheckpointTask,
+
+        /// <summary>
         /// Periodically commits AOF data to ensure durability.
         /// <para>See <see cref="StoreWrapper.CommitTaskAsync"/> for implementation.</para>
         /// </summary>
@@ -72,6 +77,7 @@ namespace Garnet.server
         {
             TaskPlacementMapping[(int)TaskType.VectorReplicationReplayTask] = TaskPlacementCategory.Replica;
             TaskPlacementMapping[(int)TaskType.AofSizeLimitTask] = TaskPlacementCategory.Primary;
+            TaskPlacementMapping[(int)TaskType.ScheduledCheckpointTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.CommitTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.CompactionTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.ObjectCollectTask] = TaskPlacementCategory.Primary;
