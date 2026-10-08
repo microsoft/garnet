@@ -193,6 +193,67 @@ namespace Tsavorite.test
             OnTearDown();
         }
 
+        /// <summary>Writes no bytes at all, so the record's value component is zero length on the object log.</summary>
+        sealed class ZeroLengthValueSerializer : BinaryObjectSerializer<IHeapObject>
+        {
+            public override void Deserialize(out IHeapObject obj) => obj = new TrackingHeapObject(blockOnClear: false);
+            public override void Serialize(IHeapObject obj) { }
+        }
+
+        /// <summary>
+        /// A zero-length value component survives the page read path (scan of an evicted page).
+        /// </summary>
+        /// <remarks>
+        /// NOTE: this does NOT yet pin the all-zero-length-page guard in <c>DeserializeObjectsOnPage</c>. This fixture's keys are
+        /// <c>OverflowTestKey</c>, so the page walk's extent is dominated by the overflow KEYS -- measured at 10,264 bytes for the
+        /// four records here -- and the walk never sees the zero total that trips "TotalLength cannot be 0". Verified by negative
+        /// control: forcing <c>hasBytesToRead = true</c> leaves this test passing.
+        /// <para>To pin that guard, the only out-of-line component on the page must be the zero-length value, which needs an
+        /// INLINE key; see <c>ComputeObjectIdValueSizeHint</c>, where a component of 511 bytes or fewer is stamped exact-size with
+        /// its byte count as the hint, so a zero-length one decodes to a zero extent while still being stamped and still counted
+        /// into <c>startPosition</c>. The other branch cannot reach zero: a component over 511 bytes is stamped with a 4 KB page
+        /// count, which is at least 1.</para>
+        /// </remarks>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ZeroLengthValueComponentSurvivesThePageReadPath()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ZeroLenPage.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ZeroLenPage.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new ZeroLengthValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            const int numRecords = 4;
+            using (var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions()))
+            {
+                var context = session.BasicContext;
+                for (var ii = 0; ii < numRecords; ++ii)
+                    _ = context.Upsert(new OverflowTestKey(ii), new TrackingHeapObject(blockOnClear: false), Empty.Default);
+            }
+
+            // Push every record below HeadAddress so the scan must read the page back from the device rather than walk memory.
+            store.Log.FlushAndEvict(wait: true);
+            Assert.That(store.Log.HeadAddress, Is.EqualTo(store.Log.TailAddress), "records must be evicted for the page path to run");
+
+            var scanned = 0;
+            using (var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
+            {
+                while (iter.GetNext())
+                    ++scanned;
+            }
+
+            Assert.That(scanned, Is.EqualTo(numRecords), "every zero-length-component record must still be returned by the scan");
+        }
+
         [Test]
         [Category("TsavoriteKV")]
         public async Task SerializedObjectCleanupTest()
