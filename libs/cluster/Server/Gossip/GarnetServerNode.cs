@@ -147,9 +147,10 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
+                    // Reuse the shared reset path so the previous linked token source is disposed
+                    // rather than overwritten and left rooted on ctsGossip until shutdown.
+                    ResetCts();
                     await client.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
-                    backoff.Reset();
                     initialized = true;
                     return true;
                 }
@@ -188,6 +189,19 @@ namespace Garnet.cluster
             {
                 initialized = false;
                 return backoff.RecordFailure();
+            }
+        }
+
+        /// <summary>
+        /// Records a successful gossip or MEET exchange and clears the reconnect backoff history.
+        /// Connection setup alone does not clear it, so a peer that accepts AUTH but keeps failing
+        /// GOSSIP continues to back off instead of resetting every reconnect.
+        /// </summary>
+        public void RecordConnectionSuccess()
+        {
+            lock (initializationSync)
+            {
+                backoff.Reset();
             }
         }
 
@@ -327,6 +341,9 @@ namespace Garnet.cluster
             }
             else if (task.Status == TaskStatus.RanToCompletion)
             {
+                // A full gossip round completed without faulting; the peer accepts GOSSIP so the
+                // reconnect backoff history can be cleared.
+                RecordConnectionSuccess();
                 var configByteArray = GetMostRecentConfig();
                 UpdateGossipRecv();
 

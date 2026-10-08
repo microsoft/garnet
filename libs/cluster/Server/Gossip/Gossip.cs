@@ -215,6 +215,7 @@ namespace Garnet.cluster
                         _ = TryMerge(other, acquireLock);
 
                         gossipStats.UpdateMeetRequestsSucceed();
+                        gsn.RecordConnectionSuccess();
 
                         // If failed to add newly created connection dispose of it to reclaim resources
                         // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
