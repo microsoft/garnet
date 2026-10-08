@@ -4736,6 +4736,77 @@ namespace Garnet.test
         }
 #endif
 
+        [Test]
+        [CancelAfter(10_000)]
+        public async Task VectorOpsInTransactionsAsync()
+        {
+            const string Key = nameof(VectorOpsInTransactionsAsync);
+            const string Element = nameof(Element);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            var tran = db.CreateTransaction();
+            var addTask = tran.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 1, 2, 3, 4 }, "{\"hello\":\"world\"}"));
+            var card1Task = tran.VectorSetLengthAsync(Key);
+            var simTask = tran.VectorSetSimilaritySearchAsync(Key, VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3, 4 }));
+            var remTask = tran.VectorSetRemoveAsync(Key, Element);
+
+            ClassicAssert.True(await tran.ExecuteAsync().ConfigureAwait(false));
+
+            ClassicAssert.True(await addTask.ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, await card1Task.ConfigureAwait(false));
+
+            using var simRes = await simTask.ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, simRes.Span.Length);
+            ClassicAssert.AreEqual(Element, (string)simRes.Span[0].Member);
+
+            ClassicAssert.True(await remTask.ConfigureAwait(false));
+        }
+
+        [Test]
+        [CancelAfter(10_000)]
+        public async Task BigGraphTransactionsAsync()
+        {
+            const string Key = nameof(BigGraphTransactionsAsync);
+            const string ElementPrefix = nameof(ElementPrefix) + "_";
+            const int ElementCount = 10_000;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            var tran = db.CreateTransaction();
+
+            var addTasks = new List<Task<bool>>();
+
+            for (var ix = 0; ix < ElementCount; ix++)
+            {
+                var addTask = tran.VectorSetAddAsync(Key, VectorSetAddRequest.Member(ElementPrefix + ix, new float[] { ix, ix, ix, ix }, $"{{\"id\":{ix}}}"));
+                addTasks.Add(addTask);
+            }
+
+            var embTasks = new List<Task<Lease<float>>>();
+            for (var ix = 0; ix < ElementCount; ix++)
+            {
+                var embTask = tran.VectorSetGetApproximateVectorAsync(Key, ElementPrefix + ix);
+                embTasks.Add(embTask);
+            }
+
+            ClassicAssert.True(await tran.ExecuteAsync().ConfigureAwait(false));
+
+            foreach (var addTask in addTasks)
+            {
+                ClassicAssert.True(await addTask.ConfigureAwait(false));
+            }
+
+            for (var ix = 0; ix < ElementCount; ix++)
+            {
+                using var emb = await embTasks[ix].ConfigureAwait(false);
+
+                ClassicAssert.IsTrue(emb.Span.SequenceEqual([ix, ix, ix, ix]));
+            }
+        }
+
         /// <summary>
         /// Create a new GarnetServer instance with a small enough log that ordinary writes flush pages.
         /// </summary>
