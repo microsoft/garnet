@@ -22,17 +22,16 @@ namespace Tsavorite.core
         public long IndexSize = 1L << 26;
 
         /// <summary>
-        /// Ceiling on hash index overflow buckets, as a percentage of the main bucket count of the index generation
-        /// they belong to. Overflow buckets hold hash entries that do not fit the main bucket array, so they grow with
-        /// the number of distinct keys rather than with the size of the data, and they are not reclaimed until the
-        /// index grows. They also chain linearly off a main bucket and are scanned by reads and upserts, so this
-        /// percentage is the average chain length allowed before allocation throws: 300 permits three overflow buckets
-        /// per main bucket. Zero selects <see cref="DefaultIndexOverflowThreshold"/>.
+        /// Ceiling on hash index overflow buckets, as a percentage of the main bucket count of the generation they
+        /// belong to. Overflow buckets hold hash entries that do not fit the main bucket array, so they grow with the
+        /// number of distinct keys, and are reclaimed only when the index grows. They chain linearly off a main bucket
+        /// and are scanned by reads and upserts, so this percentage is the average chain length allowed before
+        /// allocation throws: 300 permits three overflow buckets per main bucket. Zero selects
+        /// <see cref="DefaultIndexOverflowThreshold"/>.
         /// </summary>
         /// <remarks>
-        /// Expressed in the same unit as the index resize threshold, which is the percentage of main buckets at which
-        /// the index grows, so that the two can be compared directly. A value at or below the resize threshold would be
-        /// reached before the resize that reclaims overflow buckets.
+        /// Expressed in the same unit as the index resize threshold so the two can be compared directly. A value at or
+        /// below the resize threshold would be reached before the resize that reclaims overflow buckets.
         /// </remarks>
         public int IndexOverflowThreshold = DefaultIndexOverflowThreshold;
 
@@ -48,6 +47,17 @@ namespace Tsavorite.core
         public static long MaxIndexOverflowMaxMemorySize => MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit;
 
         /// <summary>
+        /// Buckets the overflow allocator claims at construction. The allocation counter that drives index resize
+        /// excludes these, so a caller comparing a resolved ceiling against a resize trigger must discount them.
+        /// </summary>
+        public static int OverflowBucketInitialAllocation => MallocFixedPageSize<HashBucket>.AllocateChunkSize;
+
+        /// <summary>
+        /// Size of one hash bucket, main or overflow, in bytes.
+        /// </summary>
+        public static int HashBucketSizeBytes => MallocFixedPageSize<HashBucket>.RecordSize;
+
+        /// <summary>
         /// Resolve a threshold to the overflow-bucket ceiling in bytes for an index generation of a given size,
         /// rounded down to a whole allocator page and clamped to what the page table can address.
         /// </summary>
@@ -58,9 +68,14 @@ namespace Tsavorite.core
         {
             if (overflowThreshold <= 0)
                 overflowThreshold = DefaultIndexOverflowThreshold;
-            var requested = tableSizeBuckets <= 0
-                ? 0
-                : tableSizeBuckets * overflowThreshold / 100 * MallocFixedPageSize<HashBucket>.RecordSize;
+            if (tableSizeBuckets <= 0)
+                tableSizeBuckets = 1;
+
+            // Scale before dividing, and floor at the smallest page table the allocator builds. GetLevelCount reads a
+            // non-positive budget as "unconfigured" and substitutes its own much larger default.
+            var requested = tableSizeBuckets * overflowThreshold * MallocFixedPageSize<HashBucket>.RecordSize / 100;
+            if (requested < MallocFixedPageSize<HashBucket>.MinMemorySize)
+                requested = MallocFixedPageSize<HashBucket>.MinMemorySize;
             return MallocFixedPageSize<HashBucket>.GetLevelCount(requested) * MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
         }
 

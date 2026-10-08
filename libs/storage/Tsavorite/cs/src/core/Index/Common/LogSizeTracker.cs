@@ -126,13 +126,10 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// Garnet uses this for hash-index memory beyond the configured index budget. The index holds one entry per
-        /// distinct key -- including keys whose records live only on disk -- so it grows with record count and is bounded
-        /// by no log setting; charging the unbudgeted part here is what keeps a larger-than-memory store within its
-        /// configured memory limit as record count rises.
-        /// <para>
-        /// Sampled once per resizer iteration rather than on every budget comparison, several of which are on the
-        /// record-add path. A provider may therefore be as expensive as a few field reads.
-        /// </para>
+        /// distinct key, including keys whose records live only on disk, so it grows with record count and no log
+        /// setting bounds it.
+        /// <para>Sampled once per resizer iteration, not on every budget comparison, so a provider may cost a few field
+        /// reads.</para>
         /// </remarks>
         public Func<long> ExternalMemorySizeProvider { get; set; }
 
@@ -144,10 +141,8 @@ namespace Tsavorite.core
         /// <summary>Value of <see cref="externalMemorySize"/> at the last growth report, which keeps reporting to one line per doubling.</summary>
         private long reportedExternalMemorySize;
 
-        /// <summary>
-        /// Growth below this size is not reported. The overflow bucket allocator reserves one chunk when it is constructed,
-        /// so an idle store charges a small fixed amount that is not worth a line.
-        /// </summary>
+        /// <summary>Growth below this size is not reported; the overflow bucket allocator reserves one chunk at
+        /// construction, which an idle store charges but which is not growth.</summary>
         private const long MinExternalMemoryReportBytes = 1L << 20;
 
         /// <summary>
@@ -161,9 +156,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// External memory is subtracted from the budget rather than added to <see cref="TotalSize"/> so that being over
-        /// budget continues to imply that the <em>log</em> exceeds its budget. The eviction-range computation in
-        /// <see cref="DetermineEvictionRange"/> relies on that: it derives how much to trim from the resident span, which
-        /// an over-budget condition the log did not cause would not bound.
+        /// budget continues to imply the <em>log</em> exceeds its budget, which <see cref="DetermineEvictionRange"/>
+        /// relies on to bound the trim by the resident span.
         /// </remarks>
         private long EffectiveHighTargetSize => Math.Max(highTargetSize - ExternalMemorySize, BudgetFloor);
 
@@ -380,19 +374,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Takes a fresh sample from <see cref="ExternalMemorySizeProvider"/> without signalling the resizer, for callers that
-        /// enforce the budget themselves. Recovery uses this: it owns the log and must not run the resizer concurrently, but
-        /// it consults <see cref="RemainingBudget"/> and <see cref="IsOverBudget"/> and so needs the budget to reflect memory
-        /// the restored index already holds.
+        /// Takes a fresh sample from <see cref="ExternalMemorySizeProvider"/> without signalling the resizer, for callers
+        /// that enforce the budget themselves. Recovery uses this: it owns the log, so the resizer must not run, but it
+        /// reads <see cref="RemainingBudget"/> and <see cref="IsOverBudget"/>.
         /// </summary>
         public void SampleExternalMemorySizeWithoutSignal() => _ = SampleExternalMemorySize();
 
         /// <summary>Samples <see cref="ExternalMemorySizeProvider"/>. Returns true if the external memory grew.</summary>
-        /// <remarks>
-        /// <see cref="ResizerTask"/> calls this directly rather than <see cref="RefreshExternalMemorySize"/>: it is about
-        /// to call <see cref="ResizeIfNeeded"/> anyway, and signalling from inside the loop would retire the generation it
-        /// has just captured and burn an iteration with no delay.
-        /// </remarks>
+        /// <remarks><see cref="ResizerTask"/> calls this rather than <see cref="RefreshExternalMemorySize"/>: it calls
+        /// <see cref="ResizeIfNeeded"/> next anyway, and signalling from the loop would retire the generation it has just
+        /// captured.</remarks>
         private bool SampleExternalMemorySize()
         {
             var provider = ExternalMemorySizeProvider;
@@ -407,8 +398,7 @@ namespace Tsavorite.core
             if (newSize <= previousSize)
                 return false;
 
-            // Report on each doubling so sustained growth is visible without a line per sample. The floor keeps an empty
-            // store quiet: the overflow bucket allocator reserves one chunk up front, which is charged but is not growth.
+            // Report on each doubling, so sustained growth is visible without a line per sample.
             var lastReported = Volatile.Read(ref reportedExternalMemorySize);
             if (newSize >= Math.Max(lastReported, MinExternalMemoryReportBytes) * 2
                 && Interlocked.CompareExchange(ref reportedExternalMemorySize, newSize, lastReported) == lastReported)
@@ -515,14 +505,21 @@ namespace Tsavorite.core
             {
                 // We are evicting in units of pages, so we set this to the start of the maxEvictUntilPage.
                 maxEvictUntilAddress = allocator.GetLogicalAddressOfStartOfPage(maxEvictUntilPage);
+
+                // Snapping down to the page start can land at or below headAddress despite the caller's gate on
+                // tailAddress - headAddress >= MinEvictionHeadAddressLag, because headAddress need not be page-aligned
+                // and the lag can be smaller than a page. No whole page is evictable, so retry as the tail advances.
+                if (maxEvictUntilPage <= startingHeadPage)
+                    return false;
+
                 var evictableSize = maxEvictUntilAddress - headAddress;
 
                 // evictableSize is the resident span [headAddress, tail-aligned). When heapSize is 0, TotalSize == AllocatedPageCount * PageSize, so being
                 // over budget here means AllocatedPageCount * PageSize > budget; recovery keeps AllocatedPageCount within MaxAllocatedPageCount (the read
                 // batch is capped at the budget and a final trim evicts any object-free overage), so AllocatedPageCount ~= the resident page count and that
-                // resident span must itself exceed the budget => evictableSize > 0. This holds when ExternalMemorySize has reduced the budget as well,
-                // because the reduced budget is floored at BudgetFloor (MinTargetPageCount pages). A negative value would mean AllocatedPageCount exceeds the
-                // resident set (stale pages left allocated below headAddress), which we must not reach.
+                // resident span must itself exceed the budget => evictableSize > 0. This holds when ExternalMemorySize has reduced the budget, because the
+                // reduced budget is floored at BudgetFloor (MinTargetPageCount pages). A negative value would mean AllocatedPageCount exceeds the resident
+                // set, i.e. stale pages left allocated below headAddress.
                 Debug.Assert(evictableSize >= 0, $"evictableSize ({evictableSize}) must be non-negative; AllocatedPageCount exceeds the resident set below headAddress.");
 
                 var margin = evictableSize - overBudgetAmount;
@@ -592,10 +589,9 @@ namespace Tsavorite.core
                 }
 
                 // If we have finished a page, add its size to our eviction total and set headAddress to the start of the next page,
-                // but only while that start is still behind the tail. The scan stops at maxEvictUntilAddress, which falls inside
-                // the tail page when PageSize exceeds MinEvictionHeadAddressLag, and completing the tail page would put headAddress
-                // past TailAddress. ShiftHeadAddress caps HeadAddress at FlushedUntilAddress while ShiftAddressesWithWait waits on
-                // the uncapped value, so such a headAddress is waited on forever and the resizer never runs again.
+                // but only while that start is still behind the tail. The scan stops at maxEvictUntilAddress, which falls inside the
+                // tail page when PageSize exceeds MinEvictionHeadAddressLag, so completing the tail page would put headAddress past
+                // TailAddress, which ShiftHeadAddress caps at FlushedUntilAddress and the caller then waits on forever.
                 if (headAddress >= endAddress)
                 {
                     var nextPageAddress = allocator.GetFirstValidLogicalAddressOnPage(currentPage + 1);

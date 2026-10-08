@@ -67,6 +67,11 @@ namespace Tsavorite.core
             {
                 // This will allocate over any existing table for this version and initialize the new table size
                 Initialize(info.info.table_size, (int)sectorSize);
+
+                // The buckets about to be recovered belong to the checkpointed table, and a generation's ceiling is
+                // derived from its main bucket count, so rebuild the allocator for the size actually installed.
+                overflowBucketsAllocator.Dispose();
+                overflowBucketsAllocator = NewOverflowBucketsAllocator(info.info.table_size, info.info.num_buckets);
             }
 
             BeginMainIndexRecovery(ht_version, info.main_ht_device, info.info.num_ht_bytes, isAsync);

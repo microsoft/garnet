@@ -177,11 +177,10 @@ namespace Garnet.server
         /// Overflow bucket count over total index size in percentage at which overflow-bucket allocation fails.
         /// </summary>
         /// <remarks>
-        /// Expressed in the same unit as <see cref="IndexResizeThreshold"/> and applied to the same quantity, so the
-        /// two can be compared directly: this one must exceed the resize threshold, or the ceiling would be reached
-        /// before the resize that reclaims overflow buckets. Because overflow buckets chain linearly off a main bucket
-        /// and are scanned by reads and upserts, the percentage is also the average chain length allowed, which is why
-        /// the remedy for exhausting it is a larger index rather than a larger ceiling.
+        /// Expressed in the same unit as <see cref="IndexResizeThreshold"/> and applied to the same quantity, and must
+        /// exceed it, or the ceiling would be reached before the resize that reclaims overflow buckets. Overflow buckets
+        /// chain linearly off a main bucket and are scanned by reads and upserts, so the percentage is also the average
+        /// chain length allowed; the remedy for exhausting it is a larger index, not a larger ceiling.
         /// </remarks>
         public int IndexOverflowThreshold = KVSettings.DefaultIndexOverflowThreshold;
 
@@ -791,24 +790,22 @@ namespace Garnet.server
         /// and <c>IndexMaxMemorySize</c>. Set by <see cref="GetSettings"/>.
         /// </summary>
         /// <remarks>
-        /// Those settings bound only the main bucket array. The index holds an entry per distinct key -- including keys
-        /// whose records live only on disk -- so beyond this budget it keeps growing into overflow buckets, at one 64-byte
-        /// bucket per 7 keys. That excess is charged against the log memory budget so the store as a whole stays within
-        /// its configured memory limit rather than growing with record count until the process is OOM-killed.
+        /// Those settings bound only the main bucket array. The index holds an entry per distinct key, including keys
+        /// whose records live only on disk, so beyond this budget it grows into overflow buckets at one 64-byte bucket
+        /// per 7 keys. That excess is charged against the log memory budget, keeping the store within its configured
+        /// memory limit as record count rises.
         /// </remarks>
         public long IndexMemoryBudgetBytes;
 
         /// <summary>
         /// Resolved ceiling on hash index overflow-bucket memory, in bytes, for the index generation the store starts
-        /// with. Set by <see cref="GetSettings"/>. Each later generation installed by a resize gets a ceiling scaled to
-        /// its own size, so this is a starting value rather than a lifetime bound; the live ceiling is reported by
-        /// <c>INFO STORE</c>.
+        /// with. Set by <see cref="GetSettings"/>. Each generation installed by a resize gets a ceiling scaled to its
+        /// own size, so this is a starting value, not a lifetime bound; the live ceiling is reported by <c>INFO STORE</c>.
         /// </summary>
         /// <remarks>
-        /// This is a safety ceiling, not a budget the store expects to spend, so it is deliberately not part of
+        /// This is a safety ceiling, not a budget the store expects to spend, so it is not part of
         /// <see cref="IndexMemoryBudgetBytes"/>: charging it against the log would permanently shed log memory for
-        /// overflow buckets that may never be allocated. What is charged against the log is the overflow memory
-        /// actually in use, sampled from the store.
+        /// buckets that may never be allocated. The log is charged the overflow memory actually in use.
         /// </remarks>
         public long IndexOverflowMaxMemorySizeBytes;
 
@@ -1078,24 +1075,37 @@ namespace Garnet.server
             IndexMemoryBudgetBytes = Math.Max(kvSettings.IndexSize, AdjustedIndexMaxCacheLines * 64L);
             logger?.LogInformation("[Store] Hash index memory budget is {IndexMemoryBudget}; index memory beyond it (overflow buckets) is charged against the log memory size", PrettySize(IndexMemoryBudgetBytes));
 
-            // Overflow buckets are reclaimed only when the index grows: a resize installs a fresh allocator generation
-            // and drops the old one. Once the index reaches its max size growth stops permanently, so from that point
-            // overflow memory only climbs, and nothing else bounds it. The ceiling is a percentage of the main bucket
-            // count rather than a byte size because overflow buckets chain linearly off a main bucket and are scanned
-            // by reads and upserts, so the ratio is the average chain length. That makes capacity bought far beyond the
-            // index size too slow to be worth having, and makes the ceiling comparable to the resize threshold, which
-            // bounds the same ratio.
+            // Overflow buckets are reclaimed only by an index resize, which installs a fresh allocator generation, so
+            // once the index reaches its max size overflow memory only climbs and nothing else bounds it. The ceiling is
+            // a percentage of the main bucket count because overflow buckets chain linearly and are scanned by reads and
+            // upserts, so the ratio is the average chain length and is comparable to the resize threshold.
             kvSettings.IndexOverflowThreshold = IndexOverflowThreshold;
 
-            // Both thresholds are percentages of the same quantity, so the ordering between them is the whole invariant:
-            // at or below the resize threshold the ceiling would be reached before the resize that would have reclaimed
-            // those overflow buckets, turning a recoverable growth step into a hard failure. Checked whether or not the
-            // index can grow, so that enabling growth later cannot silently produce a conflicting pair.
+            // Both thresholds are percentages of the same quantity, so their ordering is the whole invariant: at or
+            // below the resize threshold the ceiling is reached before the resize that would have reclaimed those
+            // buckets. Checked whether or not the index can grow, so enabling growth later cannot produce a bad pair.
             if (IndexOverflowThreshold <= IndexResizeThreshold)
                 throw new Exception(
                     $"Index overflow threshold ({IndexOverflowThreshold}%) must be greater than the index resize threshold"
                     + $" ({IndexResizeThreshold}%). Both are percentages of the main hash bucket count; a ceiling at or below"
                     + " the resize threshold would be reached before the index resize that reclaims overflow buckets.");
+
+            // Ordering the percentages is not sufficient: the ceiling is quantized down to a whole allocator page, and
+            // the allocator reserves a chunk at construction that the resize trigger's count excludes, so a correctly
+            // ordered pair can still resolve to a usable capacity at or below the trigger, making growth unreachable for
+            // that generation. Check every generation the index can occupy.
+            for (var generation = indexCacheLines; generation < AdjustedIndexMaxCacheLines; generation *= 2)
+            {
+                var usableBuckets = KVSettings.GetIndexOverflowMaxMemorySize(generation, IndexOverflowThreshold) / KVSettings.HashBucketSizeBytes
+                    - KVSettings.OverflowBucketInitialAllocation;
+                var resizeTrigger = generation * IndexResizeThreshold / 100;
+                if (usableBuckets <= resizeTrigger)
+                    throw new Exception(
+                        $"Index overflow threshold ({IndexOverflowThreshold}%) resolves to {usableBuckets} usable overflow buckets at an"
+                        + $" index size of {PrettySize(generation * KVSettings.HashBucketSizeBytes)}, which does not exceed the {resizeTrigger} buckets"
+                        + $" that trigger an index resize at the index resize threshold ({IndexResizeThreshold}%). The index could never grow"
+                        + " past that size. Raise the index overflow threshold, lower the index resize threshold, or raise the index size.");
+            }
 
             IndexOverflowMaxMemorySizeBytes = KVSettings.GetIndexOverflowMaxMemorySize(indexCacheLines, IndexOverflowThreshold);
             logger?.LogInformation("[Store] Using hash index overflow threshold of {OverflowThreshold}% of the main bucket count, which is {OverflowMaxSize} at the starting index size and allows average chains of {OverflowChain} overflow buckets",

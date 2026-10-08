@@ -142,6 +142,31 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ThresholdThatQuantizesBelowTheResizeTriggerIsRejected()
+        {
+            // Ordering the percentages is necessary but not sufficient. The ceiling is rounded down to a whole 4m
+            // allocator page before it takes effect, and the allocator claims a chunk at construction that the resize
+            // trigger's count excludes. At a 16m index, 51% resolves to an 8m ceiling: 131,072 buckets less the
+            // claimed chunk, against a trigger of 131,072. The resize could never fire, so the index would be stuck at
+            // a size whose overflow allocation had already started failing. Rejecting it at startup names the remedy.
+            var ex = Assert.Throws<System.Exception>(() =>
+                StartServer(indexSize: "16m", indexMaxSize: "64m", indexOverflowThreshold: 51));
+
+            ClassicAssert.IsTrue(ex.Message.Contains("could never grow"), ex.Message);
+        }
+
+        [Test]
+        public void ThresholdIsOnlyCheckedAgainstGenerationsTheIndexCanReach()
+        {
+            // The same 16m/51% pair is safe when the index cannot grow: with no max size there is no resize to become
+            // unreachable, and the ceiling is simply the bound on overflow buckets. Checking generations the index can
+            // never occupy would reject working configurations.
+            StartServer(indexSize: "16m", indexOverflowThreshold: 51);
+
+            ClassicAssert.AreEqual(51, server.Provider.StoreWrapper.store.IndexOverflowThreshold);
+        }
+
+        [Test]
         public void ThresholdIsReportedInInfoStore()
         {
             // The ceiling is only actionable if an operator can see it and the live overflow usage against it.
