@@ -292,11 +292,6 @@ namespace Garnet.server
                 errorMsg = "ERR Vector Set (preview) commands are not enabled"u8;
                 return GarnetStatus.OK;
             }
-            if (key.ReadOnlySpan.IsEmpty)
-            {
-                errorMsg = "ERR Vector Set key cannot be empty"u8;
-                return GarnetStatus.OK;
-            }
 
             result = VectorManagerResult.Invalid;
             parseState.InitializeWithArgument(key);

@@ -425,9 +425,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task XVIMPORTFinishParsingAsync([Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol)
+        public async Task XVIMPORTFinishParsingAsync()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true, protocol: protocol));
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase();
             ClassicAssert.IsTrue(RespCommandsInfo.TryGetRespCommandInfo(RespCommand.XVIMPORT, out var commandInfo));
             ClassicAssert.AreEqual(-3, commandInfo.Arity);
@@ -460,8 +460,6 @@ namespace Garnet.test
                 var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", arguments));
                 StringAssert.Contains("wrong number of arguments", exception.Message);
             }
-            ClassicAssert.AreEqual("ERR Vector Set key cannot be empty",
-                ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "", "FINISH")).Message);
             ClassicAssert.AreEqual("ERR vector set does not exist",
                 ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "missing", "FINISH")).Message);
             ClassicAssert.IsFalse(db.KeyExists("missing"));

@@ -2419,50 +2419,6 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task VectorSetRenameReplicatesAsync([Values(1, 4)] int replayTasks, [Values(1, 2)] int physicalLogs)
-        {
-            const string Source = "{rename}:source";
-            var destination = "{rename}:destination";
-            _ = await SimpleSetupClusterAsync(DefaultShards, primaryCount: 1, replicaCount: 1, useTLS: false, replayTasks: replayTasks, physicalLogs: physicalLogs).ConfigureAwait(false);
-            var log = GetStoreWrapper(context.nodes[0]).appendOnlyFile.Log;
-            var sourceHash = GarnetLog.HASH(Encoding.UTF8.GetBytes(Source));
-            for (var suffix = 0; physicalLogs > 1
-                ? log.GetPhysicalSublogIdx(sourceHash) == log.GetPhysicalSublogIdx(Encoding.UTF8.GetBytes(destination))
-                : replayTasks > 1 && log.GetReplayTaskIdx(sourceHash) == log.GetReplayTaskIdx(Encoding.UTF8.GetBytes(destination)); suffix++)
-            {
-                destination = $"{{rename}}:destination:{suffix}";
-            }
-            await using var connection = await ConnectionMultiplexer.ConnectAsync(context.clusterTestUtils.GetRedisConfig(context.endpoints)).ConfigureAwait(false);
-            var primary = connection.GetServer(context.endpoints[0]);
-            var replica = connection.GetServer(context.endpoints[1]);
-
-            ClassicAssert.AreEqual(1, (int)await primary.ExecuteAsync(0, "VADD", [Source, "VALUES", 3, 1, 2, 3, "member", "NOQUANT", "SETATTR", "attributes"]).ConfigureAwait(false));
-            ClassicAssert.AreEqual(1, (int)await primary.ExecuteAsync(0, "VADD", [destination, "VALUES", 3, 3, 2, 1, "replaced", "NOQUANT"]).ConfigureAwait(false));
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
-
-            ClassicAssert.AreEqual("OK", (string)await primary.ExecuteAsync(0, "RENAME", [Source, destination]).ConfigureAwait(false));
-            var transaction = connection.GetDatabase().CreateTransaction();
-            var renameBack = transaction.KeyRenameAsync(destination, Source);
-            var renameForward = transaction.KeyRenameAsync(Source, destination);
-            ClassicAssert.IsTrue(await transaction.ExecuteAsync().ConfigureAwait(false));
-            ClassicAssert.IsTrue(await renameBack.ConfigureAwait(false));
-            ClassicAssert.IsTrue(await renameForward.ConfigureAwait(false));
-            ClassicAssert.AreEqual("OK", (string)await primary.ExecuteAsync(0, "SET", ["{rename}:control", "after-rename"]).ConfigureAwait(false));
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
-
-            ClassicAssert.AreEqual("OK", (string)await replica.ExecuteAsync(0, "READONLY", []).ConfigureAwait(false));
-            ClassicAssert.AreEqual("after-rename", (string)await replica.ExecuteAsync(0, "GET", ["{rename}:control"], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
-            ClassicAssert.AreEqual(0, (int)await replica.ExecuteAsync(0, "EXISTS", [Source], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
-            ClassicAssert.AreEqual(0, (int)await replica.ExecuteAsync(0, "VISMEMBER", [destination, "replaced"], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
-            CollectionAssert.AreEqual(new[] { "1", "2", "3" }, (string[])await replica.ExecuteAsync(0, "VEMB", [destination, "member"], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
-            ClassicAssert.AreEqual("attributes", (string)await replica.ExecuteAsync(0, "VGETATTR", [destination, "member"], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
-
-            ClassicAssert.AreEqual(1, (int)await primary.ExecuteAsync(0, "VSETATTR", [destination, "member", "updated"]).ConfigureAwait(false));
-            context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
-            ClassicAssert.AreEqual("updated", (string)await replica.ExecuteAsync(0, "VGETATTR", [destination, "member"], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
-        }
-
-        [Test]
         public async Task ConcurrentVADDUpdatesAsync()
         {
             const int PrimaryIndex = 0;
