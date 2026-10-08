@@ -269,6 +269,10 @@ namespace Garnet
         public int CompactionFrequencySecs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("checkpoint-freq", Required = false, HelpText = "Frequency in seconds at which the server automatically takes a background checkpoint of all active databases. 0 = disabled. The interval is the gap between checkpoints, not a fixed period.")]
+        public int CheckpointFrequencySecs { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("expired-object-collection-freq", Required = false, HelpText = "Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand.")]
         public int ExpiredObjectCollectionFrequencySecs { get; set; }
 
@@ -948,6 +952,7 @@ namespace Garnet
                 AofSizeLimit = AofSizeLimit,
                 AofSizeLimitEnforceFrequencySecs = AofSizeLimitEnforceFrequencySecs,
                 CompactionFrequencySecs = CompactionFrequencySecs,
+                CheckpointFrequencySecs = CheckpointFrequencySecs,
                 ExpiredObjectCollectionFrequencySecs = ExpiredObjectCollectionFrequencySecs,
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),

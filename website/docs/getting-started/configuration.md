@@ -138,6 +138,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **AofSizeLimit** | ```--aof-size-limit``` | ```string``` | Memory size | Maximum size of AOF (rounds down to power of 2) after which unsafe truncation will be applied. Left empty AOF will grow without bound unless a checkpoint is taken |
 | **AofSizeLimitEnforceFrequencySecs** | ```--aof-size-limit-enforce-frequency``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Frequency (in secs) of execution of the AutoCheckpointBasedOnAofSizeLimit background task. |
 | **CompactionFrequencySecs** | ```--compaction-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Background hybrid log compaction frequency in seconds. 0 = disabled (compaction performed before checkpointing instead) |
+| **CheckpointFrequencySecs** | ```--checkpoint-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Gap in seconds between automatic checkpoints of all active databases. 0 = disabled. Settable at runtime with `CONFIG SET checkpoint-freq`. The append-only file is not required. |
 | **ExpiredObjectCollectionFrequencySecs** | ```--expired-object-collection-freq``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand. |
 | **CompactionType** | ```--compaction-type``` | ```LogCompactionType``` | None, Shift, Lookup, Scan | Hybrid log compaction type. Value options: None - no compaction, Shift - shift begin address without compaction (data loss), Lookup - lookup each record in compaction range, for record liveness checking using hash chain (no data loss; recommended for production use), Scan - scan old pages and move live records to tail (no data loss; NOT RECOMMENDED - builds a temporary parallel KV index proportional to the keyspace, causing significant transient memory use; prefer Lookup) |
 | **CompactionForceDelete** | ```--compaction-force-delete``` | ```bool``` |  | Forcefully delete the inactive segments immediately after the compaction strategy (type) is applied. If false, take a checkpoint to actually delete the older data files from disk. |
@@ -247,6 +248,18 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **VectorSetQuantizationTaskCount** | ```--vector-set-quantization-task-count``` | ```int``` | Integer in range:<br/>[0, MaxValue] | Configure how many quantization tasks are used to optimize Vector Set operations (default: 0 uses the machine CPU count; maximum: the machine CPU count) |
 
 [^1]: A string representing a memory size. Can either be a number of bytes, or follow this pattern: 1k, 1kb, 5M, 5Mb, 10g, 10GB etc.
+
+---
+
+## Cost of automatic checkpoints
+
+`--checkpoint-freq` is disabled by default. A value such as `300` seconds is a reasonable starting point. The interval is the gap after one checkpoint completes before the next attempt, so a slow checkpoint does not queue up another one. The first checkpoint is taken one full interval after startup or after the setting is enabled. A checkpoint is taken on every interval whether or not data has changed since the previous one. Checkpoints from `SAVE`, `BGSAVE`, or the AOF size limit do not reset the schedule. The append-only file (AOF) does not need to be enabled.
+
+Garnet checkpoints are not deltas. Each checkpoint writes the portion of the hybrid log still in memory and not yet flushed to a storage tier. For a dataset that fits in memory, this is effectively the whole dataset each time. A hybrid-log-only checkpoint avoids rewriting the hash index but still writes that log region. Disk volume scales with resident data size divided by the interval. Checkpoint files also consume disk space, and checkpoint flushes can affect latency. `--checkpoint-throttle-delay` can reduce the latency impact by extending the flush. Choose the interval based on acceptable recovery data loss and available disk bandwidth.
+
+A scheduled checkpoint covers all active databases. If one database is already being checkpointed, that database is skipped until the next interval and the others are still checkpointed. In cluster mode, only primaries act on the setting; a replica accepts the value and starts using it if it is promoted. A primary checkpoint also causes each replica to checkpoint. While one is running, `SAVE` and `BGSAVE` can return `ERR checkpoint already in progress`, and cluster attach or failover may need to be retried. `CONFIG SET checkpoint-freq` updates the interval without waiting for a running checkpoint; that checkpoint finishes normally, even when the new interval is 0. Changing the interval starts a new wait of the full new interval; setting the current value again has no effect. Shutdown waits for a running checkpoint to finish.
+
+If `--compaction-freq` is 0, checkpointing runs compaction first. With AOF enabled, a completed checkpoint truncates the AOF, so enabling scheduled checkpoints changes how much AOF history is retained. Use `LASTSAVE` for each database and `rdb_last_bgsave_status` in `INFO PERSISTENCE` to confirm completion.
 
 ---
 
