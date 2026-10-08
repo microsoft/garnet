@@ -14,6 +14,8 @@ BGSAVE [SCHEDULE] [DBID]
 
 Save all databases inside the Garnet instance in the background. If a DB ID is specified, save save only that specific database.
 
+Automatic scheduled checkpoints can be enabled with [`--checkpoint-freq`](../getting-started/configuration.md#cost-of-automatic-checkpoints).
+
 The reply is sent before the checkpoint runs, so it does not report whether the checkpoint succeeded. A background
 save that fails leaves `LASTSAVE` unchanged and sets `rdb_last_bgsave_status` to `err` in the `PERSISTENCE` section of
 [INFO](server.md#info), with details in the server log.

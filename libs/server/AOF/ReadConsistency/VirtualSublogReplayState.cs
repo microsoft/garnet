@@ -16,7 +16,7 @@ namespace Garnet.server
         const int SketchSlotMask = SketchSlotSize - 1;
 
         /// <summary>
-        /// Maximum number of spin iterations before falling back to the waiter queue.
+        /// Maximum progressive wait iterations before falling back to the waiter queue.
         /// </summary>
         const int MaxSpinCount = 64;
 
@@ -177,13 +177,15 @@ namespace Garnet.server
         /// <param name="ct">Cancellation token for the read.</param>
         public void WaitForSequenceNumber(long maximumSessionSequenceNumber, ReadSessionWaiter node, TimeSpan timeout, CancellationToken ct)
         {
-            // Phase 1: SpinWait — fast path when replay is keeping up
-            var spinner = new SpinWait();
-            for (var i = 0; i < MaxSpinCount; i++)
+            // Phase 1: replay is latency-sensitive, so permit a bounded progressive wait before
+            // paying the cost of arming and blocking on the reusable waiter.
+            var spinner = ConfiguredSpinWait.BoundedProgressive(MaxSpinCount, sleep1Threshold: -1);
+            while (true)
             {
                 if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Frontier))
                     return;
-                spinner.SpinOnce(sleep1Threshold: -1);
+                if (!spinner.TryWait())
+                    break;
             }
 
             // Phase 2: Arm the session's reusable waiter and block. The node is fully unlinked from
