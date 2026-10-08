@@ -115,7 +115,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             const int PendingMod = 16;
 
-            void LocalRead(BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
+            void LocalRead(BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>, BasicSessionLocker<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> sessionContext, int i, ref int numPending, bool isLast)
             {
                 // These are OK to be local to this LocalRead call; if it goes pending, they will be copied into IHeapContainers.
                 var keyString = $"{i}";

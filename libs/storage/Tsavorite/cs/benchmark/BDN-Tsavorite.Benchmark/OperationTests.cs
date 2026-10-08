@@ -26,7 +26,7 @@ namespace BenchmarkDotNetTests
         string logDirectory;
 
         ClientSession<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, BDNSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
-        BasicContext<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, BDNSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
+        BasicContext<SpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, BDNSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>, BasicSessionLocker<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> bContext;
 
         void SetupStore()
         {
