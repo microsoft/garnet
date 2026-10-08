@@ -29,6 +29,16 @@ namespace Garnet.server
     /// Resumption runs through <see cref="ResumeAsyncCommand"/>, which re-enters the resource scope before
     /// driving the body's state machine, then drains the rest of the batch.
     /// </para>
+    /// <para>
+    /// What a suspension does <em>not</em> release is the transaction. Key locks taken by an enclosing
+    /// <c>MULTI</c>/<c>EXEC</c> are held for as long as the body waits, so a command that parks inside a
+    /// transaction stalls every other session contending for those keys. That matches what the existing
+    /// blocking list commands already do -- they join the running transaction rather than opting out of it --
+    /// and it is why the cluster epoch, the response object and the scratch buffers are released here but the
+    /// transaction is not: those three are per-batch resources, whereas the locks are what makes the
+    /// transaction atomic and cannot be dropped mid-transaction. A blocking command whose wait is unbounded
+    /// should therefore bound it, or decline to wait when <c>txnManager.state == TxnState.Running</c>.
+    /// </para>
     /// </remarks>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
