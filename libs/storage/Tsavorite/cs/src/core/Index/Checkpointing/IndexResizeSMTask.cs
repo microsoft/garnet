@@ -42,7 +42,10 @@ namespace Tsavorite.core
                     store.numPendingChunksToBeSplit = numChunks;
                     store.splitStatus = new long[numChunks];
                     store.overflowBucketsAllocatorResize = store.overflowBucketsAllocator;
-                    store.overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>();
+
+                    // The new generation is twice the old, so its overflow ceiling is twice the old generation's: the
+                    // allowed chain length stays the same as the index grows.
+                    store.overflowBucketsAllocator = store.NewOverflowBucketsAllocator(store.state[store.resizeInfo.version].size * 2);
 
                     // Because version is 0 or 1, indexing by [1 - resizeInfo.version] references to the "new version".
                     // Once growth initialization is complete, the state versions are swapped by setting resizeInfo.version = 1 - resizeInfo.version.

@@ -22,6 +22,49 @@ namespace Tsavorite.core
         public long IndexSize = 1L << 26;
 
         /// <summary>
+        /// Ceiling on hash index overflow buckets, as a percentage of the main bucket count of the index generation
+        /// they belong to. Overflow buckets hold hash entries that do not fit the main bucket array, so they grow with
+        /// the number of distinct keys rather than with the size of the data, and they are not reclaimed until the
+        /// index grows. They also chain linearly off a main bucket and are scanned by reads and upserts, so this
+        /// percentage is the average chain length allowed before allocation throws: 300 permits three overflow buckets
+        /// per main bucket. Zero selects <see cref="DefaultIndexOverflowThreshold"/>.
+        /// </summary>
+        /// <remarks>
+        /// Expressed in the same unit as the index resize threshold, which is the percentage of main buckets at which
+        /// the index grows, so that the two can be compared directly. A value at or below the resize threshold would be
+        /// reached before the resize that reclaims overflow buckets.
+        /// </remarks>
+        public int IndexOverflowThreshold = DefaultIndexOverflowThreshold;
+
+        /// <summary>
+        /// Value used when <see cref="IndexOverflowThreshold"/> is zero.
+        /// </summary>
+        public const int DefaultIndexOverflowThreshold = 300;
+
+        /// <summary>
+        /// Largest ceiling the overflow-bucket page table can address, regardless of
+        /// <see cref="IndexOverflowThreshold"/>.
+        /// </summary>
+        public static long MaxIndexOverflowMaxMemorySize => MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit;
+
+        /// <summary>
+        /// Resolve a threshold to the overflow-bucket ceiling in bytes for an index generation of a given size,
+        /// rounded down to a whole allocator page and clamped to what the page table can address.
+        /// </summary>
+        /// <param name="tableSizeBuckets">Main bucket count of the index generation.</param>
+        /// <param name="overflowThreshold">Percentage of <paramref name="tableSizeBuckets"/>; zero selects
+        /// <see cref="DefaultIndexOverflowThreshold"/>.</param>
+        public static long GetIndexOverflowMaxMemorySize(long tableSizeBuckets, int overflowThreshold)
+        {
+            if (overflowThreshold <= 0)
+                overflowThreshold = DefaultIndexOverflowThreshold;
+            var requested = tableSizeBuckets <= 0
+                ? 0
+                : tableSizeBuckets * overflowThreshold / 100 * MallocFixedPageSize<HashBucket>.RecordSize;
+            return MallocFixedPageSize<HashBucket>.GetLevelCount(requested) * MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+        }
+
+        /// <summary>
         /// Device used for main hybrid log
         /// </summary>
         public IDevice LogDevice;
@@ -221,7 +264,7 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public override string ToString()
         {
-            var retStr = $"index: {Utility.PrettySize(IndexSize)}; log memory: {Utility.PrettySize(LogMemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
+            var retStr = $"index: {Utility.PrettySize(IndexSize)}; overflow max: {GetOverflowThreshold()}% of index ({Utility.PrettySize(GetIndexOverflowMaxMemorySize(GetIndexSizeCacheLines(), IndexOverflowThreshold))}); log memory: {Utility.PrettySize(LogMemorySize)}; log page: {Utility.PrettySize(PageSize)}; log segment: {Utility.PrettySize(SegmentSize)}";
             retStr += $"; log device: {(LogDevice == null ? "null" : LogDevice.GetType().Name)}";
             retStr += $"; obj log device: {(ObjectLogDevice == null ? "null" : ObjectLogDevice.GetType().Name)}";
             retStr += $"; mutable fraction: {MutableFraction};";
@@ -244,6 +287,12 @@ namespace Tsavorite.core
 
         internal static long SetIndexSizeFromCacheLines(long cacheLines)
             => cacheLines * 64;
+
+        /// <summary>
+        /// Resolve <see cref="IndexOverflowThreshold"/>, substituting the default when it is unset.
+        /// </summary>
+        internal int GetOverflowThreshold()
+            => IndexOverflowThreshold > 0 ? IndexOverflowThreshold : DefaultIndexOverflowThreshold;
 
         internal LogSettings GetLogSettings()
             => new()

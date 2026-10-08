@@ -28,6 +28,14 @@ namespace Tsavorite.core
         internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
         internal MallocFixedPageSize<HashBucket> overflowBucketsAllocatorResize;
 
+        // Overflow-bucket ceiling as a percentage of a generation's main bucket count. Held rather than resolved to a
+        // byte ceiling so that each generation installed by an index resize or by recovery scales with its own table
+        // size, keeping the chain length a resize produces bounded by the same ratio at every index size.
+        internal readonly int overflowThreshold;
+
+        // Logger for the overflow-bucket allocator generations created after construction.
+        private readonly ILogger overflowBucketsLogger;
+
         // An array of size two, that contains the old and new versions of the hash-table
         internal InternalHashTable[] state = new InternalHashTable[2];
 
@@ -77,7 +85,13 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public TsavoriteBase(LightEpoch epoch = null, ILogger logger = null)
+        /// <param name="epoch">Epoch instance to use, or null to own a new one</param>
+        /// <param name="indexSizeBuckets">Main bucket count of the initial index generation, used to size its
+        /// overflow-bucket allocator. Zero or negative selects <see cref="TsavoriteBase.minTableSize"/>.</param>
+        /// <param name="overflowThreshold">Ceiling on overflow buckets as a percentage of a generation's main bucket
+        /// count. Zero or negative selects <see cref="KVSettings.DefaultIndexOverflowThreshold"/>.</param>
+        /// <param name="logger">Logger</param>
+        public TsavoriteBase(LightEpoch epoch = null, long indexSizeBuckets = 0, int overflowThreshold = 0, ILogger logger = null)
         {
             if (epoch == null)
             {
@@ -86,8 +100,19 @@ namespace Tsavorite.core
             }
             else
                 this.epoch = epoch;
-            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
+
+            this.overflowThreshold = overflowThreshold > 0 ? overflowThreshold : KVSettings.DefaultIndexOverflowThreshold;
+            overflowBucketsLogger = logger;
+            overflowBucketsAllocator = NewOverflowBucketsAllocator(indexSizeBuckets > 0 ? indexSizeBuckets : minTableSize);
         }
+
+        /// <summary>
+        /// Create an overflow-bucket allocator generation sized for a given index generation. Used at construction, on
+        /// index resize, and on recovery, so that every generation's ceiling scales with its own main bucket count.
+        /// </summary>
+        /// <param name="tableSizeBuckets">Main bucket count of the generation the allocator serves.</param>
+        internal MallocFixedPageSize<HashBucket> NewOverflowBucketsAllocator(long tableSizeBuckets)
+            => new(KVSettings.GetIndexOverflowMaxMemorySize(tableSizeBuckets, overflowThreshold), overflowBucketsLogger);
 
         internal void Free()
         {
