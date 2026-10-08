@@ -21,7 +21,7 @@ namespace Tsavorite.test.InputOutputParameterTests
 
         private TsavoriteKV<IntStoreFunctions, IntAllocator> store;
         private ClientSession<TestSpanByteKey, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<TestSpanByteKey, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private BasicContext<TestSpanByteKey, int, int, Empty, UpsertInputFunctions, IntStoreFunctions, IntAllocator, BasicSessionLocker<IntStoreFunctions, IntAllocator>> bContext;
         private IDevice log;
 
         internal class UpsertInputFunctions : SessionFunctionsBase<int, int, Empty>

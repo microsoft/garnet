@@ -16,7 +16,7 @@ namespace Tsavorite.test
     {
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private ClientSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
-        private BasicContext<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
+        private BasicContext<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator, BasicSessionLocker<ClassStoreFunctions, ClassAllocator>> bContext;
         private IDevice log, objlog;
 
         [SetUp]

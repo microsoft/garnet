@@ -505,7 +505,7 @@ namespace Tsavorite.test.Expiration
         ExpirationFunctions functions;
         TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         ClientSession<TestSpanByteKey, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
-        BasicContext<TestSpanByteKey, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
+        BasicContext<TestSpanByteKey, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>, BasicSessionLocker<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> bContext;
 
         [SetUp]
         public void Setup()

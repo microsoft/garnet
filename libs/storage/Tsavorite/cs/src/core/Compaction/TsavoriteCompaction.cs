@@ -143,7 +143,7 @@ namespace Tsavorite.core
         }
 
         private void ScanImmutableTailToRemoveFromTempKv<TInput, TOutput, TContext, TFunctions>(ref long untilAddress, long scanUntil,
-                BasicContext<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext)
+                BasicContext<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, BasicSessionLocker<TStoreFunctions, TAllocator>> tempbContext)
             where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         {
             using var iter = Log.Scan(untilAddress, scanUntil);

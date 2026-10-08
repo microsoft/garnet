@@ -73,6 +73,13 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// True if the VectorManager currently active is being run in a transaction.
+        /// 
+        /// This assumes that the Vector Set being operated on has been EXCLUSIVELY locked in the transaction.
+        /// </summary>
+        private static bool InTransaction => ActiveThreadSession.txnManager?.state == TxnState.Running;
+
         private readonly ReadOptimizedLock vectorSetLocks;
 
         private readonly int vectorSetElementSelectMask;
@@ -138,7 +145,7 @@ namespace Garnet.server
         /// If locking operation will update an element, use <see cref="ReadVectorIndexWithElement"/> instead.
         /// </summary>
         internal VectorSetLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
-            => ReadVectorIndexCore(storageSession, key, ref input, indexSpan, nonBlocking: false, out status, out _);
+        => ReadVectorIndexCore(storageSession, key, ref input, indexSpan, nonBlocking: false, out status, out _);
 
         /// <summary>
         /// Core of <see cref="ReadVectorIndex"/>. When <paramref name="nonBlocking"/> is <c>true</c>, the per-set
@@ -155,7 +162,6 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
-            var inTransaction = ActiveThreadSession.txnManager.state == TxnState.Running;
 
             wouldBlock = false;
             try
@@ -213,7 +219,7 @@ namespace Garnet.server
                     GarnetStatus readRes;
                     try
                     {
-                        if (inTransaction)
+                        if (InTransaction)
                         {
                             readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
                         }
@@ -314,7 +320,7 @@ namespace Garnet.server
                             {
                                 ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Recreate_Rmw);
 
-                                if (inTransaction)
+                                if (InTransaction)
                                 {
                                     writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
                                 }
@@ -422,7 +428,6 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
-            var inTransaction = ActiveThreadSession.txnManager.state == TxnState.Running;
 
             try
             {
@@ -452,7 +457,7 @@ namespace Garnet.server
                     GarnetStatus readRes;
                     try
                     {
-                        if (inTransaction)
+                        if (InTransaction)
                         {
                             readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
                         }
@@ -573,7 +578,7 @@ namespace Garnet.server
                         {
                             try
                             {
-                                if (inTransaction)
+                                if (InTransaction)
                                 {
                                     writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
                                 }
@@ -675,7 +680,6 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
-            var inTransaction = ActiveThreadSession.txnManager.state == TxnState.Running;
 
             var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
@@ -683,7 +687,7 @@ namespace Garnet.server
             var acquiredLock = AcquireExclusiveLocks(storageSession, key);
             try
             {
-                if (inTransaction)
+                if (InTransaction)
                 {
                     status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
                 }

@@ -28,7 +28,7 @@ namespace Tsavorite.core
     /// <remarks>
     /// This struct contains no data fields; SessionFunctionsWrapper redirects with its ClientSession.
     /// </remarks>
-    internal struct BasicSessionLocker<TStoreFunctions, TAllocator> : ISessionLocker<TStoreFunctions, TAllocator>
+    public struct BasicSessionLocker<TStoreFunctions, TAllocator> : ISessionLocker<TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -113,5 +113,29 @@ namespace Tsavorite.core
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
         }
+    }
+
+    /// <summary>
+    /// Version of <see cref="ISessionLocker{TStoreFunctions, TAllocator}"/> that does no actual locking, relying on external locking for single-writer on a block.
+    /// </summary>
+    public readonly struct UnsafeNullSessionLocker<TStoreFunctions, TAllocator> : ISessionLocker<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
+    {
+        public readonly bool IsTransactionalLocking => false;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool TryLockEphemeralExclusive(TsavoriteKV<TStoreFunctions, TAllocator> store, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+        => true;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly bool TryLockEphemeralShared(TsavoriteKV<TStoreFunctions, TAllocator> store, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+        => true;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void UnlockEphemeralExclusive(TsavoriteKV<TStoreFunctions, TAllocator> store, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx) { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly void UnlockEphemeralShared(TsavoriteKV<TStoreFunctions, TAllocator> store, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx) { }
     }
 }

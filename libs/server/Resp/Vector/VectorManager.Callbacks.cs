@@ -241,7 +241,8 @@ namespace Garnet.server
                 hasPending |= status.IsPending;
             }
 
-            internal readonly void CompletePending(ref VectorBasicContext objectContext)
+            internal readonly void CompletePending<TVectorContext>(ref TVectorContext objectContext)
+                where TVectorContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
             {
                 if (hasPending)
                 {
@@ -369,11 +370,25 @@ namespace Garnet.server
 
             var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, numKeys, PinnedSpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), nsBytes, readCopyOptions, (int)valueLengthHintWithOverhead);
 
-            ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+            if (InTransaction)
+            {
+                // Locking in the transaction MUST have locked the Vector Set, so NO other thread can touch these namespaces
+                ref var ctx = ref ActiveThreadSession.unsafeVectorNullLockingBasicContext;
 
-            ctx.ReadWithPrefetch(ref enumerable);
+                ctx.ReadWithPrefetch(ref enumerable);
 
-            enumerable.CompletePending(ref ctx);
+                enumerable.CompletePending(ref ctx);
+            }
+            else
+            {
+                ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+
+                ctx.ReadWithPrefetch(ref enumerable);
+
+                enumerable.CompletePending(ref ctx);
+            }
+
+
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -383,15 +398,31 @@ namespace Garnet.server
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
-            ref var ctx = ref ActiveThreadSession.vectorBasicContext;
             VectorInput input = new();
             var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
             VectorOutput outputSpan = new();
 
-            var status = ctx.Upsert(keyWithNamespace, ref input, valueSpan, ref outputSpan);
-            if (status.IsPending)
+            Status status;
+            if (InTransaction)
             {
-                CompletePending(ref status, ref outputSpan, ref ctx);
+                // Locking in the transaction MUST have locked the Vector Set, so NO other thread can touch these namespaces
+                ref var ctx = ref ActiveThreadSession.unsafeVectorNullLockingBasicContext;
+
+                status = ctx.Upsert(keyWithNamespace, ref input, valueSpan, ref outputSpan);
+                if (status.IsPending)
+                {
+                    CompletePending(ref status, ref outputSpan, ref ctx);
+                }
+            }
+            else
+            {
+                ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+
+                status = ctx.Upsert(keyWithNamespace, ref input, valueSpan, ref outputSpan);
+                if (status.IsPending)
+                {
+                    CompletePending(ref status, ref outputSpan, ref ctx);
+                }
             }
 
             RestoreKeyLengthPrefix(keyData, keyLength);
@@ -413,9 +444,21 @@ namespace Garnet.server
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
-            ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+            Status status;
+            if (InTransaction)
+            {
+                // Locking in the transaction MUST have locked the Vector Set, so NO other thread can touch these namespaces
+                ref var ctx = ref ActiveThreadSession.unsafeVectorNullLockingBasicContext;
 
-            var status = ctx.Delete(keyWithNamespace);
+                status = ctx.Delete(keyWithNamespace);
+            }
+            else
+            {
+                ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+
+                status = ctx.Delete(keyWithNamespace);
+            }
+
             Debug.Assert(!status.IsPending, "Deletes should never go async");
 
             RestoreKeyLengthPrefix(keyData, keyLength);
@@ -437,19 +480,36 @@ namespace Garnet.server
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
-            ref var ctx = ref ActiveThreadSession.vectorBasicContext;
-
             VectorInput input = default;
             input.Callback = dataCallback;
             input.CallbackContext = dataCallbackContext;
             input.WriteDesiredSize = (int)writeLength;
 
-            var status = ctx.RMW(keyWithNamespace, ref input);
-            if (status.IsPending)
+            Status status;
+            if (InTransaction)
             {
-                VectorOutput ignored = new();
+                // Locking in the transaction MUST have locked the Vector Set, so NO other thread can touch these namespaces
+                ref var ctx = ref ActiveThreadSession.unsafeVectorNullLockingBasicContext;
 
-                CompletePending(ref status, ref ignored, ref ctx);
+                status = ctx.RMW(keyWithNamespace, ref input);
+                if (status.IsPending)
+                {
+                    VectorOutput ignored = new();
+
+                    CompletePending(ref status, ref ignored, ref ctx);
+                }
+            }
+            else
+            {
+                ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+
+                status = ctx.RMW(keyWithNamespace, ref input);
+                if (status.IsPending)
+                {
+                    VectorOutput ignored = new();
+
+                    CompletePending(ref status, ref ignored, ref ctx);
+                }
             }
 
             RestoreKeyLengthPrefix(keyData, keyLength);
@@ -479,8 +539,6 @@ namespace Garnet.server
 
             VectorElementKey keyWithNamespace = new(nsBytes, key);
 
-            ref var ctx = ref ActiveThreadSession.vectorBasicContext;
-
             while (true)
             {
                 VectorInput input = new();
@@ -490,10 +548,27 @@ namespace Garnet.server
                 {
                     VectorOutput asSpanByte = new(ptr, value.Length);
 
-                    var status = ctx.Read(keyWithNamespace, ref input, ref asSpanByte);
-                    if (status.IsPending)
+                    Status status;
+                    if (InTransaction)
                     {
-                        CompletePending(ref status, ref input, ref asSpanByte, ref ctx);
+                        // Locking in the transaction MUST have locked the Vector Set, so NO other thread can touch these namespaces
+                        ref var ctx = ref ActiveThreadSession.unsafeVectorNullLockingBasicContext;
+
+                        status = ctx.Read(keyWithNamespace, ref input, ref asSpanByte);
+                        if (status.IsPending)
+                        {
+                            CompletePending(ref status, ref input, ref asSpanByte, ref ctx);
+                        }
+                    }
+                    else
+                    {
+                        ref var ctx = ref ActiveThreadSession.vectorBasicContext;
+
+                        status = ctx.Read(keyWithNamespace, ref input, ref asSpanByte);
+                        if (status.IsPending)
+                        {
+                            CompletePending(ref status, ref input, ref asSpanByte, ref ctx);
+                        }
                     }
 
                     if (!status.Found)

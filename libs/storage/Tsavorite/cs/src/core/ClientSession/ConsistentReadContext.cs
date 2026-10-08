@@ -21,7 +21,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        public readonly BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext { get; }
+        public readonly BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, BasicSessionLocker<TStoreFunctions, TAllocator>> BasicContext { get; }
 
         /// <inheritdoc/>
         public long GetKeyHash<TOpKey>(TOpKey key)
@@ -33,7 +33,7 @@ namespace Tsavorite.core
 
         internal ConsistentReadContext(ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
-            BasicContext = new BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(clientSession);
+            BasicContext = new BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, BasicSessionLocker<TStoreFunctions, TAllocator>>(clientSession);
         }
 
         /// <inheritdoc/>

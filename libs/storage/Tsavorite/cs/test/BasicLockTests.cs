@@ -70,7 +70,7 @@ namespace Tsavorite.test.LockTests
 
         private TsavoriteKV<StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
         private ClientSession<TestSpanByteKey, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> session;
-        private BasicContext<TestSpanByteKey, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> bContext;
+        private BasicContext<TestSpanByteKey, long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>, BasicSessionLocker<StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>>> bContext;
         private IDevice log;
         private LongKeyComparerModulo keyComparer = new(NumRecords);
 
