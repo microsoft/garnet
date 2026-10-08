@@ -146,7 +146,7 @@ namespace Garnet.common
         /// remains buffered, before the next read. Lets a test deterministically deliver a graceful close
         /// (close_notify/EOF) mid-frame to exercise the reader's end-of-stream handling.
         /// </summary>
-        Network_Tls_Pause_With_Partial_Frame,
+        Tls_Pause_With_Partial_Frame,
         /// <summary>
         /// Replica full sync: fail recovery of the checkpoint received from the primary, before any of it is applied.
         /// </summary>

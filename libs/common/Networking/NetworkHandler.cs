@@ -692,7 +692,7 @@ namespace Garnet.networking
                     // exercise the end-of-stream handling below. No-op unless the injection point is enabled;
                     // compiled out entirely in Release.
                     if (transportBytesRead > 0)
-                        await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Network_Tls_Pause_With_Partial_Frame).ConfigureAwait(false);
+                        await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Tls_Pause_With_Partial_Frame).ConfigureAwait(false);
 #endif
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);
                     int count = await sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), token).ConfigureAwait(false);

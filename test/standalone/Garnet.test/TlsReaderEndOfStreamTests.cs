@@ -27,7 +27,7 @@ namespace Garnet.test
     [TestFixture]
     public class TlsReaderEndOfStreamTests : TestBase
     {
-        const ExceptionInjectionType Pause = ExceptionInjectionType.Network_Tls_Pause_With_Partial_Frame;
+        const ExceptionInjectionType Pause = ExceptionInjectionType.Tls_Pause_With_Partial_Frame;
 
         static readonly TimeSpan Deadline = TimeSpan.FromSeconds(20);
 
