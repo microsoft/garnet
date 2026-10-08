@@ -27,12 +27,13 @@ namespace Garnet.test
         int bufferStart;
         int bufferEnd;
 
-        internal RawRespClient(System.Net.EndPoint endPoint, bool useTls = false, int receiveBufferSize = 0)
+        internal RawRespClient(System.Net.EndPoint endPoint, bool useTls = false, int receiveBufferSize = 0,
+                               int receiveTimeoutMs = 60_000)
         {
             socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
             {
                 NoDelay = true,
-                ReceiveTimeout = 60_000,
+                ReceiveTimeout = receiveTimeoutMs,
                 SendTimeout = 60_000
             };
 

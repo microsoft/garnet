@@ -6,6 +6,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+#if DEBUG
+// Used only by the randomised churn soak, which is itself Debug-only.
+using System.Globalization;
+using System.IO;
+using System.Net.Sockets;
+#endif
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -856,6 +862,306 @@ namespace Garnet.test
                 client.Send(RawRespClient.Command("DEBUG", get, "0", "absent"));
                 ClassicAssert.IsNull(client.ReadBulkString(), $"DEBUG {get} replied differently for a miss");
             }
+        }
+
+        /// <summary>
+        /// Parks, aborts, kills, disconnects and ordinary commands all racing each other leave no context
+        /// behind and break no contract.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Every other test in this fixture drives one path at a time, which is what makes them diagnostic
+        /// but also what limits them: the state a park keeps is only interesting when two of those paths
+        /// reach it at once. The rendezvous in particular -- the receive stack unwinding and the operation
+        /// completing, in either order, resuming exactly once -- cannot be exercised by a test that does one
+        /// thing, and neither can the interaction between an abort arriving and a wait ending on its own.
+        /// </para>
+        /// <para>
+        /// So this does all of them at once, under a fixed seed, and checks the two things that are true no
+        /// matter how the interleaving fell out: no context is still live once the churn stops, and no
+        /// contract was violated along the way. Those cover losing a context, resuming twice, releasing
+        /// twice, writing a reply from the wrong place, and a body that returns without resuming -- the
+        /// failures that a one-path test would have to be looking for specifically to see.
+        /// </para>
+        /// <para>
+        /// Torn connections are the point rather than a nuisance, so a read that fails because the peer went
+        /// away is expected. A read that times out is not, and is reported: every operation is bounded by a
+        /// delay of at most MaxDelayMs, so a reply that never arrives is a park that never resumed.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void RandomisedAsyncBlockingChurnLeavesNothingBehind()
+        {
+#if !DEBUG
+            Assert.Ignore("Contexts and contract violations are only counted in Debug builds.");
+#else
+            const int Workers = 16;
+            const int ChurnSeconds = 8;
+            const int Keys = 16;
+            const int MaxDelayMs = 40;
+            const int ReadTimeoutMs = 5000;
+            const int Seed = 20260207;
+            const int Connecting = -2;
+
+            var failures = new List<Exception>();
+            var killTargets = new Queue<(int Id, long DueAtMs)>();
+            var parks = 0;
+            var kills = 0;
+
+            using var liveness = new RawRespClient(TestUtils.EndPoint);
+            using var killer = new RawRespClient(TestUtils.EndPoint);
+
+            for (var k = 0; k < Keys; k++)
+                SendAndReadLine(liveness, RawRespClient.Command("SET", $"churn:{k}", $"v{k}"));
+
+            var run = Stopwatch.StartNew();
+            var stop = false;
+
+            // A stream wraps the socket error it saw, so the timeout has to be looked for through the wrapper.
+            static bool IsTimeout(Exception e)
+                => e is SocketException { SocketErrorCode: SocketError.TimedOut }
+                   || (e.InnerException is not null && IsTimeout(e.InnerException));
+
+            // A torn connection is what this test produces on purpose, so a read that fails because the
+            // peer went away is expected. A read that times out is not: every operation here is bounded
+            // by a delay of at most MaxDelayMs, so a reply that never arrives means a park that never
+            // resumed, which is exactly the failure worth catching. Workers label their exceptions with
+            // the operation that failed, so the expected-ness test has to see through the wrapper.
+            static bool IsExpectedTear(Exception e)
+                => (e is IOException or SocketException && !IsTimeout(e))
+                   || (e.InnerException is not null && IsExpectedTear(e.InnerException));
+
+            void Record(Exception e)
+            {
+                if (IsExpectedTear(e))
+                    return;
+
+                lock (failures)
+                    failures.Add(e);
+            }
+
+            var workers = new Thread[Workers];
+            for (var w = 0; w < Workers; w++)
+            {
+                var seed = Seed + w;
+                workers[w] = new Thread(() =>
+                {
+                    var rng = new Random(seed);
+                    RawRespClient client = null;
+                    var clientId = 0;
+                    var op = -1;
+
+                    try
+                    {
+                        while (!Volatile.Read(ref stop) && run.Elapsed.TotalSeconds < ChurnSeconds)
+                        {
+                            try
+                            {
+                                // Reconnected only once the previous connection has actually died, so a
+                                // connection lives across many parks and the reuse path is covered rather
+                                // than a fresh context being built for every operation.
+                                if (client == null)
+                                {
+                                    // Labels a failure raised while connecting, so it is not read as a failure
+                                    // of whichever operation happened to run last.
+                                    op = Connecting;
+                                    client = new RawRespClient(TestUtils.EndPoint,
+                                                               receiveTimeoutMs: ReadTimeoutMs);
+
+                                    client.Send(RawRespClient.Command("CLIENT", "ID"));
+                                    clientId = client.ReadInteger();
+                                }
+
+                                var key = $"churn:{rng.Next(Keys)}";
+                                // DEBUG BLOCKASYNC takes seconds, so a millisecond-scale delay is fractional.
+                                var delayMs = rng.Next(MaxDelayMs);
+                                var delay = (delayMs / 1000.0).ToString("0.000", CultureInfo.InvariantCulture);
+
+                                // Aims a kill at the instant this park is due to finish, so that an abort and a
+                                // completion race each other rather than arriving at unrelated times. Only a
+                                // fraction are targeted, so most parks still get to complete normally.
+                                if (rng.Next(4) == 0)
+                                {
+                                    lock (killTargets)
+                                    {
+                                        killTargets.Enqueue((clientId, Environment.TickCount64 + delayMs));
+                                        while (killTargets.Count > Workers * 2)
+                                            _ = killTargets.Dequeue();
+                                    }
+                                }
+
+                                op = rng.Next(6);
+
+                                switch (op)
+                                {
+                                    case 0:
+                                        client.Send(RawRespClient.Command("DEBUG", "BLOCKASYNC", delay));
+                                        _ = client.ReadLine();
+                                        _ = Interlocked.Increment(ref parks);
+                                        break;
+
+                                    case 1:
+                                        client.Send(RawRespClient.Command("DEBUG", "BLOCKGETASYNC", delay, key));
+                                        _ = client.ReadBulkString();
+                                        _ = Interlocked.Increment(ref parks);
+                                        break;
+
+                                    case 2:
+                                        // Pipelined behind a park, so the resume has buffered input to drain.
+                                        client.Send(RawRespClient.Command("DEBUG", "BLOCKASYNC", delay),
+                                                    RawRespClient.Command("PING"),
+                                                    RawRespClient.Command("GET", key));
+                                        _ = client.ReadLine();
+                                        _ = client.ReadLine();
+                                        _ = client.ReadBulkString();
+                                        _ = Interlocked.Increment(ref parks);
+                                        break;
+
+                                    case 3:
+                                        client.Send(RawRespClient.Command("SET", key, "v"));
+                                        _ = client.ReadLine();
+                                        break;
+
+                                    case 4:
+                                        // A park refused inside a transaction must fall back, not wait.
+                                        client.Send(RawRespClient.Command("MULTI"),
+                                                    RawRespClient.Command("DEBUG", "BLOCKASYNC", delay),
+                                                    RawRespClient.Command("EXEC"));
+                                        _ = client.ReadLine();
+                                        _ = client.ReadLine();
+                                        _ = client.ReadLine();
+                                        _ = client.ReadLine();
+                                        break;
+
+                                    default:
+                                        // Walk away mid-park: drop the connection without reading the reply.
+                                        client.Send(RawRespClient.Command("DEBUG", "BLOCKASYNC", delay));
+                                        _ = Interlocked.Increment(ref parks);
+                                        Thread.Sleep(rng.Next(MaxDelayMs));
+                                        client.Dispose();
+                                        client = null;
+                                        break;
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                Record(new Exception($"op {op}: {e.Message}", e));
+
+                                try
+                                {
+                                    client?.Dispose();
+                                }
+                                catch (Exception disposeFailure)
+                                {
+                                    Record(disposeFailure);
+                                }
+
+                                client = null;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            client?.Dispose();
+                        }
+                        catch (Exception e)
+                        {
+                            Record(e);
+                        }
+                    }
+                })
+                { IsBackground = true };
+
+                workers[w].Start();
+            }
+
+            try
+            {
+                var rng = new Random(Seed);
+                while (run.Elapsed.TotalSeconds < ChurnSeconds)
+                {
+                    var id = 0;
+                    var dueAtMs = 0L;
+                    lock (killTargets)
+                    {
+                        if (killTargets.Count > 0)
+                            (id, dueAtMs) = killTargets.Dequeue();
+                    }
+
+                    if (id != 0)
+                    {
+                        // Lands the abort as close to the completion as the scheduler allows.
+                        var waitMs = dueAtMs - Environment.TickCount64;
+                        if (waitMs > 0)
+                            Thread.Sleep((int)waitMs);
+
+                        try
+                        {
+                            // Kills a connection that may be parked, running, or already gone. CLIENT KILL
+                            // answers :0 for one that has gone, which is a legitimate outcome here.
+                            killer.Send(RawRespClient.Command("CLIENT", "KILL", "ID", id.ToString()));
+                            kills += killer.ReadInteger();
+                        }
+                        catch (Exception e)
+                        {
+                            Record(e);
+                        }
+                    }
+
+                    // The server must stay responsive to an unrelated connection throughout, which is the
+                    // property the whole pattern exists for.
+                    var pong = SendAndReadLine(liveness, RawRespClient.Command("PING"));
+                    ClassicAssert.AreEqual("+PONG", pong, "The server stopped answering during the churn.");
+
+                    Thread.Sleep(rng.Next(5));
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref stop, true);
+
+                foreach (var worker in workers)
+                    ClassicAssert.IsTrue(worker.Join(TimeSpan.FromSeconds(30)),
+                        "A churn worker did not exit, which means a read never came back.");
+
+            }
+
+            lock (failures)
+            {
+                if (failures.Count > 0)
+                    throw new AssertionException(
+                        $"{failures.Count} unexpected failures during the churn: " +
+                        string.Join(" | ", failures.Take(5).Select(f => f.Message)), failures[0]);
+            }
+
+            ClassicAssert.Greater(parks, Workers, "The churn did not actually park anything.");
+
+            // Every connection is gone, so every context it owned must have been released and recycled.
+            // A context still live here is one the teardown paths lost.
+            ClassicAssert.IsTrue(SpinUntil(() => BlockingCommandContext.LiveContexts == 0, 30000),
+                $"{BlockingCommandContext.LiveContexts} contexts were still live after {parks} parks " +
+                $"and {kills} kills.");
+
+            ClassicAssert.AreEqual(0, BlockingCommandContext.ContractViolations,
+                "The churn violated a blocking command contract.");
+
+            ClassicAssert.AreEqual("+PONG", SendAndReadLine(liveness, RawRespClient.Command("PING")),
+                "The server was not healthy after the churn.");
+
+            TestContext.Out.WriteLine(
+                $"churn completed {parks} parks and {kills} kills with no contexts left behind");
+#endif
+        }
+
+        /// <summary>
+        /// Sends one command and reads its single-line reply.
+        /// </summary>
+        static string SendAndReadLine(RawRespClient client, byte[] command)
+        {
+            client.Send(command);
+            return client.ReadLine();
         }
     }
 }
