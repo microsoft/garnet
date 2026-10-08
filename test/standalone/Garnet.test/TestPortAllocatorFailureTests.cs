@@ -30,10 +30,8 @@ namespace Garnet.test
         private static string leaseDirectory;
 
         /// <summary>
-        /// Leases taken by a reservation are held for the life of the process by design, so this directory
-        /// cannot be deleted while any test here has reserved from it. It therefore lives outside
-        /// <see cref="TestUtils.MethodTestDir"/>, which per-test teardown deletes, and is cleaned up
-        /// best-effort at the end of the fixture.
+        /// Lives outside <see cref="TestUtils.MethodTestDir"/>, which per-test teardown deletes, because the
+        /// directory has to outlast every test in the fixture rather than one of them.
         /// </summary>
         [OneTimeSetUp]
         public void OneTimeSetUp()
@@ -51,7 +49,7 @@ namespace Garnet.test
             }
             catch (IOException)
             {
-                // Leases this fixture reserved are still open, which is the documented lifetime.
+                // Best-effort: a lease file left locked by an unrelated process must not fail the fixture.
             }
         }
 
@@ -275,6 +273,29 @@ namespace Garnet.test
                 Assert.That(stolen, Is.Null,
                     $"Block {secondBlock} holds the tail of pinned run {basePort}-{basePort + 1} but was " +
                     $"still available, so another host could reserve an overlapping run.");
+            });
+        }
+
+        /// <summary>
+        /// An isolated action must give back what it leased. A reservation normally holds its lease until the
+        /// process exits, but the private directory is discarded with the action, so a lease left locked there
+        /// protects nothing and collides with the next isolated action - which clears the record of held
+        /// blocks and so believes the block is free. The allocator then reports a conflict with another test
+        /// host, which is both false and the one diagnostic that sends the reader looking outside the process.
+        /// </summary>
+        [Test]
+        public void IsolatedLeasesAreGivenBackWhenTheActionEnds()
+        {
+            var block = -1;
+            TestPortAllocator.WithIsolatedLeases(leaseDirectory, () =>
+                block = TestPortAllocator.PortBlock(TestPortAllocator.Reserve(2, "isolated-release")));
+
+            TestPortAllocator.WithIsolatedLeases(leaseDirectory, () =>
+            {
+                using var lease = TestPortAllocator.HoldLeaseForTest(block);
+                Assert.That(lease, Is.Not.Null,
+                    $"Block {block} is still leased after the isolated action that reserved it ended, so a " +
+                    $"later test in this fixture can be told the block belongs to another test host.");
             });
         }
 

@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -373,8 +373,8 @@ namespace Garnet.test
 
         /// <summary>
         /// Runs an action with leases redirected to <paramref name="directory"/>, and with the record of blocks
-        /// already held by this process cleared so the action sees a pristine allocator. Both are restored
-        /// afterwards, including on failure.
+        /// already held by this process cleared so the action sees a pristine allocator. Everything the action
+        /// takes from the private directory is given back afterwards, including on failure.
         /// </summary>
         /// <param name="directory">Private directory to lease from.</param>
         /// <param name="action">Action to run against the redirected allocator.</param>
@@ -386,6 +386,7 @@ namespace Garnet.test
                 var previousBlocks = new int[reservedBlocks.Count];
                 reservedBlocks.CopyTo(previousBlocks);
                 var previousReservations = reservations.ToArray();
+                var previousLeaseCount = heldLeases.Count;
 
                 leaseDirectoryOverride = directory;
                 reservedBlocks.Clear();
@@ -405,6 +406,17 @@ namespace Garnet.test
                     // would make a later diagnostic claim ports this process no longer holds.
                     reservations.Clear();
                     reservations.AddRange(previousReservations);
+
+                    // A reservation normally holds its lease until the process exits, but one taken here is
+                    // scoped to the action: the next isolated action clears reservedBlocks and so considers
+                    // the block free, and a lease still locked from the previous action then reads as a
+                    // collision with a different test host. Releasing closes that gap and lets the caller
+                    // delete the directory.
+                    for (var i = heldLeases.Count - 1; i >= previousLeaseCount; i--)
+                    {
+                        heldLeases[i].Dispose();
+                        heldLeases.RemoveAt(i);
+                    }
                 }
             }
         }
