@@ -136,7 +136,7 @@ namespace Tsavorite.test.Cancellation
         CancellationFunctions functions;
         TsavoriteKV<IntStoreFunctions, IntAllocator> store;
         ClientSession<TestSpanByteKey, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> session;
-        BasicContext<TestSpanByteKey, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator> bContext;
+        BasicContext<TestSpanByteKey, int, int, Empty, CancellationFunctions, IntStoreFunctions, IntAllocator, BasicSessionLocker<IntStoreFunctions, IntAllocator>> bContext;
 
         const int NumRecs = 100;
 

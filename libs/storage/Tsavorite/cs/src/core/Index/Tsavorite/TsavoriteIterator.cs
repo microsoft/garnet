@@ -61,7 +61,7 @@ namespace Tsavorite.core
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> tempKv;
         private readonly ClientSession<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempKvSession;
-        private readonly BasicContext<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tempbContext;
+        private readonly BasicContext<ITsavoriteScanIterator, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, BasicSessionLocker<TStoreFunctions, TAllocator>> tempbContext;
         private ITsavoriteScanIterator mainKvIter;
         private ITsavoriteScanIterator tempKvIter;
 

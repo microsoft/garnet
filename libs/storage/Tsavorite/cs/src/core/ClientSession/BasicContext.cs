@@ -11,15 +11,16 @@ namespace Tsavorite.core
     /// <summary>
     /// Basic Tsavorite Context implementation.
     /// </summary>
-    public readonly struct BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
+    public readonly struct BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, TSessionLocker>
         : ITsavoriteContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
         where TKey : IKey, allows ref struct
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
+        where TSessionLocker : struct, ISessionLocker<TStoreFunctions, TAllocator>
     {
         readonly ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession;
-        internal readonly SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator> sessionFunctions;
+        internal readonly SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator> sessionFunctions;
 
         /// <inheritdoc/>
         public bool IsNull => clientSession is null;
@@ -91,7 +92,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                clientSession.store.ContextReadWithPrefetch<TKey, TBatch, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref batch, userContext, sessionFunctions);
+                clientSession.store.ContextReadWithPrefetch<TKey, TBatch, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(ref batch, userContext, sessionFunctions);
             }
             finally
             {
@@ -160,7 +161,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextReadAtAddress<EmptyKey, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+                return store.ContextReadAtAddress<EmptyKey, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(address, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
             }
             finally
             {
@@ -442,7 +443,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.ContextDelete<TKey, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(key, keyHash, userContext, sessionFunctions);
+                return store.ContextDelete<TKey, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(key, keyHash, userContext, sessionFunctions);
             }
             finally
             {
@@ -477,7 +478,7 @@ namespace Tsavorite.core
             try
             {
                 return store.CompactionConditionalCopyToTail<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions,
-                        BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
+                        TSessionLocker, TStoreFunctions, TAllocator>, TSourceLogRecord>(
                     sessionFunctions, in srcLogRecord, currentAddress, untilAddress);
             }
             finally
@@ -501,7 +502,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
+                return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>, TSourceLogRecord>(
                         sessionFunctions, scanCursorState, in srcLogRecord, currentAddress, currentAddress, untilAddress, maxAddress);
             }
             finally
@@ -522,7 +523,7 @@ namespace Tsavorite.core
             UnsafeResumeThread();
             try
             {
-                return store.InternalContainsKeyInMemory<TKey, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(
+                return store.InternalContainsKeyInMemory<TKey, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>>(
                         key, sessionFunctions, out logicalAddress, fromAddress);
             }
             finally

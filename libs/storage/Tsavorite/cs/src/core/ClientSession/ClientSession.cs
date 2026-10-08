@@ -30,9 +30,11 @@ namespace Tsavorite.core
         readonly UnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> uContext;
         readonly TransactionalUnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
         readonly TransactionalContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
-        readonly BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> bContext;
+        readonly BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, BasicSessionLocker<TStoreFunctions, TAllocator>> bContext;
         readonly ConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> crContext;
         readonly TransactionalConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tcrContext;
+
+        readonly BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, UnsafeNullSessionLocker<TStoreFunctions, TAllocator>> bulContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -98,6 +100,7 @@ namespace Tsavorite.core
                 uContext = new(this);
                 lContext = tcrContext.TransactionalContext;
                 luContext = new(this);
+                bulContext = new(this);
             }
             else
             {
@@ -105,6 +108,7 @@ namespace Tsavorite.core
                 uContext = new(this);
                 lContext = new(this);
                 luContext = new(this);
+                bulContext = new(this);
             }
 
             this.loggerFactory = loggerFactory;
@@ -172,7 +176,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Return a session wrapper struct that passes through to client session
         /// </summary>
-        public BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
+        public BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, BasicSessionLocker<TStoreFunctions, TAllocator>> BasicContext => bContext;
 
         /// <summary>
         /// Return the consistent read context;
@@ -183,6 +187,8 @@ namespace Tsavorite.core
         /// Return the transactional consistent read context
         /// </summary>
         public TransactionalConsistentReadContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalConsistentReadContext => tcrContext;
+
+        public BasicContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator, UnsafeNullSessionLocker<TStoreFunctions, TAllocator>> UnsafeBasicNullLockingContext => bulContext;
 
         #region ITsavoriteContext
 
