@@ -330,13 +330,11 @@ namespace Tsavorite.test.LogRecordTests
         sealed class EmptyTolerantSerializer : BinaryObjectSerializer<IHeapObject>
         {
             internal static int DeserializeCallCount;
-            internal static bool SawEmptyStream;
 
             public override void Deserialize(out IHeapObject obj)
             {
                 ++DeserializeCallCount;
                 var first = reader.BaseStream.ReadByte();
-                SawEmptyStream = first < 0;
                 obj = new TestObjectValue() { value = first < 0 ? 0 : first };
             }
 
@@ -345,7 +343,7 @@ namespace Tsavorite.test.LogRecordTests
 
         [Test]
         [Category(LogRecordCategory), Category(SmokeTestCategory)]
-        public unsafe void MaterializeWithoutReadingDeserializesFromAnEmptyStream()
+        public unsafe void MaterializeWithoutReadingRecordsAnAbsentObject()
         {
             Span<byte> key = stackalloc byte[initialKeyLen];
             Span<byte> value = stackalloc byte[initialValueLen];
@@ -364,7 +362,6 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(ObjectLogFilePositionInfo.IsUnstamped(positionPtr), Is.False);
 
             EmptyTolerantSerializer.DeserializeCallCount = 0;
-            EmptyTolerantSerializer.SawEmptyStream = false;
 
             // readBuffers is never touched in materialize-only mode, so no device or ring is needed.
             var storeFunctions = StoreFunctions.Create(new SpanByteComparer(), () => (IObjectSerializer<IHeapObject>)new EmptyTolerantSerializer(), DefaultRecordTriggers.Instance);
@@ -372,9 +369,11 @@ namespace Tsavorite.test.LogRecordTests
 
             logReader.MaterializeRecordObjectsWithoutReading(ref logRecord);
 
-            Assert.That(EmptyTolerantSerializer.DeserializeCallCount, Is.EqualTo(1), "the deserializer must still be called so it can observe the record");
-            Assert.That(EmptyTolerantSerializer.SawEmptyStream, Is.True, "the stream must report end-of-stream, not another record's bytes");
-            Assert.That(logRecord.ValueObject, Is.Not.Null, "the value must be materialized");
+            // Zero bytes carry no type, so there is nothing to reconstruct and the deserializer is not called at all. Calling it was
+            // the previous behavior; it only pushed the failure into the implementation, which is where GarnetObjectSerializer threw
+            // EndOfStreamException from its unconditional first ReadByte.
+            Assert.That(EmptyTolerantSerializer.DeserializeCallCount, Is.Zero, "the deserializer must not be invoked on an empty stream");
+            Assert.That(logRecord.ValueObject, Is.Null, "the object must be recorded as absent");
             Assert.That(ObjectLogFilePositionInfo.IsUnstamped(positionPtr), Is.True, "materializing must unstamp like a normal read");
         }
 

@@ -208,7 +208,14 @@ namespace Tsavorite.core
                         // A headerless object's hint is its exact byte count, so bound the deserializer to exactly that.
                         objectDataBudget = isLegacy ? (long)valueLength : logRecord.ValueObjectIdSizeHint;
                     }
-                    DoDeserialize(ref logRecord);
+
+                    // A zero-byte object carries no type information, so there is nothing a deserializer could reconstruct from it;
+                    // see MaterializeRecordObjectsWithoutReading. Record the absence instead of calling the deserializer on an empty
+                    // stream. This also unstamps the position, exactly as a deserializing read would.
+                    if (objectDataBudget == 0)
+                        logRecord.SetDeserializedValueObject(null);
+                    else
+                        DoDeserialize(ref logRecord);
                     objectChunked = false;
                     objectDataBudget = -1;
                 }
@@ -229,11 +236,14 @@ namespace Tsavorite.core
         /// <remarks>
         /// Used for a record that has out-of-line components but no bytes in the object log: one the flush skipped, or one whose only
         /// out-of-line component is zero length. Reading such a record's position would consume bytes belonging to a different record,
-        /// but simply skipping it would leave its components unmaterialized and would never tell the value serializer the record existed.
-        /// <para>Every component is therefore materialized empty and the value deserializer is still invoked with
-        /// <see cref="objectDataBudget"/> at zero, so <see cref="Read(Span{byte}, CancellationToken)"/> reports end-of-stream and it
-        /// receives no data. That lets an <c>ISessionFunctions</c> implementation audit these records, and lets a deliberately empty
-        /// object round-trip.</para>
+        /// but simply skipping it would leave its components unmaterialized.
+        /// <para>Overflow components are materialized as empty byte arrays. An object value is recorded as absent -- the value
+        /// deserializer is NOT invoked. Zero bytes carry no type information, so there is nothing a deserializer could reconstruct:
+        /// every real serializer encodes its type in the stream and cannot produce the right object, or any object, from nothing.
+        /// Invoking it anyway only moved the failure into the implementation, which is what
+        /// <c>GarnetObjectSerializer.DeserializeInternal</c> does when its unconditional first <c>ReadByte</c> hits end-of-stream.</para>
+        /// <para>The value slot is still allocated, holding null, rather than left unset: <see cref="LogRecord.ValueObject"/> resolves
+        /// an unset id through <c>objectArray.Get(-1)</c>, so callers would fault instead of seeing "no object".</para>
         /// </remarks>
         public void MaterializeRecordObjectsWithoutReading(ref LogRecord logRecord)
         {
@@ -254,7 +264,7 @@ namespace Tsavorite.core
                 if (logRecord.DataHeader.ValueIsOverflow)
                     logRecord.ValueOverflow = new OverflowByteArray(0, startOffset: 0, endOffset: 0, zeroInit: false);
                 else if (logRecord.DataHeader.ValueIsObject)
-                    DoDeserialize(ref logRecord);
+                    logRecord.SetDeserializedValueObject(null);
 
                 logRecord.OnObjectReadComplete();
             }

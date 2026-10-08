@@ -949,8 +949,9 @@ namespace Tsavorite.core
         /// <para>What the stamp still decides is whether a <i>position</i> may be used. Reading from an unstamped position would consume
         /// bytes belonging to a different record, so the walk must not seek there.</para>
         /// <para>Read extents play no part in this test. A zero extent is a legitimate zero-length out-of-line value, which contributes no
-        /// object-log bytes but is still stamped and still materialized, and a zero position word is offset 0 of segment 0 -- a
-        /// real position -- because the unstamped marker lives in the segment+offset bits.</para>
+        /// object-log bytes but is still stamped and still materialized -- as an absent object rather than a deserialized one, because
+        /// zero bytes carry no type information; see <c>ObjectLogReader.MaterializeRecordObjectsWithoutReading</c>. A zero position word
+        /// is offset 0 of segment 0 -- a real position -- because the unstamped marker lives in the segment+offset bits.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool RecordHasNoReadablePosition(in LogRecord logRecord)
