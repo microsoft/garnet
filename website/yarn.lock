@@ -5089,11 +5089,6 @@ dns-packet@^5.2.2:
   dependencies:
     "@leichtgewicht/ip-codec" "^2.0.1"
 
-docusaurus-plugin-clarity@^2.1.0:
-  version "2.1.0"
-  resolved "https://registry.yarnpkg.com/docusaurus-plugin-clarity/-/docusaurus-plugin-clarity-2.1.0.tgz#f9e30b51f15b0f973f4f7d7d66d94be33a4dc937"
-  integrity sha512-8BHjDC+69m3yQTqBHJ1xFhijHqbCjJJs19bEVySX8DpnGWlPBDbGiujEqEAyIba0sSjYaJNfg/4n61k1NOm0lw==
-
 docusaurus-theme-github-codeblock@^2.0.2:
   version "2.0.2"
   resolved "https://registry.yarnpkg.com/docusaurus-theme-github-codeblock/-/docusaurus-theme-github-codeblock-2.0.2.tgz#88b7044b81f9091330e8e4a07a1bdc9114a9fb93"

@@ -49,6 +49,14 @@ html[data-theme="dark"] {
   --ifm-navbar-search-input-placeholder-color: #8a8d91;
 }
 
+[data-cookie-preferences] {
+  display: none;
+}
+
+html.wcp-consent-required [data-cookie-preferences] {
+  display: inline;
+}
+
 .hero {
     background-image: url("/static/img/garnet-bg2-2800x720.jpg");
     background-repeat: no-repeat;
