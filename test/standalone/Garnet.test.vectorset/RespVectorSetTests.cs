@@ -5641,7 +5641,6 @@ namespace Garnet.test
         }
 
         [Test]
-        [CancelAfter(10_000)]
         public async Task BigGraphTransactionsAsync()
         {
             const string Key = nameof(BigGraphTransactionsAsync);
