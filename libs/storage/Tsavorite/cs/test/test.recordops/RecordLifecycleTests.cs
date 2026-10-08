@@ -245,6 +245,65 @@ namespace Tsavorite.test
             _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TrackedObjectValue { value = value }, 0);
         }
 
+        /// <summary>Writes no bytes, so a record's value component is zero length on the object log.</summary>
+        sealed class ZeroByteValueSerializer : BinaryObjectSerializer<IHeapObject>
+        {
+            public override void Deserialize(out IHeapObject obj) => obj = new TrackedObjectValue { value = 0 };
+            public override void Serialize(IHeapObject obj) { }
+        }
+
+        /// <summary>
+        /// A page whose out-of-line components are ALL zero length must materialize them rather than open a zero-length
+        /// object-log read.
+        /// </summary>
+        /// <remarks>
+        /// Reachable, not theoretical. <c>ComputeObjectIdValueSizeHint</c> stamps a component of 511 bytes or fewer as exact-size
+        /// with its byte count as the hint, so a zero-length one decodes through <c>DecodeObjectIdValueInitialReadExtent</c> to a
+        /// zero extent while still being stamped -- and so still counted into the page walk's <c>startPosition</c>. The other
+        /// branch cannot reach zero: a component over 511 bytes is stamped with a 4 KB page count, which is at least 1. The walk
+        /// then called <c>OnBeginReadRecords</c> with a zero total and tripped "TotalLength cannot be 0" on an IO completion
+        /// thread, taking the process with it.
+        /// <para>The KEY must be inline. With an overflow key the key's own extent dominates the walk and the zero total never
+        /// arises -- which is exactly why <c>ObjectLogScanTests</c>, whose fixture keys are overflow, cannot pin this.
+        /// <see cref="TestObjectKey"/> is inline, so the zero-length value is the page's only out-of-line component.</para>
+        /// </remarks>
+        [Test, Category("TsavoriteKV")]
+        public void AllZeroLengthComponentPageIsMaterializedNotRead()
+        {
+            using var zlLog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ZeroLen.log"), deleteOnClose: true);
+            using var zlObjLog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ZeroLen.obj.log"), deleteOnClose: true);
+            using var zlStore = new TsavoriteKV<LifecycleStoreFunctions, LifecycleAllocator>(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = zlLog,
+                ObjectLogDevice = zlObjLog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => (IObjectSerializer<IHeapObject>)new ZeroByteValueSerializer(),
+                    new LifecycleRecordTriggers(null))
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            const int numRecords = 4;
+            using (var s = zlStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
+            {
+                for (var ii = 0; ii < numRecords; ++ii)
+                    _ = s.BasicContext.Upsert(new TestObjectKey { key = ii }, new TrackedObjectValue { value = ii }, 0);
+            }
+
+            // Evict so the scan must read the page back from the device, which is the only path that walks a page of records.
+            zlStore.Log.FlushAndEvict(wait: true);
+
+            var scanned = 0;
+            using (var iter = zlStore.Log.Scan(zlStore.Log.BeginAddress, zlStore.Log.TailAddress))
+            {
+                while (iter.GetNext())
+                    ++scanned;
+            }
+
+            Assert.That(scanned, Is.EqualTo(numRecords), "every zero-length-component record must still be returned by the scan");
+        }
+
         #region Deferred dispose of a record frozen for flush
 
         /// <summary>
