@@ -311,6 +311,17 @@ namespace Garnet.server
             if (subscriptions == null && patternSubscriptions == null)
                 return;
 
+            // The pub/sub log cannot store an entry larger than one page. A forwarded cluster publish
+            // that exceeds the page size is delivered synchronously (exactly as a local PUBLISH is via
+            // PublishNow) rather than enqueued, so large messages reach subscribers instead of faulting
+            // the receiving session.
+            var totalLength = key.Length + value.Length + (2 * sizeof(int));
+            if (!aof.EntryFitsOnPage(totalLength))
+            {
+                _ = Broadcast(key, value);
+                return;
+            }
+
             aof.Enqueue(key.ReadOnlySpan, value.ReadOnlySpan, out _);
         }
 

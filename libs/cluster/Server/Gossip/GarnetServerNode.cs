@@ -16,13 +16,19 @@ namespace Garnet.cluster
     internal sealed class GarnetServerNode
     {
         readonly ClusterProvider clusterProvider;
-        readonly GarnetClient gc;
+        readonly SslClientAuthenticationOptions tlsOptions;
+        readonly LightEpoch epoch;
+        GarnetClient gc;
+        ClusterAuthContainer clientAuth;
+        ExponentialBackoff backoff;
+        readonly object initializationSync = new();
 
         long gossipSend;
         long gossipRecv;
         CancellationTokenSource cts = new();
         CancellationTokenSource internalCts = new();
-        volatile int initialized = 0;
+        volatile bool initialized;
+        Task<bool> initializationTask;
         readonly ILogger logger = null;
         SingleWriterMultiReaderLock dispose;
 
@@ -44,7 +50,12 @@ namespace Garnet.cluster
         /// <summary>
         /// GarnetClient connection
         /// </summary>
-        public GarnetClient Client => gc;
+        public GarnetClient Client => Volatile.Read(ref gc);
+
+        /// <summary>
+        /// Whether the client connection has been initialized successfully.
+        /// </summary>
+        public bool IsInitialized => initialized;
 
         /// <summary>
         /// NodeId of remote node
@@ -75,42 +86,109 @@ namespace Garnet.cluster
         /// <param name="clusterProvider"></param>
         /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
+        /// <param name="epoch"></param>
         /// <param name="logger"></param>
         public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, LightEpoch epoch, ILogger logger = null)
         {
-            var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
+            this.tlsOptions = tlsOptions;
+            this.epoch = epoch;
             this.EndPoint = endpoint;
-            this.gc = new GarnetClient(
-                endpoint,
-                tlsOptions,
-                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
-                maxOutstandingTasks: defaultMaxOutstandingTask,
-                timeoutMilliseconds: GetClientTimeoutMilliseconds(
-                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
-                authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
-                authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
-                epoch: epoch,
-                clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
-                logger: logger);
-            this.initialized = 0;
             this.logger = logger;
+            this.clientAuth = clusterProvider.ClusterAuth;
+            this.gc = CreateGarnetClient(clientAuth);
+            this.backoff = new ExponentialBackoff();
+            initialized = false;
             this.gossipRecv = 0;
             this.gossipSend = 0;
             ResetCts();
         }
 
-        /// <summary>
-        /// Initialize connection and cancellation tokens.
-        /// Initialization is performed only once
-        /// </summary>
-        public ValueTask InitializeAsync()
+        GarnetClient CreateGarnetClient(ClusterAuthContainer auth)
         {
-            // Ensure initialize executes only once
-            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return default;
+            var opts = clusterProvider.storeWrapper.serverOptions;
+            return new GarnetClient(
+                EndPoint,
+                tlsOptions,
+                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
+                maxOutstandingTasks: defaultMaxOutstandingTask,
+                timeoutMilliseconds: GetClientTimeoutMilliseconds(
+                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
+                authUsername: auth.ClusterUsername,
+                authPassword: auth.ClusterPassword,
+                epoch: epoch,
+                clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
+                logger: logger);
+        }
 
-            cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            return new(gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token));
+        /// <summary>
+        /// Attempts to initialize the connection when its reconnect backoff permits.
+        /// </summary>
+        /// <returns>True when the connection is initialized; otherwise false.</returns>
+        public ValueTask<bool> TryInitializeAsync()
+        {
+            lock (initializationSync)
+            {
+                if (initialized)
+                    return new(true);
+
+                if (initializationTask is { IsCompleted: false })
+                    return new(initializationTask);
+
+                if (!backoff.CanAttempt())
+                    return new(false);
+
+                RefreshClientAuthentication();
+                initializationTask = InitializeCoreAsync(gc);
+                return new(initializationTask);
+            }
+
+            async Task<bool> InitializeCoreAsync(GarnetClient client)
+            {
+                try
+                {
+                    cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
+                    await client.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                    backoff.Reset();
+                    initialized = true;
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    initialized = false;
+                    ResetCts();
+                    var retryDelay = backoff.RecordFailure();
+                    logger?.LogWarning(ex, "Could not establish connection to remote node [{nodeId} {endpoint}]; retrying in {retryDelay}",
+                        NodeId, EndPoint, retryDelay);
+                    return false;
+                }
+            }
+
+            void RefreshClientAuthentication()
+            {
+                var currentAuth = clusterProvider.ClusterAuth;
+                if (ReferenceEquals(currentAuth, clientAuth))
+                    return;
+
+                // Credentials rotated since this client was created; rebuild it so the reconnect uses them.
+                var oldClient = gc;
+                var newClient = CreateGarnetClient(currentAuth);
+                clientAuth = currentAuth;
+                Volatile.Write(ref gc, newClient);
+                oldClient.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Records a connection failure and returns the delay before reconnection may be attempted.
+        /// </summary>
+        public TimeSpan RecordConnectionFailure()
+        {
+            lock (initializationSync)
+            {
+                initialized = false;
+                return backoff.RecordFailure();
+            }
         }
 
         public void Dispose()
@@ -213,6 +291,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, "GOSSIP faulted processing response");
+                throw;
             }
         }
 
