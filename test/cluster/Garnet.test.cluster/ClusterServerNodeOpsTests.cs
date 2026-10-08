@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Garnet.common;
 
 namespace Garnet.test.cluster
 {
@@ -71,6 +72,7 @@ namespace Garnet.test.cluster
         {
             const int nodeCount = 3;
             const int bouncedIndex = 2;
+            const int observerIndex = 0;
 
             context.CreateInstances(nodeCount);
             context.CreateConnection();
@@ -79,12 +81,46 @@ namespace Garnet.test.cluster
             for (var i = 0; i < nodeCount; i++)
                 context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i, context.logger);
 
+            // Capture the last gossip pong an observer received from the node we are about to bounce,
+            // so we can require a genuinely fresh gossip round after the restart.
+            var bouncedNodeId = context.clusterTestUtils.GetNodeIdFromNode(bouncedIndex, context.logger);
+            var pongBeforeRestart = GetGossipPongReceived(observerIndex, bouncedNodeId);
+
             // Bounce one node; it keeps its cluster config across the restart and must rejoin.
             context.RestartNode(bouncedIndex);
+
+            // Cached membership survives the restart, so convergence alone does not prove a reconnect.
+            // Require the observer's gossip client to actually reconnect and complete a fresh gossip
+            // round with the bounced node, which advances the pong timestamp past the pre-restart value.
+            // Poll with the same exponential-backoff policy the gossip client uses for reconnects.
+            var reconnected = false;
+            var backoff = new ExponentialBackoff(baseDelay: TimeSpan.FromMilliseconds(200), maxDelay: TimeSpan.FromSeconds(2));
+            var deadline = Stopwatch.StartNew();
+            while (deadline.Elapsed < TimeSpan.FromSeconds(60))
+            {
+                if (GetGossipPongReceived(observerIndex, bouncedNodeId) > pongBeforeRestart)
+                {
+                    reconnected = true;
+                    break;
+                }
+                Thread.Sleep(backoff.RecordFailure());
+            }
+            ClassicAssert.IsTrue(reconnected, "Observer did not receive a fresh gossip pong from the bounced node after restart");
 
             // The gossip clients on the surviving nodes must reconnect and re-converge the cluster.
             for (var i = 0; i < nodeCount; i++)
                 context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i, context.logger);
+        }
+
+        /// <summary>
+        /// Returns the pong timestamp that <paramref name="observerIndex"/> last recorded for the
+        /// gossip connection to <paramref name="nodeId"/> (CLUSTER NODES pong-recv column). A value
+        /// that advances proves the observer completed a fresh gossip round with that node.
+        /// </summary>
+        private long GetGossipPongReceived(int observerIndex, string nodeId)
+        {
+            var nodes = context.clusterTestUtils.NodesDict(observerIndex, context.logger);
+            return nodes.TryGetValue(nodeId, out var node) ? long.Parse(node[ClusterInfoTag.PONG_RECEIVED]) : 0;
         }
 
         /// <summary>

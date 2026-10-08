@@ -150,7 +150,12 @@ namespace Garnet.cluster
                     // Reuse the shared reset path so the previous linked token source is disposed
                     // rather than overwritten and left rooted on ctsGossip until shutdown.
                     ResetCts();
-                    await client.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+
+                    // Pass the attempt token into the reconnect so it honors cancellation (e.g. gossip
+                    // shutdown) instead of only timing out the wait. WaitAsync still bounds how long the
+                    // gossip loop blocks here; a setup phase that ignores the token (e.g. AUTH) is torn
+                    // down when the next attempt's ReconnectAsync disposes the previous connection.
+                    await client.ReconnectAsync(cts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                     initialized = true;
                     return true;
                 }
