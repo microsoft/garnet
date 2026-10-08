@@ -155,6 +155,8 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
+            var inTransaction = ActiveThreadSession.txnManager.state == TxnState.Running;
+
             wouldBlock = false;
             try
             {
@@ -213,7 +215,15 @@ namespace Garnet.server
                     GarnetStatus readRes;
                     try
                     {
-                        readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                        if (inTransaction)
+                        {
+                            readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
+                        }
+                        else
+                        {
+                            readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                        }
+
                         Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
                     }
                     catch
@@ -335,7 +345,14 @@ namespace Garnet.server
                             {
                                 ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Recreate_Rmw);
 
-                                writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                                if (inTransaction)
+                                {
+                                    writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
+                                }
+                                else
+                                {
+                                    writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                                }
 
                                 if (writeRes != GarnetStatus.OK)
                                 {
@@ -451,6 +468,8 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
+            var inTransaction = ActiveThreadSession.txnManager.state == TxnState.Running;
+
             try
             {
                 var keyHash = storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
@@ -479,7 +498,15 @@ namespace Garnet.server
                     GarnetStatus readRes;
                     try
                     {
-                        readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                        if (inTransaction)
+                        {
+                            readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
+                        }
+                        else
+                        {
+                            readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                        }
+
                         Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
                     }
                     catch
@@ -612,7 +639,14 @@ namespace Garnet.server
                         {
                             try
                             {
-                                writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                                if (inTransaction)
+                                {
+                                    writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
+                                }
+                                else
+                                {
+                                    writeRes = storageSession.RMW_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                                }
 
                                 if (writeRes != GarnetStatus.OK)
                                 {
@@ -713,6 +747,7 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
+            var inTransaction = ActiveThreadSession.txnManager.state == TxnState.Running;
 
             var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
@@ -720,7 +755,14 @@ namespace Garnet.server
             var acquiredLock = AcquireExclusiveLocks(storageSession, key);
             try
             {
-                status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                if (inTransaction)
+                {
+                    status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringTransactionalContext);
+                }
+                else
+                {
+                    status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
+                }
                 Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
             }
             catch
