@@ -90,14 +90,14 @@ namespace Garnet.client
         readonly int networkSendThrottleMax;
 
         /// <summary>
-        /// Username to authenticate client on server.
+        /// Username to authenticate client on server. Applied on each (re)connect.
         /// </summary>
-        readonly string authUsername = null;
+        string authUsername = null;
 
         /// <summary>
-        /// Password to authenticate client on server.
+        /// Password to authenticate client on server. Applied on each (re)connect.
         /// </summary>
-        readonly string authPassword = null;
+        string authPassword = null;
 
         /// <summary>
         /// Client name to send to server for identification.
@@ -521,6 +521,20 @@ namespace Garnet.client
             }
             catch { }
             await ConnectAsync(token).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Updates the credentials used to authenticate on each subsequent (re)connect. The new
+        /// credentials take effect on the next <see cref="ConnectAsync"/>/<see cref="ReconnectAsync"/>;
+        /// the current connection is not re-authenticated in place. Must be called while no (re)connect
+        /// is in progress, consistent with the rest of the (re)connect contract.
+        /// </summary>
+        /// <param name="username">Username to authenticate with, or null for password-only/no auth.</param>
+        /// <param name="password">Password to authenticate with, or null for none.</param>
+        public void UpdateAuth(string username, string password)
+        {
+            authUsername = username;
+            authPassword = password;
         }
 
         /// <summary>

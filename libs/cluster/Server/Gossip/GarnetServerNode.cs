@@ -18,7 +18,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly SslClientAuthenticationOptions tlsOptions;
         readonly LightEpoch epoch;
-        GarnetClient gc;
+        readonly GarnetClient gc;
         ClusterAuthContainer clientAuth;
         ExponentialBackoff backoff;
         readonly object initializationSync = new();
@@ -50,7 +50,7 @@ namespace Garnet.cluster
         /// <summary>
         /// GarnetClient connection
         /// </summary>
-        public GarnetClient Client => Volatile.Read(ref gc);
+        public GarnetClient Client => gc;
 
         /// <summary>
         /// Whether the client connection has been initialized successfully.
@@ -176,12 +176,11 @@ namespace Garnet.cluster
                 if (ReferenceEquals(currentAuth, clientAuth))
                     return;
 
-                // Credentials rotated since this client was created; rebuild it so the reconnect uses them.
-                var oldClient = gc;
-                var newClient = CreateGarnetClient(currentAuth);
+                // Credentials rotated since this client last connected; update them in place so the next
+                // reconnect authenticates with them. The client is reused for the node's lifetime (no swap),
+                // so forwarding never observes a torn client reference or a client disposed mid-send.
                 clientAuth = currentAuth;
-                Volatile.Write(ref gc, newClient);
-                oldClient.Dispose();
+                gc.UpdateAuth(currentAuth.ClusterUsername, currentAuth.ClusterPassword);
             }
         }
 
@@ -409,6 +408,9 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
+                // The client is reused for the node's lifetime (gc is immutable), so the liveness check and
+                // send always target the same client; the dispose read lock above keeps the node's terminal
+                // disposal from tearing it down mid-send.
                 if (!gc.IsConnected)
                 {
                     logger?.LogError($"{nameof(TryClusterPublish)}: client not connected; skipping publish forwarding");
