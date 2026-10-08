@@ -546,6 +546,19 @@ namespace Garnet.networking
         /// </summary>
         public INetworkSender GetNetworkSender() => sslStream == null ? networkSender : this;
 
+        /// <summary>
+        /// Handles end-of-stream for the TLS reader. A zero-byte read from <see cref="sslStream"/> means the peer
+        /// completed a graceful TLS shutdown (close_notify) or closed the connection, so no further plaintext can
+        /// arrive. Returns the reader to Rest, wakes the receive-loop waiter, and disposes the connection instead of
+        /// re-reading zero bytes forever while a partial frame remains buffered.
+        /// </summary>
+        void HandleReaderEndOfStream()
+        {
+            readerStatus = TlsReaderStatus.Rest;
+            if (expectingData.CurrentCount == 0) expectingData.Release();
+            Dispose();
+        }
+
         void Read()
         {
             bool retry = false;
@@ -556,7 +569,17 @@ namespace Garnet.networking
                 if (result.IsCompletedSuccessfully)
                 {
                     // blocking is unavoidable here, but safe since we've checked IsCompletedSuccessfully
-                    transportBytesRead += AsyncUtils.BlockingWait(result);
+                    var count = AsyncUtils.BlockingWait(result);
+                    if (count == 0)
+                    {
+                        // Peer completed a graceful TLS shutdown (close_notify) or closed the connection: no further
+                        // plaintext can arrive. Tear down instead of re-reading zero bytes forever while a partial
+                        // frame remains buffered. No expectingData release here: the synchronous path has no waiter.
+                        readerStatus = TlsReaderStatus.Rest;
+                        Dispose();
+                        return;
+                    }
+                    transportBytesRead += count;
 
                     // Occupancy before processing is the capacity this pass needed; the residual after it is not.
                     var transportDemand = transportBytesRead;
@@ -598,6 +621,15 @@ namespace Garnet.networking
                 int count = await readTask.ConfigureAwait(false);
 
                 Debug.Assert(readerStatus == TlsReaderStatus.Active);
+
+                if (count == 0)
+                {
+                    // Peer completed a graceful TLS shutdown (close_notify) or closed the connection: no further
+                    // plaintext can arrive. Tear down instead of re-reading zero bytes forever while a partial frame
+                    // remains buffered.
+                    HandleReaderEndOfStream();
+                    return;
+                }
 
                 transportBytesRead += count;
 
@@ -654,9 +686,26 @@ namespace Garnet.networking
                 while (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
                 {
                     retry = false;
+#if DEBUG
+                    // Test-only rendezvous: while a partial (not-yet-consumable) frame is buffered, pause before
+                    // the next read so a test can deliver a graceful close (close_notify/EOF) mid-frame and
+                    // exercise the end-of-stream handling below. No-op unless the injection point is enabled;
+                    // compiled out entirely in Release.
+                    if (transportBytesRead > 0)
+                        await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Network_Tls_Pause_With_Partial_Frame).ConfigureAwait(false);
+#endif
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);
                     int count = await sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), token).ConfigureAwait(false);
                     Debug.Assert(readerStatus == TlsReaderStatus.Active);
+
+                    if (count == 0)
+                    {
+                        // Peer completed a graceful TLS shutdown (close_notify) or closed the connection: no further
+                        // plaintext can arrive. Tear down instead of re-reading zero bytes forever while a partial
+                        // frame remains buffered.
+                        HandleReaderEndOfStream();
+                        return;
+                    }
 
                     transportBytesRead += count;
 
