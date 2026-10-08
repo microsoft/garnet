@@ -17,7 +17,7 @@ namespace BDN.benchmark.Client
     {
         const int RingPageCount = 8;
         const int CompletionCapacity = 32;
-        const int MaxChunkSize = 256;
+        const int MaxSendChunkSizeBytes = 256;
         const int RequestPoolMinAllocationSize = 64;
         const int InlinePayloadLength = 32;
         const int OutOfLinePayloadLength = 64;
@@ -132,7 +132,7 @@ namespace BDN.benchmark.Client
                 RingPageCount,
                 CompletionCapacity,
                 CompletionCapacity,
-                MaxChunkSize,
+                MaxSendChunkSizeBytes,
                 new NoOpTransport(transportState),
                 epoch);
 

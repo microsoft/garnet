@@ -12,20 +12,17 @@ namespace Garnet.client
     sealed class DuplexOperationAsyncFlushResult<TRequestContext>
         where TRequestContext : struct, IRequestContext
     {
-        public CountWrapper count;
         public TRequestContext request;
         public int remainingChunks;
         public DuplexAdmissionController controller;
         public bool perOperationAllocation;
 
         internal void Initialize(
-            CountWrapper count,
             TRequestContext request,
             int remainingChunks,
             DuplexAdmissionController admission,
             bool perOperationAllocation)
         {
-            this.count = count;
             this.request = request;
             this.remainingChunks = remainingChunks;
             this.controller = admission;
@@ -45,16 +42,14 @@ namespace Garnet.client
                     {
                         var request = result.request;
                         var admission = result.controller;
-                        var count = result.count;
                         var perOperationAllocation = result.perOperationAllocation;
                         result.request = default;
                         result.controller = null;
-                        result.count = null;
                         result.perOperationAllocation = false;
                         if (perOperationAllocation)
                             admission.CompletePerOperationFlushResult();
                         request.Dispose();
-                        admission.CompleteFlush(count);
+                        admission.CompleteFlushPart();
                     }
                     break;
 

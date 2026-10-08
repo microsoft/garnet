@@ -98,7 +98,7 @@ namespace Garnet.client
         readonly DuplexAdmissionController controller;
         readonly TTransport transport;
         readonly ILogger logger;
-        readonly int maxChunkSizeBytes;
+        readonly int maxSendChunkSizeBytes;
         readonly FlushResultAllocationMode flushResultAllocationMode;
 
         bool disposed;
@@ -131,7 +131,7 @@ namespace Garnet.client
         /// <param name="maxOutstandingRequests">Maximum number of minimum-allocation requests awaiting local send completion. Zero derives the current header-granularity capacity.</param>
         /// <param name="completionCapacity">Maximum number of outstanding response-expecting requests; rounds
         /// up to a power of two and bounds the completion lane before producers back-pressure on replies.</param>
-        /// <param name="maxChunkSizeBytes">Size of a single network send buffer; caps the per-send chunk length.</param>
+        /// <param name="maxSendChunkSizeBytes">Maximum number of request bytes dispatched in one transport send.</param>
         /// <param name="transport">Struct-specialized transport used to send chunks and handle flush failures.</param>
         /// <param name="epoch">Shared epoch protecting the page allocator and flush machinery.</param>
         /// <param name="flushResultAllocationMode">Controls whether flush completion contexts are retained per request slot or allocated per operation.</param>
@@ -141,7 +141,7 @@ namespace Garnet.client
             int ringPageCount,
             int maxOutstandingRequests,
             int completionCapacity,
-            int maxChunkSizeBytes,
+            int maxSendChunkSizeBytes,
             TTransport transport,
             LightEpoch epoch,
             FlushResultAllocationMode flushResultAllocationMode = FlushResultAllocationMode.Buffered,
@@ -151,7 +151,7 @@ namespace Garnet.client
             if (!Enum.IsDefined(flushResultAllocationMode)) throw new ArgumentOutOfRangeException(nameof(flushResultAllocationMode));
 
             this.epoch = epoch;
-            this.maxChunkSizeBytes = maxChunkSizeBytes;
+            this.maxSendChunkSizeBytes = maxSendChunkSizeBytes;
             this.transport = transport;
             this.logger = logger;
             this.flushResultAllocationMode = flushResultAllocationMode;
@@ -320,11 +320,7 @@ namespace Garnet.client
         {
             var startPage = store.Shape.GetUnwrappedPageIndex(fromAddress);
             var endPage = store.Shape.GetUnwrappedPageIndex(untilAddress);
-            var count = new CountWrapper
-            {
-                count = 1,
-                untilAddress = untilAddress
-            };
+            controller.BeginFlushRange(untilAddress);
             var flushFailed = false;
             var disposedBail = false;
 
@@ -385,10 +381,10 @@ namespace Garnet.client
                     {
                         // Header-only inline records carry no payload; skip the send path entirely.
                         if (payloadLength > 0)
-                            ProcessRequestContext(store.GetPageBuffer(flushPage), (int)(offset + DuplexRingRecordFormat.HeaderSize), payloadLength, request, address, flushContext, count, ref flushFailed);
+                            ProcessRequestContext(store.GetPageBuffer(flushPage), (int)(offset + DuplexRingRecordFormat.HeaderSize), payloadLength, request, address, flushContext, ref flushFailed);
                     }
                     else if (kind == RequestKind.OutOfLine)
-                        ProcessRequestContext(request.Buffer, 0, request.Length, request, address, flushContext, count, ref flushFailed);
+                        ProcessRequestContext(request.Buffer, 0, request.Length, request, address, flushContext, ref flushFailed);
                     else
                     {
                         // A won claim is always Inline or OutOfLine; any other kind here means an uninitialized
@@ -404,9 +400,9 @@ namespace Garnet.client
                 flushPage = (flushPage + 1) & PageOffset.kPageMask;
             }
 
-            controller.CompleteFlush(count);
+            controller.CompleteFlushPart(); // Release the scanner-owned range sentinel.
 
-            void ProcessRequestContext(byte[] buffer, int baseOffset, int length, TRequestContext request, long address, DuplexOperationAsyncFlushResult<TRequestContext> flushContext, CountWrapper count, ref bool flushFailed)
+            void ProcessRequestContext(byte[] buffer, int baseOffset, int length, TRequestContext request, long address, DuplexOperationAsyncFlushResult<TRequestContext> flushContext, ref bool flushFailed)
             {
                 // An empty payload has nothing to send, and the chunk-count protocol below assumes length >= 1:
                 // bumping count without dispatching a chunk would leave the flush count permanently unbalanced
@@ -417,7 +413,7 @@ namespace Garnet.client
                     return;
                 }
 
-                var chunkSize = Math.Max(1, maxChunkSizeBytes);
+                var chunkSize = Math.Max(1, maxSendChunkSizeBytes);
                 var chunkCount = ((length - 1) / chunkSize) + 1;
                 var result = flushContext;
                 var perOperationAllocation = false;
@@ -432,8 +428,8 @@ namespace Garnet.client
                         perOperationAllocation = true;
                     }
                 }
-                result.Initialize(count, request, chunkCount, controller, perOperationAllocation);
-                _ = Interlocked.Increment(ref count.count);
+                result.Initialize(request, chunkCount, controller, perOperationAllocation);
+                controller.RegisterFlushPart();
 
                 var dispatchedChunks = 0;
                 try

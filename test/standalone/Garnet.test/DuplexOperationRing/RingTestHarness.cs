@@ -157,12 +157,12 @@ namespace Garnet.test
             int pageCount,
             int maxOutstandingRequests,
             int completionCapacity,
-            int maxChunkSize,
+            int maxSendChunkSizeBytes,
             FlushResultAllocationMode flushResultAllocationMode = FlushResultAllocationMode.Buffered)
         {
             epoch = new LightEpoch();
             Ring = new DuplexOperationChannel<TestRequest, int, RingTransport>(
-                pageSize, pageCount, maxOutstandingRequests, completionCapacity, maxChunkSize, new RingTransport(this), epoch,
+                pageSize, pageCount, maxOutstandingRequests, completionCapacity, maxSendChunkSizeBytes, new RingTransport(this), epoch,
                 flushResultAllocationMode);
         }
 

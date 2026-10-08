@@ -40,7 +40,7 @@ namespace Garnet.test
                 pageCount: 2,
                 maxOutstandingRequests: 64,
                 completionCapacity: 8,
-                maxChunkSize: 256,
+                maxSendChunkSizeBytes: 256,
                 flushResultAllocationMode: allocationMode);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             h.DeferCompletions();
@@ -66,7 +66,7 @@ namespace Garnet.test
                 pageCount: 2,
                 maxOutstandingRequests: 8,
                 completionCapacity: 8,
-                maxChunkSize: 256,
+                maxSendChunkSizeBytes: 256,
                 flushResultAllocationMode: allocationMode);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
@@ -95,7 +95,7 @@ namespace Garnet.test
         [TestCase(64, FlushResultAllocationMode.Buffered)]
         [TestCase(1 << 20, FlushResultAllocationMode.PerOperation)]
         [TestCase(64, FlushResultAllocationMode.PerOperation)]
-        public async Task SizeMatrix_SingleProducer(int maxChunkSize, FlushResultAllocationMode allocationMode)
+        public async Task SizeMatrix_SingleProducer(int maxSendChunkSizeBytes, FlushResultAllocationMode allocationMode)
         {
             const int pageSize = 4096;
             using var h = new RingTestHarness(
@@ -103,7 +103,7 @@ namespace Garnet.test
                 pageCount: 8,
                 maxOutstandingRequests: 4096,
                 completionCapacity: 64,
-                maxChunkSize: maxChunkSize,
+                maxSendChunkSizeBytes: maxSendChunkSizeBytes,
                 flushResultAllocationMode: allocationMode);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 
@@ -139,7 +139,7 @@ namespace Garnet.test
         public async Task OutOfLineDescriptorAddressWrapsWithPageCounter()
         {
             var operationCount = (1 << PageOffset.kPageBits) + 1;
-            using var h = new RingTestHarness(pageSize: 8, pageCount: 4, maxOutstandingRequests: 4, completionCapacity: 64, maxChunkSize: 8);
+            using var h = new RingTestHarness(pageSize: 8, pageCount: 4, maxOutstandingRequests: 4, completionCapacity: 64, maxSendChunkSizeBytes: 8);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
             var expectedIds = new List<long>(operationCount);
@@ -164,7 +164,7 @@ namespace Garnet.test
             const int perProducer = 500;
             // Small pages (MaxInline == 248) so random sizes straddle the inline/out-of-line boundary, and few
             // pages so page reuse must wait for the ring's own flush (request-lane back-pressure).
-            using var h = new RingTestHarness(pageSize: 256, pageCount: 4, maxOutstandingRequests: 128, completionCapacity: 64, maxChunkSize: 128);
+            using var h = new RingTestHarness(pageSize: 256, pageCount: 4, maxOutstandingRequests: 128, completionCapacity: 64, maxSendChunkSizeBytes: 128);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
             var expectedIds = new List<long>(producers * perProducer);
@@ -207,7 +207,7 @@ namespace Garnet.test
 
             // Completion capacity deliberately far smaller than the outstanding count, so producers block on
             // completion-lane back-pressure until the reader advances the reply watermark.
-            using var h = new RingTestHarness(pageSize: 512, pageCount: 8, maxOutstandingRequests: 512, completionCapacity: 8, maxChunkSize: 256);
+            using var h = new RingTestHarness(pageSize: 512, pageCount: 8, maxOutstandingRequests: 512, completionCapacity: 8, maxSendChunkSizeBytes: 256);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
             var readerDone = new CancellationTokenSource();
@@ -277,7 +277,7 @@ namespace Garnet.test
         [Test]
         public void CompletionPublishedAfterTeardownScanCanBeClaimed()
         {
-            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, maxOutstandingRequests: 64, completionCapacity: 1, maxChunkSize: 256);
+            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, maxOutstandingRequests: 64, completionCapacity: 1, maxSendChunkSizeBytes: 256);
 
             h.epoch.Resume();
             DuplexOperationReservation reservation;
@@ -316,7 +316,7 @@ namespace Garnet.test
         [Test]
         public void ConcurrentCompletionFaultClaimsDeliverOnce()
         {
-            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, maxOutstandingRequests: 64, completionCapacity: 1, maxChunkSize: 256);
+            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, maxOutstandingRequests: 64, completionCapacity: 1, maxSendChunkSizeBytes: 256);
 
             h.epoch.Resume();
             DuplexOperationReservation reservation;
@@ -372,7 +372,7 @@ namespace Garnet.test
                 pageCount: 4,
                 maxOutstandingRequests: 8,
                 completionCapacity: 64,
-                maxChunkSize: 64);
+                maxSendChunkSizeBytes: 64);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
             // Hold every transport send-completion in a side queue instead of finalizing it inline. Nothing the
@@ -448,7 +448,7 @@ namespace Garnet.test
         [Test]
         public async Task DisposeWakesOperationWaitingOnRequestCapacity()
         {
-            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, maxOutstandingRequests: 64, completionCapacity: 16, maxChunkSize: 64);
+            using var h = new RingTestHarness(pageSize: 256, pageCount: 2, maxOutstandingRequests: 64, completionCapacity: 16, maxSendChunkSizeBytes: 64);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             h.DeferCompletions();
 
@@ -477,7 +477,7 @@ namespace Garnet.test
         public void UnpublishedDescriptors_StrideCorrectlyOnDispose()
         {
             const int count = 20;
-            var h = new RingTestHarness(pageSize: 4096, pageCount: 4, maxOutstandingRequests: 2048, completionCapacity: 64, maxChunkSize: 4096);
+            var h = new RingTestHarness(pageSize: 4096, pageCount: 4, maxOutstandingRequests: 2048, completionCapacity: 64, maxSendChunkSizeBytes: 4096);
             try
             {
                 var nextId = 1L;

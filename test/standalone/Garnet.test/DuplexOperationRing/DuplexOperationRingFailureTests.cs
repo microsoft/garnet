@@ -39,7 +39,7 @@ namespace Garnet.test
                 pageCount: 4,
                 maxOutstandingRequests: 8,
                 completionCapacity: 32,
-                maxChunkSize: 128,
+                maxSendChunkSizeBytes: 128,
                 flushResultAllocationMode: allocationMode);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             try
@@ -77,7 +77,7 @@ namespace Garnet.test
                 pageCount: 4,
                 maxOutstandingRequests: 8,
                 completionCapacity: 32,
-                maxChunkSize: 64);
+                maxSendChunkSizeBytes: 64);
             using var producerCts = new CancellationTokenSource();
             using var guardCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
@@ -139,7 +139,7 @@ namespace Garnet.test
         {
             const int count = 256;          // == completion capacity, so ticket->slot is a bijection here
             const int claimers = 8;
-            var h = new RingTestHarness(pageSize: 64, pageCount: 2, maxOutstandingRequests: 16, completionCapacity: count, maxChunkSize: 64);
+            var h = new RingTestHarness(pageSize: 64, pageCount: 2, maxOutstandingRequests: 16, completionCapacity: count, maxSendChunkSizeBytes: 64);
             try
             {
                 for (var t = 0; t < count; t++)

@@ -56,8 +56,9 @@ namespace Garnet.client
             => Align(
                 (2 * IntPtr.Size) +
                 Unsafe.SizeOf<LightRequestContext>() +
-                (2 * IntPtr.Size) +
-                sizeof(int));
+                IntPtr.Size +
+                sizeof(int) +
+                sizeof(bool));
 
         /// <summary>
         /// Default settings for a general-purpose <see cref="GarnetLightClient"/>.
@@ -84,7 +85,7 @@ namespace Garnet.client
         /// The total excludes array headers, 8 KiB network buffers, and pooled out-of-line request buffers.
         /// It also excludes reusable flush contexts from the fixed footprint because they are allocated lazily.
         /// After every physical request slot has been used, their approximate worst-case footprint is
-        /// 16 slots * 64 bytes = 1 KiB, keeping the fully warmed request/completion ring near 10.5 KiB.
+        /// 16 slots * 56 bytes = 896 bytes, keeping the fully warmed request/completion ring near 10.4 KiB.
         /// </remarks>
         public static LightNetworkWriterOptions Default => new(
             networkBufferSizeBytes: 1 << 13,

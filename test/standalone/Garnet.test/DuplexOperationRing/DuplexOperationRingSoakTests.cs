@@ -48,13 +48,13 @@ namespace Garnet.test
                 var pageSizeBytes = 128 << rng.Next(0, 5);      // 128 .. 2048
                 var pageCount = 1 << rng.Next(1, 4);            // 2 .. 8 (power of two)
                 var completionCapacity = 1 << rng.Next(3, 7);  // 8 .. 64 (power of two)
-                var maxChunkSize = 32 << rng.Next(0, 5);       // 32 .. 512
+                var maxSendChunkSizeBytes = 32 << rng.Next(0, 5); // 32 .. 512
                 var producers = rng.Next(1, 9);
                 var perProducer = rng.Next(50, 300);
                 var expectsResponse = rng.Next(0, 2) == 0;
                 var injectFailure = rng.Next(0, 5) == 0;       // ~20% of rounds fault the transport
 
-                await RunRoundAsync(seed, round, pageSizeBytes, pageCount, completionCapacity, maxChunkSize,
+                await RunRoundAsync(seed, round, pageSizeBytes, pageCount, completionCapacity, maxSendChunkSizeBytes,
                     producers, perProducer, expectsResponse, injectFailure).ConfigureAwait(false);
             }
 
@@ -62,11 +62,11 @@ namespace Garnet.test
         }
 
         static async Task RunRoundAsync(int seed, int round, int pageSizeBytes, int pageCount, int completionCapacity,
-            int maxChunkSize, int producers, int perProducer, bool expectsResponse, bool injectFailure)
+            int maxSendChunkSizeBytes, int producers, int perProducer, bool expectsResponse, bool injectFailure)
         {
             var total = producers * perProducer;
             var label = $"seed={seed} round={round} page={pageSizeBytes}x{pageCount} cap={completionCapacity} " +
-                        $"chunk={maxChunkSize} producers={producers} perProducer={perProducer} resp={expectsResponse} " +
+                        $"chunk={maxSendChunkSizeBytes} producers={producers} perProducer={perProducer} resp={expectsResponse} " +
                         $"fail={injectFailure}";
 
             var h = new RingTestHarness(
@@ -74,7 +74,7 @@ namespace Garnet.test
                 pageCount: pageCount,
                 maxOutstandingRequests: pageSizeBytes * pageCount / DuplexRingRecordFormat.HeaderSize,
                 completionCapacity: completionCapacity,
-                maxChunkSize: maxChunkSize);
+                maxSendChunkSizeBytes: maxSendChunkSizeBytes);
             using var producerCts = new CancellationTokenSource();
             using var guardCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             var readerDone = new CancellationTokenSource();

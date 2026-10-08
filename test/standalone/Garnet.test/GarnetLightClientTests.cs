@@ -391,7 +391,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(4096, options.RequestPageSizeBytes);
             ClassicAssert.AreEqual(512, options.RequestAllocationQuantumBytes);
             ClassicAssert.AreEqual(9_728, options.MinMemoryFootprint());
-            ClassicAssert.AreEqual(10_752, options.MaxMemoryFootprint());
+            ClassicAssert.AreEqual(10_624, options.MaxMemoryFootprint());
 
             var perOperationOptions = new LightNetworkWriterOptions(
                 networkBufferSizeBytes: 1 << 13,
@@ -403,7 +403,7 @@ namespace Garnet.test
                 maxOutOfLineRentedBytes: 64L << 20,
                 flushResultAllocationMode: FlushResultAllocationMode.PerOperation);
             ClassicAssert.AreEqual(9_728, perOperationOptions.MinMemoryFootprint());
-            ClassicAssert.AreEqual(10_752, perOperationOptions.MaxMemoryFootprint());
+            ClassicAssert.AreEqual(10_624, perOperationOptions.MaxMemoryFootprint());
 
             var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new LightNetworkWriterOptions(
                 networkBufferSizeBytes: 1 << 13,
@@ -427,7 +427,7 @@ namespace Garnet.test
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
             ClassicAssert.AreEqual(256, boundedRequestOptions.RequestAllocationQuantumBytes);
             ClassicAssert.AreEqual(6_400, boundedRequestOptions.MinMemoryFootprint());
-            ClassicAssert.AreEqual(6_912, boundedRequestOptions.MaxMemoryFootprint());
+            ClassicAssert.AreEqual(6_848, boundedRequestOptions.MaxMemoryFootprint());
 
             var positionalOptions = new LightNetworkWriterOptions(
                 1 << 13, 1 << 10, 2, 64, 64, 8, 1024, FlushResultAllocationMode.Buffered);

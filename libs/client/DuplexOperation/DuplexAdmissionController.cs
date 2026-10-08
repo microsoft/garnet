@@ -45,8 +45,10 @@ namespace Garnet.client
         long flushedUntilAddress;
         long readOnlyAddress;
         long completionUntil;
+        long activeFlushUntilAddress;
         int completionReservations;
         int ongoingAggressiveShiftReadOnly;
+        int activeFlushCount;
         int activePerOperationFlushResults;
         int disposed;
 
@@ -236,13 +238,29 @@ namespace Garnet.client
             ReleaseCompletions(consumedCount);
         }
 
-        internal void CompleteFlush(CountWrapper count)
+        internal void BeginFlushRange(long untilAddress)
+        {
+            Debug.Assert(Volatile.Read(ref activeFlushCount) == 0);
+            activeFlushUntilAddress = untilAddress;
+            // Keep a scanner-owned sentinel so synchronous send callbacks cannot retire the range mid-scan.
+            Volatile.Write(ref activeFlushCount, 1);
+        }
+
+        internal void RegisterFlushPart()
+        {
+            var count = Interlocked.Increment(ref activeFlushCount);
+            Debug.Assert(count > 1);
+        }
+
+        internal void CompleteFlushPart()
         {
             try
             {
-                if (Interlocked.Decrement(ref count.count) == 0)
+                var count = Interlocked.Decrement(ref activeFlushCount);
+                Debug.Assert(count >= 0);
+                if (count == 0)
                 {
-                    _ = Utility.MonotonicUpdate(ref flushedUntilAddress, count.untilAddress, wrapDistance, out _);
+                    _ = Utility.MonotonicUpdate(ref flushedUntilAddress, activeFlushUntilAddress, wrapDistance, out _);
                     requestFreed.Set();
                     AggressiveShiftReadOnlyRunner(true);
                 }

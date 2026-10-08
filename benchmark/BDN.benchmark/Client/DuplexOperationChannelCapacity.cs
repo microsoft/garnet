@@ -15,7 +15,7 @@ namespace BDN.benchmark.Client
     [MemoryDiagnoser]
     public unsafe class DuplexOperationChannelCapacity
     {
-        const int MaxChunkSize = 4096;
+        const int MaxSendChunkSizeBytes = 4096;
         const int RequestPoolMinAllocationSize = 64;
         const int InlinePayloadLength = 32;
         const int InlineRecordSize = 40;
@@ -176,7 +176,7 @@ namespace BDN.benchmark.Client
                 RingPageCount,
                 outOfLineRequestsPerBurst,
                 outOfLineRequestsPerBurst,
-                MaxChunkSize,
+                MaxSendChunkSizeBytes,
                 new DeferredTransport(transportState),
                 epoch);
 
