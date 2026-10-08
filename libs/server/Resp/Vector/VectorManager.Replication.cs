@@ -35,7 +35,7 @@ namespace Garnet.server
 
         private int replicationReplayStarted;
         private CountingEventSlim replicationBlockEvent;
-        private readonly Channel<VADDReplicationState> replicationReplayChannel;
+        private readonly Channel<VADDReplicationState>[] replicationReplayChannels;
         private readonly Task[] replicationReplayTasks;
 
         private CancellationToken replicationReplayCancellation;
@@ -442,10 +442,13 @@ namespace Garnet.server
                 }
             }
 
+            // Place all potential updates to a given element (regardless of Vector Set) on the same task so we respect the AOF ordering
+            var replayChannelIndex = (int)((uint)SpanByteComparer.StaticGetHashCode64(element) % replicationReplayChannels.Length);
+
             // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
 
             replicationBlockEvent.Increment();
-            var queued = replicationReplayChannel.Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric));
+            var queued = replicationReplayChannels[replayChannelIndex].Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric));
             if (!queued)
             {
                 replicationBlockEvent.Decrement();
@@ -462,18 +465,16 @@ namespace Garnet.server
 
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
                 {
-                    self.replicationReplayTasks[i] = StartReplicaTaskAsync(self, obtainServerSession);
+                    self.replicationReplayTasks[i] = StartReplicaTaskAsync(self, self.replicationReplayChannels[i].Reader, obtainServerSession);
                 }
 
-                static async Task StartReplicaTaskAsync(VectorManager self, Func<RespServerSession> obtainServerSession)
+                static async Task StartReplicaTaskAsync(VectorManager self, ChannelReader<VADDReplicationState> reader, Func<RespServerSession> obtainServerSession)
                 {
                     // Force async
                     await Task.Yield();
 
                     try
                     {
-                        var reader = self.replicationReplayChannel.Reader;
-
                         SessionParseState reusableParseState = default;
                         reusableParseState.Initialize(11);
 
@@ -571,15 +572,16 @@ namespace Garnet.server
                         //
                         // We still need locking here because the replays may proceed in parallel
 
+                        // Don't need xxxWithElement lock here because we put all replays of the same _element_ name on the same task
                         using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var status))
                         {
                             Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is successful, so index must exist");
 
                             var addRes = self.TryAdd(key, indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
 
-                            if (addRes != VectorManagerResult.OK)
+                            if (addRes is not (VectorManagerResult.OK or VectorManagerResult.Duplicate))
                             {
-                                throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                                throw new GarnetException("Failed to add or update vector set index during AOF sync, this should never happen but will cause data loss if it does");
                             }
                         }
                     }
@@ -623,10 +625,14 @@ namespace Garnet.server
             _ = Interlocked.Exchange(ref replicationReplayStarted, 0);
 
             var abandoned = 0;
-            while (replicationReplayChannel.Reader.TryRead(out _))
+            for (var i = 0; i < replicationReplayChannels.Length; i++)
             {
-                replicationBlockEvent.Decrement();
-                abandoned++;
+                var replicationReplayChannelReader = replicationReplayChannels[i].Reader;
+                while (replicationReplayChannelReader.TryRead(out _))
+                {
+                    replicationBlockEvent.Decrement();
+                    abandoned++;
+                }
             }
 
             return abandoned;
@@ -639,7 +645,10 @@ namespace Garnet.server
         /// </summary>
         public void ShutdownReplayTasks()
         {
-            _ = replicationReplayChannel.Writer.TryComplete();
+            foreach (var channel in replicationReplayChannels)
+            {
+                _ = channel.Writer.TryComplete();
+            }
 
             // Disposal path, has to be synchronous
             AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
@@ -660,6 +669,7 @@ namespace Garnet.server
             var inputCopy = input;
             inputCopy.arg1 = default;
 
+            // Don't need *WithElement lock here because removes won't be concurrent to adds or updates
             using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
             {
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
@@ -687,6 +697,7 @@ namespace Garnet.server
             var inputCopy = input;
             inputCopy.arg1 = default;
 
+            // Don't need *WithElement lock here because setattrs won't be concurrent to adds or updates
             using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
             {
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");

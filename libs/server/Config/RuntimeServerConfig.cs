@@ -201,6 +201,11 @@ namespace Garnet.server
             Set(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY, "aof-size-limit-enforce-frequency",
                 ConfigKind.Int32, 0, int.MaxValue);
 
+            // checkpoint-freq (seconds): 0 = disabled, > 0 = gap between scheduled checkpoints. The scheduler
+            // re-reads this each iteration; the UpdateAction only wakes it so a change is observed promptly.
+            Set(ServerConfigType.CHECKPOINT_FREQ, "checkpoint-freq", ConfigKind.Int32, 0, int.MaxValue,
+                updateAction: ApplyCheckpointFrequencyUpdate);
+
             // Background-task frequencies whose change is enacted by restarting / killing the owning task
             // through the UpdateAction: the tasks capture their interval at start, so a runtime change
             // requires a kill+restart rather than a re-read.
@@ -267,6 +272,7 @@ namespace Garnet.server
             values[(int)ServerConfigType.MAXCLIENTS] = o.NetworkConnectionLimit;
             values[(int)ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY] = o.AofSizeLimitEnforceFrequencySecs;
             values[(int)ServerConfigType.AOF_COMMIT_FREQ] = o.CommitFrequencyMs;
+            values[(int)ServerConfigType.CHECKPOINT_FREQ] = o.CheckpointFrequencySecs;
             values[(int)ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ] = o.ExpiredObjectCollectionFrequencySecs;
             values[(int)ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ] = o.ExpiredKeyDeletionScanFrequencySecs;
         }
@@ -528,6 +534,16 @@ namespace Garnet.server
         {
             error = null;
             config.owner?.ReconcilePrimaryTask(TaskType.ObjectCollectTask);
+            return true;
+        }
+
+        // Enacts a checkpoint-freq change by starting or waking the scheduler so it observes the new interval.
+        // Disabling lets the task unregister itself after any running checkpoint finishes, so a CONFIG SET
+        // never waits for that checkpoint. Setting the current value again leaves the pending interval untouched.
+        static bool ApplyCheckpointFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        {
+            error = null;
+            config.owner?.NotifyCheckpointFrequencyChanged(intervalChanged: oldValue != newValue);
             return true;
         }
 

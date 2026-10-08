@@ -28,7 +28,7 @@ namespace Garnet.cluster
         internal readonly StoreWrapper storeWrapper;
         internal readonly GarnetServerOptions serverOptions;
         internal readonly RangeIndexManager rangeIndexManager;
-        internal long GarnetCurrentEpoch = 1;
+        internal readonly GarnetEpoch<ServerEpochObserverSource> garnetEpoch;
         ClusterAuthContainer authContainer;
 
         /// <summary>
@@ -50,6 +50,7 @@ namespace Garnet.cluster
             this.serverOptions = storeWrapper.serverOptions;
             this.rangeIndexManager = rangeIndexManager;
             this.loggerFactory = storeWrapper.loggerFactory;
+            this.garnetEpoch = new GarnetEpoch<ServerEpochObserverSource>(new ServerEpochObserverSource(storeWrapper));
 
             authContainer = new ClusterAuthContainer
             {
@@ -355,38 +356,11 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Bump Garnet epoch
-        /// </summary>
-        internal void BumpCurrentEpoch() => Interlocked.Increment(ref GarnetCurrentEpoch);
-
-        /// <summary>
         /// Wait for config transition
         /// </summary>
         /// <returns></returns>
-        internal async Task<bool> BumpAndWaitForEpochTransitionAsync()
-        {
-            BumpCurrentEpoch();
-            // Acquire latest bumped epoch
-            var currentEpoch = GarnetCurrentEpoch;
-            foreach (var server in storeWrapper.Servers)
-            {
-                while (true)
-                {
-                retry:
-                    await Task.Yield();
-                    var sessions = ((GarnetServerTcp)server).ActiveClusterSessions();
-                    foreach (var s in sessions)
-                    {
-                        var entryEpoch = s.LocalCurrentEpoch;
-                        // Retry if at least one session has not yet caught up to the current epoch.
-                        if (entryEpoch != 0 && entryEpoch < currentEpoch)
-                            goto retry;
-                    }
-                    break;
-                }
-            }
-            return true;
-        }
+        internal ValueTask<bool> BumpAndWaitForEpochTransitionAsync()
+            => garnetEpoch.BumpAndWaitForEpochTransitionAsync();
 
         /// <inheritdoc />
         public string GetRunId() => replicationManager.PrimaryReplId;
