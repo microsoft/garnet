@@ -497,8 +497,8 @@ namespace Tsavorite.core
             if (!GetInitialRecoveryAddress(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 await RecoverFuzzyIndexAsync(recoveredICInfo, cancellationToken).ConfigureAwait(false);
 
-            // The restored index holds memory charged against the log budget, and the resizer that would otherwise sample it
-            // does not run during recovery. Sample it here so the page ranges below size the log against the reduced budget.
+            // The restored index holds memory charged against the log budget, and the resizer that samples it does not
+            // run during recovery. Sample here so the page ranges below size the log against the reduced budget.
             hlogBase.logSizeTracker?.SampleExternalMemorySizeWithoutSignal();
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))

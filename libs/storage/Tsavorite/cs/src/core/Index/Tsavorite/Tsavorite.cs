@@ -74,18 +74,17 @@ namespace Tsavorite.core
         {
             get
             {
-                // The resize generation is nulled concurrently once the split completes; read it once. GetMaxValidAddress
-                // reads a counter field, so it stays valid on an allocator that was just disposed.
+                // The resize generation is nulled concurrently once the split completes, so read it once.
+                // GetMaxValidAddress reads a counter field and stays valid on an allocator that was just disposed.
                 var resizeAllocator = overflowBucketsAllocatorResize;
-                return overflowBucketsAllocator.GetMaxValidAddress() + (resizeAllocator?.GetMaxValidAddress() ?? 0);
+                return (long)overflowBucketsAllocator.GetMaxValidAddress() + (resizeAllocator?.GetMaxValidAddress() ?? 0);
             }
         }
 
         /// <summary>
         /// Ceiling on overflow-bucket memory for the live generation, in bytes, derived from
         /// <see cref="KVSettings.IndexOverflowThreshold"/> and that generation's main bucket count. Allocation beyond
-        /// it throws. Read from the allocator itself rather than recomputed, so a generation installed with the wrong
-        /// ceiling is visible.
+        /// it throws. Read from the allocator rather than recomputed, so the installed ceiling is what is reported.
         /// </summary>
         public long IndexOverflowMaxSizeBytes => overflowBucketsAllocator.MaxMemorySize;
 

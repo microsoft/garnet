@@ -46,8 +46,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Hash-index memory in excess of the configured index budget, which is charged against the main log's budget.
-        /// Zero when the index fits the budget, which is the normal case.
+        /// Hash-index memory in excess of the configured index budget, charged against the main log's budget. Zero
+        /// when the index fits the budget.
         /// </summary>
         public long IndexMemoryChargedToLogBudget => mainLogTracker?.ExternalMemorySize ?? 0;
 
@@ -87,10 +87,9 @@ namespace Garnet.server
         /// <param name="readCacheTargetSize">Target memory size for read cache</param>
         /// <param name="loggerFactory">Logger factory</param>
         /// <param name="indexMemoryBudget">
-        /// Bytes of hash-index memory the configuration budgets for. Index memory beyond it -- overflow buckets, which grow
-        /// with record count and which no index setting bounds -- is charged against <paramref name="targetSize"/>, so the
-        /// log sheds pages as the index grows instead of the two summing past the machine's memory. Pass 0 to leave the
-        /// index out of the log budget.
+        /// Bytes of hash-index memory the configuration budgets for. Index memory beyond it, which is overflow buckets
+        /// that grow with record count and that no index setting bounds, is charged against <paramref name="targetSize"/>
+        /// so the log sheds pages as the index grows. Pass 0 to leave the index out of the log budget.
         /// </param>
         public void Initialize(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null, long indexMemoryBudget = 0)
         {

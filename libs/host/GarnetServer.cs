@@ -308,8 +308,8 @@ namespace Garnet
 
             if (logger != null)
             {
-                // Use the index MAX size: the index grows with distinct key count, and anything beyond the configured
-                // index budget is charged against the log budget rather than added on top of it.
+                // Use the index max size: growth beyond the configured index budget is charged against the log budget
+                // rather than added on top of it.
                 var indexMemoryLimit = Math.Max(storeWrapper.store.IndexSize * 64, opts.AdjustedIndexMaxCacheLines * 64L);
                 var configMemoryLimit = indexMemoryLimit +
                                         storeWrapper.store.Log.MaxMemorySizeBytes +

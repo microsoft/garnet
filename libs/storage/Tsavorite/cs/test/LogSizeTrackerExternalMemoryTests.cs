@@ -18,10 +18,9 @@ namespace Tsavorite.test.LogSizeTrackerExternalMemory
     /// Memory that lives outside the log but is charged against its budget must make the log shed pages.
     /// </summary>
     /// <remarks>
-    /// Garnet's hash index holds one entry per distinct key -- including keys whose records live only on disk -- and grows
+    /// Garnet's hash index holds one entry per distinct key, including keys whose records live only on disk, and grows
     /// into overflow buckets that no index setting bounds. <see cref="LogSizeTracker{TStoreFunctions, TAllocator}.ExternalMemorySizeProvider"/>
-    /// reports that memory to the tracker, which subtracts it from the log's budget so the log sheds pages as the index grows
-    /// rather than the two summing past the machine's memory. These tests pin that behavior.
+    /// reports that memory to the tracker, which subtracts it from the log's budget so the log sheds pages as the index grows.
     /// </remarks>
     [TestFixture]
     public class LogSizeTrackerExternalMemoryTests : TestBase

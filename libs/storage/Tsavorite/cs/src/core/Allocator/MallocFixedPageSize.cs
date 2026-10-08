@@ -53,8 +53,7 @@ namespace Tsavorite.core
         /// <summary>Granularity of a memory budget: a budget is rounded down to a whole number of pages of this size.</summary>
         internal static long MemorySizeGranularity => (long)PageSize * RecordSize;
 
-        /// <summary>Budget used when none is configured, equal to the fixed capacity this allocator had before the budget
-        /// became configurable (16 GiB for 64-byte records).</summary>
+        /// <summary>Budget used when none is configured: 16 GiB for 64-byte records.</summary>
         internal static long DefaultMaxMemorySize => (long)LevelSize * PageSize * RecordSize;
 
         /// <summary>Smallest and largest budgets a level count can express, for validation messages.</summary>
@@ -208,7 +207,7 @@ namespace Tsavorite.core
 
         internal int FreeListCount => freeList.Count;   // For test
 
-        internal const int AllocateChunkSize = 16;     // internal for test
+        public const int AllocateChunkSize = 16;
 
         /// <summary>
         /// Allocate a block of size RecordSize * kAllocateChunkSize. 
@@ -244,22 +243,24 @@ namespace Tsavorite.core
         private void ThrowAllocatorFull()
             => throw new TsavoriteException(
                 $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> is full: its page table addresses at most {levelCount} pages of {PageSize} records"
-                + $" ({MaxAllocationCount} records, {MaxMemorySize} bytes), and that capacity is exhausted."
-                + " For the hash index overflow buckets this means too many hash entries have spilled out of the main bucket array;"
-                + " these buckets chain linearly and are scanned by reads and upserts, so the index is undersized for the number"
-                + " of distinct keys on this node. Raise IndexMemorySize, or set IndexMaxMemorySize to let the index grow, so that"
-                + " more entries fit in the main bucket array. Raising IndexOverflowThreshold buys capacity at the cost of"
-                + " proportionally longer chains.");
+                + $" ({MaxAllocationCount} records, {MaxMemorySize} bytes), and that capacity is exhausted.{exhaustionRemedy}");
+
+        /// <summary>Remedy appended to the exhaustion message, naming the settings that size this allocator.</summary>
+        private static string exhaustionRemedy => typeof(T) != typeof(HashBucket)
+            ? string.Empty
+            : " Too many hash entries have spilled out of the main bucket array. Overflow buckets chain linearly and are"
+                + " scanned by reads and upserts, so the index is undersized for the number of distinct keys on this node."
+                + " Raise IndexMemorySize, or set IndexMaxMemorySize to let the index grow, so that more entries fit the"
+                + " main bucket array. Raising IndexOverflowThreshold buys capacity at the cost of longer chains.";
 
         private unsafe long InternalAllocate(int blockSize)
         {
             if (freeList.TryDequeue(out long result))
                 return result;
 
-            // Reserve the block without ever letting count exceed capacity. A rejected allocation must leave no trace:
-            // count is also the high-water mark reported by GetMaxValidAddress and the level count BeginCheckpoint
-            // derives its page-table indices from, both of which index values/pointers directly. Reserving the whole
-            // block also keeps a BulkAllocate from straddling the end of the last page.
+            // Reserve the whole block without letting count exceed capacity. count is also the high-water mark
+            // GetMaxValidAddress reports and BeginCheckpoint derives page-table indices from, so a rejected allocation
+            // must not advance it.
             int index;
             while (true)
             {

@@ -635,7 +635,7 @@ namespace Garnet
         public int IndexResizeThreshold { get; set; }
 
         [IntRangeValidation(1, 10000, isRequired: false)]
-        [Option("index-overflow-threshold", Required = false, HelpText = "Hash-index overflow bucket count over total index size in percentage at which allocation fails. Same unit as --index-resize-threshold and must exceed it. Overflow buckets hold hash entries that do not fit the main bucket array, so they grow with the number of distinct keys rather than with the size of the data, and no index size setting bounds them. They also chain linearly and are scanned by reads and upserts, so this is the average chain length allowed: 300 permits three overflow buckets per main bucket. Exceeding it fails the write with a clear error instead of growing until the process is OOM-killed.")]
+        [Option("index-overflow-threshold", Required = false, HelpText = "Hash-index overflow bucket count over total index size in percentage at which allocation fails. Same unit as --index-resize-threshold and must exceed it. Overflow buckets chain linearly and are scanned by reads and upserts, so this is the average chain length allowed: 300 permits three overflow buckets per main bucket.")]
         public int IndexOverflowThreshold { get; set; }
 
         [MemorySizeValidation(isRequired: false)]

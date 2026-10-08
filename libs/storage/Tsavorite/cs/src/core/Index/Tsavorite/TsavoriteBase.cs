@@ -28,9 +28,8 @@ namespace Tsavorite.core
         internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
         internal MallocFixedPageSize<HashBucket> overflowBucketsAllocatorResize;
 
-        // Overflow-bucket ceiling as a percentage of a generation's main bucket count. Held rather than resolved to a
-        // byte ceiling so that each generation installed by an index resize or by recovery scales with its own table
-        // size, keeping the chain length a resize produces bounded by the same ratio at every index size.
+        // Overflow-bucket ceiling as a percentage of a generation's main bucket count. Held as a percentage so that
+        // each generation installed by a resize or by recovery scales with its own table size.
         internal readonly int overflowThreshold;
 
         // Logger for the overflow-bucket allocator generations created after construction.
@@ -111,8 +110,39 @@ namespace Tsavorite.core
         /// index resize, and on recovery, so that every generation's ceiling scales with its own main bucket count.
         /// </summary>
         /// <param name="tableSizeBuckets">Main bucket count of the generation the allocator serves.</param>
-        internal MallocFixedPageSize<HashBucket> NewOverflowBucketsAllocator(long tableSizeBuckets)
-            => new(KVSettings.GetIndexOverflowMaxMemorySize(tableSizeBuckets, overflowThreshold), overflowBucketsLogger);
+        /// <param name="minimumBuckets">Lower bound on the generation's capacity in buckets, regardless of the
+        /// threshold, for callers that must be able to hold a known quantity.</param>
+        internal MallocFixedPageSize<HashBucket> NewOverflowBucketsAllocator(long tableSizeBuckets, long minimumBuckets = 0)
+        {
+            var maxMemorySize = KVSettings.GetIndexOverflowMaxMemorySize(tableSizeBuckets, overflowThreshold);
+            if (minimumBuckets > 0)
+            {
+                // Round up to a whole allocator page; the ceiling is converted to a page count by rounding down.
+                var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+                var required = (minimumBuckets * MallocFixedPageSize<HashBucket>.RecordSize + granularity - 1) / granularity * granularity;
+                if (required > MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit)
+                    throw new TsavoriteException(
+                        $"An overflow-bucket generation of {required} bytes is required, which exceeds the {MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit}"
+                        + " bytes the overflow page table can address. Reduce the index size so that a generation's overflow buckets remain addressable.");
+                if (required > maxMemorySize)
+                    maxMemorySize = required;
+            }
+            return new(maxMemorySize, overflowBucketsLogger);
+        }
+
+        /// <summary>
+        /// Worst-case overflow buckets the split into a doubled table can need. An entry whose record is not in memory
+        /// is inserted into both halves of the new table, because which half it belongs to cannot be determined without
+        /// reading the record, so the split produces at most twice the old generation's entries at seven per bucket.
+        /// </summary>
+        /// <remarks>The threshold-derived ceiling is quantized to whole allocator pages and clamped at both ends, so a
+        /// doubled table does not always get a doubled ceiling and this must be reserved separately. Exhausting the
+        /// allocator mid-split throws with a chunk already claimed, leaving the waiters in
+        /// <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.SplitAllBuckets"/> spinning on a chunk that can never
+        /// complete.</remarks>
+        /// <param name="oldTableSizeBuckets">Main bucket count of the generation being split.</param>
+        internal long GetSplitOverflowBucketRequirement(long oldTableSizeBuckets)
+            => 2 * (oldTableSizeBuckets + overflowBucketsAllocator.GetMaxValidAddress());
 
         internal void Free()
         {
