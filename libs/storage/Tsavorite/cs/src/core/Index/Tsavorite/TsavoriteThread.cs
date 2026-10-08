@@ -118,10 +118,18 @@ namespace Tsavorite.core
                 }
 
                 var status = InternalCompletePendingRequestFromContext(sessionFunctions, ref request, ref op.baseOperationState, ref op.pendingState, out var newRequest);
-                if (completedOutputs is not null && status.IsCompletedSuccessfully)
+                if (status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from the pendingState before we dispose it.
-                    completedOutputs.TransferFrom(ref op.baseOperationState, ref op.pendingState, status);
+                    if (completedOutputs is not null)
+                        completedOutputs.TransferFrom(ref op.baseOperationState, ref op.pendingState, status);
+                }
+                else if (!status.IsPending)
+                {
+                    // Terminal without success. No completedOutputs entry is produced for this op, so a caller that must
+                    // not proceed past a failed operation -- compaction, which drops the source records afterwards --
+                    // cannot see the failure in the outputs; record it on the context for that caller to check.
+                    sessionFunctions.Ctx.faultedPendingCount++;
                 }
                 if (status.IsPending)
                 {

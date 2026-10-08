@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Runtime.CompilerServices;
@@ -49,16 +49,32 @@ namespace Tsavorite.core
         private static void ThrowCompactionCopyFailed(Status status)
             => throw new TsavoriteException($"Compaction could not copy a record to the tail: {status}");
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void ThrowPendingCompactionCopyFailed(long count)
+            => throw new TsavoriteException($"Compaction had {count} pending copy(s) to the tail end without completing successfully");
+
         /// <summary>Drain the pending copies to the tail, verifying that each one succeeded.</summary>
+        /// <remarks>
+        /// Two checks are needed because a pending op that ends faulted leaves no trace in the outputs: the drain transfers to
+        /// <see cref="CompletedOutputIterator{TInput, TOutput, TContext}"/> only when the terminal status is successful, so
+        /// iterating the outputs alone would silently treat such a copy as done and let <c>ShiftBeginAddress</c> drop its source.
+        /// The context's faulted-completion counter covers exactly that case.
+        /// </remarks>
         private static void CompletePendingCompactionCopies<TInput, TOutput, TContext>(
-                BasicContext<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>, TStoreFunctions, TAllocator> bContext)
+                ClientSession<ITsavoriteScanIterator, TInput, TOutput, TContext, NoOpSessionFunctions<TInput, TOutput, TContext>, TStoreFunctions, TAllocator> session)
         {
-            _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var faultedBeforeDrain = session.ctx.faultedPendingCount;
+
+            _ = session.BasicContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             using (completedOutputs)
             {
                 while (completedOutputs.Next())
                     VerifyCompactionCopyStatus(completedOutputs.Current.Status);
             }
+
+            var faulted = session.ctx.faultedPendingCount - faultedBeforeDrain;
+            if (faulted != 0)
+                ThrowPendingCompactionCopyFailed(faulted);
         }
 
         private long CompactLookup<TInput, TOutput, TContext, TCompactionFunctions>(TCompactionFunctions cf, long untilAddress)
@@ -85,7 +101,7 @@ namespace Tsavorite.core
                         {
                             if (++numPending > 256)
                             {
-                                CompletePendingCompactionCopies(storebContext);
+                                CompletePendingCompactionCopies(storeSession);
                                 numPending = 0;
                             }
                         }
@@ -98,12 +114,15 @@ namespace Tsavorite.core
                     untilAddress = iter1.NextAddress;
                 }
                 if (numPending > 0)
-                    CompletePendingCompactionCopies(storebContext);
+                    CompletePendingCompactionCopies(storeSession);
             }
 
             // Only reached when every record in the range was copied: a failed copy throws, leaving BeginAddress unchanged so no
-            // original is dropped. Copies already at the tail are then ordinary older versions -- a later compaction finds the newer
-            // tail version via minAddress and skips them -- so retrying is idempotent and the partial work costs only log space.
+            // original is dropped. The tail copies are then the live versions and the originals below them are stale, which is
+            // exactly the state an ordinary update leaves the log in. A Log.Scan walks the log physically and so returns both
+            // versions (Iterate() is the distinct-key API); consumers that need liveness filter on it, including a later
+            // compaction, whose minAddress check finds the newer tail version and skips the stale original. Retrying is
+            // therefore idempotent, and the partial work costs log space until a later compaction reclaims it.
             Log.ShiftBeginAddress(untilAddress, false);
             return untilAddress;
         }
@@ -176,7 +195,7 @@ namespace Tsavorite.core
                     {
                         if (++numPending > 256)
                         {
-                            CompletePendingCompactionCopies(storebContext);
+                            CompletePendingCompactionCopies(storeSession);
                             numPending = 0;
                         }
                     }
@@ -184,12 +203,15 @@ namespace Tsavorite.core
                         VerifyCompactionCopyStatus(status);
                 }
                 if (numPending > 0)
-                    CompletePendingCompactionCopies(storebContext);
+                    CompletePendingCompactionCopies(storeSession);
             }
 
             // Only reached when every record in the range was copied: a failed copy throws, leaving BeginAddress unchanged so no
-            // original is dropped. Copies already at the tail are then ordinary older versions -- a later compaction finds the newer
-            // tail version via minAddress and skips them -- so retrying is idempotent and the partial work costs only log space.
+            // original is dropped. The tail copies are then the live versions and the originals below them are stale, which is
+            // exactly the state an ordinary update leaves the log in. A Log.Scan walks the log physically and so returns both
+            // versions (Iterate() is the distinct-key API); consumers that need liveness filter on it, including a later
+            // compaction, whose minAddress check finds the newer tail version and skips the stale original. Retrying is
+            // therefore idempotent, and the partial work costs log space until a later compaction reclaims it.
             Log.ShiftBeginAddress(originalUntilAddress, false);
             return originalUntilAddress;
         }
