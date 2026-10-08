@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -66,6 +66,30 @@ namespace Tsavorite.core
         /// correct main position, and clearing it would let a later flush stamp a higher one and truncate segments still in use.
         /// </remarks>
         internal virtual void ResetRecoveredResidentPageHeader(int page) { }
+
+        /// <summary>Highest logical address ever marked <see cref="RecordInfo.DeferredDispose"/>. Used only to skip the drain
+        /// entirely once FlushedUntilAddress has passed every mark, which is the overwhelmingly common case.</summary>
+        /// <remarks>Deliberately a monotonic high-water mark rather than a count of outstanding marks. A marked record can be
+        /// elided and revivified once its freeze lifts, and reuse reinitializes <see cref="RecordInfo"/>, so a count would lose
+        /// a decrement and drift upward forever -- making every later flush completion walk a range that holds nothing. A
+        /// high-water address cannot drift: marks only ever raise it, and it is self-clearing in effect because the drain range
+        /// advances with FlushedUntilAddress and stops matching once it is past.</remarks>
+        private protected long deferredDisposeMaxAddress;
+
+        /// <summary>High-water address the deferred-disposal drain has already covered.</summary>
+        /// <remarks>The drain cannot simply reuse the FlushedUntilAddress delta. That delta is truncated to a sector boundary, and
+        /// the next delta begins at the untruncated FlushedUntilAddress, so the truncated remainder would fall into a permanent gap
+        /// that no range ever revisits. Tracking what has actually been drained carries that remainder forward into the next range.</remarks>
+        private protected long deferredDisposeDrainedUntilAddress;
+
+        /// <summary>Record that the deleted source at <paramref name="logicalAddress"/> was marked for deferred disposal
+        /// because it was frozen for flush.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void NoteDeferredDispose(long logicalAddress) => _ = MonotonicUpdate(ref deferredDisposeMaxAddress, logicalAddress, out _);
+
+        /// <summary>Dispose records marked <see cref="RecordInfo.DeferredDispose"/> in <paramref name="fromAddress"/> ..
+        /// <paramref name="untilAddress"/>, whose flush has completed. Only implemented by ObjectAllocator.</summary>
+        internal virtual void DrainDeferredDisposes(long fromAddress, long untilAddress) { }
 
         /// <summary>Return the first object-log position recorded in the header of <paramref name="page"/>, or an unset position when
         /// this allocator has no object log or the page contains no out-of-line records.</summary>
@@ -2165,12 +2189,49 @@ namespace Tsavorite.core
             return newHeadAddress;
         }
 
+        /// <summary>Run DrainDeferredDisposes under epoch protection, if the range holds anything.</summary>
+        /// <remarks>Epoch protection, not an epoch bump: the drain needs no barrier, because the flush that froze these records has
+        /// completed, operations take RETRY_LATER on a sealed record, and scans skip it. What it does need is for the pages it walks
+        /// to stay resident, which holding the epoch guarantees for everything at or above the HeadAddress it reads inside the
+        /// protected region -- eviction of that range cannot run until this suspends. A bump would additionally be wrong here: flush
+        /// completion runs on an IO thread that holds no epoch, and BumpCurrentEpoch requires one.</remarks>
+        private protected void DrainDeferredDisposesProtected(long fromAddress, long untilAddress)
+        {
+            if (untilAddress <= fromAddress)
+                return;
+
+            var resumed = epoch.ResumeIfNotProtected();
+            try
+            {
+                DrainDeferredDisposes(fromAddress, untilAddress);
+            }
+            finally
+            {
+                if (resumed)
+                    epoch.Suspend();
+            }
+        }
+
+        /// <summary>
+        /// Every async flush callback tries to update the flushed until address to the latest value possible, draining any
+        /// deferred disposals the shift makes eligible before returning.
+        /// </summary>
+        protected void ShiftFlushedUntilAddress()
+        {
+            ShiftFlushedUntilAddress(out var drainFromAddress, out var drainUntilAddress);
+            DrainDeferredDisposesProtected(drainFromAddress, drainUntilAddress);
+        }
+
         /// <summary>
         /// Every async flush callback tries to update the flushed until address to the latest value possible
         /// TODO: Is there a better way to do this with enabling fine-grained addresses (not necessarily at page boundaries)?
         /// </summary>
-        protected void ShiftFlushedUntilAddress()
+        /// <param name="drainFromAddress">Start of the range whose deferred disposals the caller must drain</param>
+        /// <param name="drainUntilAddress">End of that range; not greater than <paramref name="drainFromAddress"/> when there is nothing to drain</param>
+        protected void ShiftFlushedUntilAddress(out long drainFromAddress, out long drainUntilAddress)
         {
+            drainFromAddress = drainUntilAddress = 0;
+
             var currentFlushedUntilAddress = FlushedUntilAddress;
             var page = GetPage(currentFlushedUntilAddress);
 
@@ -2202,6 +2263,29 @@ namespace Tsavorite.core
 
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
                         _ = notifyFlushedUntilAddressTcs?.TrySetResult(true);
+
+                    // A deleted source whose disposal was declined while frozen becomes disposable once the flush that was reading
+                    // it completes. This delta is that range, and it is contiguous by construction because FlushedUntilAddress advances
+                    // only over completed writes -- unlike anything page-scoped, which cannot be sound when a page is flushed in
+                    // fragments that are neither tracked nor coalesced, so a callback cannot tell whether it holds the last one.
+                    // Truncating to the sector boundary removes the need to re-test the freeze: a later partial-sector rewrite reads
+                    // [RoundDown(F, sectorSize), F) for some future F >= this one, and RoundDown is monotonic, so every address below
+                    // the boundary here can never fall in that window. The truncated tail sector is carried into the next range by
+                    // deferredDisposeDrainedUntilAddress, so a record in it waits only for further log progress -- or, failing that,
+                    // for eviction, which is the old behavior and not a regression. Claiming the range with MonotonicUpdate is what
+                    // makes concurrent flush completions take disjoint ranges. The caller performs the drain, so that it does not sit
+                    // in front of the next chained flush.
+                    var maxDeferredAddress = Interlocked.Read(ref deferredDisposeMaxAddress);
+                    if (maxDeferredAddress > 0)
+                    {
+                        var candidateUntilAddress = RoundDown(currentFlushedUntilAddress, sectorSize);
+                        if (MonotonicUpdate(ref deferredDisposeDrainedUntilAddress, candidateUntilAddress, out var oldDrainedUntilAddress)
+                                && maxDeferredAddress >= oldDrainedUntilAddress)
+                        {
+                            drainFromAddress = oldDrainedUntilAddress;
+                            drainUntilAddress = candidateUntilAddress;
+                        }
+                    }
                 }
             }
 
@@ -3057,6 +3141,8 @@ namespace Tsavorite.core
                         logger?.LogError("AsyncFlushPageCallback error: {exception}", Utility.GetCallbackExceptionDetail(ioException));
                 }
 
+                long drainFromAddress = 0, drainUntilAddress = 0;
+
                 // Set the page status to flushed
                 var result = (PageAsyncFlushResult<Empty>)context;
                 errorCode = result.RecordError(errorCode);
@@ -3081,7 +3167,7 @@ namespace Tsavorite.core
                         _ = MonotonicUpdate(ref PageStatusIndicator[result.page % BufferSize].LastFlushedUntilAddress, result.untilAddress, out _);
                     }
 
-                    ShiftFlushedUntilAddress();
+                    ShiftFlushedUntilAddress(out drainFromAddress, out drainUntilAddress);
                 }
 
                 // Continue the chained flushes, popping the next request from the queue if it is adjacent.
@@ -3091,6 +3177,10 @@ namespace Tsavorite.core
                     request.flushBuffers = result.flushBuffers;  // Reuse the flush buffers from the completed flush to continue the flush chain
                     WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
                 }
+
+                // Deferred disposals last: the records are released once their flush is durable, and doing it here rather than inside
+                // the shift keeps this work off the path that issues the next chained flush.
+                DrainDeferredDisposesProtected(drainFromAddress, drainUntilAddress);
             }
             catch when (disposed) { }
         }
@@ -3102,13 +3192,15 @@ namespace Tsavorite.core
                 errorList.TruncateUntil(info.UntilAddress);
                 var page = GetPage(info.FromAddress);
                 _ = MonotonicUpdate(ref PageStatusIndicator[page % BufferSize].LastFlushedUntilAddress, info.UntilAddress, out _);
-                ShiftFlushedUntilAddress();
+                ShiftFlushedUntilAddress(out var drainFromAddress, out var drainUntilAddress);
                 var _flush = FlushedUntilAddress;
                 if (GetOffsetOnPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
                 {
                     // Reuse the flush buffers from the completed flush to continue the flush chain
                     WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
                 }
+
+                DrainDeferredDisposesProtected(drainFromAddress, drainUntilAddress);
             }
             catch when (disposed) { }
         }

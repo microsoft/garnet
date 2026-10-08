@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -243,6 +244,79 @@ namespace Tsavorite.test
             using var s = NewSession();
             _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TrackedObjectValue { value = value }, 0);
         }
+
+        #region Deferred dispose of a record frozen for flush
+
+        /// <summary>
+        /// A superseded source that is frozen for flush has its disposal declined, because releasing its heap or rewriting its
+        /// layout while the allocator is writing the live page would persist a torn or dangling record. Before the deferred-dispose
+        /// drain existed, such a record was simply "released at eviction" — but eviction calls <see cref="IRecordTriggers.OnEvict"/>,
+        /// never <see cref="IRecordTriggers.OnDispose"/>, so the Deleted disposal never fired at all. For Garnet that meant a deleted
+        /// RangeIndex or Vector record never had its data files deleted or its vector deletion requested.
+        /// <para>
+        /// This test pins that behavior from both sides: zero <c>OnDispose(Deleted)</c> while the flush is still in flight (which is
+        /// also the state the old code ended in, so removing the drain makes the final assertion fail), and exactly one once the flush
+        /// completes and the drain runs.
+        /// </para>
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void FrozenSupersededSourceIsDisposedWhenTheFlushCompletes()
+        {
+            Upsert(1, 100);
+
+            using var insideFlushWindow = new SemaphoreSlim(0);
+            using var releaseFlush = new SemaphoreSlim(0);
+            var hookFired = false;
+
+            ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+            {
+                if (phase != ObjectFlushPhase.AfterRecordWritten || hookFired)
+                    return;
+                hookFired = true;
+                _ = insideFlushWindow.Release();
+                _ = releaseFlush.Wait(TimeSpan.FromSeconds(30));
+            };
+
+            try
+            {
+                tracker.Reset();
+
+                // Run the waiting shift on a worker: it blocks until the flush completes, and the flush is parked in the hook.
+                var shift = Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true));
+
+                Assert.That(insideFlushWindow.Wait(TimeSpan.FromSeconds(30)), Is.True,
+                    "the flush never reached AfterRecordWritten, so this test proves nothing (note the hook is DEBUG-only)");
+
+                // The record is now immutable and its flush is in flight, so IsFrozenForFlush holds: the Delete supersedes it but
+                // its disposal must be declined rather than run under the flush.
+                using (var s = NewSession())
+                    _ = s.BasicContext.Delete(new TestObjectKey { key = 1 }, 0);
+
+                ClassicAssert.AreEqual(0, tracker.DisposeCount(DisposeReason.Deleted),
+                    "disposal must be declined while the record is frozen for flush");
+
+                _ = releaseFlush.Release();
+                Assert.That(shift.Wait(TimeSpan.FromSeconds(30)), Is.True, "the read-only shift did not complete");
+
+                // The drain is dispatched through BumpCurrentEpoch when a flush completion advances FlushedUntilAddress past the
+                // record's sector, so the log has to keep moving: upserting one key repeatedly would update it in place and never
+                // allocate. Use fresh keys, and touch the store until the drain has run rather than assuming it fired inline.
+                var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+                for (var key = 2; tracker.DisposeCount(DisposeReason.Deleted) == 0 && DateTime.UtcNow < deadline; ++key)
+                    Upsert(key, key * 100);
+
+                ClassicAssert.AreEqual(1, tracker.DisposeCount(DisposeReason.Deleted),
+                    "the deferred disposal must run exactly once after the flush that froze the record completed");
+                ClassicAssert.AreEqual(0, tracker.TotalEvict(),
+                    "the drain must release the record while it is still resident; eviction honors the mark too, but only as a fallback");
+            }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+            }
+        }
+
+        #endregion Deferred dispose of a record frozen for flush
 
         #region CopyUpdate — value-object slot clearing
 

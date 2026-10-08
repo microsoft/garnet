@@ -465,6 +465,59 @@ namespace Tsavorite.core
             storeFunctions.OnDisposeDiskRecord(ref logRecord, disposeReason);
         }
 
+        /// <inheritdoc/>
+        internal override void DrainDeferredDisposes(long fromAddress, long untilAddress)
+        {
+            // Anything below HeadAddress has been evicted, and EvictRecordsInRange honors the mark, so clamping drops no obligation --
+            // eviction is the fallback for every record this drain does not reach. Reading HeadAddress inside the epoch-protected
+            // region is what makes the pages at or above it safe to walk: their eviction cannot run until the caller suspends.
+            var address = fromAddress < HeadAddress ? HeadAddress : fromAddress;
+
+            while (address < untilAddress)
+            {
+                var page = GetPage(address);
+                var pageEndAddress = GetLogicalAddressOfStartOfPage(page + 1);
+                var stopAddress = untilAddress < pageEndAddress ? untilAddress : pageEndAddress;
+
+                var firstValidAddress = GetFirstValidLogicalAddressOnPage(page);
+                if (address < firstValidAddress)
+                    address = firstValidAddress;
+
+                var pageIndex = GetPageIndexForAddress(address);
+                if (IsAllocated(pageIndex))
+                {
+                    var objectIdMap = objectPages[pageIndex].objectIdMap;
+                    while (address < stopAddress)
+                    {
+                        var logRecord = new LogRecord(GetPhysicalAddress(address), objectIdMap);
+                        var allocatedSize = logRecord.AllocatedSize;
+                        if (allocatedSize <= 0)
+                            break;
+
+                        var offset = GetOffsetOnPage(address);
+                        if (offset == 0 || offset + allocatedSize > PageSize)
+                            break;
+
+                        ref var recordInfo = ref logRecord.InfoRef;
+                        if (recordInfo.DeferredDispose)
+                        {
+                            recordInfo.DeferredDispose = false;
+
+                            // Valid matters as much as Sealed. SealAndInvalidate yields Sealed and not Valid, which is an elided or
+                            // free-listed record whose disposal already ran, and a marked record can be elided once the freeze lifts
+                            // but before this drain fires. Requiring Valid is what keeps it from being disposed a second time.
+                            if (recordInfo.IsValidAndSealed)
+                                OnDispose(ref logRecord, DisposeReason.Deleted);
+                        }
+
+                        address += allocatedSize;
+                    }
+                }
+
+                address = stopAddress;
+            }
+        }
+
         /// <summary>
         /// Iterate records in the given logical address range and call <see cref="IStoreFunctions.OnEvict"/>
         /// on each non-null, non-invalid, non-tombstoned record — including sealed source records that
@@ -506,6 +559,19 @@ namespace Tsavorite.core
                 {
                     address += allocatedSize;
                     continue;
+                }
+
+                // Honor a deferred disposal here if eviction reaches the record before the drain does. Clearing the mark without
+                // disposing would resurrect exactly the leak this exists to close: eviction calls only OnEvict, so a deleted
+                // record's external resources would never be released. Running it first reproduces the ordinary sequence --
+                // disposal at the supersede site, then eviction -- so the heap accounting below sees a value-cleared record and
+                // does not double-count. Invalid records were skipped above, which is what keeps an elided record, whose
+                // disposal already ran, from being disposed twice.
+                if (logRecord.Info.DeferredDispose)
+                {
+                    logRecord.InfoRef.DeferredDispose = false;
+                    if (logRecord.Info.IsValidAndSealed)
+                        OnDispose(ref logRecord, DisposeReason.Deleted);
                 }
 
                 // Decrement the record's heap contribution in a single call.

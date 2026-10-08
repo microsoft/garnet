@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -111,23 +111,58 @@ namespace Tsavorite.core
             => RevivificationManager.GetMinRevivifiableAddress(hlogBase.GetTailAddress(), hlogBase.ReadOnlyAddress);
 
         /// <summary>
-        /// Dispose the resources of an in-memory source record that a newly-CAS'd record has just superseded, unless an
-        /// ongoing checkpoint or an in-flight flush has frozen it.
+        /// Dispose the resources of an in-memory source record that is being deleted. If an ongoing checkpoint or an
+        /// in-flight flush has frozen it, mark it for deferred disposal instead.
         /// </summary>
         /// <remarks>
+        /// This is the *deletion* path, not the general supersede path: callers are <c>InternalDelete</c>'s non-elide
+        /// branch and the four <c>InternalRMW</c> expiration paths (<see cref="RMWAction.ExpireAndStop"/> and
+        /// <see cref="RMWAction.ExpireAndResume"/>, both before and after the new record is allocated), whose net effect
+        /// is a Delete. Two of those run before any CAS, so there need not be a new record at all. An ordinary
+        /// CopyUpdate does *not* come here — it caches the source's bytes via <c>CacheSerializedObjectData</c> and
+        /// defers clearing so <c>PostCopyUpdater</c> can still read the source.
+        /// <para>
         /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
         /// free list for reuse by another record. A frozen record must keep its value until the flush that is reading it has
-        /// captured it; the value is then accounted for and released when the page is evicted. Two flushes read a record the
-        /// caller has already superseded: the snapshot flush reads object ids from its page copy but resolves them against the
-        /// live map, and the object allocator's read-only flush serializes and writes the live page directly.
+        /// captured it. Two flushes read a record the caller has already deleted: the snapshot flush reads object ids from
+        /// its page copy but resolves them against the live map, and the object allocator's read-only flush serializes and
+        /// writes the live page directly.
+        /// </para>
+        /// <para>
+        /// Only a flush freeze is marked. A checkpoint freeze is deliberately left to eviction, because the drain's release
+        /// condition would be wrong for it: the drain fires when the main log's FlushedUntilAddress passes the record, which
+        /// says nothing about whether the snapshot has captured it, so disposing on that signal could free a value the
+        /// snapshot flush has yet to write and persist a dangling object id.
+        /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+        private void OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
+            {
+                // Mark for the flush-completion drain to dispose once the flush window closes. Setting a bit on a record that is
+                // frozen for flush is safe, which is not obvious because the object allocator writes the LIVE PAGE and that of
+                // course includes RecordInfo:
+                //  - The flush writes RecordInfo to the device but never modifies it in memory, so it is not a competing writer.
+                //    Whether the DMA captures this bit is therefore nondeterministic, and harmless: RecordInfo is a single
+                //    8-byte aligned word so the device sees the old or the new value and never a tear, and
+                //    RecordInfo.ClearBitsForDiskImages strips the bit on every read-from-disk path.
+                //  - No CAS is needed. This runs on the operation path holding the record lock, so the set is exactly as safe
+                //    as the Seal() that immediately follows it at the call sites.
+                //  - The drain needs no record lock for a related reason: this call is always followed by Seal(), and
+                //    SkipOnScan is IsClosedWord(word), i.e. (word & (Valid|Sealed)) != Valid, so a Sealed record is closed to
+                //    operations (they take RETRY_LATER rather than touch it) and skipped by scans.
+                // What is NOT safe, and is what the freeze exists to prevent, is destructive mutation: freeing heap, zeroing
+                // the ObjectLogPosition the flush just stamped, or changing record layout.
+                if (hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress))
+                {
+                    logRecord.InfoRef.DeferredDispose = true;
+                    hlogBase.NoteDeferredDispose(stackCtx.recSrc.LogicalAddress);
+                }
                 return;
+            }
             OnDispose(ref logRecord, DisposeReason.Deleted);
         }
 
