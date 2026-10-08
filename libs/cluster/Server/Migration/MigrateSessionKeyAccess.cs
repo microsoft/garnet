@@ -14,7 +14,7 @@ namespace Garnet.cluster
         /// Wait for config propagation based on the type of MigrateSession that is currently in progress
         /// </summary>
         /// <exception cref="GarnetException"></exception>
-        private Task WaitForConfigPropagationAsync()
+        private ValueTask<bool> WaitForConfigPropagationAsync()
         {
             if (transferOption == TransferOption.KEYS)
                 return clusterSession.UnsafeBumpAndWaitForEpochTransitionAsync();

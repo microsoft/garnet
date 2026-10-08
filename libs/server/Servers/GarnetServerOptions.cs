@@ -213,6 +213,11 @@ namespace Garnet.server
         public int CompactionFrequencySecs = 0;
 
         /// <summary>
+        /// Frequency in seconds between automatic checkpoints. 0 = disabled.
+        /// </summary>
+        public int CheckpointFrequencySecs = 0;
+
+        /// <summary>
         /// Frequency in seconds for the background task to perform object collection which removes expired members within object from memory. 0 = disabled. Use the HCOLLECT and ZCOLLECT API to collect on-demand.
         /// </summary>
         public int ExpiredObjectCollectionFrequencySecs = 0;
