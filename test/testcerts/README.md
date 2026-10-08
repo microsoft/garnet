@@ -31,6 +31,15 @@ GarnetServer --cert-file-name `<path-to-file>`/server-cert.crt --cert-password `
 ### Note:
 The repository contains a pfx file under the path `<root>`/test/testcerts. If needed, use the testcert.pfx with the password `placeholder`.
 
+### Validity
+
+`testcert.pfx` and the PEM files extracted from it (`garnet-ca.crt`, `garnet-cert.crt`, `garnet.key`) are valid until
+**2036-10-05**. The server validates the chain against the current time, so once they expire every TLS test in the
+repository fails, with the client seeing only a connection closed by the server. Regenerate them with the steps under
+*Generate your own self-signed certificates* below, keeping the subject names (`CN=Garnet` for the issuer, `CN=GarnetTest`
+for the leaf) and the password `placeholder`, and give the leaf `subjectAltName = DNS:GarnetTest, DNS:localhost, IP:127.0.0.1`
+and `extendedKeyUsage = serverAuth, clientAuth` -- the tests connect to `127.0.0.1` and send a client certificate.
+
 ## Using a resp-compatible client with TLS:
 
 To connect a resp client with Garnet, you need a server cert, a private key and a ca cert.
