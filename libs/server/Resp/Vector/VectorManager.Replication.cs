@@ -84,7 +84,7 @@ namespace Garnet.server
         /// 
         /// This the Primary part, on a Replica <see cref="HandleVectorSetAddReplication"/> runs.
         /// </summary>
-        internal void ReplicateVectorSetAdd(ReadOnlySpan<byte> key, ref StringInput input, ref StringBasicContext context)
+        internal void ReplicateVectorSetAdd(StorageSession session, ReadOnlySpan<byte> key, ref StringInput input)
         {
             Debug.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
 
@@ -93,11 +93,26 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
 
-            var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
+            var inTransaction = session.txnManager.state == TxnState.Running;
 
-            if (res.IsPending)
+            Status res;
+            if (inTransaction)
             {
-                CompletePending(ref res, ref context);
+                res = session.stringTransactionalContext.RMW((FixedSpanByteKey)key, ref inputCopy);
+
+                if (res.IsPending)
+                {
+                    CompletePending(ref res, ref session.stringTransactionalContext);
+                }
+            }
+            else
+            {
+                res = session.stringBasicContext.RMW((FixedSpanByteKey)key, ref inputCopy);
+
+                if (res.IsPending)
+                {
+                    CompletePending(ref res, ref session.stringBasicContext);
+                }
             }
 
             if (!res.IsCompletedSuccessfully)
@@ -116,7 +131,7 @@ namespace Garnet.server
         /// 
         /// This the Primary part, on a Replica <see cref="HandleVectorSetRemoveReplication"/> runs.
         /// </summary>
-        internal void ReplicateVectorSetRemove(ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, ref StringBasicContext context)
+        internal void ReplicateVectorSetRemove(StorageSession session, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input)
         {
             Debug.Assert(input.header.cmd == RespCommand.VREM, "Shouldn't be called with anything but VREM inputs");
 
@@ -127,11 +142,26 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
 
-            var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
+            var inTransaction = session.txnManager.state == TxnState.Running;
 
-            if (res.IsPending)
+            Status res;
+            if (inTransaction)
             {
-                CompletePending(ref res, ref context);
+                res = session.stringTransactionalContext.RMW((FixedSpanByteKey)key, ref inputCopy);
+
+                if (res.IsPending)
+                {
+                    CompletePending(ref res, ref session.stringTransactionalContext);
+                }
+            }
+            else
+            {
+                res = session.stringBasicContext.RMW((FixedSpanByteKey)key, ref inputCopy);
+
+                if (res.IsPending)
+                {
+                    CompletePending(ref res, ref session.stringBasicContext);
+                }
             }
 
             if (!res.IsCompletedSuccessfully)
@@ -141,7 +171,7 @@ namespace Garnet.server
             }
         }
 
-        internal void ReplicateVectorSetSetAttribute(ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute, ref StringInput input, ref StringBasicContext context)
+        internal void ReplicateVectorSetSetAttribute(StorageSession session, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute, ref StringInput input)
         {
             Debug.Assert(input.header.cmd == RespCommand.VSETATTR, "Shouldn't be called with anything but VSETATTR inputs");
 
@@ -152,11 +182,26 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_Before_Synthetic_Replication_Rmw);
 
-            var res = context.RMW((FixedSpanByteKey)key, ref inputCopy);
+            var inTransaction = session.txnManager.state == TxnState.Running;
 
-            if (res.IsPending)
+            Status res;
+            if (inTransaction)
             {
-                CompletePending(ref res, ref context);
+                res = session.stringTransactionalContext.RMW((FixedSpanByteKey)key, ref inputCopy);
+
+                if (res.IsPending)
+                {
+                    CompletePending(ref res, ref session.stringTransactionalContext);
+                }
+            }
+            else
+            {
+                res = session.stringBasicContext.RMW((FixedSpanByteKey)key, ref inputCopy);
+
+                if (res.IsPending)
+                {
+                    CompletePending(ref res, ref session.stringBasicContext);
+                }
             }
 
             if (!res.IsCompletedSuccessfully)
