@@ -752,7 +752,6 @@ namespace Garnet.server
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
-            var inTransaction = ActiveThreadSession.txnManager.state == TxnState.Running;
 
             var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
 
