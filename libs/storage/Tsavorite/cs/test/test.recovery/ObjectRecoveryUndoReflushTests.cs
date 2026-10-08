@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -46,6 +47,20 @@ namespace Tsavorite.test.recovery.objects
 
         [TearDown]
         public void TearDown() => TestUtils.OnTearDown();
+
+        /// <summary>Blocks the state machine on entry to <paramref name="pauseAt"/>, which holds it in the preceding phase for as
+        /// long as the test needs. Deterministic where polling <c>SystemState.Phase</c> is not: a transient phase can come and go
+        /// between two samples, and does in Release builds.</summary>
+        private sealed class PauseBeforePhase(Phase pauseAt, ManualResetEventSlim reached, ManualResetEventSlim release) : IStateMachineCallback
+        {
+            public void BeforeEnteringState(SystemState next)
+            {
+                if (next.Phase != pauseAt)
+                    return;
+                reached.Set();
+                _ = release.Wait(TimeSpan.FromSeconds(30));
+            }
+        }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
@@ -244,23 +259,25 @@ namespace Tsavorite.test.recovery.objects
 
                 Assert.That(store.hlogBase.HeadAddress, Is.LessThanOrEqualTo(store.hlogBase.GetFirstValidLogicalAddressOnPage(0)),
                     "stable setup evicted records before Snapshot began");
+                var reachedWaitFlush = new ManualResetEventSlim(false);
+                var releaseWaitFlush = new ManualResetEventSlim(false);
+                var pause = new PauseBeforePhase(Phase.PERSISTENCE_CALLBACK, reachedWaitFlush, releaseWaitFlush);
+                store.stateMachineDriver.UnsafeRegisterCallback(pause);
+
                 ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot),
                     "failed to initiate Snapshot checkpoint");
 
-                var guard = 0;
-                while (store.SystemState.Phase != Phase.WAIT_FLUSH)
-                {
-                    bContext.Refresh();
-                    if (++guard > 1_000_000)
-                    {
-                        Assert.Fail($"state machine never reached WAIT_FLUSH (stuck at {store.SystemState.Phase})");
-                        return;
-                    }
-                }
+                // Block the state machine on its way OUT of WAIT_FLUSH rather than polling SystemState for it. A Snapshot goes
+                // WAIT_FLUSH -> PERSISTENCE_CALLBACK -> REST, so holding the transition into PERSISTENCE_CALLBACK leaves the store
+                // in WAIT_FLUSH for as long as this test needs. Polling could miss the phase entirely -- in Release the machine can
+                // pass through before the loop samples it, and the test then spun to its guard and failed with "stuck at REST".
+                Assert.That(reachedWaitFlush.Wait(TimeSpan.FromSeconds(30)), Is.True, "state machine never reached WAIT_FLUSH");
+                Assert.That(store.SystemState.Phase, Is.EqualTo(Phase.WAIT_FLUSH));
 
                 for (var i = stableCount; i < stableCount + fuzzyCount; i++)
                     _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
 
+                releaseWaitFlush.Set();
                 await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
             }
             finally

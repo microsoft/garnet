@@ -264,6 +264,9 @@ namespace Tsavorite.test
         {
             Upsert(1, 100);
 
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the flush window cannot be held open.");
+
             using var insideFlushWindow = new SemaphoreSlim(0);
             using var releaseFlush = new SemaphoreSlim(0);
             var hookFired = false;

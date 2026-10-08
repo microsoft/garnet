@@ -86,6 +86,9 @@ namespace Tsavorite.test
             // The deferred-cleanup design rests on this: while the object-log flush is writing a record, that record's address must
             // report IsFrozenForFlush, because that is what makes a concurrent dispose decline and defer its release to eviction.
             // The injection hook lets this be asserted at the exact moment of the write instead of inferred.
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so no record write can be observed.");
+
             CreateStore(useLargeObjects: true, captureFlushFailures: false);
 
             var observed = 0;
@@ -216,6 +219,9 @@ namespace Tsavorite.test
             // LastIssuedFlushedUntilAddress inside that window must still land on one side of the cutoff or the other: either it
             // is in the cohort Snapshot drains, or it is post-cutoff and waits for Flushing. The memory barrier pairing is what
             // guarantees that, and this races a real ReadOnly flush into the window rather than hoping the timing reproduces.
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the cutoff window cannot be raced.");
+
             CreateStore(useLargeObjects: true, captureFlushFailures: false);
 
             using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());

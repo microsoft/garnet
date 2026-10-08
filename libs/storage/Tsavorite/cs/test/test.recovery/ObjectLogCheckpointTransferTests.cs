@@ -133,7 +133,7 @@ namespace Tsavorite.test.recovery.objects
         // ended when the checkpoint was taken, which is where recovery began appending.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async Task RecoveredSnapshotPageHeadersHoldMainObjectLogPositions()
+        public async Task SnapshotPageHeadersUseMainObjectLog()
         {
             Prepare(sourceDir, out var log, out var objlog, out var store);
             Guid token;

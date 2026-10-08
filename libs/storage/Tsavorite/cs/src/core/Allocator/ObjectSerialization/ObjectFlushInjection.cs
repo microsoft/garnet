@@ -39,6 +39,17 @@ namespace Tsavorite.core
         /// <summary>Invoked at each <see cref="ObjectFlushPhase"/> with the record's logical address. Null when no test is observing.</summary>
         internal static Action<ObjectFlushPhase, long> Hook;
 
+        /// <summary>Whether the injection points are compiled in. False in Release, where <see cref="ConditionalAttribute"/> removes
+        /// every call site, so a hook can be assigned but will never fire.</summary>
+        /// <remarks>A test that depends on the hook firing must check this and skip itself, otherwise it waits for a callback that
+        /// cannot arrive and fails on its timeout in Release builds only.</remarks>
+        internal static bool IsAvailable =>
+#if DEBUG
+            true;
+#else
+            false;
+#endif
+
         /// <summary>Call the hook, if any, for <paramref name="phase"/> at <paramref name="logicalAddress"/>.</summary>
         [Conditional("DEBUG")]
         internal static void At(ObjectFlushPhase phase, long logicalAddress) => Hook?.Invoke(phase, logicalAddress);
