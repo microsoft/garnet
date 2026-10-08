@@ -237,14 +237,66 @@ namespace Tsavorite.test
 
         [Test]
         [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
-        public void OverflowBucketCapacityIsSixteenGibibytes()
+        public void OverflowBucketDefaultCapacityIsSixteenGibibytes()
         {
-            // The hash index allocates one of these per store for overflow buckets, and nothing frees a bucket when records
-            // are deleted, so this is a hard ceiling on the number of hash entries that can spill out of the main bucket array.
-            // It is asserted here so that a change to the page table geometry is a test failure rather than a production throw.
+            // The allocator's own fallback, used when no budget is supplied. Nothing frees an overflow bucket when
+            // records are deleted, so a ceiling always applies. It is asserted here so a change to the page table
+            // geometry is a test failure, not a production throw.
             using var allocator = new MallocFixedPageSize<HashBucket>();
             ClassicAssert.AreEqual(1L << 28, allocator.MaxAllocationCount);
-            ClassicAssert.AreEqual(16L * 1024 * 1024 * 1024, allocator.MaxAllocationCount * MallocFixedPageSize<HashBucket>.RecordSize);
+            ClassicAssert.AreEqual(16L * 1024 * 1024 * 1024, allocator.MaxMemorySize);
+            ClassicAssert.AreEqual(16L * 1024 * 1024 * 1024, MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize);
+        }
+
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void MemoryBudgetRoundsDownToWholePagesAndClampsToThePageTableRange()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            ClassicAssert.AreEqual(4L * 1024 * 1024, granularity, "A page of 64-byte buckets is the 4 MiB budget granularity");
+
+            // Zero and negative select the default rather than an empty allocator.
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize,
+                MallocFixedPageSize<HashBucket>.GetLevelCount(0) * granularity);
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize,
+                MallocFixedPageSize<HashBucket>.GetLevelCount(-1) * granularity);
+
+            // A budget that is not a whole number of pages rounds down, never up: rounding up would let the allocator
+            // hand out more memory than was configured.
+            ClassicAssert.AreEqual(8, MallocFixedPageSize<HashBucket>.GetLevelCount((granularity * 8) + granularity - 1));
+            ClassicAssert.AreEqual(8, MallocFixedPageSize<HashBucket>.GetLevelCount(granularity * 8));
+
+            // Below the two-level minimum the allocator cannot function, so the budget clamps up rather than failing.
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.MinLevelCount, MallocFixedPageSize<HashBucket>.GetLevelCount(1));
+
+            // count and the allocation index are int, so the page table cannot address more than int.MaxValue records.
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.MaxLevelCount, MallocFixedPageSize<HashBucket>.GetLevelCount(long.MaxValue));
+            ClassicAssert.LessOrEqual(MallocFixedPageSize<HashBucket>.MaxLevelCount * (granularity / MallocFixedPageSize<HashBucket>.RecordSize), int.MaxValue);
+        }
+
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void ConfiguredMemoryBudgetBoundsAllocationAndIsReportedBack()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            var budget = granularity * 3;
+
+            using var allocator = new MallocFixedPageSize<HashBucket>(budget);
+            ClassicAssert.AreEqual(budget, allocator.MaxMemorySize, "The allocator reports the budget it was built for");
+
+            var capacity = allocator.MaxAllocationCount;
+            ClassicAssert.AreEqual(budget / MallocFixedPageSize<HashBucket>.RecordSize, capacity);
+
+            while (allocator.GetMaxValidAddress() < capacity)
+                _ = allocator.Allocate();
+
+            // The budget is a real bound, not advisory: the allocation past it throws and leaves the count at capacity.
+            var ex = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
+            ClassicAssert.IsTrue(ex.Message.Contains("IndexOverflowThreshold"),
+                $"The exhaustion message must name the setting that raises the ceiling, but was: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("IndexMemorySize"),
+                $"The exhaustion message must name the remedy of a larger index, but was: {ex.Message}");
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress());
         }
     }
 }

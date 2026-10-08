@@ -28,16 +28,55 @@ namespace Tsavorite.core
         private const int LevelSizeBits = 12;
         private const int LevelSize = 1 << LevelSizeBits;
 
-        /// <summary>Number of levels (pages) this instance can address. Always <see cref="LevelSize"/> in production; tests
-        /// use a smaller value to exercise the exhaustion path without allocating the full capacity.</summary>
+        /// <summary>Smallest legal level count: level 0 is allocated in the constructor and every level-0 allocation
+        /// pre-allocates level 1.</summary>
+        internal const int MinLevelCount = 2;
+
+        /// <summary>Largest legal level count. <c>count</c> and the allocation index are <see cref="int"/>, so the page
+        /// table cannot address more than <see cref="int.MaxValue"/> records.</summary>
+        internal const int MaxLevelCount = int.MaxValue / PageSize;
+
+        /// <summary>Number of levels (pages) this instance can address, derived from the configured memory budget.</summary>
         private readonly int levelCount;
 
         private readonly T[][] values;
         private readonly IntPtr[] pointers;
 
         /// <summary>Maximum number of records this allocator can hand out, after which <see cref="Allocate"/> and
-        /// <see cref="BulkAllocate"/> throw. This is a structural limit of the two-level page table, not a configured one.</summary>
+        /// <see cref="BulkAllocate"/> throw.</summary>
         internal long MaxAllocationCount => (long)levelCount * PageSize;
+
+        /// <summary>Bytes of records the page table can address, which is the memory budget this instance was built for
+        /// rounded down to a whole number of pages.</summary>
+        internal long MaxMemorySize => MaxAllocationCount * RecordSize;
+
+        /// <summary>Granularity of a memory budget: a budget is rounded down to a whole number of pages of this size.</summary>
+        internal static long MemorySizeGranularity => (long)PageSize * RecordSize;
+
+        /// <summary>Budget used when none is configured, equal to the fixed capacity this allocator had before the budget
+        /// became configurable (16 GiB for 64-byte records).</summary>
+        internal static long DefaultMaxMemorySize => (long)LevelSize * PageSize * RecordSize;
+
+        /// <summary>Smallest and largest budgets a level count can express, for validation messages.</summary>
+        internal static long MinMemorySize => MinLevelCount * MemorySizeGranularity;
+
+        /// <inheritdoc cref="MinMemorySize"/>
+        internal static long MaxMemorySizeLimit => MaxLevelCount * MemorySizeGranularity;
+
+        /// <summary>
+        /// Convert a memory budget in bytes to the number of page-table levels that addresses, rounding down to a whole
+        /// number of pages and clamping to the range the page table can express.
+        /// </summary>
+        /// <param name="maxMemorySize">Budget in bytes. Zero or negative selects <see cref="DefaultMaxMemorySize"/>.</param>
+        internal static int GetLevelCount(long maxMemorySize)
+        {
+            if (maxMemorySize <= 0)
+                maxMemorySize = DefaultMaxMemorySize;
+            var levels = maxMemorySize / MemorySizeGranularity;
+            if (levels < MinLevelCount)
+                return MinLevelCount;
+            return levels > MaxLevelCount ? MaxLevelCount : (int)levels;
+        }
 
         private volatile int writeCacheLevel;
 
@@ -68,17 +107,26 @@ namespace Tsavorite.core
         public int NumAllocations => count - initialAllocation; // Ignores the initial allocation
 
         /// <summary>
-        /// Create new instance
+        /// Create new instance with the default memory budget of <see cref="DefaultMaxMemorySize"/>.
         /// </summary>
         public MallocFixedPageSize(ILogger logger = null) : this(LevelSize, logger) { }
 
         /// <summary>
-        /// Create new instance with an explicit level count. Only tests pass a value other than <see cref="LevelSize"/>.
+        /// Create new instance sized for a memory budget in bytes, rounded down to a whole number of pages and clamped
+        /// to the range the page table can express.
+        /// </summary>
+        /// <param name="maxMemorySize">Budget in bytes. Zero or negative selects <see cref="DefaultMaxMemorySize"/>.</param>
+        /// <param name="logger">Logger</param>
+        public MallocFixedPageSize(long maxMemorySize, ILogger logger = null) : this(GetLevelCount(maxMemorySize), logger) { }
+
+        /// <summary>
+        /// Create new instance with an explicit level count.
         /// </summary>
         internal unsafe MallocFixedPageSize(int levelCount, ILogger logger = null)
         {
             // Level 0 is allocated below and every level-0 allocation pre-allocates level 1, so two levels are the minimum.
-            Debug.Assert(levelCount >= 2, "levelCount must be at least 2");
+            Debug.Assert(levelCount >= MinLevelCount, "levelCount must be at least MinLevelCount");
+            Debug.Assert(levelCount <= MaxLevelCount, "levelCount must be at most MaxLevelCount");
 
             this.levelCount = levelCount;
             values = new T[levelCount][];
@@ -196,9 +244,12 @@ namespace Tsavorite.core
         private void ThrowAllocatorFull()
             => throw new TsavoriteException(
                 $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> is full: its page table addresses at most {levelCount} pages of {PageSize} records"
-                + $" ({MaxAllocationCount} records, {MaxAllocationCount * RecordSize} bytes), and that capacity is exhausted."
+                + $" ({MaxAllocationCount} records, {MaxMemorySize} bytes), and that capacity is exhausted."
                 + " For the hash index overflow buckets this means too many hash entries have spilled out of the main bucket array;"
-                + " raise the index size (IndexMaxMemorySize) so more entries fit in the main array, or reduce the number of distinct keys on this node.");
+                + " these buckets chain linearly and are scanned by reads and upserts, so the index is undersized for the number"
+                + " of distinct keys on this node. Raise IndexMemorySize, or set IndexMaxMemorySize to let the index grow, so that"
+                + " more entries fit in the main bucket array. Raising IndexOverflowThreshold buys capacity at the cost of"
+                + " proportionally longer chains.");
 
         private unsafe long InternalAllocate(int blockSize)
         {

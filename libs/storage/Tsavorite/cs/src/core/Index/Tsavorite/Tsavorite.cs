@@ -67,9 +67,32 @@ namespace Tsavorite.core
         public long IndexBucketSizeBytes => Constants.kCacheLineBytes;
 
         /// <summary>
-        /// Number of overflow buckets in use (64 bytes each)
+        /// Number of overflow buckets in use (64 bytes each), across every live generation: during an index resize the
+        /// superseded generation is still allocated until the split completes, so both are counted.
         /// </summary>
-        public long OverflowBucketCount => overflowBucketsAllocator.GetMaxValidAddress();
+        public long OverflowBucketCount
+        {
+            get
+            {
+                // The resize generation is nulled concurrently once the split completes; read it once. GetMaxValidAddress
+                // reads a counter field, so it stays valid on an allocator that was just disposed.
+                var resizeAllocator = overflowBucketsAllocatorResize;
+                return overflowBucketsAllocator.GetMaxValidAddress() + (resizeAllocator?.GetMaxValidAddress() ?? 0);
+            }
+        }
+
+        /// <summary>
+        /// Ceiling on overflow-bucket memory for the live generation, in bytes, derived from
+        /// <see cref="KVSettings.IndexOverflowThreshold"/> and that generation's main bucket count. Allocation beyond
+        /// it throws. Read from the allocator itself rather than recomputed, so a generation installed with the wrong
+        /// ceiling is visible.
+        /// </summary>
+        public long IndexOverflowMaxSizeBytes => overflowBucketsAllocator.MaxMemorySize;
+
+        /// <summary>
+        /// Ceiling on overflow buckets as a percentage of the main bucket count, applied to every index generation.
+        /// </summary>
+        public int IndexOverflowThreshold => overflowThreshold;
 
         /// <summary>
         /// Size of the in-use overflow buckets in bytes (#overflow buckets * <see cref="IndexBucketSizeBytes"/>).
@@ -78,9 +101,19 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the in-use
-        /// overflow buckets (<see cref="IndexOverflowSizeBytes"/>).
+        /// overflow buckets (<see cref="IndexOverflowSizeBytes"/>). During an index resize this also includes the
+        /// superseded hash table, which stays allocated until the split completes and makes the resize the peak of
+        /// index memory use.
         /// </summary>
-        public long IndexTotalSizeBytes => IndexSizeBytes + IndexOverflowSizeBytes;
+        public long IndexTotalSizeBytes
+        {
+            get
+            {
+                var version = resizeInfo.version;
+                var tableSize = state[version].size + state[1 - version].size;
+                return (tableSize * Constants.kCacheLineBytes) + IndexOverflowSizeBytes;
+            }
+        }
 
         /// <summary>Number of allocations performed</summary>
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
@@ -155,7 +188,7 @@ namespace Tsavorite.core
         /// <param name="storeFunctions">Store-level user function implementations</param>
         /// <param name="allocatorFactory">Func to call to create the allocator(s, if doing readcache)</param>
         public TsavoriteKV(KVSettings kvSettings, TStoreFunctions storeFunctions, Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory)
-            : base(kvSettings.Epoch, kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
+            : base(kvSettings.Epoch, kvSettings.GetIndexSizeCacheLines(), kvSettings.GetOverflowThreshold(), kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger("TsavoriteKV Index Overflow buckets"))
         {
             try
             {

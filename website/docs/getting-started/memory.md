@@ -55,10 +55,19 @@ Several consequences matter when sizing a machine:
   compact nor release them. The only event that releases overflow buckets is an index [resize](#auto-resizing-index),
   which rebuilds the index into a fresh allocator; once the index reaches `IndexMaxMemorySize` no resize occurs, and
   overflow memory only increases for the lifetime of the process.
-* Overflow buckets have a hard ceiling of **16 GiB** per index generation, which is the capacity of the allocator's page
-  table. Reaching it fails the write that needed a new bucket. With a maxed-out index this corresponds to roughly
-  1.9 billion keys beyond what the main bucket array holds, so an index sized for far fewer keys than the node stores
-  can hit it. Sizing the index per the `K * 16` rule above keeps it out of reach.
+* Overflow buckets are bounded by `IndexOverflowThreshold` (`--index-overflow-threshold`), a percentage of the main
+  bucket count of the index generation they belong to, defaulting to **300** (three overflow buckets per main bucket).
+  Reaching it fails the write that needed a new bucket, with an error naming the settings that raise it, rather than
+  letting the process grow until it is OOM-killed. The bound is a ratio rather than a byte size because an overflow
+  bucket chains off a main bucket and is scanned by reads and upserts: the ratio *is* the average chain length, so
+  capacity bought far beyond the index size is too slow to be worth having, and the remedy for exhausting it is a larger
+  index rather than a larger ceiling. Each generation installed by a [resize](#auto-resizing-index) is sized from its own
+  bucket count, so the allowed chain length stays constant as the index grows. The resulting ceiling rounds down to a
+  whole 4 MiB allocator page, is floored at 8 MiB so that a very small index still holds a useful number of keys, and
+  cannot exceed the 128 GiB the page table can address. `INFO STORE` reports the threshold as `IndexOverflowThreshold`
+  and the resolved ceiling as `IndexOverflowMaxMemorySizeBytes`, alongside current use as `IndexOverflowMemorySizeBytes`.
+* An index resize is the peak of index memory use, not a step change: the superseded hash table and its overflow
+  generation stay allocated until the split completes, so a resize transiently needs both generations at once.
 
 To make this visible, index memory **beyond** the configured index budget (the larger of `IndexMemorySize` and
 `IndexMaxMemorySize`) is charged against `LogMemorySize`. The log sheds pages to make room for it, so the two no longer sum
@@ -89,6 +98,16 @@ of the total number of hash buckets. This threshold is specified using `IndexRes
 
 We also support `IndexMaxMemorySize` (`--index-max-size`) which identifies the maximum size until which the index
 will grow in size. We do not support index size shrinking at this point.
+
+Because a resize is the only event that reclaims overflow buckets, reaching `IndexMaxMemorySize` is significant beyond
+the main array: growth stops permanently, and from that point overflow memory only climbs for the lifetime of the
+process. `IndexOverflowThreshold` (`--index-overflow-threshold`) bounds that growth.
+
+`IndexOverflowThreshold` and `IndexResizeThreshold` are deliberately expressed in the same unit — both are percentages
+of the main hash bucket count — because both bound the same quantity. The ordering between them is the whole invariant:
+a ceiling at or below the resize threshold would be reached before the resize that reclaims overflow buckets, turning a
+recoverable growth step into a hard failure. Garnet validates `IndexOverflowThreshold > IndexResizeThreshold` at startup
+and refuses to start on a conflict. The defaults (300 and 50) clear it by a wide margin.
 
 ## Hybrid Log
 
