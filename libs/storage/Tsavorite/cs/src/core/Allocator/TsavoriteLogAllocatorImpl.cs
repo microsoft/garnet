@@ -225,19 +225,10 @@ namespace Tsavorite.core
                 cts = cts
             };
 
-            ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+            // The read length covers whole entries; an entry that starts below untilAddress may end above it, and the scan returns it.
+            var readLength = GetFrameReadLength(readPage, untilAddress, out _);
 
-            uint readLength = (uint)AlignedPageSizeBytes;
-            long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
-
-            if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-            {
-                readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
-            }
-
-            if (device != null)
-                offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+            var offsetInFile = (ulong)(AlignedPageSizeBytes * (device != null ? readPage - devicePageOffset : readPage));
 
             usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
         }

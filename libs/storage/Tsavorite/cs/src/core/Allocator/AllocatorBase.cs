@@ -2546,6 +2546,46 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Compute the device read length, and the extent of in-range data, for loading <paramref name="readPage"/> into a scan frame.
+        /// </summary>
+        /// <param name="readPage">The page to read</param>
+        /// <param name="untilAddress">The address the scan stops at; it may be mid-page and may fall inside a record</param>
+        /// <param name="maxAddressOffsetOnPage">Receives the offset on the page at which record parsing must stop: the offset of
+        ///     <paramref name="untilAddress"/> when it falls on this page, else <see cref="PageSize"/>.</param>
+        /// <returns>The sector-aligned number of bytes to read from the device</returns>
+        /// <remarks>
+        /// The parse extent and the transfer length are two different bounds.
+        /// <para>Parsing stops at <paramref name="untilAddress"/>: records starting at or above it are outside the scan's range, and the
+        /// sector-aligned read pulls some of them in only partially. For the object allocator those partial records are actively harmful --
+        /// the ObjectLogPosition word and the R11 value-length high bits sit near a record's tail, so a straddling record yields a bogus
+        /// position and length read from the un-transferred (only incidentally zeroed) buffer tail.</para>
+        /// <para>The transfer must go further, because the last record that starts below <paramref name="untilAddress"/> can end above it and
+        /// the scan returns that record whole. Reading only to <paramref name="untilAddress"/> leaves that record's tail in the cleared frame,
+        /// so it is handed out zero-filled -- the same Scan call then returns different bytes depending on whether the page is in memory.</para>
+        /// <para>The read therefore extends to the end of the page's valid data: the lesser of the page end and <see cref="FlushedUntilAddress"/>,
+        /// past which this page has nothing on the device. That always covers the straddling record, because records never span pages and
+        /// FlushedUntilAddress is a record boundary. It stops short of a blanket full-page read, which would run past what was written for a page
+        /// that is only partially flushed. And it never shortens a read below what <paramref name="untilAddress"/> alone would require.</para>
+        /// </remarks>
+        private protected uint GetFrameReadLength(long readPage, long untilAddress, out long maxAddressOffsetOnPage)
+        {
+            var offsetInFile = AlignedPageSizeBytes * readPage;
+            var adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
+
+            maxAddressOffsetOnPage = PageSize;
+            if (adjustedUntilAddress <= 0 || adjustedUntilAddress - offsetInFile >= PageSize)
+                return (uint)AlignedPageSizeBytes;
+            maxAddressOffsetOnPage = adjustedUntilAddress - offsetInFile;
+
+            var pageEndAddress = GetLogicalAddressOfStartOfPage(readPage + 1);
+            var validUntilAddress = Math.Min(FlushedUntilAddress, pageEndAddress);
+            var adjustedValidUntilAddress = AlignedPageSizeBytes * GetPage(validUntilAddress) + GetOffsetOnPage(validUntilAddress);
+
+            var readLength = RoundUp(Math.Max(adjustedValidUntilAddress, adjustedUntilAddress) - offsetInFile, sectorSize);
+            return (uint)Math.Min(readLength, AlignedPageSizeBytes);
+        }
+
+        /// <summary>
         /// Read pages from specified device
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2569,6 +2609,10 @@ namespace Tsavorite.core
             else
                 frame.Clear(pageIndex);
 
+            // The read length covers whole records; maxAddressOffsetOnPage bounds the object-record walk in
+            // ObjectAllocatorImpl.DeserializeObjectsOnPage to the data this scan actually requested.
+            var readLength = GetFrameReadLength(readPage, untilAddress, out var maxAddressOffsetOnPage);
+
             var asyncResult = new PageAsyncReadResult<TContext>()
             {
                 page = readPage,
@@ -2576,29 +2620,10 @@ namespace Tsavorite.core
                 handle = completed,
                 cts = cts,
                 readBuffers = readBuffers,
-                // Default to a full page; overridden below for a partial last page. This bounds the object-record walk in
-                // ObjectAllocatorImpl.DeserializeObjectsOnPage to the valid data extent, not the sector-aligned device read length.
-                maxAddressOffsetOnPage = PageSize
+                maxAddressOffsetOnPage = maxAddressOffsetOnPage
             };
 
-            ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
-            uint readLength = (uint)AlignedPageSizeBytes;
-            long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
-
-            if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-            {
-                readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                // Record the scan's true end (untilAddress) before rounding up to a sector boundary: the object-record walk must
-                // stop here. untilAddress can be mid-page, so the sector-aligned read pulls in records that lie ABOVE the requested
-                // range and can straddle the read end -- their ObjectLogPosition word and R11 value-length high bits then fall past
-                // the bytes actually transferred and are read from the un-read (only incidentally zeroed) buffer tail, yielding a
-                // bogus position/length. Such records must not be parsed as in-range records.
-                asyncResult.maxAddressOffsetOnPage = readLength;
-                readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
-            }
-
-            if (device != null)
-                offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+            var offsetInFile = (ulong)(AlignedPageSizeBytes * (device != null ? readPage - devicePageOffset : readPage));
 
             ReadAsync(offsetInFile, (IntPtr)frame.GetPhysicalAddress(pageIndex), readLength, callback, asyncResult, usedDevice);
         }

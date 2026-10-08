@@ -485,5 +485,160 @@ namespace Tsavorite.test.spanbyte
             ClassicAssert.IsFalse(session.ScanCursor(ref cursor, totalRecords, scanIteratorFunctions), $"ScanCursor returned true even though all {scanIteratorFunctions.keys.Count} records were returned");
             ClassicAssert.AreEqual(totalRecords, scanIteratorFunctions.keys.Count);
         }
+
+        /// <summary>Value bytes are all nonzero and derived from the ordinal, so a record truncated at a sector boundary is visible as a run of zeros.</summary>
+        static byte[] CreateScanEndTestValue(int ordinal, int length)
+        {
+            var value = new byte[length];
+            for (var ii = 0; ii < length; ++ii)
+                value[ii] = (byte)(1 + ((ordinal + ii) % 251));
+            return value;
+        }
+
+        /// <summary>
+        /// Find a record that a device-sector boundary runs through, so that ending a scan just inside the record makes the
+        /// frame load stop in the middle of it.
+        /// </summary>
+        /// <returns>The address of the record, or 0 if no such record was found</returns>
+        static long FindRecordStraddlingSectorBoundary(ITsavoriteScanIterator iter, int sectorSize, out byte[] key, out byte[] value, out long nextAddress)
+        {
+            while (iter.GetNext())
+            {
+                // The first sector boundary at or after the scan end we will use (CurrentAddress + 8).
+                var sectorBoundary = (iter.CurrentAddress + 8 + sectorSize - 1) / sectorSize * sectorSize;
+
+                // Require the boundary to fall before the end of the value, not in any trailing alignment padding, so that
+                // truncating there necessarily damages the record. The record header is at least RecordInfo-sized, so
+                // CurrentAddress + sizeof(RecordInfo) + key + value is a lower bound on where the value ends.
+                if (sectorBoundary < iter.CurrentAddress + 8 + iter.Key.Length + iter.ValueSpan.Length)
+                {
+                    key = iter.Key.ToArray();
+                    value = iter.ValueSpan.ToArray();
+                    nextAddress = iter.NextAddress;
+                    return iter.CurrentAddress;
+                }
+            }
+
+            key = value = null;
+            nextAddress = 0;
+            return 0;
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(IteratorCategory)]
+        [Category(SmokeTestCategory)]
+        public unsafe void SpanByteScanEndInsideRecordTest()
+        {
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
+
+            // Values are large enough that a record spans several sectors, so the sector boundary we aim at is well inside the value.
+            const int numRecords = 500;
+            const int valueLength = 2000;
+
+            for (var ii = 0; ii < numRecords; ++ii)
+            {
+                var key = MemoryMarshal.Cast<char, byte>($"key_{ii}".AsSpan());
+                fixed (byte* keyPtr = key)
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), CreateScanEndTestValue(ii, valueLength));
+            }
+
+            // A scan to the tail never ends inside a record, so this gives the victim's true bytes.
+            byte[] victimKey, victimValue;
+            long victimAddress, victimNextAddress;
+            using (var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
+                victimAddress = FindRecordStraddlingSectorBoundary(iter, store.hlogBase.GetDeviceSectorSize(), out victimKey, out victimValue, out victimNextAddress);
+            ClassicAssert.Greater(victimAddress, 0, "Did not find a record straddling a sector boundary");
+
+            // End the scan inside the victim record. The record still starts below the end address, so the scan must return it whole.
+            var scanEnd = victimAddress + 8;
+
+            (byte[] key, byte[] value, long nextAddress) ScanToLastRecord()
+            {
+                byte[] lastKey = null, lastValue = null;
+                long lastNextAddress = 0;
+                using var iter = store.Log.Scan(store.Log.BeginAddress, scanEnd);
+                while (iter.GetNext())
+                {
+                    lastKey = iter.Key.ToArray();
+                    lastValue = iter.ValueSpan.ToArray();
+                    lastNextAddress = iter.NextAddress;
+                }
+                return (lastKey, lastValue, lastNextAddress);
+            }
+
+            var inMemory = ScanToLastRecord();
+            Assert.That(inMemory.key, Is.EqualTo(victimKey), "In-memory scan returned the wrong record");
+            Assert.That(inMemory.value, Is.EqualTo(victimValue), "In-memory scan truncated the record");
+            Assert.That(inMemory.nextAddress, Is.EqualTo(victimNextAddress), "In-memory scan did not advance past the whole record");
+
+            store.Log.FlushAndEvict(wait: true);
+            ClassicAssert.Greater(store.Log.HeadAddress, victimNextAddress, "Expected the victim record to be on disk");
+
+            // The same call must return the same record now that it is read into a frame rather than read in place.
+            var onDisk = ScanToLastRecord();
+            Assert.That(onDisk.key, Is.EqualTo(victimKey), "On-disk scan returned the wrong record");
+            Assert.That(onDisk.value, Is.EqualTo(victimValue), "On-disk scan truncated the record");
+            Assert.That(onDisk.nextAddress, Is.EqualTo(victimNextAddress), "On-disk scan did not advance past the whole record");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(IteratorCategory)]
+        [Category("Compaction")]
+        public unsafe void SpanByteCompactionEndInsideRecordTest([Values] CompactionType compactionType)
+        {
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions>(new ScanFunctions());
+            var bContext = session.BasicContext;
+
+            const int numRecords = 500;
+            const int valueLength = 2000;
+
+            for (var ii = 0; ii < numRecords; ++ii)
+            {
+                var key = MemoryMarshal.Cast<char, byte>($"key_{ii}".AsSpan());
+                fixed (byte* keyPtr = key)
+                    _ = bContext.Upsert(TestSpanByteKey.FromPointer(keyPtr, key.Length), CreateScanEndTestValue(ii, valueLength));
+            }
+
+            long victimAddress;
+            using (var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
+                victimAddress = FindRecordStraddlingSectorBoundary(iter, store.hlogBase.GetDeviceSectorSize(), out _, out _, out _);
+            ClassicAssert.Greater(victimAddress, 0, "Did not find a record straddling a sector boundary");
+
+            store.Log.FlushAndEvict(wait: true);
+
+            // Compaction takes its own record boundary from the scan's NextAddress, so an untilAddress inside a record is
+            // expected. If the scan hands back that record truncated, the truncated copy goes to the tail and
+            // ShiftBeginAddress drops the intact original.
+            _ = session.Compact(victimAddress + 8, compactionType);
+            store.Log.Truncate();
+
+            for (var ii = 0; ii < numRecords; ++ii)
+            {
+                var key = MemoryMarshal.Cast<char, byte>($"key_{ii}".AsSpan());
+                SpanByteAndMemory output = default;
+                Status status;
+                fixed (byte* keyPtr = key)
+                    status = bContext.Read(TestSpanByteKey.FromPointer(keyPtr, key.Length), ref output);
+                if (status.IsPending)
+                {
+                    _ = bContext.CompletePendingWithOutputs(out var completed, wait: true);
+                    using (completed)
+                    {
+                        while (completed.Next())
+                        {
+                            status = completed.Current.Status;
+                            output = completed.Current.Output;
+                        }
+                    }
+                }
+
+                ClassicAssert.IsTrue(status.Found, $"key_{ii} was not found after compaction");
+                Assert.That(output.ReadOnlySpan.ToArray(), Is.EqualTo(CreateScanEndTestValue(ii, valueLength)), $"key_{ii} has a damaged value after compaction");
+                output.Memory?.Dispose();
+            }
+        }
     }
 }
