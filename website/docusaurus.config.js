@@ -65,8 +65,16 @@ const config = {
     ],
   ],
 
-  plugins: [
-    "docusaurus-plugin-clarity",
+  scripts: [
+    {
+      src: 'https://wcpstatic.microsoft.com/mscc/lib/v2/wcp-consent.js',
+      id: 'wcp-consent-script',
+      async: true,
+    },
+  ],
+
+  clientModules: [
+    require.resolve('./src/clientModules/cookieConsent.js'),
   ],
 
   themeConfig:
@@ -140,7 +148,10 @@ const config = {
           copyright: `<p class="text-center">
           <a href="
           https://go.microsoft.com/fwlink/?LinkId=521839"
-          style="color: white;">Privacy &amp; Cookies</a> |
+          style="color: white;">Privacy &amp; Cookies</a>
+          <span data-cookie-preferences> |
+          <a href="#cookie-preferences"
+          style="color: white;">Cookie Preferences</a></span> |
           <a href="
           https://go.microsoft.com/fwlink/?LinkID=2259814"
           style="color: white;">Consumer Health Privacy</a> |
@@ -161,9 +172,6 @@ const config = {
         defaultMode: 'light',
         disableSwitch: false,
         respectPrefersColorScheme: false,
-      },
-      clarity: {
-        ID: "loh6v65ww5",
       },
       // github codeblock theme configuration
         codeblock: {
