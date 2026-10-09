@@ -427,6 +427,9 @@ namespace Tsavorite.core
         /// <remarks>
         /// <paramref name="compactUntilAddress"/> need not be a record boundary; compaction snaps it to the end of the last record that starts
         /// below it, which is the returned address.
+        /// <para>On failure this throws without shifting BeginAddress, so no source record is dropped. Records already copied to the tail
+        /// are left as the live versions; re-running Compact is the repair, as it skips those (a newer version now exists for the key) and
+        /// reclaims the originals once it completes.</para>
         /// </remarks>
         /// <param name="compactUntilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
@@ -441,6 +444,9 @@ namespace Tsavorite.core
         /// <remarks>
         /// <paramref name="untilAddress"/> need not be a record boundary; compaction snaps it to the end of the last record that starts below it,
         /// which is the returned address.
+        /// <para>On failure this throws without shifting BeginAddress, so no source record is dropped. Records already copied to the tail
+        /// are left as the live versions; re-running Compact is the repair, as it skips those (a newer version now exists for the key) and
+        /// reclaims the originals once it completes.</para>
         /// </remarks>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
