@@ -104,6 +104,150 @@ namespace Tsavorite.test
         }
 
         /// <summary>
+        /// The same strict one-at-a-time handoff as <see cref="AsyncWaiterIsWokenForEveryEnqueue"/>, but over
+        /// the work-item park instead of the <c>ValueTask</c> one. That park has no task at all - the producer
+        /// resumes the consumer by queueing it to the thread pool directly - so it reaches the gate through a
+        /// different branch of <c>Signal</c> and needs its own coverage.
+        /// </summary>
+        [Test]
+        public void WorkItemWaiterIsWokenForEveryEnqueue()
+        {
+            const int Items = 20_000;
+            var queue = new AsyncQueue<int>();
+            var consumer = new WorkItemDrainLoop(queue, Items, recordOrder: true);
+
+            var producer = Task.Run(() =>
+            {
+                for (var i = 0; i < Items; i++)
+                {
+                    // Hand off one at a time so the consumer is parked, not polling, when we enqueue.
+                    while (Volatile.Read(ref consumer.Consumed) != i)
+                        Thread.SpinWait(1);
+                    queue.Enqueue(i);
+                }
+            });
+
+            consumer.Start();
+
+            ClassicAssert.IsTrue(Task.WhenAll(consumer.Completion, producer).Wait(TimeoutMs),
+                $"A wakeup was lost: the consumer drained {Volatile.Read(ref consumer.Consumed)} of {Items} items before the queue stopped waking it.");
+
+            ClassicAssert.AreEqual(Items, consumer.Seen.Count);
+            for (var i = 0; i < Items; i++)
+                ClassicAssert.AreEqual(i, consumer.Seen[i], "Items were not drained in enqueue order.");
+        }
+
+        /// <summary>
+        /// Runs the producer flat out against a work-item consumer, so enqueues land across the whole
+        /// arm/recheck window rather than only while the consumer is parked. Covers the case the strict
+        /// handoff cannot reach: the producer sampled the waiter count before the arm was published, so the
+        /// waiter has to notice the entry itself and signal itself awake.
+        /// </summary>
+        [Test]
+        public void WorkItemWaiterDoesNotMissAnEntryEnqueuedWhileItArms()
+        {
+            const int Items = 200_000;
+            var queue = new AsyncQueue<int>();
+            var consumer = new WorkItemDrainLoop(queue, Items, recordOrder: false);
+
+            consumer.Start();
+
+            var producer = Task.Run(() =>
+            {
+                for (var i = 0; i < Items; i++)
+                    queue.Enqueue(i);
+            });
+
+            ClassicAssert.IsTrue(Task.WhenAll(consumer.Completion, producer).Wait(TimeoutMs),
+                $"A wakeup was lost: the consumer drained {Volatile.Read(ref consumer.Consumed)} of {Items} items before the queue stopped waking it.");
+            ClassicAssert.AreEqual(Items, Volatile.Read(ref consumer.Consumed));
+        }
+
+        /// <summary>
+        /// A consumer that parks on <see cref="AsyncQueue{T}.TryWaitForEntry"/> and is resumed by being queued
+        /// to the thread pool, which is the shape pending-completion uses to park without allocating a task.
+        /// </summary>
+        sealed class WorkItemDrainLoop : IThreadPoolWorkItem
+        {
+            readonly AsyncQueue<int> queue;
+            readonly int target;
+            readonly TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            internal readonly List<int> Seen;
+            internal int Consumed;
+
+            internal WorkItemDrainLoop(AsyncQueue<int> queue, int target, bool recordOrder)
+            {
+                this.queue = queue;
+                this.target = target;
+                Seen = recordOrder ? new List<int>(target) : null;
+            }
+
+            internal Task Completion => completion.Task;
+
+            internal void Start() => ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
+
+            public void Execute()
+            {
+                try
+                {
+                    while (Volatile.Read(ref Consumed) < target)
+                    {
+                        while (queue.TryDequeue(out var item))
+                        {
+                            Seen?.Add(item);
+                            _ = Interlocked.Increment(ref Consumed);
+                        }
+
+                        // Returns false when an entry arrived while arming, in which case drain again rather
+                        // than wait. Returning true means the gate holds this work item and will queue it.
+                        if (Volatile.Read(ref Consumed) < target && queue.TryWaitForEntry(this))
+                            return;
+                    }
+
+                    _ = completion.TrySetResult();
+                }
+                catch (Exception ex)
+                {
+                    _ = completion.TrySetException(ex);
+                }
+            }
+        }
+
+        /// <summary>
+        /// One gate serves both park shapes over the life of a queue - pending completion parks a work item,
+        /// while the ready-to-complete path parks a <c>ValueTask</c> - so arming for one must not leave the
+        /// other's registration behind. A gate that kept a spent work item would satisfy the following
+        /// <c>ValueTask</c> wait by queueing that work item a second time instead of completing the task,
+        /// stranding its waiter.
+        /// </summary>
+        [Test]
+        public void GateServesAValueTaskWaitAfterAWorkItemWait()
+        {
+            var queue = new AsyncQueue<int>();
+            var resumed = new ManualResetEventSlim(false);
+            var workItem = new SignalOnExecute(resumed);
+
+            ClassicAssert.IsTrue(queue.TryWaitForEntry(workItem), "The queue was empty, so this had to park.");
+            queue.Enqueue(1);
+            ClassicAssert.IsTrue(resumed.Wait(TimeoutMs), "The work item park was never resumed.");
+            ClassicAssert.IsTrue(queue.TryDequeue(out _));
+
+            // Same gate, now taking the ValueTask shape.
+            var wait = queue.WaitForEntryAsync();
+            ClassicAssert.IsFalse(wait.IsCompleted, "The queue was empty, so this had to park.");
+            queue.Enqueue(2);
+            ClassicAssert.IsTrue(wait.AsTask().Wait(TimeoutMs),
+                "The ValueTask wait was never completed: the gate still held the previous park's work item.");
+            ClassicAssert.IsTrue(queue.TryDequeue(out _));
+        }
+
+        sealed class SignalOnExecute(ManualResetEventSlim resumed) : IThreadPoolWorkItem
+        {
+            public void Execute() => resumed.Set();
+        }
+
+        /// <summary>
         /// A semaphore waiter and a gate waiter are tracked by separate counters, so a producer has to
         /// signal both. Enqueuing a single entry must release both of them.
         /// </summary>
