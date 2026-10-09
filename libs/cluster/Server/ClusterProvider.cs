@@ -238,7 +238,7 @@ namespace Garnet.cluster
             {
                 if (role == NodeRole.REPLICA)
                 {
-                    var (address, port) = config.GetLocalNodePrimaryAddress();
+                    var (address, port) = config.GetWorkerClientAddressFromNodeId(config.LocalNodePrimaryId);
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
                     var replicationOffsetAccLag = storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
                     var replicationOffsetVectorLag = storeWrapper.appendOnlyFile.Log.TailAddress.Diff(replicationManager.ReplicationOffset);
@@ -297,7 +297,7 @@ namespace Garnet.cluster
             var config = clusterManager.CurrentConfig;
             clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
 
-            var (address, port) = config.GetLocalNodePrimaryAddress();
+            var (address, port) = config.GetWorkerClientAddressFromNodeId(config.LocalNodePrimaryId);
             var info = new RoleInfo()
             {
                 address = address,

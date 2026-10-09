@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using Garnet.common;
@@ -141,6 +142,72 @@ namespace Garnet.test.cluster
             Assert.That(database.StringGet(Key).ToString(), Is.EqualTo("after"));
             Assert.That(ExecuteNode(1, "GET", Key).ToString(), Is.EqualTo("after"));
             Assert.That(ExecuteNode(0, "CLUSTER", "ENDPOINT", nodeIds[1]).ToString(), Is.EqualTo(GetClientEndpoint(1).ToString()));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ConcurrentFailoverErrorReturnsClientEndpoint(bool separateEndpoints)
+        {
+            CreateCluster(separateEndpoints);
+            AssignSlot(0, GetSlot(Key));
+            using ConnectionMultiplexer client = CreateClient();
+            Assert.That(client.GetDatabase(0).StringSet(Key, "value"), Is.True);
+            ConfigureReplica("peer");
+            WaitForReplicaData("value");
+            context.ShutdownNode(0, ensureAofFlush: true);
+
+            // An unanswered primary connection keeps the first failover active while the second command runs.
+            TcpListener primaryListener = new(peerEndpoints[0]);
+            primaryListener.Start();
+            try
+            {
+                Assert.That(ExecuteNode(1, "CLUSTER", "FAILOVER").ToString(), Is.EqualTo("OK"));
+                WaitUntil(() => ExecuteNode(1, "INFO", "replication").ToString()
+                    .Contains("master_failover_state:issuing-pause-writes\r\n", StringComparison.Ordinal));
+                RedisServerException exception = Assert.Throws<RedisServerException>(() => ExecuteNode(1, "CLUSTER", "FAILOVER"));
+                IPEndPoint primaryEndpoint = GetClientEndpoint(0);
+                Assert.That(exception.Message, Is.EqualTo($"ERR failed to start failover for primary(({primaryEndpoint.Address}, {primaryEndpoint.Port}))"));
+            }
+            finally
+            {
+                primaryListener.Stop();
+                _ = ExecuteNode(1, "CLUSTER", "FAILOVER", "ABORT");
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void ReplicationInfoAndRoleReturnClientEndpoints(bool separateEndpoints)
+        {
+            CreateCluster(separateEndpoints);
+            AssignSlot(0, GetSlot(Key));
+            using ConnectionMultiplexer client = CreateClient();
+            Assert.That(client.GetDatabase(0).StringSet(Key, "value"), Is.True);
+            ConfigureReplica("peer");
+            WaitForReplicaData("value");
+
+            IPEndPoint primaryEndpoint = GetClientEndpoint(0);
+            IPEndPoint replicaEndpoint = GetClientEndpoint(1);
+            string primaryInfo = ExecuteNode(0, "INFO", "replication").ToString();
+            string replicaInfo = ExecuteNode(1, "INFO", "replication").ToString();
+            RedisResult[] primaryRole = (RedisResult[])ExecuteNode(0, "ROLE");
+            RedisResult[] replicaRole = (RedisResult[])ExecuteNode(1, "ROLE");
+            RedisResult[] connectedReplicas = (RedisResult[])primaryRole[2];
+            Assert.That(connectedReplicas, Has.Length.EqualTo(1));
+            RedisResult[] replica = (RedisResult[])connectedReplicas[0];
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(primaryInfo, Does.Contain($"slave0:ip={replicaEndpoint.Address},port={replicaEndpoint.Port},"));
+                Assert.That(replicaInfo, Does.Contain($"master_host:{primaryEndpoint.Address}\r\n"));
+                Assert.That(replicaInfo, Does.Contain($"master_port:{primaryEndpoint.Port}\r\n"));
+                Assert.That(primaryRole[0].ToString(), Is.EqualTo("master"));
+                Assert.That(replica[0].ToString(), Is.EqualTo(replicaEndpoint.Address.ToString()));
+                Assert.That((int)replica[1], Is.EqualTo(replicaEndpoint.Port));
+                Assert.That(replicaRole[0].ToString(), Is.EqualTo("slave"));
+                Assert.That(replicaRole[1].ToString(), Is.EqualTo(primaryEndpoint.Address.ToString()));
+                Assert.That((int)replicaRole[2], Is.EqualTo(primaryEndpoint.Port));
+            });
         }
 
         [TestCase(false)]

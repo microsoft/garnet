@@ -309,7 +309,8 @@ set the addresses and ports returned to clients, including `MOVED` and `ASK` res
 Omitted settings use the corresponding client values.
 The port must be between 1 and 65535.
 
-`CLUSTER NODES` and `CLUSTER ENDPOINT` return client addresses and ports.
+`CLUSTER NODES`, `CLUSTER ENDPOINT`, `INFO replication`, and `ROLE` return client addresses and ports.
+Errors from `CLUSTER FAILOVER` also report client addresses and ports.
 Get peer addresses and ports from the server configuration.
 `REPLICAOF`, `FAILOVER TO`, and `MIGRATE` accept known client or peer endpoints but connect
 through the peer endpoint.

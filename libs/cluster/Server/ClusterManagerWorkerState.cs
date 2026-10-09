@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,10 +31,10 @@ namespace Garnet.cluster
             string replicaOfNodeId,
             string hostname)
         {
+            IPEndPoint peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
             while (true)
             {
                 var current = currentConfig;
-                var peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
                 var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname,
                     peerEndpoint.Address.ToString(), peerEndpoint.Port);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
@@ -107,6 +108,7 @@ namespace Garnet.cluster
                 // Reset recovery operations before proceeding with reset
                 clusterProvider.replicationManager.ResetRecovery();
 
+                IPEndPoint peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
                 var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
@@ -124,7 +126,6 @@ namespace Garnet.cluster
                     var address = endpoint.Address.ToString();
                     var port = endpoint.Port;
                     var hostname = serverOptions.ClusterAnnounceHostname;
-                    var peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
 
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;

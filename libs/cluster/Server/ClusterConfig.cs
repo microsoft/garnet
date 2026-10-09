@@ -417,6 +417,19 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Get the client-advertised address and port for a node.
+        /// </summary>
+        /// <param name="nodeId"></param>
+        /// <returns>Client address and port, or null and minus one for an unknown node.</returns>
+        public (string address, int port) GetWorkerClientAddressFromNodeId(string nodeId)
+        {
+            if (nodeId == null)
+                return (null, -1);
+            ushort workerId = GetWorkerIdFromNodeId(nodeId);
+            return workerId == 0 ? (null, -1) : (workers[workerId].Address, workers[workerId].Port);
+        }
+
+        /// <summary>
         /// Get hostname from node-id.
         /// </summary>
         /// <param name="nodeId"></param>
