@@ -310,22 +310,29 @@ namespace Garnet.test
 
             Populate();
 
-            // The runtime refuses a maximum below the processor count or below the current minimum, so this
-            // is the smallest pool available here.
             ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
-            ThreadPool.GetMinThreads(out var minWorkers, out var minIo);
-            var cappedThreads = Math.Max(Environment.ProcessorCount, Math.Max(minWorkers, minIo));
-            var sessionCount = Math.Max(64, cappedThreads * 4);
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
 
-            ClassicAssert.IsTrue(ThreadPool.SetMaxThreads(cappedThreads, cappedThreads),
-                $"Could not clamp the thread pool to {cappedThreads} from ({maxWorkers},{maxIo}) with a minimum " +
-                $"of ({minWorkers},{minIo}), so this test cannot demonstrate thread starvation.");
+            // Worker threads only. The I/O-completion maximum is left alone because on Windows the accept
+            // path, the socket receives and the device completions all run on that pool, and clamping it
+            // deadlocks the server before a single read is issued. The runtime also refuses a maximum below
+            // the processor count or below the current minimum, so this is the smallest worker pool here.
+            var cappedWorkers = Math.Max(Environment.ProcessorCount, minWorkers);
+            var sessionCount = Math.Max(64, cappedWorkers * 4);
 
             var clients = new RawClient[sessionCount];
+            var clamped = false;
             try
             {
+                // Connect before clamping: accepting a connection needs a thread too, and starving that
+                // only proves the pool is small.
                 for (var i = 0; i < sessionCount; i++)
                     clients[i] = new RawClient();
+
+                clamped = ThreadPool.SetMaxThreads(cappedWorkers, maxIo);
+                ClassicAssert.IsTrue(clamped,
+                    $"Could not clamp the worker pool to {cappedWorkers} from ({maxWorkers},{maxIo}) with a " +
+                    $"worker minimum of {minWorkers}, so this test cannot demonstrate thread starvation.");
 
                 deviceFactoryCreator.ReadDelayMs = ReadDelayMs;
 
@@ -343,8 +350,17 @@ namespace Garnet.test
                 for (var i = 0; i < sessionCount; i++)
                     clients[i].Send("GET", Key(i));
 
-                for (var i = 0; i < sessionCount; i++)
-                    ClassicAssert.AreEqual($"${ValueLength}\r\n{Value(i)}\r\n", clients[i].ReadReply(), $"Wrong value for {Key(i)}");
+                try
+                {
+                    for (var i = 0; i < sessionCount; i++)
+                        ClassicAssert.AreEqual($"${ValueLength}\r\n{Value(i)}\r\n", clients[i].ReadReply(), $"Wrong value for {Key(i)}");
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"A session produced no reply within the socket timeout, with {sessionCount} " +
+                        $"concurrent device reads against {cappedWorkers} worker threads: the reads are being " +
+                        $"serialized on thread-pool threads rather than suspended. {e.Message}");
+                }
                 sw.Stop();
 
                 ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore, sessionCount,
@@ -352,13 +368,14 @@ namespace Garnet.test
 
                 ClassicAssert.Less(sw.Elapsed.TotalMilliseconds, single.Elapsed.TotalMilliseconds * 3,
                     $"{sessionCount} concurrent device reads took {sw.Elapsed.TotalSeconds:F1}s against a single " +
-                    $"read of {single.Elapsed.TotalSeconds:F1}s with a pool of {cappedThreads} threads, which means " +
+                    $"read of {single.Elapsed.TotalSeconds:F1}s with {cappedWorkers} worker threads, which means " +
                     "they were serialized on thread-pool threads rather than suspended.");
             }
             finally
             {
                 deviceFactoryCreator.ReadDelayMs = 0;
-                _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                if (clamped)
+                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
                 foreach (var c in clients)
                     c?.Dispose();
             }
@@ -377,9 +394,11 @@ namespace Garnet.test
         /// </para>
         /// <para>
         /// Calibration: the blocking path (completing pending inline on the network thread) measures 220 B
-        /// per read, and that is the floor this can reach. Parking adds five async frames on top; with each
-        /// of them pooled the measurement is 326-346 B over repeated runs, and un-pooling any single frame
-        /// adds roughly 120 B. The bound sits between the two so that dropping one
+        /// per read, and that is the floor this can reach. Parking adds five async frames on top. With each
+        /// of them pooled the measurement spans 389-426 B across runs; un-pooling any single frame moves it
+        /// to 513-527 B. The spread comes from the builders' per-thread caches, which miss whenever a
+        /// completion lands on a different thread, so the bound is set midway between the two ranges rather
+        /// than tight against either. Dropping one
         /// <c>[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]</c>, or adding a sixth frame
         /// that forgets one, fails here.
         /// </para>
@@ -420,7 +439,7 @@ namespace Garnet.test
             var perRead = fromDisk - fromMemory;
             TestContext.Out.WriteLine($"disk={fromDisk:F0} B  memory={fromMemory:F0} B  per disk read={perRead:F0} B");
 
-            ClassicAssert.Less(perRead, 420,
+            ClassicAssert.Less(perRead, 470,
                 "A park on the pending-read path allocates a state machine: an [AsyncMethodBuilder] is missing.");
 #endif
         }
@@ -454,8 +473,15 @@ namespace Garnet.test
             {
                 var endpoint = TestUtils.EndPoint;
                 socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
-                socket.Connect(endpoint);
+
+                // Every blocking call gets a deadline. A test that wedges a socket should fail with a
+                // diagnostic, not sit until the CI job is killed.
                 socket.ReceiveTimeout = (int)TimeSpan.FromSeconds(120).TotalMilliseconds;
+                socket.SendTimeout = (int)TimeSpan.FromSeconds(120).TotalMilliseconds;
+
+                if (!socket.ConnectAsync(endpoint).Wait(TimeSpan.FromSeconds(120)))
+                    throw new IOException($"Timed out connecting to {endpoint}.");
+
                 stream = new NetworkStream(socket, ownsSocket: false);
             }
 
