@@ -509,7 +509,6 @@ namespace Garnet.server
 
                 if (addToList)
                 {
-                    // Double.TryFormat was prefered to convert the value to UTF8 byte array, but is not available before .net 8
                     if (Utf8Formatter.TryFormat(item.Value, doubleValueToByteSpan, out var bytesWritten, default))
                         items.Add(doubleValueToByteSpan.Slice(0, bytesWritten).ToArray());
                     else

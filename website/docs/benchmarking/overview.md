@@ -28,7 +28,7 @@ The BDN CI first looks at the "Allocated" bytes from that specific run and compa
     
     b) Follow the pattern for the labels of expected values that others have and use "_".
     
-    c) If the expected Allocated value differs between Linux and Windows, or between frameworks, use the value that is higher. Each CI job is gated only against its own framework, but a single expected value is shared by all of them.
+    c) If the expected Allocated value differs between Linux and Windows, use the value that is higher. The same expected value is used on both platforms.
 
     d) If the expected values are not highly deterministic, it is advisable to avoid failing the test when these values are out of compliance. To prevent false failures, prepend WARN-ON-FAIL_ instead of expected_ to each expected value. This ensures the values are checked and will only generate warnings without causing a pipeline failure. The values will still be included in the charts, even if they are marked as warnings.
  
@@ -37,7 +37,7 @@ test/BDNPerfTests/run_bdnperftest.ps1
 
 1) First parameter (optional) is the BDN test. For example, Operations.BasicOperations (default), Operations.ObjectOperations, Cluster.ClusterMigrate, Lua.LuaScripts etc
 
-1a) Second parameter (optional) is the framework to run, net8.0 (default) or net10.0. Only that framework is benchmarked and gated.
+1a) Second parameter (optional) is the framework to run, net10.0 (default). Only that framework is benchmarked and gated.
      
 2) It will verify found Allocated vs expected Allocated (giving it 10% tolerance) and show results in the output.
      

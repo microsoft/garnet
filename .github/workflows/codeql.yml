@@ -85,10 +85,6 @@ jobs:
       if: ${{ matrix.build-mode == 'manual' }}
       run: dotnet restore
 
-    - name: Build Garnet net8.0
-      if: ${{ matrix.build-mode == 'manual' }}
-      run: dotnet build -f net8.0
-
     - name: Build Garnet net10.0
       if: ${{ matrix.build-mode == 'manual' }}
       run: dotnet build -f net10.0

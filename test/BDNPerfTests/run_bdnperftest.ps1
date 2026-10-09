@@ -19,12 +19,12 @@
     ./run_bdnperftest.ps1
     ./run_bdnperftest.ps1 BDN.benchmark.Operations.BasicOperations.*
     ./run_bdnperftest.ps1 Operations.BasicOperations    <-- can run this way but this is how specify in ci-bdnbenchmark.yml
-    ./run_bdnperftest.ps1 Operations.BasicOperations net8.0
+    ./run_bdnperftest.ps1 Operations.BasicOperations net10.0
 #>
 
 param (
   [string]$currentTest = "BDN.benchmark.Operations.BasicOperations.*",
-  [string]$framework = "net8.0"
+  [string]$framework = "net10.0"
 )
 
 $OFS = "`r`n"

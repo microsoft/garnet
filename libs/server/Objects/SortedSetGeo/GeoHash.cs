@@ -182,7 +182,7 @@ namespace Garnet.server
             // there is 8~ uops issued, meaning that we would do 32 bits per mask * 8 uops * 2 = 512~ uops in total for the encoding instead of just 1 uop.
             //
             // By guarding with AVX512F support, we avoid going to this code path for Zen 3 and older platforms. Avx512F.IsSupported check is the lowest possible 
-            // check we can (as of .NET 8) to allow largest possible set of CPUs to utilize accelerated PDEP and PEXT code-path.
+            // check we can use to allow the largest possible set of CPUs to utilize the accelerated PDEP and PEXT code path.
             //
             // [1]: https://twitter.com/uops_info/status/1202984196739870722
             if (Bmi2.X64.IsSupported && Avx512F.IsSupported)

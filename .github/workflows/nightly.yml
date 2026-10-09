@@ -21,7 +21,7 @@ jobs:
       matrix:
         test: [ 'Garnet.test', 'Garnet.test.collections', 'Garnet.test.acl', 'Garnet.test.scripting', 'Garnet.test.complexstring', 'Garnet.test.vectorset', 'Garnet.test.rangeindex', 'Garnet.test.extensions' ]
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0', 'net10.0' ]
+        framework: [ 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
@@ -53,7 +53,7 @@ jobs:
       matrix:
         test: [ 'Garnet.test.cluster', 'Garnet.test.cluster.migrate', 'Garnet.test.cluster.replication', 'Garnet.test.cluster.replication.tls', 'Garnet.test.cluster.replication.asyncreplay', 'Garnet.test.cluster.replication.disklesssync', 'Garnet.test.cluster.replication.vectorsets', 'Garnet.test.cluster.vectorsets', 'Garnet.test.cluster.multilog' ]
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0', 'net10.0' ]
+        framework: [ 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
@@ -83,7 +83,7 @@ jobs:
       matrix:
         test: [ 'Tsavorite.test', 'Tsavorite.test.recordops', 'Tsavorite.test.session', 'Tsavorite.test.session.context', 'Tsavorite.test.hlog', 'Tsavorite.test.recovery', 'Tsavorite.test.stress' ]
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0', 'net10.0' ]
+        framework: [ 'net10.0' ]
         configuration: [ 'Debug', 'Release' ]
     steps:
       - name: Check out code
