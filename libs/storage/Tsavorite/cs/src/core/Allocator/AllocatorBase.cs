@@ -91,6 +91,37 @@ namespace Tsavorite.core
         /// <paramref name="untilAddress"/>, whose flush has completed. Only implemented by ObjectAllocator.</summary>
         internal virtual void DrainDeferredDisposes(long fromAddress, long untilAddress) { }
 
+        /// <summary>Lowest source address whose <c>(v)</c> image was cached by CopyUpdate since the last post-checkpoint
+        /// <c>ClearSerializedObjectData</c> sweep, or <see cref="long.MaxValue"/> when none.</summary>
+        /// <remarks>This pair both gates and bounds the sweep: the empty sentinels mean nothing was cached and the walk can be
+        /// skipped outright. That works only because the pair is consumed and reset by each sweep - unlike
+        /// <see cref="deferredDisposeMaxAddress"/>, which is a never-reset high-water and could not gate here, since a
+        /// CopyUpdate source may sit at any address at or above HeadAddress and cached addresses are therefore not monotonic
+        /// in time. A never-reset high-water would be raised past a later cache at a lower address and strand it.</remarks>
+        private protected long serializedObjectCacheMinAddress = long.MaxValue;
+
+        /// <summary>Highest source address whose <c>(v)</c> image was cached since the last sweep, or 0 when none.</summary>
+        /// <remarks>Held as an inclusive record start: the sweep's exclusive end becomes this plus one so that the record
+        /// beginning here is still walked.</remarks>
+        private protected long serializedObjectCacheMaxAddress;
+
+        /// <summary>Record that a CopyUpdate cached the <c>(v)</c> image of the source at <paramref name="logicalAddress"/>, so
+        /// the next post-checkpoint sweep runs and covers it.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void NoteSerializedObjectCache(long logicalAddress)
+        {
+            var min = Volatile.Read(ref serializedObjectCacheMinAddress);
+            while (logicalAddress < min)
+            {
+                var prior = Interlocked.CompareExchange(ref serializedObjectCacheMinAddress, logicalAddress, min);
+                if (prior == min)
+                    break;
+                min = prior;
+            }
+
+            _ = MonotonicUpdate(ref serializedObjectCacheMaxAddress, logicalAddress, out _);
+        }
+
         /// <summary>Return the first object-log position recorded in the header of <paramref name="page"/>, or an unset position when
         /// this allocator has no object log or the page contains no out-of-line records.</summary>
         internal virtual ObjectLogFilePositionInfo GetLowestObjectLogPositionForPage(int page) => new();

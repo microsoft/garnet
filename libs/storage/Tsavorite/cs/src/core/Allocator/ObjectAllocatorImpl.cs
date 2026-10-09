@@ -1907,6 +1907,35 @@ namespace Tsavorite.core
         /// </summary>
         internal override void ClearSerializedObjectData(long beginAddress, long endAddress)
         {
+            // Consume the cached extent and reset it, so the next sweep bounds itself by what is cached after this one. A
+            // cache landing during the sweep re-establishes the pair from the empty sentinel, so it is covered by the next
+            // sweep rather than lost.
+            var cachedMin = Interlocked.Exchange(ref serializedObjectCacheMinAddress, long.MaxValue);
+            var cachedMax = Interlocked.Exchange(ref serializedObjectCacheMaxAddress, 0);
+
+            // Both sentinels mean nothing was cached since the last sweep, so there is nothing in range to clear and the
+            // per-record epoch acquire/release below would be pure overhead. Testing both matters: a cache landing between
+            // the two exchanges can leave one of them behind, and that residue must still force a sweep.
+            if (cachedMin == long.MaxValue && cachedMax == 0)
+                return;
+
+            // Narrow to the addresses actually cached. Both are record starts, so clamping cannot land mid-record; the end
+            // is exclusive, hence the +1 to keep the record beginning at cachedMax in range. A torn capture yields an
+            // incoherent pair, so narrow only when the pair is coherent and otherwise fall back to the caller's range
+            // rather than risk skipping a cached record.
+            if (cachedMin <= cachedMax)
+            {
+                if (cachedMin > beginAddress)
+                    beginAddress = cachedMin;
+                if (cachedMax < endAddress - 1)
+                    endAddress = cachedMax + 1;
+            }
+
+            ClearSerializedObjectDataInRange(beginAddress, endAddress);
+        }
+
+        void ClearSerializedObjectDataInRange(long beginAddress, long endAddress)
+        {
             var address = beginAddress;
             while (address < endAddress)
             {
