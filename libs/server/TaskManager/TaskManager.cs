@@ -39,6 +39,20 @@ namespace Garnet.server
             => registry.ContainsKey(taskType);
 
         /// <summary>
+        /// Remove a task that is stopping itself from the registry without cancelling or awaiting it.
+        /// </summary>
+        /// <param name="taskType"></param>
+        /// <returns>True if the task was removed</returns>
+        internal bool TryUnregister(TaskType taskType)
+        {
+            if (!registry.TryRemove(taskType, out var taskMetadata))
+                return false;
+
+            taskMetadata.Cts.Dispose();
+            return true;
+        }
+
+        /// <summary>
         /// Dispose TaskManager instance
         /// </summary>
         public void Dispose()
