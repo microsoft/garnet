@@ -102,6 +102,24 @@ namespace Garnet.test.cluster
             AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
         }
 
+        [Test]
+        public void VectorSetReplicatesAfterStartupRecovery()
+        {
+            const string VectorSetKey = "vs-startup-recovery";
+
+            SetupDisklessCluster(2);
+
+            context.nodeOptions[ReplicaIndex].Recover = true;
+            context.RestartNode(ReplicaIndex, ensureAofFlush: true);
+            context.clusterTestUtils.AttachReplicaToPrimary(ReplicaIndex, PrimaryIndex, logger: context.logger);
+
+            PopulateVectorSet(PrimaryIndex, VectorSetKey, count: 1);
+            ClassicAssert.AreEqual(1, VectorSetSize(PrimaryIndex, VectorSetKey));
+
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
+            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, VectorSetKey);
+        }
+
         /// <summary>
         /// Every replica takes its own diskless full sync from the same populated primary.
         /// Each must rebuild its own index, not share per-primary state.
