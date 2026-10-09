@@ -23,12 +23,19 @@ namespace Garnet.server
         /// <c>+OK</c>, or the value of <c>key</c> if one was given.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// Written the way any blocking command should be: a straight-line <c>async</c> body. The session is
         /// released back to the network while the body waits, so the number of connections that can be parked
         /// at once is unrelated to the size of the thread pool. The key read after the wait demonstrates two
         /// properties of the suspension: the command's parsed arguments survive it, because the receive
         /// buffer is not shifted while a command is suspended, and storage is reachable on resume, because
         /// the resume re-enters the session's epoch and response-object scope.
+        /// </para>
+        /// <para>
+        /// This wait is idle: it has no operation in flight, and no bound other than the one the caller
+        /// asked for, so it releases the cluster epoch and re-enters at whatever epoch is current when it
+        /// resumes. <c>DEBUG BLOCKIO</c> is the variant that keeps the epoch.
+        /// </para>
         /// </remarks>
         bool NetworkDebugBlock()
         {
@@ -58,6 +65,36 @@ namespace Garnet.server
                 DebugBlockReadKey();
             else
                 WriteDirect(CmdStrings.RESP_OK);
+        }
+
+        /// <summary>
+        /// <c>DEBUG BLOCKIO seconds [key]</c>. Parks the session for the given number of seconds the way a
+        /// storage operation that went to disk does, keeping the cluster epoch for the whole wait, then
+        /// replies <c>+OK</c>, or the value of <c>key</c> if one was given.
+        /// </summary>
+        /// <remarks>
+        /// The counterpart of <see cref="NetworkDebugBlock"/>, which parks idle and releases the epoch.
+        /// This one stands in for an asynchronous storage operation: the session goes on advertising an
+        /// operation in flight for the whole wait, so a migration of the key's slot waits for the park to
+        /// end rather than moving the key out from under the read that follows. The seconds stand in for
+        /// the bound a real device puts on the wait.
+        /// </remarks>
+        bool NetworkDebugBlockIo()
+        {
+            if (parseState.Count is < 2 or > 3)
+            {
+                return AbortWithWrongNumberOfArgumentsOrUnknownSubcommand(
+                    nameof(CmdStrings.BLOCKIO), nameof(RespCommand.DEBUG));
+            }
+
+            if (!TryGetDebugBlockDelay(out var delay))
+                return true;
+
+            ValueTask body;
+            using (BeginAsyncCommand(retainClusterEpoch: true))
+                body = DebugBlockBodyAsync(delay, parseState.Count == 3);
+
+            return CompleteAsyncCommand(body);
         }
 
         /// <summary>

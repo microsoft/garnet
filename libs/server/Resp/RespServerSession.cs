@@ -596,7 +596,11 @@ namespace Garnet.server
                         slowLogStartTime = LatencyMetrics != null ? LatencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
                     }
                 }
-                clusterSession?.AcquireCurrentEpoch();
+                // A command that suspended with an operation in flight is still holding its epoch.
+                // Re-acquiring would republish the session at the newer epoch and let a configuration
+                // change the command is still racing with proceed.
+                if (clusterSession is not null && !asyncCommandRetainsClusterEpoch)
+                    clusterSession.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
@@ -688,7 +692,16 @@ namespace Garnet.server
             finally
             {
                 networkSender.ExitAndReturnResponseObject();
-                clusterSession?.ReleaseCurrentEpoch();
+
+                // The response object and the scratch buffers are per-batch and go back now. The cluster
+                // epoch is not: a command suspending with an operation in flight keeps it, so the key it is
+                // operating on cannot be migrated away while it waits.
+                if (clusterSession is not null && (!asyncSuspended || !asyncCommandRetainsClusterEpoch))
+                {
+                    clusterSession.ReleaseCurrentEpoch();
+                    asyncCommandRetainsClusterEpoch = false;
+                }
+
                 scratchBufferBuilder.Reset();
                 scratchBufferAllocator.Reset();
 

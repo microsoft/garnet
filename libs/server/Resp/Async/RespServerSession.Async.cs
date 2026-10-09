@@ -58,6 +58,17 @@ namespace Garnet.server
         /// </summary>
         bool asyncSuspended;
 
+        /// <summary>
+        /// Set while the suspended command keeps the cluster epoch across its wait, so the session goes on
+        /// advertising an operation in flight. See the remarks on <see cref="BeginAsyncCommand(bool)"/>.
+        /// </summary>
+        /// <remarks>
+        /// Read by <see cref="ConsumeCore"/> on both edges of a suspension: it skips the release on the way
+        /// out and the matching acquire on resume, because re-acquiring would republish the session at the
+        /// newer epoch and let a configuration change that the command is still racing with proceed.
+        /// </remarks>
+        bool asyncCommandRetainsClusterEpoch;
+
         /// <summary>Box of the currently suspended body.</summary>
         RespAsyncBox resumeBox;
 
@@ -135,8 +146,48 @@ namespace Garnet.server
         /// Publishes this session for the duration of an async command body's synchronous start, so the
         /// body's builder can find it. Restores the previous value, which makes nesting safe.
         /// </summary>
+        /// <param name="retainClusterEpoch">
+        /// Whether a suspension of this body keeps the cluster epoch. Pass <c>true</c> for a body that
+        /// suspends with an operation in flight, and <c>false</c> for one that suspends while idle.
+        /// </param>
+        /// <remarks>
+        /// <para>
+        /// The cluster epoch is what makes a session's "this slot is mine" decision and its action on that
+        /// decision atomic with respect to configuration changes: a migration flips the slot state and then
+        /// waits for every session to leave the older epoch before it moves any data, so a session holding
+        /// the epoch cannot land a write on a key that has already been copied away.
+        /// </para>
+        /// <para>
+        /// A suspension therefore has to choose. A body that suspends with an operation in flight -- a
+        /// storage read that went to disk, say -- must pass <c>true</c>: the key it is operating on has to
+        /// stay put across the wait, exactly as it does when the same operation completes synchronously.
+        /// The wait must be bounded by the operation, because a migration cannot start while it runs. A body
+        /// that suspends while idle, waiting on a client-visible event with no bound on when it arrives,
+        /// must pass <c>false</c> and must carry no configuration-dependent decision across the wait: it
+        /// re-enters at the current epoch and has to re-verify anything it concluded before suspending.
+        /// </para>
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal AsyncCommandScope BeginAsyncCommand() => new(this);
+        internal AsyncCommandScope BeginAsyncCommand(bool retainClusterEpoch = false)
+        {
+            // Outside cluster mode there is no epoch to keep, and leaving the flag clear keeps the
+            // per-batch acquire and release on their original path.
+            asyncCommandRetainsClusterEpoch = retainClusterEpoch && clusterSession is not null;
+            return new(this);
+        }
+
+        /// <summary>
+        /// Drops a cluster epoch that was being held across a suspension. Called when the suspension ends
+        /// without resuming, so a torn-down session cannot stall a cluster transition indefinitely.
+        /// </summary>
+        void ReleaseRetainedClusterEpoch()
+        {
+            if (!asyncCommandRetainsClusterEpoch)
+                return;
+
+            asyncCommandRetainsClusterEpoch = false;
+            clusterSession?.ReleaseCurrentEpoch();
+        }
 
         /// <summary>
         /// Scope that publishes <see cref="CurrentAsyncCommandScope"/> for an async command body.
@@ -357,6 +408,7 @@ namespace Garnet.server
             resumeBox = null;
             pendingAsyncBody = default;
             asyncSuspended = false;
+            ReleaseRetainedClusterEpoch();
             handoff.Complete();
         }
 

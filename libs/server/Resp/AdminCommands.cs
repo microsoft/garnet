@@ -774,6 +774,11 @@ namespace Garnet.server
                 return NetworkDebugBlock();
             }
 
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKIO))
+            {
+                return NetworkDebugBlockIo();
+            }
+
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKON))
             {
                 return NetworkDebugBlockOn();
@@ -850,6 +855,10 @@ namespace Garnet.server
                     "\tSuspend this connection for <seconds>, then reply +OK, or the value of <key> if one",
                     "\tis given. The connection is released back to the network while it waits, so the",
                     "\tnumber of connections that can wait at once does not depend on the thread pool.",
+                    "BLOCKIO <seconds> [key]",
+                    "\tAs BLOCK, but waits the way a storage operation that went to disk does, keeping this",
+                    "\tconnection's cluster epoch for the whole wait so <key> cannot be migrated away before",
+                    "\tit is read.",
                     "BLOCKON <name>",
                     "\tSuspend this connection until another connection runs DEBUG SIGNAL <name>.",
                     "SIGNAL <name>",
