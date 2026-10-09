@@ -91,9 +91,16 @@ namespace Garnet.server
             unifiedStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length, matchType);
 
             storeCursor = cursor;
-            long remainingCount = count;
+            var remainingCount = count;
 
-            unifiedBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            if (txnManager?.state == TxnState.Running)
+            {
+                _ = unifiedBasicContext.Session.UnsafeNullLockingScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            }
+            else
+            {
+                _ = unifiedBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            }
 
             lastScanCursor = storeCursor;
             return true;
