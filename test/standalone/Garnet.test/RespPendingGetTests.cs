@@ -403,15 +403,19 @@ namespace Garnet.test
         /// blocking implementation pays for too - plus the suspension, which is the part under test.
         /// </para>
         /// <para>
-        /// Calibration: the blocking path (completing pending inline on the network thread) measures 220 B
-        /// per read, and that is the floor this can reach. Parking adds five async frames on top. With each
-        /// of them pooled the measurement spans 389-426 B across runs; un-pooling any single frame moves it
-        /// to 513-527 B. The spread comes from the builders' per-thread caches, which miss whenever a
-        /// completion lands on a different thread, so the bound is set midway between the two ranges rather
-        /// than tight against either. All of those figures are from Linux, which is where the bound is
-        /// enforced. Dropping one
-        /// <c>[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]</c>, or adding a sixth frame
-        /// that forgets one, fails here.
+        /// Calibration: parking adds five async frames over a read that completes from memory. With each of
+        /// them pooled the measurement spans 191-213 B across runs; un-pooling any single frame moves it to
+        /// 296-317 B. The spread comes from the builders' per-thread caches, which miss whenever a completion
+        /// lands on a different thread, so the bound is set midway between the two ranges rather than tight
+        /// against either. All of those figures are from Linux, which is where the bound is enforced.
+        /// Dropping one <c>[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]</c>, or adding a
+        /// sixth frame that forgets one, fails here.
+        /// </para>
+        /// <para>
+        /// This measures the server and nothing else, which is why
+        /// <see cref="DelayedReadDeviceFactoryCreator"/> wraps a read without allocating. An earlier wrapper
+        /// captured the callback in a closure and put 202 B per read - two closures and two delegates of its
+        /// own - inside the number, nearly doubling it and leaving the bound too slack to catch much.
         /// </para>
         /// </remarks>
         [Test]
@@ -458,10 +462,11 @@ namespace Garnet.test
             if (!OperatingSystem.IsLinux())
                 return;
 
-            ClassicAssert.Less(perRead, 470,
+            ClassicAssert.Less(perRead, 255,
                 "A park on the pending-read path allocates a state machine: an [AsyncMethodBuilder] is missing.");
 #endif
         }
+
 
         static double MeasurePerOp(int iterations, Action op)
         {

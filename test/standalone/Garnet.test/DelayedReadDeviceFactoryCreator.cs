@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -34,9 +35,75 @@ namespace Garnet.test
         readonly INamedDeviceFactoryCreator inner = new LocalStorageNamedDeviceFactoryCreator();
 
         readonly object gate = new();
-        readonly PriorityQueue<Action, long> pending = new();
+        readonly PriorityQueue<PendingRead, long> pending = new();
+        readonly ConcurrentQueue<PendingRead> pool = new();
         readonly Thread scheduler;
         bool stopped;
+
+        /// <summary>
+        /// One in-flight read's completion arguments, rented for the duration of the read and returned once
+        /// the callback has been handed back to Tsavorite.
+        /// </summary>
+        /// <remarks>
+        /// This exists so that wrapping a read costs no allocation. A test here measures the allocation of a
+        /// GET that goes to the device, and a wrapper that captured the callback in a closure would put its
+        /// own cost - two closures and two delegates per read - inside the number under test and bury what
+        /// the server actually spends.
+        /// </remarks>
+        sealed class PendingRead
+        {
+            internal DelayedReadDeviceFactoryCreator owner;
+            internal DeviceIOCompletionCallback callback;
+            internal object context;
+            internal uint errorCode;
+            internal uint numBytes;
+            internal Exception exception;
+        }
+
+        /// <summary>
+        /// Passed to the underlying device in place of the real callback. Static, so it is allocated once:
+        /// everything that varies per read travels in the <see cref="PendingRead"/> handed over as the
+        /// device's context.
+        /// </summary>
+        static readonly DeviceIOCompletionCallback trampoline = static (errorCode, numBytes, context, exception) =>
+        {
+            var read = (PendingRead)context;
+            read.errorCode = errorCode;
+            read.numBytes = numBytes;
+            read.exception = exception;
+            read.owner.Delay(read);
+        };
+
+        /// <summary>Takes a record for a read that is about to be issued, and counts the read.</summary>
+        PendingRead Rent(DeviceIOCompletionCallback callback, object context)
+        {
+            _ = Interlocked.Increment(ref reads);
+
+            if (!pool.TryDequeue(out var read))
+                read = new PendingRead { owner = this };
+            read.callback = callback;
+            read.context = context;
+            return read;
+        }
+
+        /// <summary>Returns <paramref name="read"/> to the pool and then completes it.</summary>
+        static void Complete(PendingRead read)
+        {
+            var callback = read.callback;
+            var context = read.context;
+            var errorCode = read.errorCode;
+            var numBytes = read.numBytes;
+            var exception = read.exception;
+
+            // Returned before the callback runs, so a callback that issues another read reuses this record
+            // rather than growing the pool, and so a callback that throws does not leak it.
+            read.callback = null;
+            read.context = null;
+            read.exception = null;
+            read.owner.pool.Enqueue(read);
+
+            callback(errorCode, numBytes, context, exception);
+        }
 
         int reads;
 
@@ -81,14 +148,14 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Runs <paramref name="completion"/> after the currently armed delay, or immediately if there is none.
+        /// Completes <paramref name="read"/> after the currently armed delay, or immediately if there is none.
         /// </summary>
-        void Delay(Action completion)
+        void Delay(PendingRead read)
         {
             var delayMs = ReadDelayMs;
             if (delayMs <= 0)
             {
-                completion();
+                Complete(read);
                 return;
             }
 
@@ -98,11 +165,11 @@ namespace Garnet.test
                 // for it, and the store cannot be disposed until that request is retired.
                 if (stopped)
                 {
-                    completion();
+                    Complete(read);
                     return;
                 }
 
-                pending.Enqueue(completion, Environment.TickCount64 + delayMs);
+                pending.Enqueue(read, Environment.TickCount64 + delayMs);
                 Monitor.Pulse(gate);
             }
         }
@@ -111,7 +178,7 @@ namespace Garnet.test
         {
             while (true)
             {
-                Action next;
+                PendingRead next;
                 lock (gate)
                 {
                     while (true)
@@ -143,7 +210,7 @@ namespace Garnet.test
 
                 try
                 {
-                    next();
+                    Complete(next);
                 }
                 catch (Exception ex)
                 {
@@ -226,12 +293,12 @@ namespace Garnet.test
             /// <inheritdoc/>
             public void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
                 DeviceIOCompletionCallback callback, object context)
-                => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, Delayed(callback), context);
+                => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, trampoline, owner.Rent(callback, context));
 
             /// <inheritdoc/>
             public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint alignedReadLength,
                 DeviceIOCompletionCallback callback, object context)
-                => underlying.ReadAsync(alignedSourceAddress, alignedDestinationAddress, alignedReadLength, Delayed(callback), context);
+                => underlying.ReadAsync(alignedSourceAddress, alignedDestinationAddress, alignedReadLength, trampoline, owner.Rent(callback, context));
 
             /// <inheritdoc/>
             public void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
@@ -262,13 +329,6 @@ namespace Garnet.test
 
             /// <inheritdoc/>
             public void Dispose() => underlying.Dispose();
-
-            DeviceIOCompletionCallback Delayed(DeviceIOCompletionCallback callback)
-            {
-                _ = Interlocked.Increment(ref owner.reads);
-                return (errorCode, numBytes, context, exception)
-                    => owner.Delay(() => callback(errorCode, numBytes, context, exception));
-            }
         }
     }
 }
