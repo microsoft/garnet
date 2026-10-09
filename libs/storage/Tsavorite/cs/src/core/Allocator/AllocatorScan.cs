@@ -218,6 +218,15 @@ namespace Tsavorite.core
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
+        /// Version of <see cref="ScanCursor{TScanFunctions}(TsavoriteKV{TStoreFunctions, TAllocator}, ScanCursorState, ref long, long, TScanFunctions, long, bool, long, bool, bool)"/> that does not acquire locks.
+        /// </summary>
+        /// <returns></returns>
+        internal abstract bool UnsafeNullLockingScanLookup<TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions,
+                long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
+            where TScanFunctions : IScanIteratorFunctions;
+
+
+        /// <summary>
         /// Disk buffering for <see cref="ScanCursor"/>. A bounded <paramref name="count"/> (e.g. SCAN) creates a new iterator per call and usually
         /// consumes only part of one page, so read-ahead would be wasted IO. An unbounded count iterates the whole log in one call, so reading the
         /// next page while the current one is processed overlaps IO with the per-record liveness checks.
@@ -234,6 +243,39 @@ namespace Tsavorite.core
             using var session = store.NewSession<TScanIterator, TInput, TOutput, Empty, NoOpSessionFunctions<TInput, TOutput, Empty>>(new NoOpSessionFunctions<TInput, TOutput, Empty>());
             var bContext = session.BasicContext;
 
+            return
+                ScanLookupImpl(ref bContext, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor, maxAddress, resetCursor, includeTombstones);
+        }
+
+        /// <summary>
+        /// Version of <see cref="ScanLookup{TInput, TOutput, TScanFunctions, TScanIterator}(TsavoriteKV{TStoreFunctions, TAllocator}, ScanCursorState, ref long, long, TScanFunctions, TScanIterator, bool, long, bool, bool)"/> that does not acquire locks.
+        /// 
+        /// Only use if other locking guarantees exclusion, or no values are read or modified.
+        /// </summary>
+        private protected bool UnsafeNullLockingScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store,
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress,
+                bool resetCursor = true, bool includeTombstones = false)
+            where TScanFunctions : IScanIteratorFunctions
+            where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
+        {
+            using var session = store.NewSession<TScanIterator, TInput, TOutput, Empty, NoOpSessionFunctions<TInput, TOutput, Empty>>(new NoOpSessionFunctions<TInput, TOutput, Empty>());
+            var bContext = session.UnsafeBasicNullLockingContext;
+
+            return
+                ScanLookupImpl(ref bContext, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor, maxAddress, resetCursor, includeTombstones);
+        }
+
+        /// <summary>
+        /// Common implementation for <see cref="ScanLookup{TInput, TOutput, TScanFunctions, TScanIterator}(TsavoriteKV{TStoreFunctions, TAllocator}, ScanCursorState, ref long, long, TScanFunctions, TScanIterator, bool, long, bool, bool)"/> and <see cref="UnsafeNullLockingScanLookup{TInput, TOutput, TScanFunctions, TScanIterator}(TsavoriteKV{TStoreFunctions, TAllocator}, ScanCursorState, ref long, long, TScanFunctions, TScanIterator, bool, long, bool, bool)"/>.
+        /// </summary>
+        private protected bool ScanLookupImpl<TInput, TOutput, TScanFunctions, TScanIterator, TSessionLocker>(
+                ref BasicContext<TScanIterator, TInput, TOutput, Empty, NoOpSessionFunctions<TInput, TOutput, Empty>, TStoreFunctions, TAllocator, TSessionLocker> bContext,
+                ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress,
+                bool resetCursor, bool includeTombstones)
+            where TSessionLocker : struct, ISessionLocker<TStoreFunctions, TAllocator>
+            where TScanFunctions : IScanIteratorFunctions
+            where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
+        {
             if (cursor < BeginAddress) // This includes 0, which means to start the Scan
                 cursor = BeginAddress;
             else if (validateCursor && !iter.SnapCursorToLogicalAddress(ref cursor))

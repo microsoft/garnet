@@ -22,6 +22,7 @@ namespace Tsavorite.core
 
         private SectorAlignedMemory recordBuffer;
         private readonly bool assumeInMemory;
+        private readonly bool unsafeSkipLocking;
 
         private DiskLogRecord diskLogRecord;
 
@@ -41,11 +42,12 @@ namespace Tsavorite.core
         internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch, DiskScanBufferingMode diskScanBufferingMode,
                 InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
-                bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null)
+                bool includeClosedRecords = false, bool assumeInMemory = false, bool unsafeSkipLocking = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode,
                   includeClosedRecords, epoch, hlogBase.LogPageSizeBits, hlogBase._wrapper, logger: logger)
         {
             this.store = store;
+            this.unsafeSkipLocking = unsafeSkipLocking;
             this.hlogBase = hlogBase;
             this.assumeInMemory = assumeInMemory;
             if (frameSize > 0)
@@ -241,8 +243,11 @@ namespace Tsavorite.core
                             // Lock to ensure no value tearing while copying to temp storage.
                             if (store is not null)
                             {
-                                var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
-                                store.LockForScan(ref stackCtx, logRecord);
+                                if (!unsafeSkipLocking)
+                                {
+                                    var logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress, physicalAddress);
+                                    store.LockForScan(ref stackCtx, logRecord);
+                                }
 
                                 // LockForScan may spin via epoch.ProtectAndDrain(), which advances this thread's localCurrentEpoch and may synchronously fire a
                                 // previously-queued OnPagesClosed action (from a concurrent ShiftHeadAddress). If HeadAddress now exceeds currentAddress, the page

@@ -68,7 +68,7 @@ namespace Garnet.server
             {
                 var sectionsArr = sections == null ? GarnetInfoMetrics.DefaultInfo : [.. sections];
                 var garnetInfo = new GarnetInfoMetrics();
-                var info = garnetInfo.GetRespInfo(sectionsArr, activeDbId, storeWrapper);
+                var info = garnetInfo.GetRespInfo(sectionsArr, activeDbId, this);
                 if (!string.IsNullOrEmpty(info))
                 {
                     WriteLargeVerbatimString(Encoding.ASCII.GetBytes(info));

@@ -938,8 +938,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">Database ID</param>
         /// <returns>A tuple of (live keys, live keys with an expiration set).</returns>
-        public (long keyCount, long expireCount) GetKeyspaceStats(int dbId)
-            => databaseManager.GetKeyspaceStats(dbId);
+        public (long KeyCount, long ExpireCount) GetKeyspaceStats(int dbId, bool inTransaction)
+            => databaseManager.GetKeyspaceStats(dbId, inTransaction);
 
         /// <summary>
         /// Grows indexes of both main store and object store if current size is too small.

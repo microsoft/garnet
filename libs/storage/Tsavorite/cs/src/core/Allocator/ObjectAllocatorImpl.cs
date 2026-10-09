@@ -1611,6 +1611,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Version of <see cref="ScanCursor{TScanFunctions}(TsavoriteKV{TStoreFunctions, ObjectAllocator{TStoreFunctions}}, ScanCursorState, ref long, long, TScanFunctions, long, bool, long, bool, bool)"/> which does no locking.
+        /// </summary>
+        internal override bool UnsafeNullLockingScanLookup<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store, ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
+        {
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, GetScanCursorBufferingMode(count),
+                includeClosedRecords: maxAddress < long.MaxValue, unsafeSkipLocking: true, logger: logger);
+            return UnsafeNullLockingScanLookup<long, long, TScanFunctions, ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor,
+                maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
+        }
+
+        /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
         internal override bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,

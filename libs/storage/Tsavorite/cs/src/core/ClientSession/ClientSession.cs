@@ -539,6 +539,12 @@ namespace Tsavorite.core
             => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress,
                 resetCursor: resetCursor, includeTombstones: includeTombstones);
 
+        public bool UnsafeNullLockingScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false,
+                long maxAddress = long.MaxValue, bool resetCursor = true, bool includeTombstones = false)
+            where TScanFunctions : IScanIteratorFunctions
+            => store.hlogBase.UnsafeNullLockingScanLookup(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress,
+                resetCursor: resetCursor, includeTombstones: includeTombstones);
+
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.
         /// </summary>

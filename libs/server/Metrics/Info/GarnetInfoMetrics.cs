@@ -390,14 +390,14 @@ namespace Garnet.server
             clientsInfo = [new("connected_clients", metricsDisabled ? "0" : (globalMetrics.total_connections_received - globalMetrics.total_connections_disposed).ToString())];
         }
 
-        private void PopulateKeyspaceInfo(StoreWrapper storeWrapper)
+        private void PopulateKeyspaceInfo(StoreWrapper storeWrapper, bool inTransaction)
         {
             var databases = storeWrapper.GetDatabasesSnapshot();
 
             List<MetricsItem> items = null;
             foreach (var db in databases.OrderBy(db => db.Id))
             {
-                var (keyCount, expireCount) = storeWrapper.GetKeyspaceStats(db.Id);
+                var (keyCount, expireCount) = storeWrapper.GetKeyspaceStats(db.Id, inTransaction);
 
                 // Redis lists only databases that currently hold at least one key.
                 if (keyCount == 0)
@@ -496,73 +496,73 @@ namespace Garnet.server
             }
         }
 
-        private void GetRespInfo(InfoMetricsType section, int dbId, StoreWrapper storeWrapper, StringBuilder sbResponse)
+        private void GetRespInfo(InfoMetricsType section, int dbId, RespServerSession session, StringBuilder sbResponse)
         {
             var header = GetSectionHeader(section, dbId);
 
             switch (section)
             {
                 case InfoMetricsType.SERVER:
-                    PopulateServerInfo(storeWrapper);
+                    PopulateServerInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, serverInfo, sbResponse);
                     return;
                 case InfoMetricsType.MEMORY:
-                    PopulateMemoryInfo(storeWrapper);
+                    PopulateMemoryInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, memoryInfo, sbResponse);
                     return;
                 case InfoMetricsType.CLUSTER:
-                    PopulateClusterInfo(storeWrapper);
+                    PopulateClusterInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, clusterInfo, sbResponse);
                     return;
                 case InfoMetricsType.REPLICATION:
-                    PopulateReplicationInfo(storeWrapper);
+                    PopulateReplicationInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, replicationInfo, sbResponse);
                     return;
                 case InfoMetricsType.STATS:
-                    PopulateStatsInfo(storeWrapper);
+                    PopulateStatsInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, statsInfo, sbResponse);
                     return;
                 case InfoMetricsType.STORE:
-                    PopulateStoreStats(storeWrapper);
+                    PopulateStoreStats(session.StoreWrapper);
                     GetSectionRespInfo(header, storeInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.STOREHASHTABLE:
-                    PopulateStoreHashDistribution(storeWrapper);
+                    PopulateStoreHashDistribution(session.StoreWrapper);
                     GetSectionRespInfo(header, storeHashDistrInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.STOREREVIV:
-                    PopulateStoreRevivInfo(storeWrapper);
+                    PopulateStoreRevivInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, storeRevivInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.PERSISTENCE:
-                    PopulatePersistenceInfo(storeWrapper);
+                    PopulatePersistenceInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, persistenceInfo[dbId], sbResponse);
                     return;
                 case InfoMetricsType.CLIENTS:
-                    PopulateClientsInfo(storeWrapper);
+                    PopulateClientsInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, clientsInfo, sbResponse);
                     return;
                 case InfoMetricsType.KEYSPACE:
-                    PopulateKeyspaceInfo(storeWrapper);
+                    PopulateKeyspaceInfo(session.StoreWrapper, session.txnManager?.state == TxnState.Running);
                     GetSectionRespInfo(header, keyspaceInfo, sbResponse);
                     return;
                 case InfoMetricsType.MODULES:
                     GetSectionRespInfo(header, null, sbResponse);
                     return;
                 case InfoMetricsType.BPSTATS:
-                    PopulateClusterBufferPoolStats(storeWrapper);
+                    PopulateClusterBufferPoolStats(session.StoreWrapper);
                     GetSectionRespInfo(header, bufferPoolStats, sbResponse);
                     return;
                 case InfoMetricsType.CINFO:
-                    PopulateCheckpointInfo(storeWrapper);
+                    PopulateCheckpointInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, checkpointStats, sbResponse);
                     return;
                 case InfoMetricsType.HLOGSCAN:
-                    PopulateHlogScanInfo(storeWrapper);
+                    PopulateHlogScanInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, hlogScanStats[dbId], sbResponse);
                     return;
                 case InfoMetricsType.COMMANDSTATS:
-                    PopulateCommandStatsInfo(storeWrapper);
+                    PopulateCommandStatsInfo(session.StoreWrapper);
                     GetSectionRespInfo(header, commandStatsInfo, sbResponse);
                     return;
                 default:
@@ -570,12 +570,12 @@ namespace Garnet.server
             }
         }
 
-        public string GetRespInfo(InfoMetricsType[] sections, int dbId, StoreWrapper storeWrapper)
+        public string GetRespInfo(InfoMetricsType[] sections, int dbId, RespServerSession session)
         {
             var sbResponse = new StringBuilder();
             for (var i = 0; i < sections.Length; i++)
             {
-                GetRespInfo(sections[i], dbId, storeWrapper, sbResponse);
+                GetRespInfo(sections[i], dbId, session, sbResponse);
 
                 if (i != sections.Length - 1)
                     sbResponse.Append("\r\n");
@@ -584,7 +584,7 @@ namespace Garnet.server
             return sbResponse.ToString();
         }
 
-        private MetricsItem[] GetMetricInternal(InfoMetricsType section, int dbId, StoreWrapper storeWrapper)
+        private MetricsItem[] GetMetricInternal(InfoMetricsType section, int dbId, StoreWrapper storeWrapper, bool inTransaction)
         {
             switch (section)
             {
@@ -619,7 +619,7 @@ namespace Garnet.server
                     PopulateClientsInfo(storeWrapper);
                     return clientsInfo;
                 case InfoMetricsType.KEYSPACE:
-                    PopulateKeyspaceInfo(storeWrapper);
+                    PopulateKeyspaceInfo(storeWrapper, inTransaction);
                     return keyspaceInfo;
                 case InfoMetricsType.MODULES:
                     return null;
@@ -631,13 +631,13 @@ namespace Garnet.server
             }
         }
 
-        public MetricsItem[] GetMetric(InfoMetricsType section, int dbId, StoreWrapper storeWrapper) => GetMetricInternal(section, dbId, storeWrapper);
+        public MetricsItem[] GetMetric(InfoMetricsType section, int dbId, StoreWrapper storeWrapper, bool inTransaction) => GetMetricInternal(section, dbId, storeWrapper, inTransaction);
 
-        public IEnumerable<(InfoMetricsType, MetricsItem[])> GetInfoMetrics(InfoMetricsType[] sections, int dbId, StoreWrapper storeWrapper)
+        public IEnumerable<(InfoMetricsType, MetricsItem[])> GetInfoMetrics(InfoMetricsType[] sections, int dbId, StoreWrapper storeWrapper, bool inTransaction)
         {
             foreach (var section in sections)
             {
-                var infoItems = GetMetricInternal(section, dbId, storeWrapper);
+                var infoItems = GetMetricInternal(section, dbId, storeWrapper, inTransaction);
                 if (infoItems != null)
                     yield return (section, infoItems);
             }
