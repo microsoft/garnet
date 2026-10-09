@@ -30,7 +30,7 @@ namespace Garnet.server
         public MetricsItem[] GetInfoMetrics(InfoMetricsType infoMetricsType, int dbId = 0)
         {
             GarnetInfoMetrics info = new();
-            return info.GetMetric(infoMetricsType, dbId, provider.StoreWrapper);
+            return info.GetMetric(infoMetricsType, dbId, provider.StoreWrapper, inTransaction: false);
         }
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace Garnet.server
         {
             GarnetInfoMetrics info = new();
             infoMetricsTypes ??= GarnetInfoMetrics.DefaultInfo;
-            return info.GetInfoMetrics(infoMetricsTypes, dbId, provider.StoreWrapper);
+            return info.GetInfoMetrics(infoMetricsTypes, dbId, provider.StoreWrapper, inTransaction: false);
         }
 
         /// <summary>

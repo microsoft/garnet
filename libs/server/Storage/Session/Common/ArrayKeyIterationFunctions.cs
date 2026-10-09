@@ -174,7 +174,15 @@ namespace Garnet.server
             unifiedStoreDbSizeFuncs ??= new();
             unifiedStoreDbSizeFuncs.Initialize();
             long cursor = 0;
-            unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
+
+            if (txnManager?.state == TxnState.Running)
+            {
+                _ = unifiedBasicContext.Session.UnsafeNullLockingScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
+            }
+            else
+            {
+                _ = unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
+            }
 
             return unifiedStoreDbSizeFuncs.Count;
         }
@@ -185,12 +193,20 @@ namespace Garnet.server
         /// The key count uses the same non-expired predicate as <see cref="DbSize"/>, so the two are consistent.
         /// </summary>
         /// <returns>A tuple of (total live keys, live keys with an expiration set).</returns>
-        internal (long keyCount, long expireCount) KeyspaceStats()
+        internal (long keyCount, long expireCount) KeyspaceStats(bool inTransaction)
         {
             unifiedStoreKeyspaceStatsFuncs ??= new();
             unifiedStoreKeyspaceStatsFuncs.Initialize();
             long cursor = 0;
-            unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreKeyspaceStatsFuncs);
+
+            if (inTransaction)
+            {
+                _ = unifiedBasicContext.Session.UnsafeNullLockingScanCursor(ref cursor, long.MaxValue, unifiedStoreKeyspaceStatsFuncs);
+            }
+            else
+            {
+                _ = unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreKeyspaceStatsFuncs);
+            }
 
             return (unifiedStoreKeyspaceStatsFuncs.KeyCount, unifiedStoreKeyspaceStatsFuncs.ExpireCount);
         }
@@ -289,6 +305,8 @@ namespace Garnet.server
                 public virtual bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
+                    // It is ILLEGAL to touch the value of any values in here, as we are not necessarily holding locks for them
+
                     if (IsInternalRecord(in logRecord) || CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;

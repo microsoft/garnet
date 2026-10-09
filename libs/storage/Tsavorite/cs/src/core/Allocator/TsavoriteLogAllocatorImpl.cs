@@ -181,6 +181,9 @@ namespace Tsavorite.core
                 bool resetCursor = true, bool includeTombstones = false)
             => throw new TsavoriteException("TsavoriteLogAllocator Scan methods should not be used");
 
+        internal override bool UnsafeNullLockingScanLookup<TScanFunctions>(TsavoriteKV<TsavoriteLogStoreFunctions, TsavoriteLogAllocator> store, ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
+            => throw new TsavoriteException("TsavoriteLogAllocator Scan methods should not be used");
+
         /// <summary>
         /// Implementation for push-iterating key versions, called from LogAccessor
         /// </summary>
