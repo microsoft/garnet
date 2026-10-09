@@ -111,7 +111,7 @@ namespace Garnet.server
 
         bool DebugBlockReadKey<TGarnetApi>(ref TGarnetApi storageApi) where TGarnetApi : IGarnetApi
         {
-            StringInput input = new(RespCommand.GET, arg1: -1);
+            StringInput input = new(RespCommand.GET, arg1: StringInput.RespGetArg);
 
             var key = parseState.GetArgSliceByRef(2);
             var output = GetStringOutput();
