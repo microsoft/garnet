@@ -353,7 +353,6 @@ namespace Garnet.server
         )
         {
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
-
             Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
             StoreContextInNamespace(context, ref nsBytes);
 

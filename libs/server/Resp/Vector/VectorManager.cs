@@ -27,6 +27,8 @@ namespace Garnet.server
         BadParams,
         Duplicate,
         MissingElement,
+
+        ImportingPending,
     }
 
     /// <summary>
@@ -55,6 +57,7 @@ namespace Garnet.server
         internal const long VADDSetFlagsArg = MigrateIndexKeyLogArg + 1; // AOF: YES. InitialUpdater: NO (record must exist).
         internal const long CreateIndexArg = VADDSetFlagsArg + 1; // New stub record creation. AOF: NO. InitialUpdater: YES.
         internal const long VSETATTRAppendLogArg = CreateIndexArg + 1; // User VSETATTR update, replayed on replicas. AOF: Yes. InitialUpdater: NO.
+        internal const long SetImportStateArg = VSETATTRAppendLogArg + 1; // Import lifecycle flags. AOF: NO. InitialUpdater: NO (record must exist).
 
         /// <summary>
         /// Byte stored on log records to distinguish the INDEX key as a Vector Set
@@ -96,6 +99,16 @@ namespace Garnet.server
         /// Beam width default for SearchXXX methods.
         /// </summary>
         internal const int DefaultBeamWidth = 4;
+
+        /// <summary>
+        /// Minimum (inclusive) value for M in VADD (or similar).
+        /// </summary>
+        internal const int MinNumLinks = 4;
+
+        /// <summary>
+        /// Maximum (inclusive) value for M in VADD (or similar).
+        /// </summary>
+        internal const int MaxNumLinks = 4096;
 
         /// <summary>
         /// Ensures the VSIM distance output buffer has at least <paramref name="retrieveCount"/> * sizeof(float) bytes.
@@ -213,7 +226,7 @@ namespace Garnet.server
                 throw new GarnetException($"VectorSetReplayTaskCount should be in range [0,{Environment.ProcessorCount}]!");
             var vectorSetReplayCount = serverOptions.VectorSetReplayTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetReplayTaskCount;
 
-            replicationReplayChannels = new Channel<VADDReplicationState>[vectorSetReplayCount];
+            replicationReplayChannels = new Channel<VectorSetReplicationState>[vectorSetReplayCount];
             replicationReplayTasks = new Task[vectorSetReplayCount];
 
             for (var i = 0; i < replicationReplayTasks.Length; i++)
@@ -221,7 +234,7 @@ namespace Garnet.server
                 replicationReplayTasks[i] = Task.CompletedTask;
 
                 // NOTE: for multi-log we need to disable single writer since multiple AOF replay tasks may append to this common channel.
-                replicationReplayChannels[i] = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
+                replicationReplayChannels[i] = Channel.CreateUnbounded<VectorSetReplicationState>(new() { SingleWriter = !serverOptions.MultiLogEnabled, SingleReader = false, AllowSynchronousContinuations = false });
             }
 
             vectorSetLocks = new(vectorSetReplayCount);
@@ -242,15 +255,21 @@ namespace Garnet.server
             recoveredIndexes = new();
             recoveredMetadata = new();
 
-            quantizationChannel = Channel.CreateUnbounded<QuantizationState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
+            quantizationOrImportChannel = Channel.CreateUnbounded<QuantizationOrImportState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
 
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
-            quantizationTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
-            quantizationTasks = new Task[quantizationTaskCount];
+            quantizationAndImportTaskCount = serverOptions.VectorSetQuantizationTaskCount == 0 ? Environment.ProcessorCount : serverOptions.VectorSetQuantizationTaskCount;
+            quantizationAndImportTasks = new Task[quantizationAndImportTaskCount];
 
             // So Dispose's Task.WhenAll is safe even if StartQuantizationTasks never ran.
-            Array.Fill(quantizationTasks, Task.CompletedTask);
+            Array.Fill(quantizationAndImportTasks, Task.CompletedTask);
+
+            // Tracking information for active XVIMPORT ... FINISH during replication
+            activeImportFinalizations = new(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+            activeImportFinalizationsLookup = activeImportFinalizations.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
 
             // Exclusive locks for potential updates to Vector Set data
             var unroundedElementSetSize = Math.Min(Environment.ProcessorCount, 192) * 2; // 192 cores is a reasonable maximum number of cores to expect - so impose as an upper bound for now
@@ -286,8 +305,8 @@ namespace Garnet.server
                 dirtyContextMetadatas = [];
             }
 
-            // Spin up quantization
-            StartQuantizationTasks();
+            // Spin up quantization and import handling tasks
+            StartQuantizationAndImportTasks();
         }
 
         /// <summary>
@@ -627,9 +646,9 @@ namespace Garnet.server
             cleanupGate.Dispose();
 
             // drain quantization work and stop the worker tasks
-            _ = quantizationChannel.Writer.TryComplete();
-            while (quantizationChannel.Reader.TryRead(out _)) { }
-            AsyncUtils.BlockingWait(Task.WhenAll(quantizationTasks));
+            _ = quantizationOrImportChannel.Writer.TryComplete();
+            while (quantizationOrImportChannel.Reader.TryRead(out _)) { }
+            AsyncUtils.BlockingWait(Task.WhenAll(quantizationAndImportTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -765,7 +784,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                    _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                 }
 
                 return VectorManagerResult.OK;

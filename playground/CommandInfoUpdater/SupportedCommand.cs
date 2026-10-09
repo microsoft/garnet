@@ -384,6 +384,8 @@ namespace CommandInfoUpdater
             new("VREM", RespCommand.VREM),
             new("VSETATTR", RespCommand.VSETATTR),
             new("VSIM", RespCommand.VSIM),
+            new("XVCREATE", RespCommand.XVCREATE, StoreType.Main),
+            new("XVIMPORT", RespCommand.XVIMPORT, StoreType.Main),
             new("EVAL", RespCommand.EVAL),
             new("EVALSHA", RespCommand.EVALSHA),
             new("SCRIPT", RespCommand.SCRIPT, StoreType.None,

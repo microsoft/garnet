@@ -378,32 +378,46 @@ namespace Garnet.server
         #region VectorSet commands
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
-        => storageSession.VectorSetCardinality(key, out card);
+        public GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card, out bool importPending)
+        => storageSession.VectorSetCardinality(key, out card, out importPending);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
-        => storageSession.VectorSetIsMember(key, element);
+        public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element, out bool importPending)
+        => storageSession.VectorSetIsMember(key, element, out importPending);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
-        => storageSession.VectorSetLinks(key, element, ref idResults, ref distanceResults);
+        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults, out bool importPending)
+        => storageSession.VectorSetLinks(key, element, ref idResults, ref distanceResults, out importPending);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount)
-        => storageSession.VectorSetRandomMembers(key, count, ref idResults, out actualCount);
+        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount, out bool importPending)
+        => storageSession.VectorSetRandomMembers(key, count, ref idResults, out actualCount, out importPending);
+
+        public GarnetStatus VectorSetCreate(PinnedSpanByte key, int dimensions, int reduceDims, VectorQuantType quantizer,
+            int buildExplorationFactor, int numLinks, VectorDistanceMetricType distanceMetric, PinnedSpanByte? quantState, uint startPointId,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetCreate(key, dimensions, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, quantState, startPointId, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public GarnetStatus VectorSetImport(PinnedSpanByte key, VectorImportTermType termType, PinnedSpanByte id, PinnedSpanByte value,
+            out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetImport(key, termType, id, value, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public GarnetStatus VectorSetFinishImport(PinnedSpanByte key, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetFinishImport(key, out result, out errorMsg);
 
         /// <inheritdoc />
         public GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         => storageSession.VectorSetAdd(key, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, distanceMetric, out result, out errorMsg);
 
         /// <inheritdoc />
-        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
-        => storageSession.VectorSetRemove(key, element);
+        public GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element, out bool importPending)
+        => storageSession.VectorSetRemove(key, element, out importPending);
 
         /// <inheritdoc />
-        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute)
-        => storageSession.VectorSetSetAttribute(key, element, attribute);
+        public GarnetStatus VectorSetSetAttribute(PinnedSpanByte key, PinnedSpanByte element, PinnedSpanByte attribute, out bool importPending)
+        => storageSession.VectorSetSetAttribute(key, element, attribute, out importPending);
 
         /// <inheritdoc />
         public GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, out ReadOnlySpan<byte> errorMessage, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result, ref SpanByteAndMemory filterBitmap)
@@ -414,25 +428,24 @@ namespace Garnet.server
         => storageSession.VectorSetElementSimilarity(key, element.ReadOnlySpan, count, delta, searchExplorationFactor, filter.ReadOnlySpan, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result, ref filterBitmap);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances)
-        => storageSession.VectorSetEmbedding(key, element.ReadOnlySpan, ref outputDistances);
+        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances, out bool importPending)
+        => storageSession.VectorSetEmbedding(key, element.ReadOnlySpan, ref outputDistances, out importPending);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range)
-        => storageSession.VectorSetRawEmbedding(key, element.ReadOnlySpan, ref quantizedValues, out quantType, out norm, out range);
+        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range, out bool importPending)
+        => storageSession.VectorSetRawEmbedding(key, element.ReadOnlySpan, ref quantizedValues, out quantType, out norm, out range, out importPending);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
-        => storageSession.VectorSetDimensions(key, out dimensions);
+        public GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions, out bool importPending)
+        => storageSession.VectorSetDimensions(key, out dimensions, out importPending);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
-        => storageSession.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
+        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending)
+        => storageSession.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size, out importPending);
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
-        => storageSession.VectorSetGetAttribute(key, element, ref outputAttributes);
-
+        public GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes, out bool importPending)
+        => storageSession.VectorSetGetAttribute(key, element, ref outputAttributes, out importPending);
         #endregion
 
         #region RangeIndex

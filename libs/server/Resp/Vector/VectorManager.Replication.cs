@@ -27,15 +27,13 @@ namespace Garnet.server
     public sealed partial class VectorManager
     {
         /// <summary>
-        /// Represents a copy of a VADD being replayed during replication.
+        /// Represents a copied VADD or XVIMPORT term being replayed during replication.
         /// </summary>
-        private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks, VectorDistanceMetricType DistanceMetric)
-        {
-        }
+        private readonly record struct VectorSetReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks, VectorDistanceMetricType DistanceMetric, uint? ImportTermType = null);
 
         private int replicationReplayStarted;
         private CountingEventSlim replicationBlockEvent;
-        private readonly Channel<VADDReplicationState>[] replicationReplayChannels;
+        private readonly Channel<VectorSetReplicationState>[] replicationReplayChannels;
         private readonly Task[] replicationReplayTasks;
 
         private CancellationToken replicationReplayCancellation;
@@ -67,7 +65,7 @@ namespace Garnet.server
                 catch { }
 
                 var abandoned = await ResetReplayTasksAsync().ConfigureAwait(false);
-                logger?.LogInformation("VectorManager replication cancellation abandoned {abandoned} VADDs", abandoned);
+                logger?.LogInformation("VectorManager replication cancellation abandoned {abandoned} vector operations", abandoned);
             }
             finally
             {
@@ -163,6 +161,112 @@ namespace Garnet.server
             {
                 logger?.LogCritical("Failed to inject replication write for VSETATTR into log, result was {res}", res);
                 throw new GarnetException("Couldn't synthesize Vector Set attribute set operation for replication, data loss will occur");
+            }
+        }
+
+        private static void ReplicateImportOperation(ReadOnlySpan<byte> key, ref StringInput input)
+        {
+            ref var context = ref ActiveThreadSession.stringBasicContext;
+            var status = context.RMW((FixedSpanByteKey)key, ref input);
+            if (status.IsPending)
+            {
+                CompletePending(ref status, ref context);
+            }
+            if (!status.IsCompletedSuccessfully)
+            {
+                throw new GarnetException("Could not log Vector Set import operation");
+            }
+        }
+
+        private static void ReplicateVectorSetCreate(ReadOnlySpan<byte> key, uint dimensions, uint reduceDims,
+            VectorQuantType quantizer, uint buildExplorationFactor, uint numLinks, VectorDistanceMetricType distanceMetric,
+            bool hasQuantState, ReadOnlySpan<byte> quantState, uint startPointId)
+        {
+#pragma warning disable IDE0302
+            Span<uint> configuration = stackalloc uint[] { dimensions, reduceDims, (uint)quantizer, buildExplorationFactor, numLinks, (uint)distanceMetric, startPointId };
+#pragma warning restore IDE0302
+            var input = new StringInput(RespCommand.XVCREATE);
+            var configurationArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(configuration));
+            if (hasQuantState)
+            {
+                input.parseState.InitializeWithArguments(configurationArg, PinnedSpanByte.FromPinnedSpan(quantState));
+            }
+            else
+            {
+                input.parseState.InitializeWithArgument(configurationArg);
+            }
+            ReplicateImportOperation(key, ref input);
+        }
+
+        private static void ReplicateVectorSetImport(ReadOnlySpan<byte> key, uint termType, ReadOnlySpan<byte> id, ReadOnlySpan<byte> value)
+        {
+            var input = new StringInput(RespCommand.XVIMPORT);
+            input.parseState.InitializeWithArguments(
+                PinnedSpanByte.FromPinnedSpan(MemoryMarshal.AsBytes(MemoryMarshal.CreateSpan(ref termType, 1))),
+                PinnedSpanByte.FromPinnedSpan(id), PinnedSpanByte.FromPinnedSpan(value));
+            ReplicateImportOperation(key, ref input);
+        }
+
+        private static void ReplicateVectorSetFinishImport(ReadOnlySpan<byte> key)
+        {
+            var input = new StringInput(RespCommand.XVIMPORT);
+            ReplicateImportOperation(key, ref input);
+        }
+
+        internal void HandleVectorSetImportReplication(StorageSession session, Func<RespServerSession> obtainServerSession, ReadOnlySpan<byte> key, ref StringInput input)
+        {
+            if (!IsEnabled)
+            {
+                throw new GarnetException("Vector Set preview is disabled during import replay");
+            }
+
+            Debug.Assert(input.header.cmd is RespCommand.XVCREATE or RespCommand.XVIMPORT, "Only XVCREATE and XVIMPORT should be redirected here");
+
+            WaitForImportFinalization(key);
+
+            GarnetStatus status;
+            VectorManagerResult result;
+            ReadOnlySpan<byte> error;
+            if (input.header.cmd == RespCommand.XVCREATE)
+            {
+                if (input.parseState.Count is not (1 or 2) || input.parseState.GetArgSliceByRef(0).Length != 7 * sizeof(uint))
+                {
+                    throw new GarnetException("Invalid XVCREATE AOF payload");
+                }
+                var configuration = MemoryMarshal.Cast<byte, uint>(input.parseState.GetArgSliceByRef(0).ReadOnlySpan);
+                status = session.VectorSetCreate(PinnedSpanByte.FromPinnedSpan(key), (int)configuration[0], (int)configuration[1],
+                    (VectorQuantType)configuration[2], (int)configuration[3], (int)configuration[4], (VectorDistanceMetricType)configuration[5],
+                    input.parseState.Count == 2 ? input.parseState.GetArgSliceByRef(1) : null, configuration[6], out result, out error);
+            }
+            else if (input.parseState.Count == 0)
+            {
+                if (input.arg1 != 0)
+                {
+                    throw new GarnetException("Invalid XVIMPORT FINISH AOF payload");
+                }
+                status = session.VectorSetFinishImport(PinnedSpanByte.FromPinnedSpan(key), out result, out error);
+            }
+            else if (input.parseState.Count == 3 && input.parseState.GetArgSliceByRef(0).Length == sizeof(uint))
+            {
+                var termType = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).ReadOnlySpan);
+                var id = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                var value = input.parseState.GetArgSliceByRef(2).ReadOnlySpan;
+                var keyCopy = ArrayPool<byte>.Shared.Rent(key.Length).AsMemory(0, key.Length);
+                var idCopy = ArrayPool<byte>.Shared.Rent(id.Length).AsMemory(0, id.Length);
+                var valueCopy = ArrayPool<byte>.Shared.Rent(value.Length).AsMemory(0, value.Length);
+                key.CopyTo(keyCopy.Span);
+                id.CopyTo(idCopy.Span);
+                value.CopyTo(valueCopy.Span);
+                QueueVectorReplay(new(keyCopy, 0, 0, default, valueCopy, idCopy, default, 0, default, 0, default, termType), obtainServerSession);
+                return;
+            }
+            else
+            {
+                throw new GarnetException("Invalid XVIMPORT AOF payload");
+            }
+            if (status != GarnetStatus.OK || result != VectorManagerResult.OK)
+            {
+                throw new GarnetException($"Vector Set import replay failed: {status}, {result}, {Encoding.UTF8.GetString(error)}");
             }
         }
 
@@ -285,6 +389,8 @@ namespace Garnet.server
             ref StringInput input
         )
         {
+            WaitForImportFinalization(key);
+
             if (input.arg1 == MigrateElementKeyLogArg)
             {
                 // These are special, injecting by a PRIMARY applying migration operations
@@ -370,35 +476,6 @@ namespace Garnet.server
 
                 return;
             }
-            else if (input.arg1 == VectorManager.VADDSetFlagsArg)
-            {
-                // These are injected to update flags on a Vector Set
-                //
-                // Should be relatively rare, today they only happen on RENAMEs
-
-                // Flag updates need to wait for any VADDs to complete, in case they are modifying Vector Sets that are created due to a VADD
-                WaitForVectorOperationsToComplete();
-
-                var flag = MemoryMarshal.Cast<byte, VectorSetFlags>(input.parseState.GetArgSliceByRef(0))[0];
-
-                SessionParseState parse = default;
-                parse.InitializeWithArgument(PinnedSpanByte.FromPinnedSpan(key));
-
-                var readInput = new StringInput(RespCommand.VSIM, ref parse);
-
-                Span<byte> indexSpan = stackalloc byte[IndexSize];
-                using (ReadVectorIndex(currentSession, key, ref readInput, indexSpan, out var status))
-                {
-                    if (status != GarnetStatus.OK)
-                    {
-                        throw new GarnetException("Failed to apply flags to Vector Set, data loss is likely");
-                    }
-
-                    SetFlags(key, flag, ref currentSession.stringBasicContext);
-                }
-
-                return;
-            }
 
             Debug.Assert(input.arg1 == VADDAppendLogArg, "Unexpected operation during replication");
 
@@ -433,42 +510,47 @@ namespace Garnet.server
             var attributesBytes = ArrayPool<byte>.Shared.Rent(attributes.Length).AsMemory()[..attributes.Length];
             attributes.CopyTo(attributesBytes.Span);
 
-            // Spin up replication replay tasks on first use
-            if (replicationReplayStarted == 0)
+            QueueVectorReplay(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric), obtainServerSession);
+        }
+
+        private void QueueVectorReplay(VectorSetReplicationState state, Func<RespServerSession> obtainServerSession)
+        {
+            if (replicationReplayCancellation.IsCancellationRequested || replicationReplayStarted < 0)
             {
-                if (Interlocked.CompareExchange(ref replicationReplayStarted, 1, 0) == 0)
-                {
-                    StartReplicationReplayTasks(this, obtainServerSession);
-                }
+                throw new GarnetException("Vector replay is stopped");
+            }
+
+            if (replicationReplayStarted == 0 && Interlocked.CompareExchange(ref replicationReplayStarted, 1, 0) == 0)
+            {
+                StartReplicationReplayTasks(this, obtainServerSession);
             }
 
             // Place all potential updates to a given element (regardless of Vector Set) on the same task so we respect the AOF ordering
-            var replayChannelIndex = (int)((uint)SpanByteComparer.StaticGetHashCode64(element) % replicationReplayChannels.Length);
+
+            var replayChannelIndex = (int)((uint)SpanByteComparer.StaticGetHashCode64(state.Element.Span) % replicationReplayChannels.Length);
 
             // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
-
             replicationBlockEvent.Increment();
-            var queued = replicationReplayChannels[replayChannelIndex].Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric));
+            var queued = replicationReplayChannels[replayChannelIndex].Writer.TryWrite(state);
             if (!queued)
             {
                 replicationBlockEvent.Decrement();
+                ReleaseReplayEntry(state);
+
+                throw new GarnetException("Vector replay queue is closed");
             }
+
 
             static void StartReplicationReplayTasks(VectorManager self, Func<RespServerSession> obtainServerSession)
             {
-                if (self.dbId != 0)
-                {
-                    throw new GarnetException($"Unexpected DB ({self.dbId}) in cluster mode, expected 0");
-                }
-
-                self.logger?.LogInformation("Starting {numTasks} replication tasks for VADDs", self.replicationReplayTasks.Length);
+                self.logger?.LogInformation("Starting {numTasks} vector replication tasks", self.replicationReplayTasks.Length);
 
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
                 {
                     self.replicationReplayTasks[i] = StartReplicaTaskAsync(self, self.replicationReplayChannels[i].Reader, obtainServerSession);
                 }
 
-                static async Task StartReplicaTaskAsync(VectorManager self, ChannelReader<VADDReplicationState> reader, Func<RespServerSession> obtainServerSession)
+                static async Task StartReplicaTaskAsync(VectorManager self, ChannelReader<VectorSetReplicationState> reader, Func<RespServerSession> obtainServerSession)
                 {
                     // Force async
                     await Task.Yield();
@@ -491,19 +573,13 @@ namespace Garnet.server
                             {
                                 try
                                 {
-                                    try
-                                    {
-                                        ApplyVectorSetAdd(self, allocatedSession.storageSession, entry, ref reusableParseState);
-                                    }
-                                    finally
-                                    {
-                                        self.replicationBlockEvent.Decrement();
-                                    }
+                                    ApplyVectorSetReplay(self, allocatedSession.storageSession, entry, ref reusableParseState);
                                 }
-                                catch
+                                catch (Exception e)
                                 {
                                     self.logger?.LogCritical(
-                                        "Faulting ApplyVectorSetAdd ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}",
+                                        e,
+                                        "Faulting Vector Set Replication task ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}, {termType})",
                                         Encoding.UTF8.GetString(entry.Key.Span),
                                         entry.Dims,
                                         entry.ReduceDims,
@@ -513,10 +589,15 @@ namespace Garnet.server
                                         entry.Quantizer,
                                         entry.BuildExplorationFactor,
                                         Encoding.UTF8.GetString(entry.Attributes.Span),
-                                        entry.NumLinks
+                                        entry.NumLinks,
+                                        entry.ImportTermType
                                     );
-
                                     throw;
+                                }
+                                finally
+                                {
+                                    ReleaseReplayEntry(entry);
+                                    self.replicationBlockEvent.Decrement();
                                 }
                             }
                         }
@@ -533,11 +614,9 @@ namespace Garnet.server
                 }
             }
 
-            // Actually apply a replicated VADD
-            static unsafe void ApplyVectorSetAdd(VectorManager self, StorageSession storageSession, VADDReplicationState state, ref SessionParseState reusableParseState)
+            static unsafe void ApplyVectorSetReplay(VectorManager self, StorageSession storageSession, VectorSetReplicationState state, ref SessionParseState reusableParseState)
             {
-                var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric) = state;
-                try
+                var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric, importTermType) = state;
                 {
                     Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
 
@@ -550,6 +629,18 @@ namespace Garnet.server
                         var values = SpanByte.FromPinnedPointer(valuesPtr, valuesBytes.Length);
                         var element = SpanByte.FromPinnedPointer(elementPtr, elementBytes.Length);
                         var attributes = SpanByte.FromPinnedPointer(attributesPtr, attributesBytes.Length);
+
+                        if (importTermType.HasValue)
+                        {
+                            var importStatus = storageSession.VectorSetImport(PinnedSpanByte.FromPinnedSpan(key), (VectorImportTermType)importTermType.Value,
+                                PinnedSpanByte.FromPinnedSpan(element), PinnedSpanByte.FromPinnedSpan(values), out var importResult, out var error);
+                            if (importStatus != GarnetStatus.OK || importResult != VectorManagerResult.OK)
+                            {
+                                throw new GarnetException($"XVIMPORT replay failed: {importStatus}, {importResult}, {Encoding.UTF8.GetString(error)}");
+                            }
+
+                            return;
+                        }
 
                         var indexBytes = stackalloc byte[IndexSizeBytes];
 
@@ -571,11 +662,17 @@ namespace Garnet.server
                         // Equivalent to VectorStoreOps.VectorSetAdd
                         //
                         // We still need locking here because the replays may proceed in parallel
-
-                        // Don't need xxxWithElement lock here because we put all replays of the same _element_ name on the same task
-                        using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out var status))
+                        using (self.ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, DefaultStartPointId, out var status, out var importPending))
                         {
-                            Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is successful, so index must exist");
+                            if (status != GarnetStatus.OK)
+                            {
+                                throw new GarnetException($"Could not read Vector Set during VADD replay: {status}");
+                            }
+
+                            if (importPending)
+                            {
+                                throw new GarnetException("Vector Set is importing during VADD replay");
+                            }
 
                             var addRes = self.TryAdd(key, indexSpan, element, valueType, values, attributes, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
 
@@ -586,50 +683,43 @@ namespace Garnet.server
                         }
                     }
                 }
-                finally
+            }
+        }
+
+        private static void ReleaseReplayEntry(VectorSetReplicationState entry)
+        {
+            ReturnBuffer(entry.Key);
+            ReturnBuffer(entry.Values);
+            ReturnBuffer(entry.Element);
+            ReturnBuffer(entry.Attributes);
+
+            static void ReturnBuffer(Memory<byte> buffer)
+            {
+                if (MemoryMarshal.TryGetArray<byte>(buffer, out var array) && array.Array != null && array.Array.Length != 0)
                 {
-                    if (MemoryMarshal.TryGetArray<byte>(keyBytes, out var toFree))
-                    {
-                        ArrayPool<byte>.Shared.Return(toFree.Array);
-                    }
-
-                    if (MemoryMarshal.TryGetArray(valuesBytes, out toFree))
-                    {
-                        ArrayPool<byte>.Shared.Return(toFree.Array);
-                    }
-
-                    if (MemoryMarshal.TryGetArray(elementBytes, out toFree))
-                    {
-                        ArrayPool<byte>.Shared.Return(toFree.Array);
-                    }
-
-                    if (MemoryMarshal.TryGetArray(attributesBytes, out toFree))
-                    {
-                        ArrayPool<byte>.Shared.Return(toFree.Array);
-                    }
+                    ArrayPool<byte>.Shared.Return(array.Array);
                 }
             }
         }
 
         /// <summary>
-        /// Cancels replication tasks, resetting enough state that they can be resumed by a future call to <see cref="HandleVectorSetAddReplication"/>.
+        /// Clears replay state after lifecycle cancellation has stopped the workers.
         /// 
-        /// Returns the number of abanded VADDs.
+        /// Returns the number of abandoned vector operations.
         /// </summary>
         private async Task<int> ResetReplayTasksAsync()
         {
-            // Disposal path, has to be synchronous
             await Task.WhenAll(replicationReplayTasks).ConfigureAwait(false);
             Array.Fill(replicationReplayTasks, Task.CompletedTask);
-
             _ = Interlocked.Exchange(ref replicationReplayStarted, 0);
 
             var abandoned = 0;
             for (var i = 0; i < replicationReplayChannels.Length; i++)
             {
                 var replicationReplayChannelReader = replicationReplayChannels[i].Reader;
-                while (replicationReplayChannelReader.TryRead(out _))
+                while (replicationReplayChannelReader.TryRead(out var entry))
                 {
+                    ReleaseReplayEntry(entry);
                     replicationBlockEvent.Decrement();
                     abandoned++;
                 }
@@ -663,6 +753,8 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
+            WaitForImportFinalization(key);
+
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
 
@@ -670,13 +762,14 @@ namespace Garnet.server
             inputCopy.arg1 = default;
 
             // Don't need *WithElement lock here because removes won't be concurrent to adds or updates
-            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
+            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status, out var importPending))
             {
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
+                Debug.Assert(!importPending, "Replication should only occur when a remove is successful, so index should not be importing");
 
-                var addRes = TryRemove(indexSpan, element.ReadOnlySpan);
+                var remRes = TryRemove(indexSpan, element.ReadOnlySpan);
 
-                if (addRes != VectorManagerResult.OK)
+                if (remRes != VectorManagerResult.OK)
                 {
                     throw new GarnetException("Failed to remove from vector set index during AOF sync, this should never happen but will cause data loss if it does");
                 }
@@ -690,6 +783,8 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetSetAttributeReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
+            WaitForImportFinalization(key);
+
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
             var attribute = input.parseState.GetArgSliceByRef(1);
@@ -698,9 +793,10 @@ namespace Garnet.server
             inputCopy.arg1 = default;
 
             // Don't need *WithElement lock here because setattrs won't be concurrent to adds or updates
-            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status))
+            using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status, out var importPending))
             {
                 Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");
+                Debug.Assert(!importPending, "Replication should only occur when a setattr is successful, so index should not be importing");
 
                 if (!TrySetAttribute(indexSpan, element, attribute))
                 {
@@ -710,7 +806,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Wait until all ops passed to <see cref="HandleVectorSetAddReplication"/> have completed.
+        /// Wait until queued vector replays complete, propagating any worker failure.
         /// </summary>
         public void WaitForVectorOperationsToComplete()
         {

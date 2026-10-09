@@ -624,31 +624,31 @@ namespace Garnet.server
         #region Vector Sets
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card)
+        public GarnetStatus VectorSetCardinality(PinnedSpanByte key, out long card, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetCardinality(key, out card);
+            return garnetApi.VectorSetCardinality(key, out card, out importPending);
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element)
+        public GarnetStatus VectorSetIsMember(PinnedSpanByte key, PinnedSpanByte element, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetIsMember(key, element);
+            return garnetApi.VectorSetIsMember(key, element, out importPending);
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults)
+        public GarnetStatus VectorSetLinks(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory idResults, ref SpanByteAndMemory distanceResults, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetLinks(key, element, ref idResults, ref distanceResults);
+            return garnetApi.VectorSetLinks(key, element, ref idResults, ref distanceResults, out importPending);
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount)
+        public GarnetStatus VectorSetRandomMembers(PinnedSpanByte key, int count, ref SpanByteAndMemory idResults, out int actualCount, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetRandomMembers(key, count, ref idResults, out actualCount);
+            return garnetApi.VectorSetRandomMembers(key, count, ref idResults, out actualCount, out importPending);
         }
 
         /// <inheritdoc/>
@@ -666,38 +666,38 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances)
+        public GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetEmbedding(key, element, ref outputDistances);
+            return garnetApi.VectorSetEmbedding(key, element, ref outputDistances, out importPending);
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range)
+        public GarnetStatus VectorSetRawEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory quantizedValues, out VectorQuantType quantType, out double norm, out double? range, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetRawEmbedding(key, element, ref quantizedValues, out quantType, out norm, out range);
+            return garnetApi.VectorSetRawEmbedding(key, element, ref quantizedValues, out quantType, out norm, out range, out importPending);
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
+        public GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetDimensions(key, out dimensions);
+            return garnetApi.VectorSetDimensions(key, out dimensions, out importPending);
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
+        public GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
+            return garnetApi.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size, out importPending);
         }
 
         /// <inheritdoc/>
-        public GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
+        public GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes, out bool importPending)
         {
             garnetApi.WATCH(key, StoreType.Main);
-            return garnetApi.VectorSetGetAttribute(key, element, ref outputAttributes);
+            return garnetApi.VectorSetGetAttribute(key, element, ref outputAttributes, out importPending);
         }
 
         #endregion

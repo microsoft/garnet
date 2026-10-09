@@ -150,7 +150,9 @@ namespace Garnet.server
         BITOP_OR = 117,
         BITOP_XOR = 118,
         BITOP_NOT = 119,
-        BITOP_DIFF = 120, // Note: LastWriteCommand — append new write commands after this with the next value
+        BITOP_DIFF = 120,
+        XVCREATE = 121,
+        XVIMPORT = 122, // Note: LastWriteCommand -- append new write commands after this with the next value
 
         // Read-only commands. NEVER persisted (reads never enter the AOF), so these are
         // auto-numbered and may be renumbered/reordered freely across versions. They follow the
@@ -589,7 +591,7 @@ namespace Garnet.server
         // appended.
         internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        internal const RespCommand LastWriteCommand = RespCommand.BITOP_DIFF;
+        internal const RespCommand LastWriteCommand = RespCommand.XVIMPORT;
 
         // Data commands span writes + reads + scripts contiguously: [FirstDataCommand, LastDataCommand].
         internal const RespCommand FirstDataCommand = FirstWriteCommand;
@@ -643,7 +645,7 @@ namespace Garnet.server
         public static bool IsVectorSetCommand(this RespCommand cmd)
             => cmd is RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB
                or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS
-               or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
+               or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM or RespCommand.XVCREATE or RespCommand.XVIMPORT;
 
         public static bool IsDataCommand(this RespCommand cmd)
         {
@@ -722,7 +724,7 @@ namespace Garnet.server
         /// Returns true if this command can operate on a Vector Set.
         /// </summary>
         public static bool IsLegalOnVectorSet(this RespCommand cmd)
-        => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
+        => cmd is RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM or RespCommand.XVCREATE or RespCommand.XVIMPORT;
 
         /// <summary>
         /// Returns true if <paramref name="cmd"/> is allowed while a session is in

@@ -117,10 +117,10 @@ namespace Garnet.server
         /// 
         /// Operations that do not _update_ element specific data should use <see cref="ReadVectorIndex"/>.
         /// </summary>
-        internal VectorSetLock ReadVectorIndexWithElement(StorageSession storageSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        internal VectorSetLock ReadVectorIndexWithElement(StorageSession storageSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status, out bool importPending)
         {
-            var indexLock = ReadVectorIndex(storageSession, key, ref input, indexSpan, out status);
-            if (status != GarnetStatus.OK)
+            var indexLock = ReadVectorIndex(storageSession, key, ref input, indexSpan, out status, out importPending);
+            if (status != GarnetStatus.OK || importPending)
             {
                 return indexLock;
             }
@@ -137,8 +137,8 @@ namespace Garnet.server
         /// 
         /// If locking operation will update an element, use <see cref="ReadVectorIndexWithElement"/> instead.
         /// </summary>
-        internal VectorSetLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
-            => ReadVectorIndexCore(storageSession, key, ref input, indexSpan, nonBlocking: false, out status, out _);
+        internal VectorSetLock ReadVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status, out bool importPending)
+            => ReadVectorIndexCore(storageSession, key, ref input, indexSpan, nonBlocking: false, out status, out _, out importPending);
 
         /// <summary>
         /// Core of <see cref="ReadVectorIndex"/>. When <paramref name="nonBlocking"/> is <c>true</c>, the per-set
@@ -149,7 +149,7 @@ namespace Garnet.server
         /// their pool thread and retry asynchronously rather than consuming the pool and starving the disk-IO
         /// completion that releases the lock.
         /// </summary>
-        private VectorSetLock ReadVectorIndexCore(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, bool nonBlocking, out GarnetStatus status, out bool wouldBlock)
+        private VectorSetLock ReadVectorIndexCore(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, bool nonBlocking, out GarnetStatus status, out bool wouldBlock, out bool importPending)
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
@@ -180,6 +180,7 @@ namespace Garnet.server
                             {
                                 status = default;
                                 wouldBlock = true;
+                                importPending = false;
                                 return default;
                             }
                         }
@@ -199,6 +200,7 @@ namespace Garnet.server
                             {
                                 status = default;
                                 wouldBlock = true;
+                                importPending = false;
                                 return default;
                             }
                         }
@@ -225,6 +227,34 @@ namespace Garnet.server
                     if (readRes == GarnetStatus.OK)
                     {
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
+
+                        if (!needsRecreate)
+                        {
+                            if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
+                            {
+                                status = GarnetStatus.OK;
+                                importPending = false;
+                                return new(in vectorSetLocks, lockToken);
+                            }
+
+                            if (IsImportPending(indexSpan))
+                            {
+                                if (readCmd == RespCommand.VINFO)
+                                {
+                                    status = GarnetStatus.OK;
+                                    importPending = true;
+                                    return new(in vectorSetLocks, lockToken);
+                                }
+
+                                if (readCmd != RespCommand.XVIMPORT)
+                                {
+                                    status = GarnetStatus.WRONGTYPE;
+                                    importPending = true;
+                                    vectorSetLocks.ReleaseLock(lockToken);
+                                    return default;
+                                }
+                            }
+                        }
                     }
                     else
                     {
@@ -257,6 +287,7 @@ namespace Garnet.server
                                 // the caller yields its pool thread and retries.
                                 status = default;
                                 wouldBlock = true;
+                                importPending = false;
                                 return default;
                             }
 
@@ -285,7 +316,7 @@ namespace Garnet.server
                         bool requestQuantization;
                         unsafe
                         {
-                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, ReadStartPointId(indexSpan), out requestQuantization);
                         }
 
                         input.header.cmd = RespCommand.VADD;
@@ -331,7 +362,7 @@ namespace Garnet.server
                             // Post recreate the index might already need quantization - if so, queue it up
                             if (requestQuantization)
                             {
-                                _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                                _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                             }
 
                             // Try again so we don't hold an exclusive lock while performing a search
@@ -343,6 +374,7 @@ namespace Garnet.server
                         {
                             status = writeRes;
                             vectorSetLocks.ReleaseLock(lockToken);
+                            importPending = false;
 
                             return default;
                         }
@@ -351,11 +383,20 @@ namespace Garnet.server
                     {
                         status = readRes;
                         vectorSetLocks.ReleaseLock(lockToken);
+                        importPending = false;
 
                         return default;
                     }
 
+                    if (!lockToken.IsExclusive && !vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
+                    {
+                        vectorSetLocks.ReleaseLock(lockToken);
+                        takeExclusiveLock = true;
+                        continue;
+                    }
+
                     status = GarnetStatus.OK;
+                    importPending = false;
                     return new(in vectorSetLocks, lockToken);
                 }
             }
@@ -377,10 +418,10 @@ namespace Garnet.server
         /// 
         /// Operations that do not _update_ element specific data should use <see cref="ReadOrCreateVectorIndex"/>.
         /// </summary>
-        internal VectorSetLock ReadOrCreateVectorIndexWithElement(StorageSession storageSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        internal VectorSetLock ReadOrCreateVectorIndexWithElement(StorageSession storageSession, ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status, out bool importPending)
         {
-            var indexLock = ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, out status);
-            if (status != GarnetStatus.OK)
+            var indexLock = ReadOrCreateVectorIndex(storageSession, key, ref input, indexSpan, DefaultStartPointId, out status, out importPending);
+            if (status != GarnetStatus.OK || importPending)
             {
                 return indexLock;
             }
@@ -391,6 +432,8 @@ namespace Garnet.server
         /// <summary>
         /// Utility method that will read vector set index out, create one if it doesn't exist, or RECREATE one if needed.
         /// 
+        /// The <paramref name="demandCreate"/> allows fast failing if an index already exists under that key.
+        /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
         internal VectorSetLock ReadOrCreateVectorIndex(
@@ -398,7 +441,10 @@ namespace Garnet.server
             ReadOnlySpan<byte> key,
             ref StringInput input,
             scoped Span<byte> indexSpan,
-            out GarnetStatus status
+            uint startPointId,
+            out GarnetStatus status,
+            out bool importPending,
+            bool demandCreate = false
         )
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
@@ -446,6 +492,22 @@ namespace Garnet.server
                     bool needsRecreate;
                     if (readRes == GarnetStatus.OK)
                     {
+                        if (demandCreate)
+                        {
+                            // WRONGTYPE is close enough - we wanted an empty key and we found a non-empty key
+                            status = GarnetStatus.WRONGTYPE;
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            importPending = false;
+                            return default;
+                        }
+
+                        if (IsImportPending(indexSpan))
+                        {
+                            status = GarnetStatus.WRONGTYPE;
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            importPending = true;
+                            return default;
+                        }
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
                     }
                     else
@@ -477,6 +539,7 @@ namespace Garnet.server
                         ulong indexContext;
                         nint newlyAllocatedIndex;
                         bool requestQuantization;
+                        long expirationTicks = 0;
                         if (needsRecreate)
                         {
                             // If we need to recreate the index, BUT we haven't finished drop from the last time
@@ -499,7 +562,7 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                                newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, ReadStartPointId(indexSpan), out requestQuantization);
                             }
 
                             input.parseState.EnsureCapacity(12);
@@ -531,14 +594,17 @@ namespace Garnet.server
 
                             unsafe
                             {
-                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, out requestQuantization);
+                                newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr, FilterCallbackPtr, LogCallbackPtr, startPointId, out requestQuantization);
                             }
 
-                            input.parseState.EnsureCapacity(12);
+                            expirationTicks = input.parseState.Count >= 13 ? MemoryMarshal.Read<long>(input.parseState.GetArgSliceByRef(12).Span) : 0;
+                            input.parseState.EnsureCapacity(14);
 
                             // Save off for insertion
                             input.parseState.SetArgument(10, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1))));
                             input.parseState.SetArgument(11, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
+                            input.parseState.SetArgument(12, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<long, byte>(MemoryMarshal.CreateSpan(ref expirationTicks, 1))));
+                            input.parseState.SetArgument(13, PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref startPointId, 1))));
                         }
 
                         GarnetStatus writeRes;
@@ -582,17 +648,21 @@ namespace Garnet.server
                             // Post (re)create the index might already need quantization - if so, queue it up
                             if (requestQuantization)
                             {
-                                _ = quantizationChannel.Writer.TryWrite(new(key.ToArray(), QuantizationStep.BuildQuantizationTable, 0));
+                                _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                             }
 
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
                             vectorSetLocks.ReleaseLock(lockToken);
+
+                            // We created the index, so we no longer need to demand create
+                            demandCreate = false;
                             continue;
                         }
                         else
                         {
                             status = writeRes;
                             vectorSetLocks.ReleaseLock(lockToken);
+                            importPending = false;
 
                             return default;
                         }
@@ -600,12 +670,14 @@ namespace Garnet.server
                     else if (readRes != GarnetStatus.OK)
                     {
                         vectorSetLocks.ReleaseLock(lockToken);
-
+                        importPending = false;
                         status = readRes;
+
                         return default;
                     }
 
                     status = GarnetStatus.OK;
+                    importPending = false;
                     return new(in vectorSetLocks, lockToken);
                 }
             }
