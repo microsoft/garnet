@@ -9,9 +9,7 @@ namespace Tsavorite.core
     internal readonly struct SessionFunctionsWrapper<TKey, TInput, TOutput, TContext, TFunctions, TSessionLocker, TStoreFunctions, TAllocator>
             : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TSessionLocker : struct, ISessionLocker<TStoreFunctions, TAllocator>
         where TStoreFunctions : IStoreFunctions
@@ -107,18 +105,14 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostUpsertOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueSpan, ref upsertInfo, epochAccessor);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostUpsertOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueObject, ref upsertInfo, epochAccessor);
         #endregion Upserts
@@ -128,9 +122,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool NeedInitialUpdate<TOpKey>(TOpKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => _clientSession.functions.NeedInitialUpdate(key, ref input, ref output, ref rmwInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -211,9 +203,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostRMWOperation<TOpKey, TEpochAccessor>(TOpKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostRMWOperation(key, ref input, ref rmwInfo, epochAccessor);
 
@@ -246,9 +236,7 @@ namespace Tsavorite.core
 
         public void PostDeleteOperation<TOpKey, TEpochAccessor>(TOpKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
             => _clientSession.functions.PostDeleteOperation(key, ref deleteInfo, epochAccessor);
         #endregion Deletes
@@ -282,9 +270,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRMWInitialFieldInfo<TOpKey>(TOpKey key, ref TInput input)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => _clientSession.functions.GetRMWInitialFieldInfo(key, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -295,25 +281,19 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetUpsertFieldInfo<TOpKey>(TOpKey key, ReadOnlySpan<byte> value, ref TInput input)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetUpsertFieldInfo<TOpKey>(TOpKey key, IHeapObject value, ref TInput input)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => _clientSession.functions.GetUpsertFieldInfo(key, value, ref input);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetUpsertFieldInfo<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSourceLogRecord : ISourceLogRecord
             => _clientSession.functions.GetUpsertFieldInfo(key, in inputLogRecord, ref input);
 

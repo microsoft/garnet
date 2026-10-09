@@ -20,9 +20,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly bool NeedInitialUpdate<TKey>(TKey key, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             switch (input.header.cmd)
             {
@@ -1586,9 +1584,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         {
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF

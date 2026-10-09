@@ -264,9 +264,7 @@ namespace Tsavorite.core
         public unsafe void EnqueueChunkedSpan<THeader, TKey, TInput>(THeader header, int objectIdOffset, TKey key, ReadOnlySpan<byte> value, bool writeValue, ref TInput input, bool writeInput, IEpochAccessor epochAccessor, out long firstLogicalAddress)
             where THeader : unmanaged
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TInput : IStoreInput
         {
             var state = RentChunkWriteState();
@@ -323,9 +321,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public unsafe int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
             where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TInput : IStoreInput
         {
             var state = (ChunkWriteState)(object)context;

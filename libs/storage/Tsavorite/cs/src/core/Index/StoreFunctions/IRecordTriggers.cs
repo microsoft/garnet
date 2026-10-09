@@ -157,9 +157,7 @@ namespace Tsavorite.core
         void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                ref LogRecord dstLogRecord, long dstLogicalAddress)
             where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         { }
 
         /// <summary>
@@ -240,9 +238,7 @@ namespace Tsavorite.core
         public void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                      ref LogRecord dstLogRecord, long dstLogicalAddress)
             where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         { }
 
         /// <inheritdoc/>
@@ -315,9 +311,7 @@ namespace Tsavorite.core
         public void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                      ref LogRecord dstLogRecord, long dstLogicalAddress)
             where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         { }
 
         /// <inheritdoc/>

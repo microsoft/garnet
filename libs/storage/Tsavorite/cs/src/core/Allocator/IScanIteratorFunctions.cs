@@ -70,9 +70,7 @@ namespace Tsavorite.core
     {
         bool BeginGetPrevInMemory<TKey>(TKey key, out LogRecord logRecord, out bool continueOnDisk)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             ;
         void EndGetPrevInMemory();
 

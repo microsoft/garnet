@@ -21,11 +21,7 @@ namespace Garnet.server
             {
                 var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-#if NET9_0_OR_GREATER
                 if (setLookup.Add(member))
-#else
-                if (Set.Add(member.ToArray()))
-#endif
                 {
                     added++;
                     UpdateSize(member);
@@ -57,11 +53,7 @@ namespace Garnet.server
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             var member = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-#if NET9_0_OR_GREATER
             var isMember = setLookup.Contains(member);
-#else
-            var isMember = Set.Contains(member.ToArray());
-#endif
             writer.WriteInt32(isMember ? 1 : 0);
             output.result1 = 1;
         }
@@ -75,11 +67,7 @@ namespace Garnet.server
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var member = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
-#if NET9_0_OR_GREATER
                 var isMember = setLookup.Contains(member);
-#else
-                var isMember = Set.Contains(member.ToArray());
-#endif
                 writer.WriteInt32(isMember ? 1 : 0);
             }
 
@@ -94,11 +82,7 @@ namespace Garnet.server
             {
                 var field = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
 
-#if NET9_0_OR_GREATER
                 if (setLookup.Remove(field))
-#else
-                if (Set.Remove(field.ToArray()))
-#endif
                 {
                     removed++;
                     UpdateSize(field, false);

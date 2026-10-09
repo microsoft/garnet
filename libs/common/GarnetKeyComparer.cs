@@ -17,22 +17,16 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => StaticEquals(k1, k2);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetHashCode64<TKey>(TKey key)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         => StaticGetHashCode64(key);
 
         /// <summary>
@@ -41,13 +35,9 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool StaticEquals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             // Special cases for FixedSpanByteKey
             if (typeof(TFirstKey) == typeof(FixedSpanByteKey))
@@ -139,9 +129,7 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long StaticGetHashCode64<TKey>(TKey key)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             // Guarantee, irrespective of inlining decisions, that FixedSpanByteKey is special cased
             if (typeof(TKey) == typeof(FixedSpanByteKey))

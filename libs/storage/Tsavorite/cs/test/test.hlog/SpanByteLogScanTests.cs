@@ -22,21 +22,15 @@ namespace Tsavorite.test.spanbyte
 
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         // Force collisions to create a chain
         public readonly long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             long hash = SpanByteComparer.StaticGetHashCode64(k.KeyBytes);
             return mod > 0 ? hash % mod : hash;

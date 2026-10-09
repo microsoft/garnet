@@ -39,22 +39,16 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetKeyHashCode64<TKey>(TKey key)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => keyComparer.GetHashCode64(key);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool KeysEqual<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => keyComparer.Equals(k1, k2);
         #endregion Key Comparer
 
@@ -134,9 +128,7 @@ namespace Tsavorite.core
         public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                               ref LogRecord dstLogRecord, long dstLogicalAddress)
             where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => recordTriggers.PostCopyToTail(in srcLogRecord, srcLogicalAddress, ref dstLogRecord, dstLogicalAddress);
 
         /// <inheritdoc/>

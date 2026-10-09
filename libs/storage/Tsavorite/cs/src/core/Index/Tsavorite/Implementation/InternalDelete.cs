@@ -43,9 +43,7 @@ namespace Tsavorite.core
         internal OperationStatus InternalDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TContext userContext,
                             ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
@@ -203,9 +201,7 @@ namespace Tsavorite.core
         private OperationStatus CreateNewRecordDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref LogRecord srcLogRecord, ref OperationState<TInput, TOutput, TContext> operationState,
                 TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref DeleteInfo deleteInfo)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var sizeInfo = hlog.GetDeleteRecordSize(key);

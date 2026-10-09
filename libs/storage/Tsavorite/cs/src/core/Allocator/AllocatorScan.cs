@@ -38,9 +38,7 @@ namespace Tsavorite.core
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         internal bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, ref TScanFunctions scanFunctions)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TScanFunctions : IScanIteratorFunctions
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(key));
@@ -62,9 +60,7 @@ namespace Tsavorite.core
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         internal abstract bool IterateKeyVersions<TKey, TScanFunctions>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, long beginAddress, ref TScanFunctions scanFunctions)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
@@ -105,9 +101,7 @@ namespace Tsavorite.core
         /// </summary>
         internal bool IterateHashChain<TKey, TScanFunctions, TScanIterator>(TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, long beginAddress, ref TScanFunctions scanFunctions, TScanIterator iter)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TScanFunctions : IScanIteratorFunctions
             where TScanIterator : ITsavoriteScanIterator, IPushScanIterator
         {
@@ -168,9 +162,7 @@ namespace Tsavorite.core
         internal bool GetFromDiskAndPushToReader<TKey, TScanFunctions>(TKey key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
                 AsyncIOContextCompletionEvent completionEvent, out bool stop)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TScanFunctions : IScanIteratorFunctions
         {
             stop = false;

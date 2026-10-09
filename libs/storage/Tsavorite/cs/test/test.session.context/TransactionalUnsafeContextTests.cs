@@ -25,20 +25,14 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
         public bool Equals<TKeyFirst, TKeySecond>(TKeyFirst k1, TKeySecond k2)
             where TKeyFirst : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TKeySecond : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
         public long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             if (maxSleepMs > 0)
                 Thread.Sleep(rng.Next(maxSleepMs));

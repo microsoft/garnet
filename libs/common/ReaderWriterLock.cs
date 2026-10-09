@@ -18,11 +18,7 @@ namespace Garnet.common
             Writer
         }
 
-#if NET9_0_OR_GREATER
         readonly Lock mutex;
-#else
-        readonly object mutex;
-#endif
         readonly SemaphoreSlim readerSemaphore;
         readonly SemaphoreSlim writerSemaphore;
 

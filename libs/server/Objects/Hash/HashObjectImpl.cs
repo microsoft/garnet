@@ -10,11 +10,7 @@ using Garnet.common;
 using Tsavorite.core;
 
 
-#if NET9_0_OR_GREATER
 using ByteSpan = System.ReadOnlySpan<byte>;
-#else
-using ByteSpan = byte[];
-#endif
 
 namespace Garnet.server
 {
@@ -197,11 +193,7 @@ namespace Garnet.server
                 // Avoid multiple hash calculations by acquiring ref to the dictionary value.
                 // The ref is unsafe to read/write to if the hash dictionary is mutated.
                 ref var hashValueRef =
-#if NET9_0_OR_GREATER
                     ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
-#else
-                    ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
-#endif
 
                 if (!exists || IsExpired(key))
                 {
@@ -225,11 +217,7 @@ namespace Garnet.server
 
                     // To persist the key, if it has an expiration
                     if (HasExpirableItems &&
-#if NET9_0_OR_GREATER
                         expirationTimeSpanLookup.Remove(key))
-#else
-                        expirationTimes.Remove(key))
-#endif
                     {
                         HeapMemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                         CleanupExpirationStructuresIfEmpty();
@@ -305,11 +293,7 @@ namespace Garnet.server
             // Avoid multiple hash calculations by acquiring ref to the dictionary value.
             // The ref is unsafe to read/write to if the hash dictionary is mutated.
             ref var hashValueRef =
-#if NET9_0_OR_GREATER
                 ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
-#else
-                ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
-#endif
 
             if (!exists || IsExpired(key))
             {
@@ -380,11 +364,7 @@ namespace Garnet.server
             // Avoid multiple hash calculations by acquiring ref to the dictionary value.
             // The ref is unsafe to read/write to if the hash dictionary is mutated.
             ref var hashValueRef =
-#if NET9_0_OR_GREATER
                 ref CollectionsMarshal.GetValueRefOrAddDefault(hashSpanLookup, key, out var exists);
-#else
-                ref CollectionsMarshal.GetValueRefOrAddDefault(hash, key, out var exists);
-#endif
 
             if (!exists || IsExpired(key))
             {
@@ -443,11 +423,7 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters)
             {
-#if NET9_0_OR_GREATER
                 var result = SetExpiration(item.ReadOnlySpan, expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
-#else
-                var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
-#endif
                 writer.WriteInt32((int)result);
             }
 
@@ -475,11 +451,7 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters)
             {
-#if NET9_0_OR_GREATER
                 var result = GetExpiration(item.ReadOnlySpan);
-#else
-                var result = GetExpiration(item.ToArray());
-#endif
 
                 if (result >= 0)
                 {
@@ -519,11 +491,7 @@ namespace Garnet.server
 
             foreach (var item in input.parseState.Parameters)
             {
-#if NET9_0_OR_GREATER
                 var result = Persist(item.ReadOnlySpan);
-#else
-                var result = Persist(item.ToArray());
-#endif
                 writer.WriteInt32(result);
             }
 
@@ -534,11 +502,7 @@ namespace Garnet.server
         private static ByteSpan GetByteSpanFromInput(ref ObjectInput input, int index)
         {
             return input.parseState.GetArgSliceByRef(index)
-#if NET9_0_OR_GREATER
                 .ReadOnlySpan;
-#else
-                .ToArray();
-#endif
         }
     }
 }

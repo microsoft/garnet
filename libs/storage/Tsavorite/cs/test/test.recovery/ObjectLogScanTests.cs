@@ -21,21 +21,15 @@ namespace Tsavorite.test
 
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => k1.KeyBytes.AsRef<TestObjectKey>().key == k2.KeyBytes.AsRef<TestObjectKey>().key;
 
         // Force collisions to create a chain
         public long GetHashCode64<TKey>(TKey key)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             long hash = Utility.GetHashCode(key.KeyBytes.AsRef<TestObjectKey>().key);
             return mod > 0 ? hash % mod : hash;
