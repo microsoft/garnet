@@ -93,6 +93,22 @@ namespace Tsavorite.core
         /// <summary>Whether Snapshot coordination is currently installed. Checkpoint cleanup paths must leave this false.</summary>
         internal bool HasSnapshotFlushCoordination => Volatile.Read(ref snapshotFlushCoordination) is not null;
 
+        /// <summary>Whether an installed Snapshot has already written the page holding <paramref name="logicalAddress"/>, which
+        /// makes that record's <c>(v)</c> image durable and removes any need to cache it.</summary>
+        /// <remarks>
+        /// <see cref="SnapshotFlushCoordination.ReadOnlyFlushPageLimit"/> is the contiguous Snapshot-completion watermark, and it
+        /// is monotonic, so a stale read is necessarily smaller than the truth: this can report "not yet written" for a page that
+        /// has just been written (caching unnecessarily, which is safe) but can never report the reverse. Page granularity errs in
+        /// the same direction. A null coordination means no Snapshot is flushing live pages - FoldOver, or a Snapshot not yet
+        /// installed - so the answer is conservatively false and the caller caches as before.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool SnapshotHasFlushedPageFor(long logicalAddress)
+        {
+            var coordination = Volatile.Read(ref snapshotFlushCoordination);
+            return coordination is not null && GetPage(logicalAddress) < coordination.ReadOnlyFlushPageLimit;
+        }
+
         /// <summary>
         /// Close and remove <paramref name="coordination"/> if it is installed. A null value is a no-op so callers do
         /// not need to duplicate null checks on cleanup paths.

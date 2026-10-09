@@ -607,7 +607,12 @@ namespace Tsavorite.core
                         // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
                         if (srcLogRecord.DataHeader.ValueIsObject)
-                            srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord);
+                        {
+                            var needsSourceImage = isMemoryLogRecord
+                                && CheckpointNeedsSourceImage(stackCtx.recSrc.LogicalAddress, srcLogRecord.Info);
+                            if (srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord, needsSourceImage))
+                                hlogBase.NoteSerializedObjectCache(stackCtx.recSrc.LogicalAddress);
+                        }
                         var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                         if (pcuSuccess)
                         {

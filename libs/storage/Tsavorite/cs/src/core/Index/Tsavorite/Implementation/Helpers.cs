@@ -111,6 +111,38 @@ namespace Tsavorite.core
             => RevivificationManager.GetMinRevivifiableAddress(hlogBase.GetTailAddress(), hlogBase.ReadOnlyAddress);
 
         /// <summary>
+        /// Whether an ongoing checkpoint still needs the <c>(v)</c> image of a CopyUpdate source, so its bytes must be
+        /// cached before <c>PostCopyUpdater</c> can mutate the structures the new record shallow-copied from it.
+        /// </summary>
+        /// <remarks>
+        /// This only ever *narrows* caching within a checkpoint; the caller still requires the destination to be in the new
+        /// version before consulting it, so behaviour outside a checkpoint is unchanged.
+        /// <para>
+        /// A record an in-flight flush is reading is reported as needed regardless. Answering false releases the source value
+        /// (<see cref="RMWInfo.ClearSourceValueObject"/>), and disposing a value whose record image is mid-flush would persist
+        /// a torn or dangling record - the same hazard <c>OnDisposeSupersededSource</c> defers on the delete path.
+        /// </para>
+        /// <para>
+        /// The fuzzy-region test mirrors <see cref="IsFrozen{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>:
+        /// <see cref="RecordInfo.IsInNewVersion"/> is never cleared, so on its own it cannot distinguish a record written after
+        /// *this* checkpoint's transaction start from one left over from an earlier checkpoint; the fuzzy-region start is what
+        /// scopes it to the current one. The last test uses the Snapshot completion watermark: once the Snapshot has written
+        /// the page holding the source, the <c>(v)</c> image is durable and caching it again preserves nothing.
+        /// </para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool CheckpointNeedsSourceImage(long srcLogicalAddress, RecordInfo srcRecordInfo)
+        {
+            if (hlog.IsFrozenForFlush(srcLogicalAddress))
+                return true;
+
+            if (srcLogicalAddress > _hybridLogCheckpoint.info.fuzzyRegionStartAddress && srcRecordInfo.IsInNewVersion)
+                return false;
+
+            return !hlogBase.SnapshotHasFlushedPageFor(srcLogicalAddress);
+        }
+
+        /// <summary>
         /// Dispose the resources of an in-memory source record that is being deleted. If an ongoing checkpoint or an
         /// in-flight flush has frozen it, mark it for deferred disposal instead.
         /// </summary>

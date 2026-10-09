@@ -105,7 +105,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog)
+        public bool CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage)
         {
             // We'll want to clone the source object to the destination log record so PostCopyUpdater can modify it.
             // Note that this does a shallow copy of the object's internal structures (e.g. List<>), which means subsequent modifications of newValue
@@ -125,11 +125,12 @@ namespace Tsavorite.core
             //     driving its SerializationPhase and allocating serializedBytes would be pure waste;
             //   - ClearSourceValueObject is ignored by InternalRMW for non-memory sources anyway.
             if (!srcIsOnMemoryLog)
-                return;
+                return false;
 
-            // If we are not currently taking a checkpoint, we can delete the old version
-            // since the new version of the object is already created.
-            if (!dstLogRecord.Info.IsInNewVersion)
+            // No (v) image is at stake: either this is not a checkpoint's new-version record, or the checkpoint does not
+            // capture this source (it was written after the transaction start, or the Snapshot has already written its
+            // page). Release the old version rather than serializing it; the new version of the object already exists.
+            if (!dstLogRecord.Info.IsInNewVersion || !checkpointNeedsSourceImage)
             {
                 // Wait for any concurrent ongoing serialization of oldValue to complete
                 while (true)
@@ -143,7 +144,7 @@ namespace Tsavorite.core
                     _ = Thread.Yield();
                 }
                 rmwInfo.ClearSourceValueObject = true;
-                return;
+                return false;
             }
 
             // Create a serialized version for checkpoint version (v). This is only done for CopyUpdate during a checkpoint, to preserve the (v) data
@@ -180,6 +181,8 @@ namespace Tsavorite.core
 
                 _ = Thread.Yield();
             }
+
+            return true;
         }
 
         /// <inheritdoc />

@@ -97,10 +97,26 @@ namespace Garnet.test
     /// </para>
     ///
     /// <para>
-    /// A NOTE ON THE SILENT-EMPTY-STORE CASE. A FoldOver (log-only) checkpoint written with no real device, then
-    /// recovered, comes back empty with no error: FoldOver only shifts the read-only region to the tail and flushes it to
-    /// the log device, so a null device discards it and recovery reads nothing. That is a different failure from this
-    /// recipe, which uses a real device and a self-contained Snapshot, and it is why both sides here keep the tier ON.
+    /// WHY THE TIER IS ON, AND THE READABILITY MATRIX. Whether a cv7 checkpoint reads back without <c>--upgrade</c>
+    /// depends entirely on whether its objects were evicted to the object-log device, and the recovering store must be
+    /// configured with the same tier the generator used:
+    /// <list type="bullet">
+    /// <item>No tier (objects never left memory): SAVE writes a self-contained Snapshot with no segment file beside it.
+    /// Recovered with a matching null device it reads back WITHOUT <c>--upgrade</c> -- the reader selects the downlevel
+    /// decode for cv7 framing, and the upgrade only converts the object log so that LATER checkpoints are written
+    /// current-format. Recovered instead WITH a log device the same artifacts come back empty, silently, with nothing
+    /// logged at any level.</item>
+    /// <item>Tier on (objects evicted to the object-log device): the cv7 bytes live on that device in the dense
+    /// downlevel framing, and in-place recovery without <c>--upgrade</c> is refused by
+    /// <c>AllocatorBase.VerifyUpgradeCapability</c>, because converting them needs the separate upgrade device that only
+    /// an <c>--upgrade</c> run configures. The refusal throws under <c>FailOnRecoveryError</c> and is swallowed into an
+    /// empty store by default. This is the contract pinned by <see cref="GeneratedV7StoreRejectsRecoveryWithoutUpgrade"/>.</item>
+    /// <item>FoldOver (log-only) written with no real device: comes back empty for an unrelated reason -- FoldOver only
+    /// shifts the read-only region to the tail and flushes it to the log device, so a null device discards it and
+    /// recovery reads nothing.</item>
+    /// </list>
+    /// These tests keep the tier ON because the permutation sweep requires object-log content -- multi-page components
+    /// and a component crossing a 4 MB object-log segment -- which exists only once the objects are evicted to the device.
     /// </para>
     ///
     /// <para>
