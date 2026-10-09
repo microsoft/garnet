@@ -402,11 +402,12 @@ namespace Garnet.test.cluster
             _ = sync.Release(2);
             await writeTask.ConfigureAwait(false);
 
-            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
-
-            cts.CancelAfter(TimeSpan.FromSeconds(1));
-
+            // Replica VADD replay must finish before its AOF offset is published. Stop VSIM first so that
+            // replay is not competing with a tight search loop for the rest of the test timeout.
+            cts.Cancel();
             var (searchesWithNonZeroResults, searchesWithAttrs) = await readTask.ConfigureAwait(false);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults > 0);
 
@@ -649,14 +650,15 @@ namespace Garnet.test.cluster
             _ = sync.Release(secondaries.Length + 1);
             await writeTask.ConfigureAwait(false);
 
+            // Replica VADD replay must finish before its AOF offset is published. Stop VSIM first so that
+            // replay is not competing with a tight search loop for the rest of the test timeout.
+            cts.Cancel();
+            var searchesWithNonZeroResults = await Task.WhenAll(readTasks).ConfigureAwait(false);
+
             for (var secondaryIndex = SecondaryStartIndex; secondaryIndex <= SecondaryEndIndex; secondaryIndex++)
             {
                 context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, secondaryIndex);
             }
-
-            cts.CancelAfter(TimeSpan.FromSeconds(1));
-
-            var searchesWithNonZeroResults = await Task.WhenAll(readTasks).ConfigureAwait(false);
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults.All(static x => x > 0));
 
@@ -828,14 +830,15 @@ namespace Garnet.test.cluster
             await writeTask.ConfigureAwait(false);
             await deleteTask.ConfigureAwait(false);
 
+            // Replica VADD replay must finish before its AOF offset is published. Stop VSIM first so that
+            // replay is not competing with a tight search loop for the rest of the test timeout.
+            cts.Cancel();
+            var searchesWithNonZeroResults = await Task.WhenAll(readTasks).ConfigureAwait(false);
+
             for (var secondaryIndex = SecondaryStartIndex; secondaryIndex <= SecondaryEndIndex; secondaryIndex++)
             {
                 context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, secondaryIndex);
             }
-
-            cts.CancelAfter(TimeSpan.FromSeconds(1));
-
-            var searchesWithNonZeroResults = await Task.WhenAll(readTasks).ConfigureAwait(false);
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults.All(static x => x > 0));
 
