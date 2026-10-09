@@ -403,13 +403,21 @@ namespace Garnet.test
         /// blocking implementation pays for too - plus the suspension, which is the part under test.
         /// </para>
         /// <para>
-        /// Calibration: parking adds five async frames over a read that completes from memory. With each of
-        /// them pooled the measurement spans 191-213 B across runs; un-pooling any single frame moves it to
-        /// 296-317 B. The spread comes from the builders' per-thread caches, which miss whenever a completion
-        /// lands on a different thread, so the bound is set midway between the two ranges rather than tight
-        /// against either. All of those figures are from Linux, which is where the bound is enforced.
-        /// Dropping one <c>[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]</c>, or adding a
-        /// sixth frame that forgets one, fails here.
+        /// A park costs two things: the waiter it blocks on, and an async state machine for every frame it
+        /// suspends through. The waiter is reused - Tsavorite's <c>AsyncQueue</c> serves an uncancellable wait
+        /// from a single-waiter <c>IValueTaskSource</c> instead of allocating a semaphore waiter node - and
+        /// the two frames that remain between the session and that wait both pool their builders. The frames that used to sit between them were removed by having
+        /// them forward their inner <c>ValueTask</c> rather than await it.
+        /// </para>
+        /// <para>
+        /// Calibration: with the gate serving the wait the measurement spans 52-74 B across runs; routing the
+        /// same wait back through the semaphore moves it to 153-172 B. The bound sits midway between the two.
+        /// The spread within each range comes from the pooled builders' per-thread caches, which miss whenever
+        /// a completion lands on a different thread than the one that rented the box - which is most of the
+        /// time here, since suspending and resuming is the entire point. All of those figures are from Linux,
+        /// which is where the bound is enforced. Reverting the gate, dropping an
+        /// <c>[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]</c>, or adding a frame that
+        /// awaits where it could forward, fails here.
         /// </para>
         /// <para>
         /// This measures the server and nothing else, which is why
@@ -419,7 +427,7 @@ namespace Garnet.test
         /// </para>
         /// </remarks>
         [Test]
-        public void SuspendingOnADiskReadPoolsItsAsyncStateMachines()
+        public void SuspendingOnADiskReadReusesItsWaiterAndStateMachines()
         {
 #if DEBUG
             // Roslyn emits an async state machine as a class in Debug and as a struct in Release, so in Debug
@@ -462,8 +470,8 @@ namespace Garnet.test
             if (!OperatingSystem.IsLinux())
                 return;
 
-            ClassicAssert.Less(perRead, 255,
-                "A park on the pending-read path allocates a state machine: an [AsyncMethodBuilder] is missing.");
+            ClassicAssert.Less(perRead, 110,
+                "A park on the pending-read path allocates more than it should: the reusable waiter was bypassed or a frame lost its pooled builder.");
 #endif
         }
 
