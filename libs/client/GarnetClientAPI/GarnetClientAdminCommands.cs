@@ -39,7 +39,7 @@ namespace Garnet.client
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         public async Task<string> Info(InfoMetricsType infoSection = default, CancellationToken cancellationToken = default) =>
-            await ExecuteForStringResultWithCancellationAsync(INFO, InfoCommandUtils.GetRespFormattedInfoSection(infoSection), token: cancellationToken).ConfigureAwait(false);
+            await ExecuteForStringResultWithCancellationAsync(INFO, InfoCommandUtils.GetInfoSectionBytes(infoSection), token: cancellationToken).ConfigureAwait(false);
 
         /// <summary>
         /// Make the receiving node a replica of the node at the given endpoint

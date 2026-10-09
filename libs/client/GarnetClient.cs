@@ -90,14 +90,14 @@ namespace Garnet.client
         readonly int networkSendThrottleMax;
 
         /// <summary>
-        /// Username to authenticate client on server.
+        /// Username to authenticate client on server. Applied on each (re)connect.
         /// </summary>
-        readonly string authUsername = null;
+        string authUsername = null;
 
         /// <summary>
-        /// Password to authenticate client on server.
+        /// Password to authenticate client on server. Applied on each (re)connect.
         /// </summary>
-        readonly string authPassword = null;
+        string authPassword = null;
 
         /// <summary>
         /// Client name to send to server for identification.
@@ -268,6 +268,14 @@ namespace Garnet.client
         /// </summary>
         public async Task ConnectAsync(CancellationToken token = default)
         {
+            // A reconnect reuses this client's fixed completion ring, but the new NetworkWriter restarts
+            // task-id numbering at zero. Realign the completion cursor and per-slot state with that fresh
+            // numbering so replies on the new connection match the requests that produced them. On a first
+            // connect the ring is already at this baseline, so the reset is a no-op. Safe to run here because
+            // the previous connection (if any) has been torn down and drained, and no new request can be
+            // issued until this method starts the handler below.
+            ResetCompletionTracking();
+
             socket = await ConnectSendSocketAsync(timeoutMilliseconds, token).ConfigureAwait(false);
             networkWriter = new NetworkWriter(this, socket, bufferSize, sslOptions, out networkHandler, sendPageSize, networkSendThrottleMax, epoch, PoolOwnerType.GarnetClient, logger);
             await networkHandler.StartAsync(sslOptions, EndPoint.ToString(), token).ConfigureAwait(false);
@@ -513,6 +521,20 @@ namespace Garnet.client
             }
             catch { }
             await ConnectAsync(token).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Updates the credentials used to authenticate on each subsequent (re)connect. The new
+        /// credentials take effect on the next <see cref="ConnectAsync"/>/<see cref="ReconnectAsync"/>;
+        /// the current connection is not re-authenticated in place. Must be called while no (re)connect
+        /// is in progress, consistent with the rest of the (re)connect contract.
+        /// </summary>
+        /// <param name="username">Username to authenticate with, or null for password-only/no auth.</param>
+        /// <param name="password">Password to authenticate with, or null for none.</param>
+        public void UpdateAuth(string username, string password)
+        {
+            authUsername = username;
+            authPassword = password;
         }
 
         /// <summary>
@@ -1207,6 +1229,23 @@ namespace Garnet.client
         /// <inheritdoc />
         public void DisposeMessageConsumer(INetworkHandler session)
             => DrainOutstandingTasks();
+
+        /// <summary>
+        /// Resets the completion ring to its initial, empty baseline: the completion cursor returns to zero and
+        /// every slot is cleared and re-seeded with its starting task id. Called on (re)connect so the reused ring
+        /// is aligned with a fresh <see cref="NetworkWriter"/>, whose task-id numbering restarts at zero. Must only
+        /// run when no request is in flight (the prior connection has been drained and the new one is not yet
+        /// started); otherwise it would overwrite live slots.
+        /// </summary>
+        void ResetCompletionTracking()
+        {
+            tcsOffset = 0;
+            for (int i = 0; i < maxOutstandingTasks; i++)
+            {
+                tcsArray[i] = default;
+                tcsArray[i].nextTaskId = i;
+            }
+        }
 
         /// <summary>
         /// Completes every task that has been assigned a slot but not yet answered, so that no caller is
