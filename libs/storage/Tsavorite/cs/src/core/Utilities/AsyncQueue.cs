@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -180,6 +181,31 @@ namespace Tsavorite.core
             return new ValueTask(gate, version);
         }
 
+        /// <summary>
+        /// Registers <paramref name="resume"/> to be queued to the thread pool once an entry is
+        /// available, and returns true. Returns false when an entry is already available, in which
+        /// case nothing is registered and the caller proceeds on its own thread.
+        /// </summary>
+        /// <remarks>
+        /// The uncancellable wait with no task at all: a caller that is itself the unit of work to
+        /// resume registers that work item directly, so parking costs neither a task nor the thread
+        /// pool's wrapper for a delegate. Single-waiter, like <see cref="WaitForEntryAsync"/>.
+        /// </remarks>
+        public bool TryWaitForEntry(IThreadPoolWorkItem resume)
+        {
+            if (queue.Count > 0)
+                return false;
+
+            gate.ArmWorkItem(resume);
+            _ = Interlocked.Increment(ref gateWaiterCount);
+            // Pairs with the fence in Enqueue, as in WaitForEntryAsync: whichever of the producer
+            // and this thread wins Signal's CAS queues the work item exactly once.
+            Interlocked.MemoryBarrier();
+            if (queue.Count > 0)
+                gate.Signal();
+            return true;
+        }
+
         /// <remarks>
         /// Pools its state machine: this serves the cancellable callers, which are rare relative to
         /// the park on <see cref="WaitForEntryAsync"/>, and the returned <see cref="ValueTask"/> is
@@ -228,6 +254,7 @@ namespace Tsavorite.core
 
             private readonly AsyncQueue<T> owner;
             private ManualResetValueTaskSourceCore<bool> core = new() { RunContinuationsAsynchronously = true };
+            private IThreadPoolWorkItem workItem;
             private int state;
 
             internal WaitGate(AsyncQueue<T> owner) => this.owner = owner;
@@ -238,6 +265,9 @@ namespace Tsavorite.core
             /// </summary>
             internal short Arm()
             {
+                // Signal clears the work item before releasing the gate, and TryWaitForEntry only arms one
+                // when it is going to park, so a gate reaching here never still holds one.
+                Debug.Assert(workItem is null, "A spent work item outlived its park.");
                 core.Reset();
                 var version = core.Version;
                 Volatile.Write(ref state, Waiting);
@@ -245,12 +275,35 @@ namespace Tsavorite.core
             }
 
             /// <summary>
+            /// Readies the gate to queue <paramref name="resume"/> to the thread pool when the wait completes,
+            /// rather than completing a task. Called under the same single-waiter rule as <see cref="Arm"/>.
+            /// </summary>
+            internal void ArmWorkItem(IThreadPoolWorkItem resume)
+            {
+                workItem = resume;
+                Volatile.Write(ref state, Waiting);
+            }
+
+            /// <summary>
             /// Completes the current wait, if one is armed and has not already been completed.
             /// </summary>
             internal void Signal()
             {
-                if (Interlocked.CompareExchange(ref state, Signalled, Waiting) == Waiting)
+                if (Interlocked.CompareExchange(ref state, Signalled, Waiting) != Waiting)
+                    return;
+
+                var resume = workItem;
+                if (resume is null)
+                {
                     core.SetResult(true);
+                    return;
+                }
+
+                // Release the gate before handing the waiter off, so the resumed work item can arm it again.
+                workItem = null;
+                Volatile.Write(ref state, Idle);
+                _ = Interlocked.Decrement(ref owner.gateWaiterCount);
+                ThreadPool.UnsafeQueueUserWorkItem(resume, preferLocal: false);
             }
 
             public void GetResult(short token)

@@ -404,20 +404,32 @@ namespace Garnet.test
         /// </para>
         /// <para>
         /// A park costs two things: the waiter it blocks on, and an async state machine for every frame it
-        /// suspends through. The waiter is reused - Tsavorite's <c>AsyncQueue</c> serves an uncancellable wait
-        /// from a single-waiter <c>IValueTaskSource</c> instead of allocating a semaphore waiter node - and
-        /// the two frames that remain between the session and that wait both pool their builders. The frames that used to sit between them were removed by having
-        /// them forward their inner <c>ValueTask</c> rather than await it.
+        /// suspends through. Neither is allocated here. The waiter is reused - Tsavorite's <c>AsyncQueue</c>
+        /// serves an uncancellable wait from a single-waiter <c>IValueTaskSource</c> instead of allocating a
+        /// semaphore waiter node - and the frames between the session and that wait were replaced by a pooled
+        /// driver that is itself the <c>IThreadPoolWorkItem</c> the queue resumes, so the park produces no
+        /// task, no state machine and no thread-pool callback wrapper.
         /// </para>
         /// <para>
-        /// Calibration: with the gate serving the wait the measurement spans 52-74 B across runs; routing the
-        /// same wait back through the semaphore moves it to 153-172 B. The bound sits midway between the two.
-        /// The spread within each range comes from the pooled builders' per-thread caches, which miss whenever
-        /// a completion lands on a different thread than the one that rented the box - which is most of the
-        /// time here, since suspending and resuming is the entire point. All of those figures are from Linux,
-        /// which is where the bound is enforced. Reverting the gate, dropping an
-        /// <c>[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]</c>, or adding a frame that
-        /// awaits where it could forward, fails here.
+        /// Calibration, all from Linux, which is where the bound is enforced. The floor differs by runtime, so
+        /// each leg carries its own bound; both separate cleanly from the same set of regressions.
+        /// </para>
+        /// <list type="table">
+        /// <listheader><term>variant</term><description>net10.0 / net8.0</description></listheader>
+        /// <item><term>as written</term><description>23-34 B / 62-71 B</description></item>
+        /// <item><term>driver parked on the <c>ValueTask</c> wait instead of registering itself as a work
+        /// item, so completing a plain delegate makes the thread pool box it</term>
+        /// <description>53-65 B / 89-100 B</description></item>
+        /// <item><term>driver replaced by the two compiler-generated async frames it subsumes</term>
+        /// <description>52-74 B / not measured</description></item>
+        /// <item><term>uncancellable wait routed back through the semaphore</term>
+        /// <description>153-172 B / not measured</description></item>
+        /// </list>
+        /// <para>
+        /// Each bound sits above its own range and below every regression measured on that leg, so any one of
+        /// them fails here. The spread within a range is sampling noise plus the pooled builders' per-thread
+        /// caches, which miss whenever a completion lands on a different thread than the one that rented the
+        /// box - which is most of the time here, since suspending and resuming is the entire point.
         /// </para>
         /// <para>
         /// This measures the server and nothing else, which is why
@@ -464,14 +476,19 @@ namespace Garnet.test
 
             // Asserted only where the bound was calibrated. The pooled builders cache per thread, so the hit
             // rate - and with it the measurement - depends on how the platform schedules completions, and the
-            // ranges below were measured on Linux. Detection power is unaffected: a dropped attribute is
-            // dropped on every platform, so the Linux legs catch it. Other platforms still print the value,
-            // which is what a future calibration would start from.
+            // ranges above were measured on Linux. Detection power is unaffected: a regression is a regression
+            // on every platform, so the Linux legs catch it. Other platforms still print the value, which is
+            // what a future calibration would start from.
             if (!OperatingSystem.IsLinux())
                 return;
 
-            ClassicAssert.Less(perRead, 110,
-                "A park on the pending-read path allocates more than it should: the reusable waiter was bypassed or a frame lost its pooled builder.");
+#if NET8_0
+            const int Bound = 80;
+#else
+            const int Bound = 45;
+#endif
+            ClassicAssert.Less(perRead, Bound,
+                "A park on the pending-read path allocates more than it should: the reusable waiter was bypassed, the pooled driver was replaced by async frames, or the driver stopped parking as a work item.");
 #endif
         }
 
