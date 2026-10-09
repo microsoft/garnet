@@ -412,6 +412,8 @@ namespace Garnet.server
                 public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
+                    // You CANNOT touch any values safely, as this may be invoked without locks if run in a transaction
+
                     cursorRecordResult = CursorRecordResult.Skip;
                     if (!IsInternalRecord(in logRecord) && !CheckExpiry(in logRecord))
                     {
