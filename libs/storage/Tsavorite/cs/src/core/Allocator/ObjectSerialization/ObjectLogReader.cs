@@ -680,10 +680,16 @@ namespace Tsavorite.core
                 var continues = (raw & unchecked((uint)ChunkedRecordConstants.ContinuationFlag)) != 0;
                 if (objectChunkRemaining > 0)
                 {
-                    var chunkStart = recordStartPosition;
-                    chunkStart.Advance(recordStreamConsumed);
-                    if ((ulong)objectChunkRemaining > chunkStart.RemainingSizeInSegment)
-                        throw new TsavoriteException($"Object chunk length {objectChunkRemaining} crosses segment {chunkStart.SegmentId} from offset {chunkStart.Offset}");
+                    // The writer cuts every object chunk at a write-buffer fill, so a chunk's data never exceeds one write buffer less its
+                    // header. That buffer is the minimum object-log segment size, so a larger-configured segment -- or a snapshot-recovery
+                    // verbatim copy that relocates a record to a different offset-within-segment than it was written at -- can legitimately
+                    // frame a full-size chunk whose data then spans a segment boundary. The buffered reader serves that data across ring
+                    // buffers and segments (see ReadRawStream), so a segment-crossing object chunk is not itself corruption; only a length
+                    // larger than any write buffer could have produced is. A length that runs past the durable tail is caught separately by
+                    // SetDynamicRecordReadThrough below.
+                    const uint MaxObjectChunkDataLength = (uint)(IStreamBuffer.BufferSize - ChunkHeader.TotalSize);
+                    if (objectChunkRemaining > MaxObjectChunkDataLength)
+                        throw new TsavoriteException($"Object chunk length {objectChunkRemaining} exceeds the maximum object-chunk data length {MaxObjectChunkDataLength}");
                     // Remember this chunk's continuation flag so copy-to-end mode can stop after the final (non-continuing) data chunk.
                     objectCurrentChunkContinues = continues;
                     var chunkEnd = recordStreamConsumed + (ulong)objectChunkRemaining;

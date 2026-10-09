@@ -338,6 +338,16 @@ namespace Tsavorite.core
                         if ((ulong)chunk == remainingInSegment)
                             flushBuffers.filePosition.AdvanceToNextSegment();
                     }
+
+                    // The DMA issued device writes that advanced filePosition.Offset without passing through the write buffer's position
+                    // accounting, so the current buffer's endPosition -- clamped to the segment boundary when it was initialized, at the
+                    // pre-DMA Offset -- is now stale. The sector-align flush above left the buffer empty (currentPosition ==
+                    // flushedUntilPosition), so move to a freshly initialized buffer whose endPosition reflects the post-DMA segment
+                    // remainder. Without this the end fragment and every subsequent record sharing this buffer accumulate against the stale
+                    // bound, and a later flush can exceed the object-log segment (Debug assert in DiskWriteBuffer.FlushToDevice; a release
+                    // build would issue a single cross-segment device write and corrupt the log). This manifests when the segment size is
+                    // close to the buffer size (e.g. the 4 MB minimum), where the stale bound outruns the true remaining-in-segment.
+                    writeBuffer = flushBuffers.MoveToAndInitializeNextBuffer();
                 }
 
                 var written = sourceFragment + dmaTotal;
