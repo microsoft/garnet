@@ -52,6 +52,7 @@ namespace Garnet.common
         /// High-water mark of <see cref="liveBytes"/>.
         /// </summary>
         long peakLiveBytes;
+
         /// <summary>
         /// This is the maximum allocated buffer size that the instance can support based on the number of pool levels.
         /// </summary>
@@ -67,6 +68,11 @@ namespace Garnet.common
         /// Min allocation size
         /// </summary>
         public int MinAllocationSize => minAllocationSize;
+
+        /// <summary>
+        /// Maximum allocation size retained by this pool.
+        /// </summary>
+        public int MaxAllocationSize => maxAllocationSize;
 
         /// <summary>
         /// Process-wide live-buffer budget this pool participates in. Never null; disabled for pools that
@@ -190,27 +196,33 @@ namespace Garnet.common
             {
                 if (pool[level] != null)
                 {
-                    if (Interlocked.Add(ref pooledBytes, length) <= maxPooledBytes)
+                    var pooledBytesReserved = TryReservePooledBytes(length);
+                    if (pooledBytesReserved && Interlocked.Increment(ref pool[level].size) <= maxEntriesPerLevel)
                     {
-                        if (Interlocked.Increment(ref pool[level].size) <= maxEntriesPerLevel)
-                        {
-                            Array.Clear(buffer.entry, 0, length);
-                            pool[level].items.Enqueue(buffer);
-                        }
-                        else
-                        {
-                            Interlocked.Decrement(ref pool[level].size);
-                            _ = Interlocked.Add(ref pooledBytes, -length);
-                        }
+                        Array.Clear(buffer.entry, 0, length);
+                        pool[level].items.Enqueue(buffer);
                     }
-                    else
+                    else if (pooledBytesReserved)
                     {
+                        Interlocked.Decrement(ref pool[level].size);
                         _ = Interlocked.Add(ref pooledBytes, -length);
                     }
                 }
             }
             Debug.Assert(totalReferences > 0, $"Return with {totalReferences}");
             Interlocked.Decrement(ref totalReferences);
+        }
+
+        bool TryReservePooledBytes(int length)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref pooledBytes);
+                if (current > maxPooledBytes - length)
+                    return false;
+                if (Interlocked.CompareExchange(ref pooledBytes, current + length, current) == current)
+                    return true;
+            }
         }
 
         /// <summary>

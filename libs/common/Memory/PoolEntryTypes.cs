@@ -34,6 +34,9 @@ namespace Garnet.common
 
         /// <summary>Shrunk transport receive buffer for TLS (NetworkHandler).</summary>
         ShrinkTransportReceiveBuffer = 8,
+
+        /// <summary>Out-of-line command payload (NetworkWriter).</summary>
+        OutOfLinePayload = 9,
     }
 
     /// <summary>

@@ -514,14 +514,13 @@ namespace Garnet.cluster
             // Expecting exactly 2 arguments
             if (parseState.Count != 2)
             {
-                invalidParameters = true;
+                logger?.LogError("Cluster publish was rejected because it expected 2 arguments but received {argumentCount}", parseState.Count);
                 return true;
             }
 
             if (clusterProvider.storeWrapper.subscribeBroker == null)
             {
-                while (!RespWriteUtils.TryWriteError("ERR PUBLISH is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                    SendAndReset();
+                logger?.LogError("Cluster publish was rejected because pub/sub is disabled; enable it with --pubsub");
                 return true;
             }
 

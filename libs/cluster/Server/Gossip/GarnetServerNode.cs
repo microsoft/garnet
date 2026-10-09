@@ -16,13 +16,19 @@ namespace Garnet.cluster
     internal sealed class GarnetServerNode
     {
         readonly ClusterProvider clusterProvider;
-        readonly GarnetClient gc;
+        readonly SslClientAuthenticationOptions tlsOptions;
+        readonly LightEpoch epoch;
+        GarnetLightClient gc;
+        ClusterAuthContainer clientAuth;
+        readonly ExponentialBackoff backoff;
+        readonly object initializationSync = new();
 
         long gossipSend;
         long gossipRecv;
         CancellationTokenSource cts = new();
         CancellationTokenSource internalCts = new();
-        volatile int initialized = 0;
+        volatile bool initialized;
+        Task<bool> initializationTask;
         readonly ILogger logger = null;
         SingleWriterMultiReaderLock dispose;
 
@@ -42,9 +48,9 @@ namespace Garnet.cluster
         public long GossipSend => gossipSend;
 
         /// <summary>
-        /// GarnetClient connection
+        /// Whether the client connection has been initialized successfully.
         /// </summary>
-        public GarnetClient Client => gc;
+        public bool IsInitialized => initialized;
 
         /// <summary>
         /// NodeId of remote node
@@ -57,14 +63,36 @@ namespace Garnet.cluster
         public EndPoint EndPoint;
 
         /// <summary>
-        /// Default send page size for GarnetClient
+        /// Default size of each request-ring page. In out-of-line mode, each page stores
+        /// fixed-size payload descriptors rather than payload bytes, so this controls how many
+        /// requests can be queued before page reuse must wait for an earlier flush to complete.
         /// </summary>
-        const int defaultSendPageSize = 1 << 17;
+        const int defaultSendPageSize = 1 << 12;
 
         /// <summary>
-        /// Default max outstanding tasks for GarnetClient
+        /// Default network send buffer size. Also bounds the maximum request chunk sent in one transport operation.
         /// </summary>
-        const int defaultMaxOutstandingTask = 8;
+        const int defaultNetworkSendBufferSize = 1 << 13;
+
+        /// <summary>
+        /// Default number of pages in the request ring.
+        /// </summary>
+        const int defaultRequestPageCount = 2;
+
+        /// <summary>
+        /// Default number of response-expecting requests whose replies have not yet been consumed.
+        /// </summary>
+        const int defaultMaxOutstandingCompletions = 1 << 4;
+
+        /// <summary>
+        /// Default number of transport sends that may be in progress concurrently.
+        /// </summary>
+        const int defaultMaxConcurrentNetworkSends = 8;
+
+        /// <summary>
+        /// Default cap on pooled bytes reserved by out-of-line gossip requests awaiting local send completion.
+        /// </summary>
+        const long defaultMaxOutOfLineRentedBytes = 64L << 20;
 
         internal static int GetClientTimeoutMilliseconds(int clusterTimeoutSeconds)
             => clusterTimeoutSeconds <= 0 ? 0 : (int)Math.Min((long)clusterTimeoutSeconds * 1000, int.MaxValue);
@@ -75,42 +103,109 @@ namespace Garnet.cluster
         /// <param name="clusterProvider"></param>
         /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
+        /// <param name="epoch"></param>
         /// <param name="logger"></param>
         public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, LightEpoch epoch, ILogger logger = null)
         {
-            var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
+            this.tlsOptions = tlsOptions;
+            this.epoch = epoch;
             this.EndPoint = endpoint;
-            this.gc = new GarnetClient(
-                endpoint,
-                tlsOptions,
-                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
-                maxOutstandingTasks: defaultMaxOutstandingTask,
-                timeoutMilliseconds: GetClientTimeoutMilliseconds(
-                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
-                authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
-                authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
-                epoch: epoch,
-                clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
-                logger: logger);
-            this.initialized = 0;
             this.logger = logger;
+            this.clientAuth = clusterProvider.ClusterAuth;
+            this.gc = CreateGarnetClient(clientAuth);
+            this.backoff = new ExponentialBackoff();
+            initialized = false;
             this.gossipRecv = 0;
             this.gossipSend = 0;
             ResetCts();
         }
 
-        /// <summary>
-        /// Initialize connection and cancellation tokens.
-        /// Initialization is performed only once
-        /// </summary>
-        public ValueTask InitializeAsync()
-        {
-            // Ensure initialize executes only once
-            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return default;
+        GarnetLightClient CreateGarnetClient(ClusterAuthContainer auth)
+            => new(
+                EndPoint,
+                tlsOptions,
+                authUsername: auth.ClusterUsername,
+                authPassword: auth.ClusterPassword,
+                clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
+                networkWriterOptions: new LightNetworkWriterOptions(
+                    networkBufferSizeBytes: defaultNetworkSendBufferSize,
+                    requestPageSizeBytes: defaultSendPageSize,
+                    requestPageCount: defaultRequestPageCount,
+                    maxOutstandingRequests: defaultMaxOutstandingCompletions,
+                    maxOutstandingCompletions: defaultMaxOutstandingCompletions,
+                    maxConcurrentNetworkSends: defaultMaxConcurrentNetworkSends,
+                    maxOutOfLineRentedBytes: defaultMaxOutOfLineRentedBytes,
+                    flushResultAllocationMode: FlushResultAllocationMode.Buffered),
+                timeoutMilliseconds: GetClientTimeoutMilliseconds(
+                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
+                epoch: epoch,
+                logger: logger);
 
-            cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            return new(gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token));
+        /// <summary>
+        /// Attempts to initialize the connection when its reconnect backoff permits.
+        /// </summary>
+        /// <returns>True when the connection is initialized; otherwise false.</returns>
+        public ValueTask<bool> TryInitializeAsync()
+        {
+            lock (initializationSync)
+            {
+                if (initialized)
+                    return new(true);
+
+                if (initializationTask is { IsCompleted: false })
+                    return new(initializationTask);
+
+                if (!backoff.CanAttempt())
+                    return new(false);
+
+                RefreshClientAuthentication();
+                initializationTask = InitializeCoreAsync(Volatile.Read(ref gc));
+                return new(initializationTask);
+            }
+
+            async Task<bool> InitializeCoreAsync(GarnetLightClient client)
+            {
+                try
+                {
+                    cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
+                    await client.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                    backoff.Reset();
+                    initialized = true;
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    initialized = false;
+                    ResetCts();
+                    var retryDelay = backoff.RecordFailure();
+                    logger?.LogWarning(ex, "Could not establish connection to remote node [{nodeId} {endpoint}]; retrying in {retryDelay}",
+                        NodeId, EndPoint, retryDelay);
+                    return false;
+                }
+            }
+
+            void RefreshClientAuthentication()
+            {
+                var currentAuth = clusterProvider.ClusterAuth;
+                if (ReferenceEquals(currentAuth, clientAuth))
+                    return;
+
+                clientAuth = currentAuth;
+                Volatile.Read(ref gc)?.UpdateAuth(currentAuth.ClusterUsername, currentAuth.ClusterPassword);
+            }
+        }
+
+        /// <summary>
+        /// Records a connection failure and returns the delay before reconnection may be attempted.
+        /// </summary>
+        public TimeSpan RecordConnectionFailure()
+        {
+            lock (initializationSync)
+            {
+                initialized = false;
+                return backoff.RecordFailure();
+            }
         }
 
         public void Dispose()
@@ -128,9 +223,20 @@ namespace Garnet.cluster
                 cts?.Dispose();
                 internalCts?.Cancel();
                 internalCts?.Dispose();
-                gc?.Dispose();
+                Volatile.Read(ref gc)?.Dispose();
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Gets current and configured-maximum accounted memory for the active client.
+        /// </summary>
+        public (long ActiveMemoryUsageBytes, long MaxMemoryUsageBytes) GetClientMemoryUsage()
+        {
+            var client = Volatile.Read(ref gc);
+            return client == null
+                ? default
+                : (client.ActiveMemoryUsageBytes, client.MaxMemoryUsageBytes);
         }
 
         void UpdateGossipSend() => this.gossipSend = DateTimeOffset.UtcNow.Ticks;
@@ -188,7 +294,8 @@ namespace Garnet.cluster
         {
             try
             {
-                using var resp = await gc.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                var client = Volatile.Read(ref gc);
+                using var resp = await client.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
@@ -213,6 +320,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, "GOSSIP faulted processing response");
+                throw;
             }
         }
 
@@ -224,7 +332,8 @@ namespace Garnet.cluster
         public Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            return gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            var client = Volatile.Read(ref gc);
+            return client.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
         }
 
         /// <summary>
@@ -279,12 +388,13 @@ namespace Garnet.cluster
         {
             var nowTicks = DateTimeOffset.UtcNow.Ticks;
             var last_io_seconds = gossipRecv == 0 ? 0 : (int)TimeSpan.FromTicks(nowTicks - gossipSend).TotalSeconds;
+            var client = Volatile.Read(ref gc);
 
             return new ConnectionInfo()
             {
                 ping = gossipSend,
                 pong = gossipRecv,
-                connected = gc.IsConnected,
+                connected = client?.IsConnected ?? false,
                 lastIO = last_io_seconds,
             };
         }
@@ -308,12 +418,13 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                if (!gc.IsConnected)
+                var client = Volatile.Read(ref gc);
+                if (client == null || !client.IsConnected)
                 {
                     logger?.LogError($"{nameof(TryClusterPublish)}: client not connected; skipping publish forwarding");
                     return;
                 }
-                gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
+                client.ExecuteClusterPublishNoResponse(cmd, channel, message);
             }
             finally
             {

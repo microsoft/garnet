@@ -17,26 +17,19 @@ namespace Garnet.cluster
         /// <summary>
         /// Connection to primary if reachable
         /// </summary>
-        GarnetClient primaryClient = null;
-
-        /// <summary>
-        /// Send page size for GarnetClient
-        /// </summary>
-        const int sendPageSize = 1 << 17;
+        GarnetLightClient primaryClient = null;
 
         /// <summary>
         /// Helper method to establish connection towards remote node
         /// </summary>
         /// <param name="nodeId">Id of node to create connection for</param>
         /// <returns></returns>
-        private async Task<GarnetClient> CreateConnectionAsync(string nodeId)
+        private async Task<GarnetLightClient> CreateConnectionAsync(string nodeId)
         {
             var endpoint = oldConfig.GetEndpointFromNodeId(nodeId);
-            var client = new GarnetClient(
+            var client = new GarnetLightClient(
                 endpoint,
                 clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                sendPageSize: sendPageSize,
-                maxOutstandingTasks: 8,
                 authUsername: clusterProvider.ClusterUsername,
                 authPassword: clusterProvider.ClusterPassword, epoch: epoch, logger: logger);
 
@@ -60,7 +53,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeId"></param>
         /// <returns></returns>
-        private Task<GarnetClient> GetConnectionAsync(string nodeId)
+        private Task<GarnetLightClient> GetConnectionAsync(string nodeId)
             => CreateConnectionAsync(nodeId);
 
         /// <summary>
