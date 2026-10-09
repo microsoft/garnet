@@ -54,8 +54,19 @@ namespace Garnet.client
         readonly CancellationTokenSource timeoutCheckerCts;
         readonly int timeoutMilliseconds;
 
-        readonly string authUsername = null;
-        readonly string authPassword = null;
+        sealed class Authentication
+        {
+            internal readonly string Username;
+            internal readonly string Password;
+
+            internal Authentication(string username, string password)
+            {
+                Username = username;
+                Password = password;
+            }
+        }
+
+        Authentication authentication;
         readonly Memory<byte>[] clientName = null;
 
         static readonly Exception disposeException = new GarnetClientDisposedException();
@@ -137,8 +148,7 @@ namespace Garnet.client
         {
             EndPoint = endpoint;
             var options = networkWriterOptions ?? LightNetworkWriterOptions.Default;
-            this.authUsername = authUsername;
-            this.authPassword = authPassword;
+            this.authentication = new(authUsername, authPassword);
             this.clientName = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
             if (options.MaxOutstandingCompletions > PageOffset.kTaskMask + 1)
@@ -199,12 +209,13 @@ namespace Garnet.client
             if (timeoutMilliseconds > 0)
                 _ = Task.Run(TimeoutChecker);
 
+            var authentication = Volatile.Read(ref this.authentication);
             try
             {
-                if (authUsername != null)
-                    await ExecuteForStringResultWithCancellationAsync(AUTH, [authUsername, authPassword ?? ""], token).ConfigureAwait(false);
-                else if (authPassword != null)
-                    await ExecuteForStringResultWithCancellationAsync(AUTH, [authPassword], token).ConfigureAwait(false);
+                if (authentication.Username != null)
+                    await ExecuteForStringResultWithCancellationAsync(AUTH, [authentication.Username, authentication.Password ?? ""], token).ConfigureAwait(false);
+                else if (authentication.Password != null)
+                    await ExecuteForStringResultWithCancellationAsync(AUTH, [authentication.Password], token).ConfigureAwait(false);
             }
             catch (Exception e)
             {
@@ -229,10 +240,11 @@ namespace Garnet.client
 
         void RunConnectHandshake()
         {
+            var authentication = Volatile.Read(ref this.authentication);
             try
             {
                 Task authTask =
-                    (authUsername, authPassword) switch
+                    (authentication.Username, authentication.Password) switch
                     {
                         (string u, string p) => ExecuteForStringResultWithCancellationAsync(AUTH, [u, p]),
                         (string u, null) => ExecuteForStringResultWithCancellationAsync(AUTH, [u, ""]),
@@ -279,6 +291,18 @@ namespace Garnet.client
             catch { }
             await ConnectAsync(token).ConfigureAwait(false);
         }
+
+        /// <summary>
+        /// Updates the credentials used to authenticate on each subsequent connection.
+        /// </summary>
+        /// <param name="username">Username to authenticate with, or null for password-only or no authentication.</param>
+        /// <param name="password">Password to authenticate with, or null for no authentication.</param>
+        /// <remarks>
+        /// The new credentials take effect on the next connection or reconnection. The current connection is not
+        /// re-authenticated.
+        /// </remarks>
+        public void UpdateAuth(string username, string password)
+            => Volatile.Write(ref authentication, new(username, password));
 
         /// <summary>
         /// Establish a connected send socket to <see cref="EndPoint"/>, trying every DNS entry when a

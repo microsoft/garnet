@@ -229,11 +229,12 @@ namespace Garnet.test
         void CompleteSend(object context)
         {
             var result = (DuplexOperationAsyncFlushResult<TestRequest>)context;
+            var finalChunk = Volatile.Read(ref result.remainingChunks) == 1;
             DuplexOperationAsyncFlushResult<TestRequest>.CompleteChunk(context);
 
-            // CompleteChunk decrements remainingChunks; the final chunk of a request drives it to zero. Because
-            // a context's chunks are sequential, exactly the last-chunk sender observes zero and finalizes.
-            if (Volatile.Read(ref result.remainingChunks) == 0)
+            // Capture final-chunk ownership before completion, because completion may release the record slot and
+            // allow its reusable context to be initialized for another request before this callback resumes.
+            if (finalChunk)
             {
                 if (reassembly.TryRemove(context, out var acc))
                 {

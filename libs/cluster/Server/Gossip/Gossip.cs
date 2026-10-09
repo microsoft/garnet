@@ -418,7 +418,10 @@ namespace Garnet.cluster
                         if (clusterConnectionStore.GetConnection(nodeId, out var existing))
                         {
                             if (endpoint.Equals(existing.EndPoint))
+                            {
+                                _ = await existing.TryInitializeAsync().ConfigureAwait(false);
                                 continue;
+                            }
                             _ = await clusterConnectionStore.TryRemoveConnectionAsync(nodeId).ConfigureAwait(false);
                         }
 

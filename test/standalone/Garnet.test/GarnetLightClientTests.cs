@@ -58,6 +58,22 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task UpdatedAuthenticationIsUsedOnReconnect()
+        {
+            const string password = "correct-password";
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: password);
+            server.Start();
+
+            using var db = new GarnetLightClient(TestUtils.EndPoint, authPassword: "wrong-password");
+            Assert.ThrowsAsync<Exception>(async () => await db.ConnectAsync().ConfigureAwait(false));
+
+            db.UpdateAuth(username: null, password: password);
+            await db.ReconnectAsync().ConfigureAwait(false);
+
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+        }
+
+        [Test]
         public async Task SimpleSetGetTest()
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);

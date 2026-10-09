@@ -18,7 +18,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly SslClientAuthenticationOptions tlsOptions;
         readonly LightEpoch epoch;
-        GarnetLightClient gc;
+        readonly GarnetLightClient gc;
         ClusterAuthContainer clientAuth;
         readonly ExponentialBackoff backoff;
         readonly object initializationSync = new();
@@ -50,7 +50,7 @@ namespace Garnet.cluster
         /// <summary>
         /// GarnetLightClient connection
         /// </summary>
-        public GarnetLightClient Client => Volatile.Read(ref gc);
+        public GarnetLightClient Client => gc;
 
         /// <summary>
         /// Whether the client connection has been initialized successfully.
@@ -196,11 +196,8 @@ namespace Garnet.cluster
                 if (ReferenceEquals(currentAuth, clientAuth))
                     return;
 
-                var oldClient = gc;
-                var newClient = CreateGarnetClient(currentAuth);
                 clientAuth = currentAuth;
-                Volatile.Write(ref gc, newClient);
-                oldClient.Dispose();
+                gc.UpdateAuth(currentAuth.ClusterUsername, currentAuth.ClusterPassword);
             }
         }
 
@@ -231,7 +228,7 @@ namespace Garnet.cluster
                 cts?.Dispose();
                 internalCts?.Cancel();
                 internalCts?.Dispose();
-                gc?.Dispose();
+                gc.Dispose();
             }
             catch { }
         }
