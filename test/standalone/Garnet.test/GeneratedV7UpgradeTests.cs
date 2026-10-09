@@ -68,6 +68,12 @@ namespace Garnet.test
     ///   #      redis-cli -p 7777 HSET h:over   f &lt;512 bytes&gt;
     ///   #      redis-cli -p 7777 HSET h:page   f &lt;8192 bytes&gt;
     ///   #      redis-cli -p 7777 SAVE
+    ///   #
+    ///   #    Leave the storage tier OFF, as above. The data stays in memory, so SAVE writes a self-contained snapshot
+    ///   #    with no main-log segment file beside it, which is what the tests expect: they recover with
+    ///   #    useLogNullDevice so that the recovering store has no log device either. Recovering these artifacts with a
+    ///   #    log device configured produces an EMPTY store, silently, with nothing logged at any level.
+    ///   #
     ///   #    Repeat with --use-foldover-checkpoints to produce a FoldOver artifact as well; the two recovery paths
     ///   #    differ and both must be covered.
     ///
@@ -164,14 +170,45 @@ namespace Garnet.test
             }
         }
 
-        // REMOVED: GeneratedV7StoreRecoversWithoutUpgrade.
-        //
-        // Plain downlevel recovery (no --upgrade) WAS verified by hand against these same artifacts: a cv8 server started with
-        // --checkpointdir on the generated cv7 store returned DBSIZE 5 and a byte-exact 511-byte HGET, so the product path works.
-        // The equivalent test driven through TestUtils.CreateGarnetServer finds zero keys, with or without lowMemory -- a
-        // harness/configuration difference that was not isolated before this session ran out of budget, NOT a product failure.
-        // Re-add once understood. Do not re-add it asserting on CountDownlevelRecordsOnMainLog: that is already 0 after a plain
-        // recovery because recovery rewrites the main log in place (ProcessReadPages). The OBJECT log is what retains cv7
-        // framing until --upgrade converts it.
+        /// <summary>
+        /// A genuinely downlevel checkpoint is readable without <c>--upgrade</c>: the reader selects the downlevel decode
+        /// for cv7 framing. The upgrade converts the object log so that later checkpoints are written current-format; it is
+        /// not a precondition for reading the data back.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The recovering server must be configured with no storage tier, because the generator wrote these artifacts with
+        /// none: the dataset never left memory, so the checkpoint is a self-contained snapshot and no main-log segment file
+        /// exists beside it. Recovering with a log device configured instead yields an empty store, silently and with
+        /// nothing logged at any level.
+        /// </para>
+        /// <para>
+        /// This must not assert on <see cref="V7CheckpointFixture.CountDownlevelRecordsOnMainLog"/>. That is already zero
+        /// after a plain recovery, because recovery rewrites the main log in place (ProcessReadPages); the object log is what
+        /// retains cv7 framing until the upgrade converts it.
+        /// </para>
+        /// </remarks>
+        [Test]
+        [Category("GarnetServer")]
+        public void GeneratedV7StoreRecoversWithoutUpgrade()
+        {
+            RequireArtifacts();
+
+            using var recovered = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, useLogNullDevice: true);
+            recovered.Start();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            var keys = (RedisResult[])db.Execute("KEYS", "*");
+            ClassicAssert.Greater(keys.Length, 0, "the downlevel store recovered with no keys");
+
+            foreach (var key in keys.Select(k => (string)k))
+            {
+                if (db.KeyType(key) != RedisType.Hash)
+                    continue;
+                var entries = db.HashGetAll(key);
+                ClassicAssert.Greater(entries.Length, 0, $"hash {key} lost its fields across a plain recovery");
+            }
+        }
     }
 }
