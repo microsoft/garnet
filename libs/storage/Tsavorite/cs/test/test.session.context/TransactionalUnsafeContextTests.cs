@@ -166,7 +166,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
 
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private ClientSession<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> session;
-        private BasicContext<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator> bContext;
+        private BasicContext<TestSpanByteKey, long, long, Empty, TransactionalUnsafeFunctions, LongStoreFunctions, LongAllocator, BasicSessionLocker<LongStoreFunctions, LongAllocator>> bContext;
         private IDevice log;
 
         [SetUp]

@@ -1818,7 +1818,8 @@ namespace Garnet.test
                         Garnet.server.VectorOutput,
                         long, Garnet.server.VectorSessionFunctions,
                         Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
-                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>,
+                        Tsavorite.core.BasicSessionLocker<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>, Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>
                     > ignored = default;
                     batch.CompletePending(ref ignored);
                 }
@@ -1872,7 +1873,8 @@ namespace Garnet.test
                         Garnet.server.VectorOutput,
                         long, Garnet.server.VectorSessionFunctions,
                         Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
-                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>,
+                        Tsavorite.core.BasicSessionLocker<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>, Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>
                     > ignored = default;
                     batch.CompletePending(ref ignored);
                 }
@@ -1925,7 +1927,8 @@ namespace Garnet.test
                         Garnet.server.VectorOutput,
                         long, Garnet.server.VectorSessionFunctions,
                         Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
-                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>,
+                        Tsavorite.core.BasicSessionLocker<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>, Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>
                     > ignored = default;
                     batch.CompletePending(ref ignored);
                 }
@@ -1995,7 +1998,8 @@ namespace Garnet.test
                         Garnet.server.VectorOutput,
                         long, Garnet.server.VectorSessionFunctions,
                         Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
-                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>,
+                        Tsavorite.core.BasicSessionLocker<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>, Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>
                     > ignored = default;
                     batch.CompletePending(ref ignored);
                 }
@@ -2128,7 +2132,8 @@ namespace Garnet.test
                         Garnet.server.VectorOutput,
                         long, Garnet.server.VectorSessionFunctions,
                         Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
-                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>,
+                        Tsavorite.core.BasicSessionLocker<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>, Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>
                     > ignored = default;
                     batch.CompletePending(ref ignored);
                 }
@@ -2260,7 +2265,8 @@ namespace Garnet.test
                         Garnet.server.VectorOutput,
                         long, Garnet.server.VectorSessionFunctions,
                         Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
-                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>
+                        Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>,
+                        Tsavorite.core.BasicSessionLocker<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>, Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>
                     > ignored = default;
                     batch.CompletePending(ref ignored);
                 }
@@ -4735,6 +4741,217 @@ namespace Garnet.test
             }
         }
 #endif
+
+        [Test]
+        [CancelAfter(10_000)]
+        public async Task VectorOpsInTransactionsAsync()
+        {
+            const string Key = nameof(VectorOpsInTransactionsAsync);
+            const string Element = nameof(Element);
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            var tran = db.CreateTransaction();
+            var addTask = tran.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element, new float[] { 1, 2, 3, 4 }, "{\"hello\":\"world\"}"));
+            var card1Task = tran.VectorSetLengthAsync(Key);
+            var simTask = tran.VectorSetSimilaritySearchAsync(Key, VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3, 4 }));
+            var remTask = tran.VectorSetRemoveAsync(Key, Element);
+
+            ClassicAssert.True(await tran.ExecuteAsync().ConfigureAwait(false));
+
+            ClassicAssert.True(await addTask.ConfigureAwait(false));
+            ClassicAssert.AreEqual(1, await card1Task.ConfigureAwait(false));
+
+            using var simRes = await simTask.ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, simRes.Span.Length);
+            ClassicAssert.AreEqual(Element, (string)simRes.Span[0].Member);
+
+            ClassicAssert.True(await remTask.ConfigureAwait(false));
+        }
+
+        [Test]
+        public async Task BigGraphTransactionsAsync()
+        {
+            const string Key = nameof(BigGraphTransactionsAsync);
+            const string ElementPrefix = nameof(ElementPrefix) + "_";
+            const int ElementCount = 10_000;
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            var tran = db.CreateTransaction();
+
+            var addTasks = new List<Task<bool>>();
+
+            for (var ix = 0; ix < ElementCount; ix++)
+            {
+                var addTask = tran.VectorSetAddAsync(Key, VectorSetAddRequest.Member(ElementPrefix + ix, new float[] { ix, ix, ix, ix }, $"{{\"id\":{ix}}}"));
+                addTasks.Add(addTask);
+            }
+
+            var embTasks = new List<Task<Lease<float>>>();
+            for (var ix = 0; ix < ElementCount; ix++)
+            {
+                var embTask = tran.VectorSetGetApproximateVectorAsync(Key, ElementPrefix + ix);
+                embTasks.Add(embTask);
+            }
+
+            ClassicAssert.True(await tran.ExecuteAsync().ConfigureAwait(false));
+
+            foreach (var addTask in addTasks)
+            {
+                ClassicAssert.True(await addTask.ConfigureAwait(false));
+            }
+
+            for (var ix = 0; ix < ElementCount; ix++)
+            {
+                using var emb = await embTasks[ix].ConfigureAwait(false);
+
+                ClassicAssert.IsTrue(emb.Span.SequenceEqual([ix, ix, ix, ix]));
+            }
+        }
+
+        [Test]
+        public async Task ConcurrentTransactionsAsync()
+        {
+            const string VectorSetKeyPrefix = nameof(VectorSetKeyPrefix) + "_";
+            const string ElementPrefix = nameof(ElementPrefix) + "_";
+            const string StringKeyPrefix = nameof(StringKeyPrefix);
+            const int Writers = 8;
+            const int VectorSets = Writers / 2;
+            const int TransactionsPerWriter = 500;
+
+            using var startWriters = new SemaphoreSlim(0, Writers);
+
+            var writeTasks = new Task[Writers];
+            for (var i = 0; i < writeTasks.Length; i++)
+            {
+                var startIx = i * TransactionsPerWriter;
+
+                var vectorSetKey = VectorSetKeyPrefix + (i % VectorSets);
+
+                writeTasks[i] =
+                    Task.Run(
+                        async () =>
+                        {
+                            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+                            var db = redis.GetDatabase();
+
+                            await startWriters.WaitAsync().ConfigureAwait(false);
+
+                            for (var ix = 0; ix < TransactionsPerWriter; ix++)
+                            {
+                                var eIx = ix + startIx;
+                                var elemId = ElementPrefix + eIx;
+
+                                var tran = db.CreateTransaction();
+                                var addTask = tran.VectorSetAddAsync(vectorSetKey, VectorSetAddRequest.Member(elemId, new float[] { eIx, eIx, eIx, eIx }, $"{{\"id\":{eIx}}}"));
+                                var embTask = tran.VectorSetGetApproximateVectorAsync(vectorSetKey, elemId);
+
+                                ClassicAssert.True(await tran.ExecuteAsync().ConfigureAwait(false));
+                                ClassicAssert.True(await addTask.ConfigureAwait(false));
+
+                                using var embRes = await embTask.ConfigureAwait(false);
+
+                                ClassicAssert.True(embRes.Span.SequenceEqual([eIx, eIx, eIx, eIx]));
+                            }
+                        }
+                    );
+            }
+
+            using var cancel = new CancellationTokenSource();
+
+            using var nonVectorSetTasksRunning = new SemaphoreSlim(0, 2);
+
+            var scanTask =
+                Task.Run(
+                        async () =>
+                        {
+                            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+                            var s = redis.GetServers().Single();
+                            var db = redis.GetDatabase();
+
+                            var first = true;
+
+                            while (!cancel.IsCancellationRequested)
+                            {
+                                foreach (string key in s.Keys(0))
+                                {
+                                    if (key.StartsWith(StringKeyPrefix))
+                                    {
+                                        ClassicAssert.AreEqual(RedisType.String, await db.KeyTypeAsync(key).ConfigureAwait(false));
+                                    }
+                                    else
+                                    {
+                                        ClassicAssert.AreEqual(RedisType.VectorSet, await db.KeyTypeAsync(key).ConfigureAwait(false));
+                                    }
+                                }
+
+                                if (first)
+                                {
+                                    _ = nonVectorSetTasksRunning.Release();
+                                    first = false;
+                                }
+                            }
+                        }
+                    );
+
+            var nonVectorSetWriteTask =
+                Task.Run(
+                        async () =>
+                        {
+                            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+                            var db = redis.GetDatabase();
+
+                            var first = true;
+
+                            while (!cancel.IsCancellationRequested)
+                            {
+                                var randomSuffix = Random.Shared.NextInt64();
+
+                                ClassicAssert.True(await db.StringSetAsync(StringKeyPrefix + randomSuffix, randomSuffix.ToString()).ConfigureAwait(false));
+
+                                if (first)
+                                {
+                                    _ = nonVectorSetTasksRunning.Release();
+                                    first = false;
+                                }
+                            }
+                        }
+                    );
+
+            // Get all modifying tasks working
+            nonVectorSetTasksRunning.Wait();
+            nonVectorSetTasksRunning.Wait();
+
+            _ = startWriters.Release(writeTasks.Length);
+
+            // Wait for them to finish
+            await Task.WhenAll(writeTasks).ConfigureAwait(false);
+            cancel.Cancel();
+            await scanTask.ConfigureAwait(false);
+            await nonVectorSetWriteTask.ConfigureAwait(false);
+
+            await using var outerRedis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var outerDB = outerRedis.GetDatabase();
+
+            // Validate results
+            for (var i = 0; i < writeTasks.Length; i++)
+            {
+                var startIx = i * TransactionsPerWriter;
+
+                var vectorSetKey = VectorSetKeyPrefix + (i % VectorSets);
+
+                for (var j = 0; j < TransactionsPerWriter; j++)
+                {
+                    var eIx = j + startIx;
+                    var elemId = ElementPrefix + eIx;
+                    var embRes = await outerDB.VectorSetGetApproximateVectorAsync(vectorSetKey, elemId).ConfigureAwait(false);
+                    ClassicAssert.True(embRes.Span.SequenceEqual([eIx, eIx, eIx, eIx]));
+                }
+            }
+        }
 
         /// <summary>
         /// Create a new GarnetServer instance with a small enough log that ordinary writes flush pages.

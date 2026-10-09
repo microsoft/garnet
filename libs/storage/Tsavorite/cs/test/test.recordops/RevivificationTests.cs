@@ -263,7 +263,7 @@ namespace Tsavorite.test.Revivification
 
         private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private ClientSession<TestSpanByteKey, long, long, Empty, RevivificationFixedLenFunctions, LongStoreFunctions, LongAllocator> session;
-        private BasicContext<TestSpanByteKey, long, long, Empty, RevivificationFixedLenFunctions, LongStoreFunctions, LongAllocator> bContext;
+        private BasicContext<TestSpanByteKey, long, long, Empty, RevivificationFixedLenFunctions, LongStoreFunctions, LongAllocator, BasicSessionLocker<LongStoreFunctions, LongAllocator>> bContext;
         private IDevice log;
 
         private int recordSize;
@@ -702,7 +702,7 @@ namespace Tsavorite.test.Revivification
 
         private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private ClientSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
-        private BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
+        private BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, RevivificationSpanByteFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>, BasicSessionLocker<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> bContext;
         private IDevice log;
 
         [SetUp]
@@ -1668,7 +1668,7 @@ namespace Tsavorite.test.Revivification
         private TestObjectFunctions functions;
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private ClientSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions, ClassStoreFunctions, ClassAllocator> session;
-        private BasicContext<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions, ClassStoreFunctions, ClassAllocator> bContext;
+        private BasicContext<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions, ClassStoreFunctions, ClassAllocator, BasicSessionLocker<ClassStoreFunctions, ClassAllocator>> bContext;
         private IDevice log;
         private IDevice objlog;
 
@@ -1846,7 +1846,7 @@ namespace Tsavorite.test.Revivification
 
         private TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private ClientSession<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
-        private BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
+        private BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, RevivificationStressFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>, BasicSessionLocker<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> bContext;
         private IDevice log;
         private ArtificialFreeBinAllocator artificialFreeBinAllocator;
 

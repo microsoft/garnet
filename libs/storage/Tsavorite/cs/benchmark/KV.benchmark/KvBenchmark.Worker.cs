@@ -168,7 +168,7 @@ namespace Tsavorite.kvbench
         /// in both the live scoreboard sum and the final per-phase total.
         /// </summary>
         unsafe (long localOps, long reads, long writes, long deletes) RunWorkload(
-            Tsavorite.core.BasicContext<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions, KvStoreFunctions, KvAllocator> bContext,
+            Tsavorite.core.BasicContext<KvKey, PinnedSpanByte, SpanByteAndMemory, Empty, KvSessionFunctions, KvStoreFunctions, KvAllocator, BasicSessionLocker<KvStoreFunctions, KvAllocator>> bContext,
             ref PaddedLong slot, ref bool doneFlag,
             long keyCount, bool useZipf,
             Span<byte> value, ref PinnedSpanByte pinnedInputSpan, ref SpanByteAndMemory _output,
