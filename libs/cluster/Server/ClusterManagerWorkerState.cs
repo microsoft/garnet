@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,10 +31,12 @@ namespace Garnet.cluster
             string replicaOfNodeId,
             string hostname)
         {
+            IPEndPoint peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname);
+                var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname,
+                    peerEndpoint.Address.ToString(), peerEndpoint.Port);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }
@@ -105,6 +108,7 @@ namespace Garnet.cluster
                 // Reset recovery operations before proceeding with reset
                 clusterProvider.replicationManager.ResetRecovery();
 
+                IPEndPoint peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
                 var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
@@ -132,7 +136,9 @@ namespace Garnet.cluster
                         configEpoch: configEpoch,
                         role: NodeRole.PRIMARY,
                         replicaOfNodeId: null,
-                        hostname: string.IsNullOrEmpty(hostname) ? "" : hostname);
+                        hostname: string.IsNullOrEmpty(hostname) ? "" : hostname,
+                        clusterAddress: peerEndpoint.Address.ToString(),
+                        clusterPort: peerEndpoint.Port);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }

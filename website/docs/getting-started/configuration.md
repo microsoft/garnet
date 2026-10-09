@@ -80,9 +80,11 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | ----------- | ----------- | ----------- | ----------- | ----------- |
 | **Port** | ```--port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port to run server on |
 | **Address** | ```--bind``` | ```string``` | IP Address in v4/v6 format | Whitespace or comma separated string of IP addresses to bind server to (default: any) |
-| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | IP address that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Hostname that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Client port. Zero uses the listening port. Nodes use this unless ClusterPort is set. |
+| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | Client address. Nodes use this unless ClusterAddress is set. |
+| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Client hostname. |
+| **ClusterAddress** | ```--cluster-address``` | ```string``` | IPv4 or IPv6 address, except ```0.0.0.0``` and ```::``` | Peer address. Defaults to the client address. Does not change the listening address. |
+| **ClusterPort** | ```--cluster-port``` | ```int``` | Integer in range:<br/>[1, 65535] | Peer port. Defaults to the client port. Does not change the listening port. |
 | **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | ip, hostname, unknown | Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown) |
 | **LogMemorySize** | ```-m```<br/>```--memory``` | ```string``` | Memory size | Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2 |
 | **PageSize** | ```-p```<br/>```--page``` | ```string``` | Memory size | Size of each main-log page in bytes (rounds down to power of 2; minimum 512). |
@@ -297,13 +299,47 @@ when no valid checkpoint could be selected.
 
 ---
 
-## Cluster configuration compatibility
+## Separate peer and client endpoints
+
+`--cluster-announce-ip`, `--cluster-announce-port`, and `--cluster-announce-hostname`
+set the addresses and ports returned to clients, including `MOVED` and `ASK` responses.
+`--cluster-preferred-endpoint-type` controls the addresses in `MOVED` and `ASK` responses.
+
+`--cluster-address` and `--cluster-port` set the peer address and port used between nodes.
+Omitted settings use the corresponding client values.
+The port must be between 1 and 65535.
+
+`CLUSTER NODES`, `CLUSTER ENDPOINT`, `INFO replication`, and `ROLE` return client addresses and ports.
+Errors from `CLUSTER FAILOVER` also report client addresses and ports.
+Get peer addresses and ports from the server configuration.
+`REPLICAOF`, `FAILOVER TO`, and `MIGRATE` accept known client or peer endpoints but connect
+through the peer endpoint.
+
+`CLUSTER MEET` connects to the supplied address and port.
+The target must be reachable from the node executing the command, not necessarily from the client.
+Use peer addresses when client addresses are unreachable between nodes.
+
+Example with separate client and peer addresses:
+
+```text
+--bind 10.0.0.4 --port 6379
+--cluster-announce-ip 203.0.113.4 --cluster-announce-port 17004
+--cluster-announce-hostname cache.example.com --cluster-preferred-endpoint-type hostname
+--cluster-address 10.0.0.4 --cluster-port 6379
+```
+
+Configure listening ports, networking, and certificates separately.
+On startup, configured addresses and ports replace those saved in `nodes.conf`.
+
+### Upgrade compatibility
 
 :::warning Breaking change
 
-Garnet 2.2.0 writes persisted cluster configuration in format version two. After `nodes.conf`
-has been rewritten, the node cannot be rolled back to a Garnet version earlier than 2.2.0
-that only supports format version one. Back up the cluster configuration before upgrading.
+Every node must run 2.2.0 or later before upgrading the cluster to 3.0.0.
+Keep existing addresses and ports until all nodes have completed this step.
+
+Back up `nodes.conf` before upgrading. Versions older than 2.2.0 cannot read this file
+once it has been rewritten by 2.2.0 or later.
 
 :::
 
