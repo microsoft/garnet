@@ -152,8 +152,6 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            activeVectorManager?.WaitForVectorOperationsToComplete();
-            activeVectorManager?.ShutdownReplayTasks();
             activeRangeIndexManager?.DisposeIncompleteStreamReassembly();
             aofReplayCoordinator?.Dispose();
         }

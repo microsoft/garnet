@@ -285,6 +285,8 @@ namespace Garnet.server
             ref StringInput input
         )
         {
+            Debug.Assert(Volatile.Read(ref replicationReplayStarted) != -1, "VectorManager replication channels were disposed and HandleVectorSetAddReplication was called");
+
             if (input.arg1 == MigrateElementKeyLogArg)
             {
                 // These are special, injecting by a PRIMARY applying migration operations
@@ -451,6 +453,8 @@ namespace Garnet.server
             var queued = replicationReplayChannels[replayChannelIndex].Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric));
             if (!queued)
             {
+                logger?.LogCritical("VectorManager replication replay channel dropped a VADD, this should never happen, data loss will occur");
+                Debug.Assert(false, "VectorManager replication replay channel should never drop a VADD");
                 replicationBlockEvent.Decrement();
             }
 
@@ -645,15 +649,20 @@ namespace Garnet.server
         /// </summary>
         public void ShutdownReplayTasks()
         {
+            var completed = true;
             foreach (var channel in replicationReplayChannels)
             {
-                _ = channel.Writer.TryComplete();
+                completed &= channel.Writer.TryComplete();
             }
 
             // Disposal path, has to be synchronous
             AsyncUtils.BlockingWait(Task.WhenAll(replicationReplayTasks));
-
-            _ = Interlocked.Exchange(ref replicationReplayStarted, -1);
+            var previousValue = Interlocked.Exchange(ref replicationReplayStarted, -1);
+            if (previousValue == -1 || !completed)
+            {
+                logger.LogWarning("VectorManager replication replay tasks failed disposal - probably duplicate call");
+                Debug.Assert(false, "VectorManager replication tasks were already disposed");
+            }
         }
 
         /// <summary>
