@@ -157,15 +157,13 @@ namespace Tsavorite.core
             /// Waits until at least one pending I/O for this session has a response ready to drain.
             /// </summary>
             /// <remarks>
-            /// Pools its state machine: this is the per-miss park on a disk-bound workload, and the
-            /// returned <see cref="ValueTask"/> is awaited exactly once by each of its callers.
+            /// Forwards the inner <see cref="ValueTask"/> rather than awaiting it, so the per-miss park
+            /// on a disk-bound workload costs no state machine here. Every caller awaits the result with
+            /// <c>ConfigureAwait(false)</c>, which is what awaiting it here would have done.
             /// </remarks>
-            [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
-            public async ValueTask WaitPendingAsync(CancellationToken token = default)
-            {
-                if (SyncIoPendingCount > 0)
-                    await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
-            }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public ValueTask WaitPendingAsync(CancellationToken token = default)
+                => SyncIoPendingCount > 0 ? readyResponses.WaitForEntryAsync(token) : default;
 
             public bool InNewVersion => phase < Phase.REST;
         }

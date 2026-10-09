@@ -333,8 +333,8 @@ namespace Tsavorite.core
         /// Pools its state machine: a session that reads from disk reaches this on every miss, and the
         /// returned <see cref="ValueTask"/> is awaited exactly once by each of its two callers.
         /// </remarks>
-        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
-        private async ValueTask CompletePendingAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private ValueTask CompletePendingAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             token.ThrowIfCancellationRequested();
@@ -342,12 +342,20 @@ namespace Tsavorite.core
             if (store.epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
-            // Complete all pending operations on session
-            await store.CompletePendingAsync(sessionFunctions, token, getOutputs ? completedOutputs : null).ConfigureAwait(false);
+            // Forward the inner ValueTask when there is no commit to wait for, so the per-miss park
+            // costs no state machine here. This is the only shape Garnet uses.
+            if (!waitForCommit)
+                return store.CompletePendingAsync(sessionFunctions, token, getOutputs ? completedOutputs : null);
 
-            // Wait for commit if necessary
-            if (waitForCommit)
-                await WaitForCommitAsync(sessionFunctions, token).ConfigureAwait(false);
+            return CompletePendingThenWaitForCommitAsync(sessionFunctions, getOutputs, token);
+        }
+
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+        private async ValueTask CompletePendingThenWaitForCommitAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, CancellationToken token)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            await store.CompletePendingAsync(sessionFunctions, token, getOutputs ? completedOutputs : null).ConfigureAwait(false);
+            await WaitForCommitAsync(sessionFunctions, token).ConfigureAwait(false);
         }
 
         /// <summary>
