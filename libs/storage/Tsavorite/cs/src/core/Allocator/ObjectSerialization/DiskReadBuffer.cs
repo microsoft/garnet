@@ -95,8 +95,14 @@ namespace Tsavorite.core
             // NoPosition means the ring never submitted a read for this slot, so there is nothing to wait for or consume.
             if (currentPosition == NoPosition)
                 return false;
-            if (!HasData)
-                countdownEvent.Wait();
+
+            // Always wait on the countdown; do NOT short-circuit on HasData. ReadFromDeviceCallback publishes endPosition BEFORE it
+            // signals, so between those two statements HasData is true while the countdown still reads 1. Returning early there let the
+            // consumer drain the slot and MoveToNextBuffer resubmit into it via DoReadBuffer while its previous IO was still formally
+            // outstanding, tripping that method's "CurrentCount == 0" assert -- which then interpolated 0, because the signal landed
+            // between the check and the message. Waiting is also what supplies the memory barrier for reading endPosition, which the
+            // IO thread writes without one.
+            countdownEvent.Wait();
             return HasData;
         }
 
