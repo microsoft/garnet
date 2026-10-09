@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -23,7 +24,11 @@ namespace Garnet.server
             }
 
             pending = false;
-            if (status.Found)
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+            else if (status.Found)
             {
                 incr_session_found();
                 return GarnetStatus.OK;
@@ -33,6 +38,30 @@ namespace Garnet.server
                 incr_session_notfound();
                 return GarnetStatus.NOTFOUND;
             }
+        }
+
+        /// <summary>
+        /// Completes this session's pending string reads without waiting on the device, yielding the thread
+        /// until the I/O lands.
+        /// </summary>
+        /// <param name="context">String context to complete against.</param>
+        /// <typeparam name="TStringContext">Type of the string context.</typeparam>
+        /// <returns>The completed outputs, which the caller must dispose.</returns>
+        public ValueTask<CompletedOutputIterator<StringInput, StringOutput, long>> GET_CompletePendingAsync<TStringContext>(ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            => context.CompletePendingWithOutputsAsync();
+
+        /// <summary>
+        /// Records the outcome of a read that completed from pending I/O in the session metrics, which the
+        /// issuing call could not do because it did not yet have a status.
+        /// </summary>
+        /// <param name="found">Whether the record was found.</param>
+        internal void IncrementPendingReadResult(bool found)
+        {
+            if (found)
+                incr_session_found();
+            else
+                incr_session_notfound();
         }
 
         public bool GET_CompletePending<TStringContext>((GarnetStatus, StringOutput)[] outputArr, bool wait, ref TStringContext context)
