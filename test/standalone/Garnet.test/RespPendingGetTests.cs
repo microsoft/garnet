@@ -308,6 +308,16 @@ namespace Garnet.test
         {
             const int ReadDelayMs = 1000;
 
+            // Linux only, and not an arbitrary restriction. This test proves a negative - that a suspended
+            // session is holding no thread-pool thread - by starving the pool that dispatches its work. On
+            // Linux socket completions run on worker threads, so clamping workers starves exactly that path.
+            // On Windows they run on the I/O-completion pool instead, so clamping workers does not constrain
+            // dispatch and proves nothing, while clamping the I/O pool deadlocks the accept path before the
+            // first read is issued and takes the whole test host down with it: the pool is process-global and
+            // the runtime's own timers and continuations need it too.
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
             Populate();
 
             ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
@@ -398,7 +408,8 @@ namespace Garnet.test
         /// of them pooled the measurement spans 389-426 B across runs; un-pooling any single frame moves it
         /// to 513-527 B. The spread comes from the builders' per-thread caches, which miss whenever a
         /// completion lands on a different thread, so the bound is set midway between the two ranges rather
-        /// than tight against either. Dropping one
+        /// than tight against either. All of those figures are from Linux, which is where the bound is
+        /// enforced. Dropping one
         /// <c>[AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]</c>, or adding a sixth frame
         /// that forgets one, fails here.
         /// </para>
@@ -438,6 +449,14 @@ namespace Garnet.test
 
             var perRead = fromDisk - fromMemory;
             TestContext.Out.WriteLine($"disk={fromDisk:F0} B  memory={fromMemory:F0} B  per disk read={perRead:F0} B");
+
+            // Asserted only where the bound was calibrated. The pooled builders cache per thread, so the hit
+            // rate - and with it the measurement - depends on how the platform schedules completions, and the
+            // ranges below were measured on Linux. Detection power is unaffected: a dropped attribute is
+            // dropped on every platform, so the Linux legs catch it. Other platforms still print the value,
+            // which is what a future calibration would start from.
+            if (!OperatingSystem.IsLinux())
+                return;
 
             ClassicAssert.Less(perRead, 470,
                 "A park on the pending-read path allocates a state machine: an [AsyncMethodBuilder] is missing.");
