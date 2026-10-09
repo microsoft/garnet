@@ -19,13 +19,13 @@ The `BDN.benchmark` command-line tool allows contributors to run precise and rep
 You can list all available benchmarks using `--list flat` or `--list tree`, e.g.
 
 ```
-dotnet run -c Release -f net8.0 --list flat
+dotnet run -c Release -f net10.0 --list flat
 ```
 
-To run specific benchmarks, you can use `--filter`. For example, to run all RESP-protocol write benchmarks using the default configuration, which will run the benchmarks using all .NET target runtimes (with the dynamic PGO disabled):
+To run specific benchmarks, you can use `--filter`. For example, to run all RESP-protocol write benchmarks using the default configuration (.NET 10 with dynamic PGO disabled):
 
 ```
-dotnet run -c Release -f net8.0 --filter *RespIntegerWriteBenchmarks*
+dotnet run -c Release -f net10.0 --filter *RespIntegerWriteBenchmarks*
 ```
 
 See more command-line options at https://benchmarkdotnet.org/articles/guides/console-args.html

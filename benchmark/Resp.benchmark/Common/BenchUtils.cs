@@ -118,7 +118,7 @@ namespace Resp.benchmark
                 || sslPolicyErrors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
                 return false;
 
-#pragma warning disable SYSLIB0057 // Required while Resp.benchmark still targets net8.0.
+#pragma warning disable SYSLIB0057 // X509Certificate2 constructors are obsolete.
             using var serverCertificate = new X509Certificate2(certificate);
             using var issuerCertificate = new X509Certificate2(issuerCertificatePath);
 #pragma warning restore SYSLIB0057

@@ -110,22 +110,13 @@ $basePath = $string.Substring(0,$position-1)  # take off slash off end as well
 Set-Location $basePath/main/GarnetServer
 
 if ($mode -eq 0 -or $mode -eq 1) {
-	# Build GarnetJSON module for both frameworks
+	# Build GarnetJSON module
 	Write-Host "** Building GarnetJSON module ...  **"
 	Set-Location $basePath/modules/GarnetJSON
-	dotnet build GarnetJSON.csproj -c Release -f net8.0
 	dotnet build GarnetJSON.csproj -c Release -f net10.0
 	Set-Location $basePath/main/GarnetServer
 
 	Write-Host "** Publish ... **"
-	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-arm64-based -f:net8.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-x64-based -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-arm64-based -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-x64-based -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=portable -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=win-arm64-based-readytorun -f:net8.0 
-	dotnet publish GarnetServer.csproj -p:PublishProfile=win-x64-based-readytorun -f:net8.0 
-
 	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-arm64-based -f:net10.0
 	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-x64-based -f:net10.0 
 	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-arm64-based -f:net10.0 
@@ -135,15 +126,6 @@ if ($mode -eq 0 -or $mode -eq 1) {
 	dotnet publish GarnetServer.csproj -p:PublishProfile=win-x64-based-readytorun -f:net10.0 
 
 	# Clean up all the extra files
-	CleanUpFiles "linux-arm64" "linux-x64" "net8.0"
-	CleanUpFiles "linux-x64" "linux-x64" "net8.0"
-	CleanUpFiles "osx-arm64" "linux-x64" "net8.0"
-	CleanUpFiles "osx-x64" "linux-x64" "net8.0"
-	#CleanUpFiles "portable" "win-x64" "net8.0" # don't clean up all files for portable ... leave as is
-	CleanUpFiles "win-x64\Service" "win-x64" "net8.0" $false
-	CleanUpFiles "win-x64" "win-x64" "net8.0"
-	CleanUpFiles "win-arm64" "win-x64" "net8.0"
-
 	CleanUpFiles "linux-arm64" "linux-x64" "net10.0"
 	CleanUpFiles "linux-x64" "linux-x64" "net10.0"
 	CleanUpFiles "osx-arm64" "linux-x64" "net10.0"
@@ -155,14 +137,6 @@ if ($mode -eq 0 -or $mode -eq 1) {
 
 	# Copy GarnetJSON.dll to all platforms
 	Write-Host "** Copying GarnetJSON.dll to extensions folders... **"
-	CopyGarnetJSON "linux-arm64" "net8.0"
-	CopyGarnetJSON "linux-x64" "net8.0"
-	CopyGarnetJSON "osx-arm64" "net8.0"
-	CopyGarnetJSON "osx-x64" "net8.0"
-	CopyGarnetJSON "portable" "net8.0"
-	CopyGarnetJSON "win-x64" "net8.0"
-	CopyGarnetJSON "win-arm64" "net8.0"
-
 	CopyGarnetJSON "linux-arm64" "net10.0"
 	CopyGarnetJSON "linux-x64" "net10.0"
 	CopyGarnetJSON "osx-arm64" "net10.0"
@@ -176,18 +150,16 @@ if ($mode -eq 0 -or $mode -eq 1) {
 if ($mode -eq 0 -or $mode -eq 2) {
 
 	# Make sure at publish folders are there as basic check files are actually published before trying to zip
-	$publishedFilesFolderNet8 = "$basePath/main/GarnetServer/bin/Release/net8.0/publish"
 	$publishedFilesFolderNet10 = "$basePath/main/GarnetServer/bin/Release/net10.0/publish"
 	
-	if (!(Test-Path $publishedFilesFolderNet8) -or !(Test-Path $publishedFilesFolderNet10)) {
-		Write-Error "$publishedFilesFolderNet8 or $publishedFilesFolderNet10 does not exist. Run .\CreateBinaries 1 to publish the binaries first."
+	if (!(Test-Path $publishedFilesFolderNet10)) {
+		Write-Error "$publishedFilesFolderNet10 does not exist. Run .\CreateBinaries 1 to publish the binaries first."
 		Set-Location $lastPwd
 		exit
 	}
 	
-	# Create the directories - both net80 and net100 will be in the same zip file.
+	# Create the directories for the net10.0 binaries.
 	$directories = @("linux-arm64", "linux-x64", "osx-arm64", "osx-x64", "portable", "win-arm64", "win-x64")
-	$sourceFramework = @("net8.0", "net10.0")
 	$baseSourcePath = "$basePath/main/GarnetServer/bin/Release"
 	$destinationPath = "$basePath/main/GarnetServer/bin/Release/publish"
 	$zipfiledestinationPath = "$destinationPath/output"
@@ -208,20 +180,18 @@ if ($mode -eq 0 -or $mode -eq 2) {
 	}
 
 	foreach ($dir in $directories) {
-		foreach ($version in $sourceFramework) {
-			$sourcePath = Join-Path -Path $baseSourcePath -ChildPath "$version\publish\$dir"
-			$destDirPath = Join-Path -Path $destinationPath -ChildPath $dir
-			$destVersionPath = Join-Path -Path $destDirPath -ChildPath $version
-			
-			if (!(Test-Path $destVersionPath)) {
-				mkdir $destVersionPath
-			}
-			
-			Copy-Item -Path "$sourcePath\*" -Destination $destVersionPath -Recurse -Force
+		$sourcePath = Join-Path -Path $baseSourcePath -ChildPath "net10.0\publish\$dir"
+		$destDirPath = Join-Path -Path $destinationPath -ChildPath $dir
+		$destVersionPath = Join-Path -Path $destDirPath -ChildPath "net10.0"
+
+		if (!(Test-Path $destVersionPath)) {
+			mkdir $destVersionPath
 		}
+
+		Copy-Item -Path "$sourcePath\*" -Destination $destVersionPath -Recurse -Force
 	}
  
-	# Compress the files - both net8.0 and net10.0 in the same zip file
+	# Compress the net10.0 binaries
 	Write-Host "** Compressing the files ... **"
 	7z a -mmt20 -mx5 -scsWIN -r win-x64-based-readytorun.zip ../win-x64/*
 	7z a -mmt20 -mx5 -scsWIN -r win-arm64-based-readytorun.zip ../win-arm64/*
