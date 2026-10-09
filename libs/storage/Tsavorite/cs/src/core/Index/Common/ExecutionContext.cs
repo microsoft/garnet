@@ -165,6 +165,14 @@ namespace Tsavorite.core
             public ValueTask WaitPendingAsync(CancellationToken token = default)
                 => SyncIoPendingCount > 0 ? readyResponses.WaitForEntryAsync(token) : default;
 
+            /// <summary>
+            /// As <see cref="WaitPendingAsync"/>, but resumes by queueing <paramref name="resume"/> to the
+            /// thread pool. Returns false when there is nothing to wait for, leaving the caller running.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool TryWaitPending(IThreadPoolWorkItem resume)
+                => SyncIoPendingCount > 0 && readyResponses.TryWaitForEntry(resume);
+
             public bool InNewVersion => phase < Phase.REST;
         }
     }
