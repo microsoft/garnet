@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading.Tasks;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -30,6 +31,13 @@ namespace Garnet.server
         /// <param name="wait"></param>
         /// <returns></returns>
         bool GET_CompletePending(out CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs, bool wait = false);
+
+        /// <summary>
+        /// Completes pending read operations on the main store without blocking the calling thread, so a
+        /// read that went to disk does not hold the thread that issued it.
+        /// </summary>
+        /// <returns>The completed outputs, which the caller must dispose.</returns>
+        ValueTask<CompletedOutputIterator<StringInput, StringOutput, long>> GET_CompletePendingAsync();
 
         /// <summary>
         /// RMW operation on main store

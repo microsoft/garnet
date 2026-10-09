@@ -22,7 +22,9 @@ namespace Garnet.server
             // HasOptionalOrObjectFields is false iff: KeyIsInline, ValueIsInline, !HasETag, !HasExpiration (implies !ValueIsObject).
             // RecordType 0 means normal string (not VectorSet or RangeIndex).
             // This avoids expiry checks (no expiration), type-safety checks, ETag handling, and custom command dispatch.
-            if (input.arg1 < 0 && !dataHeader.HasOptionalOrObjectFields && srcLogRecord.RecordType == 0)
+            // A completion arriving from pending I/O takes the full path instead, because only that path
+            // knows whether the caller still owns the buffer the output points into.
+            if (input.arg1 < 0 && !dataHeader.HasOptionalOrObjectFields && srcLogRecord.RecordType == 0 && !readInfo.IsFromPending)
             {
                 CopyRespTo(srcLogRecord.ValueSpan, ref output);
                 return true;
@@ -97,6 +99,10 @@ namespace Garnet.server
                     return HandleEtagReader(in srcLogRecord, ref input, ref output, ref readInfo, cmd, value);
                 case RespCommand.MGET:
                 case RespCommand.NONE:
+                    // A suspending GET has let go of the network buffer it passed in, so a completion from
+                    // pending I/O has to land in pooled memory that outlives the park.
+                    if (readInfo.IsFromPending && input.arg1 == StringInput.SuspendingRespGetArg)
+                        output.SpanByteAndMemory.ConvertToHeap();
                     CopyRespTo(value, ref output);
                     break;
                 default:

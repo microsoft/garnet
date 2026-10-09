@@ -314,6 +314,12 @@ namespace Tsavorite.core
             => CompletePendingAsync(sessionFunctions, getOutputs: false, waitForCommit, token);
 
         /// <inheritdoc/>
+        /// <remarks>
+        /// Pools its state machine: a session that reads from disk reaches this on every miss. The
+        /// returned <see cref="ValueTask{TResult}"/> must be consumed exactly once, which is what the
+        /// <see cref="ValueTask{TResult}"/> contract already requires of every caller.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
         internal async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 bool waitForCommit = false, CancellationToken token = default)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -323,6 +329,11 @@ namespace Tsavorite.core
             return completedOutputs;
         }
 
+        /// <remarks>
+        /// Pools its state machine: a session that reads from disk reaches this on every miss, and the
+        /// returned <see cref="ValueTask"/> is awaited exactly once by each of its two callers.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
         private async ValueTask CompletePendingAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {

@@ -319,6 +319,21 @@ namespace Garnet.server
         public long arg1;
 
         /// <summary>
+        /// <see cref="arg1"/> marking a <see cref="RespCommand.GET"/> issued from the RESP layer, as opposed
+        /// to the many internal callers that reuse the command. The reader keys its fast path on the value
+        /// being negative.
+        /// </summary>
+        public const long RespGetArg = -1;
+
+        /// <summary>
+        /// <see cref="arg1"/> marking a RESP <see cref="RespCommand.GET"/> whose caller does not hold the
+        /// network buffer it passed in once the read goes to disk, because it parks the session rather than
+        /// waiting on the device. Behaves exactly like <see cref="RespGetArg"/> except that a completion
+        /// arriving from pending I/O writes to pooled memory instead of into that buffer.
+        /// </summary>
+        public const long SuspendingRespGetArg = -2;
+
+        /// <summary>
         /// Session parse state
         /// </summary>
         public SessionParseState parseState;

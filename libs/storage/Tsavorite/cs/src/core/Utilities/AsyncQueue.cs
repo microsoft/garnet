@@ -148,6 +148,11 @@ namespace Tsavorite.core
             return WaitForEntryAsyncSlow(token);
         }
 
+        /// <remarks>
+        /// Pools its state machine: this is the park taken on every pending I/O that is not already
+        /// drained, and the returned <see cref="ValueTask"/> is awaited exactly once by its only caller.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
         private async ValueTask WaitForEntryAsyncSlow(CancellationToken token)
         {
             _ = Interlocked.Increment(ref waiterCount);

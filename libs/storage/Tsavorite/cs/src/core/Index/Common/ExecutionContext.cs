@@ -153,6 +153,14 @@ namespace Tsavorite.core
                 }
             }
 
+            /// <summary>
+            /// Waits until at least one pending I/O for this session has a response ready to drain.
+            /// </summary>
+            /// <remarks>
+            /// Pools its state machine: this is the per-miss park on a disk-bound workload, and the
+            /// returned <see cref="ValueTask"/> is awaited exactly once by each of its callers.
+            /// </remarks>
+            [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
             public async ValueTask WaitPendingAsync(CancellationToken token = default)
             {
                 if (SyncIoPendingCount > 0)

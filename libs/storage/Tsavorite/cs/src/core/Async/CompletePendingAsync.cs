@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -27,6 +28,11 @@ namespace Tsavorite.core
         /// Async operations (e.g., ReadAsync) need to be completed individually
         /// </summary>
         /// <returns></returns>
+        /// <remarks>
+        /// Pools its state machine: a session that reads from disk reaches this on every miss, and the
+        /// returned <see cref="ValueTask"/> is awaited exactly once by its only caller.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
         internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                                       CancellationToken token, CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>

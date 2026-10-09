@@ -70,11 +70,17 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            StringInput input = new(RespCommand.GET, arg1: -1);
+            StringInput input = new(RespCommand.GET, arg1: StringInput.SuspendingRespGetArg);
 
             var key = parseState.GetArgSliceByRef(0);
             var output = GetStringOutput();
-            var status = storageApi.GET(key, ref input, ref output);
+
+            // Issued without waiting on the device: a read that misses memory parks the session rather than
+            // holding this thread for the whole I/O.
+            var status = storageApi.GET_WithPending(key, ref input, ref output, ctx: 0, out var pending);
+
+            if (pending)
+                return FinishPendingGet(ref storageApi);
 
             switch (status)
             {
@@ -92,6 +98,21 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// Finishes a <c>GET</c> whose read went to disk, parking the session for the I/O where that is
+        /// allowed and completing inline where it is not.
+        /// </summary>
+        /// <remarks>
+        /// A running transaction cannot park: it holds its key locks for the whole wait, and its context
+        /// holds Tsavorite's epoch across the call, which an asynchronous completion may not do.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        bool FinishPendingGet<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+            => txnManager.state == TxnState.Running
+                ? NetworkGETCompletePendingInline(ref storageApi)
+                : NetworkGETSuspending();
 
         /// <summary>
         /// GET
@@ -245,7 +266,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetAdvancedApi
         {
             var key = parseState.GetArgSliceByRef(0);
-            StringInput input = new(RespCommand.GET, arg1: -1);
+            StringInput input = new(RespCommand.GET, arg1: StringInput.RespGetArg);
             var firstPending = -1;
             (GarnetStatus, StringOutput)[] outputArr = pendingGetOutputArr;
             // Initial output points at the current network buffer position. Used for the

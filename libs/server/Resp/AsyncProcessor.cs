@@ -86,8 +86,11 @@ namespace Garnet.server
             {
                 while (asyncCompleted < asyncStarted)
                 {
-                    // First complete all pending ops
+                    // First complete all pending ops. This runs on a background task of its own rather than
+                    // on the network thread, so waiting here costs nothing the session needs.
+#pragma warning disable VSTHRD103 // Call async methods when in an async method
                     storageApi.GET_CompletePending(out var completedOutputs, true);
+#pragma warning restore VSTHRD103
 
                     try
                     {

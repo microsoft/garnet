@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -52,6 +53,10 @@ namespace Garnet.server
 
         public bool GET_CompletePending(out CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs, bool wait)
             => storageSession.GET_CompletePending(out completedOutputs, wait, ref stringContext);
+
+        /// <inheritdoc />
+        public ValueTask<CompletedOutputIterator<StringInput, StringOutput, long>> GET_CompletePendingAsync()
+            => storageSession.GET_CompletePendingAsync(ref stringContext);
 
         /// <inheritdoc />
         public unsafe GarnetStatus GETForMemoryResult(PinnedSpanByte key, out MemoryResult<byte> value)
