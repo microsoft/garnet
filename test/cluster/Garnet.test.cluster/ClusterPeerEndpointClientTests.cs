@@ -133,6 +133,7 @@ namespace Garnet.test.cluster
             WaitForReplicaData("before");
 
             Assert.That(ExecuteNode(1, "CLUSTER", "FAILOVER").ToString(), Is.EqualTo("OK"));
+            context.clusterTestUtils.WaitForFailoverCompleted(1);
             WaitUntil(() => ((RedisResult[])ExecuteNode(1, "ROLE"))[0].ToString() == "master");
             WaitForSlotOwnership(slot, nodeIds[1]);
             Assert.That(database.StringGet(Key).ToString(), Is.EqualTo("before"));
