@@ -33,6 +33,7 @@ namespace Garnet.test.cluster
         public void TearDown() => context.TearDown();
 
         [TestCase(false, false)]
+        [TestCase(false, true)]
         [TestCase(true, false)]
         [TestCase(true, true)]
         public void ClientDiscoversAndRoutesToAdvertisedEndpoints(bool separateEndpoints, bool useHostname)
@@ -63,6 +64,22 @@ namespace Garnet.test.cluster
                 Assert.That(nodes, Does.Contain(GetClientEndpoint(1).ToString()));
                 if (separateEndpoints)
                     Assert.That(nodes, Does.Not.Contain("127.0.0.2"));
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void HostnameClientEndpointsAcceptIpv4AndIpv6(bool separateEndpoints)
+        {
+            CreateCluster(separateEndpoints, useHostname: true);
+            for (int index = 0; index < 2; index++)
+            {
+                foreach (IPAddress address in new[] { IPAddress.Loopback, IPAddress.IPv6Loopback })
+                {
+                    IPEndPoint endpoint = new(address, GetClientEndpoint(index).Port);
+                    using ConnectionMultiplexer client = ConnectionMultiplexer.Connect(TestUtils.GetConfig([endpoint], allowAdmin: true));
+                    Assert.That(client.GetServer(endpoint).Execute("PING").ToString(), Is.EqualTo("PONG"));
+                }
             }
         }
 
@@ -138,10 +155,14 @@ namespace Garnet.test.cluster
             WaitForReplicaData("before");
 
             IPEndPoint newPeerEndpoint = new(IPAddress.Parse("127.0.0.2"), ClusterTestContext.Port + 4);
-            context.nodeOptions[1].EndPoints = [GetClientEndpoint(1), newPeerEndpoint];
+            context.nodeOptions[1].EndPoints = useHostname
+                ? [GetClientEndpoint(1), new IPEndPoint(IPAddress.IPv6Loopback, GetClientEndpoint(1).Port), newPeerEndpoint]
+                : [GetClientEndpoint(1), newPeerEndpoint];
             context.nodeOptions[1].ClusterPort = newPeerEndpoint.Port;
             context.nodeOptions[1].Recover = true;
-            context.RestartNode(1, ensureAofFlush: true);
+            context.ShutdownNode(1, ensureAofFlush: true);
+            context.clusterTestUtils.WaitForAofSyncDriverDipose(0);
+            context.RestartNode(1);
             context.CreateConnection();
             WaitUntil(() => ((RedisResult[])ExecuteNode(1, "ROLE"))[0].ToString() == "slave");
             Assert.That(ExecuteNode(1, "CLUSTER", "MYID").ToString(), Is.EqualTo(nodeIds[1]));
@@ -153,7 +174,7 @@ namespace Garnet.test.cluster
 
         private void CreateCluster(bool separateEndpoints, bool useHostname = false)
         {
-            context.CreateInstances(2, enableAOF: true);
+            context.CreateInstances(2, enableAOF: true, clusterReplicationReestablishmentTimeout: 1);
             peerEndpoints = new IPEndPoint[2];
             nodeIds = new string[2];
             for (int index = 0; index < 2; index++)
@@ -165,6 +186,8 @@ namespace Garnet.test.cluster
                 peerEndpoints[index] = peerEndpoint;
                 GarnetServerOptions options = context.nodeOptions[index];
                 options.EndPoints = separateEndpoints ? [clientEndpoint, peerEndpoint] : [clientEndpoint];
+                if (useHostname)
+                    options.EndPoints = [.. options.EndPoints, new IPEndPoint(IPAddress.IPv6Loopback, clientEndpoint.Port)];
                 options.ClusterAnnounceEndpoint = clientEndpoint;
                 options.ClusterAnnounceHostname = "localhost";
                 options.ClusterPreferredEndpointType = useHostname ? ClusterPreferredEndpointType.Hostname : ClusterPreferredEndpointType.Ip;
