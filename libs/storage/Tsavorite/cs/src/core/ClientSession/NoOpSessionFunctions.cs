@@ -58,9 +58,7 @@ namespace Tsavorite.core
 
         public readonly bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => true;
 
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
@@ -76,27 +74,19 @@ namespace Tsavorite.core
              => throw new NotImplementedException("GetRMWModifiedFieldInfo is not supported in this ISessionFunctions implementation");
         public readonly RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => throw new NotImplementedException("GetRMWInitialFieldInfo is not supported in this ISessionFunctions implementation");
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => throw new NotImplementedException("GetUpsertFieldInfo(ReadOnlySpan<byte> value) is not supported in this ISessionFunctions implementation");
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => throw new NotImplementedException("IHeapObject value) is not supported in this ISessionFunctions implementation");
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSourceLogRecord : ISourceLogRecord
             => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.DataHeader.ValueIsObject, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 
@@ -132,30 +122,22 @@ namespace Tsavorite.core
 
         public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         { }
         public readonly void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         { }
         public readonly void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         { }
         public readonly void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         { }
 

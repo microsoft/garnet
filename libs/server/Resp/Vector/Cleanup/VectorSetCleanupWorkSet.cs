@@ -14,9 +14,7 @@ namespace Garnet.server
     internal sealed class VectorSetCleanupWorkSet<TValue>
     {
         private readonly ConcurrentDictionary<byte[], TValue> entries;
-#if NET9_0_OR_GREATER
         private readonly ConcurrentDictionary<byte[], TValue>.AlternateLookup<ReadOnlySpan<byte>> lookup;
-#endif
         /// <summary>
         /// Are there any pending items for cleanup?
         /// </summary>
@@ -25,9 +23,7 @@ namespace Garnet.server
         public VectorSetCleanupWorkSet()
         {
             entries = new(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
             lookup = entries.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
         }
 
         /// <summary>
@@ -35,11 +31,7 @@ namespace Garnet.server
         /// </summary>
         public bool Contains(ReadOnlySpan<byte> key)
         {
-#if NET9_0_OR_GREATER
             return lookup.ContainsKey(key);
-#else
-            return entries.ContainsKey(key.ToArray());
-#endif
         }
 
         /// <summary>

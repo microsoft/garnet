@@ -15,21 +15,15 @@ namespace Tsavorite.core
         /// <summary>Get a 64-bit hash code for a key</summary>
         long GetKeyHashCode64<TKey>(TKey key)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             ;
 
         /// <summary>Compare two keys for equality</summary>
         bool KeysEqual<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             ;
         #endregion Key Comparer
 
@@ -93,9 +87,7 @@ namespace Tsavorite.core
         void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                ref LogRecord dstLogRecord, long dstLogicalAddress)
             where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             ;
 
         /// <inheritdoc cref="IRecordTriggers.OnTruncate"/>

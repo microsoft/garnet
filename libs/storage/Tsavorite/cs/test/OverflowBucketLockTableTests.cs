@@ -19,20 +19,14 @@ namespace Tsavorite.test.LockTable
     {
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
         public long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
 
             => 42L;
     }

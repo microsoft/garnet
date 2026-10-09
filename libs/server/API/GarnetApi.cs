@@ -259,9 +259,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
             where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             => storageSession.ReadWithPrefetch(ref batch, ref stringContext, userContext);
         #endregion
 

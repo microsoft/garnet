@@ -15,7 +15,7 @@ git clone git@github.com:microsoft/garnet.git
 
 ## Build the Project
 
-Garnet multi-targets both `net8.0` and `net10.0`. Make sure the .NET 10 SDK is installed, following instructions [here](https://dotnet.microsoft.com/en-us/download); the .NET 10 SDK builds both targets. To build or run the `net8.0` target, also install the .NET 8 runtime and targeting pack. You can use either Linux or Windows; Garnet works equally well on both platforms.
+Garnet targets `net10.0`. Make sure the .NET 10 SDK is installed, following instructions [here](https://dotnet.microsoft.com/en-us/download). You can use either Linux or Windows; Garnet works equally well on both platforms.
 
 Go to the root folder of the repo and build using .NET CLI, or open `Garnet.slnx` and build using the latest Visual Studio 2022 17.x or Visual Studio 2026.
 

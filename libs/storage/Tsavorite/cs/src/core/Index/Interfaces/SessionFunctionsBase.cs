@@ -68,16 +68,12 @@ namespace Tsavorite.core
 
         public virtual void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         { }
         public virtual void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         { }
 
@@ -97,9 +93,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => true;
 
         /// <inheritdoc/>
@@ -110,9 +104,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         { }
 
@@ -139,9 +131,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         { }
 
@@ -158,30 +148,22 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref TInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => throw new NotImplementedException("GetRMWInitialFieldInfo requires knowledge of TInput");
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref TInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ValueIsObject = false, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref TInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => new() { KeySize = key.KeyBytes.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         /// <inheritdoc/>
         public virtual RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSourceLogRecord : ISourceLogRecord
             => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.DataHeader.ValueIsObject, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 

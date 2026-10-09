@@ -321,9 +321,7 @@ namespace Tsavorite.test
 
         internal static unsafe bool FindHashBucketEntryForKey<TKey, TStoreFunctions, TAllocator>(this TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, out HashBucketEntry entry)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -359,21 +357,15 @@ namespace Tsavorite.test
         /// <inheritdoc />
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => k1.KeyBytes.AsRef<int>() == k2.KeyBytes.AsRef<int>();
 
         /// <inheritdoc />
         public long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => Utility.GetHashCode(k.KeyBytes.AsRef<int>());
     }
 
@@ -389,21 +381,15 @@ namespace Tsavorite.test
         /// <inheritdoc />
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
         /// <inheritdoc />
         public long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => Utility.GetHashCode(k.KeyBytes.AsRef<long>());
     }
 
@@ -416,20 +402,14 @@ namespace Tsavorite.test
 
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => k1.KeyBytes.AsSliceRef<long>() == k2.KeyBytes.AsSliceRef<long>();
 
         public long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => mod == 0 ? k.KeyBytes.AsSliceRef<long>() : k.KeyBytes.AsSliceRef<long>() % mod;
     }
 
@@ -442,21 +422,15 @@ namespace Tsavorite.test
 
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         // Force collisions to create a chain
         public readonly long GetHashCode64<TKey>(TKey k)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             var value = SpanByteComparer.StaticGetHashCode64(k.KeyBytes);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;
@@ -468,9 +442,7 @@ namespace Tsavorite.test
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
                 this ITsavoriteContext<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where Functions : ISessionFunctions<TInput, TOutput, TContext>
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
@@ -479,9 +451,7 @@ namespace Tsavorite.test
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
                 this ITsavoriteContext<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where Functions : ISessionFunctions<TInput, TOutput, TContext>
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>

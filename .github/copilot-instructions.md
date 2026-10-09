@@ -37,7 +37,7 @@ cd main/GarnetServer && dotnet run -c Debug -f net10.0 -- --logger-level Trace -
 Test ports are claimed automatically per test host, so several checkouts can run tests on one machine with no
 setup; see [Test ports](#test-ports).
 
-Target frameworks are `net8.0` and `net10.0`. CI runs tests on both, in Debug and Release, on Ubuntu and Windows.
+The target framework is `net10.0`. CI runs tests in Debug and Release, on Ubuntu and Windows.
 
 Test projects live under `test/standalone/` and `test/cluster/` — there is no bare `test/Garnet.test`.
 

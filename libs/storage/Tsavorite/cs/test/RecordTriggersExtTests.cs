@@ -72,9 +72,7 @@ namespace Tsavorite.test
             public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                                   ref LogRecord dstLogRecord, long dstLogicalAddress)
                 where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
                     , allows ref struct
-#endif
             {
                 events?.PostCopyToTailEvents.Add((srcLogicalAddress, dstLogicalAddress));
             }

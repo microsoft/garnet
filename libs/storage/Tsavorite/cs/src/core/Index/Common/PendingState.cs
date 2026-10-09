@@ -89,9 +89,7 @@ namespace Tsavorite.core
             internal void CopyInputsForReadOrRMW<TKey, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
                 where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
                 CopyKey(key, bufferPool, sessionFunctions);
@@ -142,9 +140,7 @@ namespace Tsavorite.core
             /// <summary>Copy the passed key into our <see cref="requestKey"/>.</summary>
             internal void CopyKey<TKey, TSessionFunctionsWrapper>(TKey key, SectorAlignedBufferPool bufferPool, TSessionFunctionsWrapper sessionFunctions)
                 where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
                 if (requestKey.IsEmpty)

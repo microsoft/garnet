@@ -92,8 +92,7 @@ if (-not (Test-Path -Path $configFile)) {
 $json = Get-Content -Raw $configFile
 $object = $json | ConvertFrom-Json
 
-# net6.0, net7.0 or net8.0 can be used. Prefer to just use most recent
-$framework = "net8.0"
+$framework = "net10.0"
 
 # Use this in the file name to separate outputs when running in ADO
 $CurrentOS = "Windows"

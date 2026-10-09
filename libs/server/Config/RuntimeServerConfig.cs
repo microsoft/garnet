@@ -34,10 +34,8 @@ namespace Garnet.server
 
         // Wire name (and aliases) -> ServerConfigType, for CONFIG parameter parsing.
         static readonly Dictionary<byte[], ServerConfigType> NameToType = BuildNameLookup();
-#if NET9_0_OR_GREATER
         static readonly Dictionary<byte[], ServerConfigType>.AlternateLookup<ReadOnlySpan<byte>> NameToTypeSpanLookup =
             NameToType.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
 
         // All types handled by this table (settable + read-only), for CONFIG GET *.
         static readonly ServerConfigType[] runtimeTypes = BuildRuntimeTypes();
@@ -562,11 +560,7 @@ namespace Garnet.server
         /// <summary>Resolve a config parameter name (honoring aliases) to a config type handled by this table.</summary>
         public static bool TryGetType(ReadOnlySpan<byte> name, out ServerConfigType type)
         {
-#if NET9_0_OR_GREATER
             return NameToTypeSpanLookup.TryGetValue(name, out type);
-#else
-            return NameToType.TryGetValue(name.ToArray(), out type);
-#endif
         }
 
         // The CLI/config surface expresses these timeouts in seconds and treats <= 0 as an infinite timeout.

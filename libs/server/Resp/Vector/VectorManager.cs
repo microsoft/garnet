@@ -1786,9 +1786,7 @@ namespace Garnet.server
                 else
                 {
                     var dupeTracker = new HashSet<byte[]>(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
                     var dupeTrackerLookup = dupeTracker.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
 
                     var remaining = candidates;
 
@@ -1804,11 +1802,7 @@ namespace Garnet.server
                         var id = remaining.Slice(sizeof(int), idLen);
                         byte[] idArr = null;
                         var isDupe =
-#if NET9_0_OR_GREATER
                                 dupeTrackerLookup.Contains(id)
-#else
-                                dupeTracker.Contains(idArr ??= id.ToArray())
-#endif
                                 ;
 
                         var afterId = remaining[(sizeof(int) + idLen)..];
