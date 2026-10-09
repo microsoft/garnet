@@ -44,12 +44,9 @@ namespace Garnet.cluster
 
                 for (var i = 0; i < numConnection; i++)
                 {
-                    var client = connections[i].Client;
-                    if (client == null)
-                        continue;
-
-                    activeMemoryUsageBytes = SaturatingAdd(activeMemoryUsageBytes, client.ActiveMemoryUsageBytes);
-                    maxMemoryUsageBytes = SaturatingAdd(maxMemoryUsageBytes, client.MaxMemoryUsageBytes);
+                    var (clientActiveMemoryUsageBytes, clientMaxMemoryUsageBytes) = connections[i].GetClientMemoryUsage();
+                    activeMemoryUsageBytes = SaturatingAdd(activeMemoryUsageBytes, clientActiveMemoryUsageBytes);
+                    maxMemoryUsageBytes = SaturatingAdd(maxMemoryUsageBytes, clientMaxMemoryUsageBytes);
                 }
             }
             finally

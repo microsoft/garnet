@@ -18,7 +18,7 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly SslClientAuthenticationOptions tlsOptions;
         readonly LightEpoch epoch;
-        readonly GarnetLightClient gc;
+        GarnetLightClient gc;
         ClusterAuthContainer clientAuth;
         readonly ExponentialBackoff backoff;
         readonly object initializationSync = new();
@@ -46,11 +46,6 @@ namespace Garnet.cluster
         /// Timestamp of last gossipSend for this connection
         /// </summary>
         public long GossipSend => gossipSend;
-
-        /// <summary>
-        /// GarnetLightClient connection
-        /// </summary>
-        public GarnetLightClient Client => gc;
 
         /// <summary>
         /// Whether the client connection has been initialized successfully.
@@ -165,7 +160,7 @@ namespace Garnet.cluster
                     return new(false);
 
                 RefreshClientAuthentication();
-                initializationTask = InitializeCoreAsync(gc);
+                initializationTask = InitializeCoreAsync(Volatile.Read(ref gc));
                 return new(initializationTask);
             }
 
@@ -197,7 +192,7 @@ namespace Garnet.cluster
                     return;
 
                 clientAuth = currentAuth;
-                gc.UpdateAuth(currentAuth.ClusterUsername, currentAuth.ClusterPassword);
+                Volatile.Read(ref gc)?.UpdateAuth(currentAuth.ClusterUsername, currentAuth.ClusterPassword);
             }
         }
 
@@ -228,9 +223,20 @@ namespace Garnet.cluster
                 cts?.Dispose();
                 internalCts?.Cancel();
                 internalCts?.Dispose();
-                gc.Dispose();
+                Volatile.Read(ref gc)?.Dispose();
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Gets current and configured-maximum accounted memory for the active client.
+        /// </summary>
+        public (long ActiveMemoryUsageBytes, long MaxMemoryUsageBytes) GetClientMemoryUsage()
+        {
+            var client = Volatile.Read(ref gc);
+            return client == null
+                ? default
+                : (client.ActiveMemoryUsageBytes, client.MaxMemoryUsageBytes);
         }
 
         void UpdateGossipSend() => this.gossipSend = DateTimeOffset.UtcNow.Ticks;
@@ -288,7 +294,8 @@ namespace Garnet.cluster
         {
             try
             {
-                using var resp = await gc.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                var client = Volatile.Read(ref gc);
+                using var resp = await client.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
@@ -325,7 +332,8 @@ namespace Garnet.cluster
         public Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            return gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            var client = Volatile.Read(ref gc);
+            return client.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
         }
 
         /// <summary>
@@ -380,12 +388,13 @@ namespace Garnet.cluster
         {
             var nowTicks = DateTimeOffset.UtcNow.Ticks;
             var last_io_seconds = gossipRecv == 0 ? 0 : (int)TimeSpan.FromTicks(nowTicks - gossipSend).TotalSeconds;
+            var client = Volatile.Read(ref gc);
 
             return new ConnectionInfo()
             {
                 ping = gossipSend,
                 pong = gossipRecv,
-                connected = gc.IsConnected,
+                connected = client?.IsConnected ?? false,
                 lastIO = last_io_seconds,
             };
         }
@@ -409,12 +418,13 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                if (!gc.IsConnected)
+                var client = Volatile.Read(ref gc);
+                if (client == null || !client.IsConnected)
                 {
                     logger?.LogError($"{nameof(TryClusterPublish)}: client not connected; skipping publish forwarding");
                     return;
                 }
-                gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
+                client.ExecuteClusterPublishNoResponse(cmd, channel, message);
             }
             finally
             {
