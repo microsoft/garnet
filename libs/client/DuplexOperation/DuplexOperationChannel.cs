@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -208,6 +209,9 @@ namespace Garnet.client
         /// </summary>
         public void DrainRequests()
             => controller.DrainRequests();
+
+        internal ValueTask WaitForIdleAsync(CancellationToken token)
+            => controller.WaitForIdleAsync(token);
 
         #endregion
 

@@ -232,6 +232,9 @@ namespace Garnet.client
         public void DrainRequests()
             => channel.DrainRequests();
 
+        internal ValueTask WaitForIdleAsync(CancellationToken token)
+            => channel.WaitForIdleAsync(token);
+
         /// <summary>Reader-side: try to read a published completion for the given ticket.</summary>
         public bool TryReadCompletion(int ticket, out TcsWrapper completion)
             => channel.TryReadCompletion(ticket, out completion);

@@ -54,10 +54,18 @@ namespace Garnet.client
 
         CompletionEvent requestFreed;
         CompletionEvent completionFreed;
+        CompletionEvent idleStateChanged;
 
         internal int CompletionTail => tailPageOffset.TaskId;
 
         internal int ActivePerOperationFlushResultCount => Volatile.Read(ref activePerOperationFlushResults);
+
+        internal bool IsIdle
+            => GetTailAddress() == Volatile.Read(ref flushedUntilAddress) &&
+               Volatile.Read(ref completionReservations) == 0 &&
+               Volatile.Read(ref activeFlushCount) == 0 &&
+               Volatile.Read(ref activePerOperationFlushResults) == 0 &&
+               Volatile.Read(ref ongoingAggressiveShiftReadOnly) == 0;
 
         internal DuplexAdmissionController(
             PageShape shape,
@@ -75,6 +83,7 @@ namespace Garnet.client
 
             requestFreed.Initialize();
             completionFreed.Initialize();
+            idleStateChanged.Initialize();
         }
 
         public void Dispose()
@@ -84,6 +93,22 @@ namespace Garnet.client
 
             requestFreed.Dispose();
             completionFreed.Dispose();
+            idleStateChanged.Dispose();
+        }
+
+        internal async ValueTask WaitForIdleAsync(CancellationToken token)
+        {
+            while (!IsIdle)
+            {
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+
+                DrainRequests();
+                var stateChanged = idleStateChanged;
+                if (IsIdle)
+                    return;
+
+                await stateChanged.WaitAsync(token).ConfigureAwait(false);
+            }
         }
 
         internal long GetTailAddress()
@@ -236,6 +261,7 @@ namespace Garnet.client
 
             Volatile.Write(ref completionUntil, Volatile.Read(ref completionUntil) + consumedCount);
             ReleaseCompletions(consumedCount);
+            idleStateChanged.Set();
         }
 
         internal void BeginFlushRange(long untilAddress)
@@ -262,6 +288,7 @@ namespace Garnet.client
                 {
                     _ = Utility.MonotonicUpdate(ref flushedUntilAddress, activeFlushUntilAddress, wrapDistance, out _);
                     requestFreed.Set();
+                    idleStateChanged.Set();
                     AggressiveShiftReadOnlyRunner(true);
                 }
             }
@@ -277,6 +304,7 @@ namespace Garnet.client
         {
             var active = Interlocked.Decrement(ref activePerOperationFlushResults);
             Debug.Assert(active >= 0);
+            idleStateChanged.Set();
         }
 
         /// <summary>
@@ -306,6 +334,7 @@ namespace Garnet.client
                         return;
                 }
                 ongoingAggressiveShiftReadOnly = 0;
+                idleStateChanged.Set();
             } while (ToShift() && ongoingAggressiveShiftReadOnly == 0 &&
                      Interlocked.CompareExchange(ref ongoingAggressiveShiftReadOnly, 1, 0) == 0);
 

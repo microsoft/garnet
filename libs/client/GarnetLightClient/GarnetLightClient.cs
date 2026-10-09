@@ -45,6 +45,9 @@ namespace Garnet.client
 
         Socket socket;
         int disposed;
+        int acceptingOperations = 1;
+        int activeOperations;
+        readonly TaskCompletionSource operationsDrained = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <inheritdoc />
         public bool Disposed => disposed > 0;
@@ -450,11 +453,40 @@ namespace Garnet.client
             GC.SuppressFinalize(this);
         }
 
+        /// <summary>
+        /// Stops accepting new operations, waits for accepted operations and their network activity to complete,
+        /// and then releases the client resources.
+        /// </summary>
+        /// <param name="token">
+        /// Cancellation token for the graceful wait. Cancellation forces normal disposal before it is propagated.
+        /// </param>
+        public async ValueTask DisposeGracefullyAsync(CancellationToken token = default)
+        {
+            if (Disposed)
+                return;
+
+            BeginRetirement();
+            try
+            {
+                await operationsDrained.Task.WaitAsync(token).ConfigureAwait(false);
+
+                var writer = Volatile.Read(ref networkWriter);
+                if (writer != null)
+                    await writer.WaitForIdleAsync(token).ConfigureAwait(false);
+            }
+            finally
+            {
+                Dispose();
+            }
+        }
+
 #pragma warning disable IDE0060 // Remove unused parameter
         void Dispose(bool disposing)
 #pragma warning restore IDE0060 // Remove unused parameter
         {
-            if (Interlocked.Increment(ref disposed) > 1) return;
+            BeginRetirement();
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+                return;
 
             timeoutCheckerCts?.Cancel();
             socket?.Dispose();
@@ -463,10 +495,55 @@ namespace Garnet.client
                 epoch.Dispose();
         }
 
+        void BeginRetirement()
+        {
+            if (Interlocked.Exchange(ref acceptingOperations, 0) != 0 &&
+                Volatile.Read(ref activeOperations) == 0)
+                operationsDrained.TrySetResult();
+        }
+
+        bool TryEnterOperation()
+        {
+            if (Volatile.Read(ref acceptingOperations) == 0)
+                return false;
+
+            Interlocked.Increment(ref activeOperations);
+            if (Volatile.Read(ref acceptingOperations) != 0)
+                return true;
+
+            ExitOperation();
+            return false;
+        }
+
+        void ExitOperation()
+        {
+            var active = Interlocked.Decrement(ref activeOperations);
+            if (active == 0 && Volatile.Read(ref acceptingOperations) == 0)
+                operationsDrained.TrySetResult();
+        }
+
         /// <summary>
         /// Issue a command whose response completes the provided <paramref name="tcs"/>.
         /// </summary>
         async ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        {
+            if (!TryEnterOperation())
+            {
+                CompleteOnFailure(tcs, disposeException);
+                return;
+            }
+
+            try
+            {
+                await InternalExecuteCoreAsync(tcs, respOp, args, token).ConfigureAwait(false);
+            }
+            finally
+            {
+                ExitOperation();
+            }
+        }
+
+        async ValueTask InternalExecuteCoreAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args, CancellationToken token)
         {
             var writer = networkWriter;
             var isArray = args != null;
@@ -662,6 +739,21 @@ namespace Garnet.client
         /// Issue a command for execution without expecting a response.
         /// </summary>
         void InternalExecuteNoResponse(ReadOnlyMemory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
+        {
+            if (!TryEnterOperation())
+                ThrowException(disposeException);
+
+            try
+            {
+                InternalExecuteNoResponseCore(respOp, subop, param1, param2, token);
+            }
+            finally
+            {
+                ExitOperation();
+            }
+        }
+
+        void InternalExecuteNoResponseCore(ReadOnlyMemory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token)
         {
             var writer = networkWriter;
             const int arraySize = 4;
