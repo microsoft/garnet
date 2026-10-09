@@ -26,6 +26,13 @@ namespace Garnet.common
         readonly string remoteEndpointName;
         readonly string localEndpointName;
         readonly bool isLocalConnection;
+
+        /// <summary>
+        /// Box home for <see cref="ResumeReceiveWithoutTLSAsync"/>. One per connection, because a connection
+        /// suspends its receive loop at most once at a time: the suspension is what stops it receiving.
+        /// </summary>
+        readonly FireAndForgetBoxHolder resumeBox = new();
+
         int closeRequested;
 
         /// <summary>
@@ -215,6 +222,7 @@ namespace Garnet.common
                     // A command in this batch suspended. Hand the rest of the loop to a continuation and
                     // release this IO thread. No receive is outstanding, so the connection stays idle until
                     // the batch finishes, which is what parks the session.
+                    FireAndForgetMethodBuilder.UseBoxOf(resumeBox);
                     _ = ResumeReceiveWithoutTLSAsync(pending.Value, demand, e);
                 }
             }

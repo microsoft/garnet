@@ -411,25 +411,30 @@ namespace Garnet.test
         /// task, no state machine and no thread-pool callback wrapper.
         /// </para>
         /// <para>
-        /// Calibration, all from Linux, which is where the bound is enforced. The floor differs by runtime, so
-        /// each leg carries its own bound; both separate cleanly from the same set of regressions.
+        /// Calibration, all from Linux, which is where the bound is enforced. Both the floor and the spread
+        /// depend on the runtime and on what else the machine is doing, so each leg carries its own bound and
+        /// each bound is set from the loaded numbers, which are the ones CI reproduces.
         /// </para>
         /// <list type="table">
         /// <listheader><term>variant</term><description>net10.0 / net8.0</description></listheader>
-        /// <item><term>as written</term><description>23-34 B / 62-71 B</description></item>
+        /// <item><term>as written, machine busy</term><description>23-34 B / 62-71 B</description></item>
+        /// <item><term>as written, machine idle</term><description>-29 to -43 B / -3 to -7 B</description></item>
         /// <item><term>driver parked on the <c>ValueTask</c> wait instead of registering itself as a work
-        /// item, so completing a plain delegate makes the thread pool box it</term>
-        /// <description>53-65 B / 89-100 B</description></item>
-        /// <item><term>driver replaced by the two compiler-generated async frames it subsumes</term>
+        /// item, so completing a plain delegate makes the thread pool box it; idle</term>
+        /// <description>-4 to 2 B / 24 to 26 B</description></item>
+        /// <item><term>the same, busy</term><description>53-65 B / 89-100 B</description></item>
+        /// <item><term>driver replaced by the two compiler-generated async frames it subsumes; busy</term>
         /// <description>52-74 B / not measured</description></item>
-        /// <item><term>uncancellable wait routed back through the semaphore</term>
+        /// <item><term>uncancellable wait routed back through the semaphore; busy</term>
         /// <description>153-172 B / not measured</description></item>
         /// </list>
         /// <para>
-        /// Each bound sits above its own range and below every regression measured on that leg, so any one of
-        /// them fails here. The spread within a range is sampling noise plus the pooled builders' per-thread
-        /// caches, which miss whenever a completion lands on a different thread than the one that rented the
-        /// box - which is most of the time here, since suspending and resuming is the entire point.
+        /// The whole table shifts by tens of bytes with load, because load changes how often a receive
+        /// completes synchronously, and on an idle machine that leaves the device read below the memory read.
+        /// What does not shift is the gap between a row and its regression, roughly 30 B either way. The
+        /// bounds are therefore set from the busy rows and are slack when run idle; the sharp, load-free
+        /// guarantee for the part that used to dominate this number lives in
+        /// <see cref="ConcurrentParksReuseTheirConnectionBoxes"/>, which counts boxes instead of weighing them.
         /// </para>
         /// <para>
         /// This measures the server and nothing else, which is why
@@ -474,11 +479,10 @@ namespace Garnet.test
             var perRead = fromDisk - fromMemory;
             TestContext.Out.WriteLine($"disk={fromDisk:F0} B  memory={fromMemory:F0} B  per disk read={perRead:F0} B");
 
-            // Asserted only where the bound was calibrated. The pooled builders cache per thread, so the hit
-            // rate - and with it the measurement - depends on how the platform schedules completions, and the
-            // ranges above were measured on Linux. Detection power is unaffected: a regression is a regression
-            // on every platform, so the Linux legs catch it. Other platforms still print the value, which is
-            // what a future calibration would start from.
+            // Asserted only where the bound was calibrated, against the busy rows of the table above, because
+            // those are what a shared CI runner reproduces. Detection power is unaffected on other platforms:
+            // a regression is a regression everywhere, so the Linux legs catch it, and elsewhere the value is
+            // still printed, which is what a future calibration would start from.
             if (!OperatingSystem.IsLinux())
                 return;
 
@@ -492,6 +496,122 @@ namespace Garnet.test
 #endif
         }
 
+
+        /// <summary>
+        /// A connection must keep reusing one state machine box across parks, however the thread pool happens
+        /// to schedule the resumes.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Counted rather than weighed, because the weight of a box is lost in the noise of a round trip. The
+        /// count is also the only way to see the failure this guards: a box pooled per thread is rented on the
+        /// thread that suspends a park and released on the thread that resumes it, so whether it is reused at
+        /// all depends on how the pool happens to hand the resume out. On an idle machine the two threads are
+        /// usually the same and a per-thread pool looks perfect; add concurrency and it misses, which is
+        /// exactly when the allocation is least affordable.
+        /// </para>
+        /// <para>
+        /// Each round trip is a park of its own - the connection suspends, resumes, replies, and only then
+        /// receives the next command - so this performs one rent and one release per round, and a box held
+        /// per connection makes every one of them a hit.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ConcurrentParksReuseTheirConnectionBoxes()
+        {
+            Populate();
+
+            const int Connections = 32;
+            const int RoundsPerConnection = 64;
+
+            var clients = new RawClient[Connections];
+            var failures = new string[Connections];
+
+            try
+            {
+                for (var i = 0; i < Connections; i++)
+                    clients[i] = new RawClient();
+
+                // Give each connection its own key, far enough apart to stay below the head address, so no
+                // two connections race onto one record and turn a device read into a memory hit.
+                string KeyFor(int c) => Key(c * 8);
+                string ExpectedFor(int c) => $"${ValueLength}\r\n{Value(c * 8)}\r\n";
+
+                // Warm up: every connection parks once, allocating the single box it then reuses.
+                for (var i = 0; i < Connections; i++)
+                    ClassicAssert.AreEqual(ExpectedFor(i), clients[i].Execute("GET", KeyFor(i)));
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                var allocatedBefore = Interlocked.Read(ref Garnet.common.FireAndForgetBox.Allocations);
+
+                // Dedicated threads, so the measured phase does not depend on the pool having a thread free
+                // for a blocking client at the moment the server needs one for a resume.
+                var start = new ManualResetEventSlim(false);
+                var threads = new Thread[Connections];
+                for (var i = 0; i < Connections; i++)
+                {
+                    var index = i;
+                    threads[i] = new Thread(() =>
+                    {
+                        try
+                        {
+                            start.Wait();
+                            for (var r = 0; r < RoundsPerConnection; r++)
+                            {
+                                var reply = clients[index].Execute("GET", KeyFor(index));
+                                if (reply != ExpectedFor(index))
+                                {
+                                    failures[index] = $"Connection {index} round {r} read {reply}";
+                                    return;
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            failures[index] = $"Connection {index} threw {ex.GetType().Name}: {ex.Message}";
+                        }
+                    })
+                    { IsBackground = true };
+                    threads[i].Start();
+                }
+
+                start.Set();
+                foreach (var t in threads)
+                {
+                    if (!t.Join(TimeSpan.FromSeconds(120)))
+                        Assert.Fail("A connection did not finish its rounds within the timeout.");
+                }
+
+                foreach (var failure in failures)
+                {
+                    if (failure is not null)
+                        Assert.Fail(failure);
+                }
+
+                var allocated = Interlocked.Read(ref Garnet.common.FireAndForgetBox.Allocations) - allocatedBefore;
+                TestContext.Out.WriteLine(
+                    $"{Connections * RoundsPerConnection} parks allocated {allocated} boxes");
+
+                ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore,
+                    Connections * RoundsPerConnection,
+                    "The keys stopped going to the device part way through, so this measured nothing.");
+
+                // Not zero, because releasing a box trails the receive that starts the next park: the body
+                // arms the next receive and only then returns, so a connection whose next command is already
+                // waiting can rent before the release lands and correctly take a fresh box rather than one
+                // still being cleared. That loses a handful of handoffs, never the pooling itself, which is
+                // what the gap between this bound and a per-thread pool's thousands measures.
+                ClassicAssert.LessOrEqual(allocated, Connections,
+                    $"{Connections * RoundsPerConnection} parks across {Connections} connections allocated " +
+                    $"{allocated} state machine boxes, so a park is no longer reusing the box its connection " +
+                    "holds.");
+            }
+            finally
+            {
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
 
         static double MeasurePerOp(int iterations, Action op)
         {
