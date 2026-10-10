@@ -59,6 +59,23 @@ namespace BDN.benchmark.Operations.LTM
         [Params(1, 2, 4, 8, 16, 32, 64)]
         public int Reads { get; set; }
 
+        /// <summary>
+        /// Which path a run of pipelined <c>GET</c>s takes.
+        /// <para>
+        /// <c>true</c> is scatter-gather: the run is submitted in one go and the whole run is completed by a
+        /// single blocking <c>CompletePending</c>, so every read in it is in flight at once and one thread is
+        /// blocked for the whole run. <c>false</c> is the suspending path: each miss parks the session on its
+        /// own, so no thread is held, but only one read is in flight per connection at a time.
+        /// </para>
+        /// <para>
+        /// Sweeping both against <see cref="Reads"/> separates the two costs that matter. Per-operation time
+        /// falling as the run grows is overlap; staying flat is its absence. Allocation is per batch either
+        /// way, so divide by <see cref="Reads"/> before comparing the two paths.
+        /// </para>
+        /// </summary>
+        [Params(false, true)]
+        public bool ScatterGather { get; set; }
+
         /// <summary>Prefix for populated (present) keys.</summary>
         const string KeyPrefix = "k:";
 
@@ -98,6 +115,8 @@ namespace BDN.benchmark.Operations.LTM
             // actually suspend. It also means the measurement includes a cross-thread handoff, which is real
             // cost on this path but does make run-to-run variance higher than the inline-completion benchmarks.
             opts.DeviceCompletionThreads = 1;
+
+            opts.EnableScatterGatherGet = ScatterGather;
         }
 
         public override void GlobalSetup()
