@@ -72,8 +72,13 @@ namespace Garnet.common
         readonly LimitedFixedBufferPool networkPool;
 
         /// <summary>
-        /// NOTE: This variable should not be marked as readonly as it is a mutable struct
+        /// Guards <see cref="responseObject"/>. Thread-owner tracking is off, because a command that suspends
+        /// with an operation in flight keeps the response object across its wait and releases it from the
+        /// thread that resumes the session, which is not the thread that took the lock.
         /// </summary>
+        /// <remarks>
+        /// NOTE: This variable should not be marked as readonly as it is a mutable struct
+        /// </remarks>
         SpinLock spinLock;
 
         private int closeRequested;
@@ -104,7 +109,7 @@ namespace Garnet.common
             this.responseObject = null;
             this.ThrottleMax = throttleMax;
             this.sendTimeoutMs = sendTimeout > TimeSpan.Zero ? (int)Math.Min(sendTimeout.TotalMilliseconds, int.MaxValue) : Timeout.Infinite;
-            this.spinLock = new();
+            this.spinLock = new(enableThreadOwnerTracking: false);
             this.closeRequested = 0;
 
             remoteEndpoint = socket.RemoteEndPoint is IPEndPoint remote ? $"{remote.Address}:{remote.Port}" : "";

@@ -70,7 +70,7 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            StringInput input = new(RespCommand.GET, arg1: StringInput.SuspendingRespGetArg);
+            StringInput input = new(RespCommand.GET, arg1: StringInput.RespGetArg);
 
             var key = parseState.GetArgSliceByRef(0);
             var output = GetStringOutput();
