@@ -97,7 +97,7 @@ namespace Garnet.server
         /// <remarks>
         /// Created on first use, so a session that never parks does not allocate one. Deliberately not
         /// disposed here: a suspended body may still be completing against it after <see cref="Dispose"/> has
-        /// run, and <see cref="SessionDelay.Cancel"/> has already stopped its timer.
+        /// run, and <see cref="SessionWaitSource.Cancel"/> has already stopped its timer.
         /// </remarks>
         internal SessionDelay SessionDelay
         {
@@ -200,6 +200,38 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// True while a suspended command is holding the per-batch scope across its wait, which is when the
+        /// batch's resources must not be released and its replies must not be flushed.
+        /// </summary>
+        bool SuspendedHoldingBatchScope => asyncSuspended && asyncCommandRetainsBatchScope;
+
+        /// <summary>
+        /// Takes the per-batch scope: the response object replies are written into, and, in cluster mode, the
+        /// cluster epoch. See the remarks on <see cref="BeginAsyncCommand(bool)"/>.
+        /// </summary>
+        void EnterBatchScope()
+        {
+            if (clusterSession is not null)
+                clusterSession.AcquireCurrentEpoch();
+            networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+        }
+
+        /// <summary>
+        /// Gives the per-batch scope back, including the scratch buffers whose contents it kept addressable.
+        /// </summary>
+        void ExitBatchScope()
+        {
+            asyncCommandRetainsBatchScope = false;
+            networkSender.ExitAndReturnResponseObject();
+
+            if (clusterSession is not null)
+                clusterSession.ReleaseCurrentEpoch();
+
+            scratchBufferBuilder.Reset();
+            scratchBufferAllocator.Reset();
+        }
+
+        /// <summary>
         /// Drops a per-batch scope that was being held across a suspension. Called when the suspension ends
         /// without resuming, so a torn-down session neither leaks its response object nor stalls a cluster
         /// transition indefinitely.
@@ -210,14 +242,8 @@ namespace Garnet.server
         /// </remarks>
         void ReleaseRetainedBatchScope()
         {
-            if (!asyncCommandRetainsBatchScope)
-                return;
-
-            asyncCommandRetainsBatchScope = false;
-            networkSender.ExitAndReturnResponseObject();
-            clusterSession?.ReleaseCurrentEpoch();
-            scratchBufferBuilder.Reset();
-            scratchBufferAllocator.Reset();
+            if (asyncCommandRetainsBatchScope)
+                ExitBatchScope();
         }
 
         /// <summary>

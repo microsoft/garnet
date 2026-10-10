@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -232,9 +233,11 @@ namespace Garnet.common
 
             // Taken rather than read, so that a resume racing with the next park hands the box to exactly one
             // of them. Losing the race costs an allocation, never a shared box.
-            if (Interlocked.Exchange(ref owner.Box, null) is FireAndForgetBox<TStateMachine> owned)
+            var held = Interlocked.Exchange(ref owner.Box, null);
+            if (held is FireAndForgetBox<TStateMachine> owned)
                 return owned;
 
+            Debug.Assert(held is null, "A holder is shared by methods with different state machines.");
             return new FireAndForgetBox<TStateMachine> { Owner = owner };
         }
     }

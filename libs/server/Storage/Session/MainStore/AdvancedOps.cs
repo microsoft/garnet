@@ -64,7 +64,7 @@ namespace Garnet.server
                 incr_session_notfound();
         }
 
-        public bool GET_CompletePending<TStringContext>((GarnetStatus, StringOutput)[] outputArr, bool wait, ref TStringContext context)
+        public bool GET_CompletePending<TStringContext>((GarnetStatus Status, StringOutput Output)[] outputArr, bool wait, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             Debug.Assert(outputArr != null);
@@ -87,7 +87,7 @@ namespace Garnet.server
         /// <param name="completedOutputs">Outputs of the completion, whose contexts index <paramref name="outputArr"/>.</param>
         /// <param name="outputArr">Per-submission slots to fill.</param>
         internal void ScatterCompletedGets(CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs,
-            (GarnetStatus, StringOutput)[] outputArr)
+            (GarnetStatus Status, StringOutput Output)[] outputArr)
         {
             Debug.Assert(outputArr != null);
 

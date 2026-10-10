@@ -567,7 +567,9 @@ namespace Garnet.server
 
             // A consumer with no receive loop to unwind to -- the embedded and in-process transports -- cannot
             // park, so the suspended command is waited out here. Every transport that can park calls
-            // TryConsumeMessagesAsync and never reaches this.
+            // TryConsumeMessagesAsync and never reaches this. AsTask is what makes the wait possible at all:
+            // the underlying source is reusable, and blocking on one directly would read a result it may
+            // already have recycled.
             return AsyncUtils.BlockingWait(PublishSuspension().AsTask());
         }
 
@@ -601,11 +603,7 @@ namespace Garnet.server
                 // and in cluster mode would republish the session at the newer epoch, letting a
                 // configuration change the command is still racing with proceed.
                 if (!asyncCommandRetainsBatchScope)
-                {
-                    if (clusterSession is not null)
-                        clusterSession.AcquireCurrentEpoch();
-                    networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                }
+                    EnterBatchScope();
                 recvBufferPtr = reqBuffer;
 
                 if (storeWrapper.EnforceConsistentRead())
@@ -699,16 +697,9 @@ namespace Garnet.server
                 // operation in flight keeps all of it, so it resumes on the same response object, with its
                 // scratch slots intact, and -- in cluster mode -- still holding the epoch, which keeps the
                 // key it is operating on from being migrated away while it waits.
-                if (!asyncSuspended || !asyncCommandRetainsBatchScope)
+                if (!SuspendedHoldingBatchScope)
                 {
-                    asyncCommandRetainsBatchScope = false;
-                    networkSender.ExitAndReturnResponseObject();
-
-                    if (clusterSession is not null)
-                        clusterSession.ReleaseCurrentEpoch();
-
-                    scratchBufferBuilder.Reset();
-                    scratchBufferAllocator.Reset();
+                    ExitBatchScope();
 
                     // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers
                     // grown for one unusually wide command can be released here. Counting down an integer
@@ -886,7 +877,7 @@ namespace Garnet.server
             // command suspending with an operation in flight must not flush: it resumes writing into this
             // same buffer, at this same dcurr, and flushes once the batch finishes. A synchronous
             // completion holds its replies back over the operation in exactly the same way.
-            if (dcurr > networkSender.GetResponseObjectHead() && !(asyncSuspended && asyncCommandRetainsBatchScope))
+            if (dcurr > networkSender.GetResponseObjectHead() && !SuspendedHoldingBatchScope)
             {
                 Send(networkSender.GetResponseObjectHead());
                 if (toDispose)

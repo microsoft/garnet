@@ -142,8 +142,10 @@ namespace Garnet.server
             else
             {
                 // On any later suspension the state machine already lives in the box, and the reference
-                // handed to this method is a reference to the box's own field.
-                Debug.Assert(ReferenceEquals(pending, box));
+                // handed to this method is a reference to the box's own field. Were it a copy instead, the
+                // resumed body would advance a state machine nothing else can see.
+                Debug.Assert(Unsafe.AreSame(ref ((RespAsyncBox<TStateMachine>)pending).StateMachine, ref stateMachine),
+                    "A suspending body was handed a copy of its state machine rather than the box's own.");
             }
 
             // Arm the session before handing the delegate out: an awaiter may invoke it inline, on another

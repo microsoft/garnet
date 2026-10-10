@@ -111,10 +111,14 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// A socket error is a result, not a fault: <see cref="GetResult"/> returns it inside the
+        /// <see cref="SocketOperationResult"/> for the caller to inspect, and never throws. Reporting
+        /// <see cref="ValueTaskSourceStatus.Faulted"/> would contradict that, and would make
+        /// <c>IsCompletedSuccessfully</c> false on a path that has a perfectly good result to hand back.
+        /// </remarks>
         public ValueTaskSourceStatus GetStatus(short token)
-            => !ReferenceEquals(continuation, CallbackCompleted) ? ValueTaskSourceStatus.Pending
-                : SocketError == SocketError.Success ? ValueTaskSourceStatus.Succeeded
-                : ValueTaskSourceStatus.Faulted;
+            => ReferenceEquals(continuation, CallbackCompleted) ? ValueTaskSourceStatus.Succeeded : ValueTaskSourceStatus.Pending;
 
         /// <inheritdoc />
         public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
