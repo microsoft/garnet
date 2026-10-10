@@ -82,7 +82,17 @@ namespace Tsavorite.core
         protected ILogger logger;
 
         /// <summary>
-        /// Constructor
+        /// Constructor, sizing the overflow-bucket allocator from the defaults.
+        /// </summary>
+        /// <param name="epoch">Epoch instance to use, or null to own a new one</param>
+        /// <param name="logger">Logger</param>
+        public TsavoriteBase(LightEpoch epoch = null, ILogger logger = null)
+            : this(epoch, 0, 0, logger)
+        {
+        }
+
+        /// <summary>
+        /// Constructor, sizing the overflow-bucket allocator for a given index generation.
         /// </summary>
         /// <param name="epoch">Epoch instance to use, or null to own a new one</param>
         /// <param name="indexSizeBuckets">Main bucket count of the initial index generation, used to size its
@@ -90,7 +100,7 @@ namespace Tsavorite.core
         /// <param name="overflowThreshold">Ceiling on overflow buckets as a percentage of a generation's main bucket
         /// count. Zero or negative selects <see cref="KVSettings.DefaultIndexOverflowThreshold"/>.</param>
         /// <param name="logger">Logger</param>
-        public TsavoriteBase(LightEpoch epoch = null, long indexSizeBuckets = 0, int overflowThreshold = 0, ILogger logger = null)
+        public TsavoriteBase(LightEpoch epoch, long indexSizeBuckets, int overflowThreshold, ILogger logger)
         {
             if (epoch == null)
             {
@@ -117,7 +127,9 @@ namespace Tsavorite.core
             var maxMemorySize = KVSettings.GetIndexOverflowMaxMemorySize(tableSizeBuckets, overflowThreshold);
             if (minimumBuckets > 0)
             {
-                // Round up to a whole allocator page; the ceiling is converted to a page count by rounding down.
+                // The new allocator's constructor consumes its initial allocation before the caller sees it, so that
+                // must be covered too. Round up to a whole allocator page; the ceiling rounds down to a page count.
+                minimumBuckets += KVSettings.OverflowBucketInitialAllocation;
                 var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
                 var required = (minimumBuckets * MallocFixedPageSize<HashBucket>.RecordSize + granularity - 1) / granularity * granularity;
                 if (required > MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit)
@@ -131,18 +143,17 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Worst-case overflow buckets the split into a doubled table can need. An entry whose record is not in memory
-        /// is inserted into both halves of the new table, because which half it belongs to cannot be determined without
-        /// reading the record, so the split produces at most twice the old generation's entries at seven per bucket.
+        /// Worst-case overflow buckets the split into a doubled table can need, which is twice the current generation's.
         /// </summary>
-        /// <remarks>The threshold-derived ceiling is quantized to whole allocator pages and clamped at both ends, so a
-        /// doubled table does not always get a doubled ceiling and this must be reserved separately. Exhausting the
-        /// allocator mid-split throws with a chunk already claimed, leaving the waiters in
+        /// <remarks>An entry whose record is not in memory is inserted into both halves of the new table, because which
+        /// half it belongs to cannot be determined without reading the record. Old bucket <c>i</c> maps to exactly new
+        /// buckets <c>i</c> and <c>i + size</c>, so each half's main bucket absorbs the seven entries of the old main
+        /// bucket and only the old overflow chain needs new overflow buckets: at most one per old overflow bucket per
+        /// half. Exhausting the allocator mid-split throws with a chunk already claimed, leaving the waiters in
         /// <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.SplitAllBuckets"/> spinning on a chunk that can never
-        /// complete.</remarks>
-        /// <param name="oldTableSizeBuckets">Main bucket count of the generation being split.</param>
-        internal long GetSplitOverflowBucketRequirement(long oldTableSizeBuckets)
-            => 2 * (oldTableSizeBuckets + overflowBucketsAllocator.GetMaxValidAddress());
+        /// complete, so this capacity is both guaranteed and reserved before the grow begins.</remarks>
+        internal long GetSplitOverflowBucketRequirement()
+            => 2 * overflowBucketsAllocator.GetMaxValidAddress();
 
         internal void Free()
         {

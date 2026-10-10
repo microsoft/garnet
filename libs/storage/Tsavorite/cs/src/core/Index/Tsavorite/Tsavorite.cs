@@ -94,15 +94,25 @@ namespace Tsavorite.core
         public int IndexOverflowThreshold => overflowThreshold;
 
         /// <summary>
-        /// Size of the in-use overflow buckets in bytes (#overflow buckets * <see cref="IndexBucketSizeBytes"/>).
+        /// Memory committed by the overflow-bucket allocators, including the resize generation while a grow is in
+        /// progress. The allocator commits whole pages ahead of the buckets it hands out, so this exceeds
+        /// <see cref="OverflowBucketCount"/> * <see cref="IndexBucketSizeBytes"/> and is what the process pays.
         /// </summary>
-        public long IndexOverflowSizeBytes => OverflowBucketCount * Constants.kCacheLineBytes;
+        public long IndexOverflowSizeBytes
+        {
+            get
+            {
+                // The resize generation is nulled concurrently once the split completes, so read it once.
+                var resizeAllocator = overflowBucketsAllocatorResize;
+                return overflowBucketsAllocator.AllocatedSizeBytes + (resizeAllocator?.AllocatedSizeBytes ?? 0);
+            }
+        }
 
         /// <summary>
-        /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the in-use
-        /// overflow buckets (<see cref="IndexOverflowSizeBytes"/>). During an index resize this also includes the
-        /// superseded hash table, which stays allocated until the split completes and makes the resize the peak of
-        /// index memory use.
+        /// Total index memory in bytes: the main hash table (<see cref="IndexSizeBytes"/>) plus the memory committed
+        /// by the overflow-bucket allocators (<see cref="IndexOverflowSizeBytes"/>). During an index resize this also
+        /// includes the superseded hash table, which stays allocated until the split completes and makes the resize the
+        /// peak of index memory use.
         /// </summary>
         public long IndexTotalSizeBytes
         {

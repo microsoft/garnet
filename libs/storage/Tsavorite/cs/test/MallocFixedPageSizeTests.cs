@@ -298,5 +298,89 @@ namespace Tsavorite.test
                 $"The exhaustion message must name the remedy of a larger index, but was: {ex.Message}");
             ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress());
         }
+
+        /// <summary>
+        /// Capacity held by <see cref="MallocFixedPageSize{T}.Reserve"/> is exclusive: ordinary allocations fail once
+        /// they would encroach on it, and the reserving caller can still take all of it. An index grow reserves what
+        /// its split needs while writes continue to allocate from the same generation, and a split that cannot allocate
+        /// leaves a chunk claimed forever.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void ReservedCapacityIsNotAvailableToOrdinaryAllocations()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 2);
+
+            var capacity = allocator.MaxAllocationCount;
+            const long Reservation = 1024;
+            allocator.Reserve(Reservation);
+
+            while (allocator.GetMaxValidAddress() < capacity - Reservation)
+                _ = allocator.Allocate();
+
+            _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate(),
+                "An ordinary allocation must not take capacity reserved for the split");
+
+            for (var i = 0L; i < Reservation; ++i)
+                _ = allocator.Allocate(useReservation: true);
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress(),
+                "The reserving caller must be able to take every record it reserved");
+
+            _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate(useReservation: true),
+                "The reservation is capacity, not an exemption from the bound");
+        }
+
+        /// <summary>
+        /// Released capacity returns to ordinary allocations, so a generation is not permanently shrunk by the grow
+        /// that created it.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void ReleasingAReservationReturnsItToOrdinaryAllocations()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 2);
+
+            var capacity = allocator.MaxAllocationCount;
+            allocator.Reserve(1024);
+            while (allocator.GetMaxValidAddress() < capacity - 1024)
+                _ = allocator.Allocate();
+            _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
+
+            allocator.ReleaseReservation();
+            while (allocator.GetMaxValidAddress() < capacity)
+                _ = allocator.Allocate();
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress());
+        }
+
+        /// <summary>
+        /// The memory an allocator costs is the pages it has committed, which runs ahead of the records handed out:
+        /// level 0 is allocated in the constructor and every page pre-allocates its successor. Charging the index
+        /// against the log budget from the allocation count alone would omit that.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void AllocatedSizeBytesReportsCommittedPagesNotHandedOutRecords()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 4);
+
+            // A fresh allocator has handed out only its initial block, but has already committed level 0 and level 1.
+            ClassicAssert.AreEqual(granularity * 2, allocator.AllocatedSizeBytes,
+                "Construction commits the first page and pre-allocates its successor");
+            ClassicAssert.Less((long)allocator.GetMaxValidAddress() * MallocFixedPageSize<HashBucket>.RecordSize,
+                allocator.AllocatedSizeBytes, "Committed memory must exceed the size implied by the allocation count");
+
+            // Crossing into the second page commits the third.
+            var recordsPerPage = granularity / MallocFixedPageSize<HashBucket>.RecordSize;
+            while (allocator.GetMaxValidAddress() <= recordsPerPage)
+                _ = allocator.Allocate();
+            ClassicAssert.AreEqual(granularity * 3, allocator.AllocatedSizeBytes,
+                "Reaching a page commits its successor");
+
+            ClassicAssert.LessOrEqual(allocator.AllocatedSizeBytes, allocator.MaxMemorySize,
+                "Committed memory can never exceed the budget the allocator was built for");
+        }
     }
 }
