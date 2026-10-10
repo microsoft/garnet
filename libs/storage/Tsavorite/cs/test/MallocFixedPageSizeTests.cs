@@ -1,7 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -381,6 +384,54 @@ namespace Tsavorite.test
 
             ClassicAssert.LessOrEqual(allocator.AllocatedSizeBytes, allocator.MaxMemorySize,
                 "Committed memory can never exceed the budget the allocator was built for");
+        }
+
+        /// <summary>
+        /// A rejected allocation advances <c>count</c> before rolling it back, so a concurrent reader can observe the
+        /// overshoot. <c>GetMaxValidAddress</c> is what <c>BeginCheckpoint</c> derives page-table indices from, so an
+        /// unclamped read would index past the last level.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void ConcurrentRejectionsNeverPublishAnAddressPastTheLastPage()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 2);
+
+            var capacity = allocator.MaxAllocationCount;
+            while (allocator.GetMaxValidAddress() < capacity)
+                _ = allocator.Allocate();
+
+            using var stop = new CancellationTokenSource();
+            var rejecters = new Task[Environment.ProcessorCount];
+            for (var i = 0; i < rejecters.Length; i++)
+            {
+                rejecters[i] = Task.Run(() =>
+                {
+                    while (!stop.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            _ = allocator.Allocate();
+                        }
+                        catch (TsavoriteException)
+                        {
+                        }
+                    }
+                });
+            }
+
+            var maxObserved = 0L;
+            for (var i = 0; i < 200_000; i++)
+                maxObserved = Math.Max(maxObserved, allocator.GetMaxValidAddress());
+
+            stop.Cancel();
+            Task.WaitAll(rejecters);
+
+            ClassicAssert.AreEqual(capacity, maxObserved,
+                "A reader must never observe an address past the last page the table can address");
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress(),
+                "Rejections must roll back, leaving the high-water mark where the last successful allocation left it");
         }
     }
 }
