@@ -128,10 +128,8 @@ namespace Tsavorite.core
             if (minimumBuckets > 0)
             {
                 // The new allocator's constructor consumes its initial allocation before the caller sees it, so that
-                // must be covered too. Round up to a whole allocator page; the ceiling rounds down to a page count.
-                minimumBuckets += KVSettings.OverflowBucketInitialAllocation;
-                var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
-                var required = (minimumBuckets * MallocFixedPageSize<HashBucket>.RecordSize + granularity - 1) / granularity * granularity;
+                // must be covered too.
+                var required = MallocFixedPageSize<HashBucket>.GetMemorySizeForRecords(minimumBuckets + KVSettings.OverflowBucketInitialAllocation);
                 if (required > MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit)
                     throw new TsavoriteException(
                         $"An overflow-bucket generation of {required} bytes is required, which exceeds the {MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit}"

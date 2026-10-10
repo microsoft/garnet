@@ -499,7 +499,7 @@ namespace Tsavorite.core
 
             // The restored index holds memory charged against the log budget, and the resizer that samples it does not
             // run during recovery. Sample here so the page ranges below size the log against the reduced budget.
-            hlogBase.logSizeTracker?.SampleExternalMemorySizeWithoutSignal();
+            _ = hlogBase.logSizeTracker?.RefreshExternalMemorySize();
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
@@ -729,7 +729,7 @@ namespace Tsavorite.core
 
             // Recovery rebuilds the index as it replays the log, so re-sample per batch rather than relying on the sample
             // taken before the hybrid log was read.
-            hlogBase.logSizeTracker.SampleExternalMemorySizeWithoutSignal();
+            _ = hlogBase.logSizeTracker.RefreshExternalMemorySize();
 
             var headPage = hlogBase.GetPage(recoveryStatus.headAddress);
             var loadedPages = tailPage - headPage + 1;
@@ -1091,7 +1091,7 @@ namespace Tsavorite.core
             }
 
             // With a size tracker, iterate pages from highest (untilAddress) to lowest (fromAddress) with budget control, evicting pages (and moving headAddress up) as needed.
-            hlogBase.logSizeTracker.SampleExternalMemorySizeWithoutSignal();
+            _ = hlogBase.logSizeTracker.RefreshExternalMemorySize();
             var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
 
             for (var page = endPage - 1; page >= startPage; page--)

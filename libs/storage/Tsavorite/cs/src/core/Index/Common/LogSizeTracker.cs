@@ -364,27 +364,11 @@ namespace Tsavorite.core
         public void Signal() => SignalResizer();
 
         /// <summary>
-        /// Takes a fresh sample from <see cref="ExternalMemorySizeProvider"/> and, if the external memory has grown,
-        /// signals the resizer so the log sheds pages to make room for it.
+        /// Takes a fresh sample from <see cref="ExternalMemorySizeProvider"/>, returning true if the external memory
+        /// grew. Callers that want the resizer woken on growth follow a true return with <see cref="Signal"/>; the
+        /// resizer loop and recovery do not, as both act on the new value themselves.
         /// </summary>
-        public void RefreshExternalMemorySize()
-        {
-            if (SampleExternalMemorySize())
-                SignalResizer();
-        }
-
-        /// <summary>
-        /// Takes a fresh sample from <see cref="ExternalMemorySizeProvider"/> without signalling the resizer, for callers
-        /// that enforce the budget themselves. Recovery uses this: it owns the log, so the resizer must not run, but it
-        /// reads <see cref="RemainingBudget"/> and <see cref="IsOverBudget"/>.
-        /// </summary>
-        public void SampleExternalMemorySizeWithoutSignal() => _ = SampleExternalMemorySize();
-
-        /// <summary>Samples <see cref="ExternalMemorySizeProvider"/>. Returns true if the external memory grew.</summary>
-        /// <remarks><see cref="ResizerTask"/> calls this rather than <see cref="RefreshExternalMemorySize"/>: it calls
-        /// <see cref="ResizeIfNeeded"/> next anyway, and signalling from the loop would retire the generation it has just
-        /// captured.</remarks>
-        private bool SampleExternalMemorySize()
+        public bool RefreshExternalMemorySize()
         {
             var provider = ExternalMemorySizeProvider;
             if (provider is null)
@@ -451,7 +435,7 @@ namespace Tsavorite.core
                         // resize would spin this loop with no delay between attempts.
                         try
                         {
-                            _ = SampleExternalMemorySize();
+                            _ = RefreshExternalMemorySize();
                             ResizeIfNeeded(cancellationToken);
                         }
                         catch (OperationCanceledException)
@@ -568,8 +552,7 @@ namespace Tsavorite.core
                 }
 
                 // We have objects, so iterate records to see where the new headAddress must be. Don't go past maxEvictUntilAddress.
-                var pageEndAddress = allocator.GetLogicalAddressOfStartOfPage(currentPage + 1);
-                var endAddress = pageEndAddress;
+                var endAddress = allocator.GetLogicalAddressOfStartOfPage(currentPage + 1);
                 if (endAddress > maxEvictUntilAddress)
                     endAddress = maxEvictUntilAddress;
                 while (headAddress < endAddress)
