@@ -528,6 +528,99 @@ namespace Tsavorite.test
             }
         }
 
+        /// <summary>
+        /// Key whose length varies with the ordinal, so record sizes do not divide the device sector size evenly and some record
+        /// therefore has a sector boundary running through it. The comparer reads only the leading <see cref="TestObjectKey"/>.
+        /// </summary>
+        readonly struct VariableLengthTestKey : IKey
+        {
+            readonly byte[] bytes;
+
+            internal VariableLengthTestKey(int key)
+            {
+                bytes = new byte[sizeof(int) + (key % 8)];
+                _ = BitConverter.TryWriteBytes(bytes, key);
+            }
+
+            public bool IsPinned => false;
+            public bool IsEmpty => false;
+            public ReadOnlySpan<byte> KeyBytes => bytes;
+            public bool HasNamespace => false;
+            public ReadOnlySpan<byte> NamespaceBytes => [];
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category(IteratorCategory)]
+        public void ObjectScanEndInsideRecordTest()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectScanEndInsideRecordTest.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectScanEndInsideRecordTest.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<VariableLengthTestKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var bContext = session.BasicContext;
+
+            var start = store.Log.TailAddress;
+            for (var ii = 0; ii < TotalRecords; ++ii)
+                _ = bContext.Upsert(new VariableLengthTestKey(ii), new TestObjectValue { value = ii }, Empty.Default);
+
+            store.Log.FlushAndEvict(wait: true);
+
+            // Find a record that a device-sector boundary runs through, before its trailing alignment padding, so that a frame load
+            // stopping at that boundary cuts off the record's object-log position and lengths.
+            var sectorSize = store.hlogBase.GetDeviceSectorSize();
+            long victimAddress = 0, victimNextAddress = 0;
+            var victimKey = 0;
+            var victimValue = 0;
+            using (var iter = store.Log.Scan(start, store.Log.TailAddress))
+            {
+                while (iter.GetNext())
+                {
+                    var sectorBoundary = (iter.CurrentAddress + 8 + sectorSize - 1) / sectorSize * sectorSize;
+                    if (sectorBoundary + 8 <= iter.NextAddress)
+                    {
+                        victimAddress = iter.CurrentAddress;
+                        victimNextAddress = iter.NextAddress;
+                        victimKey = iter.Key.AsRef<TestObjectKey>().key;
+                        victimValue = ((TestObjectValue)iter.ValueObject).value;
+                        break;
+                    }
+                }
+            }
+            ClassicAssert.Greater(victimAddress, 0, "Did not find a record straddling a sector boundary");
+
+            // The record still starts below the scan end, so the scan must return it whole, with its object read from the right object-log position.
+            long lastAddress = 0, lastNextAddress = 0;
+            var lastKey = -1;
+            var lastValue = -1;
+            using (var iter = store.Log.Scan(start, victimAddress + 8))
+            {
+                while (iter.GetNext())
+                {
+                    lastAddress = iter.CurrentAddress;
+                    lastNextAddress = iter.NextAddress;
+                    lastKey = iter.Key.AsRef<TestObjectKey>().key;
+                    lastValue = ((TestObjectValue)iter.ValueObject).value;
+                }
+            }
+
+            Assert.That(lastAddress, Is.EqualTo(victimAddress), "Scan returned the wrong last record");
+            Assert.That(lastNextAddress, Is.EqualTo(victimNextAddress), "Scan did not advance past the whole record");
+            Assert.That(lastKey, Is.EqualTo(victimKey), "Scan truncated the record's key");
+            Assert.That(lastValue, Is.EqualTo(victimValue), "Scan truncated the record's object");
+        }
+
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]

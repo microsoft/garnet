@@ -225,6 +225,16 @@ namespace Tsavorite.core
         /// <summary>
         /// Pull-scan the log given address range; returns all records with address less than endAddress
         /// </summary>
+        /// <remarks>
+        /// <para><paramref name="endAddress"/> need not be a record boundary. A record that starts below it is returned whole even if it
+        /// ends above it, so the iterator's <see cref="ITsavoriteScanIterator.NextAddress"/> can exceed <paramref name="endAddress"/>.</para>
+        /// <para>This is a physical walk of the log, so it returns every version of a key that the range contains, not just the live one:
+        /// an updated key appears once per surviving version, and so does a key whose record was copied to the tail by a compaction that
+        /// did not go on to shift BeginAddress past the original. Callers that need one record per key must uniquify, as the store's own
+        /// consumers do, giving precedence to the later record for a key: <c>ClientSession.Iterate</c> and <see cref="CompactionType.Scan"/>
+        /// buffer the earlier versions in a temporary store, while <see cref="CompactionType.Lookup"/> consults the hash index for a newer
+        /// version of the key.</para>
+        /// </remarks>
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ITsavoriteScanIterator Scan(long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false)
@@ -241,6 +251,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Push-scan the log given address range; returns all records with address less than endAddress
         /// </summary>
+        /// <remarks>
+        /// <para><paramref name="endAddress"/> need not be a record boundary; a record that starts below it is returned whole even if it ends above it.</para>
+        /// <para>This is a physical walk of the log, so it pushes every version of a key that the range contains, not just the live one.
+        /// Callers that need one record per key must uniquify, giving precedence to the later record for a key, as <c>ClientSession.Iterate</c>
+        /// and compaction do.</para>
+        /// </remarks>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering)
             where TScanFunctions : IScanIteratorFunctions
@@ -274,6 +290,13 @@ namespace Tsavorite.core
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
+        /// <remarks>
+        /// <paramref name="untilAddress"/> need not be a record boundary; compaction snaps it to the end of the last record that starts below it,
+        /// which is the returned address.
+        /// <para>On failure this throws without shifting BeginAddress, so no source record is dropped. Records already copied to the tail
+        /// are left as the live versions; re-running Compact is the repair, as it skips those (a newer version now exists for the key) and
+        /// reclaims the originals once it completes.</para>
+        /// </remarks>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
@@ -284,6 +307,13 @@ namespace Tsavorite.core
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
+        /// <remarks>
+        /// <paramref name="untilAddress"/> need not be a record boundary; compaction snaps it to the end of the last record that starts below it,
+        /// which is the returned address.
+        /// <para>On failure this throws without shifting BeginAddress, so no source record is dropped. Records already copied to the tail
+        /// are left as the live versions; re-running Compact is the repair, as it skips those (a newer version now exists for the key) and
+        /// reclaims the originals once it completes.</para>
+        /// </remarks>
         /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions"/>)</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
