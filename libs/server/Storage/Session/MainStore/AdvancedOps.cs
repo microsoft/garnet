@@ -73,7 +73,24 @@ namespace Garnet.server
             var ret = context.CompletePendingWithOutputs(out var completedOutputs, wait);
             latencyMetrics?.Stop(LatencyMetricsType.PENDING_LAT);
 
-            // Update array with completed outputs
+            ScatterCompletedGets(completedOutputs, outputArr);
+            return ret;
+        }
+
+        /// <summary>
+        /// Places completed reads into their submission slots and records them in the session metrics.
+        /// </summary>
+        /// <remarks>
+        /// Completions arrive in device order, not submission order, so each output is routed by the context
+        /// the caller stamped on it at submission. Disposes the iterator.
+        /// </remarks>
+        /// <param name="completedOutputs">Outputs of the completion, whose contexts index <paramref name="outputArr"/>.</param>
+        /// <param name="outputArr">Per-submission slots to fill.</param>
+        internal void ScatterCompletedGets(CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs,
+            (GarnetStatus, StringOutput)[] outputArr)
+        {
+            Debug.Assert(outputArr != null);
+
             while (completedOutputs.Next())
             {
                 outputArr[(int)completedOutputs.Current.Context] = (completedOutputs.Current.Status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND, completedOutputs.Current.Output);
@@ -84,8 +101,6 @@ namespace Garnet.server
                     sessionMetrics?.incr_total_notfound();
             }
             completedOutputs.Dispose();
-
-            return ret;
         }
 
         public bool GET_CompletePending<TStringContext>(out CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs, bool wait, ref TStringContext context)

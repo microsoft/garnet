@@ -260,8 +260,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// GET - scatter gather version
+        /// GET - scatter gather version: consumes a run of consecutive GETs, submits every read that misses
+        /// memory, and waits for them together.
         /// </summary>
+        /// <remarks>
+        /// Reads that go to the device are waited on by suspending the session once, on the single completion
+        /// covering the whole run, so the run gets the device overlap of a batched wait without holding a
+        /// thread for it. A running transaction completes in place instead.
+        /// </remarks>
         bool NetworkGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
         {
@@ -332,65 +338,10 @@ namespace Garnet.server
                 }
             }
 
-            if (firstPending != -1)
-            {
-                // First complete all pending ops
-                _ = storageApi.GET_CompletePending(outputArr, true);
-
-                // Write the outputs to network buffer in batch order. The first pending slot
-                // (i==0) is special: its Reader wrote directly into the network buffer at the
-                // dcurr that was captured at submission time, so we just advance dcurr to
-                // commit those bytes (the IsSpanByte fast path). All other slots were
-                // scratch-backed: memcpy them into the network buffer.
-                var n = c - firstPending;
-                for (var i = 0; i < n; i++)
-                {
-                    var status = outputArr[i].Item1;
-                    var sbm = outputArr[i].Item2.SpanByteAndMemory;
-                    if (status == GarnetStatus.OK)
-                    {
-                        if (i == 0)
-                        {
-                            // First pending: data is already in the network buffer at dcurr.
-                            ProcessOutput(sbm);
-                        }
-                        else if (sbm.IsSpanByte)
-                        {
-                            // Scratch slot: write it into the network buffer (flushing if it is full).
-                            // The slot is at most PendingScratchSlotSize, well under the network buffer,
-                            // so this succeeds after at most one flush.
-                            var slot = new ReadOnlySpan<byte>(sbm.SpanByte.ToPointer(), sbm.Length);
-                            while (!RespWriteUtils.TryWriteDirect(slot, ref dcurr, dend))
-                                SendAndReset();
-                        }
-                        else
-                        {
-                            // Overflow path: Reader couldn't fit the response in the scratch
-                            // slot and rented a heap buffer instead. Copy + dispose.
-                            SendAndReset(sbm.Memory, sbm.Length);
-                        }
-                    }
-                    else
-                    {
-                        WriteNull();
-                    }
-                }
-
-                // Publish the (possibly grown) array back to the session-cached field so the
-                // next batch can reuse it, and clear the used slots so we don't keep
-                // references to disposed StringOutput.SpanByteAndMemory.Memory wrappers.
-                pendingGetOutputArr = outputArr;
-                Array.Clear(outputArr, 0, n);
-
-                // The scratch slots are dead now that they have been copied to the network buffer;
-                // rewind the allocator to its entry savepoint so subsequent commands in this network
-                // batch reuse the space instead of growing on top of it.
-                scratchBufferAllocator.TryRewindToOffset(scratchOffset);
-            }
-
+            // Account for the GETs beyond the first, which the caller already counted. Done before the
+            // completion so the parking path does not have to repeat it.
             if (c > 1)
             {
-                // Update metrics (the first GET is accounted for by the caller)
                 if (LatencyMetrics != null) opCount += c - 1;
                 if (sessionMetrics != null)
                 {
@@ -399,7 +350,97 @@ namespace Garnet.server
                 }
             }
 
+            if (firstPending != -1)
+            {
+                // Publish the (possibly grown) array and the wrap-up bounds so the completion half can
+                // find them, whether it runs inline below or on a resume after the session parks.
+                pendingGetOutputArr = outputArr;
+                sgPendingCount = c - firstPending;
+                sgScratchOffset = scratchOffset;
+
+                // A running transaction holds its key locks and its epoch across this call, so it cannot
+                // park; complete on this thread instead.
+                if (txnManager.state == TxnState.Running)
+                {
+                    _ = storageApi.GET_CompletePending(outputArr, wait: true);
+                    WriteCompletedSGGets();
+                    return true;
+                }
+
+                ValueTask body;
+                using (BeginAsyncCommand(retainBatchScope: true))
+                    body = PendingSGGetBodyAsync(storageApi.GET_CompletePendingAsync());
+
+                return CompleteAsyncCommand(body);
+            }
+
             return true;
+        }
+
+        /// <summary>
+        /// Session fields carrying the wrap-up bounds of an in-flight <see cref="NetworkGET_SG"/> run from
+        /// the issue loop to <see cref="WriteCompletedSGGets"/>, which may run on a later resume.
+        /// </summary>
+        private int sgPendingCount;
+        private int sgScratchOffset;
+
+        /// <summary>
+        /// Writes a completed scatter-gather run's replies into the network buffer in batch order.
+        /// </summary>
+        /// <remarks>
+        /// The first pending slot is special: its Reader wrote directly into the network buffer at the
+        /// <c>dcurr</c> captured at submission, so committing those bytes is just an advance. Every later
+        /// submission was scratch-backed and is copied in here. Both rely on the response buffer and the
+        /// scratch allocator being the same ones the issue loop used, which is what retaining the per-batch
+        /// scope across the park guarantees.
+        /// </remarks>
+        private void WriteCompletedSGGets()
+        {
+            var outputArr = pendingGetOutputArr;
+            var n = sgPendingCount;
+
+            for (var i = 0; i < n; i++)
+            {
+                var status = outputArr[i].Item1;
+                var sbm = outputArr[i].Item2.SpanByteAndMemory;
+                if (status == GarnetStatus.OK)
+                {
+                    if (i == 0)
+                    {
+                        // First pending: data is already in the network buffer at dcurr.
+                        ProcessOutput(sbm);
+                    }
+                    else if (sbm.IsSpanByte)
+                    {
+                        // Scratch slot: write it into the network buffer (flushing if it is full).
+                        // The slot is at most PendingScratchSlotSize, well under the network buffer,
+                        // so this succeeds after at most one flush.
+                        var slot = new ReadOnlySpan<byte>(sbm.SpanByte.ToPointer(), sbm.Length);
+                        while (!RespWriteUtils.TryWriteDirect(slot, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        // Overflow path: Reader couldn't fit the response in the scratch
+                        // slot and rented a heap buffer instead. Copy + dispose.
+                        SendAndReset(sbm.Memory, sbm.Length);
+                    }
+                }
+                else
+                {
+                    WriteNull();
+                }
+            }
+
+            // Clear the used slots so we don't keep references to disposed
+            // StringOutput.SpanByteAndMemory.Memory wrappers.
+            Array.Clear(outputArr, 0, n);
+            sgPendingCount = 0;
+
+            // The scratch slots are dead now that they have been copied to the network buffer;
+            // rewind the allocator to the run's entry savepoint so subsequent commands in this network
+            // batch reuse the space instead of growing on top of it.
+            scratchBufferAllocator.TryRewindToOffset(sgScratchOffset);
         }
 
         /// <summary>

@@ -139,5 +139,33 @@ namespace Garnet.server
             WriteCompletedGet(completed);
             return true;
         }
+
+        /// <summary>
+        /// Waits for a scatter-gather run's reads without holding the thread, then writes its replies.
+        /// </summary>
+        /// <remarks>
+        /// The whole run parks once, on the single completion covering every read it submitted, so a batch
+        /// of disk-bound GETs gets the same device overlap as the blocking path and differs from it only by
+        /// the thread switch on resume. The per-batch scope is retained across the park because the reads
+        /// are already writing into this session's response buffer and scratch slots.
+        /// </remarks>
+        /// <param name="pending">Completion covering the reads the issue loop submitted.</param>
+        [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
+        async ValueTask PendingSGGetBodyAsync(ValueTask<CompletedOutputIterator<StringInput, StringOutput, long>> pending)
+        {
+            CompletedOutputIterator<StringInput, StringOutput, long> completed;
+            storageSession.StartPendingMetrics();
+            try
+            {
+                completed = await pending.ConfigureAwait(false);
+            }
+            finally
+            {
+                storageSession.StopPendingMetrics();
+            }
+
+            storageSession.ScatterCompletedGets(completed, pendingGetOutputArr);
+            WriteCompletedSGGets();
+        }
     }
 }
