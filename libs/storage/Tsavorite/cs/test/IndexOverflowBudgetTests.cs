@@ -33,6 +33,7 @@ namespace Tsavorite.test.IndexOverflowBudget
             log?.Dispose();
             log = null;
             DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         // Large enough that the threshold percentages under test land above the allocator's smallest page table, so a
@@ -138,32 +139,25 @@ namespace Tsavorite.test.IndexOverflowBudget
         }
 
         /// <summary>
-        /// A grow must guarantee the new generation can hold every bucket the split can need, independently of the
-        /// threshold: a split inserts an entry into both halves of the new table when its record is not in memory, so it
-        /// can need twice the old generation's entries. Running out mid-split leaves SplitAllBuckets spinning on a chunk
-        /// that can never complete.
+        /// A grow must guarantee the new generation can hold every bucket the split can need, and must hold that
+        /// capacity in reserve. A split inserts an entry into both halves of the new table when its record is not in
+        /// memory, so it can need twice the old generation's overflow buckets; running out mid-split leaves
+        /// SplitAllBuckets spinning on a chunk that can never complete. Writes arriving during the grow allocate from
+        /// the same new generation, so capacity that is merely present is not enough.
         /// </summary>
         [Test]
         [Category(TsavoriteKVTestCategory)]
         public void AGrowReservesEnoughOverflowBucketsForTheSplit()
         {
-            // At this threshold the doubled generation's threshold-derived ceiling is smaller than the split needs,
-            // so the reservation is what supplies the difference rather than the ratio happening to cover it.
             const int Threshold = 150;
             CreateStore(Threshold);
 
             var mainBuckets = IndexSizeBytes / 64;
-
-            // Fill the current generation past the point where the doubled ratio alone would suffice. The split needs
-            // 2 * (main + overflow) buckets, so overflow must exceed main * (Threshold/100 - 1) for that to bind.
-            var overflowToAllocate = mainBuckets * 3 / 2 - mainBuckets / 2 + 1;
-            for (var i = 0L; i < overflowToAllocate; ++i)
+            for (var i = 0L; i < mainBuckets; ++i)
                 _ = store.overflowBucketsAllocator.Allocate();
 
-            var requirement = store.GetSplitOverflowBucketRequirement(mainBuckets);
-            var ratioCeilingAfterGrow = KVSettings.GetIndexOverflowMaxMemorySize(mainBuckets * 2, Threshold);
-            ClassicAssert.Greater(requirement * 64, ratioCeilingAfterGrow,
-                "This test is only meaningful if the split needs more than the doubled generation's ratio would allow");
+            var requirement = store.GetSplitOverflowBucketRequirement();
+            ClassicAssert.Greater(requirement, 0, "The old generation must hold overflow buckets for this test to mean anything");
 
             store.GrowIndexAsync().GetAwaiter().GetResult();
             ClassicAssert.AreEqual(mainBuckets * 2, store.IndexSize, "The index must actually have grown for this test to mean anything");

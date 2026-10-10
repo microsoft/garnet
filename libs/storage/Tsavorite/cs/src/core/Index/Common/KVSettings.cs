@@ -58,6 +58,13 @@ namespace Tsavorite.core
         public static int HashBucketSizeBytes => MallocFixedPageSize<HashBucket>.RecordSize;
 
         /// <summary>
+        /// Memory an overflow-bucket generation commits as soon as it exists, whatever the threshold resolves to. The
+        /// allocator commits whole pages and pre-allocates each page's successor, so a generation that has handed out
+        /// nothing still holds this much.
+        /// </summary>
+        public static long OverflowBucketFloorMemorySize => MallocFixedPageSize<HashBucket>.MinMemorySize;
+
+        /// <summary>
         /// Resolve a threshold to the overflow-bucket ceiling in bytes for an index generation of a given size,
         /// rounded down to a whole allocator page and clamped to what the page table can address.
         /// </summary>

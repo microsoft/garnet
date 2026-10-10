@@ -41,7 +41,11 @@ namespace Tsavorite.core
                     // Build the new generation before mutating any resize state, so that a failure to size it refuses
                     // the grow rather than leaving it half-applied. Its ceiling is twice the old generation's, keeping
                     // the allowed chain length constant as the index grows, and is floored at what the split can need.
-                    var newOverflowBucketsAllocator = store.NewOverflowBucketsAllocator(oldSize * 2, store.GetSplitOverflowBucketRequirement(oldSize));
+                    // That capacity is then reserved, so writes arriving during the grow cannot consume what the split
+                    // was sized for; SplitAllBuckets releases the reservation once every chunk has been split.
+                    var splitRequirement = store.GetSplitOverflowBucketRequirement();
+                    var newOverflowBucketsAllocator = store.NewOverflowBucketsAllocator(oldSize * 2, splitRequirement);
+                    newOverflowBucketsAllocator.Reserve(splitRequirement);
 
                     var numChunks = (int)(oldSize / Constants.kSizeofChunk);
                     if (numChunks == 0) numChunks = 1; // at least one chunk

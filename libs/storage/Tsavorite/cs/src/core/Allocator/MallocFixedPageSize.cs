@@ -39,6 +39,13 @@ namespace Tsavorite.core
         /// <summary>Number of levels (pages) this instance can address, derived from the configured memory budget.</summary>
         private readonly int levelCount;
 
+        /// <summary>Pages actually allocated, which is what this allocator costs in memory. Pages are committed ahead of
+        /// the records handed out: level 0 at construction and every page pre-allocates its successor.</summary>
+        private int allocatedPageCount;
+
+        /// <summary>Records at the top of the capacity that only a reserved allocation may take.</summary>
+        private long reservedCount;
+
         private readonly T[][] values;
         private readonly IntPtr[] pointers;
 
@@ -52,6 +59,10 @@ namespace Tsavorite.core
 
         /// <summary>Granularity of a memory budget: a budget is rounded down to a whole number of pages of this size.</summary>
         internal static long MemorySizeGranularity => (long)PageSize * RecordSize;
+
+        /// <summary>Bytes this allocator has actually committed. Pages are allocated whole and ahead of the records
+        /// handed out, so this exceeds the size implied by the allocation count and is what the process pays.</summary>
+        public long AllocatedSizeBytes => (long)Volatile.Read(ref allocatedPageCount) * PageSize * RecordSize;
 
         /// <summary>Budget used when none is configured: 16 GiB for 64-byte records.</summary>
         internal static long DefaultMaxMemorySize => (long)LevelSize * PageSize * RecordSize;
@@ -135,6 +146,7 @@ namespace Tsavorite.core
             freeList = new ConcurrentQueue<long>();
 
             values[0] = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
+            _ = Interlocked.Increment(ref allocatedPageCount);
             if (IsBlittable)
             {
                 pointers[0] = (IntPtr)(((long)Unsafe.AsPointer(ref values[0][0]) + (SectorSize - 1)) & ~(SectorSize - 1));
@@ -207,6 +219,27 @@ namespace Tsavorite.core
 
         internal int FreeListCount => freeList.Count;   // For test
 
+        /// <summary>
+        /// Hold <paramref name="recordCount"/> records at the top of the capacity for allocations that pass
+        /// <c>useReservation</c>. Ordinary allocations fail once they would encroach on the reserve, so a caller that
+        /// must be able to allocate a known quantity cannot be starved by concurrent ordinary allocations.
+        /// </summary>
+        internal void Reserve(long recordCount)
+        {
+            if (recordCount > MaxAllocationCount - count)
+                ThrowReservationTooLarge(recordCount);
+            _ = Interlocked.Exchange(ref reservedCount, recordCount);
+        }
+
+        /// <summary>Release a reservation made by <see cref="Reserve"/>, returning its capacity to ordinary allocations.</summary>
+        internal void ReleaseReservation() => Interlocked.Exchange(ref reservedCount, 0);
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void ThrowReservationTooLarge(long recordCount)
+            => throw new TsavoriteException(
+                $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> cannot reserve {recordCount} records:"
+                + $" {MaxAllocationCount - count} of its {MaxAllocationCount} remain unallocated.{exhaustionRemedy}");
+
         public const int AllocateChunkSize = 16;
 
         /// <summary>
@@ -222,28 +255,31 @@ namespace Tsavorite.core
             Debug.Assert(allocationMode != AllocationMode.Single, "Cannot mix Single and Bulk allocation modes");
             allocationMode = AllocationMode.Bulk;
 #endif
-            return InternalAllocate(AllocateChunkSize);
+            return InternalAllocate(AllocateChunkSize, useReservation: false);
         }
 
         /// <summary>
         /// Allocate a block of size RecordSize.
         /// </summary>
+        /// <param name="useReservation">Draw on capacity held by <see cref="Reserve"/>, for a caller that reserved it.</param>
         /// <returns>The logicalAddress (index) of the block</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe long Allocate()
+        public unsafe long Allocate(bool useReservation = false)
         {
 #if DEBUG
             Debug.Assert(allocationMode != AllocationMode.Bulk, "Cannot mix Single and Bulk allocation modes");
             allocationMode = AllocationMode.Single;
 #endif
-            return InternalAllocate(1);
+            return InternalAllocate(1, useReservation);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void ThrowAllocatorFull()
+        private void ThrowAllocatorFull(long limit)
             => throw new TsavoriteException(
                 $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> is full: its page table addresses at most {levelCount} pages of {PageSize} records"
-                + $" ({MaxAllocationCount} records, {MaxMemorySize} bytes), and that capacity is exhausted.{exhaustionRemedy}");
+                + $" ({MaxAllocationCount} records, {MaxMemorySize} bytes), and that capacity is exhausted."
+                + (limit < MaxAllocationCount ? $" {MaxAllocationCount - limit} records of it are reserved for an index grow in progress." : string.Empty)
+                + exhaustionRemedy);
 
         /// <summary>Remedy appended to the exhaustion message, naming the settings that size this allocator.</summary>
         private static string exhaustionRemedy => typeof(T) != typeof(HashBucket)
@@ -253,20 +289,23 @@ namespace Tsavorite.core
                 + " Raise IndexMemorySize, or set IndexMaxMemorySize to let the index grow, so that more entries fit the"
                 + " main bucket array. Raising IndexOverflowThreshold buys capacity at the cost of longer chains.";
 
-        private unsafe long InternalAllocate(int blockSize)
+        private unsafe long InternalAllocate(int blockSize, bool useReservation)
         {
             if (freeList.TryDequeue(out long result))
                 return result;
 
-            // Reserve the whole block without letting count exceed capacity. count is also the high-water mark
+            // An ordinary allocation may not encroach on capacity held by Reserve.
+            var limit = MaxAllocationCount - (useReservation ? 0 : Volatile.Read(ref reservedCount));
+
+            // Take the whole block without letting count exceed the limit. count is also the high-water mark
             // GetMaxValidAddress reports and BeginCheckpoint derives page-table indices from, so a rejected allocation
             // must not advance it.
             int index;
             while (true)
             {
                 var reserved = count;
-                if (reserved + (long)blockSize > MaxAllocationCount)
-                    ThrowAllocatorFull();
+                if (reserved + (long)blockSize > limit)
+                    ThrowAllocatorFull(limit);
                 if (Interlocked.CompareExchange(ref count, reserved + blockSize, reserved) == reserved)
                 {
                     index = reserved;
@@ -288,6 +327,7 @@ namespace Tsavorite.core
                         pointers[1] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
                     values[1] = tmp;
+                    _ = Interlocked.Increment(ref allocatedPageCount);
                     Interlocked.MemoryBarrier();
                 }
 
@@ -339,6 +379,7 @@ namespace Tsavorite.core
                         pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
                     values[newBaseAddr] = tmp;
+                    _ = Interlocked.Increment(ref allocatedPageCount);
                 }
 
                 Interlocked.MemoryBarrier();

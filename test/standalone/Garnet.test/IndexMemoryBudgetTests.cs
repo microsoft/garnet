@@ -6,6 +6,7 @@ using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -22,31 +23,49 @@ namespace Garnet.test
     {
         GarnetServer server;
 
-        // Small enough that 100k keys overflow it by a wide margin, large enough that chains stay short.
-        const string IndexSize = "64k";
-        const int NumKeys = 100_000;
+        // 65536 main buckets. An overflow generation commits 8 MiB even when nearly empty, so the index must be
+        // at least this large for its overflow ceiling (IndexOverflowThreshold percent of it) to exceed that floor.
+        const string IndexSize = "4m";
+
+        // Enough to spill past the 8 MiB floor and commit a third overflow page, while staying under the ceiling.
+        const int NumKeys = 1_300_000;
 
         [SetUp]
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+        }
+
+        void StartServer()
+        {
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
-                memorySize: "64m",
+                memorySize: "128m",
                 indexSize: IndexSize,
                 pageSize: "4m");
             server.Start();
         }
 
+        static void Populate(int numKeys)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            for (var i = 0; i < numKeys; i++)
+                db.StringSet($"key:{i}", "v", flags: CommandFlags.FireAndForget);
+            _ = db.StringGet("key:0");
+        }
+
         [TearDown]
         public void TearDown()
         {
-            server.Dispose();
+            server?.Dispose();
             TestUtils.OnTearDown();
         }
 
         [Test]
         public void IndexOverflowIsChargedToLogBudget()
         {
+            StartServer();
+
             var storeWrapper = server.Provider.StoreWrapper;
             var store = storeWrapper.store;
             var tracker = store.Log.LogSizeTracker;
@@ -54,31 +73,25 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(tracker);
 
             var budget = storeWrapper.serverOptions.IndexMemoryBudgetBytes;
-            ClassicAssert.AreEqual(store.IndexSizeBytes, budget,
-                "With no index max size configured the index cannot grow, so the budget is the initial index size.");
+            ClassicAssert.AreEqual(store.IndexSizeBytes + KVSettings.OverflowBucketFloorMemorySize, budget,
+                "With no index max size configured the index cannot grow, so the budget is the initial index size plus"
+                + " the memory an overflow generation commits just by existing.");
 
-            // An empty store has only the overflow allocator's initial chunk, which is negligible.
+            // An empty store has committed only that floor, so nothing is charged to the log yet.
             tracker.RefreshExternalMemorySize();
-            var initialCharge = tracker.ExternalMemorySize;
-            ClassicAssert.Less(initialCharge, budget / 16);
+            ClassicAssert.AreEqual(0, tracker.ExternalMemorySize,
+                "An index at its configured size with no overflow growth must not reduce the log budget.");
 
             var targetSizeBefore = tracker.TargetSize;
 
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
-            {
-                var db = redis.GetDatabase(0);
-                for (var i = 0; i < NumKeys; i++)
-                    db.StringSet($"key:{i}", "v", flags: CommandFlags.FireAndForget);
-                _ = db.StringGet("key:0");
-            }
+            Populate(NumKeys);
 
             tracker.RefreshExternalMemorySize();
 
             var expected = store.IndexTotalSizeBytes - budget;
             ClassicAssert.Greater(expected, 0,
-                $"{NumKeys} keys must spill into overflow buckets with an index of {IndexSize}.");
+                $"{NumKeys} keys must commit overflow pages beyond the floor with an index of {IndexSize}.");
             ClassicAssert.AreEqual(expected, tracker.ExternalMemorySize);
-            ClassicAssert.Greater(tracker.ExternalMemorySize, initialCharge * 16);
 
             // The charge reduces the log's effective budget, which is what makes the node shed log pages
             // instead of growing past the configured memory limit.
@@ -90,16 +103,11 @@ namespace Garnet.test
         [Test]
         public void IndexMemoryIsReportedInInfoStore()
         {
-            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
-            {
-                var db = redis.GetDatabase(0);
-                for (var i = 0; i < NumKeys; i++)
-                    db.StringSet($"key:{i}", "v", flags: CommandFlags.FireAndForget);
-                _ = db.StringGet("key:0");
-            }
+            StartServer();
+            Populate(NumKeys);
 
             var store = server.Provider.StoreWrapper.store;
-            server.Provider.StoreWrapper.store.Log.LogSizeTracker.RefreshExternalMemorySize();
+            store.Log.LogSizeTracker.RefreshExternalMemorySize();
 
             var metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.STORE);
 

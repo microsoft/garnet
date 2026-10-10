@@ -26,8 +26,11 @@ namespace Tsavorite.core
             while (numPendingChunksToBeSplit > 0)
                 _ = Thread.Yield();
 
-            // Splits done, GC the old version of the hash table
+            // Splits done; the capacity held for them returns to ordinary allocations.
             Debug.Assert(numPendingChunksToBeSplit == 0);
+            overflowBucketsAllocator.ReleaseReservation();
+
+            // GC the old version of the hash table
             state[1 - resizeInfo.version] = default;
             overflowBucketsAllocatorResize.Dispose();
             overflowBucketsAllocatorResize = null;
@@ -142,7 +145,7 @@ namespace Tsavorite.core
                                 // Insert in left
                                 if (left == left_end)
                                 {
-                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                    var new_bucket_logical = overflowBucketsAllocator.Allocate(useReservation: true);
                                     var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                     *left = new_bucket_logical;
                                     left = (long*)new_bucket;
@@ -158,7 +161,7 @@ namespace Tsavorite.core
                                 {
                                     if (right == right_end)
                                     {
-                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                        var new_bucket_logical = overflowBucketsAllocator.Allocate(useReservation: true);
                                         var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                         *right = new_bucket_logical;
                                         right = (long*)new_bucket;
@@ -174,7 +177,7 @@ namespace Tsavorite.core
                                 // Insert in right
                                 if (right == right_end)
                                 {
-                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                    var new_bucket_logical = overflowBucketsAllocator.Allocate(useReservation: true);
                                     var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                     *right = new_bucket_logical;
                                     right = (long*)new_bucket;
@@ -190,7 +193,7 @@ namespace Tsavorite.core
                                 {
                                     if (left == left_end)
                                     {
-                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                        var new_bucket_logical = overflowBucketsAllocator.Allocate(useReservation: true);
                                         var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                         *left = new_bucket_logical;
                                         left = (long*)new_bucket;
@@ -209,7 +212,7 @@ namespace Tsavorite.core
                             // Insert in left
                             if (left == left_end)
                             {
-                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                var new_bucket_logical = overflowBucketsAllocator.Allocate(useReservation: true);
                                 var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                 *left = new_bucket_logical;
                                 left = (long*)new_bucket;
@@ -222,7 +225,7 @@ namespace Tsavorite.core
                             // Insert in right
                             if (right == right_end)
                             {
-                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
+                                var new_bucket_logical = overflowBucketsAllocator.Allocate(useReservation: true);
                                 var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
                                 *right = new_bucket_logical;
                                 right = (long*)new_bucket;
