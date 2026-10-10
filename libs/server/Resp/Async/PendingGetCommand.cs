@@ -21,9 +21,11 @@ namespace Garnet.server
     /// sessions, and the reply is written when the I/O lands.
     /// </para>
     /// <para>
-    /// This is the operation-in-flight kind of suspension, so it keeps the cluster epoch. The record it is
+    /// This is the operation-in-flight kind of suspension, so it keeps the per-batch scope. The record it is
     /// about to read must still belong to this node when the device comes back, which is exactly the
-    /// guarantee the epoch gives, and the wait is bounded by the device rather than by a client.
+    /// guarantee the cluster epoch gives, and the read is already writing into the response buffer the
+    /// session passed it, so that buffer has to stay this session's for the duration. The wait is bounded by
+    /// the device rather than by a client, which is what makes holding the scope acceptable.
     /// </para>
     /// </remarks>
     internal sealed partial class RespServerSession : ServerSessionBase
@@ -45,7 +47,7 @@ namespace Garnet.server
         bool NetworkGETSuspending()
         {
             ValueTask body;
-            using (BeginAsyncCommand(retainClusterEpoch: true))
+            using (BeginAsyncCommand(retainBatchScope: true))
                 body = PendingGetBodyAsync();
 
             return CompleteAsyncCommand(body);
@@ -77,8 +79,8 @@ namespace Garnet.server
                 : basicGarnetApi.GET_CompletePendingAsync();
 
         /// <summary>
-        /// Writes the reply for a read that completed from pending I/O, into the response buffer the resume
-        /// has just re-entered.
+        /// Writes the reply for a read that completed from pending I/O, into the response buffer the session
+        /// held across the suspension.
         /// </summary>
         void WriteCompletedGet()
         {

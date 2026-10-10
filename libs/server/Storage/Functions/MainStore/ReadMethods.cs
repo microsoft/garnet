@@ -99,10 +99,6 @@ namespace Garnet.server
                     return HandleEtagReader(in srcLogRecord, ref input, ref output, ref readInfo, cmd, value);
                 case RespCommand.MGET:
                 case RespCommand.NONE:
-                    // A suspending GET has let go of the network buffer it passed in, so a completion from
-                    // pending I/O has to land in pooled memory that outlives the park.
-                    if (readInfo.IsFromPending && input.arg1 == StringInput.SuspendingRespGetArg)
-                        output.SpanByteAndMemory.ConvertToHeap();
                     CopyRespTo(value, ref output);
                     break;
                 default:
