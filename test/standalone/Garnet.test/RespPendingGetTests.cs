@@ -209,7 +209,8 @@ namespace Garnet.test
 
         /// <summary>
         /// A transaction cannot suspend: it holds its key locks for the whole wait. The read is completed in
-        /// place instead, which must still produce the right reply.
+        /// place instead, which must still produce the right reply. Two consecutive GETs, so the run takes
+        /// the scatter-gather path and exercises its in-place completion rather than the single-read one.
         /// </summary>
         [Test]
         public void GetInsideATransactionReadsBackAValueThatIsNoLongerInMemory()
@@ -226,8 +227,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Several reads in one pipelined batch, so the session suspends and resumes part way through a batch
-        /// repeatedly and each reply still lands in order.
+        /// A run of consecutive reads in one pipelined batch. The run takes the scatter-gather path, which
+        /// submits every read and suspends once on their shared completion, and each reply still lands in
+        /// order - the first out of the response buffer it was read into, the rest out of scratch slots.
         /// </summary>
         [Test]
         public void PipelinedGetsThatGoToTheDeviceReplyInOrder()
@@ -335,6 +337,110 @@ namespace Garnet.test
             {
                 deviceFactoryCreator.ReadDelayMs = 0;
             }
+        }
+
+        /// <summary>
+        /// The same proof for a pipelined run of reads, which takes the scatter-gather path rather than the
+        /// single-read path.
+        /// </summary>
+        /// <remarks>
+        /// A run of consecutive GETs is served by submitting every read in the run and then waiting for them
+        /// together. Waiting in place holds one thread for the whole run, so a clamped pool serves the runs a
+        /// poolful at a time and the elapsed time grows with the ratio of sessions to threads - which the
+        /// single-read test cannot show, because a lone GET never enters the scatter-gather path. Parking on
+        /// the run's completion holds no thread, so every session's reads are in flight at once.
+        /// </remarks>
+        [Test]
+        public void ManyConcurrentPipelinedRunsOutnumberTheThreadPoolAndStillFinishTogether()
+        {
+            const int ReadDelayMs = 1000;
+            const int GetsPerRun = 2;
+
+            // Linux only, for the reason given on the single-read test above.
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
+            Populate();
+
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
+
+            var cappedWorkers = Math.Max(Environment.ProcessorCount, minWorkers);
+            var sessionCount = Math.Max(64, cappedWorkers * 4);
+            ClassicAssert.LessOrEqual(sessionCount * GetsPerRun, PopulatedKeys,
+                "Not enough populated keys to give every session a distinct run.");
+
+            var clients = new RawClient[sessionCount];
+            var clamped = false;
+            try
+            {
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i] = new RawClient();
+
+                clamped = ThreadPool.SetMaxThreads(cappedWorkers, maxIo);
+                ClassicAssert.IsTrue(clamped,
+                    $"Could not clamp the worker pool to {cappedWorkers} from ({maxWorkers},{maxIo}) with a " +
+                    $"worker minimum of {minWorkers}, so this test cannot demonstrate thread starvation.");
+
+                deviceFactoryCreator.ReadDelayMs = ReadDelayMs;
+
+                // One run on its own, as the yardstick. Its reads are submitted together and complete
+                // together, so a whole run costs about one device round trip.
+                var single = Stopwatch.StartNew();
+                clients[0].SendPipeline(Run(0, GetsPerRun));
+                for (var j = 0; j < GetsPerRun; j++)
+                    ClassicAssert.AreEqual($"${ValueLength}\r\n{Value(j)}\r\n", clients[0].ReadReply());
+                single.Stop();
+
+                ClassicAssert.GreaterOrEqual(single.Elapsed.TotalMilliseconds, ReadDelayMs * 0.8,
+                    "A run returned faster than the injected device delay, so it never went to the device.");
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+
+                var sw = Stopwatch.StartNew();
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i].SendPipeline(Run(i * GetsPerRun, GetsPerRun));
+
+                try
+                {
+                    for (var i = 0; i < sessionCount; i++)
+                        for (var j = 0; j < GetsPerRun; j++)
+                            ClassicAssert.AreEqual($"${ValueLength}\r\n{Value(i * GetsPerRun + j)}\r\n",
+                                clients[i].ReadReply(), $"Wrong value for reply {j} of session {i}");
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"A session produced no reply within the socket timeout, with {sessionCount} " +
+                        $"concurrent runs of {GetsPerRun} device reads against {cappedWorkers} worker threads: " +
+                        $"the runs are being serialized on thread-pool threads rather than suspended. {e.Message}");
+                }
+                sw.Stop();
+
+                ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore, sessionCount * GetsPerRun,
+                    "Fewer device reads than reads requested, so some of these were served from memory.");
+
+                ClassicAssert.Less(sw.Elapsed.TotalMilliseconds, single.Elapsed.TotalMilliseconds * 3,
+                    $"{sessionCount} concurrent runs of {GetsPerRun} device reads took {sw.Elapsed.TotalSeconds:F1}s " +
+                    $"against a single run of {single.Elapsed.TotalSeconds:F1}s with {cappedWorkers} worker " +
+                    "threads, which means the runs were serialized on thread-pool threads rather than suspended.");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                if (clamped)
+                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>Builds a pipelined run of <paramref name="count"/> GETs starting at <paramref name="from"/>.</summary>
+        static string[][] Run(int from, int count)
+        {
+            var commands = new string[count][];
+            for (var j = 0; j < count; j++)
+                commands[j] = ["GET", Key(from + j)];
+            return commands;
         }
 
         /// <summary>
