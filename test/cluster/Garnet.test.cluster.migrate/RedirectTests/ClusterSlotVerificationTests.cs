@@ -52,6 +52,7 @@ namespace Garnet.test.cluster
                 new APPEND(),
                 new STRLEN(),
                 new RENAME(),
+                new COPY(),
                 new DEL(),
                 new GETDEL(),
                 new EXISTS(),
