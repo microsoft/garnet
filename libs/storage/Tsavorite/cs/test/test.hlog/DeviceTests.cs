@@ -91,6 +91,84 @@ namespace Tsavorite.test
             }
         }
 
+        /// <summary>
+        /// A device read must not allocate. Every <see cref="IDevice.ReadAsync(ulong, IntPtr, uint, DeviceIOCompletionCallback, object)"/>
+        /// first runs the lazy-creation guard, so anything the guard allocates is paid once per IO.
+        /// </summary>
+        /// <remarks>
+        /// Weighed here rather than at the Garnet level because the end-to-end differential between a disk
+        /// read and a memory read is dominated by whether the receive completed synchronously, which swings
+        /// by tens of bytes with load and buries a per-read regression of this size. With no network in the
+        /// picture the floor is flat, so the bound can sit just above it.
+        /// <para>
+        /// The regression this catches: the guard's cold creation path captures a local in the drainer-thread
+        /// lambda, and Roslyn allocates that closure on entry to whichever method declares it. Folded back
+        /// into the guard it costs 32 B on every read and write; held in its own method it costs 32 B once.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public unsafe void NativeDeviceReadDoesNotAllocatePerIo()
+        {
+            const int Size = IDevice.MinDeviceSectorSize;
+
+            using var device = new NativeStorageDevice(Path.Join(TestUtils.MethodTestDir, "test.log"), deleteOnClose: true);
+            device.Initialize(1L << 30);
+
+            var writeBuffer = bufferPool.Get(Size);
+            var readBuffer = bufferPool.Get(Size);
+            var pending = 0;
+
+            DeviceIOCompletionCallback callback = (errorCode, numBytes, context, ioException) =>
+            {
+                if (errorCode != 0)
+                    Assert.Fail($"Device IO failed with error {errorCode}");
+                _ = Interlocked.Decrement(ref pending);
+            };
+
+            void Await()
+            {
+                while (Volatile.Read(ref pending) != 0)
+                    _ = Thread.Yield();
+            }
+
+            void Read()
+            {
+                Volatile.Write(ref pending, 1);
+                device.ReadAsync(0, (IntPtr)readBuffer.aligned_pointer, Size, callback, null);
+                Await();
+            }
+
+            try
+            {
+                Volatile.Write(ref pending, 1);
+                device.WriteAsync((IntPtr)writeBuffer.aligned_pointer, 0, Size, callback, null);
+                Await();
+
+                // Warm everything the read path pools - JIT, the shard slot arrays, the native handle - so
+                // the measurement sees only what a steady-state read costs.
+                for (var i = 0; i < 2_000; i++)
+                    Read();
+
+                const int Iterations = 20_000;
+                var before = GC.GetTotalAllocatedBytes(precise: true);
+                for (var i = 0; i < Iterations; i++)
+                    Read();
+                var perRead = (GC.GetTotalAllocatedBytes(precise: true) - before) / (double)Iterations;
+
+                TestContext.Out.WriteLine($"per device read = {perRead:F2} B");
+
+                ClassicAssert.Less(perRead, 8.0,
+                    "A device read allocates. The usual cause is a lambda added to the lazy-creation guard or "
+                    + "to ReadAsync itself: a closure there is allocated on entry to the method that declares "
+                    + "it, which on this path means once per IO rather than once per device.");
+            }
+            finally
+            {
+                writeBuffer.Return();
+                readBuffer.Return();
+            }
+        }
+
         void Callback(uint errorCode, uint numBytes, object context, Exception ioException)
         {
             semaphore.Release();
