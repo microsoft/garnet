@@ -62,10 +62,10 @@ namespace BDN.benchmark.Operations.LTM
         /// <summary>
         /// Which path a run of pipelined <c>GET</c>s takes.
         /// <para>
-        /// <c>true</c> is scatter-gather: the run is submitted in one go and the whole run is completed by a
-        /// single blocking <c>CompletePending</c>, so every read in it is in flight at once and one thread is
-        /// blocked for the whole run. <c>false</c> is the suspending path: each miss parks the session on its
-        /// own, so no thread is held, but only one read is in flight per connection at a time.
+        /// <c>true</c> is scatter-gather: the whole run is submitted in one go and completed by a single
+        /// suspension, so every read in it is in flight at once and the session parks once for the run.
+        /// <c>false</c> parks per miss, so only one read is outstanding per connection at a time and nothing
+        /// overlaps. Neither holds a thread across the device.
         /// </para>
         /// <para>
         /// Sweeping both against <see cref="Reads"/> separates the two costs that matter. Per-operation time
