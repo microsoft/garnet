@@ -69,15 +69,16 @@ namespace Garnet.server
 
         /// <summary>
         /// <c>DEBUG BLOCKIO seconds [key]</c>. Parks the session for the given number of seconds the way a
-        /// storage operation that went to disk does, keeping the cluster epoch for the whole wait, then
+        /// storage operation that went to disk does, keeping the per-batch scope for the whole wait, then
         /// replies <c>+OK</c>, or the value of <c>key</c> if one was given.
         /// </summary>
         /// <remarks>
-        /// The counterpart of <see cref="NetworkDebugBlock"/>, which parks idle and releases the epoch.
-        /// This one stands in for an asynchronous storage operation: the session goes on advertising an
-        /// operation in flight for the whole wait, so a migration of the key's slot waits for the park to
-        /// end rather than moving the key out from under the read that follows. The seconds stand in for
-        /// the bound a real device puts on the wait.
+        /// The counterpart of <see cref="NetworkDebugBlock"/>, which parks idle and releases the scope.
+        /// This one stands in for an asynchronous storage operation: the session holds its response object
+        /// and scratch buffers across the wait and goes on advertising an operation in flight, so a
+        /// migration of the key's slot waits for the park to end rather than moving the key out from under
+        /// the read that follows. The seconds stand in for the bound a real device puts on the wait, which
+        /// is what makes holding the scope acceptable.
         /// </remarks>
         bool NetworkDebugBlockIo()
         {
@@ -91,7 +92,7 @@ namespace Garnet.server
                 return true;
 
             ValueTask body;
-            using (BeginAsyncCommand(retainClusterEpoch: true))
+            using (BeginAsyncCommand(retainBatchScope: true))
                 body = DebugBlockBodyAsync(delay, parseState.Count == 3);
 
             return CompleteAsyncCommand(body);

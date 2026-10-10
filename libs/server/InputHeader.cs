@@ -326,14 +326,6 @@ namespace Garnet.server
         public const long RespGetArg = -1;
 
         /// <summary>
-        /// <see cref="arg1"/> marking a RESP <see cref="RespCommand.GET"/> whose caller does not hold the
-        /// network buffer it passed in once the read goes to disk, because it parks the session rather than
-        /// waiting on the device. Behaves exactly like <see cref="RespGetArg"/> except that a completion
-        /// arriving from pending I/O writes to pooled memory instead of into that buffer.
-        /// </summary>
-        public const long SuspendingRespGetArg = -2;
-
-        /// <summary>
         /// Session parse state
         /// </summary>
         public SessionParseState parseState;

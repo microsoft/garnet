@@ -596,13 +596,17 @@ namespace Garnet.server
                         slowLogStartTime = LatencyMetrics != null ? LatencyMetrics.Get(LatencyMetricsType.NET_RS_LAT) : Stopwatch.GetTimestamp();
                     }
                 }
-                // A command that suspended with an operation in flight is still holding its epoch.
-                // Re-acquiring would republish the session at the newer epoch and let a configuration
-                // change the command is still racing with proceed.
-                if (clusterSession is not null && !asyncCommandRetainsClusterEpoch)
-                    clusterSession.AcquireCurrentEpoch();
+                // A command that suspended with an operation in flight is still holding the per-batch scope.
+                // Retaking it would hand the body a different response object and a reset scratch buffer,
+                // and in cluster mode would republish the session at the newer epoch, letting a
+                // configuration change the command is still racing with proceed.
+                if (!asyncCommandRetainsBatchScope)
+                {
+                    if (clusterSession is not null)
+                        clusterSession.AcquireCurrentEpoch();
+                    networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                }
                 recvBufferPtr = reqBuffer;
-                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
 
                 if (storeWrapper.EnforceConsistentRead())
                 {
@@ -691,26 +695,28 @@ namespace Garnet.server
             }
             finally
             {
-                networkSender.ExitAndReturnResponseObject();
-
-                // The response object and the scratch buffers are per-batch and go back now. The cluster
-                // epoch is not: a command suspending with an operation in flight keeps it, so the key it is
-                // operating on cannot be migrated away while it waits.
-                if (clusterSession is not null && (!asyncSuspended || !asyncCommandRetainsClusterEpoch))
+                // The per-batch scope goes back at the batch boundary. A command suspending with an
+                // operation in flight keeps all of it, so it resumes on the same response object, with its
+                // scratch slots intact, and -- in cluster mode -- still holding the epoch, which keeps the
+                // key it is operating on from being migrated away while it waits.
+                if (!asyncSuspended || !asyncCommandRetainsBatchScope)
                 {
-                    clusterSession.ReleaseCurrentEpoch();
-                    asyncCommandRetainsClusterEpoch = false;
+                    asyncCommandRetainsBatchScope = false;
+                    networkSender.ExitAndReturnResponseObject();
+
+                    if (clusterSession is not null)
+                        clusterSession.ReleaseCurrentEpoch();
+
+                    scratchBufferBuilder.Reset();
+                    scratchBufferAllocator.Reset();
+
+                    // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers
+                    // grown for one unusually wide command can be released here. Counting down an integer
+                    // keeps this off the parse state itself, which measurably degrades code generation for
+                    // this method when read on every batch.
+                    if (--sessionTrimCountdown <= 0)
+                        TrimSessionBuffers();
                 }
-
-                scratchBufferBuilder.Reset();
-                scratchBufferAllocator.Reset();
-
-                // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers
-                // grown for one unusually wide command can be released here. Counting down an integer
-                // keeps this off the parse state itself, which measurably degrades code generation for
-                // this method when read on every batch.
-                if (--sessionTrimCountdown <= 0)
-                    TrimSessionBuffers();
             }
 
             // A suspended batch is unfinished: report nothing consumed so the network stack neither shifts
@@ -876,7 +882,11 @@ namespace Garnet.server
                     SessionAsking = (byte)(SessionAsking - 1);
             }
 
-            if (dcurr > networkSender.GetResponseObjectHead())
+            // Sending hands the response object to the socket and drops the session's claim on it, so a
+            // command suspending with an operation in flight must not flush: it resumes writing into this
+            // same buffer, at this same dcurr, and flushes once the batch finishes. A synchronous
+            // completion holds its replies back over the operation in exactly the same way.
+            if (dcurr > networkSender.GetResponseObjectHead() && !(asyncSuspended && asyncCommandRetainsBatchScope))
             {
                 Send(networkSender.GetResponseObjectHead());
                 if (toDispose)

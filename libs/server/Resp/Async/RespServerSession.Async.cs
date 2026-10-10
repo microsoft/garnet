@@ -17,27 +17,34 @@ namespace Garnet.server
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A command body suspends inside <see cref="TryConsumeMessagesAsync"/> but after the session's resource
-    /// scope has been released, so no response-object lock, cluster epoch, or scratch buffer is held across
-    /// the wait. Because the stack has not unwound past <see cref="TryConsumeMessagesAsync"/>, the network
-    /// handler has not shifted or resized the receive buffer and has not issued the next receive. The
-    /// suspended command therefore keeps its arguments valid, and commands pipelined behind it stay unparsed
-    /// until it finishes -- the session is parked, exactly as a synchronous blocking command would leave it,
-    /// but without owning a thread.
+    /// A command body suspends inside <see cref="TryConsumeMessagesAsync"/>. Because the stack has not
+    /// unwound past <see cref="TryConsumeMessagesAsync"/>, the network handler has not shifted or resized the
+    /// receive buffer and has not issued the next receive. The suspended command therefore keeps its
+    /// arguments valid, and commands pipelined behind it stay unparsed until it finishes -- the session is
+    /// parked, exactly as a synchronous blocking command would leave it, but without owning a thread.
     /// </para>
     /// <para>
-    /// Resumption runs through <see cref="ResumeAsyncCommand"/>, which re-enters the resource scope before
-    /// driving the body's state machine, then drains the rest of the batch.
+    /// What happens to the session's per-batch scope -- the response object, the scratch buffers, and the
+    /// cluster epoch -- is the suspending command's choice, made through
+    /// <see cref="BeginAsyncCommand(bool)"/>. A command waiting on an operation already in flight keeps the
+    /// scope, so it resumes on the buffers and at the epoch it suspended on and differs from a synchronous
+    /// completion only by the thread switch. A command waiting while idle, on an event with no bound on when
+    /// it arrives, releases the scope and retakes it on resume, and so may carry no pointer into it across
+    /// the wait.
     /// </para>
     /// <para>
-    /// What a suspension does <em>not</em> release is the transaction. Key locks taken by an enclosing
-    /// <c>MULTI</c>/<c>EXEC</c> are held for as long as the body waits, so a command that parks inside a
-    /// transaction stalls every other session contending for those keys. That matches what the existing
-    /// blocking list commands already do -- they join the running transaction rather than opting out of it --
-    /// and it is why the cluster epoch, the response object and the scratch buffers are released here but the
-    /// transaction is not: those three are per-batch resources, whereas the locks are what makes the
-    /// transaction atomic and cannot be dropped mid-transaction. A blocking command whose wait is unbounded
-    /// should therefore bound it, or decline to wait when <c>txnManager.state == TxnState.Running</c>.
+    /// Resumption runs through <see cref="ResumeAsyncCommand"/>, which re-enters the resource scope -- or
+    /// finds it still held -- before driving the body's state machine, then drains the rest of the batch.
+    /// </para>
+    /// <para>
+    /// What no suspension releases is the transaction. Key locks taken by an enclosing <c>MULTI</c>/
+    /// <c>EXEC</c> are held for as long as the body waits, so a command that parks inside a transaction
+    /// stalls every other session contending for those keys. That matches what the existing blocking list
+    /// commands already do -- they join the running transaction rather than opting out of it -- and it is
+    /// why the per-batch scope can be released by an idle suspension but the transaction cannot: the scope
+    /// lasts one batch, whereas the locks are what makes the transaction atomic and cannot be dropped
+    /// mid-transaction. A blocking command whose wait is unbounded should therefore bound it, or decline to
+    /// wait when <c>txnManager.state == TxnState.Running</c>.
     /// </para>
     /// </remarks>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
@@ -59,15 +66,15 @@ namespace Garnet.server
         bool asyncSuspended;
 
         /// <summary>
-        /// Set while the suspended command keeps the cluster epoch across its wait, so the session goes on
-        /// advertising an operation in flight. See the remarks on <see cref="BeginAsyncCommand(bool)"/>.
+        /// Set while the suspended command keeps the per-batch scope -- response object, scratch buffers,
+        /// and the cluster epoch -- across its wait. See the remarks on <see cref="BeginAsyncCommand(bool)"/>.
         /// </summary>
         /// <remarks>
         /// Read by <see cref="ConsumeCore"/> on both edges of a suspension: it skips the release on the way
-        /// out and the matching acquire on resume, because re-acquiring would republish the session at the
-        /// newer epoch and let a configuration change that the command is still racing with proceed.
+        /// out and the matching acquire on resume, so the body re-enters on the buffers and at the epoch it
+        /// suspended on.
         /// </remarks>
-        bool asyncCommandRetainsClusterEpoch;
+        bool asyncCommandRetainsBatchScope;
 
         /// <summary>Box of the currently suspended body.</summary>
         RespAsyncBox resumeBox;
@@ -146,47 +153,71 @@ namespace Garnet.server
         /// Publishes this session for the duration of an async command body's synchronous start, so the
         /// body's builder can find it. Restores the previous value, which makes nesting safe.
         /// </summary>
-        /// <param name="retainClusterEpoch">
-        /// Whether a suspension of this body keeps the cluster epoch. Pass <c>true</c> for a body that
+        /// <param name="retainBatchScope">
+        /// Whether a suspension of this body keeps the per-batch scope. Pass <c>true</c> for a body that
         /// suspends with an operation in flight, and <c>false</c> for one that suspends while idle.
         /// </param>
         /// <remarks>
         /// <para>
-        /// The cluster epoch is what makes a session's "this slot is mine" decision and its action on that
-        /// decision atomic with respect to configuration changes: a migration flips the slot state and then
-        /// waits for every session to leave the older epoch before it moves any data, so a session holding
-        /// the epoch cannot land a write on a key that has already been copied away.
+        /// A batch runs inside a scope that <see cref="ConsumeCore"/> takes on entry and drops on exit: the
+        /// response object the replies are written into, the two scratch buffers command arguments and
+        /// outputs are laid out in, and, in cluster mode, the cluster epoch. The epoch is what makes a
+        /// session's "this slot is mine" decision and its action on that decision atomic with respect to
+        /// configuration changes: a migration flips the slot state and then waits for every session to
+        /// leave the older epoch before it moves any data, so a session holding the epoch cannot land a
+        /// write on a key that has already been copied away.
         /// </para>
         /// <para>
         /// A suspension therefore has to choose. A body that suspends with an operation in flight -- a
-        /// storage read that went to disk, say -- must pass <c>true</c>: the key it is operating on has to
-        /// stay put across the wait, exactly as it does when the same operation completes synchronously.
-        /// The wait must be bounded by the operation, because a migration cannot start while it runs. A body
-        /// that suspends while idle, waiting on a client-visible event with no bound on when it arrives,
-        /// must pass <c>false</c> and must carry no configuration-dependent decision across the wait: it
-        /// re-enters at the current epoch and has to re-verify anything it concluded before suspending.
+        /// storage read that went to disk, say -- must pass <c>true</c>, and the scope is held across the
+        /// wait exactly as it is when the same operation completes synchronously: the key it is operating
+        /// on stays put, the output it has already written stays addressable, and the pointers it parked
+        /// on stay valid. Such a suspension differs from a synchronous completion only by the thread switch
+        /// on resume. The wait must be bounded by the operation, because nothing else bounds how long the
+        /// scope is held.
+        /// </para>
+        /// <para>
+        /// A body that suspends while idle, waiting on a client-visible event with no bound on when it
+        /// arrives, must pass <c>false</c>. The scope is dropped on the way out and retaken on resume, so
+        /// the body may carry no pointer into it and no configuration-dependent decision across the wait:
+        /// it re-enters at the current epoch, on fresh buffers, and has to re-verify anything it concluded
+        /// before suspending.
+        /// </para>
+        /// <para>
+        /// Keeping the response object necessarily keeps its lock -- <c>EnterAndGetResponseObject</c>
+        /// asserts the session is not already holding a buffer, so the two cannot be separated. A push to
+        /// this session, from <see cref="Publish"/> on a publisher's thread, therefore waits for the
+        /// suspension to end. That is the same exposure a read completed in place already has, since it
+        /// holds the same lock for the same device round trip, and it is the other reason a retaining wait
+        /// must be bounded by the operation.
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal AsyncCommandScope BeginAsyncCommand(bool retainClusterEpoch = false)
+        internal AsyncCommandScope BeginAsyncCommand(bool retainBatchScope = false)
         {
-            // Outside cluster mode there is no epoch to keep, and leaving the flag clear keeps the
-            // per-batch acquire and release on their original path.
-            asyncCommandRetainsClusterEpoch = retainClusterEpoch && clusterSession is not null;
+            asyncCommandRetainsBatchScope = retainBatchScope;
             return new(this);
         }
 
         /// <summary>
-        /// Drops a cluster epoch that was being held across a suspension. Called when the suspension ends
-        /// without resuming, so a torn-down session cannot stall a cluster transition indefinitely.
+        /// Drops a per-batch scope that was being held across a suspension. Called when the suspension ends
+        /// without resuming, so a torn-down session neither leaks its response object nor stalls a cluster
+        /// transition indefinitely.
         /// </summary>
-        void ReleaseRetainedClusterEpoch()
+        /// <remarks>
+        /// Runs on whichever thread observed the teardown, which is not the thread that took the scope. The
+        /// response object's lock is constructed without thread-owner tracking for this reason.
+        /// </remarks>
+        void ReleaseRetainedBatchScope()
         {
-            if (!asyncCommandRetainsClusterEpoch)
+            if (!asyncCommandRetainsBatchScope)
                 return;
 
-            asyncCommandRetainsClusterEpoch = false;
+            asyncCommandRetainsBatchScope = false;
+            networkSender.ExitAndReturnResponseObject();
             clusterSession?.ReleaseCurrentEpoch();
+            scratchBufferBuilder.Reset();
+            scratchBufferAllocator.Reset();
         }
 
         /// <summary>
@@ -408,7 +439,7 @@ namespace Garnet.server
             resumeBox = null;
             pendingAsyncBody = default;
             asyncSuspended = false;
-            ReleaseRetainedClusterEpoch();
+            ReleaseRetainedBatchScope();
             handoff.Complete();
         }
 

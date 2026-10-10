@@ -248,10 +248,10 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A read is issued against the response buffer at the position the writer had reached, but the
-        /// suspension gives that buffer back and the resume starts a new one at its head. A reply written
-        /// earlier in the same batch moves those two positions apart, so a completion that still writes
-        /// through the issue-time position shows up here as a wrong reply.
+        /// A read is issued against the response buffer at the position the writer had reached, and the
+        /// suspension keeps that buffer so the completion writes through exactly that position. A reply
+        /// written earlier in the same batch moves the batch's start and the issue position apart, so a
+        /// resume that mistook one for the other shows up here as a wrong reply.
         /// </summary>
         [Test]
         public void GetThatGoesToTheDeviceAfterEarlierOutputInTheSameBatchRepliesCorrectly()
@@ -290,6 +290,51 @@ namespace Garnet.test
             client.SendPipeline(["PING"], ["GET", LargeKey]);
             ClassicAssert.AreEqual("+PONG\r\n", client.ReadReply());
             ClassicAssert.AreEqual($"${largeValue.Length}\r\n{largeValue}\r\n", client.ReadReply());
+        }
+
+        /// <summary>
+        /// A reply written before a command suspends stays in the response buffer until the batch finishes,
+        /// rather than being flushed on the way out.
+        /// </summary>
+        /// <remarks>
+        /// Sending is what hands the response object to the socket and drops the session's claim on it, so a
+        /// suspension that flushed would be giving away the buffer its own pending read is still writing
+        /// into. Holding the reply back is also what the synchronous path does: a read completed in place
+        /// writes the whole batch out once, after the device returns.
+        /// </remarks>
+        [Test]
+        public void ReplyWrittenBeforeASuspensionIsNotFlushedUntilTheBatchFinishes()
+        {
+            const int ReadDelayMs = 1000;
+
+            Populate();
+
+            using var client = new RawClient();
+
+            // Warms the connection so the measurement below does not include first-reply setup.
+            ClassicAssert.AreEqual("+PONG\r\n", client.Execute("PING"));
+
+            deviceFactoryCreator.ReadDelayMs = ReadDelayMs;
+            try
+            {
+                var sw = Stopwatch.StartNew();
+                client.SendPipeline(["PING"], ["GET", Key(0)]);
+
+                var pong = client.ReadReply();
+                var elapsedToPong = sw.Elapsed;
+
+                ClassicAssert.GreaterOrEqual(elapsedToPong.TotalMilliseconds, ReadDelayMs * 0.8,
+                    $"The reply written before the suspension arrived after {elapsedToPong.TotalMilliseconds:F0}ms, " +
+                    $"well inside the {ReadDelayMs}ms device read that followed it, so the suspension flushed the " +
+                    "response buffer it was still writing into.");
+
+                ClassicAssert.AreEqual("+PONG\r\n", pong);
+                ClassicAssert.AreEqual($"${ValueLength}\r\n{Value(0)}\r\n", client.ReadReply());
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+            }
         }
 
         /// <summary>

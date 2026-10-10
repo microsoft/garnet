@@ -37,8 +37,8 @@ namespace Garnet.server
         void Resume() => Session.ResumeAsyncCommand(this);
 
         /// <summary>
-        /// Drives the boxed state machine. Called only from the session resume pump, which has already
-        /// re-entered the session's response object and epoch scope.
+        /// Drives the boxed state machine. Called only from the session resume pump, which has entered the
+        /// session's per-batch scope, or confirmed the suspension never left it.
         /// </summary>
         internal abstract void MoveNext();
 
