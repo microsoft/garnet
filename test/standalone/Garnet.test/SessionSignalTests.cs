@@ -105,8 +105,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, registry.SignalAll(Name));
         }
 
+        /// <summary>
+        /// Teardown releases a wait by faulting it, so the command body unwinds instead of running on to
+        /// write a reply into a response object the session is giving back.
+        /// </summary>
         [Test]
-        public async Task ATeardownCompletesAWaitInFlight()
+        public void ATeardownCompletesAWaitInFlight()
         {
             var registry = new SessionSignalRegistry();
             var signal = new SessionSignal();
@@ -116,11 +120,11 @@ namespace Garnet.test
             ClassicAssert.IsFalse(wait.IsCompleted);
 
             signal.Cancel();
-            await wait.WaitAsync(WaitLimit);
+            _ = Assert.ThrowsAsync<OperationCanceledException>(async () => await wait.WaitAsync(WaitLimit));
         }
 
         [Test]
-        public async Task ATeardownThatPrecedesTheWaitStillCompletesIt()
+        public void ATeardownThatPrecedesTheWaitStillCompletesIt()
         {
             var registry = new SessionSignalRegistry();
             var signal = new SessionSignal();
@@ -132,7 +136,7 @@ namespace Garnet.test
 
             var wait = signal.WaitAsync();
             ClassicAssert.IsTrue(wait.IsCompleted);
-            await wait;
+            _ = Assert.ThrowsAsync<OperationCanceledException>(async () => await wait);
         }
 
         [Test]
@@ -177,7 +181,15 @@ namespace Garnet.test
 
                 // Either may win, but completing the wait twice throws out of whichever ran second.
                 await Task.WhenAll(signalling, tearingDown).WaitAsync(WaitLimit);
-                await wait.WaitAsync(WaitLimit);
+
+                // The winner decides how the wait ends: a signal satisfies it, a teardown faults it.
+                try
+                {
+                    await wait.WaitAsync(WaitLimit);
+                }
+                catch (OperationCanceledException)
+                {
+                }
             }
         }
 

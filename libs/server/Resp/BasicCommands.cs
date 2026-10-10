@@ -26,7 +26,7 @@ namespace Garnet.server
         /// pending-GET batch grows the array via doubling (8→16→…→batchSize), allocating
         /// ~80 KB per batch at b=1024 and dominating the disk-GET allocation profile.
         /// </summary>
-        private (GarnetStatus, StringOutput)[] pendingGetOutputArr;
+        private (GarnetStatus Status, StringOutput Output)[] pendingGetOutputArr;
 
         /// <summary>
         /// Per-slot reservation size for a post-first-pending <see cref="NetworkGET_SG"/> response.
@@ -274,7 +274,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             StringInput input = new(RespCommand.GET, arg1: StringInput.RespGetArg);
             var firstPending = -1;
-            (GarnetStatus, StringOutput)[] outputArr = pendingGetOutputArr;
+            (GarnetStatus Status, StringOutput Output)[] outputArr = pendingGetOutputArr;
             // Initial output points at the current network buffer position. Used for the
             // prefix-sync path and (if it goes pending) the first pending op — which is the
             // only pending op whose response lands directly in the network buffer.
@@ -401,8 +401,8 @@ namespace Garnet.server
 
             for (var i = 0; i < n; i++)
             {
-                var status = outputArr[i].Item1;
-                var sbm = outputArr[i].Item2.SpanByteAndMemory;
+                var status = outputArr[i].Status;
+                var sbm = outputArr[i].Output.SpanByteAndMemory;
                 if (status == GarnetStatus.OK)
                 {
                     if (i == 0)
@@ -2132,7 +2132,7 @@ namespace Garnet.server
             return true;
         }
 
-        static void SetResult(int c, ref int firstPending, ref (GarnetStatus, StringOutput)[] outputArr,
+        static void SetResult(int c, ref int firstPending, ref (GarnetStatus Status, StringOutput Output)[] outputArr,
             GarnetStatus status, StringOutput output)
         {
             const int initialBatchSize = 8; // number of items in initial batch
@@ -2141,7 +2141,7 @@ namespace Garnet.server
                 // Lazily allocate the per-session output array on first pending entry of a session.
                 // Subsequent batches reuse the (possibly grown) array via the cached session field,
                 // so steady-state pipelines never allocate here after the first batch.
-                outputArr ??= new (GarnetStatus, StringOutput)[initialBatchSize];
+                outputArr ??= new (GarnetStatus Status, StringOutput Output)[initialBatchSize];
                 firstPending = c;
             }
 
@@ -2152,7 +2152,7 @@ namespace Garnet.server
             if (c - firstPending >= outputArr.Length)
             {
                 int newCount = (int)BitOperations.RoundUpToPowerOf2((uint)(c - firstPending + 1));
-                var outputArr2 = new (GarnetStatus, StringOutput)[newCount];
+                var outputArr2 = new (GarnetStatus Status, StringOutput Output)[newCount];
                 Array.Copy(outputArr, outputArr2, outputArr.Length);
                 outputArr = outputArr2;
             }

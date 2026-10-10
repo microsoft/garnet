@@ -118,21 +118,28 @@ namespace Garnet.server
         /// <summary>
         /// Closes the gate permanently, waiting for any resume already inside to leave.
         /// </summary>
+        /// <remarks>
+        /// <see cref="Closed"/> is only ever published by a thread that observed the gate free, or by the
+        /// resume that was asked to hand it over. A resume leaving between this thread's two attempts may be
+        /// followed immediately by another entering -- <c>DrainResumes</c> exits and re-enters on
+        /// adjacent instructions -- so the attempt restarts rather than assuming the gate is still free.
+        /// </remarks>
         internal void Close()
         {
-            if (Interlocked.CompareExchange(ref state, Closed, Free) != Busy)
-                return;
-
-            if (Interlocked.CompareExchange(ref state, Closing, Busy) != Busy)
+            while (true)
             {
-                // The resume left between the two attempts, leaving the gate free.
-                Volatile.Write(ref state, Closed);
+                var observed = Interlocked.CompareExchange(ref state, Closed, Free);
+                if (observed != Busy)
+                    return;
+
+                if (Interlocked.CompareExchange(ref state, Closing, Busy) != Busy)
+                    continue;
+
+                var spin = new SpinWait();
+                while (Volatile.Read(ref state) != Closed)
+                    spin.SpinOnce();
                 return;
             }
-
-            var spin = new SpinWait();
-            while (Volatile.Read(ref state) != Closed)
-                spin.SpinOnce();
         }
     }
 }

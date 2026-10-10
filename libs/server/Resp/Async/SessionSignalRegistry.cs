@@ -11,6 +11,11 @@ namespace Garnet.server
     /// the per-key waiter lists a real blocking command keeps, and exists so <c>DEBUG BLOCKON</c> /
     /// <c>DEBUG SIGNAL</c> can exercise cross-session wakeup without a data structure getting in the way.
     /// </summary>
+    /// <remarks>
+    /// A name's list is kept once created, rather than retired when its last waiter leaves: retiring it would
+    /// have to exclude a registration that already holds the list it is about to add to, and this is
+    /// <c>DEBUG</c> scaffolding whose names come from a test rather than from production traffic.
+    /// </remarks>
     internal sealed class SessionSignalRegistry
     {
         readonly ConcurrentDictionary<string, List<SessionSignal>> waiters = new();

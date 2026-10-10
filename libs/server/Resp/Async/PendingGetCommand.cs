@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -31,16 +31,6 @@ namespace Garnet.server
     internal sealed partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// Status and output of the read that completed from pending I/O, handed from the async body to the
-        /// non-async method that writes the reply.
-        /// </summary>
-        /// <remarks>
-        /// A field rather than an argument because an <c>async</c> method cannot hold the storage API, and
-        /// because it is written and read on the one thread that holds the session scope at the time.
-        /// </remarks>
-        CompletedOutputIterator<StringInput, StringOutput, long> pendingGetOutputs;
-
-        /// <summary>
         /// Finishes a <c>GET</c> whose read went to disk, by parking the session until the I/O completes.
         /// </summary>
         /// <returns>Always true: the reply is written on resume.</returns>
@@ -56,17 +46,18 @@ namespace Garnet.server
         [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
         async ValueTask PendingGetBodyAsync()
         {
+            CompletedOutputIterator<StringInput, StringOutput, long> completed;
             storageSession.StartPendingMetrics();
             try
             {
-                pendingGetOutputs = await CompletePendingGetAsync().ConfigureAwait(false);
+                completed = await CompletePendingGetAsync().ConfigureAwait(false);
             }
             finally
             {
                 storageSession.StopPendingMetrics();
             }
 
-            WriteCompletedGet();
+            WriteCompletedGet(completed);
         }
 
         /// <summary>
@@ -79,19 +70,8 @@ namespace Garnet.server
                 : basicGarnetApi.GET_CompletePendingAsync();
 
         /// <summary>
-        /// Writes the reply for a read that completed from pending I/O, into the response buffer the session
-        /// held across the suspension.
-        /// </summary>
-        void WriteCompletedGet()
-        {
-            var completed = pendingGetOutputs;
-            pendingGetOutputs = null;
-
-            WriteCompletedGet(completed);
-        }
-
-        /// <summary>
-        /// Writes the reply for a single completed read and disposes the iterator that carried it.
+        /// Writes the reply for a single completed read, into the response buffer the session held across
+        /// the suspension, and disposes the iterator that carried it.
         /// </summary>
         /// <param name="completed">Outputs of the completion, holding exactly this session's one read.</param>
         void WriteCompletedGet(CompletedOutputIterator<StringInput, StringOutput, long> completed)
