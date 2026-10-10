@@ -1,0 +1,28 @@
+{
+  "id": "dev/cluster/slot-migration",
+  "title": "Migration Overview",
+  "description": "In Garnet, slot migration describes the process of reassigning slot ownership and transferring the associated key-value pairs from one primary node to another within a fully operational cluster.",
+  "source": "@site/docs/dev/cluster/migration.md",
+  "sourceDirName": "dev/cluster",
+  "slug": "/dev/cluster/slot-migration",
+  "permalink": "/garnet/docs/dev/cluster/slot-migration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/cluster/migration.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "slot-migration",
+    "sidebar_label": "Migration",
+    "title": "Migration Overview"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Sharding",
+    "permalink": "/garnet/docs/dev/cluster/sharding"
+  },
+  "next": {
+    "title": "Contributing",
+    "permalink": "/garnet/docs/dev/contributing"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "id": "azure/cluster-configuration",
+  "title": "Cluster Configuration for Azure Cosmos DB Garnet Cache",
+  "description": "Available Tiers",
+  "source": "@site/docs/azure/cluster-configuration.md",
+  "sourceDirName": "azure",
+  "slug": "/azure/cluster-configuration",
+  "permalink": "/garnet/docs/azure/cluster-configuration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/azure/cluster-configuration.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "cluster-configuration",
+    "sidebar_label": "Cluster Configuration",
+    "title": "Cluster Configuration for Azure Cosmos DB Garnet Cache"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "API Compatibility",
+    "permalink": "/garnet/docs/azure/api-compatibility"
+  },
+  "next": {
+    "title": "Resiliency",
+    "permalink": "/garnet/docs/azure/resiliency"
+  }
+}
