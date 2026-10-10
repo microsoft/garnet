@@ -659,6 +659,103 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Teardown may not reclaim the receive buffer while a resume is running on it, so
+        /// <c>ResumeGate.Close</c> must not return while the gate is occupied -- including when the resume it
+        /// found inside leaves and another takes its place while the close is still deciding what to do.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The occupants here are the shape <c>DrainResumes</c> takes: it leaves the gate and re-enters on the
+        /// next instruction, which is what turns the window between a close's two attempts into a reachable
+        /// one rather than a theoretical one. Several threads stand in for that, because the window is a few
+        /// instructions wide and one thread alone lands in it too rarely to be a test.
+        /// </para>
+        /// <para>
+        /// The violation is observed from inside the gate rather than from the closing thread: an occupant
+        /// that finds the round already closed is running exactly where teardown has been told nothing is
+        /// running. Reading it the other way round -- the closer looking for an occupant -- would miss one
+        /// that had already left.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ClosingAGateNeverReturnsWhileAResumeIsInside()
+        {
+            Assume.That(Environment.ProcessorCount > 2, "The race needs the occupants and the close on separate cores.");
+
+            // Each round is one gate, closed once. The window is only reachable on a fraction of rounds, so
+            // the count is what makes it a certainty rather than a coin toss.
+            const int Rounds = 100_000;
+
+            var rounds = new GateRound[Rounds];
+            for (var i = 0; i < Rounds; i++)
+                rounds[i] = new GateRound();
+
+            GateRound current = null;
+            var stop = false;
+            var violations = 0;
+
+            var occupants = new Thread[Math.Min(4, Environment.ProcessorCount - 1)];
+            for (var t = 0; t < occupants.Length; t++)
+            {
+                occupants[t] = new Thread(() =>
+                {
+                    while (!Volatile.Read(ref stop))
+                    {
+                        var round = Volatile.Read(ref current);
+                        if (round is null || !round.Gate.TryEnter())
+                            continue;
+
+                        // Held on both sides of the dwell, so a close that returns at either moment is caught.
+                        if (Volatile.Read(ref round.Closed) != 0)
+                            _ = Interlocked.Increment(ref violations);
+
+                        Thread.SpinWait(8);
+
+                        if (Volatile.Read(ref round.Closed) != 0)
+                            _ = Interlocked.Increment(ref violations);
+
+                        round.Gate.Exit();
+                    }
+                })
+                { IsBackground = true, Name = $"{nameof(ClosingAGateNeverReturnsWhileAResumeIsInside)}-{t}" };
+                occupants[t].Start();
+            }
+
+            try
+            {
+                for (var i = 0; i < Rounds; i++)
+                {
+                    var round = rounds[i];
+                    Volatile.Write(ref current, round);
+
+                    // Let an occupant reach this gate, so the close has something to find inside.
+                    Thread.SpinWait(64);
+
+                    round.Gate.Close();
+                    Volatile.Write(ref round.Closed, 1);
+
+                    ClassicAssert.IsFalse(round.Gate.TryEnter(), "A closed gate admitted a resume.");
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref stop, true);
+                foreach (var occupant in occupants)
+                    _ = occupant.Join(TimeSpan.FromSeconds(30));
+            }
+
+            ClassicAssert.Zero(violations,
+                "Close returned while a resume was inside the gate, so teardown would reclaim the receive buffer under it.");
+        }
+
+        /// <summary>One gate and whether its close has returned, as seen by the threads contending for it.</summary>
+        sealed class GateRound
+        {
+            internal Garnet.server.ResumeGate Gate;
+            internal int Closed;
+        }
+
+        /// <summary>
         /// Minimal synchronous RESP client. Unlike a multiplexer it never reorders or coalesces, so a test can
         /// place commands precisely on either side of a suspension and observe exactly when each reply lands.
         /// It is also allocation-light on the steady-state path, so a test can attribute process-wide

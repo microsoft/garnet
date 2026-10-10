@@ -170,15 +170,7 @@ namespace Tsavorite.core
             if (token.CanBeCanceled)
                 return WaitForEntryAsyncSlow(token);
 
-            var version = gate.Arm();
-            _ = Interlocked.Increment(ref gateWaiterCount);
-            // Pairs with the fence in Enqueue: either the producer sees our armed gate and
-            // signals it, or we see its entry here and signal ourselves. Signal() is a CAS,
-            // so exactly one of the two completes the gate.
-            Interlocked.MemoryBarrier();
-            if (queue.Count > 0)
-                gate.Signal();
-            return new ValueTask(gate, version);
+            return new ValueTask(gate, gate.Arm());
         }
 
         /// <summary>
@@ -197,12 +189,6 @@ namespace Tsavorite.core
                 return false;
 
             gate.ArmWorkItem(resume);
-            _ = Interlocked.Increment(ref gateWaiterCount);
-            // Pairs with the fence in Enqueue, as in WaitForEntryAsync: whichever of the producer
-            // and this thread wins Signal's CAS queues the work item exactly once.
-            Interlocked.MemoryBarrier();
-            if (queue.Count > 0)
-                gate.Signal();
             return true;
         }
 
@@ -269,8 +255,11 @@ namespace Tsavorite.core
                 // when it is going to park, so a gate reaching here never still holds one.
                 Debug.Assert(workItem is null, "A spent work item outlived its park.");
                 core.Reset();
+
+                // Read before publishing: a producer may complete this wait before Publish returns.
                 var version = core.Version;
                 Volatile.Write(ref state, Waiting);
+                Publish();
                 return version;
             }
 
@@ -282,6 +271,23 @@ namespace Tsavorite.core
             {
                 workItem = resume;
                 Volatile.Write(ref state, Waiting);
+                Publish();
+            }
+
+            /// <summary>
+            /// Makes an armed gate visible to producers, and closes the race against one that enqueued just
+            /// before the arm became visible.
+            /// </summary>
+            void Publish()
+            {
+                _ = Interlocked.Increment(ref owner.gateWaiterCount);
+
+                // Pairs with the fence in Enqueue: either the producer sees our armed gate and signals it,
+                // or we see its entry here and signal ourselves. Signal is a CAS, so exactly one of the two
+                // completes the gate.
+                Interlocked.MemoryBarrier();
+                if (owner.queue.Count > 0)
+                    Signal();
             }
 
             /// <summary>

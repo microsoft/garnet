@@ -22,7 +22,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="outputArr"></param>
         /// <param name="wait"></param>
-        bool GET_CompletePending((GarnetStatus, StringOutput)[] outputArr, bool wait = false);
+        bool GET_CompletePending((GarnetStatus Status, StringOutput Output)[] outputArr, bool wait = false);
 
         /// <summary>
         /// Complete pending read operations on main store
