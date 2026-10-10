@@ -43,8 +43,9 @@ namespace Tsavorite.core
         /// the records handed out: level 0 at construction and every page pre-allocates its successor.</summary>
         private int allocatedPageCount;
 
-        /// <summary>Records at the top of the capacity that only a reserved allocation may take.</summary>
-        private long reservedCount;
+        /// <summary>Ceiling an ordinary allocation may take <c>count</c> to. Equal to <see cref="MaxAllocationCount"/>
+        /// unless <see cref="Reserve"/> is holding capacity, which only a reserved allocation may take.</summary>
+        private long ordinaryAllocationLimit;
 
         private readonly T[][] values;
         private readonly IntPtr[] pointers;
@@ -139,6 +140,7 @@ namespace Tsavorite.core
             Debug.Assert(levelCount <= MaxLevelCount, "levelCount must be at most MaxLevelCount");
 
             this.levelCount = levelCount;
+            ordinaryAllocationLimit = MaxAllocationCount;
             values = new T[levelCount][];
             pointers = new IntPtr[levelCount];
 
@@ -228,11 +230,11 @@ namespace Tsavorite.core
         {
             if (recordCount > MaxAllocationCount - count)
                 ThrowReservationTooLarge(recordCount);
-            _ = Interlocked.Exchange(ref reservedCount, recordCount);
+            _ = Interlocked.Exchange(ref ordinaryAllocationLimit, MaxAllocationCount - recordCount);
         }
 
         /// <summary>Release a reservation made by <see cref="Reserve"/>, returning its capacity to ordinary allocations.</summary>
-        internal void ReleaseReservation() => Interlocked.Exchange(ref reservedCount, 0);
+        internal void ReleaseReservation() => Interlocked.Exchange(ref ordinaryAllocationLimit, MaxAllocationCount);
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void ThrowReservationTooLarge(long recordCount)
@@ -273,13 +275,20 @@ namespace Tsavorite.core
             return InternalAllocate(1, useReservation);
         }
 
+        /// <summary>
+        /// Undo the <c>count</c> advance of a rejected allocation and throw. Rolling back keeps the counter from
+        /// running away -- and eventually overflowing <see cref="int"/> -- across repeated rejections.
+        /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void ThrowAllocatorFull(long limit)
-            => throw new TsavoriteException(
+        private void ThrowAllocatorFull(int blockSize, long limit)
+        {
+            _ = Interlocked.Add(ref count, -blockSize);
+            throw new TsavoriteException(
                 $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> is full: its page table addresses at most {levelCount} pages of {PageSize} records"
                 + $" ({MaxAllocationCount} records, {MaxMemorySize} bytes), and that capacity is exhausted."
                 + (limit < MaxAllocationCount ? $" {MaxAllocationCount - limit} records of it are reserved for an index grow in progress." : string.Empty)
                 + exhaustionRemedy);
+        }
 
         /// <summary>Remedy appended to the exhaustion message, naming the settings that size this allocator.</summary>
         private static string exhaustionRemedy => typeof(T) != typeof(HashBucket)
@@ -294,24 +303,14 @@ namespace Tsavorite.core
             if (freeList.TryDequeue(out long result))
                 return result;
 
-            // An ordinary allocation may not encroach on capacity held by Reserve.
-            var limit = MaxAllocationCount - (useReservation ? 0 : Volatile.Read(ref reservedCount));
+            // An ordinary allocation may not encroach on capacity held by Reserve. useReservation is constant at each
+            // call site, so this folds away once inlined.
+            var limit = useReservation ? MaxAllocationCount : Volatile.Read(ref ordinaryAllocationLimit);
 
-            // Take the whole block without letting count exceed the limit. count is also the high-water mark
-            // GetMaxValidAddress reports and BeginCheckpoint derives page-table indices from, so a rejected allocation
-            // must not advance it.
-            int index;
-            while (true)
-            {
-                var reserved = count;
-                if (reserved + (long)blockSize > limit)
-                    ThrowAllocatorFull(limit);
-                if (Interlocked.CompareExchange(ref count, reserved + blockSize, reserved) == reserved)
-                {
-                    index = reserved;
-                    break;
-                }
-            }
+            // Determine insertion index.
+            int index = Interlocked.Add(ref count, blockSize) - blockSize;
+            if (index + (long)blockSize > limit)
+                ThrowAllocatorFull(blockSize, limit);
 
             int offset = index & PageSizeMask;
             int baseAddr = index >> PageSizeBits;
@@ -588,10 +587,15 @@ namespace Tsavorite.core
             => _ = Interlocked.CompareExchange(ref checkpointError, new IoFailure(detail, exception), null);
 
         /// <summary>
-        /// Max valid address
+        /// Max valid address: the high-water mark of records handed out.
         /// </summary>
-        /// <returns></returns>
-        public int GetMaxValidAddress() => count;
+        /// <remarks>Clamped to <see cref="MaxAllocationCount"/>. A rejected allocation advances <c>count</c> before
+        /// rolling it back, and a reader in that window must not derive a page-table index past the last level.</remarks>
+        public int GetMaxValidAddress()
+        {
+            var current = count;
+            return current <= MaxAllocationCount ? current : (int)MaxAllocationCount;
+        }
 
         /// <summary>
         /// Get page size
