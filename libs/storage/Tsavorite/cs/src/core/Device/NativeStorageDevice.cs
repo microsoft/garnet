@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -1409,6 +1410,19 @@ namespace Tsavorite.core
             if (Volatile.Read(ref nativeDevice) != IntPtr.Zero) return;
             if (Volatile.Read(ref disposedFlag) != 0)
                 throw new ObjectDisposedException(nameof(NativeStorageDevice));
+            CreateNativeDevice();
+        }
+
+        /// <summary>
+        /// Cold path of <see cref="EnsureNativeDeviceCreated"/>: creates and publishes the native
+        /// handle under <c>nativeCreateLock</c>. Kept in its own non-inlined method because the
+        /// drainer-thread lambda below captures a local, and Roslyn allocates that closure on entry to
+        /// the method that declares it; folded back into the per-IO guard it would allocate a
+        /// display-class object on every read and write.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void CreateNativeDevice()
+        {
             lock (nativeCreateLock)
             {
                 // Inside the lock the acquire fence guarantees we see writes from the prior
