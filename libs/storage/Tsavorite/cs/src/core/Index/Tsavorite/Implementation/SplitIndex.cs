@@ -26,8 +26,11 @@ namespace Tsavorite.core
             while (numPendingChunksToBeSplit > 0)
                 _ = Thread.Yield();
 
-            // Splits done, GC the old version of the hash table
+            // Splits done; the capacity held for them returns to ordinary allocations.
             Debug.Assert(numPendingChunksToBeSplit == 0);
+            overflowBucketsAllocator.ReleaseReservation();
+
+            // GC the old version of the hash table
             state[1 - resizeInfo.version] = default;
             overflowBucketsAllocatorResize.Dispose();
             overflowBucketsAllocatorResize = null;
@@ -94,6 +97,30 @@ namespace Tsavorite.core
             return false;
         }
 
+        /// <summary>
+        /// Append <paramref name="word"/> to one half's chain, extending it with a fresh overflow bucket when the
+        /// current one is full.
+        /// </summary>
+        /// <param name="tail">Next free entry in the chain; advanced past the entry written.</param>
+        /// <param name="end">The chain's overflow pointer slot, where a new bucket is linked.</param>
+        /// <param name="word">The hash entry to append.</param>
+        /// <remarks>Allocates against the capacity <see cref="MallocFixedPageSize{T}.Reserve"/> holds for the split.
+        /// Concurrent writes allocate from the same generation, and a split that cannot allocate leaves its chunk
+        /// claimed forever, so it must not compete with them for the last buckets.</remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void AppendToSplitChain(ref long* tail, ref long* end, long word)
+        {
+            if (tail == end)
+            {
+                var bucketLogicalAddress = overflowBucketsAllocator.Allocate(useReservation: true);
+                *tail = bucketLogicalAddress;
+                tail = (long*)overflowBucketsAllocator.GetPhysicalAddress(bucketLogicalAddress);
+                end = tail + Constants.kOverflowBucketIndex;
+            }
+
+            *tail++ = word;
+        }
+
         private void SplitChunk(
                     HashBucket* _src_start,
                     HashBucket* _dest_start0,
@@ -139,98 +166,28 @@ namespace Tsavorite.core
                             var hash = storeFunctions.GetKeyHashCode64(logRecord);
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
-                                // Insert in left
-                                if (left == left_end)
-                                {
-                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
-                                    *left = new_bucket_logical;
-                                    left = (long*)new_bucket;
-                                    left_end = left + Constants.kOverflowBucketIndex;
-                                }
+                                AppendToSplitChain(ref left, ref left_end, entry.word);
 
-                                *left = entry.word;
-                                left++;
-
-                                // Insert previous address in right
+                                // The record's previous address may belong to the other half, so start that chain too.
                                 entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 1);
                                 if ((entry.Address != kInvalidAddress) && (entry.Address != kTempInvalidAddress))
-                                {
-                                    if (right == right_end)
-                                    {
-                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
-                                        *right = new_bucket_logical;
-                                        right = (long*)new_bucket;
-                                        right_end = right + Constants.kOverflowBucketIndex;
-                                    }
-
-                                    *right = entry.word;
-                                    right++;
-                                }
+                                    AppendToSplitChain(ref right, ref right_end, entry.word);
                             }
                             else
                             {
-                                // Insert in right
-                                if (right == right_end)
-                                {
-                                    var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                    var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
-                                    *right = new_bucket_logical;
-                                    right = (long*)new_bucket;
-                                    right_end = right + Constants.kOverflowBucketIndex;
-                                }
+                                AppendToSplitChain(ref right, ref right_end, entry.word);
 
-                                *right = entry.word;
-                                right++;
-
-                                // Insert previous address in left
+                                // The record's previous address may belong to the other half, so start that chain too.
                                 entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 0);
                                 if ((entry.Address != kInvalidAddress) && (entry.Address != kTempInvalidAddress))
-                                {
-                                    if (left == left_end)
-                                    {
-                                        var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                        var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
-                                        *left = new_bucket_logical;
-                                        left = (long*)new_bucket;
-                                        left_end = left + Constants.kOverflowBucketIndex;
-                                    }
-
-                                    *left = entry.word;
-                                    left++;
-                                }
+                                    AppendToSplitChain(ref left, ref left_end, entry.word);
                             }
                         }
                         else
                         {
-                            // Insert in both new locations
-
-                            // Insert in left
-                            if (left == left_end)
-                            {
-                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
-                                *left = new_bucket_logical;
-                                left = (long*)new_bucket;
-                                left_end = left + Constants.kOverflowBucketIndex;
-                            }
-
-                            *left = entry.word;
-                            left++;
-
-                            // Insert in right
-                            if (right == right_end)
-                            {
-                                var new_bucket_logical = overflowBucketsAllocator.Allocate();
-                                var new_bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(new_bucket_logical);
-                                *right = new_bucket_logical;
-                                right = (long*)new_bucket;
-                                right_end = right + Constants.kOverflowBucketIndex;
-                            }
-
-                            *right = entry.word;
-                            right++;
+                            // The record is not in memory, so which half it belongs to is unknown: insert into both.
+                            AppendToSplitChain(ref left, ref left_end, entry.word);
+                            AppendToSplitChain(ref right, ref right_end, entry.word);
                         }
                     }
 

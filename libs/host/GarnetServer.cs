@@ -308,13 +308,19 @@ namespace Garnet
 
             if (logger != null)
             {
-                var configMemoryLimit = (storeWrapper.store.IndexSize * 64) +
+                // Use the index max size: growth beyond the configured index budget is charged against the log budget
+                // rather than added on top of it.
+                var indexMemoryLimit = Math.Max(storeWrapper.store.IndexSize * 64, opts.AdjustedIndexMaxCacheLines * 64L);
+                var configMemoryLimit = indexMemoryLimit +
                                         storeWrapper.store.Log.MaxMemorySizeBytes +
                                         (storeWrapper.store.ReadCache?.MaxMemorySizeBytes ?? 0) +
                                         (storeWrapper.appendOnlyFile?.Log.MaxMemorySizeBytes.AggregateDiff(0) ?? 0) +
                                         (storeWrapper.sizeTracker?.TargetSize ?? 0) +
                                         (storeWrapper.sizeTracker?.ReadCacheTargetSize ?? 0);
                 logger.LogInformation("Total configured memory limit: {configMemoryLimit}", configMemoryLimit);
+                logger.LogInformation("Hash index holds one entry per distinct key, including keys whose records are on disk, at ~{bytesPerKey} bytes per key;"
+                    + " the configured index budget of {indexMemoryLimit} bytes covers ~{keyCapacity} keys, beyond which index memory is taken from the log budget",
+                    64.0 / 7, indexMemoryLimit, indexMemoryLimit / 64 * 7);
             }
 
             var maxDatabases = opts.EnableCluster ? 1 : opts.MaxDatabases;
@@ -501,7 +507,7 @@ namespace Garnet
 
             if (kvSettings.LogMemorySize > 0 || kvSettings.ReadCacheMemorySize > 0)
             {
-                cacheSizeTracker.Initialize(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory);
+                cacheSizeTracker.Initialize(store, kvSettings.LogMemorySize, kvSettings.ReadCacheMemorySize, this.loggerFactory, opts.IndexMemoryBudgetBytes);
                 sizeTracker = cacheSizeTracker;
             }
             return store;

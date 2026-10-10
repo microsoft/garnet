@@ -87,6 +87,7 @@ namespace Garnet
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
         public string IndexMaxMemorySize { get; set; }
 
+
         [OptionValidation]
         [Option("use-native-allocator", Required = false, HelpText = "Route large memory regions (log pages / hash index / recovery frames) through a native (off-managed-heap) direct-VM allocator (mmap/VirtualAlloc) instead of the GC heap. No native library is required. When enabled, this memory is outside the managed GC heap: size GCHeapHardLimit to leave headroom and monitor 'native_allocator_bytes' in INFO memory.")]
         public bool? UseNativeAllocator { get; set; }
@@ -633,6 +634,10 @@ namespace Garnet
         [Option("index-resize-threshold", Required = false, HelpText = "Hash-index Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
 
+        [IntRangeValidation(1, 10000, isRequired: false)]
+        [Option("index-overflow-threshold", Required = false, HelpText = "Hash-index overflow bucket count over total index size in percentage at which allocation fails. Same unit as --index-resize-threshold and must exceed it. Overflow buckets chain linearly and are scanned by reads and upserts, so this is the average chain length allowed: 300 permits three overflow buckets per main bucket.")]
+        public int IndexOverflowThreshold { get; set; }
+
         [MemorySizeValidation(isRequired: false)]
         [Option("max-inline-key-size", Required = false, HelpText = "Maximum size of a key stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. \"1k\", \"128\"). Must be in range [0, 1022] bytes; default is 1022.")]
         public string MaxInlineKeySize { get; set; }
@@ -1041,6 +1046,7 @@ namespace Garnet
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
+                IndexOverflowThreshold = IndexOverflowThreshold,
                 MaxInlineKeySize = MaxInlineKeySize,
                 MaxInlineValueSize = MaxInlineValueSize,
                 InitialIORecordSize = InitialIORecordSize,

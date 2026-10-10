@@ -120,6 +120,50 @@ namespace Tsavorite.core
         /// <summary>Size of log heap memory only</summary>
         public long LogHeapSizeBytes => heapSize.Total;
 
+        /// <summary>
+        /// Supplies the size of memory that lives outside the log but is charged against the log's budget, so that the
+        /// log yields pages as that memory grows instead of the two sets of allocations summing past the machine's RAM.
+        /// </summary>
+        /// <remarks>
+        /// Garnet uses this for hash-index memory beyond the configured index budget. The index holds one entry per
+        /// distinct key, including keys whose records live only on disk, so it grows with record count and no log
+        /// setting bounds it.
+        /// <para>Sampled once per resizer iteration, not on every budget comparison, so a provider may cost a few field
+        /// reads.</para>
+        /// </remarks>
+        public Func<long> ExternalMemorySizeProvider { get; set; }
+
+        /// <summary>The most recent sample taken from <see cref="ExternalMemorySizeProvider"/>; zero if there is none.</summary>
+        public long ExternalMemorySize => Volatile.Read(ref externalMemorySize);
+
+        private long externalMemorySize;
+
+        /// <summary>Value of <see cref="externalMemorySize"/> at the last growth report, which keeps reporting to one line per doubling.</summary>
+        private long reportedExternalMemorySize;
+
+        /// <summary>Growth below this size is not reported; the overflow bucket allocator reserves one chunk at
+        /// construction, which an idle store charges but which is not growth.</summary>
+        private const long MinExternalMemoryReportBytes = 1L << 20;
+
+        /// <summary>
+        /// The smallest budget the log may be reduced to, which is the same floor <see cref="UpdateTargetSize"/> enforces
+        /// on an explicitly configured target.
+        /// </summary>
+        private long BudgetFloor => logAccessor.allocatorBase.PageSize * (long)MinTargetPageCount;
+
+        /// <summary>
+        /// <see cref="highTargetSize"/> less <see cref="ExternalMemorySize"/>: the trimming trigger actually in force.
+        /// </summary>
+        /// <remarks>
+        /// External memory is subtracted from the budget rather than added to <see cref="TotalSize"/> so that being over
+        /// budget continues to imply the <em>log</em> exceeds its budget, which <see cref="DetermineEvictionRange"/>
+        /// relies on to bound the trim by the resident span.
+        /// </remarks>
+        private long EffectiveHighTargetSize => Math.Max(highTargetSize - ExternalMemorySize, BudgetFloor);
+
+        /// <summary><see cref="lowTargetSize"/> less <see cref="ExternalMemorySize"/>: the level trimming runs down to.</summary>
+        private long EffectiveLowTargetSize => Math.Max(lowTargetSize - ExternalMemorySize, BudgetFloor);
+
         /// <summary>Target size for the hybrid log memory utilization</summary>
         public long TargetSize { get; private set; }
 
@@ -129,16 +173,16 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override string ToString()
         {
-            return $"{runState}; TargetSize: [{TargetSize}, hi: {highTargetSize}, lo: {lowTargetSize}]; TotalSize: [{TotalSize}, Heap: {heapSize.Total}];"
+            return $"{runState}; TargetSize: [{TargetSize}, hi: {highTargetSize}, lo: {lowTargetSize}, effHi: {EffectiveHighTargetSize}]; TotalSize: [{TotalSize}, Heap: {heapSize.Total}, External: {ExternalMemorySize}];"
                  + $" isOver: [{IsOverBudget}, canEvict {IsBeyondSizeLimitAndCanEvict()}]; AllocPgCt: {logAccessor.AllocatedPageCount}; PgSize {logAccessor.allocatorBase.PageSize}";
         }
 
         /// <summary>Returns the memory budget we have remaining</summary>
         /// <remarks>May return a negative value if already over budget.</remarks>
-        public long RemainingBudget => highTargetSize - TotalSize;
+        public long RemainingBudget => EffectiveHighTargetSize - TotalSize;
 
         /// <summary>Return true if the total size is outside the target plus delta</summary>
-        public bool IsOverBudget => TotalSize > highTargetSize;
+        public bool IsOverBudget => TotalSize > EffectiveHighTargetSize;
 
         /// <summary>Return true if the total size is outside the target plus delta *and* we have pages we can (partially or completely) evict</summary>
         /// <param name="addingPage">If true, we are allocating a new page. Otherwise, we are called when adding or growing a new <see cref="IHeapObject"/></param>
@@ -157,7 +201,7 @@ namespace Tsavorite.core
             // Otherwise, we need at least MinEvictionHeadAddressLag to be able to evict anything. Use UnstableGetTailAddress (as above): this is
             // reached from HandlePageOverflow on the thread that owns tail-address stabilization, and the stable GetTailAddress() would spin-wait
             // forever for a TailPageOffset that only this same thread can reset (after NeedToWaitForClose returns).
-            return (TotalSize > highTargetSize) && logAccessor.allocatorBase.UnstableGetTailAddress(out _) - logAccessor.allocatorBase.HeadAddress >= MinEvictionHeadAddressLag;
+            return (TotalSize > EffectiveHighTargetSize) && logAccessor.allocatorBase.UnstableGetTailAddress(out _) - logAccessor.allocatorBase.HeadAddress >= MinEvictionHeadAddressLag;
         }
 
         /// <summary>Creates a new log size tracker</summary>
@@ -320,6 +364,37 @@ namespace Tsavorite.core
         public void Signal() => SignalResizer();
 
         /// <summary>
+        /// Takes a fresh sample from <see cref="ExternalMemorySizeProvider"/>, returning true if the external memory
+        /// grew. Callers that want the resizer woken on growth follow a true return with <see cref="Signal"/>; the
+        /// resizer loop and recovery do not, as both act on the new value themselves.
+        /// </summary>
+        public bool RefreshExternalMemorySize()
+        {
+            var provider = ExternalMemorySizeProvider;
+            if (provider is null)
+                return false;
+
+            var newSize = provider();
+            if (newSize < 0)
+                newSize = 0;
+
+            var previousSize = Interlocked.Exchange(ref externalMemorySize, newSize);
+            if (newSize <= previousSize)
+                return false;
+
+            // Report on each doubling, so sustained growth is visible without a line per sample.
+            var lastReported = Volatile.Read(ref reportedExternalMemorySize);
+            if (newSize >= Math.Max(lastReported, MinExternalMemoryReportBytes) * 2
+                && Interlocked.CompareExchange(ref reportedExternalMemorySize, newSize, lastReported) == lastReported)
+            {
+                logger?.LogWarning("Memory outside the log has grown to {externalMemorySize} bytes and is charged against the log budget of {targetSize} bytes,"
+                    + " reducing the log to {effectiveTargetSize} bytes. In Garnet this is hash-index memory beyond the configured index size, which grows with"
+                    + " record count: raise the index size to match the number of keys, or lower the log memory size.", newSize, TargetSize, EffectiveHighTargetSize);
+            }
+            return true;
+        }
+
+        /// <summary>
         /// Performs resizing by waiting for an event that is signaled whenever memory utilization changes.
         /// This is invoked on the threadpool to avoid blocking calling threads during the resize operation.
         /// </summary>
@@ -360,6 +435,7 @@ namespace Tsavorite.core
                         // resize would spin this loop with no delay between attempts.
                         try
                         {
+                            _ = RefreshExternalMemorySize();
                             ResizeIfNeeded(cancellationToken);
                         }
                         catch (OperationCanceledException)
@@ -396,14 +472,16 @@ namespace Tsavorite.core
         private bool DetermineEvictionRange(long currentSize, CancellationToken cancellationToken, out long headAddress,
             ref int allocatedPageCount, out long estimatedHeapTrimmedSize)
         {
-            // We know we are oversize so we calculate how much we need to trim to get to lowTargetSize.
-            var overBudgetAmount = currentSize - lowTargetSize;
+            // We know we are oversize so we calculate how much we need to trim to get to the effective lowTargetSize.
+            var overBudgetAmount = currentSize - EffectiveLowTargetSize;
             estimatedHeapTrimmedSize = 0L;
 
             var allocator = logAccessor.allocatorBase;
             headAddress = allocator.HeadAddress;
+            var startingHeadAddress = headAddress;
             var startingHeadPage = allocator.GetPage(headAddress);
-            var maxEvictUntilAddress = allocator.UnstableGetTailAddress(out _) - MinEvictionHeadAddressLag;
+            var tailAddress = allocator.UnstableGetTailAddress(out _);
+            var maxEvictUntilAddress = tailAddress - MinEvictionHeadAddressLag;
             var maxEvictUntilPage = allocator.GetPage(maxEvictUntilAddress);
 
             // If there is nothing to trim from the heap, we just do math to trim as many pages as we need to (up to the limit).
@@ -411,13 +489,21 @@ namespace Tsavorite.core
             {
                 // We are evicting in units of pages, so we set this to the start of the maxEvictUntilPage.
                 maxEvictUntilAddress = allocator.GetLogicalAddressOfStartOfPage(maxEvictUntilPage);
+
+                // Snapping down to the page start can land at or below headAddress despite the caller's gate on
+                // tailAddress - headAddress >= MinEvictionHeadAddressLag, because headAddress need not be page-aligned
+                // and the lag can be smaller than a page. No whole page is evictable, so retry as the tail advances.
+                if (maxEvictUntilPage <= startingHeadPage)
+                    return false;
+
                 var evictableSize = maxEvictUntilAddress - headAddress;
 
                 // evictableSize is the resident span [headAddress, tail-aligned). When heapSize is 0, TotalSize == AllocatedPageCount * PageSize, so being
                 // over budget here means AllocatedPageCount * PageSize > budget; recovery keeps AllocatedPageCount within MaxAllocatedPageCount (the read
                 // batch is capped at the budget and a final trim evicts any object-free overage), so AllocatedPageCount ~= the resident page count and that
-                // resident span must itself exceed the budget => evictableSize > 0. A negative value would mean AllocatedPageCount exceeds the resident set
-                // (stale pages left allocated below headAddress), which we must not reach.
+                // resident span must itself exceed the budget => evictableSize > 0. This holds when ExternalMemorySize has reduced the budget, because the
+                // reduced budget is floored at BudgetFloor (MinTargetPageCount pages). A negative value would mean AllocatedPageCount exceeds the resident
+                // set, i.e. stale pages left allocated below headAddress.
                 Debug.Assert(evictableSize >= 0, $"evictableSize ({evictableSize}) must be non-negative; AllocatedPageCount exceeds the resident set below headAddress.");
 
                 var margin = evictableSize - overBudgetAmount;
@@ -485,16 +571,26 @@ namespace Tsavorite.core
                         break;
                 }
 
-                // If we have finished a page, add its size to our eviction total and set headAddress to the start of the next page.
+                // If we have finished a page, add its size to our eviction total and set headAddress to the start of the next page,
+                // but only while that start is still behind the tail. The scan stops at maxEvictUntilAddress, which falls inside the
+                // tail page when PageSize exceeds MinEvictionHeadAddressLag, so completing the tail page would put headAddress past
+                // TailAddress, which ShiftHeadAddress caps at FlushedUntilAddress and the caller then waits on forever.
                 if (headAddress >= endAddress)
                 {
-                    pageTrimmedSize += allocator.PageSize;
-                    headAddress = allocator.GetFirstValidLogicalAddressOnPage(currentPage + 1);
+                    var nextPageAddress = allocator.GetFirstValidLogicalAddressOnPage(currentPage + 1);
+                    if (nextPageAddress <= tailAddress)
+                    {
+                        pageTrimmedSize += allocator.PageSize;
+                        headAddress = nextPageAddress;
+                    }
                 }
 
                 if (estimatedHeapTrimmedSize + pageTrimmedSize >= overBudgetAmount)
                     break;
             }
+
+            Debug.Assert(headAddress <= Math.Max(startingHeadAddress, tailAddress),
+                $"headAddress ({headAddress}) must not pass TailAddress ({tailAddress}); it would be waited on forever.");
 
             // headAddress is now properly set. Return whether we could satisfy the resize request; for Recovery, we may need to wait on flush.
             return estimatedHeapTrimmedSize + pageTrimmedSize >= overBudgetAmount;
@@ -508,7 +604,7 @@ namespace Tsavorite.core
         {
             // Loop to decrease size. These variables retain the values they acquired during the last loop iteration.
             var currentSize = TotalSize;
-            if (currentSize <= highTargetSize)
+            if (currentSize <= EffectiveHighTargetSize)
                 return;
 
             long headAddress, estimatedHeapTrimmedSize, readOnlyAddress;
@@ -521,7 +617,7 @@ namespace Tsavorite.core
             {
                 // AllocatedPageCount is set here, after we've resumed the epoch (which may have done eviction).
                 allocatedPageCount = logAccessor.AllocatedPageCount;
-                logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} BufferSize: {BufferSize}", heapSize.Total, highTargetSize, allocatedPageCount, logAccessor.BufferSize);
+                logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} BufferSize: {BufferSize}", heapSize.Total, EffectiveHighTargetSize, allocatedPageCount, logAccessor.BufferSize);
 
                 // See how much we can evict from HeadAddress onwards. Ignore the return value that indicates whether this is complete;
                 // we calculate the new ROA up to MinTargetPageCount pages before TailAddress, and that's as far as we can go.

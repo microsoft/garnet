@@ -466,7 +466,7 @@ namespace Tsavorite.core
                     DirectVirtualMemory.Clear((nint)state[resizeInfo.version].tableAligned, state[resizeInfo.version].size * sizeof(HashBucket));
                 }
             overflowBucketsAllocator.Dispose();
-            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
+            overflowBucketsAllocator = NewOverflowBucketsAllocator(state[resizeInfo.version].size);
 
             // Reset the hybrid log
             hlogBase.Reset();
@@ -496,6 +496,10 @@ namespace Tsavorite.core
 
             if (!GetInitialRecoveryAddress(recoveredICInfo, recoveredHLCInfo, out long recoverFromAddress))
                 await RecoverFuzzyIndexAsync(recoveredICInfo, cancellationToken).ConfigureAwait(false);
+
+            // The restored index holds memory charged against the log budget, and the resizer that samples it does not
+            // run during recovery. Sample here so the page ranges below size the log against the reduced budget.
+            _ = hlogBase.logSizeTracker?.RefreshExternalMemorySize();
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
@@ -722,6 +726,10 @@ namespace Tsavorite.core
         {
             if (hlogBase.logSizeTracker is null)
                 return;
+
+            // Recovery rebuilds the index as it replays the log, so re-sample per batch rather than relying on the sample
+            // taken before the hybrid log was read.
+            _ = hlogBase.logSizeTracker.RefreshExternalMemorySize();
 
             var headPage = hlogBase.GetPage(recoveryStatus.headAddress);
             var loadedPages = tailPage - headPage + 1;
@@ -1083,6 +1091,7 @@ namespace Tsavorite.core
             }
 
             // With a size tracker, iterate pages from highest (untilAddress) to lowest (fromAddress) with budget control, evicting pages (and moving headAddress up) as needed.
+            _ = hlogBase.logSizeTracker.RefreshExternalMemorySize();
             var maxHeadAddress = untilAddress - LogSizeTracker.MinEvictionHeadAddressLag;
 
             for (var page = endPage - 1; page >= startPage; page--)

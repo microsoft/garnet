@@ -28,8 +28,74 @@ namespace Tsavorite.core
         private const int LevelSizeBits = 12;
         private const int LevelSize = 1 << LevelSizeBits;
 
-        private readonly T[][] values = new T[LevelSize][];
-        private readonly IntPtr[] pointers = new IntPtr[LevelSize];
+        /// <summary>Smallest legal level count: level 0 is allocated in the constructor and every level-0 allocation
+        /// pre-allocates level 1.</summary>
+        internal const int MinLevelCount = 2;
+
+        /// <summary>Largest legal level count. <c>count</c> and the allocation index are <see cref="int"/>, so the page
+        /// table cannot address more than <see cref="int.MaxValue"/> records.</summary>
+        internal const int MaxLevelCount = int.MaxValue / PageSize;
+
+        /// <summary>Number of levels (pages) this instance can address, derived from the configured memory budget.</summary>
+        private readonly int levelCount;
+
+        /// <summary>Pages actually allocated, which is what this allocator costs in memory. Pages are committed ahead of
+        /// the records handed out: level 0 at construction and every page pre-allocates its successor.</summary>
+        private int allocatedPageCount;
+
+        /// <summary>Ceiling an ordinary allocation may take <c>count</c> to. Equal to <see cref="MaxAllocationCount"/>
+        /// unless <see cref="Reserve"/> is holding capacity, which only a reserved allocation may take.</summary>
+        private long ordinaryAllocationLimit;
+
+        private readonly T[][] values;
+        private readonly IntPtr[] pointers;
+
+        /// <summary>Maximum number of records this allocator can hand out, after which <see cref="Allocate"/> and
+        /// <see cref="BulkAllocate"/> throw.</summary>
+        internal long MaxAllocationCount => (long)levelCount * PageSize;
+
+        /// <summary>Bytes of records the page table can address, which is the memory budget this instance was built for
+        /// rounded down to a whole number of pages.</summary>
+        internal long MaxMemorySize => MaxAllocationCount * RecordSize;
+
+        /// <summary>Granularity of a memory budget: a budget is rounded down to a whole number of pages of this size.</summary>
+        internal static long MemorySizeGranularity => (long)PageSize * RecordSize;
+
+        /// <summary>Bytes this allocator has actually committed. Pages are allocated whole and ahead of the records
+        /// handed out, so this exceeds the size implied by the allocation count and is what the process pays.</summary>
+        public long AllocatedSizeBytes => (long)Volatile.Read(ref allocatedPageCount) * PageSize * RecordSize;
+
+        /// <summary>Budget used when none is configured: 16 GiB for 64-byte records.</summary>
+        internal static long DefaultMaxMemorySize => (long)LevelSize * PageSize * RecordSize;
+
+        /// <summary>Smallest and largest budgets a level count can express, for validation messages.</summary>
+        internal static long MinMemorySize => MinLevelCount * MemorySizeGranularity;
+
+        /// <inheritdoc cref="MinMemorySize"/>
+        internal static long MaxMemorySizeLimit => MaxLevelCount * MemorySizeGranularity;
+
+        /// <summary>
+        /// Convert a memory budget in bytes to the number of page-table levels that addresses, rounding down to a whole
+        /// number of pages and clamping to the range the page table can express.
+        /// </summary>
+        /// <param name="maxMemorySize">Budget in bytes. Zero or negative selects <see cref="DefaultMaxMemorySize"/>.</param>
+        internal static int GetLevelCount(long maxMemorySize)
+        {
+            if (maxMemorySize <= 0)
+                maxMemorySize = DefaultMaxMemorySize;
+            var levels = maxMemorySize / MemorySizeGranularity;
+            if (levels < MinLevelCount)
+                return MinLevelCount;
+            return levels > MaxLevelCount ? MaxLevelCount : (int)levels;
+        }
+
+        /// <summary>
+        /// Smallest budget that can hand out <paramref name="recordCount"/> records: their size rounded up to a whole
+        /// page, since <see cref="GetLevelCount"/> rounds a budget down. Not clamped, so a caller can tell a requirement
+        /// beyond <see cref="MaxMemorySizeLimit"/> from one that fits.
+        /// </summary>
+        internal static long GetMemorySizeForRecords(long recordCount)
+            => (recordCount * RecordSize + MemorySizeGranularity - 1) / MemorySizeGranularity * MemorySizeGranularity;
 
         private volatile int writeCacheLevel;
 
@@ -60,14 +126,37 @@ namespace Tsavorite.core
         public int NumAllocations => count - initialAllocation; // Ignores the initial allocation
 
         /// <summary>
-        /// Create new instance
+        /// Create new instance with the default memory budget of <see cref="DefaultMaxMemorySize"/>.
         /// </summary>
-        public unsafe MallocFixedPageSize(ILogger logger = null)
+        public MallocFixedPageSize(ILogger logger = null) : this(LevelSize, logger) { }
+
+        /// <summary>
+        /// Create new instance sized for a memory budget in bytes, rounded down to a whole number of pages and clamped
+        /// to the range the page table can express.
+        /// </summary>
+        /// <param name="maxMemorySize">Budget in bytes. Zero or negative selects <see cref="DefaultMaxMemorySize"/>.</param>
+        /// <param name="logger">Logger</param>
+        public MallocFixedPageSize(long maxMemorySize, ILogger logger = null) : this(GetLevelCount(maxMemorySize), logger) { }
+
+        /// <summary>
+        /// Create new instance with an explicit level count.
+        /// </summary>
+        internal unsafe MallocFixedPageSize(int levelCount, ILogger logger = null)
         {
+            // Level 0 is allocated below and every level-0 allocation pre-allocates level 1, so two levels are the minimum.
+            Debug.Assert(levelCount >= MinLevelCount, "levelCount must be at least MinLevelCount");
+            Debug.Assert(levelCount <= MaxLevelCount, "levelCount must be at most MaxLevelCount");
+
+            this.levelCount = levelCount;
+            ordinaryAllocationLimit = MaxAllocationCount;
+            values = new T[levelCount][];
+            pointers = new IntPtr[levelCount];
+
             this.logger = logger;
             freeList = new ConcurrentQueue<long>();
 
             values[0] = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
+            _ = Interlocked.Increment(ref allocatedPageCount);
             if (IsBlittable)
             {
                 pointers[0] = (IntPtr)(((long)Unsafe.AsPointer(ref values[0][0]) + (SectorSize - 1)) & ~(SectorSize - 1));
@@ -140,7 +229,29 @@ namespace Tsavorite.core
 
         internal int FreeListCount => freeList.Count;   // For test
 
-        internal const int AllocateChunkSize = 16;     // internal for test
+        /// <summary>
+        /// Hold <paramref name="recordCount"/> records at the top of the capacity for allocations that pass
+        /// <c>useReservation</c>. Ordinary allocations fail once they would encroach on the reserve, so a caller that
+        /// must be able to allocate a known quantity cannot be starved by concurrent ordinary allocations.
+        /// </summary>
+        internal void Reserve(long recordCount)
+        {
+            var allocated = count;
+            if (recordCount > MaxAllocationCount - allocated)
+                ThrowReservationTooLarge(recordCount, allocated);
+            _ = Interlocked.Exchange(ref ordinaryAllocationLimit, MaxAllocationCount - recordCount);
+        }
+
+        /// <summary>Release a reservation made by <see cref="Reserve"/>, returning its capacity to ordinary allocations.</summary>
+        internal void ReleaseReservation() => Interlocked.Exchange(ref ordinaryAllocationLimit, MaxAllocationCount);
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void ThrowReservationTooLarge(long recordCount, long allocated)
+            => throw new TsavoriteException(
+                $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> cannot reserve {recordCount} records:"
+                + $" {MaxAllocationCount - allocated} of its {MaxAllocationCount} remain unallocated.{ExhaustionRemedy}");
+
+        public const int AllocateChunkSize = 16;
 
         /// <summary>
         /// Allocate a block of size RecordSize * kAllocateChunkSize. 
@@ -155,30 +266,58 @@ namespace Tsavorite.core
             Debug.Assert(allocationMode != AllocationMode.Single, "Cannot mix Single and Bulk allocation modes");
             allocationMode = AllocationMode.Bulk;
 #endif
-            return InternalAllocate(AllocateChunkSize);
+            return InternalAllocate(AllocateChunkSize, useReservation: false);
         }
 
         /// <summary>
         /// Allocate a block of size RecordSize.
         /// </summary>
+        /// <param name="useReservation">Draw on capacity held by <see cref="Reserve"/>, for a caller that reserved it.</param>
         /// <returns>The logicalAddress (index) of the block</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe long Allocate()
+        public unsafe long Allocate(bool useReservation = false)
         {
 #if DEBUG
             Debug.Assert(allocationMode != AllocationMode.Bulk, "Cannot mix Single and Bulk allocation modes");
             allocationMode = AllocationMode.Single;
 #endif
-            return InternalAllocate(1);
+            return InternalAllocate(1, useReservation);
         }
 
-        private unsafe long InternalAllocate(int blockSize)
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void ThrowAllocatorFull(long limit)
+            => throw new TsavoriteException(
+                $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> is full: its page table addresses at most {levelCount} pages of {PageSize} records"
+                + $" ({MaxAllocationCount} records, {MaxMemorySize} bytes), and that capacity is exhausted."
+                + (limit < MaxAllocationCount ? $" {MaxAllocationCount - limit} records of it are reserved for an index grow in progress." : string.Empty)
+                + ExhaustionRemedy);
+
+        /// <summary>Remedy appended to the exhaustion message, naming the settings that size this allocator.</summary>
+        private static readonly string ExhaustionRemedy = typeof(T) != typeof(HashBucket)
+            ? string.Empty
+            : " Too many hash entries have spilled out of the main bucket array. Overflow buckets chain linearly and are"
+                + " scanned by reads and upserts, so the index is undersized for the number of distinct keys on this node."
+                + " Raise IndexMemorySize, or set IndexMaxMemorySize to let the index grow, so that more entries fit the"
+                + " main bucket array. Raising IndexOverflowThreshold buys capacity at the cost of longer chains.";
+
+        private unsafe long InternalAllocate(int blockSize, bool useReservation)
         {
             if (freeList.TryDequeue(out long result))
                 return result;
 
+            // An ordinary allocation may not encroach on capacity held by Reserve. useReservation is constant at each
+            // call site, so this folds away once inlined.
+            var limit = useReservation ? MaxAllocationCount : Volatile.Read(ref ordinaryAllocationLimit);
+
             // Determine insertion index.
             int index = Interlocked.Add(ref count, blockSize) - blockSize;
+            if (index + (long)blockSize > limit)
+            {
+                // Undo the advance before throwing: repeated rejections would otherwise run count away and overflow int.
+                _ = Interlocked.Add(ref count, -blockSize);
+                ThrowAllocatorFull(limit);
+            }
+
             int offset = index & PageSizeMask;
             int baseAddr = index >> PageSizeBits;
 
@@ -193,6 +332,7 @@ namespace Tsavorite.core
                         pointers[1] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
                     values[1] = tmp;
+                    _ = Interlocked.Increment(ref allocatedPageCount);
                     Interlocked.MemoryBarrier();
                 }
 
@@ -236,11 +376,16 @@ namespace Tsavorite.core
                 // Allocate for next page
                 int newBaseAddr = baseAddr + 1;
 
-                var tmp = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
-                if (IsBlittable)
-                    pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
+                // The last level has no successor to pre-allocate; the next allocation past it throws in ThrowAllocatorFull.
+                if (newBaseAddr < levelCount)
+                {
+                    var tmp = GC.AllocateArray<T>(PageSize + SectorSize, pinned: IsBlittable);
+                    if (IsBlittable)
+                        pointers[newBaseAddr] = (IntPtr)(((long)Unsafe.AsPointer(ref tmp[0]) + (SectorSize - 1)) & ~(SectorSize - 1));
 
-                values[newBaseAddr] = tmp;
+                    values[newBaseAddr] = tmp;
+                    _ = Interlocked.Increment(ref allocatedPageCount);
+                }
 
                 Interlocked.MemoryBarrier();
             }
@@ -448,10 +593,15 @@ namespace Tsavorite.core
             => _ = Interlocked.CompareExchange(ref checkpointError, new IoFailure(detail, exception), null);
 
         /// <summary>
-        /// Max valid address
+        /// Max valid address: the high-water mark of records handed out.
         /// </summary>
-        /// <returns></returns>
-        public int GetMaxValidAddress() => count;
+        /// <remarks>Clamped to <see cref="MaxAllocationCount"/>. A rejected allocation advances <c>count</c> before
+        /// rolling it back, and a reader in that window must not derive a page-table index past the last level.</remarks>
+        public int GetMaxValidAddress()
+        {
+            var current = count;
+            return current <= MaxAllocationCount ? current : (int)MaxAllocationCount;
+        }
 
         /// <summary>
         /// Get page size

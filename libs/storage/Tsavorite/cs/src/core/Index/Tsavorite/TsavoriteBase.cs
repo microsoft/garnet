@@ -28,6 +28,13 @@ namespace Tsavorite.core
         internal MallocFixedPageSize<HashBucket> overflowBucketsAllocator;
         internal MallocFixedPageSize<HashBucket> overflowBucketsAllocatorResize;
 
+        // Overflow-bucket ceiling as a percentage of a generation's main bucket count. Held as a percentage so that
+        // each generation installed by a resize or by recovery scales with its own table size.
+        internal readonly int overflowThreshold;
+
+        // Logger for the overflow-bucket allocator generations created after construction.
+        private readonly ILogger overflowBucketsLogger;
+
         // An array of size two, that contains the old and new versions of the hash-table
         internal InternalHashTable[] state = new InternalHashTable[2];
 
@@ -75,9 +82,25 @@ namespace Tsavorite.core
         protected ILogger logger;
 
         /// <summary>
-        /// Constructor
+        /// Constructor, sizing the overflow-bucket allocator from the defaults.
         /// </summary>
+        /// <param name="epoch">Epoch instance to use, or null to own a new one</param>
+        /// <param name="logger">Logger</param>
         public TsavoriteBase(LightEpoch epoch = null, ILogger logger = null)
+            : this(epoch, 0, 0, logger)
+        {
+        }
+
+        /// <summary>
+        /// Constructor, sizing the overflow-bucket allocator for a given index generation.
+        /// </summary>
+        /// <param name="epoch">Epoch instance to use, or null to own a new one</param>
+        /// <param name="indexSizeBuckets">Main bucket count of the initial index generation, used to size its
+        /// overflow-bucket allocator. Zero or negative selects <see cref="TsavoriteBase.minTableSize"/>.</param>
+        /// <param name="overflowThreshold">Ceiling on overflow buckets as a percentage of a generation's main bucket
+        /// count. Zero or negative selects <see cref="KVSettings.DefaultIndexOverflowThreshold"/>.</param>
+        /// <param name="logger">Logger</param>
+        public TsavoriteBase(LightEpoch epoch, long indexSizeBuckets, int overflowThreshold, ILogger logger)
         {
             if (epoch == null)
             {
@@ -86,8 +109,49 @@ namespace Tsavorite.core
             }
             else
                 this.epoch = epoch;
-            overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
+
+            this.overflowThreshold = overflowThreshold > 0 ? overflowThreshold : KVSettings.DefaultIndexOverflowThreshold;
+            overflowBucketsLogger = logger;
+            overflowBucketsAllocator = NewOverflowBucketsAllocator(indexSizeBuckets > 0 ? indexSizeBuckets : minTableSize);
         }
+
+        /// <summary>
+        /// Create an overflow-bucket allocator generation sized for a given index generation. Used at construction, on
+        /// index resize, and on recovery, so that every generation's ceiling scales with its own main bucket count.
+        /// </summary>
+        /// <param name="tableSizeBuckets">Main bucket count of the generation the allocator serves.</param>
+        /// <param name="minimumBuckets">Lower bound on the generation's capacity in buckets, regardless of the
+        /// threshold, for callers that must be able to hold a known quantity.</param>
+        internal MallocFixedPageSize<HashBucket> NewOverflowBucketsAllocator(long tableSizeBuckets, long minimumBuckets = 0)
+        {
+            var maxMemorySize = KVSettings.GetIndexOverflowMaxMemorySize(tableSizeBuckets, overflowThreshold);
+            if (minimumBuckets > 0)
+            {
+                // The new allocator's constructor consumes its initial allocation before the caller sees it, so that
+                // must be covered too.
+                var required = MallocFixedPageSize<HashBucket>.GetMemorySizeForRecords(minimumBuckets + KVSettings.OverflowBucketInitialAllocation);
+                if (required > MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit)
+                    throw new TsavoriteException(
+                        $"An overflow-bucket generation of {required} bytes is required, which exceeds the {MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit}"
+                        + " bytes the overflow page table can address. Reduce the index size so that a generation's overflow buckets remain addressable.");
+                if (required > maxMemorySize)
+                    maxMemorySize = required;
+            }
+            return new(maxMemorySize, overflowBucketsLogger);
+        }
+
+        /// <summary>
+        /// Worst-case overflow buckets the split into a doubled table can need, which is twice the current generation's.
+        /// </summary>
+        /// <remarks>An entry whose record is not in memory is inserted into both halves of the new table, because which
+        /// half it belongs to cannot be determined without reading the record. Old bucket <c>i</c> maps to exactly new
+        /// buckets <c>i</c> and <c>i + size</c>, so each half's main bucket absorbs the seven entries of the old main
+        /// bucket and only the old overflow chain needs new overflow buckets: at most one per old overflow bucket per
+        /// half. Exhausting the allocator mid-split throws with a chunk already claimed, leaving the waiters in
+        /// <see cref="TsavoriteKV{TStoreFunctions, TAllocator}.SplitAllBuckets"/> spinning on a chunk that can never
+        /// complete, so this capacity is both guaranteed and reserved before the grow begins.</remarks>
+        internal long GetSplitOverflowBucketRequirement()
+            => 2 * overflowBucketsAllocator.GetMaxValidAddress();
 
         internal void Free()
         {

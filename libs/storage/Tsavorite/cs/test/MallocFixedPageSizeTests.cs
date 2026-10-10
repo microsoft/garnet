@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -124,6 +128,310 @@ namespace Tsavorite.test
                 ClassicAssert.AreEqual(numChunks, allocator.FreeListCount);
             }
             allocator.Dispose();
+        }
+
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void AllocatorThrowsWhenPageTableIsExhausted()
+        {
+            DeleteDirectory(MethodTestDir, wait: true);
+
+            // A small level count exercises the same exhaustion path as the production level count without allocating its capacity.
+            const int LevelCount = 3;
+            using var allocator = new MallocFixedPageSize<byte>(LevelCount);
+
+            var capacity = allocator.GetPageSize() * (long)LevelCount;
+            ClassicAssert.AreEqual(capacity, allocator.MaxAllocationCount);
+
+            // The constructor consumes one bulk chunk, so that many fewer are available here.
+            var expectedAllocations = capacity - MallocFixedPageSize<byte>.AllocateChunkSize;
+
+            long allocations = 0;
+            long lastAddress = 0;
+            _ = Assert.Throws<TsavoriteException>(() =>
+            {
+                while (true)
+                {
+                    lastAddress = allocator.Allocate();
+                    allocations++;
+                }
+            });
+
+            ClassicAssert.AreEqual(expectedAllocations, allocations);
+
+            // The last allocation before the limit is a usable record, not a torn or out-of-range one.
+            ClassicAssert.AreEqual(capacity - 1, lastAddress);
+            byte marker = 42;
+            allocator.Set(lastAddress, ref marker);
+            ClassicAssert.AreEqual(42, allocator.Get(lastAddress));
+
+            // Freeing makes room again: the free list is consulted before the capacity check.
+            allocator.Free(lastAddress);
+            ClassicAssert.AreEqual(lastAddress, allocator.Allocate());
+            _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
+
+            // A rejected allocation leaves no trace. count is both the high-water mark reported to metrics and the value
+            // BeginCheckpoint derives page-table indices from, so letting rejections advance it would index past the table.
+            for (var i = 0; i < 8; i++)
+                _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress());
+        }
+
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void BulkAllocateStopsAtTheEndOfThePageTable()
+        {
+            DeleteDirectory(MethodTestDir, wait: true);
+
+            const int LevelCount = 2;
+            using var allocator = new MallocFixedPageSize<byte>(LevelCount);
+
+            var capacity = allocator.GetPageSize() * (long)LevelCount;
+            var chunkSize = MallocFixedPageSize<byte>.AllocateChunkSize;
+
+            // The whole block is reserved at once, so a chunk is either fully within the page table or refused. The chunk
+            // size divides the page size, so the last chunk ends exactly at capacity rather than straddling it.
+            ClassicAssert.AreEqual(0, allocator.GetPageSize() % chunkSize);
+
+            long lastAddress = 0;
+            _ = Assert.Throws<TsavoriteException>(() =>
+            {
+                while (true)
+                    lastAddress = allocator.BulkAllocate();
+            });
+
+            ClassicAssert.AreEqual(capacity - chunkSize, lastAddress);
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress());
+
+            // Every record of the final chunk is addressable, so the refused chunk did not truncate a usable one.
+            for (var i = 0; i < chunkSize; i++)
+            {
+                byte value = (byte)i;
+                allocator.Set(lastAddress + i, ref value);
+                ClassicAssert.AreEqual(i, allocator.Get(lastAddress + i));
+            }
+
+            _ = Assert.Throws<TsavoriteException>(() => allocator.BulkAllocate());
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress());
+        }
+
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void CheckpointSucceedsAfterAllocatorIsExhausted()
+        {
+            DeleteDirectory(MethodTestDir, wait: true);
+
+            const int LevelCount = 2;
+            using var allocator = new MallocFixedPageSize<HashBucket>(LevelCount);
+
+            var capacity = allocator.GetPageSize() * (long)LevelCount;
+            while (allocator.GetMaxValidAddress() < capacity)
+                _ = allocator.Allocate();
+
+            for (var i = 0; i < 4; i++)
+                _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
+
+            // BeginCheckpoint turns count into a page-table index range, so a count past capacity would read out of range.
+            using var device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ExhaustedCheckpoint.dat"), deleteOnClose: true);
+            allocator.BeginCheckpoint(device, 0, out var numBytes);
+            allocator.IsCheckpointCompletedAsync().AsTask().GetAwaiter().GetResult();
+            ClassicAssert.AreEqual((ulong)(capacity * MallocFixedPageSize<HashBucket>.RecordSize), numBytes);
+        }
+
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void OverflowBucketDefaultCapacityIsSixteenGibibytes()
+        {
+            // The allocator's own fallback, used when no budget is supplied. Nothing frees an overflow bucket when
+            // records are deleted, so a ceiling always applies. It is asserted here so a change to the page table
+            // geometry is a test failure, not a production throw.
+            using var allocator = new MallocFixedPageSize<HashBucket>();
+            ClassicAssert.AreEqual(1L << 28, allocator.MaxAllocationCount);
+            ClassicAssert.AreEqual(16L * 1024 * 1024 * 1024, allocator.MaxMemorySize);
+            ClassicAssert.AreEqual(16L * 1024 * 1024 * 1024, MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize);
+        }
+
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void MemoryBudgetRoundsDownToWholePagesAndClampsToThePageTableRange()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            ClassicAssert.AreEqual(4L * 1024 * 1024, granularity, "A page of 64-byte buckets is the 4 MiB budget granularity");
+
+            // Zero and negative select the default rather than an empty allocator.
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize,
+                MallocFixedPageSize<HashBucket>.GetLevelCount(0) * granularity);
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.DefaultMaxMemorySize,
+                MallocFixedPageSize<HashBucket>.GetLevelCount(-1) * granularity);
+
+            // A budget that is not a whole number of pages rounds down, never up: rounding up would let the allocator
+            // hand out more memory than was configured.
+            ClassicAssert.AreEqual(8, MallocFixedPageSize<HashBucket>.GetLevelCount((granularity * 8) + granularity - 1));
+            ClassicAssert.AreEqual(8, MallocFixedPageSize<HashBucket>.GetLevelCount(granularity * 8));
+
+            // Below the two-level minimum the allocator cannot function, so the budget clamps up rather than failing.
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.MinLevelCount, MallocFixedPageSize<HashBucket>.GetLevelCount(1));
+
+            // count and the allocation index are int, so the page table cannot address more than int.MaxValue records.
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.MaxLevelCount, MallocFixedPageSize<HashBucket>.GetLevelCount(long.MaxValue));
+            ClassicAssert.LessOrEqual(MallocFixedPageSize<HashBucket>.MaxLevelCount * (granularity / MallocFixedPageSize<HashBucket>.RecordSize), int.MaxValue);
+        }
+
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void ConfiguredMemoryBudgetBoundsAllocationAndIsReportedBack()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            var budget = granularity * 3;
+
+            using var allocator = new MallocFixedPageSize<HashBucket>(budget);
+            ClassicAssert.AreEqual(budget, allocator.MaxMemorySize, "The allocator reports the budget it was built for");
+
+            var capacity = allocator.MaxAllocationCount;
+            ClassicAssert.AreEqual(budget / MallocFixedPageSize<HashBucket>.RecordSize, capacity);
+
+            while (allocator.GetMaxValidAddress() < capacity)
+                _ = allocator.Allocate();
+
+            // The budget is a real bound, not advisory: the allocation past it throws and leaves the count at capacity.
+            var ex = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
+            ClassicAssert.IsTrue(ex.Message.Contains("IndexOverflowThreshold"),
+                $"The exhaustion message must name the setting that raises the ceiling, but was: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("IndexMemorySize"),
+                $"The exhaustion message must name the remedy of a larger index, but was: {ex.Message}");
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress());
+        }
+
+        /// <summary>
+        /// Capacity held by <see cref="MallocFixedPageSize{T}.Reserve"/> is exclusive: ordinary allocations fail once
+        /// they would encroach on it, and the reserving caller can still take all of it. An index grow reserves what
+        /// its split needs while writes continue to allocate from the same generation, and a split that cannot allocate
+        /// leaves a chunk claimed forever.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void ReservedCapacityIsNotAvailableToOrdinaryAllocations()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 2);
+
+            var capacity = allocator.MaxAllocationCount;
+            const long Reservation = 1024;
+            allocator.Reserve(Reservation);
+
+            while (allocator.GetMaxValidAddress() < capacity - Reservation)
+                _ = allocator.Allocate();
+
+            _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate(),
+                "An ordinary allocation must not take capacity reserved for the split");
+
+            for (var i = 0L; i < Reservation; ++i)
+                _ = allocator.Allocate(useReservation: true);
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress(),
+                "The reserving caller must be able to take every record it reserved");
+
+            _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate(useReservation: true),
+                "The reservation is capacity, not an exemption from the bound");
+        }
+
+        /// <summary>
+        /// Released capacity returns to ordinary allocations, so a generation is not permanently shrunk by the grow
+        /// that created it.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void ReleasingAReservationReturnsItToOrdinaryAllocations()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 2);
+
+            var capacity = allocator.MaxAllocationCount;
+            allocator.Reserve(1024);
+            while (allocator.GetMaxValidAddress() < capacity - 1024)
+                _ = allocator.Allocate();
+            _ = Assert.Throws<TsavoriteException>(() => allocator.Allocate());
+
+            allocator.ReleaseReservation();
+            while (allocator.GetMaxValidAddress() < capacity)
+                _ = allocator.Allocate();
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress());
+        }
+
+        /// <summary>
+        /// The memory an allocator costs is the pages it has committed, which runs ahead of the records handed out:
+        /// level 0 is allocated in the constructor and every page pre-allocates its successor. Charging the index
+        /// against the log budget from the allocation count alone would omit that.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void AllocatedSizeBytesReportsCommittedPagesNotHandedOutRecords()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 4);
+
+            // A fresh allocator has handed out only its initial block, but has already committed level 0 and level 1.
+            ClassicAssert.AreEqual(granularity * 2, allocator.AllocatedSizeBytes,
+                "Construction commits the first page and pre-allocates its successor");
+            ClassicAssert.Less((long)allocator.GetMaxValidAddress() * MallocFixedPageSize<HashBucket>.RecordSize,
+                allocator.AllocatedSizeBytes, "Committed memory must exceed the size implied by the allocation count");
+
+            // Crossing into the second page commits the third.
+            var recordsPerPage = granularity / MallocFixedPageSize<HashBucket>.RecordSize;
+            while (allocator.GetMaxValidAddress() <= recordsPerPage)
+                _ = allocator.Allocate();
+            ClassicAssert.AreEqual(granularity * 3, allocator.AllocatedSizeBytes,
+                "Reaching a page commits its successor");
+
+            ClassicAssert.LessOrEqual(allocator.AllocatedSizeBytes, allocator.MaxMemorySize,
+                "Committed memory can never exceed the budget the allocator was built for");
+        }
+
+        /// <summary>
+        /// A rejected allocation advances <c>count</c> before rolling it back, so a concurrent reader can observe the
+        /// overshoot. <c>GetMaxValidAddress</c> is what <c>BeginCheckpoint</c> derives page-table indices from, so an
+        /// unclamped read would index past the last level.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void ConcurrentRejectionsNeverPublishAnAddressPastTheLastPage()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 2);
+
+            var capacity = allocator.MaxAllocationCount;
+            while (allocator.GetMaxValidAddress() < capacity)
+                _ = allocator.Allocate();
+
+            using var stop = new CancellationTokenSource();
+            var rejecters = new Task[Environment.ProcessorCount];
+            for (var i = 0; i < rejecters.Length; i++)
+            {
+                rejecters[i] = Task.Run(() =>
+                {
+                    while (!stop.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            _ = allocator.Allocate();
+                        }
+                        catch (TsavoriteException)
+                        {
+                        }
+                    }
+                });
+            }
+
+            var maxObserved = 0L;
+            for (var i = 0; i < 200_000; i++)
+                maxObserved = Math.Max(maxObserved, allocator.GetMaxValidAddress());
+
+            stop.Cancel();
+            Task.WaitAll(rejecters);
+
+            ClassicAssert.AreEqual(capacity, maxObserved,
+                "A reader must never observe an address past the last page the table can address");
+            ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress(),
+                "Rejections must roll back, leaving the high-water mark where the last successful allocation left it");
         }
     }
 }
