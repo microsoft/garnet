@@ -41,12 +41,6 @@ namespace Tsavorite.core
         public const int DefaultIndexOverflowThreshold = 300;
 
         /// <summary>
-        /// Largest ceiling the overflow-bucket page table can address, regardless of
-        /// <see cref="IndexOverflowThreshold"/>.
-        /// </summary>
-        public static long MaxIndexOverflowMaxMemorySize => MallocFixedPageSize<HashBucket>.MaxMemorySizeLimit;
-
-        /// <summary>
         /// Buckets the overflow allocator claims at construction. The allocation counter that drives index resize
         /// excludes these, so a caller comparing a resolved ceiling against a resize trigger must discount them.
         /// </summary>

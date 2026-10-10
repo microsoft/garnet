@@ -89,6 +89,14 @@ namespace Tsavorite.core
             return levels > MaxLevelCount ? MaxLevelCount : (int)levels;
         }
 
+        /// <summary>
+        /// Smallest budget that can hand out <paramref name="recordCount"/> records: their size rounded up to a whole
+        /// page, since <see cref="GetLevelCount"/> rounds a budget down. Not clamped, so a caller can tell a requirement
+        /// beyond <see cref="MaxMemorySizeLimit"/> from one that fits.
+        /// </summary>
+        internal static long GetMemorySizeForRecords(long recordCount)
+            => (recordCount * RecordSize + MemorySizeGranularity - 1) / MemorySizeGranularity * MemorySizeGranularity;
+
         private volatile int writeCacheLevel;
 
         private volatile int count;
@@ -228,8 +236,9 @@ namespace Tsavorite.core
         /// </summary>
         internal void Reserve(long recordCount)
         {
-            if (recordCount > MaxAllocationCount - count)
-                ThrowReservationTooLarge(recordCount);
+            var allocated = count;
+            if (recordCount > MaxAllocationCount - allocated)
+                ThrowReservationTooLarge(recordCount, allocated);
             _ = Interlocked.Exchange(ref ordinaryAllocationLimit, MaxAllocationCount - recordCount);
         }
 
@@ -237,10 +246,10 @@ namespace Tsavorite.core
         internal void ReleaseReservation() => Interlocked.Exchange(ref ordinaryAllocationLimit, MaxAllocationCount);
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void ThrowReservationTooLarge(long recordCount)
+        private void ThrowReservationTooLarge(long recordCount, long allocated)
             => throw new TsavoriteException(
                 $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> cannot reserve {recordCount} records:"
-                + $" {MaxAllocationCount - count} of its {MaxAllocationCount} remain unallocated.{exhaustionRemedy}");
+                + $" {MaxAllocationCount - allocated} of its {MaxAllocationCount} remain unallocated.{ExhaustionRemedy}");
 
         public const int AllocateChunkSize = 16;
 
@@ -275,23 +284,16 @@ namespace Tsavorite.core
             return InternalAllocate(1, useReservation);
         }
 
-        /// <summary>
-        /// Undo the <c>count</c> advance of a rejected allocation and throw. Rolling back keeps the counter from
-        /// running away -- and eventually overflowing <see cref="int"/> -- across repeated rejections.
-        /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void ThrowAllocatorFull(int blockSize, long limit)
-        {
-            _ = Interlocked.Add(ref count, -blockSize);
-            throw new TsavoriteException(
+        private void ThrowAllocatorFull(long limit)
+            => throw new TsavoriteException(
                 $"{nameof(MallocFixedPageSize<T>)}<{typeof(T).Name}> is full: its page table addresses at most {levelCount} pages of {PageSize} records"
                 + $" ({MaxAllocationCount} records, {MaxMemorySize} bytes), and that capacity is exhausted."
                 + (limit < MaxAllocationCount ? $" {MaxAllocationCount - limit} records of it are reserved for an index grow in progress." : string.Empty)
-                + exhaustionRemedy);
-        }
+                + ExhaustionRemedy);
 
         /// <summary>Remedy appended to the exhaustion message, naming the settings that size this allocator.</summary>
-        private static string exhaustionRemedy => typeof(T) != typeof(HashBucket)
+        private static readonly string ExhaustionRemedy = typeof(T) != typeof(HashBucket)
             ? string.Empty
             : " Too many hash entries have spilled out of the main bucket array. Overflow buckets chain linearly and are"
                 + " scanned by reads and upserts, so the index is undersized for the number of distinct keys on this node."
@@ -310,7 +312,11 @@ namespace Tsavorite.core
             // Determine insertion index.
             int index = Interlocked.Add(ref count, blockSize) - blockSize;
             if (index + (long)blockSize > limit)
-                ThrowAllocatorFull(blockSize, limit);
+            {
+                // Undo the advance before throwing: repeated rejections would otherwise run count away and overflow int.
+                _ = Interlocked.Add(ref count, -blockSize);
+                ThrowAllocatorFull(limit);
+            }
 
             int offset = index & PageSizeMask;
             int baseAddr = index >> PageSizeBits;
