@@ -2,12 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
-using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
@@ -49,7 +50,7 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ObjectIdMapCategory)]
-        public void PartialSectorReadFailureStopsFlush([Values] InjectedReadFailure failureMode)
+        public void PartialSectorFlushSkipsReadBack()
         {
             CreateStore(useLargeObjects: false, captureFlushFailures: true);
 
@@ -62,34 +63,224 @@ namespace Tsavorite.test
             var lastSuccessfulFlush = store.Log.FlushedUntilAddress;
             Assert.That(lastSuccessfulFlush, Is.EqualTo(store.Log.TailAddress));
             Assert.That(lastSuccessfulFlush % logDevice.SectorSize, Is.Not.Zero,
-                "The first flush must end mid-sector so the next flush performs a sector read-back.");
+                "The first flush must end mid-sector so the next flush rewrites an aligned live-page prefix.");
 
-            var writeCountBeforeFailure = logDevice.WriteCount;
+            var writeCountBeforeFlush = logDevice.WriteCount;
             _ = context.Upsert(new TestObjectKey { key = 2 }, new TestObjectValue { value = 2 }, Empty.Default);
-            var failedFlushUntilAddress = store.Log.TailAddress;
+            var expectedFlushUntilAddress = store.Log.TailAddress;
 
-            logDevice.FailNextRead(failureMode);
-            store.Log.Flush(wait: false);
+            logDevice.FailNextRead(InjectedReadFailure.DeviceError);
+            store.Log.Flush(wait: true);
 
-            Assert.That(flushFailureEvent.Wait(TimeSpan.FromSeconds(10)), Is.True, "The failed read was not propagated to the flush callback.");
-            Assert.That(logDevice.FailedReadCount, Is.EqualTo(1));
-            Assert.That(logDevice.LastFailedReadLength, Is.EqualTo(logDevice.SectorSize));
-            Assert.That(logDevice.LastFailedReadAddress, Is.EqualTo((ulong)RoundDown(lastSuccessfulFlush, (int)logDevice.SectorSize)));
-            Assert.That(logDevice.WriteCount, Is.EqualTo(writeCountBeforeFailure), "A failed sector read-back must not submit a replacement main-log write.");
-            Assert.That(store.Log.FlushedUntilAddress, Is.EqualTo(lastSuccessfulFlush), "A failed read-back must not advance FlushedUntilAddress.");
-            Assert.That(flushFailure.FromAddress, Is.EqualTo(lastSuccessfulFlush));
-            Assert.That(flushFailure.UntilAddress, Is.EqualTo(failedFlushUntilAddress));
+            Assert.That(logDevice.FailedReadCount, Is.Zero, "Front-partial flushing must not read back the already-durable sector prefix.");
+            Assert.That(logDevice.WriteCount, Is.GreaterThan(writeCountBeforeFlush));
+            Assert.That(store.Log.FlushedUntilAddress, Is.EqualTo(expectedFlushUntilAddress));
+            Assert.That(flushFailureEvent.IsSet, Is.False);
+        }
 
-            if (failureMode == InjectedReadFailure.DeviceError)
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void EveryRecordTheFlushWritesIsFrozenWhileItIsWritten()
+        {
+            // The deferred-cleanup design rests on this: while the object-log flush is writing a record, that record's address must
+            // report IsFrozenForFlush, because that is what makes a concurrent dispose decline and defer its release to eviction.
+            // The injection hook lets this be asserted at the exact moment of the write instead of inferred.
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so no record write can be observed.");
+
+            CreateStore(useLargeObjects: true, captureFlushFailures: false);
+
+            var observed = 0;
+            var notFrozen = new List<long>();
+            ObjectFlushInjection.Hook = (phase, logicalAddress) =>
             {
-                Assert.That(flushFailure.ErrorCode, Is.EqualTo(ControlledReadFailureDevice.InjectedErrorCode));
-                Assert.That(flushFailure.Exception, Is.Null);
-            }
-            else
+                if (phase != ObjectFlushPhase.AfterRecordWritten)
+                    return;
+                _ = Interlocked.Increment(ref observed);
+                if (!store.hlog.IsFrozenForFlush(logicalAddress))
+                {
+                    lock (notFrozen)
+                        notFrozen.Add(logicalAddress);
+                }
+            };
+
+            try
             {
-                Assert.That(flushFailure.ErrorCode, Is.EqualTo(uint.MaxValue));
-                Assert.That(flushFailure.Exception, Is.TypeOf<EndOfStreamException>());
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var context = session.BasicContext;
+
+                for (var key = 0; key < 16; ++key)
+                    _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+                store.Log.Flush(wait: true);
             }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+            }
+
+            Assert.That(observed, Is.GreaterThan(0), "the injection hook must fire for records the flush writes, or this test proves nothing");
+            Assert.That(notFrozen, Is.Empty, $"records written by the flush must be frozen at that moment; unfrozen addresses: {string.Join(", ", notFrozen)}");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void WriteFailureIsSurfacedAndDoesNotHangTheWaiter([Values] bool synchronous)
+        {
+            // A device write can fail two ways: rejected at submission, so the completion callback runs INLINE on the submitting
+            // thread before WriteAsync returns (LocalMemoryDevice's ENOENT/EINVAL paths, ShardedStorageDevice's inline countdown);
+            // or accepted and then failed, so the completion is posted from another thread. Both must surface the error, and both
+            // must let a caller waiting on the flush make progress: a failed flush never advances FlushedUntilAddress, which is
+            // exactly what Flush(wait: true) waits on, so without an error check the waiter spins forever.
+            CreateStore(useLargeObjects: true, captureFlushFailures: true);
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var context = session.BasicContext;
+
+            for (var key = 0; key < 8; ++key)
+                _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+            objectLogDevice.FailWriteNumber(objectLogDevice.WriteCount + 1, synchronous);
+
+            // Run the waiting flush on a worker so a regression fails this test instead of hanging the whole run.
+            var threw = false;
+            var flush = Task.Run(() =>
+            {
+                try
+                {
+                    store.Log.Flush(wait: true);
+                }
+                catch (TsavoriteException)
+                {
+                    threw = true;
+                }
+            });
+
+            var returned = flush.Wait(TimeSpan.FromSeconds(30));
+            var surfaced = flushFailureEvent.Wait(TimeSpan.FromSeconds(5));
+
+            Assert.That(objectLogDevice.FailedWriteCount, Is.EqualTo(1), "the injected write failure must have been taken");
+            Assert.That(surfaced, Is.True, "the write failure must be surfaced, not swallowed");
+            Assert.That(flushFailure.ErrorCode, Is.Not.Zero, "the surfaced failure must carry the device error code");
+            Assert.That(returned, Is.True, "Flush(wait: true) must not wait forever for an address a failed flush can never reach");
+            Assert.That(threw, Is.True, "the waiter must observe the failure as an exception rather than returning as though the flush succeeded");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void WriteFailureIsSurfacedAndDoesNotStallAllocation([Values] bool synchronous)
+        {
+            // A failed flush pins FlushedUntilAddress, so the buffer page an allocation needs reclaimed is never freed.
+            // Both allocation retry paths must surface that rather than wait on it: RETRY_NOW polls flushEvent in
+            // WaitToRetryNow, and RETRY_LATER parks on it indefinitely in HandleRetryStatus's ALLOCATE_FAILED case.
+            CreateStore(useLargeObjects: true, captureFlushFailures: true);
+
+            // Run everything on a worker so a regression fails this test instead of hanging the whole run, and so the
+            // session is used from a single thread. The insert count must outrun the 32-page buffer that LogMemorySize
+            // gives us, so allocation is forced to reclaim the page the failed flush pinned.
+            var threw = false;
+            var inserts = Task.Run(() =>
+            {
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var context = session.BasicContext;
+
+                for (var key = 0; key < 8; ++key)
+                    _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+                objectLogDevice.FailWriteNumber(objectLogDevice.WriteCount + 1, synchronous);
+
+                try
+                {
+                    for (var key = 8; key < 20_000; ++key)
+                        _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+                }
+                catch (TsavoriteException)
+                {
+                    threw = true;
+                }
+            });
+
+            var returned = inserts.Wait(TimeSpan.FromSeconds(60));
+
+            Assert.That(returned, Is.True, "allocation must not wait forever for a page that a failed flush can never free");
+            Assert.That(objectLogDevice.FailedWriteCount, Is.EqualTo(1), "the injected write failure must have been taken");
+            Assert.That(threw, Is.True, "the allocation must observe the failure as an exception rather than retrying forever");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void ReadOnlyIssuanceRacingCutoffCaptureIsClassifiedCorrectly()
+        {
+            // Snapshot samples the ReadOnly cutoff while coordination is in CapturingCutoff. A ReadOnly worker that publishes
+            // LastIssuedFlushedUntilAddress inside that window must still land on one side of the cutoff or the other: either it
+            // is in the cohort Snapshot drains, or it is post-cutoff and waits for Flushing. The memory barrier pairing is what
+            // guarantees that, and this races a real ReadOnly flush into the window rather than hoping the timing reproduces.
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the cutoff window cannot be raced.");
+
+            CreateStore(useLargeObjects: true, captureFlushFailures: false);
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var context = session.BasicContext;
+
+            for (var key = 0; key < 32; ++key)
+                _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+            var hookFired = 0;
+            Exception raceFailure = null;
+            var racers = new List<Task>();
+            ObjectFlushInjection.Hook = (phase, cutoffCandidate) =>
+            {
+                if (phase != ObjectFlushPhase.SnapshotCutoffCapturing)
+                    return;
+                _ = Interlocked.Increment(ref hookFired);
+
+                // This hook runs INSIDE lock (snapshotFlushSync), so it must not issue the flush itself -- doing so re-enters the
+                // coordination path and deadlocks. Start the racing ReadOnly flush on a worker and return immediately, which is
+                // what actually puts a LastIssuedFlushedUntilAddress publication into the capture window.
+                lock (racers)
+                {
+                    racers.Add(Task.Run(() =>
+                    {
+                        try
+                        {
+                            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: false);
+                        }
+                        catch (Exception ex)
+                        {
+                            raceFailure = ex;
+                        }
+                    }));
+                }
+            };
+
+            try
+            {
+                for (var key = 32; key < 48; ++key)
+                    _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+
+                _ = store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot);
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+                Task[] pending;
+                lock (racers)
+                    pending = racers.ToArray();
+                _ = Task.WaitAll(pending, TimeSpan.FromSeconds(30));
+            }
+
+            Assert.That(hookFired, Is.GreaterThan(0), "the cutoff-capture window must have been entered, or this test proves nothing");
+            Assert.That(raceFailure, Is.Null, $"a ReadOnly flush issued inside the cutoff-capture window must be classified, not rejected: {raceFailure}");
+
+            // Reaching here means the checkpoint completed: the raced ReadOnly range was classified on one side of the cutoff
+            // rather than deadlocking the drain or tripping the state-machine guards in PublishReadOnlyFlushCutoff/BeginFlushing.
+            Assert.That(store.Log.FlushedUntilAddress, Is.GreaterThan(0), "the checkpoint must have flushed through the raced range");
         }
 
         [Test]
@@ -118,8 +309,12 @@ namespace Tsavorite.test
 
             var startPage = store.hlogBase.GetPage(snapshotStartAddress);
             var endPage = store.hlogBase.GetPage(snapshotEndAddress) + 1;
+            using var coordination = new SnapshotFlushCoordination();
+            coordination.BeginCutoffCapture(startPage);
+            coordination.PublishReadOnlyFlushCutoff(0);
+            coordination.BeginFlushing();
             store.hlogBase.AsyncFlushPagesForSnapshot(flushBuffers, startPage, endPage, snapshotStartAddress, snapshotEndAddress,
-                long.MaxValue, snapshotLogDevice, snapshotObjectLogDevice, out var completedTask, throttleCheckpointFlushDelayMs: -1);
+                long.MaxValue, snapshotLogDevice, snapshotObjectLogDevice, coordination, out var completedTask, throttleCheckpointFlushDelayMs: -1);
 
             Assert.DoesNotThrowAsync(async () => await completedTask);
             Assert.That(snapshotLogDevice.ReadCount, Is.Zero, "A fresh snapshot sector has no existing prefix to preserve.");
@@ -227,6 +422,9 @@ namespace Tsavorite.test
 
         private readonly IDevice underlying;
         private int failNextRead;
+        private int failWriteNumber;
+        private int failWriteSynchronously;
+        private int failedWriteCount;
         private int readCount;
         private int writeCount;
         private int failedReadCount;
@@ -241,10 +439,12 @@ namespace Tsavorite.test
         internal int ReadCount => Volatile.Read(ref readCount);
         internal int WriteCount => Volatile.Read(ref writeCount);
         internal int FailedReadCount => Volatile.Read(ref failedReadCount);
+        internal int FailedWriteCount => Volatile.Read(ref failedWriteCount);
         internal int TruncateUntilAddressCount => Volatile.Read(ref truncateUntilAddressCount);
         internal int RemoveSegmentCount => Volatile.Read(ref removeSegmentCount);
         internal ulong LastFailedReadAddress { get; private set; }
         internal uint LastFailedReadLength { get; private set; }
+        internal ulong LastFailedWriteAddress { get; private set; }
 
         internal ControlledReadFailureDevice(IDevice underlying)
             : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
@@ -256,6 +456,17 @@ namespace Tsavorite.test
         {
             failureMode = mode;
             _ = Interlocked.Exchange(ref failNextRead, 1);
+        }
+
+        /// <summary>Fail the <paramref name="writeNumber"/>'th write (1-based). When <paramref name="synchronous"/> the completion callback
+        /// is invoked with an error inline on the submitting thread, which is the shape a device uses when it rejects a request outright
+        /// (see LocalMemoryDevice's ENOENT/EINVAL paths and ShardedStorageDevice's inline countdown completion). Otherwise the error is
+        /// posted to the thread pool, matching a request that was accepted and then failed asynchronously. Neither case touches the
+        /// underlying device, so no bytes for the failed write reach storage.</summary>
+        internal void FailWriteNumber(int writeNumber, bool synchronous = true)
+        {
+            Volatile.Write(ref failWriteSynchronously, synchronous ? 1 : 0);
+            Volatile.Write(ref failWriteNumber, writeNumber);
         }
 
         public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
@@ -291,7 +502,24 @@ namespace Tsavorite.test
         public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
             DeviceIOCompletionCallback callback, object context)
         {
-            _ = Interlocked.Increment(ref writeCount);
+            var thisWrite = Interlocked.Increment(ref writeCount);
+            if (Volatile.Read(ref failWriteNumber) == thisWrite)
+            {
+                _ = Interlocked.Increment(ref failedWriteCount);
+                LastFailedWriteAddress = destinationAddress;
+
+                if (Volatile.Read(ref failWriteSynchronously) == 1)
+                {
+                    // Submission failure: complete inline on the caller's thread, before WriteAsync returns.
+                    callback(InjectedErrorCode, 0, context, ioException: null);
+                }
+                else
+                {
+                    // Accepted-then-failed: complete from a different thread, as a posted IO completion would.
+                    _ = ThreadPool.UnsafeQueueUserWorkItem(_ => callback(InjectedErrorCode, 0, context, ioException: null), null);
+                }
+                return;
+            }
             underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
         }
 

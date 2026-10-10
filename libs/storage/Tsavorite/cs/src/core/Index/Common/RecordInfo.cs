@@ -27,7 +27,7 @@ namespace Tsavorite.core
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         const int kTotalBits = Size * 8;
 
-        // Other marker bits. Unused* means bits not yet assigned. Numbered Unused0 (highest bit position) down to Unused10
+        // Other marker bits. Unused* means bits not yet assigned. Numbered Unused0 (highest bit position) down to Unused9
         // (just above the high-end RecordInfo bits) so the ToString output prints them in the natural high-to-low bit order.
         const int kIsReadCacheBitOffset = kAddressBits - 1;
         const int kTombstoneBitOffset = kIsReadCacheBitOffset + 1;
@@ -35,8 +35,8 @@ namespace Tsavorite.core
         const int kInNewVersionBitOffset = kValidBitOffset + 1;
         const int kModifiedBitOffset = kInNewVersionBitOffset + 1;
         const int kSealedBitOffset = kModifiedBitOffset + 1;
-        const int kUnused10BitOffset = kSealedBitOffset + 1;
-        const int kUnused9BitOffset = kUnused10BitOffset + 1;
+        const int kDeferredDisposeBitOffset = kSealedBitOffset + 1;
+        const int kUnused9BitOffset = kDeferredDisposeBitOffset + 1;
         const int kUnused8BitOffset = kUnused9BitOffset + 1;
         const int kUnused7BitOffset = kUnused8BitOffset + 1;
         const int kUnused6BitOffset = kUnused7BitOffset + 1;
@@ -53,7 +53,7 @@ namespace Tsavorite.core
         const long kInNewVersionBitMask = 1L << kInNewVersionBitOffset;
         const long kModifiedBitMask = 1L << kModifiedBitOffset;
         const long kSealedBitMask = 1L << kSealedBitOffset;
-        const long kUnused10BitMask = 1L << kUnused10BitOffset;
+        const long kDeferredDisposeBitMask = 1L << kDeferredDisposeBitOffset;
         const long kUnused9BitMask = 1L << kUnused9BitOffset;
         const long kUnused8BitMask = 1L << kUnused8BitOffset;
         const long kUnused7BitMask = 1L << kUnused7BitOffset;
@@ -105,7 +105,9 @@ namespace Tsavorite.core
         public void ClearBitsForDiskImages()
         {
             // A Sealed record may become current again during recovery if the RCU-inserted record was not written to disk during a crash. So clear that bit here.
-            word &= ~kSealedBitMask;
+            // DeferredDispose is in-memory state: the flush writes the live page, so whether the device captured it is nondeterministic, and a recovered
+            // image has no pending flush for it to refer to. Clearing it here is what makes persisting it harmless.
+            word &= ~(kSealedBitMask | kDeferredDisposeBitMask);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -132,6 +134,17 @@ namespace Tsavorite.core
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get { return (word & kSealedBitMask) != 0; }
+        }
+
+        /// <summary>
+        /// A record that is both <see cref="Valid"/> and <see cref="IsSealed"/>: a live record that has been superseded,
+        /// as distinct from the <c>Sealed &amp;&amp; !Valid</c> that <see cref="SealAndInvalidate"/> leaves on an elided
+        /// or free-listed record. Tests both bits in one masked compare.
+        /// </summary>
+        public readonly bool IsValidAndSealed
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return (word & (kValidBitMask | kSealedBitMask)) == (kValidBitMask | kSealedBitMask); }
         }
 
         /// <summary>
@@ -343,23 +356,23 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused9BitMask : word & ~kUnused9BitMask;
         }
 
-        internal bool Unused10
+        internal bool DeferredDispose
         {
-            readonly get => (word & kUnused10BitMask) != 0;
-            set => word = value ? word | kUnused10BitMask : word & ~kUnused10BitMask;
+            readonly get => (word & kDeferredDisposeBitMask) != 0;
+            set => word = value ? word | kDeferredDisposeBitMask : word & ~kDeferredDisposeBitMask;
         }
 
         public override readonly string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
             static string bstr01(bool value) => value ? "1" : "0";
-            // Unused0..Unused10 printed in declared order (Unused0 leftmost = highest bit position), grouped in 4s separated by '|'.
+            // Unused0..Unused9 printed in declared order (Unused0 leftmost = highest bit position), grouped in 4s separated by '|'.
             var unusedStr = $"{bstr01(Unused0)}{bstr01(Unused1)}{bstr01(Unused2)}{bstr01(Unused3)}"
                           + $"|{bstr01(Unused4)}{bstr01(Unused5)}{bstr01(Unused6)}{bstr01(Unused7)}"
-                          + $"|{bstr01(Unused8)}{bstr01(Unused9)}{bstr01(Unused10)}";
+                          + $"|{bstr01(Unused8)}{bstr01(Unused9)}";
             return $"prev {AddressString(PreviousAddress)}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, rc {bstr(IsReadCache)},"
-                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)},"
-                 + $" Unused0-10 {unusedStr}";
+                 + $" mod {bstr(Modified)}, inv {bstr(IsInNewVersion)}, defDisp {bstr(DeferredDispose)},"
+                 + $" Unused0-9 {unusedStr}";
         }
     }
 }

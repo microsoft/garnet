@@ -20,6 +20,12 @@ namespace Garnet
                 RegisterExtensions(server);
 
                 // Start the server
+                if (server.IsUpgradeRun)
+                {
+                    server.RunUpgrade();
+                    return;
+                }
+
                 server.Start();
 
                 Thread.Sleep(Timeout.Infinite);

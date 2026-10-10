@@ -14,8 +14,7 @@ namespace Tsavorite.core
         Snapshot,
 
         /// <summary>
-        /// Flush current log (move read-only to tail)
-        /// (enables incremental checkpointing, but log grows faster)
+        /// Flush current log by moving the read-only boundary to the tail; the log grows faster than with a Snapshot
         /// </summary>
         FoldOver,
 

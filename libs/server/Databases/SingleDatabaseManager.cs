@@ -120,6 +120,14 @@ namespace Garnet.server
                         throw;
                 }
             }
+            catch (TsavoriteLogGeometryMismatchException ex)
+            {
+                // A configuration mistake, not unreadable data: the checkpoint is intact and recovers once the store is
+                // opened with the settings it was written with. Continuing would discard it, so this is fatal whatever
+                // FailOnRecoveryError says.
+                Logger?.LogError(ex, "Refusing to start: the store's log geometry does not match the checkpoint being recovered");
+                throw;
+            }
             catch (Exception ex)
             {
                 // Unless FailOnRecoveryError is set the server continues with whatever was recovered, so this must
@@ -135,6 +143,37 @@ namespace Garnet.server
 
             // Once everything is setup, initialize the VectorManager
             defaultDatabase.VectorManager.Initialize();
+
+            ReportIgnoredDatabaseMapping();
+        }
+
+        /// <summary>
+        /// Reports a recovered database mapping that this manager cannot act on. A mapping is recorded only
+        /// when a swap had relabelled a database, and honoring it means placing a store under an id that
+        /// differs from its storage slot, which only the multi-database manager can do. Recovery normally
+        /// selects that manager when a mapping is present, so this is reached only when multiple databases
+        /// are disabled outright; the store still recovers, but as database 0. Say so rather than let the
+        /// relabelling disappear silently.
+        /// </summary>
+        private void ReportIgnoredDatabaseMapping()
+        {
+            // Recovery already read the metadata and recorded the mapping, so nothing is re-read here.
+            var mapping = defaultDatabase.CheckpointRecovery.DatabaseMapping;
+            if (mapping == null)
+                return;
+
+            for (var storageSlot = 0; storageSlot < mapping.Length; storageSlot++)
+            {
+                if (mapping[storageSlot] == storageSlot)
+                    continue;
+
+                Logger?.LogError(
+                    "The recovered checkpoint records a database mapping (storage slot {storageSlot} was database {dbId}), " +
+                    "but this server does not allow multiple databases and has recovered it as database 0. " +
+                    "Restart with multiple databases enabled for the recorded mapping to be applied.",
+                    storageSlot, mapping[storageSlot]);
+                return;
+            }
         }
 
         /// <inheritdoc/>
@@ -361,8 +400,10 @@ namespace Garnet.server
 
             FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
-            if (safeTruncateAof && StoreWrapper.serverOptions.EnableAOF)
+            if (safeTruncateAof)
                 SafeFlushAOF(AofEntryType.FlushDb, unsafeTruncateLog);
+            else
+                EnqueueDatabaseFlush(defaultDatabase, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -376,6 +417,8 @@ namespace Garnet.server
             // For standalone FlushDatabase will take care of the AOF truncation
             if (safeTruncateAof)
                 SafeFlushAOF(AofEntryType.FlushAll, unsafeTruncateLog);
+            else
+                EnqueueDatabaseFlush(defaultDatabase, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -422,16 +465,23 @@ namespace Garnet.server
 
         public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
-        private unsafe void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)
+        private void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {
-            // Safe truncate up to tail for botth primary and replica
-            StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.Log.TailAddress);
+            // AOF replay runs against a clone of this manager whose databases carry no AppendOnlyFile,
+            // while StoreWrapper still refers to the live one. Truncation must still run against the live
+            // AOF, but the record must not be appended again: a primary replaying its own AOF reaches here
+            // with IsPrimary() true and would re-enqueue the flush, growing the log on every recovery.
+            var replaying = AppendOnlyFile == null;
+            var liveAof = replaying ? StoreWrapper.appendOnlyFile : AppendOnlyFile;
+            if (liveAof == null)
+                return;
+
+            // Safe truncate up to tail for both primary and replica
+            StoreWrapper.clusterProvider.SafeTruncateAOF(liveAof.Log.TailAddress);
 
             // Only enqueue operation if this is a primary
-            if (StoreWrapper.clusterProvider.IsPrimary())
-            {
-                AppendOnlyFile.Log.EnqueueSafeFlushAOF(entryType, unsafeTruncateLog, defaultDatabase.Id);
-            }
+            if (!replaying && StoreWrapper.clusterProvider.IsPrimary())
+                liveAof.Log.EnqueueSafeFlushAOF(entryType, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>

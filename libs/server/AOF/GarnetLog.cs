@@ -1251,7 +1251,32 @@ namespace Garnet.server
             EnqueueBroadcastEntry(basicHeader);
         }
 
-        internal void EnqueueSafeFlushAOF(AofEntryType opType, bool unsafeTruncateLog, int dbId)
+        /// <summary>
+        /// Enqueue the label this AOF's database carries after a swap. The record describes only the
+        /// database whose log it is written into, so no mapping has to be carried and a log that is
+        /// replayed on its own still states its own label.
+        /// </summary>
+        /// <param name="swapEpoch">Swap epoch the label was assigned at</param>
+        /// <param name="logicalDatabaseId">Logical database id this database now carries</param>
+        internal void EnqueueSwapDb(long swapEpoch, int logicalDatabaseId)
+        {
+            var basicHeader = new AofHeader
+            {
+                HeaderType = AofHeaderType.BasicHeader,
+                opType = AofEntryType.SwapDb,
+                storeVersion = swapEpoch,
+                sessionID = -1,
+                databaseId = (byte)logicalDatabaseId
+            };
+            EnqueueBroadcastEntry(basicHeader);
+        }
+
+        /// <summary>
+        /// Enqueue a flush marker. The record is scoped to the AOF it is written into and carries no
+        /// database id: replay applies it to whichever database's log it is read from, so a swap that
+        /// relabels that database afterwards cannot misdirect it.
+        /// </summary>
+        internal void EnqueueSafeFlushAOF(AofEntryType opType, bool unsafeTruncateLog)
         {
             var basicHeader = new AofHeader
             {
@@ -1259,8 +1284,7 @@ namespace Garnet.server
                 opType = opType,
                 storeVersion = 0,
                 sessionID = -1,
-                UnsafeTruncateLog = unsafeTruncateLog,
-                databaseId = (byte)dbId
+                UnsafeTruncateLog = unsafeTruncateLog
             };
             EnqueueBroadcastEntry(basicHeader);
         }

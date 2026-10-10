@@ -373,7 +373,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true);
             RegisterCustomCommand();
             server.Start();
 
@@ -389,7 +389,7 @@ namespace Garnet.test
         public async Task AofUpsertRecoverTestAsync()
         {
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, lowMemory: true);
             RegisterCustomCommand();
             server.Start();
 
@@ -404,7 +404,7 @@ namespace Garnet.test
 
             _ = await server.Store.CommitAOFAsync(default);
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, lowMemory: true);
             RegisterCustomCommand();
             server.Start();
 

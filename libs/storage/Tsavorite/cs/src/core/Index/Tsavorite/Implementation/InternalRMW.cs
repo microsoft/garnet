@@ -413,17 +413,17 @@ namespace Tsavorite.core
                         return OperationStatus.CANCELED;
                     else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                     {
-                        // The old value is logically deleted (expired). Dispose resources immediately unless frozen by a checkpoint.
+                        // The old value is logically deleted (expired). Dispose resources immediately unless frozen by a checkpoint or an in-flight flush.
                         if (stackCtx.recSrc.HasMainLogSrc)
-                            OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                            OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
                         doingCU = false;
                         forExpiration = true;
                     }
                     else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                     {
-                        // Immediately dispose all resources on the expired source record, unless frozen by a checkpoint.
+                        // Immediately dispose all resources on the expired source record, unless frozen by a checkpoint or an in-flight flush.
                         if (stackCtx.recSrc.HasMainLogSrc)
-                            OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                            OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
 
                         if (allocOptions.elideSourceRecord)
                         {
@@ -522,9 +522,9 @@ namespace Tsavorite.core
                 {
                     Debug.Assert(!addTombstone, "Should not have gone down RCU if NCU had already requested tombstoning." +
                         "This block should only handle expiration/tombstoning via RCU.");
-                    // Dispose the source record's resources immediately, unless frozen by a checkpoint.
+                    // Dispose the source record's resources immediately, unless frozen by a checkpoint or an in-flight flush.
                     if (stackCtx.recSrc.HasMainLogSrc)
-                        OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                        OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
                     addTombstone = true;
                     newLogRecord.InfoRef.SetTombstone();
                     newLogRecord.InfoRef.SetModified();
@@ -533,9 +533,9 @@ namespace Tsavorite.core
                 }
                 else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                 {
-                    // Dispose the source record's resources immediately, unless frozen by a checkpoint.
+                    // Dispose the source record's resources immediately, unless frozen by a checkpoint or an in-flight flush.
                     if (stackCtx.recSrc.HasMainLogSrc)
-                        OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                        OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
                     doingCU = false;
                     forExpiration = true;
 
@@ -607,7 +607,12 @@ namespace Tsavorite.core
                         // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
                         if (srcLogRecord.DataHeader.ValueIsObject)
-                            srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord);
+                        {
+                            var needsSourceImage = isMemoryLogRecord
+                                && CheckpointNeedsSourceImage(stackCtx.recSrc.LogicalAddress, srcLogRecord.Info);
+                            if (srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord, needsSourceImage))
+                                hlogBase.NoteSerializedObjectCache(stackCtx.recSrc.LogicalAddress);
+                        }
                         var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                         if (pcuSuccess)
                         {

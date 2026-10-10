@@ -132,7 +132,12 @@ namespace Garnet.server
         /// <summary>
         /// Definition for delegate creating a new logical database
         /// </summary>
-        public delegate GarnetDatabase DatabaseCreatorDelegate(int dbId);
+        /// <summary>
+        /// Delegate for creating a new logical database bound to a storage slot. A newly created
+        /// database takes the slot matching its logical ID.
+        /// </summary>
+        /// <param name="storageSlot">Storage slot, which is also the initial logical database ID</param>
+        public delegate GarnetDatabase DatabaseCreatorDelegate(int storageSlot);
 
         /// <summary>
         /// Number of active databases
@@ -404,6 +409,35 @@ namespace Garnet.server
                     databaseManager.RecoverVectorSets();
                 }
             }
+        }
+
+        /// <summary>
+        /// Recover for an offline up-conversion run (<c>--upgrade</c>). Performs the standalone recovery sequence unconditionally,
+        /// including in cluster mode: cluster startup recovers through the replication manager, whose behavior depends on the node's
+        /// role -- a replica does not read its checkpoint at all unless ClusterReplicaResumeWithData is set -- so routing through it
+        /// would let the run finish without having examined the store. The upgrade never serves requests, so no replication state is
+        /// established and the role is irrelevant to what has to be converted on disk.
+        /// </summary>
+        public async ValueTask RecoverForUpgradeAsync()
+        {
+            await RecoverCheckpointAsync().ConfigureAwait(false);
+            databaseManager.RecoverVectorSets();
+            await RecoverAOFAsync().ConfigureAwait(false);
+            _ = ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
+        }
+
+        /// <summary>
+        /// Count the databases whose object log was up-converted by <see cref="RecoverForUpgradeAsync"/>.
+        /// </summary>
+        public int CountUpgradedDatabases()
+        {
+            var count = 0;
+            foreach (var db in databaseManager.GetDatabasesSnapshot())
+            {
+                if (db?.Store?.Log.ObjectLogWasUpgraded == true)
+                    ++count;
+            }
+            return count;
         }
 
         /// <summary>

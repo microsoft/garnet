@@ -35,8 +35,14 @@ namespace Tsavorite.core
                 case Phase.PREPARE:
                     // Capture state before checkpoint starts
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
-                    store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
+                    store._hybridLogCheckpoint.info.fuzzyRegionStartAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
+                    store._hybridLogCheckpoint.info.pageSize = store.hlogBase.PageSize;
+                    store._hybridLogCheckpoint.info.segmentSize = store.hlogBase.GetMainLogSegmentSize();
+
+                    // Allocators without an object log return -1; record 0 there, matching "not applicable" in the metadata.
+                    var objectLogSegmentSize = store.hlogBase.GetObjectLogSegmentSize();
+                    store._hybridLogCheckpoint.info.objectLogSegmentSize = objectLogSegmentSize > 0 ? objectLogSegmentSize : 0;
                     break;
 
                 case Phase.IN_PROGRESS:
@@ -51,7 +57,7 @@ namespace Tsavorite.core
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
                     stateMachineDriver.ResetLastVersion();
                     // Grab final logical address (end of fuzzy region)
-                    store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
+                    store._hybridLogCheckpoint.info.recoveredTailAddress = store.hlogBase.GetTailAddress();
 
                     // Grab other metadata for the checkpoint
                     store._hybridLogCheckpoint.info.headAddress = store.hlogBase.HeadAddress;
@@ -131,6 +137,11 @@ namespace Tsavorite.core
             // between leaves the flush in flight, so it has to be awaited here: releasing what it is writing to
             // fails it, and its completion would then be counted against the next checkpoint's flush state.
             TsavoriteBase.WaitForCheckpointFlush(store._hybridLogCheckpoint.flushedTask);
+
+            // Remove the allocator's install before disposing. Dispose() closes the coordination and then discards the
+            // reference, so clearing afterward would find nothing to clear and leave the allocator holding a closed
+            // object until the next PREPARE overwrites it. FoldOver installs no coordination, so this is a no-op there.
+            store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
 
             // Releases any snapshot devices and flush buffers already created, and clears the checkpoint so the next
             // one can run. Matches the cleanup CompleteCheckpointAsync performs when it observes a failed checkpoint.
