@@ -434,6 +434,182 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>Builds an MGET over <paramref name="count"/> keys starting at <paramref name="from"/>.</summary>
+        static string[] MGet(int from, int count)
+        {
+            var args = new string[count + 1];
+            args[0] = "MGET";
+            for (var j = 0; j < count; j++)
+                args[j + 1] = Key(from + j);
+            return args;
+        }
+
+        /// <summary>Builds the reply an MGET over those keys should produce.</summary>
+        static string MGetReply(int from, int count)
+        {
+            var sb = new StringBuilder($"*{count}\r\n");
+            for (var j = 0; j < count; j++)
+                sb.Append($"${ValueLength}\r\n{Value(from + j)}\r\n");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// An MGET issues all of its reads before draining any of them, so a batch that suspends has already
+        /// written the replies for the keys it found in memory into the response buffer. Those have to still
+        /// be there, in their original positions, when the device reads land.
+        /// </summary>
+        [Test]
+        public void MGetInterleavesMemoryAndDeviceValuesInKeyOrder()
+        {
+            Populate();
+
+            using var client = new RawClient();
+
+            // Alternates the oldest keys, which are below the head address, with the newest, which are not.
+            const int Pairs = 16;
+            var args = new string[(Pairs * 2) + 1];
+            var expected = new StringBuilder($"*{Pairs * 2}\r\n");
+            args[0] = "MGET";
+            for (var i = 0; i < Pairs; i++)
+            {
+                var onDevice = i;
+                var inMemory = PopulatedKeys - 1 - i;
+                args[(i * 2) + 1] = Key(onDevice);
+                args[(i * 2) + 2] = Key(inMemory);
+                expected.Append($"${ValueLength}\r\n{Value(onDevice)}\r\n");
+                expected.Append($"${ValueLength}\r\n{Value(inMemory)}\r\n");
+            }
+
+            ClassicAssert.AreEqual(expected.ToString(), client.Execute(args));
+
+            ClassicAssert.Greater(deviceFactoryCreator.ReadCount, 0,
+                "No device read was issued, so none of these keys had left memory and the test proved nothing.");
+        }
+
+        /// <summary>
+        /// A missing key inside an MGET that also goes to the device still replies as a null at its own
+        /// position, which is the one place where the pending path writes something other than a value.
+        /// </summary>
+        [Test]
+        public void MGetRepliesNullForAMissingKeyAlongsideDeviceReads()
+        {
+            Populate();
+
+            using var client = new RawClient();
+
+            var reply = client.Execute("MGET", Key(0), "pendingget:absent", Key(1));
+            ClassicAssert.AreEqual(
+                $"*3\r\n${ValueLength}\r\n{Value(0)}\r\n$-1\r\n${ValueLength}\r\n{Value(1)}\r\n", reply);
+        }
+
+        /// <summary>
+        /// An MGET inside a transaction cannot suspend, because the transaction holds its key locks and
+        /// Tsavorite's epoch across the call, so it completes its device reads in place instead.
+        /// </summary>
+        [Test]
+        public void MGetInsideATransactionReadsBackValuesThatAreNoLongerInMemory()
+        {
+            Populate();
+
+            using var client = new RawClient();
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("MULTI"));
+            ClassicAssert.AreEqual("+QUEUED\r\n", client.Execute(MGet(0, 8)));
+
+            ClassicAssert.AreEqual($"*1\r\n{MGetReply(0, 8)}", client.Execute("EXEC"));
+        }
+
+        /// <summary>
+        /// The same guarantee as <see cref="ManyConcurrentDeviceReadsOutnumberTheThreadPoolAndStillFinishTogether"/>,
+        /// for the batched read path: an MGET has a whole set of keys outstanding on the device at once, and
+        /// draining that set on the network thread would hold the thread for the slowest of them.
+        /// </summary>
+        [Test]
+        public void ManyConcurrentMGetsOutnumberTheThreadPoolAndStillFinishTogether()
+        {
+            const int ReadDelayMs = 1000;
+            const int KeysPerMGet = 8;
+
+            // Linux only, for the reason given on ManyConcurrentDeviceReadsOutnumberTheThreadPoolAndStillFinishTogether.
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
+            Populate();
+
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
+
+            var cappedWorkers = Math.Max(Environment.ProcessorCount, minWorkers);
+            var sessionCount = Math.Max(64, cappedWorkers * 4);
+
+            var clients = new RawClient[sessionCount];
+            var clamped = false;
+            try
+            {
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i] = new RawClient();
+
+                clamped = ThreadPool.SetMaxThreads(cappedWorkers, maxIo);
+                ClassicAssert.IsTrue(clamped,
+                    $"Could not clamp the worker pool to {cappedWorkers} from ({maxWorkers},{maxIo}) with a " +
+                    $"worker minimum of {minWorkers}, so this test cannot demonstrate thread starvation.");
+
+                deviceFactoryCreator.ReadDelayMs = ReadDelayMs;
+
+                // One MGET on its own, as the yardstick. Its own reads overlap on the device, so this is the
+                // right comparison: what is under test is whether the sessions overlap too.
+                var single = Stopwatch.StartNew();
+                ClassicAssert.AreEqual(MGetReply(0, KeysPerMGet), clients[0].Execute(MGet(0, KeysPerMGet)));
+                single.Stop();
+
+                ClassicAssert.GreaterOrEqual(single.Elapsed.TotalMilliseconds, ReadDelayMs * 0.8,
+                    "A single MGET returned faster than the injected device delay, so it never went to the device.");
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+
+                var sw = Stopwatch.StartNew();
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i].Send(MGet(Window(i, KeysPerMGet), KeysPerMGet));
+
+                try
+                {
+                    for (var i = 0; i < sessionCount; i++)
+                        ClassicAssert.AreEqual(MGetReply(Window(i, KeysPerMGet), KeysPerMGet), clients[i].ReadReply(),
+                            $"Wrong reply for the MGET starting at {Key(Window(i, KeysPerMGet))}");
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"A session produced no reply within the socket timeout, with {sessionCount} " +
+                        $"concurrent MGETs of {KeysPerMGet} device reads against {cappedWorkers} worker threads: " +
+                        $"the reads are being drained on thread-pool threads rather than suspended. {e.Message}");
+                }
+                sw.Stop();
+
+                ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore, sessionCount,
+                    "Fewer device reads than sessions, so some of these MGETs were served entirely from memory.");
+
+                ClassicAssert.Less(sw.Elapsed.TotalMilliseconds, single.Elapsed.TotalMilliseconds * 3,
+                    $"{sessionCount} concurrent MGETs took {sw.Elapsed.TotalSeconds:F1}s against a single MGET of " +
+                    $"{single.Elapsed.TotalSeconds:F1}s with {cappedWorkers} worker threads, which means they were " +
+                    "serialized on thread-pool threads rather than suspended.");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                if (clamped)
+                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// First key of the window session <paramref name="i"/> reads. Windows wrap within the older half of
+        /// the populated keys, which keeps every one of them below the head address however many sessions the
+        /// clamped pool size works out to.
+        /// </summary>
+        static int Window(int i, int keysPerRead) => (i % (PopulatedKeys / 2 / keysPerRead)) * keysPerRead;
+
         /// <summary>Builds a pipelined run of <paramref name="count"/> GETs starting at <paramref name="from"/>.</summary>
         static string[][] Run(int from, int count)
         {
