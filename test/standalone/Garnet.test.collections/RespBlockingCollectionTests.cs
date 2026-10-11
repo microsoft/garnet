@@ -1550,5 +1550,61 @@ namespace Garnet.test
             CollectionAssert.AreEqual(initial, db.ListRange(srcKey, 0, -1).Select(x => x.ToString()).ToArray());
             ClassicAssert.AreEqual("not-a-list", db.StringGet(dstKey).ToString());
         }
+
+        /// <summary>
+        /// A blocking pop is completed by whichever of the broker and its timeout gets there first. Both run
+        /// concurrently, on different threads, against the same observer, so the losing one has to be a no-op:
+        /// a second completion would both lose the item it was handed and take down the broker's main loop,
+        /// leaving every later blocking command to time out instead of being served.
+        /// </summary>
+        [Test]
+        public void ATimeoutExpiringAsAnItemArrivesNeitherLosesTheItemNorStopsTheBroker()
+        {
+            const string key = "blpop:timeout:race";
+            const int rounds = 300;
+
+            // Separate connections: a blocking pop holds up every other command on its own connection.
+            using var popperConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var pusherConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var popper = popperConnection.GetDatabase(0);
+            var pusher = pusherConnection.GetDatabase(0);
+
+            // Push roughly as often as the pop times out, so that a good share of the rounds have the push and
+            // the timeout landing together rather than milliseconds apart.
+            var pushed = 0;
+            var stop = false;
+            var pushTask = Task.Run(() =>
+            {
+                while (!Volatile.Read(ref stop))
+                {
+                    _ = pusher.ListRightPush(key, "v");
+                    _ = Interlocked.Increment(ref pushed);
+                    Thread.Sleep(random.Next(1, 10));
+                }
+            });
+
+            var popped = 0;
+            for (var i = 0; i < rounds; i++)
+            {
+                if (!popper.Execute("BLPOP", key, "0.005").IsNull)
+                    popped++;
+            }
+
+            Volatile.Write(ref stop, true);
+            pushTask.Wait(TimeSpan.FromSeconds(30));
+
+            var remaining = (int)popper.ListLength(key);
+            ClassicAssert.AreEqual(Volatile.Read(ref pushed), popped + remaining,
+                $"Items were lost: pushed {pushed}, popped {popped}, {remaining} left in the list");
+
+            // The broker is only observably alive if it still hands over an item that is already there. A dead
+            // main loop is invisible to the rounds above, which can all be satisfied by their own timeouts.
+            _ = popper.KeyDelete(key);
+            _ = pusher.ListRightPush(key, "sentinel");
+            var served = popper.Execute("BLPOP", key, "10");
+            ClassicAssert.IsFalse(served.IsNull,
+                "BLPOP timed out on a key that already held an item, so the broker's main loop is no longer running");
+            ClassicAssert.AreEqual("sentinel", ((RedisResult[])served)[1].ToString());
+        }
     }
 }

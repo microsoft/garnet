@@ -1,7 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Threading.Tasks.Sources;
 using Garnet.common;
 
 namespace Garnet.server
@@ -9,7 +12,14 @@ namespace Garnet.server
     /// <summary>
     /// This class defines an observer for a specific blocking command
     /// </summary>
-    internal class CollectionItemObserver
+    /// <remarks>
+    /// The observer is its own completion source. Exactly one session awaits it and exactly one caller
+    /// completes it - the winner of the <see cref="Status"/> transition out of
+    /// <see cref="ObserverStatus.WaitingForResult"/>, taken under <see cref="ObserverStatusLock"/> - so the
+    /// wait is served by a single <see cref="IValueTaskSource{TResult}"/> rather than by a semaphore, a
+    /// cancellation token source, and the waiter, timer and registration objects those imply.
+    /// </remarks>
+    internal sealed class CollectionItemObserver : IValueTaskSource<CollectionItemResult>
     {
         /// <summary>
         /// The session in which the blocking command was called
@@ -29,12 +39,7 @@ namespace Garnet.server
         /// <summary>
         /// Status of the observer
         /// </summary>
-        internal ObserverStatus Status { get; set; } = ObserverStatus.WaitingForResult;
-
-        /// <summary>
-        /// Result of the observer
-        /// </summary>
-        internal CollectionItemResult Result { get; private set; }
+        internal ObserverStatus Status { get; private set; } = ObserverStatus.WaitingForResult;
 
         /// <summary>
         /// Lock for the status of the observer
@@ -42,46 +47,91 @@ namespace Garnet.server
         internal SingleWriterMultiReaderLock ObserverStatusLock;
 
         /// <summary>
-        /// Semaphore to notify the ResultSet status
+        /// Continuations are scheduled, never inlined: the completer is usually the broker's main loop, and
+        /// resuming the session inline there would run that session's command and response write on the loop
+        /// every other blocking command depends on.
         /// </summary>
-        internal SemaphoreSlim ResultFoundSemaphore { get; } = new(0, 1);
+        ManualResetValueTaskSourceCore<CollectionItemResult> resultSource = new() { RunContinuationsAsynchronously = true };
 
         /// <summary>
-        /// Cancellation token to signal the semaphore awaiter to stop
+        /// Fires once when a finite timeout expires. Null for an indefinite wait.
         /// </summary>
-        internal CancellationTokenSource CancellationTokenSource { get; } = new();
+        Timer timeoutTimer;
 
         internal CollectionItemObserver(RespServerSession session, RespCommand command, CollectionItemArgs commandArgs = default)
         {
             Session = session;
             Command = command;
             CommandArgs = commandArgs;
-            Result = CollectionItemResult.Empty;
+        }
+
+        /// <summary>
+        /// Waits for this observer to be given a result, to be unblocked, or for its timeout to expire.
+        /// </summary>
+        /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
+        /// <returns>The result the observer was completed with</returns>
+        internal ValueTask<CollectionItemResult> WaitAsync(double timeoutInSeconds)
+        {
+            if (timeoutInSeconds != 0)
+            {
+                // Armed only after the field is assigned, so a timeout that fires immediately cannot race the
+                // awaiter's disposal of the timer.
+                timeoutTimer = new Timer(static state => ((CollectionItemObserver)state).HandleTimeout(), this,
+                    Timeout.Infinite, Timeout.Infinite);
+                _ = timeoutTimer.Change(TimeSpan.FromSeconds(timeoutInSeconds), Timeout.InfiniteTimeSpan);
+            }
+
+            return new ValueTask<CollectionItemResult>(this, resultSource.Version);
         }
 
         /// <summary>
         /// Safely set the result for the observer
         /// </summary>
-        /// <param name="result"></param>
+        /// <param name="result">Result to complete the observer with</param>
         /// <param name="isWriteLocked">True if the ObserverStatusLock was write locked by the caller</param>
         internal void HandleSetResult(CollectionItemResult result, bool isWriteLocked = false)
+            => TryComplete(result, ObserverStatus.ResultSet, isWriteLocked);
+
+        /// <summary>
+        /// Unblocks the observer with an empty result, or with an error if <paramref name="throwError"/> is set.
+        /// </summary>
+        /// <param name="throwError">True to complete the waiting session with an error rather than an empty result</param>
+        /// <returns>True if this call unblocked the observer</returns>
+        internal bool TryForceUnblock(bool throwError = false)
+            => TryComplete(throwError ? CollectionItemResult.ForceUnblocked : CollectionItemResult.Empty,
+                ObserverStatus.ResultSet, isWriteLocked: false);
+
+        /// <summary>
+        /// Safely set the status of the observer to reflect that its calling session was disposed
+        /// </summary>
+        internal void HandleSessionDisposed()
+            => TryComplete(CollectionItemResult.Empty, ObserverStatus.SessionDisposed, isWriteLocked: false);
+
+        void HandleTimeout()
+            => TryComplete(CollectionItemResult.Empty, ObserverStatus.ResultSet, isWriteLocked: false);
+
+        /// <summary>
+        /// Completes the wait, if this observer is still waiting for one.
+        /// </summary>
+        /// <returns>True if this call is the one that completed the observer</returns>
+        bool TryComplete(CollectionItemResult result, ObserverStatus status, bool isWriteLocked)
         {
-            // If the result is already set or the observer session is disposed
-            // There is no need to set the result
+            // The result is already set, or the observer's session is disposed
             if (Status != ObserverStatus.WaitingForResult)
-                return;
+                return false;
 
             if (!isWriteLocked)
                 ObserverStatusLock.WriteLock();
             try
             {
                 if (Status != ObserverStatus.WaitingForResult)
-                    return;
+                    return false;
 
-                // Set the result, update the status and release the semaphore
-                Result = result;
-                Status = ObserverStatus.ResultSet;
-                ResultFoundSemaphore.Release();
+                Status = status;
+
+                // Safe under the lock: continuations are scheduled rather than run here.
+                resultSource.SetResult(result);
+                return true;
             }
             finally
             {
@@ -90,47 +140,22 @@ namespace Garnet.server
             }
         }
 
-        internal bool TryForceUnblock(bool throwError = false)
+        public CollectionItemResult GetResult(short token)
         {
-            // If the result is already set or the observer session is disposed
-            // There is no need to set the result
-            if (Status != ObserverStatus.WaitingForResult)
-                return false;
-
-            ObserverStatusLock.WriteLock();
             try
             {
-                if (Status != ObserverStatus.WaitingForResult)
-                    return false;
-
-                // Set the result, update the status and release the semaphore
-                Result = throwError ? CollectionItemResult.ForceUnblocked : CollectionItemResult.Empty;
-                Status = ObserverStatus.ResultSet;
-                ResultFoundSemaphore.Release();
-                return true;
+                return resultSource.GetResult(token);
             }
             finally
             {
-                ObserverStatusLock.WriteUnlock();
+                timeoutTimer?.Dispose();
             }
         }
 
-        /// <summary>
-        /// Safely set the status of the observer to reflect that its calling session was disposed
-        /// </summary>
-        internal void HandleSessionDisposed()
-        {
-            ObserverStatusLock.WriteLock();
-            try
-            {
-                Status = ObserverStatus.SessionDisposed;
-                CancellationTokenSource.Cancel();
-            }
-            finally
-            {
-                ObserverStatusLock.WriteUnlock();
-            }
-        }
+        public ValueTaskSourceStatus GetStatus(short token) => resultSource.GetStatus(token);
+
+        public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+            => resultSource.OnCompleted(continuation, state, token, flags);
     }
 
     internal enum ObserverStatus

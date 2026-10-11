@@ -90,12 +90,9 @@ namespace Garnet.server
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
-        internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
+        internal ValueTask<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
             RespServerSession session, double timeoutInSeconds, CollectionItemArgs cmdArgs = default)
-        {
-            var observer = new CollectionItemObserver(session, command, cmdArgs);
-            return await GetCollectionItemAsync(observer, keys, timeoutInSeconds).ConfigureAwait(false);
-        }
+            => WaitForResultAsync(new CollectionItemObserver(session, command, cmdArgs), keys, timeoutInSeconds);
 
         /// <summary>
         /// Asynchronously wait for item from collection object at srcKey and
@@ -107,12 +104,9 @@ namespace Garnet.server
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
-        internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey,
+        internal ValueTask<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey,
             RespServerSession session, double timeoutInSeconds, CollectionItemArgs cmdArgs)
-        {
-            var observer = new CollectionItemObserver(session, command, cmdArgs);
-            return await GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds).ConfigureAwait(false);
-        }
+            => WaitForResultAsync(new CollectionItemObserver(session, command, cmdArgs), [srcKey], timeoutInSeconds);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void StartMainLoop()
@@ -124,8 +118,17 @@ namespace Garnet.server
             }
         }
 
-        private async Task<CollectionItemResult> GetCollectionItemAsync(CollectionItemObserver observer, byte[][] keys,
-            double timeoutInSeconds)
+        /// <summary>
+        /// Registers <paramref name="observer"/> against the keys it observes and waits for it to be completed,
+        /// by a result arriving, by CLIENT UNBLOCK, by its session being disposed, or by its timeout expiring.
+        /// </summary>
+        /// <remarks>
+        /// Pools its state machine: this is the only await on the blocking-command path, and the returned
+        /// <see cref="ValueTask{TResult}"/> is awaited exactly once by each of its callers.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+        private async ValueTask<CollectionItemResult> WaitForResultAsync(CollectionItemObserver observer,
+            byte[][] keys, double timeoutInSeconds)
         {
             // Add the session ID to observer mapping
             sessionIdToObserver.TryAdd(observer.Session.ObjectStoreSessionID, observer);
@@ -133,33 +136,18 @@ namespace Garnet.server
             // Start the main loop task if it hasn't been started yet
             StartMainLoop();
 
+            // Begin the wait before the observer is published, so that a result or a timeout arriving
+            // immediately completes this wait rather than racing its creation.
+            var wait = observer.WaitAsync(timeoutInSeconds);
+
             // Add a new observer event to the event queue
             brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateNewObserverEvent(observer, keys));
 
-            var timeout = timeoutInSeconds == 0
-                ? TimeSpan.FromMilliseconds(-1)
-                : TimeSpan.FromSeconds(timeoutInSeconds);
-
-            try
-            {
-                // Wait for either the result found notification or the timeout to expire
-                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Session is disposed
-            }
+            var result = await wait.ConfigureAwait(false);
 
             sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
 
-            // Check if observer is still waiting for result
-            if (observer.Status == ObserverStatus.WaitingForResult)
-            {
-                // Try to set the observer result to an empty one
-                observer.HandleSetResult(CollectionItemResult.Empty);
-            }
-
-            return observer.Result;
+            return result;
         }
 
         /// <summary>
@@ -705,20 +693,14 @@ namespace Garnet.server
                 // Repeat while not disposed or cancelled
                 while (!cts.IsCancellationRequested)
                 {
-
                     // Try to synchronously get the next event
                     if (!brokerEventsQueue.TryDequeue(out var nextEvent))
                     {
-                        // Asynchronously dequeue next event in broker's queue
-                        // once event is dequeued successfully, call handler method
-                        try
-                        {
-                            nextEvent = await brokerEventsQueue.DequeueAsync(cts.Token).ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            continue;
-                        }
+                        // Park until an event arrives. The wait is uncancellable so that the queue serves it
+                        // from its single-waiter gate rather than from a semaphore waiter plus a token
+                        // registration; Dispose wakes this loop with a sentinel event instead.
+                        await brokerEventsQueue.WaitForEntryAsync().ConfigureAwait(false);
+                        continue;
                     }
 
                     HandleBrokerEvent(ref nextEvent);
@@ -763,21 +745,12 @@ namespace Garnet.server
         public void Dispose()
         {
             cts.Cancel();
+
+            // Wake the main loop, which parks on an uncancellable wait for the next event.
+            brokerEventsQueue.Enqueue(default);
+
             foreach (var observer in sessionIdToObserver.Values)
-            {
-                if (observer.Status == ObserverStatus.WaitingForResult &&
-                    !observer.CancellationTokenSource.IsCancellationRequested)
-                {
-                    try
-                    {
-                        observer.CancellationTokenSource.Cancel();
-                    }
-                    catch (Exception)
-                    {
-                        // ignored
-                    }
-                }
-            }
+                observer.HandleSessionDisposed();
 
             var prevMainLoopStatus = Interlocked.Exchange(ref mainLoopTaskStatus, MAIN_LOOP_DISPOSED);
 
