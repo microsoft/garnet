@@ -129,7 +129,7 @@ namespace Garnet.server
                                 }
                             }
                             if (dcurr > networkSender.GetResponseObjectHead())
-                                Send(networkSender.GetResponseObjectHead());
+                                SendNow(networkSender.GetResponseObjectHead());
                         }
                     }
                     finally

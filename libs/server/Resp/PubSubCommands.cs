@@ -45,7 +45,7 @@ namespace Garnet.server
 
                 // Flush the publish message for this subscriber
                 if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
-                    Send(networkSender.GetResponseObjectHead());
+                    SendNow(networkSender.GetResponseObjectHead());
             }
             catch (Exception ex) when (reentrant)
             {
@@ -89,7 +89,7 @@ namespace Garnet.server
                 WriteDirectLargeRespString(value.ReadOnlySpan);
 
                 if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
-                    Send(networkSender.GetResponseObjectHead());
+                    SendNow(networkSender.GetResponseObjectHead());
             }
             catch (Exception ex) when (reentrant)
             {
@@ -162,19 +162,17 @@ namespace Garnet.server
 
             if (storeWrapper.serverOptions.EnableCluster)
             {
-                var _key = parseState.GetArgSliceByRef(0).Span;
-                var _val = parseState.GetArgSliceByRef(1).Span;
-
-                // No choice but to block here as we're on the network thread
-                AsyncUtils.BlockingWait(storeWrapper.clusterProvider.ClusterPublishAsync(cmd, _key, _val));
+                // Started here, where the spans are still addressable: the forward copies them itself if it
+                // has to go async. The session then suspends on it rather than blocking the network thread.
+                var forward = storeWrapper.clusterProvider.ClusterPublishAsync(cmd, key.Span, value.Span);
+                return CompleteClusterPublish(forward, numClients);
             }
 
-            // A failed delivery to this session ends it, after the message is forwarded to the other nodes and
-            // before the reply is written into the response buffer the failed send released
+            // A failed delivery to this session ends it, before the reply is written into the response buffer
+            // the failed send released
             selfDeliveryFailure?.Throw();
 
-            while (!RespWriteUtils.TryWriteInt32(numClients, ref dcurr, dend))
-                SendAndReset();
+            WriteInt32(numClients);
 
             return true;
         }

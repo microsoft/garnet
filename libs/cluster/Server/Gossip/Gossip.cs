@@ -244,8 +244,7 @@ namespace Garnet.cluster
                 GarnetServerNode gsn;
                 if (getOrAddTask.IsCompletedSuccessfully)
                 {
-                    // Cannot remove .GetResult here, but it's gated by IsCompletedSuccessfully so safe
-                    (_, gsn) = AsyncUtils.BlockingWait(getOrAddTask);
+                    (_, gsn) = getOrAddTask.GetAwaiter().GetResultGuarded();
                 }
                 else
                 {

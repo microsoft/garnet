@@ -137,7 +137,7 @@ namespace Garnet.test.cluster
             {
                 // Dispose doesn't ensure that inflight AOF commits to disk are completed, so for graceful shutdown in
                 // some tests, we need to manually ensure AOF flush before disposing the node.
-                AsyncUtils.BlockingWait(nodes[nodeIndex].Store.CommitAOFAsync(CancellationToken.None));
+                AsyncUtils.BlockingWait(nodes[nodeIndex].Store.CommitAOFAsync(CancellationToken.None).AsTask());
             }
 
             nodes[nodeIndex].Dispose();

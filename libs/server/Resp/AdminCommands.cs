@@ -212,9 +212,6 @@ namespace Garnet.server
             }
         }
 
-        ValueTask<bool> CommitAofAsync(int dbId = -1)
-        => storeWrapper.CommitAOFAsync(dbId);
-
         private bool NetworkMonitor()
         {
             if (parseState.Count != 0)
@@ -618,36 +615,6 @@ namespace Garnet.server
             return true;
         }
 
-        /// <summary>
-        /// COMMITAOF [DBID]
-        /// </summary>
-        /// <returns></returns>
-        private bool NetworkCOMMITAOF()
-        {
-            if (parseState.Count > 1)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF));
-            }
-
-            // By default - commit AOF for all active databases, unless database ID specified
-            var dbId = -1;
-
-            // Check if ID specified
-            if (parseState.Count == 1)
-            {
-                if (!TryParseDatabaseId(0, out dbId))
-                    return true;
-            }
-
-            // Have to block as we're on network thread
-            _ = AsyncUtils.BlockingWait(CommitAofAsync(dbId));
-
-            while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
-        }
-
         private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -721,8 +688,13 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
-            clusterSession.ProcessClusterCommands(command, storageSession.vectorManager, ref parseState, ref dcurr, ref dend);
-            return true;
+            if (clusterSession.ProcessClusterCommands(command, storageSession.vectorManager, ref parseState, ref dcurr, ref dend, out var pending))
+                return true;
+
+            ValueTask body;
+            using (BeginAsyncCommand())
+                body = ClusterCommandBodyAsync(pending);
+            return CompleteAsyncCommand(body);
         }
 
         private bool NetworkDebug()
