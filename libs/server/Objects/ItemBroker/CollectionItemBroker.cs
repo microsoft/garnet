@@ -91,7 +91,7 @@ namespace Garnet.server
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
         internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
-            RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs = null)
+            RespServerSession session, double timeoutInSeconds, CollectionItemArgs cmdArgs = default)
         {
             var observer = new CollectionItemObserver(session, command, cmdArgs);
             return await GetCollectionItemAsync(observer, keys, timeoutInSeconds).ConfigureAwait(false);
@@ -108,7 +108,7 @@ namespace Garnet.server
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
         internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey,
-            RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs)
+            RespServerSession session, double timeoutInSeconds, CollectionItemArgs cmdArgs)
         {
             var observer = new CollectionItemObserver(session, command, cmdArgs);
             return await GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds).ConfigureAwait(false);
@@ -258,26 +258,40 @@ namespace Garnet.server
             {
                 keysToObservers ??= new Dictionary<byte[], ConcurrentQueue<CollectionItemObserver>>(ByteArrayComparer.Instance);
 
-                // Iterate over the keys in order, set the observer's result if collection in key contains an item
-                foreach (var key in keys)
+                // Held across the first attempt, as in TryAssignItemFromKey: the attempt runs against the
+                // observing session's storage session, and this is the lock a session disposing concurrently
+                // waits on before it tears that storage session down.
+                observer.ObserverStatusLock.WriteLock();
+                try
                 {
-                    // If the key already has a non-empty observer queue, it does not have an item to retrieve
-                    if (keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty)
-                        continue;
+                    if (observer.Status != ObserverStatus.WaitingForResult)
+                        return;
 
-                    // The key has an empty observer queue, try to retrieve next available item
-                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
-                            out _, out var result))
-                        continue;
+                    // Iterate over the keys in order, set the observer's result if collection in key contains an item
+                    foreach (var key in keys)
+                    {
+                        // If the key already has a non-empty observer queue, it does not have an item to retrieve
+                        if (keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty)
+                            continue;
 
-                    // An item was found - set the observer result and return
-                    sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
-                    observer.HandleSetResult(result);
+                        // The key has an empty observer queue, try to retrieve next available item
+                        if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
+                                out _, out var result))
+                            continue;
 
-                    // The key still has an empty observer queue, and the current observer retrieved a result, so we can remove the key.
-                    keysToObservers.Remove(key);
+                        // An item was found - set the observer result and return
+                        sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+                        observer.HandleSetResult(result, isWriteLocked: true);
 
-                    return;
+                        // The key still has an empty observer queue, and the current observer retrieved a result, so we can remove the key.
+                        keysToObservers.Remove(key);
+
+                        return;
+                    }
+                }
+                finally
+                {
+                    observer.ObserverStatusLock.WriteUnlock();
                 }
 
                 // No item was found, enqueue new observer in every observed key's queue
@@ -391,8 +405,8 @@ namespace Garnet.server
         /// Pops the next available item(s) from the list at <paramref name="asKey"/> using RMW, so that the update is
         /// applied by Tsavorite rather than by mutating the heap object in place.
         /// </summary>
-        private static unsafe bool TryGetNextListResult<TObjectContext>(byte[] key, PinnedSpanByte asKey,
-            PinnedSpanByte dstKey, StorageSession storageSession, RespCommand command, PinnedSpanByte[] cmdArgs,
+        private static bool TryGetNextListResult<TObjectContext>(byte[] key, PinnedSpanByte asKey,
+            PinnedSpanByte dstKey, StorageSession storageSession, RespCommand command, in CollectionItemArgs cmdArgs,
             ListObject srcList, int currCount, ref TObjectContext objectContext, out CollectionItemResult result,
             out byte[] notifyKey)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
@@ -417,8 +431,8 @@ namespace Garnet.server
                     }
                 case RespCommand.BLMOVE:
                     {
-                        var srcDirection = (OperationDirection)cmdArgs[1].ReadOnlySpan[0];
-                        var dstDirection = (OperationDirection)cmdArgs[2].ReadOnlySpan[0];
+                        var srcDirection = cmdArgs.SourceDirection;
+                        var dstDirection = cmdArgs.DestinationDirection;
 
                         if (srcDirection == OperationDirection.Unknown || dstDirection == OperationDirection.Unknown)
                             return false;
@@ -465,14 +479,14 @@ namespace Garnet.server
                             return true;
                         }
 
-                        notifyKey = dstKey.ToArray();
+                        notifyKey = cmdArgs.DestinationKey;
                         result = new CollectionItemResult(key, movedItem);
                         return true;
                     }
                 case RespCommand.BLMPOP:
                     {
-                        var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
-                        var popCount = Math.Min(*(int*)cmdArgs[1].ToPointer(), currCount);
+                        var popDirection = cmdArgs.SourceDirection;
+                        var popCount = Math.Min(cmdArgs.Count, currCount);
 
                         var status = storageSession.ListPop(asKey, popCount,
                             popDirection == OperationDirection.Left ? ListOperation.LPOP : ListOperation.RPOP,
@@ -498,8 +512,8 @@ namespace Garnet.server
         /// update is applied by Tsavorite rather than by mutating the heap object in place.
         /// BZPOPMIN and BZPOPMAX share the same implementation, differing only in pop order.
         /// </summary>
-        private static unsafe bool TryGetNextSortedSetResult<TObjectContext>(byte[] key, PinnedSpanByte asKey,
-            StorageSession storageSession, RespCommand command, PinnedSpanByte[] cmdArgs, int currCount,
+        private static bool TryGetNextSortedSetResult<TObjectContext>(byte[] key, PinnedSpanByte asKey,
+            StorageSession storageSession, RespCommand command, in CollectionItemArgs cmdArgs, int currCount,
             ref TObjectContext objectContext, out CollectionItemResult result)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -516,8 +530,8 @@ namespace Garnet.server
                     popCount = 1;
                     break;
                 case RespCommand.BZMPOP:
-                    lowScoresFirst = *(bool*)cmdArgs[0].ToPointer();
-                    popCount = Math.Min(*(int*)cmdArgs[1].ToPointer(), currCount);
+                    lowScoresFirst = cmdArgs.LowScoresFirst;
+                    popCount = Math.Min(cmdArgs.Count, currCount);
                     break;
                 default:
                     return false;
@@ -563,8 +577,8 @@ namespace Garnet.server
             return default;
         }
 
-        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command,
-            PinnedSpanByte[] cmdArgs, bool failOnSrcTypeMismatch, out int currCount, out CollectionItemResult result)
+        private bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command,
+            in CollectionItemArgs cmdArgs, bool failOnSrcTypeMismatch, out int currCount, out CollectionItemResult result)
         {
             currCount = default;
             result = default;
@@ -579,9 +593,9 @@ namespace Garnet.server
 
             PinnedSpanByte dstKey = default;
             if (command == RespCommand.BLMOVE)
-                dstKey = cmdArgs[0];
+                dstKey = BlockingKeys.AsSpanByte(cmdArgs.DestinationKey);
 
-            var asKey = storageSession.scratchBufferBuilder.CreateArgSlice(key);
+            var asKey = BlockingKeys.AsSpanByte(key);
 
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
@@ -668,7 +682,6 @@ namespace Garnet.server
             }
             finally
             {
-                storageSession.scratchBufferBuilder.RewindScratchBuffer(asKey);
                 if (createTransaction)
                     storageSession.txnManager.Commit(true);
 

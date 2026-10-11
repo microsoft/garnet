@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -5601,6 +5602,88 @@ namespace Garnet.test
             {
                 ClassicAssert.IsTrue(unblockTasks.All(x => (int)x.Result == 0));
             }
+        }
+
+        [Test]
+        public void ClientUnblockRacingAPopThatFindsAnItemNeverLosesTheItem()
+        {
+            // The broker's first attempt on behalf of a new observer pops the item out of the list and only then
+            // hands it to the observer. CLIENT UNBLOCK targets the same observer as soon as it is registered, which
+            // is before that attempt runs. Unless the attempt and the hand-off are atomic with respect to the
+            // unblock, the unblock can claim the observer in between: the client is told it was unblocked and the
+            // item, already popped, belongs to nobody.
+            const int Workers = 8;
+            const int RoundsPerWorker = 400;
+            const string Value = "unblockRaceValue";
+
+            using var admin = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var adminDb = admin.GetDatabase(0);
+
+            // Connected up front: a connect inside the loop adds nothing to the race and can time out when eight
+            // of them land at once.
+            var blockers = new ConnectionMultiplexer[Workers];
+            var blockerDbs = new IDatabase[Workers];
+            var clientIds = new long[Workers];
+            for (var i = 0; i < Workers; i++)
+            {
+                blockers[i] = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                blockerDbs[i] = blockers[i].GetDatabase(0);
+                clientIds[i] = (long)blockerDbs[i].Execute("CLIENT", "ID");
+            }
+
+            var lostItems = new ConcurrentQueue<string>();
+            var delivered = 0;
+
+            try
+            {
+                Parallel.For(0, Workers, worker =>
+                {
+                    var key = $"unblockRaceKey:{worker}";
+                    var blockerDb = blockerDbs[worker];
+                    var clientId = clientIds[worker];
+
+                    for (var round = 0; round < RoundsPerWorker; round++)
+                    {
+                        // The item is already there, so the pop resolves on the broker's first attempt.
+                        ClassicAssert.AreEqual(1, (long)adminDb.Execute("RPUSH", key, Value));
+
+                        var pop = blockerDb.ExecuteAsync("BLPOP", key, 10);
+                        var unblock = adminDb.ExecuteAsync("CLIENT", "UNBLOCK", clientId, "ERROR");
+
+                        bool gotItem;
+                        try
+                        {
+                            gotItem = !pop.GetAwaiter().GetResult().IsNull;
+                        }
+                        catch (RedisServerException ex) when (ex.Message.StartsWith("UNBLOCKED"))
+                        {
+                            gotItem = false;
+                        }
+
+                        _ = unblock.GetAwaiter().GetResult();
+
+                        // The item was either handed to the popping client or is still in the list. Never neither.
+                        var remaining = (long)adminDb.Execute("LLEN", key);
+                        if (remaining != (gotItem ? 0 : 1))
+                            lostItems.Enqueue($"{key} round {round}: BLPOP {(gotItem ? "returned" : "did not return")} the item, LLEN was {remaining}");
+
+                        if (gotItem)
+                            _ = Interlocked.Increment(ref delivered);
+                        else
+                            _ = adminDb.Execute("DEL", key);
+                    }
+                });
+            }
+            finally
+            {
+                foreach (var blocker in blockers)
+                    blocker.Dispose();
+            }
+
+            ClassicAssert.IsEmpty(lostItems, $"{lostItems.Count} rounds lost the item: {string.Join("; ", lostItems.Take(5))}");
+
+            // Guards against the race never being set up at all, e.g. if the unblock always arrived first.
+            ClassicAssert.Greater(delivered, 0, "No round delivered the item, so the pop path was never exercised.");
         }
 
         [Test]
