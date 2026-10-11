@@ -70,6 +70,42 @@ namespace Garnet.server
         GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
 
         /// <summary>
+        /// Read operation on the unified store that reports rather than waits when the record is not in
+        /// memory, so the caller can decide how to wait for the device.
+        /// </summary>
+        /// <param name="key">Key to read.</param>
+        /// <param name="input">Input describing what to read.</param>
+        /// <param name="output">Output for a read served from memory.</param>
+        /// <param name="pending">True if the read went to the device, leaving the status meaningless.</param>
+        GarnetStatus Read_UnifiedStore_WithPending(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out bool pending);
+
+        /// <summary>
+        /// RMW operation on the unified store that reports rather than waits when the record is not in
+        /// memory. The update is already applied when this reports pending; only its outcome is still on
+        /// the device.
+        /// </summary>
+        /// <param name="key">Key to update.</param>
+        /// <param name="input">Input describing the update.</param>
+        /// <param name="output">Output for an update served from memory.</param>
+        /// <param name="pending">True if the update went to the device, leaving the status meaningless.</param>
+        GarnetStatus RMW_UnifiedStore_WithPending(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out bool pending);
+
+        /// <summary>
+        /// Completes pending unified-store operations on this session.
+        /// </summary>
+        /// <param name="completedOutputs">Outputs of the operations that completed.</param>
+        /// <param name="wait">Whether to wait for every outstanding operation.</param>
+        /// <returns>True if every outstanding operation completed.</returns>
+        bool Unified_CompletePending(out CompletedOutputIterator<UnifiedInput, UnifiedOutput, long> completedOutputs, bool wait = false);
+
+        /// <summary>
+        /// Completes pending unified-store operations without blocking the calling thread, so an operation
+        /// that went to disk does not hold the thread that issued it.
+        /// </summary>
+        /// <returns>The completed outputs, which the caller must dispose.</returns>
+        ValueTask<CompletedOutputIterator<UnifiedInput, UnifiedOutput, long>> Unified_CompletePendingAsync();
+
+        /// <summary>
         /// Read batch of keys on main store.
         /// </summary>
         void ReadWithPrefetch<TBatch>(ref TBatch batch, long context = default)

@@ -74,6 +74,45 @@ namespace Garnet.test
             ClassicAssert.AreEqual("total_found:1", totalFound, "Expected total_found to be one after sending one successful request");
         }
 
+        /// <summary>
+        /// A read that goes to the device is one pending operation, however the session waits for it.
+        /// </summary>
+        /// <remarks>
+        /// The session that issues the read counts it as pending there and then, because at that point it
+        /// knows the read missed memory but not yet what it found. The half that waits for the device must
+        /// therefore only time the wait, not count the operation a second time.
+        /// </remarks>
+        [Test]
+        public void AReadThatGoesToTheDeviceCountsAsOnePendingOperation()
+        {
+            // Enough records, written small, that the earliest of them is well below the log head address.
+            const int Keys = 8192;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            var batch = db.CreateBatch();
+            Task last = null;
+            for (var i = 0; i < Keys; i++)
+                last = batch.StringSetAsync($"pending:{i:D6}", new string('v', 48));
+            batch.Execute();
+            last.Wait(TimeSpan.FromSeconds(60));
+
+            ClassicAssert.IsNotNull(db.Execute("INFO", "RESET"));
+            Thread.Sleep(TimeSpan.FromSeconds(1.1));
+
+            _ = db.StringGet("pending:000000");
+            Thread.Sleep(TimeSpan.FromSeconds(1.1));
+
+            var totalPending = db.Execute("INFO", "STATS").ToString()
+                .Split("\r\n").First(x => x.StartsWith("total_pending:"));
+
+            ClassicAssert.AreEqual("total_pending:1", totalPending,
+                $"Expected one pending operation for one read that went to the device. A count of 0 means " +
+                $"the key was still in memory and this test needs more than {Keys} keys; a count of 2 means " +
+                "the read was counted both where it was issued and where it was waited for.");
+        }
+
         [Test]
         public void UptimeIncreasesAcrossInfoCalls()
         {

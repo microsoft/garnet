@@ -262,6 +262,22 @@ namespace Garnet.server
             => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
+        public GarnetStatus Read_UnifiedStore_WithPending(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out bool pending)
+            => storageSession.Read_UnifiedStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus RMW_UnifiedStore_WithPending(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out bool pending)
+            => storageSession.RMW_UnifiedStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref unifiedContext);
+
+        /// <inheritdoc />
+        public bool Unified_CompletePending(out CompletedOutputIterator<UnifiedInput, UnifiedOutput, long> completedOutputs, bool wait = false)
+            => storageSession.Unified_CompletePending(out completedOutputs, wait, ref unifiedContext);
+
+        /// <inheritdoc />
+        public ValueTask<CompletedOutputIterator<UnifiedInput, UnifiedOutput, long>> Unified_CompletePendingAsync()
+            => storageSession.Unified_CompletePendingAsync(ref unifiedContext);
+
+        /// <inheritdoc />
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
             where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>, allows ref struct
             => storageSession.ReadWithPrefetch(ref batch, ref stringContext, userContext);

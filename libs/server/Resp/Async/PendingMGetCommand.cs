@@ -39,9 +39,9 @@ namespace Garnet.server
             // epoch across the call, which an asynchronous completion may not do.
             if (txnManager.state == TxnState.Running)
             {
-                storageSession.StartPendingMetrics();
+                storageSession.StartPendingLatency();
                 _ = storageApi.GET_CompletePending(out var completed, wait: true);
-                storageSession.StopPendingMetrics();
+                storageSession.StopPendingLatency();
 
                 batch.WriteCompleted(completed);
                 return true;
@@ -60,14 +60,14 @@ namespace Garnet.server
         async ValueTask PendingMGetBodyAsync(ValueTask<CompletedOutputIterator<StringInput, StringOutput, long>> pending)
         {
             CompletedOutputIterator<StringInput, StringOutput, long> completed;
-            storageSession.StartPendingMetrics();
+            storageSession.StartPendingLatency();
             try
             {
                 completed = await pending.ConfigureAwait(false);
             }
             finally
             {
-                storageSession.StopPendingMetrics();
+                storageSession.StopPendingLatency();
             }
 
             // Cleared before writing, so a reply that throws cannot leave the batch behind to be written a
