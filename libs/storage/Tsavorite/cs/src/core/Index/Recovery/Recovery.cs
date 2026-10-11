@@ -969,7 +969,7 @@ namespace Tsavorite.core
         {
             if (!upgradeObjectLog || checkpointType == CheckpointType.Snapshot)
                 return;
-            hlogBase.CompleteObjectLogUpgrade();
+            hlogBase.CompleteObjectLogUpgrade(adoptConvertedTailNow: false);
             TrimResidentPagesToBudget(recoveryStatus, untilAddress);
         }
 
@@ -1234,7 +1234,7 @@ namespace Tsavorite.core
                 // Both regions are converted, so the upgrade device becomes the live object log and its append position the live tail.
                 // The conversion pass has already loaded each page's objects from the current-format bytes it wrote, so the deferred
                 // object load has nothing left to do.
-                hlogBase.CompleteObjectLogUpgrade();
+                hlogBase.CompleteObjectLogUpgrade(adoptConvertedTailNow: true);
                 TrimResidentPagesToBudget(recoveryStatus, untilAddress);
             }
             else

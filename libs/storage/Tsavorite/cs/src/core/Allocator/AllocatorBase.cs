@@ -44,8 +44,11 @@ namespace Tsavorite.core
         /// <summary>Whether a downlevel object-log up-conversion is in progress.</summary>
         internal virtual bool IsUpgradingObjectLog => false;
 
-        /// <summary>Finish up-converting a downlevel object log, making the upgrade device the live object log.</summary>
-        internal virtual void CompleteObjectLogUpgrade() { }
+        /// <summary>Finish up-converting a downlevel object log, making the destination device the live object log.</summary>
+        /// <param name="adoptConvertedTailNow">Whether to adopt the converted append position as the live object-log tail immediately.
+        /// Snapshot recovery passes true because it has already called <see cref="SetObjectLogTail"/> before the snapshot conversion phase;
+        /// FoldOver passes false because it calls <see cref="SetObjectLogTail"/> afterward, which then adopts the converted position.</param>
+        internal virtual void CompleteObjectLogUpgrade(bool adoptConvertedTailNow) { }
 
         /// <summary>Whether a downlevel object-log up-conversion completed, making the upgrade device the live object log.</summary>
         internal virtual bool ObjectLogWasUpgraded => false;
@@ -970,12 +973,22 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>
         /// A store with no object-log device has nothing to convert and needs no upgrade device; any checkpoint it later takes is
-        /// stamped with the current version regardless.
+        /// stamped with the current version regardless. A self-contained snapshot also needs no separate device: its object bytes live
+        /// entirely in the checkpoint's snapshot object log and its main object log is empty, so the conversion writes the converted
+        /// bytes into that empty main device in place of a separate upgrade device.
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void VerifyUpgradeCapability(HybridLogRecoveryInfo info)
         {
             if (!HybridLogRecoveryInfo.UsesDownlevelObjectLog(info.hybridLogRecoveryVersion) || !HasObjectLogDevice || HasUpgradeObjectLogDevice)
+                return;
+
+            // A self-contained snapshot keeps every object byte in the checkpoint's snapshot object log and leaves the main object log
+            // empty, so the up-conversion can target that empty main device and no separate upgrade device is required. The main
+            // object-log tail captured at the hybrid-log/snapshot boundary is unset exactly when the main object log carries no downlevel
+            // bytes to rewrite in place; a FoldOver checkpoint, or a snapshot with a non-empty hybrid-log region, has them and still needs
+            // a separate device to avoid an unsupported in-place rewrite.
+            if (info.useSnapshotFile != 0 && !info.hlogEndObjectLogTail.HasData)
                 return;
 
             throw new TsavoriteException($"Recovering checkpoint version {info.hybridLogRecoveryVersion} requires up-converting its object log,"

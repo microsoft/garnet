@@ -104,8 +104,12 @@ namespace Garnet.test
     /// <item>No tier (objects never left memory): SAVE writes a self-contained Snapshot with no segment file beside it.
     /// Recovered with a matching null device it reads back WITHOUT <c>--upgrade</c> -- the reader selects the downlevel
     /// decode for cv7 framing, and the upgrade only converts the object log so that LATER checkpoints are written
-    /// current-format. Recovered instead WITH a log device the same artifacts come back empty, silently, with nothing
-    /// logged at any level.</item>
+    /// current-format. Recovered instead WITH an (empty) object-log device it ALSO reads back without <c>--upgrade</c>:
+    /// the self-contained snapshot leaves the main object log empty (<c>useSnapshotFile</c> set, no
+    /// <c>hlogEndObjectLogTail</c>), so <c>AllocatorBase.VerifyUpgradeCapability</c> lets the conversion retarget that
+    /// empty device instead of refusing. This self-contained recovery is pinned at the Tsavorite layer by
+    /// <c>RecoverV7SelfContainedSnapshotWithoutUpgradeObjectLog</c> and its companions in <c>V7DownlevelRecoveryTests</c>;
+    /// before that fix the same artifacts came back empty, silently, with nothing logged at any level.</item>
     /// <item>Tier on (objects evicted to the object-log device): the cv7 bytes live on that device in the dense
     /// downlevel framing, and in-place recovery without <c>--upgrade</c> is refused by
     /// <c>AllocatorBase.VerifyUpgradeCapability</c>, because converting them needs the separate upgrade device that only
@@ -216,7 +220,7 @@ namespace Garnet.test
         /// resident on the main log; once the object bytes live on the object-log device, <c>AllocatorBase.VerifyUpgradeCapability</c>
         /// rejects recovery unless an upgrade device is present, because the downlevel object log stores above-cutoff components
         /// headerless and cannot be decoded in place by a release that no longer carries the per-record downlevel selector. The
-        /// default-off branch is a silent-data-loss footgun of the same family as the SILENT-EMPTY note above: an operator who
+        /// default-off branch is a silent-data-loss footgun in its own right: an operator who
         /// restarts the new binary over a cv7 data directory without <c>--upgrade</c> gets an empty store and no error. Whether to
         /// make this refusal fatal regardless of <c>FailOnRecoveryError</c> (as the geometry-mismatch path already is) is a product
         /// decision left to the maintainers; this test pins the current behavior so a change is deliberate.

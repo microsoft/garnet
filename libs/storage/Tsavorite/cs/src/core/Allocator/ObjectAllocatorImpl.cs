@@ -738,8 +738,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger)
         {
-            // While up-converting, a flush appends current-format bytes to the upgrade device; the downlevel device stays the read source.
-            var localObjectLogDevice = objectLogDevice ?? (isUpgradingObjectLog ? upgradeObjectLogDevice : this.objectLogDevice);
+            // While up-converting, a flush appends current-format bytes to the destination device; the downlevel device stays the read source.
+            var localObjectLogDevice = objectLogDevice ?? (isUpgradingObjectLog ? UpgradeDestinationObjectLogDevice : this.objectLogDevice);
             return localObjectLogDevice is not null
                 ? new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, localObjectLogDevice, logger)
                 : null;
@@ -791,11 +791,14 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void BeginObjectLogUpgrade()
         {
-            Debug.Assert(upgradeObjectLogDevice is not null, $"{nameof(BeginObjectLogUpgrade)} requires an upgrade object-log device");
+            Debug.Assert(UpgradeDestinationObjectLogDevice is not null, $"{nameof(BeginObjectLogUpgrade)} requires an object-log device to receive the converted bytes");
             Debug.Assert(!isUpgradingObjectLog, $"{nameof(BeginObjectLogUpgrade)} should be called only once");
 
-            // The upgrade device is a new, empty file, so conversion appends from its start. objectLogTail is left alone: it holds the
-            // downlevel tail from the checkpoint metadata and continues to bound reads of the downlevel device during conversion.
+            // The destination device is empty - a new upgrade device, or the empty main object log of a self-contained snapshot - so
+            // conversion appends from its start. objectLogTail is left alone: for a FoldOver or non-empty-hybrid-log snapshot it holds the
+            // downlevel tail from the checkpoint metadata and continues to bound reads of the downlevel main device during conversion; for a
+            // self-contained snapshot it is the unset boundary tail and the main device is never read (the downlevel bytes come from the
+            // checkpoint's snapshot object log).
             upgradeObjectLogTail = new(0, objectLogTail.SegmentSizeBits);
             isUpgradingObjectLog = true;
         }
@@ -807,20 +810,21 @@ namespace Tsavorite.core
         internal override bool ObjectLogWasUpgraded => objectLogWasUpgraded;
 
         /// <inheritdoc/>
-        internal override void CompleteObjectLogUpgrade()
+        internal override void CompleteObjectLogUpgrade(bool adoptConvertedTailNow)
         {
             Debug.Assert(isUpgradingObjectLog, $"{nameof(CompleteObjectLogUpgrade)} requires {nameof(BeginObjectLogUpgrade)}");
 
-            // Every page has been converted, so the up-converted device becomes the live object log. The live tail is adopted from
-            // upgradeObjectLogTail by SetObjectLogTail, which recovery calls once the hybrid-log phase completes.
-            objectLogDevice = upgradeObjectLogDevice;
+            // Every page has been converted, so the destination device becomes the live object log. With a separate upgrade device this
+            // repoints the live device to it; for a self-contained snapshot the destination is already the main device, so this is a no-op.
+            objectLogDevice = UpgradeDestinationObjectLogDevice;
             objectLogWasUpgraded = true;
             isUpgradingObjectLog = false;
 
-            // Snapshot recovery sets the tail between its two conversion phases (so the snapshot phase appends after the hybrid-log
-            // objects), leaving it holding the downlevel tail; re-adopt the converted position here. FoldOver leaves the tail unset
-            // through conversion, and SetObjectLogTail adopts the converted position when recovery calls it afterward.
-            if (objectLogTail.HasData)
+            // Snapshot recovery has already called SetObjectLogTail (before the snapshot conversion phase, so that phase appends after the
+            // hybrid-log objects), so the converted append position must be adopted now; for a self-contained snapshot the tail set there is
+            // the unset boundary tail, which is why the adoption cannot be conditioned on the tail already having data. FoldOver instead calls
+            // SetObjectLogTail after this, and that call adopts the converted position because objectLogWasUpgraded is now set.
+            if (adoptConvertedTailNow)
                 objectLogTail = upgradeObjectLogTail;
 
             // lowestObjectLogSegmentInUse needs no reset: conversion appends from segment 0 of the new device, and the field is only ever
@@ -880,6 +884,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal override bool HasUpgradeObjectLogDevice => upgradeObjectLogDevice is not null;
+
+        /// <summary>Destination device for up-converted object bytes: the separate upgrade device when one is configured, otherwise the
+        /// main object-log device itself. The latter is used only for a self-contained snapshot, whose main object log is empty, so the
+        /// conversion writes into empty space and never aliases a read source (reads come from the checkpoint's snapshot object log).</summary>
+        private IDevice UpgradeDestinationObjectLogDevice => upgradeObjectLogDevice ?? objectLogDevice;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.NoInlining)]

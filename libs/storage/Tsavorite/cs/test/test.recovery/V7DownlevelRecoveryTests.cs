@@ -114,6 +114,26 @@ namespace Tsavorite.test.recovery
                 ClassicAssert.AreEqual((byte)((key * 31) + i), actual[i], $"key {key} byte[{i}] mismatch");
         }
 
+        // Read keys [firstKey, lastKeyExclusive) as objects from a recovered store and assert each payload is byte-exact.
+        static void VerifyObjectValueRange(TsavoriteKV<ObjStoreFunctions, ObjAllocator> store, int firstKey, int lastKeyExclusive, int valueSize, string context)
+        {
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+            for (var key = firstKey; key < lastKeyExclusive; key++)
+            {
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                TestLargeObjectOutput output = new();
+                var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                if (status.IsPending)
+                {
+                    ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                    (status, output) = GetSinglePendingResult(completed);
+                }
+                ClassicAssert.IsTrue(status.Found, $"key {key} not found {context} (size {valueSize})");
+                VerifyPayload(key, valueSize, output.valueObject?.value);
+            }
+        }
+
         // Build a current-format FoldOver checkpoint of numRecords small object-value records, then transform it on disk into a v7
         // (checkpoint version 7) checkpoint. Returns the checkpoint token.
         Guid BuildV7FoldOverFixture(int numRecords, int valueSize)
@@ -1016,6 +1036,144 @@ namespace Tsavorite.test.recovery
                 log.Dispose();
                 objlog.Dispose();
                 upgradeObjlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7SelfContainedSnapshotWithoutUpgradeObjectLog([Values(100, 507, 1024, 20000)] int valueSize)
+        {
+            // A self-contained snapshot (nothing spilled past the hybrid-log/snapshot boundary) keeps every downlevel object byte in the
+            // checkpoint's snapshot object log and leaves the main object log empty. The up-conversion can therefore target that empty main
+            // device, so recovery succeeds with NO separate UpgradeObjectLogDevice - where it previously refused and, with FailOnRecoveryError
+            // off, came back silently empty. Sizes span inline, overflow, and multi-page object values.
+            const int numRecords = 8;
+            var token = BuildV7DenseSnapshotFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog: null);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                VerifyObjectValueRange(store, 0, numRecords, valueSize, "after self-contained v7 snapshot recovery without upgrade device");
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7SelfContainedSnapshotUpConvertsMainObjectLogWithoutUpgradeDevice([Values(400, 20000)] int valueSize)
+        {
+            // Proves the conversion wrote CURRENT-format bytes into the empty main object log itself (there is no separate upgrade device),
+            // not merely that reads decode: after recovery no main-log record may still carry the v7 marker in unused bit 63.
+            const int numRecords = 150;
+            var token = BuildV7DenseSnapshotFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog: null);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                VerifyObjectValueRange(store, 0, numRecords, valueSize, "after self-contained v7 snapshot recovery without upgrade device");
+
+                // No FlushAndEvict: recovery's conversion pass already wrote every snapshot page to the main log, and the snapshot region is
+                // left mutable, so a post-recovery flush would re-serialize the objects at fresh positions and hide what the conversion produced.
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            AssertMainLogHasNoDownlevelRecords(token, numRecords);
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7SelfContainedSnapshotWithoutUpgradeThenAppendPersists([Values(1024, 20000)] int valueSize)
+        {
+            // A small memory budget evicts most recovered records to the main object log during recovery, so they are read-only at their
+            // converted positions. The live object-log tail must therefore be the converted append position: a post-recovery write that is
+            // flushed has to land AFTER those positions. Had completion not adopted the converted tail, the new objects would overwrite the
+            // converted bytes and the evicted records would read back corrupt.
+            const int numRecords = 40;
+            var token = BuildV7DenseSnapshotFixture(numRecords, valueSize);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 15, upgradeObjlog: null);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+
+                using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var key = numRecords; key < numRecords * 2; key++)
+                        _ = bContext.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue() { value = MakePayload(key, valueSize) });
+                }
+                store.Log.FlushAndEvict(wait: true);
+
+                VerifyObjectValueRange(store, 0, numRecords * 2, valueSize, "after appending to a recovered self-contained v7 snapshot without upgrade device");
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7SelfContainedSnapshotWithoutUpgradeThenReloadAsCurrent([Values(100, 20000)] int valueSize)
+        {
+            // End to end: upgrade a downlevel self-contained snapshot with no upgrade device, re-checkpoint the upgraded store, then load that
+            // new checkpoint on a FRESH store with empty devices. The second recovery is a current-version snapshot, so it must load cleanly -
+            // proving the first recovery produced a genuine, re-checkpointable current-format store.
+            const int numRecords = 8;
+            var token = BuildV7DenseSnapshotFixture(numRecords, valueSize);
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+
+            Guid upgradedToken;
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog: null);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out upgradedToken, CheckpointType.Snapshot), "failed to checkpoint the upgraded store");
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            ClassicAssert.AreNotEqual(token, upgradedToken, "re-checkpoint should produce a new token");
+
+            // Fresh, empty devices: the reload must come entirely from the upgraded (current-version) snapshot checkpoint.
+            IDevice reloadLog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "reload.log"), deleteOnClose: false);
+            IDevice reloadObjlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "reload.obj.log"), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(reloadLog, reloadObjlog, checkpointDir, 1L << 20, upgradeObjlog: null);
+                _ = await store.RecoverAsync(default, upgradedToken).ConfigureAwait(false);
+                VerifyObjectValueRange(store, 0, numRecords, valueSize, "after reloading the upgraded cv8 snapshot on a fresh store");
+            }
+            finally
+            {
+                reloadLog.Dispose();
+                reloadObjlog.Dispose();
             }
         }
 
