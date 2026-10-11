@@ -330,24 +330,26 @@ namespace Garnet.server
             }
 
             var exists = 0;
+            var pendingCount = 0;
 
             // Prepare input
             var input = new UnifiedInput(RespCommand.EXISTS);
 
             var output = new UnifiedOutput();
 
+            // Every key is issued before any of them is drained, so the keys that are not in memory overlap
+            // on the device and the command waits once for all of them rather than once per key.
             for (var i = 0; i < parseState.Count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
-                var status = storageApi.EXISTS(key, ref input, ref output);
-                if (status == GarnetStatus.OK)
+                var status = storageApi.Read_UnifiedStore_WithPending(key, ref input, ref output, out var pending);
+                if (pending)
+                    pendingCount++;
+                else if (status == GarnetStatus.OK)
                     exists++;
             }
 
-            while (!RespWriteUtils.TryWriteInt32(exists, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
+            return CompleteExists(exists, pendingCount, ref storageApi);
         }
 
         /// <summary>
@@ -440,19 +442,9 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
-            var status = storageApi.EXPIRE(key, ref input, ref output);
+            var status = storageApi.RMW_UnifiedStore_WithPending(key, ref input, ref output, out var pending);
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return true;
+            return CompleteUnifiedOp(status, ref output, pending, UnifiedMissReply.Zero, ref storageApi, isRmw: true);
         }
 
         /// <summary>
@@ -477,18 +469,9 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
-            var status = storageApi.PERSIST(key, ref input, ref output);
+            var status = storageApi.RMW_UnifiedStore_WithPending(key, ref input, ref output, out var pending);
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
-            }
-            return true;
+            return CompleteUnifiedOp(status, ref output, pending, UnifiedMissReply.Zero, ref storageApi, isRmw: true);
         }
 
         /// <summary>
@@ -514,18 +497,9 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
-            var status = storageApi.TTL(key, ref input, ref output);
+            var status = storageApi.Read_UnifiedStore_WithPending(key, ref input, ref output, out var pending);
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
-                    SendAndReset();
-            }
-            return true;
+            return CompleteUnifiedOp(status, ref output, pending, UnifiedMissReply.NegativeTwo, ref storageApi);
         }
 
         /// <summary>
@@ -551,18 +525,9 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
-            var status = storageApi.EXPIRETIME(key, ref input, ref output);
+            var status = storageApi.Read_UnifiedStore_WithPending(key, ref input, ref output, out var pending);
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_N2, ref dcurr, dend))
-                    SendAndReset();
-            }
-            return true;
+            return CompleteUnifiedOp(status, ref output, pending, UnifiedMissReply.NegativeTwo, ref storageApi);
         }
     }
 }

@@ -47,14 +47,14 @@ namespace Garnet.server
         async ValueTask PendingGetBodyAsync()
         {
             CompletedOutputIterator<StringInput, StringOutput, long> completed;
-            storageSession.StartPendingMetrics();
+            storageSession.StartPendingLatency();
             try
             {
                 completed = await CompletePendingGetAsync().ConfigureAwait(false);
             }
             finally
             {
-                storageSession.StopPendingMetrics();
+                storageSession.StopPendingLatency();
             }
 
             WriteCompletedGet(completed);
@@ -112,9 +112,9 @@ namespace Garnet.server
         bool NetworkGETCompletePendingInline<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            storageSession.StartPendingMetrics();
+            storageSession.StartPendingLatency();
             _ = storageApi.GET_CompletePending(out var completed, wait: true);
-            storageSession.StopPendingMetrics();
+            storageSession.StopPendingLatency();
 
             WriteCompletedGet(completed);
             return true;
@@ -134,14 +134,14 @@ namespace Garnet.server
         async ValueTask PendingSGGetBodyAsync(ValueTask<CompletedOutputIterator<StringInput, StringOutput, long>> pending)
         {
             CompletedOutputIterator<StringInput, StringOutput, long> completed;
-            storageSession.StartPendingMetrics();
+            storageSession.StartPendingLatency();
             try
             {
                 completed = await pending.ConfigureAwait(false);
             }
             finally
             {
-                storageSession.StopPendingMetrics();
+                storageSession.StopPendingLatency();
             }
 
             storageSession.ScatterCompletedGets(completed, pendingGetOutputArr);

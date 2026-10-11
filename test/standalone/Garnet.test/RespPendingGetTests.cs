@@ -604,6 +604,221 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// The unified-store commands read a record's header rather than its value, so on a working set
+        /// larger than memory they go to the device as often as a <c>GET</c> does. Each has to give the same
+        /// answer across a suspension as it gives from memory.
+        /// </summary>
+        /// <remarks>
+        /// The control key is written last, so it is still in memory, and is given the same key length and
+        /// the same value as the key under test, so even the answers that depend on size - <c>MEMORY
+        /// USAGE</c>, <c>OBJECT ENCODING</c> - have to match exactly.
+        /// </remarks>
+        [Test]
+        public void UnifiedCommandsAnswerFromTheDeviceExactlyAsTheyDoFromMemory()
+        {
+            Populate();
+
+            using var client = new RawClient();
+
+            var onDevice = Key(0);
+            var inMemory = $"pendingget:9{0:D5}";
+            ClassicAssert.AreEqual(onDevice.Length, inMemory.Length);
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("SET", inMemory, Value(0)));
+
+            void AssertSameAcrossASuspension(params string[] verb)
+            {
+                var fromMemory = client.Execute([.. verb, inMemory]);
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                var fromDevice = client.Execute([.. verb, onDevice]);
+
+                ClassicAssert.Greater(deviceFactoryCreator.ReadCount, readsBefore,
+                    $"{string.Join(' ', verb)} {onDevice} never went to the device, so it proves nothing.");
+                ClassicAssert.AreEqual(fromMemory, fromDevice,
+                    $"{string.Join(' ', verb)} answered differently across a suspension.");
+            }
+
+            AssertSameAcrossASuspension("TYPE");
+            AssertSameAcrossASuspension("TTL");
+            AssertSameAcrossASuspension("PTTL");
+            AssertSameAcrossASuspension("EXPIRETIME");
+            AssertSameAcrossASuspension("PEXPIRETIME");
+            AssertSameAcrossASuspension("EXISTS");
+            AssertSameAcrossASuspension("OBJECT", "ENCODING");
+            AssertSameAcrossASuspension("MEMORY", "USAGE");
+
+            // PERSIST on a key with no timeout reports that it changed nothing, and changes nothing.
+            AssertSameAcrossASuspension("PERSIST");
+        }
+
+        /// <summary>
+        /// <c>EXPIRE</c> and <c>PERSIST</c> are the updates of the family, so beyond answering correctly
+        /// they have to leave the record in the state they reported.
+        /// </summary>
+        [Test]
+        public void ExpireAndPersistApplyToAKeyThatIsNoLongerInMemory()
+        {
+            Populate();
+
+            using var client = new RawClient();
+            var key = Key(1);
+
+            var readsBefore = deviceFactoryCreator.ReadCount;
+            ClassicAssert.AreEqual(":1\r\n", client.Execute("EXPIRE", key, "1000"));
+            ClassicAssert.Greater(deviceFactoryCreator.ReadCount, readsBefore,
+                $"EXPIRE {key} never went to the device, so it proves nothing.");
+
+            ClassicAssert.AreEqual(":1000\r\n", client.Execute("TTL", key),
+                "EXPIRE reported that it set a timeout it did not set.");
+            ClassicAssert.AreEqual($"${ValueLength}\r\n{Value(1)}\r\n", client.Execute("GET", key),
+                "EXPIRE lost the value of the record it updated.");
+
+            ClassicAssert.AreEqual(":1\r\n", client.Execute("PERSIST", key));
+            ClassicAssert.AreEqual(":-1\r\n", client.Execute("TTL", key),
+                "PERSIST reported that it removed a timeout it did not remove.");
+        }
+
+        /// <summary>
+        /// <c>EXISTS</c> issues every one of its keys before waiting for any of them, so its reads overlap on
+        /// the device, and the count it reports has to survive that.
+        /// </summary>
+        [Test]
+        public void ExistsCountsEveryKeyItFindsAcrossOneSuspension()
+        {
+            Populate();
+
+            using var client = new RawClient();
+
+            // Eight keys on the device, one of them twice - EXISTS counts repeats - and two never written.
+            string[] args = ["EXISTS", Key(0), Key(1), Key(2), Key(3), Key(0),
+                "pendingget:absent1", Key(4), Key(5), Key(6), Key(7), "pendingget:absent2"];
+
+            var readsBefore = deviceFactoryCreator.ReadCount;
+            ClassicAssert.AreEqual(":9\r\n", client.Execute(args));
+
+            ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore, 8,
+                "Fewer device reads than keys on the device, so this EXISTS was served from memory.");
+        }
+
+        /// <summary>
+        /// A running transaction holds its key locks and Tsavorite's epoch across the call, so it cannot
+        /// park. These commands have to fall back to completing in place and still answer correctly.
+        /// </summary>
+        [Test]
+        public void UnifiedCommandsInsideATransactionReadBackKeysThatAreNoLongerInMemory()
+        {
+            Populate();
+
+            using var client = new RawClient();
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("MULTI"));
+            ClassicAssert.AreEqual("+QUEUED\r\n", client.Execute("TYPE", Key(0)));
+            ClassicAssert.AreEqual("+QUEUED\r\n", client.Execute("TTL", Key(1)));
+            ClassicAssert.AreEqual("+QUEUED\r\n", client.Execute("EXISTS", Key(2), Key(3), "pendingget:absent"));
+            ClassicAssert.AreEqual("+QUEUED\r\n", client.Execute("EXPIRE", Key(4), "1000"));
+            ClassicAssert.AreEqual("+QUEUED\r\n", client.Execute("TTL", Key(4)));
+
+            ClassicAssert.AreEqual("*5\r\n+string\r\n:-1\r\n:2\r\n:1\r\n:1000\r\n", client.Execute("EXEC"));
+        }
+
+        /// <summary>
+        /// The point of the design, on the unified-store path. With the thread pool clamped, more sessions
+        /// than there are worker threads each issue a unified-store command that has to go to the device, and
+        /// they all have to come back in about the time one of them takes. If the reads were drained in place
+        /// instead, each would hold a worker thread for its whole device round trip and the sessions would
+        /// run in waves of <c>cappedWorkers</c>.
+        /// </summary>
+        /// <remarks>
+        /// Half the sessions send <c>TTL</c> and half send <c>EXISTS</c>, because the two take different
+        /// paths out of the dispatch: a single operation whose own output is the reply, and a set of
+        /// operations whose count is the reply.
+        /// </remarks>
+        [Test]
+        public void ManyConcurrentUnifiedCommandsOutnumberTheThreadPoolAndStillFinishTogether()
+        {
+            const int ReadDelayMs = 1000;
+            const int KeysPerExists = 4;
+
+            // Linux only, for the reason given on ManyConcurrentDeviceReadsOutnumberTheThreadPoolAndStillFinishTogether.
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
+            Populate();
+
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
+
+            var cappedWorkers = Math.Max(Environment.ProcessorCount, minWorkers);
+            var sessionCount = Math.Max(64, cappedWorkers * 4);
+
+            // Session i sends TTL of one key when even, and EXISTS of KeysPerExists keys when odd.
+            bool IsExists(int i) => (i & 1) == 1;
+            string[] Command(int i) => IsExists(i)
+                ? [.. new[] { "EXISTS" }, .. MGet(Window(i, KeysPerExists), KeysPerExists)[1..]]
+                : ["TTL", Key(Window(i, 1))];
+            string Reply(int i) => IsExists(i) ? $":{KeysPerExists}\r\n" : ":-1\r\n";
+
+            var clients = new RawClient[sessionCount];
+            var clamped = false;
+            try
+            {
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i] = new RawClient();
+
+                clamped = ThreadPool.SetMaxThreads(cappedWorkers, maxIo);
+                ClassicAssert.IsTrue(clamped,
+                    $"Could not clamp the worker pool to {cappedWorkers} from ({maxWorkers},{maxIo}) with a " +
+                    $"worker minimum of {minWorkers}, so this test cannot demonstrate thread starvation.");
+
+                deviceFactoryCreator.ReadDelayMs = ReadDelayMs;
+
+                // One command on its own, as the yardstick.
+                var single = Stopwatch.StartNew();
+                ClassicAssert.AreEqual(Reply(0), clients[0].Execute(Command(0)));
+                single.Stop();
+
+                ClassicAssert.GreaterOrEqual(single.Elapsed.TotalMilliseconds, ReadDelayMs * 0.8,
+                    "A single TTL returned faster than the injected device delay, so it never went to the device.");
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+
+                var sw = Stopwatch.StartNew();
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i].Send(Command(i));
+
+                try
+                {
+                    for (var i = 0; i < sessionCount; i++)
+                        ClassicAssert.AreEqual(Reply(i), clients[i].ReadReply(),
+                            $"Wrong reply for session {i}: {string.Join(' ', Command(i))}");
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"A session produced no reply within the socket timeout, with {sessionCount} " +
+                        $"concurrent unified-store commands against {cappedWorkers} worker threads: the reads " +
+                        $"are being drained on thread-pool threads rather than suspended. {e.Message}");
+                }
+                sw.Stop();
+
+                ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore, sessionCount,
+                    "Fewer device reads than sessions, so some of these commands were served entirely from memory.");
+
+                ClassicAssert.Less(sw.Elapsed.TotalMilliseconds, single.Elapsed.TotalMilliseconds * 3,
+                    $"{sessionCount} concurrent unified-store commands took {sw.Elapsed.TotalSeconds:F1}s against " +
+                    $"a single one of {single.Elapsed.TotalSeconds:F1}s with {cappedWorkers} worker threads, which " +
+                    "means they were serialized on thread-pool threads rather than suspended.");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                if (clamped)
+                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>
         /// First key of the window session <paramref name="i"/> reads. Windows wrap within the older half of
         /// the populated keys, which keeps every one of them below the head address however many sessions the
         /// clamped pool size works out to.

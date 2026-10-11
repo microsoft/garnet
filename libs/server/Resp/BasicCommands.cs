@@ -1695,18 +1695,9 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
-            var status = storageApi.MEMORYUSAGE(key, ref input, ref output);
+            var status = storageApi.Read_UnifiedStore_WithPending(key, ref input, ref output, out var pending);
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
-                WriteNull();
-            }
-
-            return true;
+            return CompleteUnifiedOp(status, ref output, pending, UnifiedMissReply.Null, ref storageApi);
         }
 
         /// <summary>
@@ -1732,19 +1723,10 @@ namespace Garnet.server
             var input = new UnifiedInput(subCommand);
             var output = GetUnifiedOutput();
 
-            var status = storageApi.OBJECT(key, ref input, ref output);
+            var status = storageApi.Read_UnifiedStore_WithPending(key, ref input, ref output, out var pending);
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
-                // Missing key: reply with nil for all OBJECT subcommands.
-                WriteNull();
-            }
-
-            return true;
+            // Missing key: reply with nil for all OBJECT subcommands.
+            return CompleteUnifiedOp(status, ref output, pending, UnifiedMissReply.Null, ref storageApi);
         }
 
         /// <summary>
