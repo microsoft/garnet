@@ -30,9 +30,11 @@ namespace Garnet.server
             // ReadWithPrefetch epoch is held).
             MGetReadArgBatch_SG batch = new(this);
             storageApi.ReadWithPrefetch(ref batch);
-            batch.CompletePending(ref storageApi);
 
-            return true;
+            if (!batch.IsPending)
+                return true;
+
+            return FinishPendingMGet(batch, ref storageApi);
         }
 
         /// <summary>

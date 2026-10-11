@@ -24,6 +24,11 @@ namespace Garnet.server
         private bool pendingNullWrite;
         private Memory<(Status Status, StringOutput Output)> runningStatus;
 
+        // Index of the first read that went to the device, which is where runningStatus starts. Captured
+        // when the batch first goes pending so the completion half does not have to derive it from the
+        // parse state, which the batch may outlive when the session suspends for the I/O.
+        private int asyncOffset;
+
         /// <inheritdoc/>
         public readonly int Count
         => session.parseState.Count;
@@ -99,8 +104,6 @@ namespace Garnet.server
             }
             else
             {
-                var asyncOffset = session.parseState.Count - runningStatus.Length;
-
                 var shiftedIndex = i - asyncOffset;
                 runningStatus.Span[shiftedIndex] = (runningStatus.Span[shiftedIndex].Status, output);
             }
@@ -118,6 +121,7 @@ namespace Garnet.server
                     var bufferSize = session.parseState.Count - i;
                     var arr = ArrayPool<(Status, StringOutput)>.Shared.Rent(bufferSize);
                     runningStatus = arr.AsMemory()[..bufferSize];
+                    asyncOffset = i;
 
 #if DEBUG
                     // Fill with garbage to make easier to debug
@@ -147,32 +151,28 @@ namespace Garnet.server
             }
             else
             {
-                var asyncOffset = session.parseState.Count - runningStatus.Length;
-
                 var shiftedIndex = i - asyncOffset;
                 runningStatus.Span[shiftedIndex] = (status, default);
             }
         }
 
         /// <summary>
-        /// If any operations went async, complete them all and finish writing the results out.
+        /// Whether any read in this batch went to the device, so the batch cannot be finished by the thread
+        /// that issued it without first waiting for the I/O.
         /// </summary>
-        public readonly unsafe void CompletePending<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetAdvancedApi
+        public readonly bool IsPending => HasGoneAsync;
+
+        /// <summary>
+        /// Writes out the replies for a batch that went to the device, interleaving the reads that were
+        /// served from memory with the ones the completion carries, and returns the pooled status buffer.
+        /// </summary>
+        /// <param name="iter">Outputs of the completion covering every read this batch sent to the device.</param>
+        public readonly unsafe void WriteCompleted(CompletedOutputIterator<StringInput, StringOutput, long> iter)
         {
-            if (!HasGoneAsync)
-            {
-                return;
-            }
+            Debug.Assert(HasGoneAsync, "Nothing went to the device, so there is nothing to write");
 
             try
             {
-                var asyncOffset = session.parseState.Count - runningStatus.Length;
-
-                // Force completion
-                var res = storageApi.GET_CompletePending(out var iter, wait: true);
-                Debug.Assert(res, "Expected all pending operations to complete");
-
                 using (iter)
                 {
                     var runningStatusSpan = runningStatus.Span;
