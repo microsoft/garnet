@@ -50,23 +50,5 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static T BlockingWait<T>(Task<T> t)
         => t.GetAwaiter().GetResult();
-
-        /// <summary>
-        /// Block on a given <see cref="ValueTask"/>.
-        /// 
-        /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void BlockingWait(ValueTask t)
-        => t.GetAwaiter().GetResult();
-
-        /// <summary>
-        /// Block on a given <see cref="ValueTask{TResult}"/>.
-        /// 
-        /// If at all possible, you should instead await your tasks, but for cases where this is not possible use this helper.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static T BlockingWait<T>(ValueTask<T> t)
-        => t.GetAwaiter().GetResult();
     }
 }

@@ -1,12 +1,21 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.ACL;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Flushes the response buffer the cluster session shares with the RESP session that owns it, and leaves
+    /// the cursors on a buffer with room to carry on writing.
+    /// </summary>
+    /// <param name="dcurr">Write cursor, reset to the head of a usable buffer on return.</param>
+    /// <param name="dend">End of the usable buffer.</param>
+    public unsafe delegate void ResponseFlusher(ref byte* dcurr, ref byte* dend);
+
     /// <summary>
     /// Cluster RESP session
     /// </summary>
@@ -70,9 +79,22 @@ namespace Garnet.server
         void ReleaseCurrentEpoch();
 
         /// <summary>
-        /// Process cluster commands
+        /// Process cluster commands.
         /// </summary>
-        unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend);
+        /// <remarks>
+        /// A command that must wait does not block the network thread. It returns false with the wait in
+        /// <paramref name="pending"/> and writes no reply; the caller suspends the session on that wait and
+        /// then calls <see cref="CompletePendingCommand"/> to write the reply.
+        /// </remarks>
+        /// <returns>True if the command is complete; false if <paramref name="pending"/> must be awaited.</returns>
+        unsafe bool ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend, out ValueTask pending);
+
+        /// <summary>
+        /// Writes the reply of the command that returned a pending wait, now that the wait has completed.
+        /// </summary>
+        /// <param name="dcurr">Write cursor into the response buffer.</param>
+        /// <param name="dend">End of the response buffer.</param>
+        unsafe void CompletePendingCommand(ref byte* dcurr, ref byte* dend);
 
         /// <summary>
         /// Reset cached slot verification result

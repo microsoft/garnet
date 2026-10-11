@@ -487,11 +487,7 @@ namespace Garnet.cluster
 
                 if (setSlotsSucceeded)
                 {
-                    // Cannot avoid blocking here we're on the network thread
-                    AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
-
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    return SuspendOn(BumpEpochAsync(), PendingReply.Ok);
                 }
                 else
                 {
@@ -587,11 +583,7 @@ namespace Garnet.cluster
 
             if (setSlotsSucceeded)
             {
-                // Cannot avoid blocking here we're on the network thread
-                AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
-
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return SuspendOn(BumpEpochAsync(), PendingReply.Ok);
             }
             else
             {

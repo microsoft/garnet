@@ -240,6 +240,18 @@ namespace Garnet.server
         bool waitForAofBlocking = false;
 
         /// <summary>
+        /// Replies held back because the AOF records that produced them are not committed yet. Filled by
+        /// <see cref="Send"/> when the response buffer fills mid-batch, and written out in order by
+        /// <see cref="SendDeferred"/> once <see cref="FlushBatch"/> has waited for the commit.
+        /// </summary>
+        /// <remarks>
+        /// Only ever non-null under <c>--wait-for-commit</c>, and only for a reply that outgrows the response
+        /// buffer. It holds at most the replies of one batch, which is the price of acking no earlier than the
+        /// commit without blocking the network thread to do it.
+        /// </remarks>
+        List<ArraySegment<byte>> aofDeferredReplies;
+
+        /// <summary>
         /// A per-session cache for storing lua scripts
         /// </summary>
         internal readonly SessionScriptCache sessionScriptCache;
@@ -334,7 +346,7 @@ namespace Garnet.server
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
             var cp = clusterProvider ?? storeWrapper.clusterProvider;
-            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
+            clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, FlushForClusterSession, logger);
             clusterSession?.SetUserHandle(this._userHandle);
             sessionScriptCache?.SetUserHandle(this._userHandle);
 
@@ -415,6 +427,9 @@ namespace Garnet.server
 
             // First, so a parked command stops waiting before the state it would resume into is torn down.
             CancelAsyncCommands();
+
+            // Replies held back for a commit this session will now never flush.
+            DiscardDeferredReplies();
 
             // Before the database sessions below: a suspended blocking collection command is resolved on the
             // broker's thread using this session's storage session, and this is what makes that thread stop.
@@ -656,8 +671,7 @@ namespace Garnet.server
                     SendAndReset();
 
                 // Send message and dispose the network sender to end the session
-                if (dcurr > networkSender.GetResponseObjectHead())
-                    Send(networkSender.GetResponseObjectHead());
+                FlushFatal();
 
                 // The session is no longer usable, dispose it
                 networkSender.DisposeNetworkSender(true);
@@ -675,8 +689,7 @@ namespace Garnet.server
                 }
 
                 // Send message and dispose the network sender to end the session
-                if (dcurr > networkSender.GetResponseObjectHead())
-                    Send(networkSender.GetResponseObjectHead());
+                FlushFatal();
 
                 if (ex.Panic)
                 {
@@ -889,14 +902,74 @@ namespace Garnet.server
             // command suspending with an operation in flight must not flush: it resumes writing into this
             // same buffer, at this same dcurr, and flushes once the batch finishes. A synchronous
             // completion holds its replies back over the operation in exactly the same way.
-            if (dcurr > networkSender.GetResponseObjectHead() && !SuspendedHoldingBatchScope)
+            if (!SuspendedHoldingBatchScope)
+                FlushBatch();
+        }
+
+        /// <summary>
+        /// Writes the batch's replies out, first waiting for the AOF commit that makes them durable when the
+        /// batch ran a command that appended to the AOF under <c>--wait-for-commit</c>. The wait suspends the
+        /// session rather than blocking the network thread, so the flush then happens on resume.
+        /// </summary>
+        private void FlushBatch()
+        {
+            if (waitForAofBlocking)
             {
-                Send(networkSender.GetResponseObjectHead());
-                if (toDispose)
+                // A command of this batch is parked on an unbounded wait and is about to give the response
+                // object back. Take the replies with us: they go out when that command ends the batch.
+                if (asyncSuspended)
                 {
-                    networkSender.DisposeNetworkSender(true);
+                    DeferLiveReply();
+                    return;
                 }
+
+                var commit = storeWrapper.WaitForCommitAsync();
+                if (!commit.IsCompletedSuccessfully)
+                {
+                    ValueTask body;
+                    using (BeginAsyncCommand(retainBatchScope: true))
+                        body = FlushAfterCommitAsync(commit);
+
+                    _ = CompleteAsyncCommand(body);
+                    return;
+                }
+
+                // Completed synchronously, so it carries no source to observe.
+                waitForAofBlocking = false;
             }
+
+            SendBatch();
+        }
+
+        /// <summary>
+        /// Writes out everything the batch produced, in the order it was produced.
+        /// </summary>
+        private void SendBatch()
+        {
+            if (aofDeferredReplies is not null)
+            {
+                // Writing the held-back replies reuses the response buffer the live tail is sitting in, and
+                // the tail was produced last, so it joins the queue behind them rather than racing them out.
+                DeferLiveReply();
+                SendDeferred();
+            }
+            else
+            {
+                SendNow(networkSender.GetResponseObjectHead());
+            }
+
+            if (toDispose)
+                networkSender.DisposeNetworkSender(true);
+        }
+
+        /// <summary>
+        /// Writes out the batch's replies on a path that ends the session, where the commit they would have
+        /// waited for can no longer be waited for and the connection carrying the ack is destroyed with it.
+        /// </summary>
+        private void FlushFatal()
+        {
+            waitForAofBlocking = false;
+            SendBatch();
         }
 
         // Make first command in string as uppercase
@@ -1516,6 +1589,26 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Writes the reply of a cluster command whose wait has completed, now that the session scope has
+        /// been re-entered and <c>dcurr</c> points into a response buffer again.
+        /// </summary>
+        private void CompletePendingClusterCommand() => clusterSession.CompletePendingCommand(ref dcurr, ref dend);
+
+        /// <summary>
+        /// Flushes on behalf of the cluster session, which writes its replies into this session's response
+        /// buffer through cursors of its own. Adopting them keeps the two in one ordered stream, so the
+        /// cluster session's replies take part in the hold-back <see cref="Send"/> does.
+        /// </summary>
+        private void FlushForClusterSession(ref byte* clusterDcurr, ref byte* clusterDend)
+        {
+            dcurr = clusterDcurr;
+            dend = clusterDend;
+            SendAndReset();
+            clusterDcurr = dcurr;
+            clusterDend = dend;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SendAndReset(IMemoryOwner<byte> memory, int length)
         {
@@ -1599,55 +1692,111 @@ namespace Garnet.server
             // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
-            if ((int)(dcurr - d) > 0)
-            {
-                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (waitForAofBlocking)
-                {
-                    var task = storeWrapper.WaitForCommitAsync();
+            var sendBytes = (int)(dcurr - d);
+            if (sendBytes <= 0)
+                return;
 
-                    // Must block, we're on the network thread
-                    if (!task.IsCompletedSuccessfully) AsyncUtils.BlockingWait(task);
+            // The AOF records behind these bytes are not committed yet, and the commit cannot be waited for
+            // here: this runs inside a synchronous write loop, deep below any point that could suspend. Hold
+            // the bytes instead. FlushBatch waits for the commit at the end of the batch and writes them out.
+            if (waitForAofBlocking)
+            {
+                DeferReply(d, sendBytes);
+                return;
+            }
+
+            SendNow(d);
+        }
+
+        /// <summary>
+        /// Writes out the response buffer without regard for the AOF commit, for a writer that is not part of
+        /// the session's batch: an out-of-band push, or a completion running on another thread. Neither can
+        /// take part in the hold-back <see cref="Send"/> does, and neither carries an AOF-dependent reply.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void SendNow(byte* d)
+        {
+            var sendBytes = (int)(dcurr - d);
+            if (sendBytes <= 0)
+                return;
+
+            networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
+            sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
+        }
+
+        /// <summary>
+        /// Copies a reply out of the response buffer so the buffer can be reused before the reply is durable.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void DeferReply(byte* d, int sendBytes)
+        {
+            var copy = ArrayPool<byte>.Shared.Rent(sendBytes);
+            new ReadOnlySpan<byte>(d, sendBytes).CopyTo(copy);
+            (aofDeferredReplies ??= []).Add(new(copy, 0, sendBytes));
+        }
+
+        /// <summary>
+        /// Moves whatever the response buffer holds onto the queue of held-back replies, leaving the session
+        /// an empty buffer.
+        /// </summary>
+        private void DeferLiveReply()
+        {
+            var head = networkSender.GetResponseObjectHead();
+            var sendBytes = (int)(dcurr - head);
+            if (sendBytes <= 0)
+                return;
+
+            DeferReply(head, sendBytes);
+            dcurr = head;
+        }
+
+        /// <summary>
+        /// Writes out the replies held back by <see cref="DeferReply"/>, in the order they were produced,
+        /// leaving the session an empty response buffer to carry on with.
+        /// </summary>
+        private void SendDeferred()
+        {
+            var deferred = aofDeferredReplies;
+            aofDeferredReplies = null;
+
+            foreach (var reply in deferred)
+            {
+                var written = 0;
+                while (written < reply.Count)
+                {
+                    // A buffer acquired under memory pressure can be smaller than the one the reply was
+                    // captured from, so a reply is written in whatever the current buffer takes.
+                    var head = networkSender.GetResponseObjectHead();
+                    var room = (int)(networkSender.GetResponseObjectTail() - head);
+                    var chunk = Math.Min(room, reply.Count - written);
+
+                    reply.AsSpan(written, chunk).CopyTo(new Span<byte>(head, room));
+                    written += chunk;
+
+                    networkSender.SendResponse(0, chunk);
+                    sessionMetrics?.incr_total_net_output_bytes((ulong)chunk);
+
+                    networkSender.GetResponseObject();
+                    dcurr = networkSender.GetResponseObjectHead();
+                    dend = networkSender.GetResponseObjectTail();
                 }
-                int sendBytes = (int)(dcurr - d);
-                networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
-                sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
+
+                ArrayPool<byte>.Shared.Return(reply.Array);
             }
         }
 
         /// <summary>
-        /// Debug version - send one byte at a time
+        /// Drops replies held back for a commit that will never be waited for, which is only reached when the
+        /// session is torn down mid-batch.
         /// </summary>
-        private void DebugSend(byte* d)
+        private void DiscardDeferredReplies()
         {
-            // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr-d))).Replace("\n", "|").Replace("\r", "") + "]");
+            if (aofDeferredReplies is null)
+                return;
 
-            if ((int)(dcurr - d) > 0)
-            {
-                if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
-                {
-                    var task = storeWrapper.WaitForCommitAsync();
-
-                    // Must block, we're on the network thread
-                    if (!task.IsCompletedSuccessfully) AsyncUtils.BlockingWait(task);
-                }
-                int sendBytes = (int)(dcurr - d);
-                byte[] buffer = new byte[sendBytes];
-                fixed (byte* dest = buffer)
-                    Buffer.MemoryCopy(d, dest, sendBytes, sendBytes);
-
-
-                for (int i = 0; i < sendBytes; i++)
-                {
-                    *d = buffer[i];
-                    networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), 1);
-                    networkSender.GetResponseObject();
-                    d = dcurr = networkSender.GetResponseObjectHead();
-                    dend = networkSender.GetResponseObjectTail();
-                }
-
-                sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
-            }
+            foreach (var reply in aofDeferredReplies)
+                ArrayPool<byte>.Shared.Return(reply.Array);
+            aofDeferredReplies = null;
         }
 
         /// <summary>

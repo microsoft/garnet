@@ -1267,7 +1267,7 @@ namespace Garnet.server
         private void HandleAofCommitMode(RespCommand cmd)
         {
             // Reset waitForAofBlocking if there is no pending unsent data on the network
-            if (dcurr == networkSender.GetResponseObjectHead())
+            if (dcurr == networkSender.GetResponseObjectHead() && aofDeferredReplies is null)
                 waitForAofBlocking = false;
 
             // During a started transaction (Network Skip mode) the cmd is not executed so we can safely skip setting the AOF blocking flag
