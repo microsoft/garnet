@@ -263,6 +263,9 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled). Refreshed from the runtime config at the
         // start of each message batch so CONFIG SET slowlog-log-slower-than affects live sessions.
         long slowLogThreshold;
+        // Command whose slow log entry is owed once its suspended body completes. A suspending command has
+        // not run for its duration yet - that duration is the wait - so it is accounted on resume instead.
+        RespCommand slowLogSuspendedCmd = RespCommand.INVALID;
 
         /// <summary>
         /// Create a new RESP server session
@@ -417,6 +420,10 @@ namespace Garnet.server
             // First, so a parked command stops waiting before the state it would resume into is torn down.
             CancelAsyncCommands();
 
+            // Before the database sessions below: a suspended blocking collection command is resolved on the
+            // broker's thread using this session's storage session, and this is what makes that thread stop.
+            storeWrapper.itemBroker?.HandleSessionDisposed(this);
+
             if (recvBufferPtr != null)
             {
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
@@ -442,7 +449,6 @@ namespace Garnet.server
                 storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics, commandStats);
 
             subscribeBroker?.RemoveSubscription(this);
-            storeWrapper.itemBroker?.HandleSessionDisposed(this);
             sessionScriptCache?.Dispose();
         }
 
@@ -867,7 +873,13 @@ namespace Garnet.server
 
                 // Handle metrics and special cases
                 if (LatencyMetrics != null) opCount++;
-                if (slowLogThreshold > 0) HandleSlowLog(cmd);
+                if (slowLogThreshold > 0)
+                {
+                    if (asyncSuspended)
+                        slowLogSuspendedCmd = cmd;
+                    else
+                        HandleSlowLog(cmd);
+                }
                 if (sessionMetrics != null)
                 {
                     sessionMetrics.total_commands_processed++;

@@ -406,6 +406,16 @@ namespace Garnet.server
             finally
             {
                 ReturnAsyncBox(box);
+
+                // The command has now run for its whole duration, measured from the start of the batch that
+                // carried it, so the entry it was owed can be written.
+                if (slowLogSuspendedCmd != RespCommand.INVALID)
+                {
+                    var suspendedCmd = slowLogSuspendedCmd;
+                    slowLogSuspendedCmd = RespCommand.INVALID;
+                    if (slowLogThreshold > 0)
+                        HandleSlowLog(suspendedCmd);
+                }
             }
         }
 

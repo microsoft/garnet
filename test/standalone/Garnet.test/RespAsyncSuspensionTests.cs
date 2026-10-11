@@ -29,6 +29,7 @@ namespace Garnet.test
         const string Ok = "+OK\r\n";
         const string Pong = "+PONG\r\n";
         const string Queued = "+QUEUED\r\n";
+        const string NullArray = "*-1\r\n";
 
         /// <summary>
         /// Whether the server under test terminates TLS. The two transports take entirely separate paths
@@ -537,6 +538,150 @@ namespace Garnet.test
                 foreach (var c in clients)
                     c?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// The same claim as <see cref="MoreSessionsBlockConcurrentlyThanTheThreadPoolHasThreads"/>, made for
+        /// a real blocking command rather than the debug probe. <c>BLPOP</c> waits on the collection item
+        /// broker, and the number of clients that can wait at once is unrelated to the size of the thread pool.
+        /// </summary>
+        [Test]
+        public void MoreSessionsBlockOnBlpopThanTheThreadPoolHasThreads()
+        {
+            const int SessionCount = 256;
+            const int CappedWorkers = 32;
+            const double TimeoutSeconds = 2.0;
+
+            static string KeyOf(int i) => $"blpop-park-{i}";
+
+            // The pool is capped well below the session count for the duration of the test. Without the cap
+            // the claim is unfalsifiable on a large host: the pool happily injects a thread per blocked wait,
+            // in well under a second, and a thread-per-wait implementation passes on thread count and on time.
+            ThreadPool.GetMinThreads(out var minWorkers, out var minIo);
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+
+            var clients = new RawRespSession[SessionCount];
+            try
+            {
+                if (!ThreadPool.SetMinThreads(Math.Min(minWorkers, CappedWorkers), minIo) ||
+                    !ThreadPool.SetMaxThreads(CappedWorkers, maxIo))
+                    Assert.Ignore("Could not cap the thread pool, so the session count cannot be made to exceed it.");
+
+                for (var i = 0; i < SessionCount; i++)
+                    clients[i] = new RawRespSession(useTls);
+
+                // Each session waits on its own key that nobody ever pushes to, so each one blocks for its
+                // whole timeout and then reports no item. The elapsed time is therefore a direct measure of
+                // how many of the waits overlapped.
+                var sw = Stopwatch.StartNew();
+                var timeout = TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+                for (var i = 0; i < SessionCount; i++)
+                    clients[i].Send("BLPOP", KeyOf(i), timeout);
+
+                for (var i = 0; i < SessionCount; i++)
+                    ClassicAssert.AreEqual(NullArray, clients[i].ReadReply(), $"Session {i} did not time out cleanly.");
+                sw.Stop();
+
+                // Holding a thread per wait admits at most CappedWorkers of them at a time, so the waits would
+                // run in roughly SessionCount / CappedWorkers sequential rounds of a full timeout each.
+                ClassicAssert.Less(sw.Elapsed.TotalSeconds, TimeoutSeconds * 4,
+                    $"{SessionCount} concurrent BLPOPs took {sw.Elapsed.TotalSeconds:F1}s against a pool of " +
+                    $"{CappedWorkers} threads, which indicates they were serialized on those threads rather than parked.");
+                ClassicAssert.GreaterOrEqual(sw.Elapsed.TotalSeconds, TimeoutSeconds * 0.8,
+                    "The waits finished faster than a single timeout, so they did not take effect.");
+            }
+            finally
+            {
+                foreach (var c in clients)
+                    c?.Dispose();
+
+                _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                _ = ThreadPool.SetMinThreads(minWorkers, minIo);
+            }
+        }
+
+        /// <summary>
+        /// Every session parked on its own key is woken by a push to that key, and receives the item pushed to
+        /// it rather than another session's. The pushes come from one connection while all of them are parked.
+        /// </summary>
+        [Test]
+        public void EveryParkedBlpopIsWokenByItsOwnPush()
+        {
+            const int SessionCount = 256;
+
+            static string KeyOf(int i) => $"blpop-wake-{i}";
+            static string ValueOf(int i) => $"item-{i}";
+
+            var clients = new RawRespSession[SessionCount];
+            try
+            {
+                for (var i = 0; i < SessionCount; i++)
+                {
+                    clients[i] = new RawRespSession(useTls);
+                    clients[i].Send("BLPOP", KeyOf(i), "30");
+                }
+
+                // Long enough for every one of them to have been parked before the first push lands, so the
+                // pushes exercise the broker's wake path rather than its first-attempt path.
+                Thread.Sleep(1000);
+
+                using (var pusher = new RawRespSession(useTls))
+                {
+                    for (var i = 0; i < SessionCount; i++)
+                        ClassicAssert.AreEqual(":1\r\n", pusher.Execute("RPUSH", KeyOf(i), ValueOf(i)));
+                }
+
+                for (var i = 0; i < SessionCount; i++)
+                {
+                    var key = KeyOf(i);
+                    var value = ValueOf(i);
+                    ClassicAssert.AreEqual($"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n",
+                        clients[i].ReadReply(), $"Session {i} did not receive its own pushed item.");
+                }
+            }
+            finally
+            {
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A blocked <c>BLPOP</c> is resolved on the broker's thread, using the waiting session's storage
+        /// session, so a client that vanishes mid-wait races that thread against its own teardown. The broker
+        /// has a single main loop and does not catch exceptions out of it, so losing that race stops every
+        /// blocking collection command on the server for good -- which is what the final pop here detects.
+        /// </summary>
+        [Test]
+        public void DisconnectingWhileBlockedOnBlpopLeavesTheBrokerRunning()
+        {
+            const int Rounds = 100;
+            using var pusher = new RawRespSession(useTls);
+
+            for (var round = 0; round < Rounds; round++)
+            {
+                var key = $"blpop-abort-{round}";
+                var waiter = new RawRespSession(useTls);
+                waiter.Send("BLPOP", key, "30");
+
+                // Let the session reach the parked state, then abort it at the moment the push that would
+                // wake it arrives.
+                Thread.Sleep(1);
+                var abort = new Thread(waiter.AbortAndDispose) { IsBackground = true };
+                abort.Start();
+                _ = pusher.Execute("RPUSH", key, "v");
+                abort.Join();
+            }
+
+            // A pop that blocks and is then served proves the broker's loop survived every one of those races.
+            const string FinalKey = "blpop-abort-final";
+            using var survivor = new RawRespSession(useTls);
+            ClassicAssert.AreEqual(Pong, survivor.Execute("PING"));
+
+            survivor.Send("BLPOP", FinalKey, "30");
+            Thread.Sleep(200);
+            ClassicAssert.AreEqual(":1\r\n", pusher.Execute("RPUSH", FinalKey, "done"));
+            ClassicAssert.AreEqual($"*2\r\n${FinalKey.Length}\r\n{FinalKey}\r\n$4\r\ndone\r\n", survivor.ReadReply());
         }
 
         [Test]
