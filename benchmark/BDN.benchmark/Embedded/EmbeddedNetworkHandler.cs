@@ -44,8 +44,8 @@ namespace Embedded.server
             else
             {
                 var pending = BeginNetworkReceiveWithoutTLS(request.buffer.Length, out var demand);
-                if (!pending.IsCompletedSuccessfully)
-                    CompleteNetworkReceiveWithoutTLS(await pending.ConfigureAwait(false), demand);
+                if (pending.HasValue)
+                    CompleteNetworkReceiveWithoutTLS(await pending.Value.ConfigureAwait(false), demand);
             }
 
             Debug.Assert(networkBytesRead == 0);

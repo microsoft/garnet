@@ -256,8 +256,12 @@ namespace Garnet.common
                     return null;
                 }
 
+                // A returned consume means this pass is unfinished, whether or not it has completed by now:
+                // a resume on another thread can complete it the instant it is published, and treating that
+                // as "already handled" would skip the completion half and leave the batch's bytes unconsumed
+                // for the next pass to parse again.
                 var pending = BeginNetworkReceiveWithoutTLS(e.BytesTransferred, out demand);
-                if (!pending.IsCompletedSuccessfully)
+                if (pending.HasValue)
                     return pending;
 
                 e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);

@@ -370,9 +370,10 @@ namespace Garnet.networking
         /// <see cref="CompleteNetworkReceiveWithoutTLS"/>.
         /// </param>
         /// <returns>
-        /// A completed task if the pass is already finished, otherwise the session's pending consume. The
-        /// caller owns driving that to completion and then calling
-        /// <see cref="CompleteNetworkReceiveWithoutTLS"/>.
+        /// Null if the pass is already finished, otherwise the session's consume. The caller owns driving that
+        /// to completion and then calling <see cref="CompleteNetworkReceiveWithoutTLS"/>. The consume carries
+        /// no such ownership itself: a suspended command may be resumed on another thread the instant it is
+        /// published, so the returned consume can be complete before the caller ever looks at it.
         /// </returns>
         /// <remarks>
         /// Split from its completion half so that the whole suspension path costs a single asynchronous frame.
@@ -380,7 +381,7 @@ namespace Garnet.networking
         /// </remarks>
 #pragma warning disable VSTHRD200 // Paired Begin/Complete halves of one receive pass; an "Async" suffix would
         // imply the method itself is awaited to completion, which it is not.
-        public unsafe ValueTask<int> BeginNetworkReceiveWithoutTLS(int bytesTransferred, out int demand)
+        public unsafe ValueTask<int>? BeginNetworkReceiveWithoutTLS(int bytesTransferred, out int demand)
         {
             networkBytesRead += bytesTransferred;
             transportReceiveBuffer = networkReceiveBuffer;
@@ -396,7 +397,7 @@ namespace Garnet.networking
                 return consumed;
 
             CompleteNetworkReceiveWithoutTLS(consumed.GetAwaiter().GetResultGuarded(), demand);
-            return default;
+            return null;
         }
 #pragma warning restore VSTHRD200
 
@@ -598,6 +599,12 @@ namespace Garnet.networking
         const int NothingProcessed = -1;
 
         /// <summary>
+        /// Whether a <see cref="BeginProcess"/> is still waiting for its <see cref="CompleteProcess"/>.
+        /// Maintained for the debug assertion in <see cref="BeginProcess"/> only.
+        /// </summary>
+        bool processPassOutstanding;
+
+        /// <summary>
         /// Hands the buffered transport bytes to the session.
         /// </summary>
         /// <returns>
@@ -608,10 +615,17 @@ namespace Garnet.networking
 #pragma warning disable VSTHRD200 // See BeginNetworkReceiveWithoutTLS.
         unsafe ValueTask<int> BeginProcess()
         {
+            // A pass that is still outstanding means its completion half was skipped, which leaves the bytes
+            // it consumed in the buffer for this pass to parse a second time. Caught here because the next
+            // receive is where a skipped completion first becomes observable.
+            Debug.Assert(!processPassOutstanding, "A receive pass began while the previous one was unfinished");
+
             if (transportBytesRead > 0 &&
                 (session != null || serverHook.TryCreateMessageConsumer(new Span<byte>(transportReceiveBufferPtr, transportBytesRead), GetNetworkSender(), out session)))
             {
-                return session.TryConsumeMessagesAsync(transportReceiveBufferPtr + transportReadHead, transportBytesRead - transportReadHead);
+                var consumed = session.TryConsumeMessagesAsync(transportReceiveBufferPtr + transportReadHead, transportBytesRead - transportReadHead);
+                SetProcessPassOutstanding(true);
+                return consumed;
             }
 
             return new ValueTask<int>(NothingProcessed);
@@ -624,6 +638,8 @@ namespace Garnet.networking
         /// <param name="consumed">Bytes the session consumed, or <see cref="NothingProcessed"/>.</param>
         void CompleteProcess(int consumed)
         {
+            SetProcessPassOutstanding(false);
+
             if (consumed == NothingProcessed)
                 return;
 
@@ -634,6 +650,9 @@ namespace Garnet.networking
             if (readerStatus == TlsReaderStatus.Rest)
                 ShiftTransportReceiveBuffer();
         }
+
+        [Conditional("DEBUG")]
+        void SetProcessPassOutstanding(bool outstanding) => processPassOutstanding = outstanding;
 
         /// <summary>
         /// Processes the buffered transport bytes, suspending if a command in the batch does.
