@@ -464,7 +464,9 @@ namespace Garnet.test
                 ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "missing", "FINISH")).Message);
             ClassicAssert.IsFalse(db.KeyExists("missing"));
 
+            await WaitForXVIMPORTCompletionAsync(db, "FINISH").ConfigureAwait(false);
             ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "FINISH", "VECTOR", new byte[] { 1, 0, 0, 0 }, new byte[12]));
+
             ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "FINISH", "FP32", new byte[12], "first", "NOQUANT", "M", 4));
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "FINISH", "FINISH"));
             ClassicAssert.AreEqual(1, (int)db.Execute("VCARD", "FINISH"));

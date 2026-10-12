@@ -32,6 +32,7 @@ namespace Garnet.server
         private readonly record struct VectorSetReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks, VectorDistanceMetricType DistanceMetric, uint? ImportTermType = null);
 
         private int replicationReplayStarted;
+        private uint nextRoundRobinIndex;
         private CountingEventSlim replicationBlockEvent;
         private readonly Channel<VectorSetReplicationState>[] replicationReplayChannels;
         private readonly Task[] replicationReplayTasks;
@@ -257,7 +258,7 @@ namespace Garnet.server
                 key.CopyTo(keyCopy.Span);
                 id.CopyTo(idCopy.Span);
                 value.CopyTo(valueCopy.Span);
-                QueueVectorReplay(new(keyCopy, 0, 0, default, valueCopy, idCopy, default, 0, default, 0, default, termType), obtainServerSession);
+                QueueVectorReplay(new(keyCopy, 0, 0, default, valueCopy, idCopy, default, 0, default, 0, default, termType), obtainServerSession, roundRobinReplays: true);
                 return;
             }
             else
@@ -512,10 +513,10 @@ namespace Garnet.server
             var attributesBytes = ArrayPool<byte>.Shared.Rent(attributes.Length).AsMemory()[..attributes.Length];
             attributes.CopyTo(attributesBytes.Span);
 
-            QueueVectorReplay(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric), obtainServerSession);
+            QueueVectorReplay(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric), obtainServerSession, roundRobinReplays: false);
         }
 
-        private void QueueVectorReplay(VectorSetReplicationState state, Func<RespServerSession> obtainServerSession)
+        private void QueueVectorReplay(VectorSetReplicationState state, Func<RespServerSession> obtainServerSession, bool roundRobinReplays)
         {
             if (replicationReplayCancellation.IsCancellationRequested || replicationReplayStarted < 0)
             {
@@ -528,8 +529,10 @@ namespace Garnet.server
             }
 
             // Place all potential updates to a given element (regardless of Vector Set) on the same task so we respect the AOF ordering
-
-            var replayChannelIndex = (int)((uint)SpanByteComparer.StaticGetHashCode64(state.Element.Span) % replicationReplayChannels.Length);
+            // 
+            // For XVIMPORT we can distribute these randomly, because imports don't have element available and won't repeatedly set the same id anyway
+            var hashOrIndex = roundRobinReplays ? (uint)SpanByteComparer.StaticGetHashCode64(state.Element.Span) : Interlocked.Increment(ref nextRoundRobinIndex);
+            var replayChannelIndex = (int)(hashOrIndex % replicationReplayChannels.Length);
 
             // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
             replicationBlockEvent.Increment();
