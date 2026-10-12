@@ -99,6 +99,57 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AResumeForAFinishedSuspensionIsDropped()
+        {
+            var handoff = new SuspensionHandoff();
+
+            handoff.Arm();
+            ClassicAssert.IsFalse(handoff.Park());
+            ClassicAssert.IsTrue(handoff.ClaimResume());
+            handoff.Complete();
+
+            // Nothing is in flight, so there is no body for this completion to drive. Driving one anyway
+            // re-enters the session with a null resume box, which ConsumeCore reads as a fresh batch and
+            // replays from the start of the receive buffer -- a second reply for every command in it.
+            ClassicAssert.IsFalse(handoff.ClaimResume());
+        }
+
+        [Test]
+        public async Task ExactlyOneOfTwoCompletionsDrivesAParkedResume()
+        {
+            var handoff = new SuspensionHandoff();
+
+            for (var round = 0; round < 20_000; round++)
+            {
+                handoff.Arm();
+                ClassicAssert.IsFalse(handoff.Park());
+
+                var first = false;
+                var second = false;
+                using var start = new SemaphoreSlim(0, 2);
+
+                var one = Task.Run(() =>
+                {
+                    start.Wait();
+                    first = handoff.ClaimResume();
+                });
+                var two = Task.Run(() =>
+                {
+                    start.Wait();
+                    second = handoff.ClaimResume();
+                });
+
+                start.Release(2);
+                await Task.WhenAll(one, two).WaitAsync(WaitLimit);
+
+                ClassicAssert.IsTrue(first ^ second,
+                    $"round {round}: first={first} second={second}");
+
+                handoff.Complete();
+            }
+        }
+
+        [Test]
         public void AResumeEntersAnOpenGateAndLeavesItOpen()
         {
             var gate = new ResumeGate();
