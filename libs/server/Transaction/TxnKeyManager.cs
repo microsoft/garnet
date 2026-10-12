@@ -9,6 +9,14 @@ namespace Garnet.server
     sealed partial class TransactionManager
     {
         /// <summary>
+        /// Requires that all hash buckets get locked
+        /// </summary>
+        public void LockEntireKeyspace()
+        {
+            lockEntireKeyspace = true;
+        }
+
+        /// <summary>
         /// Save key entry
         /// </summary>
         /// <param name="key"></param>

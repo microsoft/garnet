@@ -186,7 +186,17 @@ namespace Garnet.server
                 return true;
             }
 
-            txnManager.LockKeys(commandInfo, isSubCommand);
+            if (cmd == RespCommand.KEYS)
+            {
+                // KEYS is a terrible command that requires both consistency and traversing the whole keyspace
+                //
+                // So if we're in a transaction, lock _everything_
+                txnManager.LockEntireKeyspace();
+            }
+            else
+            {
+                txnManager.LockKeys(commandInfo, isSubCommand);
+            }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
                 SendAndReset();
