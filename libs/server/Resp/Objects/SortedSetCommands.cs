@@ -112,26 +112,10 @@ namespace Garnet.server
             var input = new ObjectInput(header);
             var output = new ObjectOutput();
 
-            var status = storageApi.SortedSetLength(key, ref input, ref output);
+            var status = storageApi.Read_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.OK:
-                    // Process output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-            }
-
-            return true;
+            return CompleteObjectOp(status, ref output, pending,
+                new ObjectReplyShape(ObjectMissReply.Zero, ObjectHitReply.Int32Result1), ref storageApi);
         }
 
         /// <summary>
@@ -291,7 +275,7 @@ namespace Garnet.server
 
             var status = storageApi.Read_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            return CompleteObjectOp(status, ref output, pending, ObjectMissReply.NullPerField, ref storageApi);
+            return CompleteObjectOp(status, ref output, pending, ObjectMissReply.NullPerArg, ref storageApi);
         }
 
         /// <summary>
@@ -788,37 +772,18 @@ namespace Garnet.server
 
             var status = GarnetStatus.NOTFOUND;
             ObjectOutput output = default;
+            var pending = false;
 
             // This prevents going to the backend if ZRANDMEMBER is called with a count of 0
             if (paramCount != 0)
             {
                 // Prepare output
                 output = GetObjectOutput();
-                status = storageApi.SortedSetRandomMember(key, ref input, ref output);
+                status = storageApi.Read_ObjectStore_WithPending(key, ref input, ref output, out pending);
             }
 
-            switch (status)
-            {
-                case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    if (includedCount)
-                    {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTYLIST, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else
-                    {
-                        WriteNull();
-                    }
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-            }
-            return true;
+            return CompleteObjectOp(status, ref output, pending,
+                new ObjectReplyShape(ObjectMissReply.EmptyArrayIfFlagElseNull, flag: includedCount), ref storageApi);
         }
 
         /// <summary>
@@ -1641,29 +1606,10 @@ namespace Garnet.server
 
             var output = GetObjectOutput();
 
-            var status = storageApi.SortedSetTimeToLive(key, ref input, ref output);
+            var status = storageApi.Read_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteArrayLength(numMembers, ref dcurr, dend))
-                        SendAndReset();
-                    for (var i = 0; i < numMembers; i++)
-                    {
-                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    break;
-                default:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-            }
-
-            return true;
+            return CompleteObjectOp(status, ref output, pending,
+                new ObjectReplyShape(ObjectMissReply.MinusTwoPerCount, count: numMembers), ref storageApi);
         }
 
         /// <summary>

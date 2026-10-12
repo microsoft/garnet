@@ -952,11 +952,18 @@ namespace Garnet.server
                         body = FlushAfterCommitAsync(commit);
 
                     _ = CompleteAsyncCommand(body);
-                    return;
-                }
 
-                // Completed synchronously, so it carries no source to observe.
-                waitForAofBlocking = false;
+                    // The body suspends only if the commit was still outstanding when it awaited. A commit
+                    // landing in between runs the body to completion inline, and the batch then flushes
+                    // here, exactly as it does when the commit is already complete on entry.
+                    if (asyncSuspended)
+                        return;
+                }
+                else
+                {
+                    // Completed synchronously, so it carries no source to observe.
+                    waitForAofBlocking = false;
+                }
             }
 
             SendBatch();

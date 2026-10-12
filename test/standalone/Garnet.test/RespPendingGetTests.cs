@@ -1207,11 +1207,17 @@ namespace Garnet.test
         /// <summary>Sorted set <paramref name="i"/>, read back after it has left memory.</summary>
         static string ZsetKey(int i) => $"pendingzset:{i:D6}";
 
+        /// <summary>List <paramref name="i"/>, read back after it has left memory.</summary>
+        static string ListKey(int i) => $"pendinglist:{i:D6}";
+
+        /// <summary>Set <paramref name="i"/>, read back after it has left memory.</summary>
+        static string SetKey(int i) => $"pendingset:{i:D6}";
+
         /// <summary>Fields written into every hash, and members into every sorted set.</summary>
         const int ObjectFields = 3;
 
         /// <summary>
-        /// Writes enough hashes and sorted sets that the earliest of them are no longer in memory, so
+        /// Writes enough of every object type that the earliest of them are no longer in memory, so
         /// reading them back has to go to the device.
         /// </summary>
         void PopulateObjects()
@@ -1225,13 +1231,17 @@ namespace Garnet.test
             {
                 var entries = new HashEntry[ObjectFields];
                 var members = new SortedSetEntry[ObjectFields];
+                var values = new RedisValue[ObjectFields];
                 for (var f = 0; f < ObjectFields; f++)
                 {
                     entries[f] = new HashEntry($"f{f}", $"{i}-{f}");
                     members[f] = new SortedSetEntry($"m{f}", (i * ObjectFields) + f);
+                    values[f] = $"m{f}";
                 }
 
                 _ = batch.HashSetAsync(HashKey(i), entries);
+                _ = batch.ListRightPushAsync(ListKey(i), values);
+                _ = batch.SetAddAsync(SetKey(i), values);
                 last = batch.SortedSetAddAsync(ZsetKey(i), members);
             }
             batch.Execute();
@@ -1241,7 +1251,7 @@ namespace Garnet.test
             deviceFactoryCreator.ResetReadCount();
         }
 
-        /// <summary>Hashes and sorted sets written by <see cref="PopulateObjects"/>.</summary>
+        /// <summary>Objects of each type written by <see cref="PopulateObjects"/>.</summary>
         const int PopulatedObjects = 4096;
 
         /// <summary>
@@ -1260,21 +1270,28 @@ namespace Garnet.test
 
             using var client = new RawClient();
 
-            var hashOnDevice = HashKey(0);
-            var hashInMemory = $"pendinghash:9{0:D5}";
-            var zsetOnDevice = ZsetKey(0);
-            var zsetInMemory = $"pendingzset:9{0:D5}";
-            ClassicAssert.AreEqual(hashOnDevice.Length, hashInMemory.Length);
-            ClassicAssert.AreEqual(zsetOnDevice.Length, zsetInMemory.Length);
+            // The first read of a record copies it back into memory, so every comparison takes an object
+            // that has not been read yet. Its twin is written here and so is still in memory.
+            var next = 0;
 
-            for (var f = 0; f < ObjectFields; f++)
+            void AssertSameAcrossASuspension(string type, params string[] rest)
             {
-                _ = client.Execute("HSET", hashInMemory, $"f{f}", $"0-{f}");
-                _ = client.Execute("ZADD", zsetInMemory, f.ToString(CultureInfo.InvariantCulture), $"m{f}");
-            }
+                var i = ++next;
+                var onDevice = $"pending{type}:{i:D6}";
+                var inMemory = $"pending{type}:9{i:D5}";
 
-            void AssertSameAcrossASuspension(string onDevice, string inMemory, params string[] rest)
-            {
+                for (var f = 0; f < ObjectFields; f++)
+                {
+                    var score = ((i * ObjectFields) + f).ToString(CultureInfo.InvariantCulture);
+                    _ = type switch
+                    {
+                        "hash" => client.Execute("HSET", inMemory, $"f{f}", $"{i}-{f}"),
+                        "zset" => client.Execute("ZADD", inMemory, score, $"m{f}"),
+                        "list" => client.Execute("RPUSH", inMemory, $"m{f}"),
+                        _ => client.Execute("SADD", inMemory, $"m{f}"),
+                    };
+                }
+
                 var verb = rest[0];
                 string[] ArgsFor(string key) => [verb, key, .. rest[1..]];
 
@@ -1289,8 +1306,10 @@ namespace Garnet.test
                     $"{verb} answered differently across a suspension.");
             }
 
-            void Hash(params string[] rest) => AssertSameAcrossASuspension(hashOnDevice, hashInMemory, rest);
-            void Zset(params string[] rest) => AssertSameAcrossASuspension(zsetOnDevice, zsetInMemory, rest);
+            void Hash(params string[] rest) => AssertSameAcrossASuspension("hash", rest);
+            void Zset(params string[] rest) => AssertSameAcrossASuspension("zset", rest);
+            void List(params string[] rest) => AssertSameAcrossASuspension("list", rest);
+            void Set(params string[] rest) => AssertSameAcrossASuspension("set", rest);
 
             // Hits, misses and the multi-field shapes, whose miss reply is as long as the argument list.
             Hash("HGET", "f0");
@@ -1298,6 +1317,14 @@ namespace Garnet.test
             Hash("HGETALL");
             Hash("HMGET", "f0", "f1", "f2");
             Hash("HMGET", "f0", "absent");
+            Hash("HLEN");
+            Hash("HSTRLEN", "f0");
+            Hash("HSTRLEN", "absent");
+            Hash("HEXISTS", "f0");
+            Hash("HEXISTS", "absent");
+            Hash("HKEYS");
+            Hash("HVALS");
+            Hash("HTTL", "FIELDS", "2", "f0", "absent");
 
             Zset("ZSCORE", "m0");
             Zset("ZSCORE", "absent");
@@ -1308,11 +1335,42 @@ namespace Garnet.test
             Zset("ZCOUNT", "-inf", "+inf");
             Zset("ZRANGE", "0", "-1");
             Zset("ZRANGE", "0", "-1", "WITHSCORES");
+            Zset("ZCARD");
+            Zset("ZTTL", "MEMBERS", "2", "m0", "absent");
+
+            // GEODIST and GEOPOS read the sorted set the GEO commands are built on.
+            Zset("GEODIST", "m0", "m1");
+            Zset("GEOPOS", "m0", "m1");
+
+            List("LLEN");
+            List("LRANGE", "0", "-1");
+            List("LINDEX", "0");
+            List("LINDEX", "99");
+            List("LPOS", "m1");
+            List("LPOS", "absent");
+            List("LPOS", "m1", "COUNT", "0");
+
+            Set("SCARD");
+            Set("SMEMBERS");
+            Set("SISMEMBER", "m0");
+            Set("SISMEMBER", "absent");
+            Set("SMISMEMBER", "m0", "absent");
+
+            // A count of zero answers without reading the key at all, so it must not reach the device.
+            foreach (var argv in new[] { new[] { "HRANDFIELD", HashKey(0), "0" }, ["ZRANDMEMBER", ZsetKey(0), "0"], ["SRANDMEMBER", SetKey(0), "0"] })
+            {
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                ClassicAssert.AreEqual("*0\r\n", client.Execute(argv));
+                ClassicAssert.AreEqual(readsBefore, deviceFactoryCreator.ReadCount,
+                    $"{argv[0]} with a count of zero read the device.");
+            }
 
             // A read of a key that was never written, which has to answer the miss reply rather than wait.
             ClassicAssert.AreEqual("$-1\r\n", client.Execute("HGET", "pendinghash:absent", "f0"));
             ClassicAssert.AreEqual("*0\r\n", client.Execute("HGETALL", "pendinghash:absent"));
             ClassicAssert.AreEqual(":0\r\n", client.Execute("ZCOUNT", "pendingzset:absent", "-inf", "+inf"));
+            ClassicAssert.AreEqual(":0\r\n", client.Execute("SCARD", "pendingset:absent"));
+            ClassicAssert.AreEqual("$-1\r\n", client.Execute("LINDEX", "pendinglist:absent", "0"));
         }
 
         /// <summary>
