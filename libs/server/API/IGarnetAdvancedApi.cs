@@ -10,6 +10,14 @@ namespace Garnet.server
     /// <summary>
     /// Advanced API calls, not to be used by normal clients
     /// </summary>
+    /// <remarks>
+    /// The <c>_WithPending</c> methods are the non-waiting counterparts of the per-command methods on
+    /// <see cref="IGarnetReadApi"/>: they report that an operation went to the device instead of waiting on
+    /// it, leaving the caller to decide how to wait. That is what lets a RESP command handler suspend its
+    /// session rather than hold the network completion thread, so these are what a handler calls. The cost
+    /// is that the caller owns the pending protocol -- it must drain, through a <c>CompletePendingAsync</c>
+    /// or an equivalent, before it reads an output.
+    /// </remarks>
     public interface IGarnetAdvancedApi
     {
         /// <summary>

@@ -10,6 +10,14 @@ namespace Garnet.server
 {
     sealed partial class StorageSession : IDisposable
     {
+        /// <summary>
+        /// Reads from the unified store, waiting on the device when the record is not in memory.
+        /// </summary>
+        /// <remarks>
+        /// The wait holds the calling thread for the device round trip, so this is for a caller that owns
+        /// the thread it runs on. A RESP command handler runs on the network completion thread and must use
+        /// <see cref="Read_UnifiedStore_WithPending{TUnifiedContext}"/> instead.
+        /// </remarks>
         public GarnetStatus Read_UnifiedStore<TUnifiedContext>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -21,6 +29,14 @@ namespace Garnet.server
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
+        /// <summary>
+        /// Updates the unified store, waiting on the device when the record is not in memory.
+        /// </summary>
+        /// <remarks>
+        /// The wait holds the calling thread for the device round trip, so this is for a caller that owns
+        /// the thread it runs on. A RESP command handler runs on the network completion thread and must use
+        /// <see cref="RMW_UnifiedStore_WithPending{TUnifiedContext}"/> instead.
+        /// </remarks>
         public GarnetStatus RMW_UnifiedStore<TUnifiedContext>(ReadOnlySpan<byte> key, ref UnifiedInput input, ref UnifiedOutput output, ref TUnifiedContext context)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
