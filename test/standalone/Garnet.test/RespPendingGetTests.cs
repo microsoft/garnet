@@ -1201,14 +1201,151 @@ namespace Garnet.test
                 "The GET behind the wrong-type one lost its reply");
         }
 
+        /// <summary>Hash <paramref name="i"/>, read back after it has left memory.</summary>
+        static string HashKey(int i) => $"pendinghash:{i:D6}";
+
+        /// <summary>Sorted set <paramref name="i"/>, read back after it has left memory.</summary>
+        static string ZsetKey(int i) => $"pendingzset:{i:D6}";
+
+        /// <summary>Fields written into every hash, and members into every sorted set.</summary>
+        const int ObjectFields = 3;
+
+        /// <summary>
+        /// Writes enough hashes and sorted sets that the earliest of them are no longer in memory, so
+        /// reading them back has to go to the device.
+        /// </summary>
+        void PopulateObjects()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var batch = db.CreateBatch();
+            Task last = null;
+            for (var i = 0; i < PopulatedObjects; i++)
+            {
+                var entries = new HashEntry[ObjectFields];
+                var members = new SortedSetEntry[ObjectFields];
+                for (var f = 0; f < ObjectFields; f++)
+                {
+                    entries[f] = new HashEntry($"f{f}", $"{i}-{f}");
+                    members[f] = new SortedSetEntry($"m{f}", (i * ObjectFields) + f);
+                }
+
+                _ = batch.HashSetAsync(HashKey(i), entries);
+                last = batch.SortedSetAddAsync(ZsetKey(i), members);
+            }
+            batch.Execute();
+
+            last.Wait(TimeSpan.FromSeconds(60));
+
+            deviceFactoryCreator.ResetReadCount();
+        }
+
+        /// <summary>Hashes and sorted sets written by <see cref="PopulateObjects"/>.</summary>
+        const int PopulatedObjects = 4096;
+
+        /// <summary>
+        /// The object-store reads answer the same whether their record is in memory or on the device. Each
+        /// is asked of a record that has left memory and of an identical one that has not, and the two
+        /// replies have to match byte for byte.
+        /// </summary>
+        /// <remarks>
+        /// The control is written last, so it is still in memory, and is given the same key length and the
+        /// same contents as the key under test.
+        /// </remarks>
+        [Test]
+        public void ObjectReadsAnswerFromTheDeviceExactlyAsTheyDoFromMemory()
+        {
+            PopulateObjects();
+
+            using var client = new RawClient();
+
+            var hashOnDevice = HashKey(0);
+            var hashInMemory = $"pendinghash:9{0:D5}";
+            var zsetOnDevice = ZsetKey(0);
+            var zsetInMemory = $"pendingzset:9{0:D5}";
+            ClassicAssert.AreEqual(hashOnDevice.Length, hashInMemory.Length);
+            ClassicAssert.AreEqual(zsetOnDevice.Length, zsetInMemory.Length);
+
+            for (var f = 0; f < ObjectFields; f++)
+            {
+                _ = client.Execute("HSET", hashInMemory, $"f{f}", $"0-{f}");
+                _ = client.Execute("ZADD", zsetInMemory, f.ToString(CultureInfo.InvariantCulture), $"m{f}");
+            }
+
+            void AssertSameAcrossASuspension(string onDevice, string inMemory, params string[] rest)
+            {
+                var verb = rest[0];
+                string[] ArgsFor(string key) => [verb, key, .. rest[1..]];
+
+                var fromMemory = client.Execute(ArgsFor(inMemory));
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                var fromDevice = client.Execute(ArgsFor(onDevice));
+
+                ClassicAssert.Greater(deviceFactoryCreator.ReadCount, readsBefore,
+                    $"{verb} {onDevice} never went to the device, so it proves nothing.");
+                ClassicAssert.AreEqual(fromMemory, fromDevice,
+                    $"{verb} answered differently across a suspension.");
+            }
+
+            void Hash(params string[] rest) => AssertSameAcrossASuspension(hashOnDevice, hashInMemory, rest);
+            void Zset(params string[] rest) => AssertSameAcrossASuspension(zsetOnDevice, zsetInMemory, rest);
+
+            // Hits, misses and the multi-field shapes, whose miss reply is as long as the argument list.
+            Hash("HGET", "f0");
+            Hash("HGET", "absent");
+            Hash("HGETALL");
+            Hash("HMGET", "f0", "f1", "f2");
+            Hash("HMGET", "f0", "absent");
+
+            Zset("ZSCORE", "m0");
+            Zset("ZSCORE", "absent");
+            Zset("ZMSCORE", "m0", "m1", "m2");
+            Zset("ZMSCORE", "m0", "absent");
+            Zset("ZRANK", "m1");
+            Zset("ZRANK", "absent");
+            Zset("ZCOUNT", "-inf", "+inf");
+            Zset("ZRANGE", "0", "-1");
+            Zset("ZRANGE", "0", "-1", "WITHSCORES");
+
+            // A read of a key that was never written, which has to answer the miss reply rather than wait.
+            ClassicAssert.AreEqual("$-1\r\n", client.Execute("HGET", "pendinghash:absent", "f0"));
+            ClassicAssert.AreEqual("*0\r\n", client.Execute("HGETALL", "pendinghash:absent"));
+            ClassicAssert.AreEqual(":0\r\n", client.Execute("ZCOUNT", "pendingzset:absent", "-inf", "+inf"));
+        }
+
+        /// <summary>
+        /// An object read inside a running transaction completes in place rather than suspending, because a
+        /// transaction holds its key locks until it ends and parking would hold them across the device wait.
+        /// </summary>
+        [Test]
+        public void ObjectReadsInsideATransactionStillCompleteFromTheDevice()
+        {
+            PopulateObjects();
+
+            using var client = new RawClient();
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("MULTI"));
+            ClassicAssert.AreEqual("+QUEUED\r\n", client.Execute("HGET", HashKey(2), "f0"));
+            ClassicAssert.AreEqual("+QUEUED\r\n", client.Execute("ZSCORE", ZsetKey(2), "m0"));
+
+            var readsBefore = deviceFactoryCreator.ReadCount;
+            var exec = client.Execute("EXEC");
+
+            ClassicAssert.Greater(deviceFactoryCreator.ReadCount, readsBefore,
+                "The transaction never went to the device, so it proves nothing.");
+            ClassicAssert.AreEqual("*2\r\n$3\r\n2-0\r\n$1\r\n6\r\n", exec,
+                "A transaction lost or reordered the replies of its object reads.");
+        }
+
         /// <summary>
         /// Minimal synchronous RESP client. Unlike a multiplexer it never reorders or coalesces, and it needs
         /// no thread-pool thread of its own, so it can be used while the pool is deliberately exhausted.
         /// </summary>
         sealed class RawClient : IDisposable
         {
-            readonly Socket socket;
-            readonly NetworkStream stream;
+            readonly Socket socket; readonly NetworkStream stream;
             readonly byte[] writeBuffer = new byte[4096];
             byte[] received = new byte[4096];
             int receivedLength;
