@@ -283,7 +283,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Whether we need to buffer new page from disk
         /// </summary>
-        protected bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        protected bool NeedBufferAndLoad(long currentAddress, int currentPage, long currentFrame, long headAddress, long endAddress)
         {
             for (var i = 0; i < frameSize; i++)
             {

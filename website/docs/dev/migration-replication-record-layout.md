@@ -85,7 +85,9 @@ value** or **object value** (`DiskLogRecord.Serialize` / `Deserialize`). Each ov
 length as a **4-byte little-endian prefix** so `Deserialize` can locate it (the same contiguous layout the chunked form
 uses). An **object value** is the tail of the image (**no length prefix**) and its length is derived on read as
 `recordSpan.Length - objectValueStart`, so a small object deserializes directly from the buffer. The inline portion's RDH
-`KeyLength`/`ValueLength` raw fields are left exactly as the source record had them and are never rewritten on the wire. A record is sent whole only when it fits one send buffer; a larger record (including a large object) takes the
+`KeyLength`/`ValueLength` raw fields are left exactly as the source record had them and are never rewritten on the wire.
+For an overflow key, raw KeyLength may carry object-log page-count high bits; effective `KeyLength` is still the 4-byte
+objectId slot size, so inline layout calculation is unchanged. A record is sent whole only when it fits one send buffer; a larger record (including a large object) takes the
 chunked path ([§4](#4-chunked-record-chunkedlogrecord-tag-5)).
 
 ```
@@ -126,7 +128,7 @@ bit(s)   field
  4       HasETag
  5       (reserved)
  6..13   FillerWords          (count of 8-byte filler words after alignment padding)
- 14..23  KeyLength            (raw inline key length; = objectId size for an overflow key; never rewritten on the wire)
+ 14..23  KeyLength            (inline: exact bytes; overflow: page-count high bits; effective length remains objectId size)
  24..47  ValueLength          (raw inline value length; = objectId size for overflow/object; never rewritten on the wire)
  48..55  RecordType           (byte, caller-interpreted)
  56..63  Namespace            (byte; encodes whether extra namespace bytes precede the key data)
@@ -202,8 +204,9 @@ On completion:
 - **Fully-inline record** → `DiskLogRecord.Deserialize(inlineBuffer)`.
 - **Any out-of-line component** → deserialize the object value (if any) from its sequence, then
   `DiskLogRecord.CompleteDeserializeChunkedRecord(header, keyOverflow, valueOverflow, valueObject)`,
-  which **assigns** the pre-populated overflow key/value directly (no re-allocation or copy). The RDH length fields are
-  left untouched (the out-of-line lengths rode in the 4-byte wire prefixes, which the receiver already consumed).
+  which **assigns** the pre-populated overflow key/value directly (no re-allocation or copy). Effective RDH lengths are
+  unchanged. Overflow-key assignment normalizes raw KeyLength from any object-log page-count bits to the objectId-slot
+  size; the logical out-of-line lengths rode in the 4-byte wire prefixes, which the receiver already consumed.
 
 ## 5. Send and receive flows
 

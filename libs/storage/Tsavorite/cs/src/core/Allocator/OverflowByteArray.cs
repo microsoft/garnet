@@ -128,6 +128,18 @@ namespace Tsavorite.core
             header.endOffset = offsetFromEnd;
         }
 
+        /// <summary>Set the leading and trailing allocation slack excluded from the logical payload span. A direct object-log read uses
+        /// these offsets to place the payload at the same sector residue as its file position while allowing the aligned device request
+        /// to start before and end after the logical payload without a staging allocation.</summary>
+        internal readonly void SetAlignedReadOffsets(int offsetFromStart, int offsetFromEnd)
+        {
+            Debug.Assert(offsetFromStart >= 0 && offsetFromEnd >= 0, "Aligned-read offsets must be non-negative");
+            Debug.Assert(offsetFromStart + offsetFromEnd <= Array.Length - OverflowHeader.Size, "Aligned-read offsets exceed allocation");
+            ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
+            header.startOffset = offsetFromStart;
+            header.endOffset = offsetFromEnd;
+        }
+
         /// <summary>Pin the underlying heap object.  It is the caller's responsibility to release the returned <see cref="GCHandle"/>.</summary>
         public readonly GCHandle Pin()
         => GCHandle.Alloc(Array, GCHandleType.Pinned);

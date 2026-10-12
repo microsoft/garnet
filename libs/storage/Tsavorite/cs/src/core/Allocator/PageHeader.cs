@@ -65,9 +65,11 @@ namespace Tsavorite.core
         /// Set the lowest object-log position on this main-log page, if ObjectAllocator.
         /// </summary>
         /// <param name="position">The position in the object log.</param>
-        internal void SetLowestObjectLogPosition(in ObjectLogFilePositionInfo position)
+        /// <param name="force">Overwrite an already-stamped position. Used when up-converting a downlevel object log, where the page's
+        /// existing stamp refers to the downlevel device that the conversion is replacing.</param>
+        internal void SetLowestObjectLogPosition(in ObjectLogFilePositionInfo position, bool force = false)
         {
-            if (objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet)
+            if (force || objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet)
                 objectLogLowestPositionWord = position.word;
         }
 

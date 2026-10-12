@@ -1,11 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
@@ -339,6 +341,7 @@ namespace Tsavorite.test
 
         private TsavoriteKV<ObjTrackingStoreFunctions, ObjTrackingAllocator> store;
         private IDevice log, objlog;
+        private GatedCompletionDevice gatedLog;
         private ObjDisposeTracker tracker;
 
         [SetUp]
@@ -347,11 +350,17 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjDeleteDisposeTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjDeleteDisposeTests.obj.log"), deleteOnClose: true);
+
+            // Only the flush-window tests need to hold a flush in flight; everywhere else the gate would just add indirection.
+            if (TestContext.CurrentContext.Test.MethodName.Contains("FrozenForFlush")
+                || TestContext.CurrentContext.Test.MethodName.Contains("PartialSector"))
+                gatedLog = new GatedCompletionDevice(log);
+
             tracker = new ObjDisposeTracker();
             store = new(new()
             {
                 IndexSize = 1L << 13,
-                LogDevice = log,
+                LogDevice = (IDevice)gatedLog ?? log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 LogMemorySize = 1L << 15,
@@ -366,6 +375,8 @@ namespace Tsavorite.test
         {
             store?.Dispose();
             store = null;
+            gatedLog?.Dispose();
+            gatedLog = null;
             log?.Dispose();
             log = null;
             objlog?.Dispose();
@@ -415,6 +426,84 @@ namespace Tsavorite.test
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             for (int i = 0; i < n; i++) _ = s.BasicContext.Delete(new TestObjectKey { key = i });
             ClassicAssert.AreEqual(n, tracker.DisposeRecordDeletedCount, $"OnDispose(Deleted) should be called exactly {n} times");
+        }
+
+        /// <summary>
+        /// Disposing a superseded source frees its value object and returns its ObjectIdMap slot for reuse. The object allocator
+        /// flushes from the live page, so doing that while the record's flush is issued but not yet durable can persist a Valid
+        /// record whose ObjectLogPosition refers to a freed - or recycled, hence unrelated - object. Disposal must be deferred to
+        /// eviction for the duration of that window.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDisposeDeferredWhileFrozenForFlushTest()
+        {
+            var recordAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+
+            // Hold the flush's device write so SafeReadOnlyAddress passes the record while FlushedUntilAddress stays behind it.
+            gatedLog.Gate = true;
+            store.hlogBase.ShiftReadOnlyAddressWithWait(store.Log.TailAddress, wait: false);
+            gatedLog.WaitForPending(1, TimeSpan.FromSeconds(30));
+            tracker.Reset();
+
+            Assert.That(store.hlogBase.SafeReadOnlyAddress, Is.GreaterThan(recordAddress), "record should be immutable");
+            Assert.That(store.hlogBase.FlushedUntilAddress, Is.LessThanOrEqualTo(recordAddress), "record's flush should still be in flight");
+            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.True);
+
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
+                _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
+
+            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) must be deferred while the record's flush is in flight");
+
+            // Let the flush complete so teardown does not block on it.
+            gatedLog.Release(0);
+            gatedLog.WaitForCompletion(0, TimeSpan.FromSeconds(30));
+        }
+
+        /// <summary>
+        /// A partial flush must start its device write on a sector boundary, so it rewrites, from the live page, the records
+        /// between that boundary and its own start address - records a previous flush already made durable. Disposing one of
+        /// them while that write is in flight can persist a torn record image, so the frozen window has to extend down to the
+        /// sector boundary rather than stopping at FlushedUntilAddress.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDisposeDeferredWhileInRewrittenPartialSectorTest()
+        {
+            var recordAddress = store.Log.TailAddress;
+            UpsertObj(1, 100);
+
+            // First flush: make the record durable, ending on a non-sector-aligned boundary.
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            var sectorSize = (int)log.SectorSize;
+            var flushedUntil = store.hlogBase.FlushedUntilAddress;
+            Assert.That(flushedUntil, Is.GreaterThan(recordAddress), "record should be durable");
+            Assert.That(flushedUntil % sectorSize, Is.Not.EqualTo(0), "the flush must end mid-sector for the next one to rewrite it");
+            Assert.That(recordAddress, Is.GreaterThanOrEqualTo(RoundDown(flushedUntil, sectorSize)),
+                "record must sit in the sector that the next flush rewrites");
+
+            // Second flush: hold its device write. It starts at the first flush's end and rounds that down to the sector
+            // boundary, so its write span covers the already-durable record.
+            gatedLog.Gate = true;
+            UpsertObj(2, 200);
+            store.hlogBase.ShiftReadOnlyAddressWithWait(store.Log.TailAddress, wait: false);
+            gatedLog.WaitForPending(1, TimeSpan.FromSeconds(30));
+            tracker.Reset();
+
+            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.True,
+                "a record being rewritten by an in-flight flush must be frozen");
+
+            using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
+                _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
+
+            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount,
+                "OnDispose(Deleted) must be deferred while a flush is rewriting the record's sector");
+
+            // Let the flush complete so teardown does not block on it.
+            gatedLog.Release(0);
+            gatedLog.WaitForCompletion(0, TimeSpan.FromSeconds(30));
         }
 
         #endregion

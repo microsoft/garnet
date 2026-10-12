@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -63,7 +63,7 @@ namespace Tsavorite.core
         private bool IsEntryVersionNew(ref HashBucketEntry entry)
         {
             // A version shift can only happen in an address after the checkpoint starts, as v_new threads RCU entries to the tail.
-            if (entry.Address < _hybridLogCheckpoint.info.startLogicalAddress)
+            if (entry.Address < _hybridLogCheckpoint.info.fuzzyRegionStartAddress)
                 return false;
 
             // Read cache entries are not in new version
@@ -78,7 +78,7 @@ namespace Tsavorite.core
 
         // Can only elide the record if it is the tail of the tag chain (i.e. is the record in the hash bucket entry) and its
         // PreviousAddress does not point to a valid record. Otherwise an earlier record for this key could be reachable again.
-        // Also, it cannot be elided if it is frozen due to checkpointing.
+        // Also, it cannot be elided if it is frozen by a checkpoint or an in-flight flush.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
@@ -90,16 +90,20 @@ namespace Tsavorite.core
         }
 
         // If the record is in a checkpoint range, it must not be modified. If it is in the fuzzy region, it can only be modified
-        // if it is a new record.
+        // if it is a new record. A record whose flush is committed but not yet durable is frozen for the same reason: an allocator
+        // that flushes from the live page is reading the record image, so releasing its heap or rewriting its layout would persist
+        // a torn or dangling record. Such a record is released at eviction instead.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
-            return sessionFunctions.Ctx.IsInV1
-                        && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.startLogicalAddress     // In checkpoint range
-                            || !srcRecordInfo.IsInNewVersion);                                                  // In fuzzy region and an old version
+            if (sessionFunctions.Ctx.IsInV1
+                        && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress // In checkpoint range
+                            || !srcRecordInfo.IsInNewVersion))                                                  // In fuzzy region and an old version
+                return true;
+            return hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -107,23 +111,90 @@ namespace Tsavorite.core
             => RevivificationManager.GetMinRevivifiableAddress(hlogBase.GetTailAddress(), hlogBase.ReadOnlyAddress);
 
         /// <summary>
-        /// Dispose the resources of an in-memory source record that a newly-CAS'd record has just superseded, unless an
-        /// ongoing checkpoint has frozen it.
+        /// Whether an ongoing checkpoint still needs the <c>(v)</c> image of a CopyUpdate source, so its bytes must be
+        /// cached before <c>PostCopyUpdater</c> can mutate the structures the new record shallow-copied from it.
         /// </summary>
         /// <remarks>
-        /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
-        /// free list for reuse by another record. The snapshot flush reads object ids from its page copy but resolves them
-        /// against the live map, so disposing a frozen record lets the flush serialize a freed - or recycled, and therefore
-        /// unrelated - object in its place. A frozen record must keep its value until the checkpoint has captured it; the
-        /// value is then accounted for and released when the page is evicted.
+        /// This only ever *narrows* caching within a checkpoint; the caller still requires the destination to be in the new
+        /// version before consulting it, so behaviour outside a checkpoint is unchanged.
+        /// <para>
+        /// A record an in-flight flush is reading is reported as needed regardless. Answering false releases the source value
+        /// (<see cref="RMWInfo.ClearSourceValueObject"/>), and disposing a value whose record image is mid-flush would persist
+        /// a torn or dangling record - the same hazard <c>OnDisposeSupersededSource</c> defers on the delete path.
+        /// </para>
+        /// <para>
+        /// The fuzzy-region test mirrors <see cref="IsFrozen{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>:
+        /// <see cref="RecordInfo.IsInNewVersion"/> is never cleared, so on its own it cannot distinguish a record written after
+        /// *this* checkpoint's transaction start from one left over from an earlier checkpoint; the fuzzy-region start is what
+        /// scopes it to the current one. The last test uses the Snapshot completion watermark: once the Snapshot has written
+        /// the page holding the source, the <c>(v)</c> image is durable and caching it again preserves nothing.
+        /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+        private bool CheckpointNeedsSourceImage(long srcLogicalAddress, RecordInfo srcRecordInfo)
+        {
+            if (hlog.IsFrozenForFlush(srcLogicalAddress))
+                return true;
+
+            if (srcLogicalAddress > _hybridLogCheckpoint.info.fuzzyRegionStartAddress && srcRecordInfo.IsInNewVersion)
+                return false;
+
+            return !hlogBase.SnapshotHasFlushedPageFor(srcLogicalAddress);
+        }
+
+        /// <summary>
+        /// Dispose the resources of an in-memory source record that is being deleted. If an ongoing checkpoint or an
+        /// in-flight flush has frozen it, mark it for deferred disposal instead.
+        /// </summary>
+        /// <remarks>
+        /// This is the *deletion* path, not the general supersede path: callers are <c>InternalDelete</c>'s non-elide
+        /// branch and the four <c>InternalRMW</c> expiration paths (<see cref="RMWAction.ExpireAndStop"/> and
+        /// <see cref="RMWAction.ExpireAndResume"/>, both before and after the new record is allocated), whose net effect
+        /// is a Delete. Two of those run before any CAS, so there need not be a new record at all. An ordinary
+        /// CopyUpdate does *not* come here — it caches the source's bytes via <c>CacheSerializedObjectData</c> and
+        /// defers clearing so <c>PostCopyUpdater</c> can still read the source.
+        /// <para>
+        /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
+        /// free list for reuse by another record. A frozen record must keep its value until the flush that is reading it has
+        /// captured it. Two flushes read a record the caller has already deleted: the snapshot flush reads object ids from
+        /// its page copy but resolves them against the live map, and the object allocator's read-only flush serializes and
+        /// writes the live page directly.
+        /// </para>
+        /// <para>
+        /// Only a flush freeze is marked. A checkpoint freeze is deliberately left to eviction, because the drain's release
+        /// condition would be wrong for it: the drain fires when the main log's FlushedUntilAddress passes the record, which
+        /// says nothing about whether the snapshot has captured it, so disposing on that signal could free a value the
+        /// snapshot flush has yet to write and persist a dangling object id.
+        /// </para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref LogRecord logRecord)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, logRecord.Info))
+            {
+                // Mark for the flush-completion drain to dispose once the flush window closes. Setting a bit on a record that is
+                // frozen for flush is safe, which is not obvious because the object allocator writes the LIVE PAGE and that of
+                // course includes RecordInfo:
+                //  - The flush writes RecordInfo to the device but never modifies it in memory, so it is not a competing writer.
+                //    Whether the DMA captures this bit is therefore nondeterministic, and harmless: RecordInfo is a single
+                //    8-byte aligned word so the device sees the old or the new value and never a tear, and
+                //    RecordInfo.ClearBitsForDiskImages strips the bit on every read-from-disk path.
+                //  - No CAS is needed. This runs on the operation path holding the record lock, so the set is exactly as safe
+                //    as the Seal() that immediately follows it at the call sites.
+                //  - The drain needs no record lock for a related reason: this call is always followed by Seal(), and
+                //    SkipOnScan is IsClosedWord(word), i.e. (word & (Valid|Sealed)) != Valid, so a Sealed record is closed to
+                //    operations (they take RETRY_LATER rather than touch it) and skipped by scans.
+                // What is NOT safe, and is what the freeze exists to prevent, is destructive mutation: freeing heap, zeroing
+                // the ObjectLogPosition the flush just stamped, or changing record layout.
+                if (hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress))
+                {
+                    logRecord.InfoRef.DeferredDispose = true;
+                    hlogBase.NoteDeferredDispose(stackCtx.recSrc.LogicalAddress);
+                }
                 return;
+            }
             OnDispose(ref logRecord, DisposeReason.Deleted);
         }
 
@@ -213,7 +284,9 @@ namespace Tsavorite.core
             // (We no longer need to guard the read-cache prefix boundary here: with the latch-free design nothing
             // consumes the boundary after FindInReadCache - the update detaches and the promotion head-inserts via the
             // hash-entry CAS, which itself fails if the prefix was concurrently evicted and the head changed.)
-            return !(stackCtx.recSrc.HasInMemorySrc && stackCtx.recSrc.LogicalAddress < stackCtx.recSrc.AllocatorBase.HeadAddress);
+            // A readcache source keeps the readcache bit set in its LogicalAddress, so it must be compared to the
+            // readcache HeadAddress in absolute form; AbsoluteAddress is a no-op for a main-log source.
+            return !(stackCtx.recSrc.HasInMemorySrc && AbsoluteAddress(stackCtx.recSrc.LogicalAddress) < stackCtx.recSrc.AllocatorBase.HeadAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

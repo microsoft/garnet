@@ -475,6 +475,8 @@ namespace Garnet.test
                 Assert.That(store._hybridLogCheckpoint.objectLogFlushBuffers, Is.Null, "Object log flush buffers were leaked");
                 Assert.That(store._indexCheckpoint.IsDefault, Is.True, "Index checkpoint was not reset");
                 Assert.That(store._indexCheckpoint.main_ht_device, Is.Null, "Index hash table device was leaked");
+                Assert.That(store.hlogBase.HasSnapshotFlushCoordination, Is.False,
+                    "Snapshot flush coordination was left installed on the allocator");
             });
         }
 

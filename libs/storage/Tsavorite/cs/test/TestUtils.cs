@@ -224,10 +224,11 @@ namespace Tsavorite.test
 
             // The device layer rejects non-extended paths longer than WIN32_MAX_PATH - 11 (the 11 reserves
             // room for a ".<segmentId>" suffix). Tests create files well below this directory; the deepest
-            // are checkpoint files such as "\<iter>\checkpoints\cpr-checkpoints\<guid>\snapshot.obj.dat"
-            // (~85 chars). Once this directory's fully-qualified length is within that reserve of MAX_PATH,
-            // switch to an extended-length path so those children stay valid.
-            const int reservedForChildPaths = 100;
+            // are checkpoint files such as "\<iter>\checkpoints_<slot>\cpr-checkpoints\<guid>\snapshot.obj.dat"
+            // (~92 chars), which with that 11-char reserve needs 103. Once this directory's fully-qualified
+            // length is within the reserve below of MAX_PATH, switch to an extended-length path so those
+            // children stay valid.
+            const int reservedForChildPaths = 128;
             if (fullPath.Length <= Native32.WIN32_MAX_PATH - reservedForChildPaths)
                 return path;
 

@@ -218,7 +218,7 @@ namespace Tsavorite.core
             };
 
             // If the source record is elidable we will detach it from the tag chain below, after the CAS, by carrying its
-            // PreviousAddress on the new tombstone. CanElide() excludes checkpoint-frozen records.
+            // PreviousAddress on the new tombstone. CanElide() excludes frozen records.
             if (!TryAllocateRecord(sessionFunctions, ref operationState, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
@@ -266,7 +266,7 @@ namespace Tsavorite.core
                     // Fire the Deleted disposal first so triggers keyed on deletion (e.g. range-index file cleanup and
                     // Vector Set deletion) still run; that releases and un-accounts the value. The elide/freelist disposal
                     // below then releases the key, which eviction would otherwise have accounted for.
-                    // CanElide() already excluded checkpoint-frozen records, so no IsFrozen check is needed here.
+                    // CanElide() already excluded frozen records, so no IsFrozen check is needed here.
                     OnDispose(ref srcLogRecord, DisposeReason.Deleted);
 
                     srcLogRecord.InfoRef.SealAndInvalidate();    // The record was elided, so Invalidate
@@ -278,8 +278,8 @@ namespace Tsavorite.core
                 }
                 else if (stackCtx.recSrc.HasMainLogSrc)
                 {
-                    // Dispose the superseded source record's resources, unless a checkpoint has frozen it.
-                    OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
+                    // Dispose the deleted source record's resources, unless a checkpoint or an in-flight flush has frozen it.
+                    OnDisposeDeletedSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
                     srcLogRecord.InfoRef.Seal();    // Not elided so Seal without invalidate
                 }
 

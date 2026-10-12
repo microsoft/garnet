@@ -101,8 +101,16 @@ namespace Tsavorite.test
                 DoSerialize(writer);
             }
             public void WriteType(BinaryWriter writer, bool isNull) => writer.Write(isNull);
-            public void CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog)
-                => Volatile.Write(ref cachedDataPresent, 1);
+            public bool CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage)
+            {
+                if (!checkpointNeedsSourceImage)
+                {
+                    rmwInfo.ClearSourceValueObject = true;
+                    return false;
+                }
+                Volatile.Write(ref cachedDataPresent, 1);
+                return true;
+            }
             public void ClearSerializedObjectData()
             {
                 if (Interlocked.Exchange(ref cachedDataPresent, 0) == 0)
@@ -193,6 +201,67 @@ namespace Tsavorite.test
             OnTearDown();
         }
 
+        /// <summary>Writes no bytes at all, so the record's value component is zero length on the object log.</summary>
+        sealed class ZeroLengthValueSerializer : BinaryObjectSerializer<IHeapObject>
+        {
+            public override void Deserialize(out IHeapObject obj) => obj = new TrackingHeapObject(blockOnClear: false);
+            public override void Serialize(IHeapObject obj) { }
+        }
+
+        /// <summary>
+        /// A zero-length value component survives the page read path (scan of an evicted page).
+        /// </summary>
+        /// <remarks>
+        /// NOTE: this does NOT yet pin the all-zero-length-page guard in <c>DeserializeObjectsOnPage</c>. This fixture's keys are
+        /// <c>OverflowTestKey</c>, so the page walk's extent is dominated by the overflow KEYS -- measured at 10,264 bytes for the
+        /// four records here -- and the walk never sees the zero total that trips "TotalLength cannot be 0". Verified by negative
+        /// control: forcing <c>hasBytesToRead = true</c> leaves this test passing.
+        /// <para>To pin that guard, the only out-of-line component on the page must be the zero-length value, which needs an
+        /// INLINE key; see <c>ComputeObjectIdValueSizeHint</c>, where a component of 511 bytes or fewer is stamped exact-size with
+        /// its byte count as the hint, so a zero-length one decodes to a zero extent while still being stamped and still counted
+        /// into <c>startPosition</c>. The other branch cannot reach zero: a component over 511 bytes is stamped with a 4 KB page
+        /// count, which is at least 1.</para>
+        /// </remarks>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ZeroLengthValueComponentSurvivesThePageReadPath()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ZeroLenPage.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ZeroLenPage.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new ZeroLengthValueSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            const int numRecords = 4;
+            using (var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions()))
+            {
+                var context = session.BasicContext;
+                for (var ii = 0; ii < numRecords; ++ii)
+                    _ = context.Upsert(new OverflowTestKey(ii), new TrackingHeapObject(blockOnClear: false), Empty.Default);
+            }
+
+            // Push every record below HeadAddress so the scan must read the page back from the device rather than walk memory.
+            store.Log.FlushAndEvict(wait: true);
+            Assert.That(store.Log.HeadAddress, Is.EqualTo(store.Log.TailAddress), "records must be evicted for the page path to run");
+
+            var scanned = 0;
+            using (var iter = store.Log.Scan(store.Log.BeginAddress, store.Log.TailAddress))
+            {
+                while (iter.GetNext())
+                    ++scanned;
+            }
+
+            Assert.That(scanned, Is.EqualTo(numRecords), "every zero-length-component record must still be returned by the scan");
+        }
+
         [Test]
         [Category("TsavoriteKV")]
         public async Task SerializedObjectCleanupTest()
@@ -227,6 +296,10 @@ namespace Tsavorite.test
                 var record = store.hlogBase._wrapper.CreateLogRecord(beginAddress);
                 Assert.That(record.DataHeader.KeyIsOverflow, Is.True);
 
+                // TrackingHeapObject fabricates cached state (cachedDataPresent starts at 1) rather than going through
+                // CacheSerializedObjectData, so it must also announce the cache that gates and bounds the sweep.
+                store.hlogBase.NoteSerializedObjectCache(beginAddress);
+
                 // Pause after cleanup captures the managed value reference.
                 var cleanupTask = Task.Run(() => store.Log.ClearSerializedObjectData(beginAddress, endAddress));
                 Assert.That(value.clearEntered.Wait(TimeSpan.FromSeconds(5)), Is.True, "Cleanup did not capture the heap value");
@@ -249,6 +322,174 @@ namespace Tsavorite.test
             {
                 value.releaseClear.Set();
             }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void SweepIsSkippedWhenNothingWasCached()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SweepSkip.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SweepSkip.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new TrackingHeapObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var context = session.BasicContext;
+            var value = new TrackingHeapObject(blockOnClear: false);
+
+            var beginAddress = store.Log.TailAddress;
+            _ = context.Upsert(new OverflowTestKey(1), value, Empty.Default);
+            var endAddress = store.Log.TailAddress;
+
+            // No CopyUpdate has cached a (v) image, so the sweep must not walk the range at all.
+            store.Log.ClearSerializedObjectData(beginAddress, endAddress);
+            Assert.That(value.ClearCount, Is.Zero, "the sweep walked the range when nothing had been cached");
+
+            // Negative control: the skip is a gate, not a permanent disable. Announcing a cache makes the very same
+            // sweep do its work, which proves the range and the record were reachable all along.
+            store.hlogBase.NoteSerializedObjectCache(beginAddress);
+            store.Log.ClearSerializedObjectData(beginAddress, endAddress);
+            Assert.That(value.ClearCount, Is.EqualTo(1), "the sweep did not run after a cache was announced");
+
+            // The gate re-arms: with that cache consumed, a further sweep is skipped again.
+            store.Log.ClearSerializedObjectData(beginAddress, endAddress);
+            Assert.That(value.ClearCount, Is.EqualTo(1), "the sweep ran again with no new cache");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void SweepIsNarrowedToTheCachedAddressRange()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SweepNarrow.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SweepNarrow.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new TrackingHeapObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            using var session = store.NewSession<OverflowTestKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var context = session.BasicContext;
+
+            var below = new TrackingHeapObject(blockOnClear: false);
+            var cached = new TrackingHeapObject(blockOnClear: false);
+            var above = new TrackingHeapObject(blockOnClear: false);
+
+            var beginAddress = store.Log.TailAddress;
+            _ = context.Upsert(new OverflowTestKey(1), below, Empty.Default);
+            var cachedAddress = store.Log.TailAddress;
+            _ = context.Upsert(new OverflowTestKey(2), cached, Empty.Default);
+            _ = context.Upsert(new OverflowTestKey(3), above, Empty.Default);
+            var endAddress = store.Log.TailAddress;
+
+            // Only the middle record's (v) image was cached, so only it is in the recorded extent.
+            store.hlogBase.NoteSerializedObjectCache(cachedAddress);
+            store.Log.ClearSerializedObjectData(beginAddress, endAddress);
+
+            Assert.That(cached.ClearCount, Is.EqualTo(1), "the cached record was not cleared");
+            Assert.That(below.ClearCount, Is.Zero, "the walk was not clamped at its start to the cached extent");
+            Assert.That(above.ClearCount, Is.Zero, "the walk was not clamped at its end to the cached extent");
+
+            // Negative control: the two outer records are reachable from the same caller range, and are cleared once the
+            // recorded extent spans them. Without this, the assertions above would also pass if the sweep did nothing.
+            store.hlogBase.NoteSerializedObjectCache(beginAddress);
+            store.hlogBase.NoteSerializedObjectCache(endAddress - 1);
+            store.Log.ClearSerializedObjectData(beginAddress, endAddress);
+
+            Assert.That(below.ClearCount, Is.EqualTo(1), "the record below the previous extent was never reachable");
+            Assert.That(above.ClearCount, Is.EqualTo(1), "the record above the previous extent was never reachable");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void CachingIsSkippedWhenTheCheckpointDoesNotNeedTheSourceImage()
+        {
+            var value = new CountingSerializationHeapObject();
+            _ = CreateStoreWithCachedSerializationSource("NoSourceImageNeeded", value, out var recordAddress);
+
+            var logRecord = store.hlogBase._wrapper.CreateLogRecord(recordAddress);
+            RMWInfo rmwInfo = default;
+
+            // The checkpoint has no (v) image at stake for this source, so the bytes must not be serialized and the
+            // caller must be told it may release the source value immediately.
+            var cached = value.CacheSerializedObjectData(ref logRecord, ref rmwInfo, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: false);
+
+            Assert.That(cached, Is.False, "the object reported caching bytes it was told were not needed");
+            Assert.That(value.doSerializeCount, Is.Zero, "the (v) image was serialized despite not being needed");
+            Assert.That(rmwInfo.ClearSourceValueObject, Is.True, "the source value was not released for immediate clearing");
+
+            // Negative control: an object in the same starting state, told the image IS needed, does serialize. This
+            // proves the path is reached and the assertions above are not passing for an unrelated reason. It must be
+            // a fresh object: the skip path above deliberately leaves the phase terminal, so re-running on `value`
+            // would short-circuit for that reason instead.
+            var control = new CountingSerializationHeapObject();
+            RMWInfo neededInfo = default;
+            var cachedWhenNeeded = control.CacheSerializedObjectData(ref logRecord, ref neededInfo, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
+            Assert.That(cachedWhenNeeded, Is.True);
+            Assert.That(control.doSerializeCount, Is.EqualTo(1));
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void SnapshotCompletionWatermarkReportsFlushedPages()
+        {
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Watermark.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Watermark.obj.log"), deleteOnClose: true);
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 15,
+                PageSize = MinKvLogPageSize
+            }, StoreFunctions.Create(comparer, () => new TrackingHeapObjectSerializer())
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+
+            var addressOnPage0 = store.hlogBase.GetFirstValidLogicalAddressOnPage(0);
+            var addressOnPage3 = store.hlogBase.GetFirstValidLogicalAddressOnPage(3);
+
+            // With no Snapshot installed the answer is conservatively false, so callers cache exactly as before.
+            Assert.That(store.hlogBase.SnapshotHasFlushedPageFor(addressOnPage0), Is.False);
+
+            using var coordination = new SnapshotFlushCoordination();
+            store.hlogBase.PrepareSnapshotFlushCoordination(coordination);
+            try
+            {
+                coordination.BeginCutoffCapture(0);
+                coordination.PublishReadOnlyFlushCutoff(0);
+                coordination.AdvanceReadOnlyFlushPageLimit(3);
+                coordination.BeginFlushing();
+
+                // Strictly below the exclusive watermark means the Snapshot has written that page.
+                Assert.That(store.hlogBase.SnapshotHasFlushedPageFor(addressOnPage0), Is.True);
+
+                // The page at the watermark has not been written yet, so its (v) image must still be cached.
+                Assert.That(store.hlogBase.SnapshotHasFlushedPageFor(addressOnPage3), Is.False);
+            }
+            finally
+            {
+                store.hlogBase.ClearSnapshotFlushCoordination(coordination);
+            }
+
+            // Removing coordination returns the conservative answer.
+            Assert.That(store.hlogBase.SnapshotHasFlushedPageFor(addressOnPage0), Is.False);
         }
 
         [Test]
@@ -336,7 +577,11 @@ namespace Tsavorite.test
             // Drive the CopyUpdate-during-checkpoint path that caches the (v) bytes.
             var logRecord = store.hlogBase._wrapper.CreateLogRecord(recordAddress);
             RMWInfo rmwInfo = default;
-            value.CacheSerializedObjectData(ref logRecord, ref rmwInfo, srcIsOnMemoryLog: true);
+            value.CacheSerializedObjectData(ref logRecord, ref rmwInfo, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
+
+            // The sweep is gated on a cache having been noted, and bounded by the address noted with it; InternalRMW does
+            // that in production, so a test that drives the object directly must do it too or the sweep below skips.
+            store.hlogBase.NoteSerializedObjectCache(recordAddress);
 
             // Caching serializes once, into the cached byte[] rather than to a writer.
             Assert.That(value.doSerializeCount, Is.EqualTo(1), "CacheSerializedObjectData did not capture the (v) bytes");
@@ -398,7 +643,7 @@ namespace Tsavorite.test
                 // The ref local must be created inside the lambda; ref locals cannot be captured.
                 var record = store.hlogBase._wrapper.CreateLogRecord(recordAddress);
                 RMWInfo info = default;
-                value.CacheSerializedObjectData(ref record, ref info, srcIsOnMemoryLog: true);
+                value.CacheSerializedObjectData(ref record, ref info, srcIsOnMemoryLog: true, checkpointNeedsSourceImage: true);
             });
             Assert.That(failure.Message, Is.EqualTo(CountingSerializationHeapObject.SerializeFailureMessage));
             Assert.That(value.doSerializeCount, Is.EqualTo(1));

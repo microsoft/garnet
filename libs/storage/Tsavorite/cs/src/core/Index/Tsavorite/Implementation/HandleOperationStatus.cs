@@ -90,6 +90,11 @@ namespace Tsavorite.core
                     // allocation that disposal has made unsatisfiable would spin this loop. Checked after the
                     // finally so the epoch is resumed exactly once before the throw unwinds.
                     hlogBase.ThrowIfDisposed();
+
+                    // A failed flush leaves the allocation unsatisfiable for the same reason. The error path signals the
+                    // flush event to make the failure observable promptly, so without this the retry would take a fresh
+                    // event generation and park on it indefinitely.
+                    hlogBase.ThrowIfFlushFailedForAllocation();
                     return true;
                 default:
                     // RECORD_ON_DISK falls here: do NOT reset operationState.logicalAddress, the caller (HandleOperationStatus)

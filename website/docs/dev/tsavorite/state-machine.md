@@ -498,6 +498,109 @@ and the delayed worker can encounter cleared state. Normal transition
 completion and exceptions thrown directly by an executing after-transition
 hook do release transition-in through the worker's `finally` block.
 
+## What the state machine does *not* order: in-flight data capture
+
+This is the single easiest thing to get wrong when reasoning about record
+lifetime during a checkpoint, and it became materially more important with
+no-copy flushing, where the allocator writes the **live page** rather than a
+copy.
+
+The state machine gives two strong guarantees, and neither one is the guarantee
+people reach for:
+
+1. **Phase observation is ordered.** `RunStateMachine` publishes a state and
+   then establishes an epoch boundary, so every thread has observed the new
+   phase before the next phase's work proceeds.
+2. **Version decisions are consistent.** CPR checks force an operation that
+   began under an older phase to refresh and retry, so no operation straddles a
+   version boundary. An operation running after `IN_PROGRESS` is published
+   correctly treats a `(v)` record as old-version and read-copy-updates into
+   `(v+1)`.
+
+Neither guarantee says anything about **when the `(v)` data physically lands on
+the device.** The epoch boundary orders *phase transitions* against in-flight
+*operations*; it does not order *I/O completion* against *later* operations, and
+nothing re-bumps the epoch when a flush completes.
+
+That is precisely why `ExecutionContext.IsInV1` stays true through
+`IN_PROGRESS`, `WAIT_INDEX_CHECKPOINT`, **and `WAIT_FLUSH`** — it is not asking
+"which version am I writing?", it is asking "is the `(v)` image still being
+captured?"
+
+### The window
+
+```
+PREPARE ──► IN_PROGRESS ──► WAIT_INDEX_CHECKPOINT ──► WAIT_FLUSH ──► REST
+            │                                                   │
+            │  fuzzy region opens;                              │  snapshot /
+            │  (v+1) operations run at full speed               │  fold-over I/O
+            │                                                   │  completes
+            └──────────── the (v) image is still in flight ─────┘
+```
+
+Throughout that span, ordinary `(v+1)` traffic — `Delete`, and RMW that finds an
+expired source — supersedes `(v)` records and would, in the absence of a guard,
+immediately dispose them. Disposal is destructive: it runs
+`LogField.ClearObjectIdAndConvertToInline`, which calls `objectIdMap.Free` and
+flips the field to inline **in the live record**. The snapshot holds a page
+*copy* whose record bytes still carry the old object id, and it resolves ids
+against the **live** map — so once another record reuses that slot, the
+checkpoint serializes an unrelated object.
+
+`IsFrozen` exists for exactly this window, and `OnDisposeDeletedSource` declines
+disposal while it holds:
+
+```csharp
+if (sessionFunctions.Ctx.IsInV1
+            && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress
+                || !srcRecordInfo.IsInNewVersion))
+    return true;
+return hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
+```
+
+Note that this is a *different* hazard from the one that caching the superseded
+object's bytes solves. `CacheSerializedObjectData` preserves the `(v)`
+**content** when a `(v+1)` record shares the object through a shallow clone; it
+says nothing about the **slot**. Both are needed.
+
+### The same shape, without a checkpoint
+
+No-copy flushing introduces a second, structurally identical window that has
+nothing to do with the state machine at all. The object allocator's read-only
+flush serializes directly from the live page, so between the moment a record
+becomes immutable and the moment its bytes are durable, it is just as
+unsafe to dispose:
+
+```
+FlushedUntilAddress <= A < SafeReadOnlyAddress        → IsFrozenForFlush(A)
+```
+
+The two freezes are released by different signals, and that difference matters:
+
+| Freeze | Released by | Deferred disposal |
+|---|---|---|
+| Flush | `FlushedUntilAddress` passing the record | **Marked** (`RecordInfo.DeferredDispose`) and drained on flush completion |
+| Checkpoint | the checkpoint completing | **Not marked** — left to eviction |
+
+A checkpoint freeze deliberately is *not* marked for the drain. The drain fires
+when the main log's `FlushedUntilAddress` passes the record, which says nothing
+about whether the *snapshot* has captured it — so draining on that signal could
+free a value the snapshot flush has yet to write and persist a dangling object
+id.
+
+### Practical rule
+
+> Before releasing, overwriting, or re-laying-out a record, ask who else is
+> still *reading* it — not merely which version it belongs to. The state machine
+> answers the version question. It does not answer the reader question; the
+> `IsFrozen` / `IsFrozenForFlush` pair does.
+
+Regression coverage for both arms:
+`CheckpointSharedObjectMutationTests.DeleteDuringCheckpointDoesNotDisposeTheFrozenSource`
+pauses at `WAIT_FLUSH` and deletes, asserting the slot survives;
+`RecordLifecycleTests.FrozenSupersededSourceIsDisposedWhenTheFlushCompletes`
+parks a flush mid-write and asserts disposal is declined and then drained.
+
 ## Rules for state-machine task code
 
 - Put work that must occur before a state becomes visible in
@@ -513,6 +616,9 @@ hook do release transition-in through the worker's `finally` block.
   another task.
 - Ensure `NextState` always provides a path back to `REST`; failure recovery
   follows that graph without invoking task hooks.
+- Do not assume a published phase means the previous version's data is durable.
+  Phase transitions are ordered against operations, not against I/O completion;
+  see [What the state machine does *not* order](#what-the-state-machine-does-not-order-in-flight-data-capture).
 
 ## Related topics
 

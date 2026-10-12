@@ -88,4 +88,43 @@ namespace Tsavorite.core
             UnreadableTokenCount = unreadableTokenCount;
         }
     }
+
+    /// <summary>
+    /// The store's log geometry does not match the geometry recorded in the checkpoint being recovered.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from the other recovery failures because it reports a configuration mistake rather than unreadable data.
+    /// The checkpoint is intact and recovers correctly once the store is opened with the settings it was written with, so
+    /// a host must not fall back to starting empty and discarding it.
+    /// </remarks>
+    public class TsavoriteLogGeometryMismatchException : TsavoriteException
+    {
+        /// <summary>
+        /// Report a geometry mismatch between the store's settings and the recovered checkpoint.
+        /// </summary>
+        /// <param name="message"></param>
+        public TsavoriteLogGeometryMismatchException(string message) : base(message)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Recovering a downlevel checkpoint requires up-converting its object log, but no device was configured to receive the
+    /// converted object bytes.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from the other recovery failures because it reports a configuration mistake rather than unreadable data: the
+    /// downlevel object log is intact and recovers correctly once an upgrade object-log device is configured (an <c>--upgrade</c>
+    /// run), so a host must not fall back to starting empty and discarding it. Mirrors <see cref="TsavoriteLogGeometryMismatchException"/>.
+    /// </remarks>
+    public class TsavoriteObjectLogUpgradeRequiredException : TsavoriteException
+    {
+        /// <summary>
+        /// Report that recovering a downlevel object log needs an upgrade object-log device that was not configured.
+        /// </summary>
+        /// <param name="message"></param>
+        public TsavoriteObjectLogUpgradeRequiredException(string message) : base(message)
+        {
+        }
+    }
 }

@@ -53,10 +53,18 @@ namespace Tsavorite.core
         /// <see cref="DiskLogRecord"/> sources, where the (v) data is already persisted on disk, the source
         /// <c>this</c> is ephemeral and about to be disposed up the pending chain, and clone is all that's needed.
         /// </param>
-        void CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog);
+        /// <param name="checkpointNeedsSourceImage">
+        /// Whether an ongoing checkpoint still needs this object's (v) image. This only narrows caching *within* a
+        /// checkpoint: the (v) image is captured when the destination is in the new version and this is also true.
+        /// False means there is nothing to preserve - the source was itself written after this checkpoint's
+        /// transaction start, or the Snapshot has already written the source's page - so the source value may be
+        /// released immediately instead of serialized.
+        /// </param>
+        /// <returns>True if the (v) bytes were cached, so the caller can note that a later sweep has work to do.</returns>
+        bool CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage);
 
         /// <summary>
-        /// Clear any serialized data from <see cref="CacheSerializedObjectData(ref LogRecord, ref RMWInfo, bool)"/>.
+        /// Clear any serialized data from <see cref="CacheSerializedObjectData(ref LogRecord, ref RMWInfo, bool, bool)"/>.
         /// This must be idempotent and must not change object state when no cached data is present.
         /// </summary>
         void ClearSerializedObjectData();

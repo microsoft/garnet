@@ -217,6 +217,83 @@ namespace Tsavorite.test.recovery
             _ = sourceAddress;
         }
 
+        /// <summary>
+        /// A Delete that supersedes a (v) record while the checkpoint is still capturing it must NOT dispose the source.
+        /// <para>
+        /// CPR and the epoch bumps in <c>RunStateMachine</c> make the *version* decision correct — the Delete below
+        /// correctly RCUs a (v+1) tombstone over a (v) source — but neither waits for the snapshot's data capture, and
+        /// the session's <c>IsInV1</c> stays true through <see cref="Phase.WAIT_FLUSH"/> for exactly that reason.
+        /// Disposing here would run
+        /// <c>LogField.ClearObjectIdAndConvertToInline</c> on the live record: it calls <c>objectIdMap.Free</c> and flips
+        /// the field to inline, while the snapshot holds a page *copy* that still carries the old object id and resolves
+        /// ids against the *live* map — so a later record reusing that slot gets serialized in its place.
+        /// </para>
+        /// <para>
+        /// This is a different hazard from the one #2101 fixed: <c>CacheSerializedObjectData</c> preserves the (v)
+        /// *content* inside the object, and says nothing about the *slot*. It is also a path that test does not reach,
+        /// because the RMW CopyUpdate path caches rather than calling <c>OnDisposeDeletedSource</c>; Delete and the
+        /// expired-source RMW paths are the callers that do.
+        /// </para>
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("CheckpointRestore")]
+        public async Task DeleteDuringCheckpointDoesNotDisposeTheFrozenSource()
+        {
+            var key = new TestObjectKey { key = 1 };
+            var sourceAddress = store.Log.TailAddress;
+
+            using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                _ = session.BasicContext.Upsert(key, new SharedListHeapObject([1, 2, 3]), Empty.Default);
+
+            // On an empty log the tail reads below the first page's first valid address, so the record actually lands
+            // after the page header rather than at the address sampled above.
+            var firstValidAddress = store.hlogBase.GetFirstValidLogicalAddressOnPage(0);
+            if (sourceAddress < firstValidAddress)
+                sourceAddress = firstValidAddress;
+
+            var sourceBeforeCheckpoint = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+            Assert.That(sourceBeforeCheckpoint.DataHeader.ValueIsInline, Is.False,
+                "the source record should hold an object id, otherwise this test cannot observe the slot being freed");
+
+            // Create the session BEFORE the checkpoint so it participates in the state machine from PREPARE onward, which
+            // is how a real long-lived session behaves. IsFrozen reads the *session's* phase, and a session created in the
+            // middle of the window may not have adopted it yet.
+            using var deleteSession = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions());
+
+            // Pause on entry to WAIT_FLUSH: IN_PROGRESS has been published and the fuzzy region has opened, so the
+            // Delete below is (v+1) against a (v) source that the snapshot has not finished capturing.
+            var pause = new PauseAtPhase(Phase.WAIT_FLUSH);
+            store.stateMachineDriver.UnsafeRegisterCallback(pause);
+
+            Assert.That(store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
+            Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True, "Checkpoint did not reach WAIT_FLUSH");
+
+            var tailBeforeDelete = store.Log.TailAddress;
+            Assert.That(store.SystemState.Phase, Is.AnyOf(Phase.IN_PROGRESS, Phase.WAIT_INDEX_CHECKPOINT),
+                "precondition: the store must still be capturing the (v) image, or IsFrozen cannot engage");
+
+            var status = deleteSession.BasicContext.Delete(key, Empty.Default);
+            if (status.IsPending)
+                _ = deleteSession.BasicContext.CompletePending(wait: true);
+
+            var source = store.hlogBase._wrapper.CreateLogRecord(sourceAddress);
+            Assert.Multiple(() =>
+            {
+                Assert.That(store.Log.TailAddress, Is.GreaterThan(tailBeforeDelete),
+                    "the Delete did not RCU a new tombstone, so it never reached the superseded-source path");
+                Assert.That(source.DataHeader.ValueIsInline, Is.False,
+                    "the checkpoint-frozen source was disposed: its ObjectIdMap slot was freed and the field converted to inline, "
+                    + "which lets the in-flight snapshot resolve that id to whatever record reuses the slot");
+                Assert.That(source.Info.DeferredDispose, Is.False,
+                    "a checkpoint freeze must not be marked for the deferred-dispose drain; the drain releases on the main log's "
+                    + "FlushedUntilAddress, which says nothing about whether the snapshot has captured the record");
+            });
+
+            pause.Release.Set();
+            await store.CompleteCheckpointAsync().ConfigureAwait(false);
+        }
+
         internal class SharedListFunctions : SessionFunctionsBase<TestObjectInput, TestObjectOutput, Empty>
         {
             public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)

@@ -66,7 +66,7 @@ namespace Tsavorite.core
             // version shift and is only now being retried as (v+1).
             if (sessionFunctions.Ctx.IsInV1)
             {
-                var fuzzyStartAddress = _hybridLogCheckpoint.info.startLogicalAddress;
+                var fuzzyStartAddress = _hybridLogCheckpoint.info.fuzzyRegionStartAddress;
                 if (fuzzyStartAddress > minRevivAddress)
                     minRevivAddress = fuzzyStartAddress;
             }

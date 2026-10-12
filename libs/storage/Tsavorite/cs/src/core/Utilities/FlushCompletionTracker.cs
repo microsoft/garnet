@@ -54,7 +54,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Complete flush of one page
         /// </summary>
-        public void CompleteFlush()
+        public void CompleteOneFlush()
         {
             _ = (flushSemaphore?.Release());
             if (Interlocked.Decrement(ref count) == 0)

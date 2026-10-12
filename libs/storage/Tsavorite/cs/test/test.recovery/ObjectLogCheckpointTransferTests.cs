@@ -126,6 +126,104 @@ namespace Tsavorite.test.recovery.objects
             }
         }
 
+        // A snapshot-region page that recovery flushes to the main log has its objects copied into the MAIN object log and its records
+        // repointed there, but it arrives carrying the header it was checkpointed with, whose position is in the SNAPSHOT object log.
+        // GetLowestObjectLogSegmentInUse feeds that word to the main device's TruncateUntilSegment, so a stale stamp truncates against an
+        // unrelated address space. Every resident page must therefore hold either no position or one at/after where the main object log
+        // ended when the checkpoint was taken, which is where recovery began appending.
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task SnapshotPageHeadersUseMainObjectLog()
+        {
+            Prepare(sourceDir, out var log, out var objlog, out var store);
+            Guid token;
+            ulong mainObjectLogEndAtCheckpoint;
+            long snapshotRegionStartAddress;
+            try
+            {
+                using (var session = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions()))
+                {
+                    var bContext = session.BasicContext;
+                    for (var ii = 0; ii < NumRecords; ii++)
+                        _ = bContext.Upsert(new TestObjectKey { key = ii }, new TestObjectValue { value = ii });
+                }
+
+                ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot));
+                await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
+
+                // The main log file ends at the hybrid-log/snapshot boundary: records below it are already durable on the main log and
+                // their pages legitimately carry main object-log positions from before the checkpoint; records at or above it live only
+                // in the snapshot and are what recovery copies into the main object log.
+                var logFileInfo = store.GetLogFileSize(token);
+                mainObjectLogEndAtCheckpoint = (ulong)logFileInfo.hybridLogObjectFileEndAddress;
+                snapshotRegionStartAddress = logFileInfo.hybridLogFileEndAddress;
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+
+            Prepare(sourceDir, out log, out objlog, out store);
+            long recoveredTailAddress;
+            try
+            {
+                // Recovery only flushes snapshot pages to the main log when it has to evict, which requires a size-tracker budget.
+                // Without one TrimLogPages returns immediately, every page stays resident, and the path under test never runs.
+                const long recoveryTargetSize = 8L * MinKvLogPageSize;
+                var tracker = new LogSizeTracker<ClassStoreFunctions, ClassAllocator>(store.Log, recoveryTargetSize,
+                    recoveryTargetSize / 8, recoveryTargetSize / 16, logger: null);
+                store.Log.SetLogSizeTracker(tracker);
+
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                recoveredTailAddress = store.Log.TailAddress;
+            }
+            finally
+            {
+                Destroy(log, objlog, store);
+            }
+
+            // Snapshot-region pages are flushed to the MAIN log during recovery and then evicted, so the stamp has to be read back from
+            // the main log file rather than from a resident page. A page that stayed resident instead was returned to the freshly-allocated
+            // state (NotSet) for a later flush to stamp, which reads the same here.
+            var stamped = 0;
+            var scanned = 0;
+            var firstSnapshotPage = (snapshotRegionStartAddress + MinKvLogPageSize - 1) / MinKvLogPageSize;
+            for (var page = firstSnapshotPage; page <= recoveredTailAddress / MinKvLogPageSize; page++)
+            {
+                ++scanned;
+                var word = ReadPageHeaderObjectLogWord(Path.Combine(sourceDir, LogBaseName), page * MinKvLogPageSize);
+                if (word == ObjectLogFilePositionInfo.NotSet)
+                    continue;
+                ++stamped;
+                Assert.That(word & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.GreaterThanOrEqualTo(mainObjectLogEndAtCheckpoint),
+                    $"snapshot-region page {page} header holds object-log position {word & ObjectLogFilePositionInfo.SegmentAndOffsetMask}, which "
+                    + $"precedes the main object log's end at checkpoint ({mainObjectLogEndAtCheckpoint}); that is a snapshot-object-log position, not a main one");
+            }
+
+            Assert.That(stamped, Is.GreaterThan(0),
+                $"no snapshot-region page carried an object-log position, so this test proves nothing: scanned {scanned} pages from {firstSnapshotPage} "
+                + $"(snapshotRegionStart {snapshotRegionStartAddress}, recoveredTail {recoveredTailAddress}, mainObjEnd {mainObjectLogEndAtCheckpoint})");
+        }
+
+        /// <summary>Read a main-log page's <see cref="PageHeader.objectLogLowestPositionWord"/> straight from the log file.</summary>
+        private static unsafe ulong ReadPageHeaderObjectLogWord(string logBaseName, long pageStartAddress)
+        {
+            var path = $"{logBaseName}.{pageStartAddress / MainLogSegmentSize}";
+            if (!File.Exists(path))
+                return ObjectLogFilePositionInfo.NotSet;
+
+            var offsetInSegment = pageStartAddress % MainLogSegmentSize;
+            using var stream = File.OpenRead(path);
+            if (offsetInSegment + PageHeader.Size > stream.Length)
+                return ObjectLogFilePositionInfo.NotSet;
+
+            _ = stream.Seek(offsetInSegment, SeekOrigin.Begin);
+            var bytes = new byte[PageHeader.Size];
+            stream.ReadExactly(bytes);
+            fixed (byte* headerPtr = bytes)
+                return ((PageHeader*)headerPtr)->objectLogLowestPositionWord;
+        }
+
         // Copies exactly the file ranges that TsavoriteSnapshotReader sends to a replica during full sync.
         private void TransferCheckpoint(Guid token, LogFileInfo logFileInfo)
         {

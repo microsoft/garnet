@@ -24,6 +24,24 @@ namespace Garnet.server
         public int UnreadableTokenCount;
 
         /// <summary>
+        /// Storage-slot to logical-database mapping recorded in the recovered checkpoint, as
+        /// <c>DatabaseMapping[storageSlot] = logicalDatabaseId</c>, or null if it recorded none.
+        /// Every database records the whole mapping, so one checkpoint describes the full permutation.
+        /// </summary>
+        public int[] DatabaseMapping;
+
+        /// <summary>
+        /// Swap epoch that <see cref="DatabaseMapping"/> belongs to. Databases are checkpointed
+        /// individually and can therefore disagree; the highest epoch wins.
+        /// </summary>
+        public long SwapEpoch;
+
+        /// <summary>
+        /// Checkpoint format version of the recovered checkpoint, or zero if none was recovered.
+        /// </summary>
+        public int CheckpointVersion;
+
+        /// <summary>
         /// True if a checkpoint was recovered into the store.
         /// </summary>
         public readonly bool CheckpointRecovered => StoreVersion > 0;

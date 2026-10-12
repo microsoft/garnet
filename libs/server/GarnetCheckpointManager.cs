@@ -50,6 +50,12 @@ namespace Garnet.server
         public void SetRecoveredSafeAofAddress(ref AofAddress recoveredSafeAofAddress) => RecoveredSafeAofAddress = recoveredSafeAofAddress;
 
         /// <inheritdoc />
+        /// <remarks>Accepted here because Garnet relabels databases through SWAPDB, so its checkpoints must
+        /// record which logical database each storage slot held when the checkpoint ran.</remarks>
+        public override void SetDatabaseMappingProvider(Func<(int[] Mapping, long Epoch)> provider)
+            => databaseMappingProvider = provider;
+
+        /// <inheritdoc />
         public override unsafe byte[] GetCookie()
         {
             if (CurrentHistoryId == null) return null;

@@ -83,15 +83,14 @@ namespace Garnet.test
         /// depends on where the buffer position sits (mod the sector size) when the value is written. Any string
         /// value larger than the &lt;= 4 KB inline limit becomes object-log overflow, so the sub-sector "shim"
         /// records walk the buffer position across a full sector, producing various near-sector-end combinations.
-        /// This hardens the currently-active buffered write path and pre-stages coverage for re-enabling the
-        /// direct-DMA write path (see <c>EnableDirectObjectLogWrite</c>), whose start/interior/end fragment split
-        /// is driven by exactly these offsets.
+        /// This hardens both the buffered write path and the direct-DMA write path (taken for values above
+        /// <c>MaxCopySpanLen</c>), whose start/interior/end fragment split is driven by exactly these offsets.
         /// </remarks>
         [Test]
         public async Task LargeValueFlushWithPrecedingSectorCombinations()
         {
             const int OverflowBase = 8 * 1024;         // > the <= 4 KB inline limit, so shims are object-log overflow
-            const int DirectThreshold = 128 * 1024;    // MaxCopySpanLen: values above this take the direct-DMA path when enabled
+            const int DirectThreshold = 128 * 1024;    // MaxCopySpanLen: values above this take the direct-DMA path
             const int FlushBuffer = 4 * 1024 * 1024;   // IStreamBuffer.BufferSize (object-log write buffer)
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));

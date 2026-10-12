@@ -78,6 +78,12 @@ namespace Garnet.server
         /// Flush db
         /// </summary>
         FlushDb = 0x61,
+        /// <summary>
+        /// Records the logical database id that the database owning this AOF carries after a swap,
+        /// together with the swap epoch it was assigned at. Written into every active database's AOF so
+        /// each log states its own label; recovery takes the highest epoch per storage slot.
+        /// </summary>
+        SwapDb = 0x62,
 
         /// <summary>
         /// Unified store upsert string
