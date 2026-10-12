@@ -23,7 +23,7 @@ namespace Garnet.server
     /// <summary>
     /// Transaction manager
     /// </summary>
-    public sealed unsafe partial class TransactionManager
+    public sealed partial class TransactionManager
     {
         /// <summary>
         /// Disposable to allow <see cref="PromoteToTransaction"/> to be handled with a using block.
@@ -151,6 +151,11 @@ namespace Garnet.server
         /// </summary>
         private bool vectorContextMetadataLocked;
 
+        /// <summary>
+        /// True if we need to lock the entire keyspace rather than just a subset of keys.
+        /// </summary>
+        private bool lockEntireKeyspace;
+
         internal TransactionManager(
             StoreWrapper storeWrapper,
             RespServerSession respSession,
@@ -266,7 +271,14 @@ namespace Garnet.server
             {
                 try
                 {
-                    keyEntries.UnlockAllKeys();
+                    if (lockEntireKeyspace)
+                    {
+                        keyEntries.UnlockEntireKeyspace();
+                    }
+                    else
+                    {
+                        keyEntries.UnlockAllKeys();
+                    }
 
                     if (vectorContextMetadataLocked)
                     {
@@ -294,6 +306,7 @@ namespace Garnet.server
             this.PerformWrites = false;
             this.lockVectorManagerContextMetadata = false;
             this.vectorContextMetadataLocked = false;
+            this.lockEntireKeyspace = false;
 
             // Reset cluster key parse state
             if (clusterEnabled)
@@ -545,7 +558,14 @@ namespace Garnet.server
 
                         keyEntries.AddKeys(contextMetadataLocks);
 
-                        lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                        if (lockEntireKeyspace)
+                        {
+                            lockSuccess = keyEntries.TryLockEntireKeyspace(lock_timeout);
+                        }
+                        else
+                        {
+                            lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                        }
                     }
                     else
                     {
@@ -554,7 +574,14 @@ namespace Garnet.server
                 }
                 else
                 {
-                    lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                    if (lockEntireKeyspace)
+                    {
+                        lockSuccess = keyEntries.TryLockEntireKeyspace(lock_timeout);
+                    }
+                    else
+                    {
+                        lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                    }
                 }
             }
             else
@@ -570,7 +597,15 @@ namespace Garnet.server
                     keyEntries.AddKeys(contextMetadataLocks);
                 }
 
-                keyEntries.LockAllKeys();
+                if (lockEntireKeyspace)
+                {
+                    keyEntries.LockEntireKeyspace();
+                }
+                else
+                {
+                    keyEntries.LockAllKeys();
+                }
+
                 lockSuccess = true;
             }
 
