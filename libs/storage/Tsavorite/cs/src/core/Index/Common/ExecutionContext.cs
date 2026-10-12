@@ -147,6 +147,41 @@ namespace Tsavorite.core
 
             public bool HasNoPendingRequests => SyncIoPendingCount == 0;
 
+            /// <summary>Drivers that currently own this context's drain loop.</summary>
+            int activeDrivers;
+
+            /// <summary>
+            /// Takes the drain lease for one driver run, held until <see cref="EndDrive"/>.
+            /// </summary>
+            /// <remarks>
+            /// A pending-completion driver runs the whole drain - resume the epoch, complete the requests,
+            /// suspend - before the continuation that hands the session back to its caller, so the caller's
+            /// own synchronization cannot cover it. The lease spans the driver's lifetime rather than one
+            /// pass of the loop, because the loop parks and resumes between passes.
+            /// </remarks>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void BeginDrive() => Interlocked.Increment(ref activeDrivers);
+
+            /// <summary>Releases the lease taken by <see cref="BeginDrive"/>.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void EndDrive() => Interlocked.Decrement(ref activeDrivers);
+
+            /// <summary>
+            /// Waits until no driver owns the drain loop, so the caller can drain this context itself.
+            /// </summary>
+            /// <remarks>
+            /// Bounded by the device read the driver is waiting on: a driver holding the lease is either
+            /// running the drain or parked on a response that the device will deliver. Cold by construction -
+            /// reached only when a session is torn down while a read it issued is still in flight.
+            /// </remarks>
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            internal void WaitForDriversToFinish()
+            {
+                var spinner = new SpinWait();
+                while (Volatile.Read(ref activeDrivers) > 0)
+                    spinner.SpinOnce();
+            }
+
             public void WaitPending(LightEpoch epoch)
             {
                 if (SyncIoPendingCount > 0)

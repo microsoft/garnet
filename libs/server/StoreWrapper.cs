@@ -252,7 +252,7 @@ namespace Garnet.server
             this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
             if (!serverOptions.DisableObjects)
-                this.itemBroker = new CollectionItemBroker();
+                this.itemBroker = new CollectionItemBroker(this);
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)

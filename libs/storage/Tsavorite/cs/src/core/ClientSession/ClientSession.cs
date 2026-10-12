@@ -31,8 +31,9 @@ namespace Tsavorite.core
         /// <remarks>
         /// Append-only, and published with a release so a reader that sees a pool also sees its
         /// <see cref="PendingCompletionDriverPool.Next"/>. Walking is therefore lock-free; only creation
-        /// takes <see cref="pendingDriverPoolsGate"/>, because a resumed session can reach this from the
-        /// thread that drove its completion while another thread is here for the same session.
+        /// takes <see cref="pendingDriverPoolsGate"/>. Garnet parks the session that owns these, so it
+        /// reaches them from one thread at a time, but completing pending requests is public API and so the
+        /// list is kept correct for a caller that drains a session from a thread of its own.
         /// </remarks>
         PendingCompletionDriverPool pendingDriverPools;
 
@@ -157,6 +158,12 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
+            // A driver may still own this session's drain loop. It runs the whole Tsavorite drain before the
+            // continuation that hands the session back to its caller, so the caller's own teardown ordering
+            // cannot exclude it, and draining here at the same time would put two threads in
+            // InternalCompletePendingRequests on one execution context.
+            ctx.WaitForDriversToFinish();
+
             completedOutputs?.Dispose();
 
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.

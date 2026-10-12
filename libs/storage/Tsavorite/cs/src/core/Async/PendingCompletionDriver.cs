@@ -175,6 +175,7 @@ namespace Tsavorite.core
             this.sessionFunctions = sessionFunctions;
             this.completedOutputs = completedOutputs;
             this.token = token;
+            sessionFunctions.Ctx.BeginDrive();
 
             core.Reset();
             return core.Version;
@@ -279,9 +280,14 @@ namespace Tsavorite.core
         }
 
         /// <summary>Drops references the driver no longer needs so a pooled driver does not root them.</summary>
+        /// <remarks>
+        /// Releases the session's drain lease first: from here on the session is free for another thread,
+        /// which is what lets a continuation run inline on this thread and tear the session down.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void Release()
         {
+            sessionFunctions.Ctx.EndDrive();
             sessionFunctions = default;
             completedOutputs = null;
             token = default;
