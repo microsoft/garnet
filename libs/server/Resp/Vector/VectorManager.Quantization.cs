@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -64,6 +65,15 @@ namespace Garnet.server
         /// </summary>
         internal int QuantizationBackfillsProcessed => quantizationBackfillsProcessed;
 
+        private void EnqueueQuantization(QuantizationState state)
+        {
+            if (!quantizationChannel.Writer.TryWrite(state))
+            {
+                logger?.LogCritical("VectorManager quantization channel rejected a request");
+                Debug.Assert(false, "VectorManager quantization channel should never drop a request");
+            }
+        }
+
         /// <summary>
         /// Populate <see cref="quantizationTasks"/> with running tasks for handling any quantization requests.
         /// </summary>
@@ -71,10 +81,10 @@ namespace Garnet.server
         {
             for (var i = 0; i < quantizationTasks.Length; i++)
             {
-                quantizationTasks[i] = QuantizationTaskAsync(this, quantizationChannel.Reader, quantizationChannel.Writer);
+                quantizationTasks[i] = QuantizationTaskAsync(this, quantizationChannel.Reader);
             }
 
-            static async Task QuantizationTaskAsync(VectorManager self, ChannelReader<QuantizationState> reader, ChannelWriter<QuantizationState> writer)
+            static async Task QuantizationTaskAsync(VectorManager self, ChannelReader<QuantizationState> reader)
             {
                 // Force async
                 await Task.Yield();
@@ -99,7 +109,7 @@ namespace Garnet.server
                         // Instead of spin-waiting on a pool thread (which would consume the pool and starve the
                         // disk-IO completion that releases the lock, deadlocking concurrent VADD), yield the pool
                         // thread and retry so a completion can always be scheduled.
-                        for (var attempt = 0; !TryProcessQuantizationRequest(self, session, writer, state, indexArray); attempt++)
+                        for (var attempt = 0; !TryProcessQuantizationRequest(self, session, state, indexArray); attempt++)
                         {
                             if (attempt < 16)
                             {
@@ -124,7 +134,7 @@ namespace Garnet.server
             // handled (or is terminal, e.g. the index was dropped), and false when the set lock was contended and
             // the caller should yield its pool thread and retry. All ref struct / Span / native interop stays inside
             // this synchronous method so it never straddles an await.
-            static bool TryProcessQuantizationRequest(VectorManager self, RespServerSession session, ChannelWriter<QuantizationState> writer, QuantizationState state, byte[] indexArray)
+            static bool TryProcessQuantizationRequest(VectorManager self, RespServerSession session, QuantizationState state, byte[] indexArray)
             {
                 try
                 {
@@ -166,7 +176,7 @@ namespace Garnet.server
                                             // Schedule backfill after quantization table is available
                                             for (var i = 0; i < self.quantizationTaskCount; i++)
                                             {
-                                                _ = writer.TryWrite(new(state.Key, QuantizationStep.BackfillQuantizedVectors, i));
+                                                self.EnqueueQuantization(new(state.Key, QuantizationStep.BackfillQuantizedVectors, i));
                                             }
                                         }
 
@@ -178,7 +188,7 @@ namespace Garnet.server
                                             self.logger?.LogError("Quantization backfill {step}/{total} failed for context {context}", state.StepIndex, self.quantizationTasks.Length, context);
 
                                             // Post a retry back on the channel
-                                            _ = writer.TryWrite(new(state.Key, QuantizationStep.BackfillQuantizedVectors, state.StepIndex));
+                                            self.EnqueueQuantization(new(state.Key, QuantizationStep.BackfillQuantizedVectors, state.StepIndex));
                                             break;
                                         }
 
