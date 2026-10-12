@@ -216,14 +216,13 @@ namespace Garnet.common
         {
             try
             {
-                var pending = ReceiveLoopWithoutTLS(e, out var demand);
-                if (pending.HasValue)
+                if (TryReceiveLoopWithoutTLS(e, out var demand, out var pending))
                 {
                     // A command in this batch suspended. Hand the rest of the loop to a continuation and
                     // release this IO thread. No receive is outstanding, so the connection stays idle until
                     // the batch finishes, which is what parks the session.
                     FireAndForgetMethodBuilder.UseBoxOf(resumeBox);
-                    _ = ResumeReceiveWithoutTLSAsync(pending.Value, demand, e);
+                    _ = ResumeReceiveWithoutTLSAsync(pending, demand, e);
                 }
             }
             catch (Exception ex)
@@ -237,36 +236,48 @@ namespace Garnet.common
         /// </summary>
         /// <param name="e">Receive event args for this connection.</param>
         /// <param name="demand">
-        /// Buffer occupancy of the unfinished pass, meaningful only when this returns a pending consume.
+        /// Buffer occupancy of the unfinished pass, meaningful only when this returns true.
+        /// </param>
+        /// <param name="pending">
+        /// The consume that must finish before the loop continues, meaningful only when this returns true.
         /// </param>
         /// <returns>
-        /// Null once the loop is finished -- the connection was torn down, or a receive is outstanding and its
-        /// completion will re-enter here. Otherwise the consume that must finish before the loop continues.
+        /// False once the loop is finished -- the connection was torn down, or a receive is outstanding and
+        /// its completion will re-enter here. True when a batch suspended and <paramref name="pending"/> must
+        /// be awaited and completed first.
         /// </returns>
-        private ValueTask<int>? ReceiveLoopWithoutTLS(SocketAsyncEventArgs e, out int demand)
+        private bool TryReceiveLoopWithoutTLS(SocketAsyncEventArgs e, out int demand, out ValueTask<int> pending)
         {
             demand = 0;
+            pending = default;
             do
             {
                 if (e.BytesTransferred == 0 || e.SocketError != SocketError.Success || serverHook.Disposed)
                 {
                     // No more things to receive
                     Dispose(e);
-                    return null;
+                    return false;
                 }
 
-                // A returned consume means this pass is unfinished, whether or not it has completed by now:
-                // a resume on another thread can complete it the instant it is published, and treating that
-                // as "already handled" would skip the completion half and leave the batch's bytes unconsumed
-                // for the next pass to parse again.
-                var pending = BeginNetworkReceiveWithoutTLS(e.BytesTransferred, out demand);
-                if (pending.HasValue)
-                    return pending;
+                var consume = BeginNetworkReceiveWithoutTLS(e.BytesTransferred, out demand);
+
+                // Observe the consume exactly once, into a local, and let everything below follow from that
+                // one observation. A resume on another thread can complete it the instant it is published, so
+                // a second observation need not agree with this one, and a pass believed finished on the
+                // strength of it would skip the completion half and leave this batch's bytes unconsumed for
+                // the next pass to parse again.
+                if (!consume.IsCompletedSuccessfully)
+                {
+                    pending = consume;
+                    return true;
+                }
+
+                CompleteNetworkReceiveWithoutTLS(consume.GetAwaiter().GetResultGuarded(), demand);
 
                 e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
             } while (!e.AcceptSocket.ReceiveAsync(e));
 
-            return null;
+            return false;
         }
 
         /// <summary>
@@ -289,11 +300,8 @@ namespace Garnet.common
                     if (e.AcceptSocket.ReceiveAsync(e))
                         return;
 
-                    var next = ReceiveLoopWithoutTLS(e, out demand);
-                    if (!next.HasValue)
+                    if (!TryReceiveLoopWithoutTLS(e, out demand, out pending))
                         return;
-
-                    pending = next.Value;
                 }
             }
             catch (Exception ex)
