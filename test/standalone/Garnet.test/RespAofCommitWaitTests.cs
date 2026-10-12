@@ -172,14 +172,28 @@ namespace Garnet.test
         /// <remarks>
         /// The window is a few instructions wide, so it is reached by volume. A commit interval just long
         /// enough to outlast a write makes nearly every batch wait, and short enough that the commit lands
-        /// while it is waiting; the sessions then supply the repetitions. A batch that loses its flush leaves
-        /// its session waiting for a reply that will never come, which is what the bounded wait detects.
+        /// while it is waiting; the sessions then supply the repetitions.
+        /// <para>
+        /// The sessions write for a wall-clock budget rather than a fixed count, because a commit-gated
+        /// write costs one commit interval and that interval is the host's timer granularity, not the
+        /// millisecond asked for -- about sixteen times longer on Windows. A fixed count turns that into a
+        /// timeout on a slow host even when nothing is wrong. A session that loses a flush, on the other
+        /// hand, is waiting on a socket and never sees the stop signal, so it is still the one task that
+        /// fails to finish.
+        /// </para>
+        /// <para>
+        /// That same granularity is where the detection comes from: a host that honours the millisecond
+        /// exposes the window often enough to catch the defect on nearly every run, and one that rounds up
+        /// to its tick exposes it rarely. The test is sound either way -- it never fails on a correct
+        /// build -- and the hosts that honour it are what make the suite catch a regression.
+        /// </para>
         /// </remarks>
         [Test]
         public void ACommitLandingWhileTheBatchWaitsForItStillFlushesTheBatch()
         {
             const int SessionCount = 32;
-            const int WritesPerSession = 4000;
+            var writeFor = TimeSpan.FromSeconds(10);
+            var drainWithin = TimeSpan.FromSeconds(20);
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitWait: true, commitFrequencyMs: 1);
             server.Start();
@@ -187,6 +201,7 @@ namespace Garnet.test
             var clients = new RawRespSession[SessionCount];
             var wrongReplies = new ConcurrentQueue<string>();
             var progress = new int[SessionCount];
+            var stop = false;
             try
             {
                 for (var i = 0; i < SessionCount; i++)
@@ -198,28 +213,36 @@ namespace Garnet.test
                     var id = i;
                     writers[i] = Task.Factory.StartNew(() =>
                     {
-                        for (var w = 0; w < WritesPerSession; w++)
+                        for (var w = 0; !Volatile.Read(ref stop); w++)
                         {
                             var reply = clients[id].Execute("SET", $"flush-{id}-{w}", "v");
                             if (reply != Ok)
                                 wrongReplies.Enqueue($"Session {id} write {w} replied {reply}.");
-                            progress[id] = w + 1;
+                            Volatile.Write(ref progress[id], w + 1);
                         }
                     }, TaskCreationOptions.LongRunning);
                 }
 
-                if (!Task.WaitAll(writers, TimeSpan.FromSeconds(30)))
+                Thread.Sleep(writeFor);
+                Volatile.Write(ref stop, true);
+
+                if (!Task.WaitAll(writers, drainWithin))
                 {
                     var stalled = string.Join(", ", Enumerable.Range(0, SessionCount)
-                        .Where(i => progress[i] < WritesPerSession)
-                        .Select(i => $"session {i} at {progress[i]}/{WritesPerSession}"));
+                        .Where(i => !writers[i].IsCompleted)
+                        .Select(i => $"session {i} after {Volatile.Read(ref progress[i])} writes"));
                     Assert.Fail($"A commit-gated batch never reached the wire: {stalled}.");
                 }
 
                 ClassicAssert.IsEmpty(wrongReplies, string.Join(" ", wrongReplies));
+
+                // A run too small to reach the window would pass whether or not the flush is there.
+                var total = progress.Sum();
+                ClassicAssert.Greater(total, 10_000, $"Only {total} commit-gated writes completed, too few to reach the window.");
             }
             finally
             {
+                Volatile.Write(ref stop, true);
                 foreach (var c in clients)
                     c?.AbortAndDispose();
             }
