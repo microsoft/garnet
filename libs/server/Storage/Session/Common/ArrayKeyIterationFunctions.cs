@@ -167,7 +167,16 @@ namespace Garnet.server
             // Snapshot semantics: emit each unique live key exactly once based on its latest in-range
             // version at scan-start, even if a concurrent RCU moves the key's tail above the captured
             // TailAddress during the scan. Equivalent to the legacy tempKv-backed Iterate(...).
-            _ = unifiedBasicContext.Session.IterateLookupSnapshot(ref unifiedStoreDbKeysFuncs);
+
+            if (txnManager?.state == TxnState.Running)
+            {
+                // If we're in a transaction, we've already locked everything - so skip lock acquisiton
+                _ = unifiedBasicContext.Session.UnsafeNullLockingIterateLookupSnapshot(ref unifiedStoreDbKeysFuncs);
+            }
+            else
+            {
+                _ = unifiedBasicContext.Session.IterateLookupSnapshot(ref unifiedStoreDbKeysFuncs);
+            }
 
             return Keys;
         }

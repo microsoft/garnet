@@ -101,6 +101,45 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool DoTransactionalLockEntireKeyspace<TSessionFunctionsWrapper>(
+            TSessionFunctionsWrapper sessionFunctions,
+            ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession
+        )
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            // Equivalent of DoTransactionalLock, but locks all buckets
+
+            var retryCount = 0;
+        Retry:
+
+            for (var currBucketIndex = 0; currBucketIndex < clientSession.store.LockTable.NumBuckets; currBucketIndex++)
+            {
+                if (clientSession.store.InternalTryLockExclusive(currBucketIndex))
+                {
+                    clientSession.exclusiveLockCount++;
+                    continue;
+                }
+
+                // Unlock everyhting befor e areturn
+                for (var lockedBucketIndex = 0; lockedBucketIndex < currBucketIndex; lockedBucketIndex++)
+                {
+                    clientSession.store.InternalUnlockExclusive(lockedBucketIndex);
+                    clientSession.exclusiveLockCount--;
+                }
+
+                // We've released our locks so this refresh will let other threads advance and release their locks, and we will retry with a full timeout.
+                _ = clientSession.store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(OperationStatus.RETRY_LATER, sessionFunctions);
+                retryCount++;
+                if (retryCount >= KeyLockMaxRetryAttempts)
+                    return false;
+                goto Retry;
+            }
+
+            // We locked all buckets
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool DoTransactionalTryLock<TSessionFunctionsWrapper, TTransactionalKey>(TSessionFunctionsWrapper sessionFunctions,
                 ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
                 ReadOnlySpan<TTransactionalKey> keys, TimeSpan timeout, CancellationToken cancellationToken)
@@ -150,6 +189,57 @@ namespace Tsavorite.core
                     _ = clientSession.store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions);
                     goto Retry;
                 }
+            }
+
+            // All locks were successful.
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool DoTransactionalTryLockEntireKeyspace<TSessionFunctionsWrapper>(
+            TSessionFunctionsWrapper sessionFunctions,
+            ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession,
+            TimeSpan timeout,
+            CancellationToken cancellationToken
+        )
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            // Equivalent of DoTransactionalTryLock, but locks all buckets
+            var startTimestamp = Stopwatch.GetTimestamp();
+
+        Retry:
+            for (var currBucketIndex = 0; currBucketIndex < clientSession.store.LockTable.NumBuckets; currBucketIndex++)
+            {
+                OperationStatus status;
+                if (cancellationToken.IsCancellationRequested)
+                    status = OperationStatus.CANCELED;
+                else
+                {
+                    if (clientSession.store.InternalTryLockExclusive(currBucketIndex))
+                    {
+                        clientSession.exclusiveLockCount++;
+                        continue;
+                    }
+
+                    status = OperationStatus.RETRY_LATER;
+                }
+
+                // Cancellation or lock failure before we've completed all buckets; we have not locked the current key. Unlock anything we've locked.
+                for (var lockedBucketIndex = 0; lockedBucketIndex < currBucketIndex; lockedBucketIndex++)
+                {
+                    clientSession.store.InternalUnlockExclusive(lockedBucketIndex);
+                    clientSession.exclusiveLockCount--;
+                }
+
+                // Lock failure is the only place we check the timeout. If we've exceeded that, or if we've had a cancellation, return false.
+                // A negative timeout (e.g. Timeout.InfiniteTimeSpan) means wait indefinitely until cancellation.
+                if (cancellationToken.IsCancellationRequested || (timeout >= TimeSpan.Zero && Stopwatch.GetElapsedTime(startTimestamp) > timeout))
+                    return false;
+
+                // No cancellation and we're within the timeout. We've released our locks so this refresh will let other threads advance
+                // and release their locks, and we will retry with a full timeout.
+                _ = clientSession.store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions);
+                goto Retry;
             }
 
             // All locks were successful.
@@ -233,6 +323,17 @@ namespace Tsavorite.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static void DoTransactionalUnlockEntireKeyspace(ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
+        {
+            // Equivalent to DoTransactionalUnlock, but unlocks entire keyspace
+            for (var bucketIndex = 0; bucketIndex < clientSession.store.LockTable.NumBuckets; bucketIndex++)
+            {
+                clientSession.store.InternalUnlockExclusive(bucketIndex);
+                --clientSession.exclusiveLockCount;
+            }
+        }
+
         /// <inheritdoc/>
         public void Lock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys)
             where TTransactionalKey : ITransactionalKey
@@ -246,6 +347,25 @@ namespace Tsavorite.core
                 try
                 {
                     lockAcquired = DoTransactionalLock(sessionFunctions, clientSession, keys);
+                }
+                finally
+                {
+                    clientSession.UnsafeSuspendThread();
+                }
+            }
+        }
+
+        public void LockEntireKeyspace()
+        {
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
+            var lockAcquired = false;
+            while (!lockAcquired)
+            {
+                clientSession.UnsafeResumeThread(sessionFunctions);
+                try
+                {
+                    lockAcquired = DoTransactionalLockEntireKeyspace(sessionFunctions, clientSession);
                 }
                 finally
                 {
@@ -280,6 +400,22 @@ namespace Tsavorite.core
             try
             {
                 return DoTransactionalTryLock(sessionFunctions, clientSession, keys, timeout, cancellationToken);
+            }
+            finally
+            {
+                clientSession.UnsafeSuspendThread();
+            }
+        }
+
+        public bool TryLockEntireKeyspace(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.TryLock()");
+
+            clientSession.UnsafeResumeThread(sessionFunctions);
+            try
+            {
+                return DoTransactionalTryLockEntireKeyspace(sessionFunctions, clientSession, timeout, cancellationToken);
             }
             finally
             {
@@ -331,6 +467,22 @@ namespace Tsavorite.core
             try
             {
                 DoTransactionalUnlock(clientSession, keys);
+            }
+            finally
+            {
+                clientSession.UnsafeSuspendThread();
+            }
+        }
+
+        public void UnlockEntireKeyspace()
+        {
+            clientSession.CheckIsAcquiredTransactional(sessionFunctions);
+            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Unlock()");
+
+            clientSession.UnsafeResumeThread(sessionFunctions);
+            try
+            {
+                DoTransactionalUnlockEntireKeyspace(clientSession);
             }
             finally
             {

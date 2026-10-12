@@ -126,6 +126,16 @@ namespace Garnet.server
             phase = 0;
         }
 
+        internal void LockEntireKeyspace()
+        {
+            phase = 1;
+
+            comparison.UnifiedTransactionalContext.LockEntireKeyspace();
+            unifiedStoreKeyLocked = true;
+
+            phase = 0;
+        }
+
         internal bool TryLockAllKeys(TimeSpan lock_timeout)
         {
             phase = 1;
@@ -152,11 +162,39 @@ namespace Garnet.server
             return true;
         }
 
+        internal bool TryLockEntireKeyspace(TimeSpan lock_timeout)
+        {
+            phase = 1;
+
+            unifiedStoreKeyLocked = comparison.UnifiedTransactionalContext.TryLockEntireKeyspace(lock_timeout, cancellationToken: default);
+            if (!unifiedStoreKeyLocked)
+            {
+                phase = 0;
+                return false;
+            }
+
+            phase = 0;
+            return true;
+        }
+
         internal void UnlockAllKeys()
         {
             phase = 2;
             if (unifiedStoreKeyLocked && keyCount > 0)
                 comparison.UnifiedTransactionalContext.Unlock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
+            keyCount = 0;
+            unifiedStoreKeyLocked = false;
+            phase = 0;
+        }
+
+        internal void UnlockEntireKeyspace()
+        {
+            phase = 2;
+            if (unifiedStoreKeyLocked)
+            {
+                comparison.UnifiedTransactionalContext.UnlockEntireKeyspace();
+            }
+
             keyCount = 0;
             unifiedStoreKeyLocked = false;
             phase = 0;

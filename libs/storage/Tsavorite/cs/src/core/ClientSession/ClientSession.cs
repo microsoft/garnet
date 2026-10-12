@@ -514,6 +514,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Equivalent to <see cref="IterateLookupSnapshot{TScanFunctions}(ref TScanFunctions, bool)"/>, but without locking any keys.
+        /// </summary>
+        public bool UnsafeNullLockingIterateLookupSnapshot<TScanFunctions>(ref TScanFunctions scanFunctions, bool includeTombstones = false)
+            where TScanFunctions : IScanIteratorFunctions
+        {
+            var untilAddress = store.Log.TailAddress;
+            long cursor = 0;
+            return UnsafeNullLockingScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress,
+                validateCursor: false, maxAddress: untilAddress, resetCursor: true, includeTombstones: includeTombstones);
+        }
+
+        /// <summary>
         /// Push-scan the log from <paramref name="cursor"/> (which should be a valid address) and push up to <paramref name="count"/> records
         /// to the caller via <paramref name="scanFunctions"/> for each Key that is not found at a higher address.
         /// </summary>
