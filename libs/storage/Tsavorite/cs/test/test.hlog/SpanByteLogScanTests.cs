@@ -494,7 +494,7 @@ namespace Tsavorite.test.spanbyte
         static ReadOnlySpan<byte> ScanEndTestKey(int ordinal) => MemoryMarshal.Cast<char, byte>($"key_{ordinal}".AsSpan());
 
         unsafe void PopulateForScanEndTest(BasicContext<TestSpanByteKey, PinnedSpanByte, SpanByteAndMemory, Empty, ScanFunctions,
-                SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext)
+                SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>, BasicSessionLocker<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>>> bContext)
         {
             for (var ii = 0; ii < ScanEndTestRecords; ++ii)
             {
