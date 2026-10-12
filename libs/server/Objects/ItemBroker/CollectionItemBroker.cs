@@ -63,11 +63,54 @@ namespace Garnet.server
         private const int MAIN_LOOP_STARTED = 1;
         private const int MAIN_LOOP_DISPOSED = 2;
 
+        readonly StoreWrapper storeWrapper;
+
+        /// <summary>
+        /// Storage sessions the main loop runs its attempts on, one per database it has served.
+        /// </summary>
+        /// <remarks>
+        /// The loop cannot borrow the waiting session's. A storage session and its transaction manager are
+        /// single-threaded state belonging to the network thread that owns them, and an attempt runs a
+        /// transaction: it drives that session's Tsavorite contexts, takes its locks, and leaves its
+        /// transaction state machine behind. A blocking command registers its observer before its handler
+        /// returns, so the loop can be inside an attempt while that network thread is still unwinding the
+        /// batch it parked in, trimming the transaction manager the attempt is using. Created lazily and
+        /// reached only from the main loop, so neither the map nor the sessions it holds need a lock.
+        /// </remarks>
+        readonly Dictionary<int, StorageSession> loopStorageSessions = [];
+
         /// <summary>
         /// Constructor for CollectionItemBroker
         /// </summary>
-        public CollectionItemBroker()
+        /// <param name="storeWrapper">The store the main loop runs its attempts against</param>
+        public CollectionItemBroker(StoreWrapper storeWrapper) => this.storeWrapper = storeWrapper;
+
+        /// <summary>
+        /// The main loop's storage session for one database, created on first use.
+        /// </summary>
+        StorageSession LoopStorageSession(int dbId)
         {
+            if (loopStorageSessions.TryGetValue(dbId, out var session))
+                return session;
+
+            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
+            Debug.Assert(dbFound, "A blocking command waited on a database the store does not have");
+
+            var scratchBufferAllocator = new ScratchBufferAllocator();
+            session = new StorageSession(storeWrapper, new ScratchBufferBuilder(), scratchBufferAllocator, sessionMetrics: null,
+                    LatencyMetrics: null, dbId, readSessionState: null, db.VectorManager, storeWrapper.logger);
+
+            // An attempt wraps its reads and writes in an internal transaction, so the session needs a
+            // transaction manager of its own. The manager is given no RESP session because the attempt locks
+            // the keys it was handed rather than deriving them from a parse state, which is the only thing a
+            // RESP session is consulted for here.
+            session.txnManager = new TransactionManager(storeWrapper, respSession: null,
+                    new BasicGarnetApi(session, session.stringBasicContext, session.objectBasicContext, session.unifiedBasicContext),
+                    new TransactionalGarnetApi(session, session.stringTransactionalContext, session.objectTransactionalContext, session.unifiedTransactionalContext),
+                    session, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger: storeWrapper.logger, dbId: dbId);
+
+            loopStorageSessions[dbId] = session;
+            return session;
         }
 
         /// <summary>
@@ -263,7 +306,7 @@ namespace Garnet.server
                             continue;
 
                         // The key has an empty observer queue, try to retrieve next available item
-                        if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
+                        if (!TryGetResult(key, LoopStorageSession(observer.DatabaseId), observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
                                 out _, out var result))
                             continue;
 
@@ -336,7 +379,7 @@ namespace Garnet.server
                             }
 
                             // Try to get next available item from object stored in key
-                            if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: false,
+                            if (!TryGetResult(key, LoopStorageSession(observer.DatabaseId), observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: false,
                                     out _, out var result))
                             {
                                 // The collection cannot serve the observer at the head of the queue. Stop here rather
@@ -758,6 +801,11 @@ namespace Garnet.server
             {
                 done.Wait();
             }
+
+            // The main loop has finished, so its storage sessions are no longer in use.
+            foreach (var session in loopStorageSessions.Values)
+                session.Dispose();
+            loopStorageSessions.Clear();
 
             done.Dispose();
             cts.Dispose();

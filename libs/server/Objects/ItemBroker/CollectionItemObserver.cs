@@ -27,6 +27,12 @@ namespace Garnet.server
         internal RespServerSession Session { get; }
 
         /// <summary>
+        /// The database the blocking command was called against, captured here because the broker's main
+        /// loop reads it after the session has parked and may have moved on.
+        /// </summary>
+        internal int DatabaseId { get; }
+
+        /// <summary>
         /// The command type for the blocking command
         /// </summary>
         internal RespCommand Command { get; }
@@ -61,6 +67,7 @@ namespace Garnet.server
         internal CollectionItemObserver(RespServerSession session, RespCommand command, CollectionItemArgs commandArgs = default)
         {
             Session = session;
+            DatabaseId = session.activeDbId;
             Command = command;
             CommandArgs = commandArgs;
         }

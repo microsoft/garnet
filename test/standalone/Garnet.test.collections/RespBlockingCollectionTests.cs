@@ -35,6 +35,64 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
+        /// <summary>
+        /// Drives many concurrent blocking pops whose items are already present, so every one of them is
+        /// served by the broker's main loop rather than by a later push. This covers the loop's own storage
+        /// sessions: the loop runs a transaction per attempt, so a loop session that is missing a piece of
+        /// its setup answers nothing and every blocking command hangs.
+        /// </summary>
+        [Test]
+        public void ConcurrentBlockingPopsServedByTheBrokerLoopReturnTheRightItem()
+        {
+            const int Sessions = 8;
+            const int Rounds = 150;
+
+            var failures = new List<string>();
+            var barrier = new Barrier(Sessions);
+
+            var workers = new Task[Sessions];
+            for (var s = 0; s < Sessions; ++s)
+            {
+                var id = s;
+                workers[s] = Task.Run(() =>
+                {
+                    using var client = TestUtils.CreateRequest();
+                    var key = $"blockkey-{id}";
+
+                    barrier.SignalAndWait();
+
+                    for (var round = 0; round < Rounds; ++round)
+                    {
+                        var value = $"v-{id}-{round}";
+
+                        var pushed = Encoding.ASCII.GetString(client.SendCommand($"LPUSH {key} {value}"));
+                        if (!pushed.StartsWith(":1\r\n", StringComparison.Ordinal))
+                        {
+                            lock (failures)
+                                failures.Add($"session {id} round {round}: LPUSH answered {Printable(pushed)}");
+                            return;
+                        }
+
+                        // The item is already in the list, so this is answered from the broker's main loop
+                        // rather than by a later push.
+                        var popped = Encoding.ASCII.GetString(client.SendCommand($"BLPOP {key} 10", 3));
+                        var expected = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
+                        if (!popped.StartsWith(expected, StringComparison.Ordinal))
+                        {
+                            lock (failures)
+                                failures.Add($"session {id} round {round}: BLPOP answered {Printable(popped)}, expected {Printable(expected)}");
+                            return;
+                        }
+                    }
+                });
+            }
+
+            ClassicAssert.IsTrue(Task.WaitAll(workers, TimeSpan.FromMinutes(2)), "A blocking pop never came back");
+            ClassicAssert.IsEmpty(failures, string.Join(Environment.NewLine, failures));
+        }
+
+        static string Printable(string resp) => resp.Replace("\r", "\\r").Replace("\n", "\\n");
+
         [Test]
         [TestCase("BRPOP")]
         [TestCase("BLPOP")]
