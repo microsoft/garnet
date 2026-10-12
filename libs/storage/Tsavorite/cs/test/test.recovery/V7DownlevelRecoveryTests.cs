@@ -807,7 +807,7 @@ namespace Tsavorite.test.recovery
             try
             {
                 using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog: null);
-                var ex = Assert.ThrowsAsync<TsavoriteException>(async () => _ = await store.RecoverAsync(default, token).ConfigureAwait(false));
+                var ex = Assert.ThrowsAsync<TsavoriteObjectLogUpgradeRequiredException>(async () => _ = await store.RecoverAsync(default, token).ConfigureAwait(false));
                 ClassicAssert.IsTrue(ex.Message.Contains(nameof(KVSettings.UpgradeObjectLogDevice)), $"unexpected message: {ex.Message}");
             }
             finally

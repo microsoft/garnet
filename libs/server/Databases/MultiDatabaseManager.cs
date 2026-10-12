@@ -206,6 +206,14 @@ namespace Garnet.server
                     Logger?.LogError(ex, "Refusing to start: the log geometry of storage slot {storageSlot} does not match the checkpoint being recovered", storageSlot);
                     throw;
                 }
+                catch (TsavoriteObjectLogUpgradeRequiredException ex)
+                {
+                    // A configuration mistake, not unreadable data: the downlevel object log is intact and recovers once an
+                    // upgrade object-log device is configured (an --upgrade run). Continuing would discard it, so this is fatal
+                    // whatever FailOnRecoveryError says, exactly like a geometry mismatch.
+                    Logger?.LogError(ex, "Refusing to start: recovering the downlevel object log of storage slot {storageSlot} requires an upgrade object-log device (--upgrade)", storageSlot);
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     // Unless FailOnRecoveryError is set the server continues with whatever was recovered, so this

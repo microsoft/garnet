@@ -107,4 +107,24 @@ namespace Tsavorite.core
         {
         }
     }
+
+    /// <summary>
+    /// Recovering a downlevel checkpoint requires up-converting its object log, but no device was configured to receive the
+    /// converted object bytes.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from the other recovery failures because it reports a configuration mistake rather than unreadable data: the
+    /// downlevel object log is intact and recovers correctly once an upgrade object-log device is configured (an <c>--upgrade</c>
+    /// run), so a host must not fall back to starting empty and discarding it. Mirrors <see cref="TsavoriteLogGeometryMismatchException"/>.
+    /// </remarks>
+    public class TsavoriteObjectLogUpgradeRequiredException : TsavoriteException
+    {
+        /// <summary>
+        /// Report that recovering a downlevel object log needs an upgrade object-log device that was not configured.
+        /// </summary>
+        /// <param name="message"></param>
+        public TsavoriteObjectLogUpgradeRequiredException(string message) : base(message)
+        {
+        }
+    }
 }

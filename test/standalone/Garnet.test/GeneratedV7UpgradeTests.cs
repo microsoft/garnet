@@ -113,8 +113,9 @@ namespace Garnet.test
     /// <item>Tier on (objects evicted to the object-log device): the cv7 bytes live on that device in the dense
     /// downlevel framing, and in-place recovery without <c>--upgrade</c> is refused by
     /// <c>AllocatorBase.VerifyUpgradeCapability</c>, because converting them needs the separate upgrade device that only
-    /// an <c>--upgrade</c> run configures. The refusal throws under <c>FailOnRecoveryError</c> and is swallowed into an
-    /// empty store by default. This is the contract pinned by <see cref="GeneratedV7StoreRejectsRecoveryWithoutUpgrade"/>.</item>
+    /// an <c>--upgrade</c> run configures. The refusal throws a dedicated <c>TsavoriteObjectLogUpgradeRequiredException</c>
+    /// that the host treats as fatal regardless of <c>FailOnRecoveryError</c> (like a geometry mismatch), so recovery stops
+    /// rather than coming up empty. This is the contract pinned by <see cref="GeneratedV7StoreRejectsRecoveryWithoutUpgrade"/>.</item>
     /// <item>FoldOver (log-only) written with no real device: comes back empty for an unrelated reason -- FoldOver only
     /// shifts the read-only region to the tail and flushes it to the log device, so a null device discards it and
     /// recovery reads nothing.</item>
@@ -211,43 +212,34 @@ namespace Garnet.test
         /// <summary>
         /// A genuinely downlevel checkpoint whose objects were evicted to the object-log device CANNOT be recovered in place
         /// without <c>--upgrade</c>: up-converting the downlevel object log needs the separate upgrade device that only an
-        /// <c>--upgrade</c> run configures, so recovery refuses. With <c>FailOnRecoveryError</c> on, the refusal surfaces as a
-        /// <see cref="TsavoriteException"/>; with the default off, the same refusal is swallowed and the server comes up with an
-        /// empty store.
+        /// <c>--upgrade</c> run configures, so recovery refuses. Because the checkpoint is intact and recovers once that device
+        /// is configured, the refusal is a <see cref="TsavoriteObjectLogUpgradeRequiredException"/> the host treats as fatal
+        /// regardless of <c>FailOnRecoveryError</c> -- exactly like a geometry mismatch -- rather than coming up with an empty store.
         /// </summary>
         /// <remarks>
         /// This corrects an earlier premise that cv7 data was "readable without --upgrade." That holds only for records still
         /// resident on the main log; once the object bytes live on the object-log device, <c>AllocatorBase.VerifyUpgradeCapability</c>
         /// rejects recovery unless an upgrade device is present, because the downlevel object log stores above-cutoff components
-        /// headerless and cannot be decoded in place by a release that no longer carries the per-record downlevel selector. The
-        /// default-off branch is a silent-data-loss footgun in its own right: an operator who
-        /// restarts the new binary over a cv7 data directory without <c>--upgrade</c> gets an empty store and no error. Whether to
-        /// make this refusal fatal regardless of <c>FailOnRecoveryError</c> (as the geometry-mismatch path already is) is a product
-        /// decision left to the maintainers; this test pins the current behavior so a change is deliberate.
+        /// headerless and cannot be decoded in place by a release that no longer carries the per-record downlevel selector. Making
+        /// the refusal fatal regardless of <c>FailOnRecoveryError</c> (as the geometry-mismatch path already is) avoids the
+        /// silent-data-loss footgun of an operator restarting the new binary over a cv7 data directory without <c>--upgrade</c>
+        /// and getting an empty store with no error: recovery stops and tells the operator to add <c>--upgrade</c> rather than
+        /// discarding intact data.
         /// </remarks>
         [Test]
         [Category("GarnetServer")]
-        public void GeneratedV7StoreRejectsRecoveryWithoutUpgrade()
+        public void GeneratedV7StoreRejectsRecoveryWithoutUpgrade([Values(false, true)] bool failOnRecoveryError)
         {
             RequireArtifacts();
 
-            // With FailOnRecoveryError on, recovery refuses rather than silently dropping the dataset.
-            using (var strict = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, tryRecover: true, failOnRecoveryError: true))
-            {
-                var ex = Assert.Throws<TsavoriteException>(() => strict.Start(),
-                    "recovering a downlevel object-log checkpoint without --upgrade must refuse, not come up empty");
-                StringAssert.Contains("UpgradeObjectLogDevice", ex.Message);
-            }
-
-            // Under the default (FailOnRecoveryError off) the same refusal is swallowed, so the store recovers empty. Pinning this
-            // documents the silent-data-loss footgun; a product change to fail loudly by default would update this assertion.
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            RequireArtifacts();
-            using var recovered = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, tryRecover: true);
-            recovered.Start();
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
-            ClassicAssert.AreEqual(0L, (long)redis.GetDatabase(0).Execute("DBSIZE"),
-                "without --upgrade and with FailOnRecoveryError off, an un-upgraded object-log store recovers empty");
+            // Up-converting a downlevel object log whose bytes live on the object-log device needs the separate upgrade device that
+            // only an --upgrade run configures. Because the checkpoint is intact and recovers once that device is present, recovery
+            // refuses with a dedicated exception the host treats as fatal regardless of FailOnRecoveryError, rather than discarding
+            // the dataset and coming up empty.
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, tryRecover: true, failOnRecoveryError: failOnRecoveryError);
+            var ex = Assert.Throws<TsavoriteObjectLogUpgradeRequiredException>(() => server.Start(),
+                "recovering a downlevel object-log checkpoint without --upgrade must refuse, not come up empty");
+            StringAssert.Contains("UpgradeObjectLogDevice", ex.Message);
         }
 
         /// <summary>

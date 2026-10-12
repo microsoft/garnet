@@ -969,7 +969,10 @@ namespace Tsavorite.core
         /// Verify that a downlevel checkpoint carrying object-log data can actually be up-converted. A downlevel object log stores
         /// records headerless above the size that now requires a chunk header, so it cannot be rewritten in place; the converted
         /// bytes need a separate destination device. Recovering without one would leave the object log in a format that a later
-        /// release, which no longer carries the per-record downlevel selector, cannot decode.
+        /// release, which no longer carries the per-record downlevel selector, cannot decode. The refusal is a dedicated
+        /// <see cref="TsavoriteObjectLogUpgradeRequiredException"/>, so a host can treat it as fatal regardless of its
+        /// fail-on-recovery-error policy -- the data is intact and recovers once an upgrade device is configured -- instead of
+        /// falling back to an empty store.
         /// </summary>
         /// <remarks>
         /// A store with no object-log device has nothing to convert and needs no upgrade device; any checkpoint it later takes is
@@ -991,7 +994,7 @@ namespace Tsavorite.core
             if (info.useSnapshotFile != 0 && !info.hlogEndObjectLogTail.HasData)
                 return;
 
-            throw new TsavoriteException($"Recovering checkpoint version {info.hybridLogRecoveryVersion} requires up-converting its object log,"
+            throw new TsavoriteObjectLogUpgradeRequiredException($"Recovering checkpoint version {info.hybridLogRecoveryVersion} requires up-converting its object log,"
                 + $" but no {nameof(KVSettings.UpgradeObjectLogDevice)} was configured to receive the converted object bytes");
         }
 
