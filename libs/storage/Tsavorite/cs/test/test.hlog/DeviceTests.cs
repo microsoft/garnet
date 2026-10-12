@@ -101,6 +101,11 @@ namespace Tsavorite.test
         /// by tens of bytes with load and buries a per-read regression of this size. With no network in the
         /// picture the floor is flat, so the bound can sit just above it.
         /// <para>
+        /// Weighs the submitting thread only. A read is submitted on the caller's thread and completed on a
+        /// drainer thread, so a process-wide counter would also carry every byte the drainer and the runtime
+        /// allocate while the loop runs - on a loaded machine that is the larger number of the two.
+        /// </para>
+        /// <para>
         /// The regression this catches: the guard's cold creation path captures a local in the drainer-thread
         /// lambda, and Roslyn allocates that closure on entry to whichever method declares it. Folded back
         /// into the guard it costs 32 B on every read and write; held in its own method it costs 32 B once.
@@ -150,10 +155,10 @@ namespace Tsavorite.test
                     Read();
 
                 const int Iterations = 20_000;
-                var before = GC.GetTotalAllocatedBytes(precise: true);
+                var before = GC.GetAllocatedBytesForCurrentThread();
                 for (var i = 0; i < Iterations; i++)
                     Read();
-                var perRead = (GC.GetTotalAllocatedBytes(precise: true) - before) / (double)Iterations;
+                var perRead = (GC.GetAllocatedBytesForCurrentThread() - before) / (double)Iterations;
 
                 TestContext.Out.WriteLine($"per device read = {perRead:F2} B");
 
