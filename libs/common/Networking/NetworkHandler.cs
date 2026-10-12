@@ -661,7 +661,7 @@ namespace Garnet.networking
         void Read()
         {
             bool retry = false;
-            while (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
+            while (TlsReaderHasWork(retry))
             {
                 retry = false;
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
@@ -733,6 +733,19 @@ namespace Garnet.networking
         }
 
         /// <summary>
+        /// Whether the TLS reader has more to do before it can return to rest. Three things keep it going:
+        /// ciphertext still buffered on the transport, plaintext already buffered from an earlier read, and a
+        /// transport buffer <see cref="FinishTransportPass"/> just grew, whose new space should be filled
+        /// before resting. The plaintext case cannot be deferred to the next network receive: a read takes
+        /// only what fits in the space left, and <see cref="SslStream"/> keeps the remainder of the record
+        /// internally, so the socket has nothing left to announce. Every pass of every reader -- synchronous,
+        /// asynchronous, and suspension resume -- decides with this, so none of them can drift from the rest.
+        /// </summary>
+        /// <param name="retry">Whether the pass just grew the transport buffer.</param>
+        bool TlsReaderHasWork(bool retry)
+            => networkBytesRead > networkReadHead || transportBytesRead > 0 || retry;
+
+        /// <summary>
         /// Finishes a synchronous TLS reader pass whose processing suspended, then hands back to the
         /// asynchronous reader loop.
         /// </summary>
@@ -743,7 +756,7 @@ namespace Garnet.networking
                 await processing.ConfigureAwait(false);
 
                 var retry = FinishTransportPass(transportDemand);
-                if (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
+                if (TlsReaderHasWork(retry))
                 {
                     _ = SslReaderLoopAsync(retry, token);
                     return;
@@ -789,11 +802,8 @@ namespace Garnet.networking
                 await ProcessAsync().ConfigureAwait(false);
 
                 retry = FinishTransportPass(transportDemand);
-                // If more work, passthrough to the general SslReaderAsync, else this task is done.
-                // Continue while a reply remains partially parsed even when all ciphertext has been consumed;
-                // SslStream may still hold its remaining plaintext internally. Also propagate retry after growing
-                // the transport buffer so the new space is read before returning to the network receive loop.
-                if (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
+                // retry is handed to the chained loop so it reads into the space just grown before resting.
+                if (TlsReaderHasWork(retry))
                 {
                     _ = SslReaderLoopAsync(retry, token);
                 }
@@ -819,7 +829,7 @@ namespace Garnet.networking
             try
             {
                 bool retry = initialRetry;
-                while (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
+                while (TlsReaderHasWork(retry))
                 {
                     retry = false;
 #if DEBUG
