@@ -276,6 +276,11 @@ namespace Tsavorite.core
                     }
                     else
                     {
+                        // The frame is loaded to the end of the page's valid data, so a record read from it must lie entirely below
+                        // FlushedUntilAddress; otherwise its tail is the cleared frame rather than log data.
+                        Debug.Assert(currentAddress + allocatedSize <= hlogBase.FlushedUntilAddress,
+                            $"Record at {currentAddress} of size {allocatedSize} extends past FlushedUntilAddress {hlogBase.FlushedUntilAddress}");
+
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         // SpanByteAllocator has no objects, so no value-object disposal is required.
                         diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap));

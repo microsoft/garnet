@@ -424,6 +424,13 @@ namespace Tsavorite.core
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
+        /// <remarks>
+        /// <paramref name="compactUntilAddress"/> need not be a record boundary; compaction snaps it to the end of the last record that starts
+        /// below it, which is the returned address.
+        /// <para>On failure this throws without shifting BeginAddress, so no source record is dropped. Records already copied to the tail
+        /// are left as the live versions; re-running Compact is the repair, as it skips those (a newer version now exists for the key) and
+        /// reclaims the originals once it completes.</para>
+        /// </remarks>
         /// <param name="compactUntilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
@@ -434,6 +441,13 @@ namespace Tsavorite.core
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
+        /// <remarks>
+        /// <paramref name="untilAddress"/> need not be a record boundary; compaction snaps it to the end of the last record that starts below it,
+        /// which is the returned address.
+        /// <para>On failure this throws without shifting BeginAddress, so no source record is dropped. Records already copied to the tail
+        /// are left as the live versions; re-running Compact is the repair, as it skips those (a newer version now exists for the key) and
+        /// reclaims the originals once it completes.</para>
+        /// </remarks>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <param name="compactionFunctions">User provided compaction functions (see <see cref="ICompactionFunctions"/>).</param>
