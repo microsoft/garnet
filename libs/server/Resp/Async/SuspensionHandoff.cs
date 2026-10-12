@@ -20,6 +20,9 @@ namespace Garnet.server
     ///
     /// The window is a few instructions wide, which is why the handoff is a state machine rather than a lock:
     /// whichever thread arrives second has to be able to tell that it is second.
+    ///
+    /// Driving a resume is a claim, not an observation, so that a suspension is driven by exactly one thread
+    /// however many completions reach it.
     /// </remarks>
     internal struct SuspensionHandoff
     {
@@ -38,6 +41,12 @@ namespace Garnet.server
         /// <summary>A completion arrived while arming. The parking thread drains it on its way out.</summary>
         const int ResumePending = 3;
 
+        /// <summary>
+        /// A resume has been claimed, and the thread that claimed it is driving the body. Distinct from
+        /// <see cref="Parked"/> so that the claim is exclusive: see <see cref="ClaimResume"/>.
+        /// </summary>
+        const int Resuming = 4;
+
         int state;
 
         /// <summary>
@@ -49,20 +58,37 @@ namespace Garnet.server
         /// Called by the parking thread once it has left the resource scope.
         /// </summary>
         /// <returns>True if a completion already arrived and the caller must drive the resume.</returns>
-        internal bool Park() => Interlocked.Exchange(ref state, Parked) == ResumePending;
+        internal bool Park()
+        {
+            // The common case: no completion has arrived, so the suspension is left for one to claim.
+            if (Interlocked.CompareExchange(ref state, Parked, Arming) == Arming)
+                return false;
+
+            // Otherwise a completion arrived while arming and this thread drives it. It is claimed here
+            // rather than published as parked, so that it is driven by this thread alone.
+            return Interlocked.CompareExchange(ref state, Resuming, ResumePending) == ResumePending;
+        }
 
         /// <summary>
         /// Called by the thread completing the operation the body awaited.
         /// </summary>
         /// <returns>True if the caller must drive the resume, false if the parking thread will.</returns>
+        /// <remarks>
+        /// A resume is claimed by taking the suspension out of <see cref="Parked"/>, not merely by observing
+        /// it there, so that exactly one thread drives a given suspension. A completion that finds any other
+        /// state has nothing to drive: the suspension has already been claimed, has already finished, or was
+        /// never in flight. Driving one anyway would re-enter the session with no body to resume, which
+        /// <c>ConsumeCore</c> reads as a fresh batch -- replaying the receive buffer from the start, and so
+        /// running the batch's commands, and writing their replies, a second time.
+        /// </remarks>
         internal bool ClaimResume()
         {
-            var observed = Interlocked.CompareExchange(ref state, ResumePending, Arming);
-            if (observed == Arming)
+            // While the parking thread is still inside the resource scope, the completion is recorded for it
+            // to drain on its way out and this thread stands down.
+            if (Interlocked.CompareExchange(ref state, ResumePending, Arming) == Arming)
                 return false;
 
-            Debug.Assert(observed == Parked, "A resume arrived for a suspension that was not in flight");
-            return true;
+            return Interlocked.CompareExchange(ref state, Resuming, Parked) == Parked;
         }
 
         /// <summary>
