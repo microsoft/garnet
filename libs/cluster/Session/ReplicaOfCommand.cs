@@ -69,7 +69,7 @@ namespace Garnet.cluster
                     UpgradeLock: false
                 );
 
-                return SuspendOn(ReplicateAsync(syncOpts), PendingReply.Ok);
+                return SuspendOn(ReplicateAsync(syncOpts));
             }
         }
     }

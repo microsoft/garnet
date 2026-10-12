@@ -82,6 +82,14 @@ namespace Garnet.test
         internal void Send(params string[] args) => SendBatch(args);
 
         /// <summary>
+        /// Waits for the server to send something, without consuming it.
+        /// </summary>
+        /// <param name="timeout">How long to wait before reporting that nothing arrived.</param>
+        /// <returns>True if a reply is available or the connection ended; false if the server sent nothing.</returns>
+        internal bool WaitForReply(TimeSpan timeout)
+            => readStart < readEnd || socket.Poll(timeout, SelectMode.SelectRead);
+
+        /// <summary>
         /// Sends several commands in a single socket write, so the server sees them in one receive.
         /// Each element is one command's tokens.
         /// </summary>
@@ -174,6 +182,11 @@ namespace Garnet.test
                 case (byte)'>':
                     var count = ParseLen(lineStart + 1, lineLen - 1);
                     for (var i = 0; i < count; i++)
+                        ReadOne(ref len);
+                    return;
+                case (byte)'%':
+                    var pairs = ParseLen(lineStart + 1, lineLen - 1);
+                    for (var i = 0; i < pairs * 2; i++)
                         ReadOne(ref len);
                     return;
                 default:

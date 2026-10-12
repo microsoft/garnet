@@ -22,9 +22,7 @@ namespace Garnet.server
             // HasOptionalOrObjectFields is false iff: KeyIsInline, ValueIsInline, !HasETag, !HasExpiration (implies !ValueIsObject).
             // RecordType 0 means normal string (not VectorSet or RangeIndex).
             // This avoids expiry checks (no expiration), type-safety checks, ETag handling, and custom command dispatch.
-            // A completion arriving from pending I/O takes the full path instead, because only that path
-            // knows whether the caller still owns the buffer the output points into.
-            if (input.arg1 < 0 && !dataHeader.HasOptionalOrObjectFields && srcLogRecord.RecordType == 0 && !readInfo.IsFromPending)
+            if (input.arg1 < 0 && !dataHeader.HasOptionalOrObjectFields && srcLogRecord.RecordType == 0)
             {
                 CopyRespTo(srcLogRecord.ValueSpan, ref output);
                 return true;

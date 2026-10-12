@@ -32,7 +32,10 @@ namespace Garnet.server
             try
             {
                 if (!reentrant)
+                {
                     networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                    writingOutOfBand = true;
+                }
 
                 WritePushLength(3);
 
@@ -60,7 +63,10 @@ namespace Garnet.server
             finally
             {
                 if (!reentrant)
+                {
+                    writingOutOfBand = false;
                     networkSender.ExitAndReturnResponseObject();
+                }
             }
         }
 
@@ -76,7 +82,10 @@ namespace Garnet.server
             try
             {
                 if (!reentrant)
+                {
                     networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                    writingOutOfBand = true;
+                }
 
                 WritePushLength(4);
 
@@ -104,7 +113,10 @@ namespace Garnet.server
             finally
             {
                 if (!reentrant)
+                {
+                    writingOutOfBand = false;
                     networkSender.ExitAndReturnResponseObject();
+                }
             }
         }
 

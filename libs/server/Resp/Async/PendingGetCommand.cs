@@ -106,8 +106,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Completes a <c>GET</c> whose read went to disk on the calling thread, for the cases that cannot
-        /// park: a running transaction holds its key locks and its epoch across the call.
+        /// Completes a <c>GET</c> whose read went to disk on the calling thread, for the case that cannot
+        /// park: a running transaction, which holds its key locks until it ends.
         /// </summary>
         bool NetworkGETCompletePendingInline<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi

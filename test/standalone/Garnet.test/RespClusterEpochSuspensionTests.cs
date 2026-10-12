@@ -3,6 +3,8 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -125,6 +127,29 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual("+OK", reply);
             return elapsed;
+        }
+
+        /// <summary>
+        /// A suspended cluster command answers with the outcome its body recorded. The body of an
+        /// <c>async</c> method runs up to its first incomplete await before the suspension is published, so
+        /// one that fails without ever suspending has already recorded that failure, and naming a success
+        /// reply at the point of publication would answer a failed command with it.
+        /// </summary>
+        /// <remarks>
+        /// Replicating this node from itself is rejected before the first await, which is what makes the
+        /// body finish without suspending.
+        /// </remarks>
+        [Test]
+        public void AClusterCommandThatFailsBeforeSuspendingAnswersWithItsFailure()
+        {
+            var endpoint = (IPEndPoint)TestUtils.EndPoint;
+
+            using var client = new RawConnection();
+            var reply = client.Execute("REPLICAOF", endpoint.Address.ToString(),
+                endpoint.Port.ToString(CultureInfo.InvariantCulture));
+
+            ClassicAssert.IsTrue(reply.StartsWith("-ERR", StringComparison.Ordinal),
+                $"REPLICAOF of this node from itself answered {reply}");
         }
 
         /// <summary>

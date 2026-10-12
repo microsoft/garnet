@@ -256,6 +256,18 @@ namespace Garnet.server
         List<ArraySegment<byte>> aofDeferredReplies;
 
         /// <summary>
+        /// Set while a writer that is not part of the session's batch holds the response object: an
+        /// out-of-band push, or a completion running on another thread.
+        /// </summary>
+        /// <remarks>
+        /// Such a writer carries no AOF-dependent reply and cannot take part in the hold-back
+        /// <see cref="Send"/> does. Letting it would split a message that outgrows the response buffer
+        /// across the commit, holding back the chunks it flushed while its last chunk -- which the writer
+        /// itself puts on the wire with <see cref="SendNow"/> -- went straight out ahead of them.
+        /// </remarks>
+        bool writingOutOfBand;
+
+        /// <summary>
         /// A per-session cache for storing lua scripts
         /// </summary>
         internal readonly SessionScriptCache sessionScriptCache;
@@ -693,18 +705,27 @@ namespace Garnet.server
                 }
 
                 // Send message and dispose the network sender to end the session
-                FlushFatal();
-
                 if (ex.Panic)
                 {
+                    FlushFatal();
+
                     // Does not return, finally block below will NOT be ran.
                     Environment.Exit(-1);
                 }
 
                 if (ex.DisposeSession)
                 {
+                    FlushFatal();
+
                     // The session is no longer usable, dispose it
                     networkSender.DisposeNetworkSender(true);
+                }
+                else
+                {
+                    // The session carries on, so its replies keep the guarantee they were given: the batch
+                    // goes out through the ordinary path, which waits for the commit by suspending rather
+                    // than by holding this thread.
+                    FlushBatch();
                 }
             }
             catch (Exception ex)
@@ -970,9 +991,21 @@ namespace Garnet.server
         /// Writes out the batch's replies on a path that ends the session, where the commit they would have
         /// waited for can no longer be waited for and the connection carrying the ack is destroyed with it.
         /// </summary>
+        /// <remarks>
+        /// Under <c>--wait-for-commit</c> those replies include acknowledgements for writes whose commit has
+        /// not landed. Waiting for it here would hand the network thread to any client able to provoke the
+        /// fault, and sending without waiting would tell the client a write is durable when it is not, so
+        /// the batch is dropped: a client that sees its connection end draws no conclusion about durability.
+        /// </remarks>
         private void FlushFatal()
         {
-            waitForAofBlocking = false;
+            if (waitForAofBlocking)
+            {
+                waitForAofBlocking = false;
+                DiscardDeferredReplies();
+                dcurr = networkSender.GetResponseObjectHead();
+            }
+
             SendBatch();
         }
 
@@ -1708,7 +1741,7 @@ namespace Garnet.server
             // The AOF records behind these bytes are not committed yet, and the commit cannot be waited for
             // here: this runs inside a synchronous write loop, deep below any point that could suspend. Hold
             // the bytes instead. FlushBatch waits for the commit at the end of the batch and writes them out.
-            if (waitForAofBlocking)
+            if (waitForAofBlocking && !writingOutOfBand)
             {
                 DeferReply(d, sendBytes);
                 return;

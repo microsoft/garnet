@@ -101,6 +101,7 @@ namespace Garnet.server
                             // sent at that point. For sync responses that span multiple ProcessMessage calls (e.g., MGET), we need the
                             // main thread to hold the sender lock until the response is done.
                             networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                            writingOutOfBand = true;
 
                             // Send async replies with completed outputs
                             while (completedOutputs.Next())
@@ -135,6 +136,7 @@ namespace Garnet.server
                     finally
                     {
                         completedOutputs.Dispose();
+                        writingOutOfBand = false;
                         networkSender.ExitAndReturnResponseObject();
                     }
                 }

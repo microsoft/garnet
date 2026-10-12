@@ -61,7 +61,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Updates the unified store, reporting rather than waiting when the record is not in memory. The
-        /// update is already applied when this reports pending; only its outcome is still on the device.
+        /// update has not been applied when this reports pending: it is applied when the record arrives,
+        /// in the continuation of the pending operation.
         /// </summary>
         /// <param name="key">Key to update.</param>
         /// <param name="input">Input describing the update.</param>

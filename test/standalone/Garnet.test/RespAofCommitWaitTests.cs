@@ -159,5 +159,84 @@ namespace Garnet.test
                         client.Execute("GET", $"durable-{i}"), $"Key durable-{i} was acknowledged but did not survive.");
             }
         }
+        /// <summary>
+        /// A command that faults without ending the session must not release the batch's acknowledgements:
+        /// the writes behind them are still waiting for their commit, and the session carries on afterwards,
+        /// so the client would keep using a connection that had told it an uncommitted write was durable.
+        /// </summary>
+        /// <remarks>
+        /// The first write lands on a commit boundary, which puts a full interval between the batch below
+        /// and the next commit, so the window the batch is asked to stay silent for is not a race against
+        /// one that was already about to fire.
+        /// </remarks>
+        [Test]
+        public void AFaultThatKeepsTheSessionDoesNotReleaseUncommittedAcknowledgements()
+        {
+            const int CommitMs = 4000;
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                enableAOF: true, commitWait: true, commitFrequencyMs: CommitMs, disableObjects: true);
+            server.Start();
+
+            using var client = new RawRespSession();
+
+            ClassicAssert.AreEqual(Ok, client.Execute("SET", "fault-commit-sync", "v"));
+
+            // LPUSH faults with the object store disabled, which is one of the two faults that leave the
+            // session usable, and it lands in the same batch as a write that is owed a commit.
+            client.SendPipeline(["SET", "fault-commit", "v"], ["LPUSH", "fault-list", "x"]);
+
+            ClassicAssert.IsFalse(client.WaitForReply(TimeSpan.FromMilliseconds(CommitMs / 2)),
+                "The batch was answered before its commit, so the SET was acknowledged as durable while it was not.");
+
+            // The session is still usable, so the whole batch is answered once the commit lands.
+            ClassicAssert.AreEqual(Ok, client.ReadReply(), "The acknowledged write lost its reply.");
+            ClassicAssert.IsTrue(client.ReadReply().StartsWith("-ERR", StringComparison.Ordinal),
+                "The faulting command lost its error.");
+            ClassicAssert.AreEqual(Pong, client.Execute("PING"), "The session did not survive the fault.");
+        }
+
+        /// <summary>
+        /// A push belongs to no batch and carries no AOF-dependent reply, so the hold-back does not apply to
+        /// it. A session whose batch parked on an unbounded wait hands the response object back with its
+        /// commit still outstanding, which is when another session can write a push into it. Holding that
+        /// push's chunks would put its last chunk -- the one the publisher writes out itself -- on the wire
+        /// ahead of the rest of the message.
+        /// </summary>
+        [Test]
+        public void APushWrittenWhileARepliesIsHeldArrivesWhole()
+        {
+            const int CommitMs = 4000;
+            const int PayloadBytes = 128 * 1024;
+            const int ClientBufferBytes = 1024 * 1024;
+
+            // A buffer the payload cannot fit in, so writing the push has to flush part of it.
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                enableAOF: true, commitWait: true, commitFrequencyMs: CommitMs, networkBufferSize: "16k");
+            server.Start();
+
+            using var subscriber = new RawRespSession(bufferSize: ClientBufferBytes);
+            using var publisher = new RawRespSession(bufferSize: ClientBufferBytes);
+
+            // RESP3, so one session can both subscribe and write: RESP2 subscriber mode rejects SET.
+            StringAssert.StartsWith("%", subscriber.Execute("HELLO", "3"));
+            StringAssert.Contains("subscribe", subscriber.Execute("SUBSCRIBE", "ch"));
+
+            // The SET leaves a commit outstanding and DEBUG BLOCK parks the batch, so the response object
+            // goes back while the SET's reply is still held.
+            subscriber.SendPipeline(["SET", "commit-push", "v"], ["DEBUG", "BLOCK", "1"]);
+            Thread.Sleep(200);
+
+            var payload = new string('x', PayloadBytes);
+            ClassicAssert.AreEqual(":1\r\n", publisher.Execute("PUBLISH", "ch", payload),
+                "The parked session was not subscribed.");
+
+            ClassicAssert.AreEqual($">3\r\n$7\r\nmessage\r\n$2\r\nch\r\n${PayloadBytes}\r\n{payload}\r\n",
+                subscriber.ReadReply(), "The push did not arrive whole and in order.");
+
+            // The held replies follow once the commit lands.
+            ClassicAssert.AreEqual(Ok, subscriber.ReadReply(), "The acknowledged write lost its reply.");
+            ClassicAssert.AreEqual(Ok, subscriber.ReadReply(), "The parked command lost its reply.");
+        }
     }
 }

@@ -24,11 +24,11 @@ namespace Tsavorite.core
     /// </summary>
     /// <remarks>
     /// A session reaches the loop on every read that misses memory, so the drivers are pooled rather than
-    /// allocated per call. The pool is an intrusive free list and is not thread-safe, matching the rest of
-    /// <see cref="ClientSession{TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator}"/>.
-    /// It holds as many drivers as the session nests completions, which is two: resuming a session runs its
-    /// continuation inline, and that continuation can issue the next read and park again before the driver
-    /// that resumed it is back on the list.
+    /// allocated per call. The pool is an intrusive free list guarded by <see cref="gate"/>: a driver is
+    /// returned only after <c>SetResult</c> has run its continuation inline, and that continuation can
+    /// resume the session, post the next receive, and let another thread rent from this pool before the
+    /// returning thread is done. The lock is uncontended except in that window, and every path that reaches
+    /// it has already waited on a device.
     /// </remarks>
     internal sealed class PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> : PendingCompletionDriverPool
         where TStoreFunctions : IStoreFunctions
@@ -36,6 +36,7 @@ namespace Tsavorite.core
         where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
     {
         readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
+        readonly object gate = new();
         PendingCompletionDriver<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> free;
 
         internal PendingCompletionDriverPool(TsavoriteKV<TStoreFunctions, TAllocator> store) => this.store = store;
@@ -60,20 +61,28 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         PendingCompletionDriver<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> Rent()
         {
-            var driver = free;
-            if (driver is null)
-                return new PendingCompletionDriver<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper>(this, store);
+            lock (gate)
+            {
+                var driver = free;
+                if (driver is not null)
+                {
+                    free = driver.NextFree;
+                    driver.NextFree = null;
+                    return driver;
+                }
+            }
 
-            free = driver.NextFree;
-            driver.NextFree = null;
-            return driver;
+            return new PendingCompletionDriver<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper>(this, store);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Return(PendingCompletionDriver<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> driver)
         {
-            driver.NextFree = free;
-            free = driver;
+            lock (gate)
+            {
+                driver.NextFree = free;
+                free = driver;
+            }
         }
     }
 
