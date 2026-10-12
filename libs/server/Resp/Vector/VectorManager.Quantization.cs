@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -83,6 +84,15 @@ namespace Garnet.server
         /// </summary>
         internal int QuantizationBackfillsProcessed => quantizationBackfillsProcessed;
 
+        private void EnqueueQuantization(QuantizationOrImportState state)
+        {
+            if (!quantizationOrImportChannel.Writer.TryWrite(state))
+            {
+                logger?.LogCritical("VectorManager quantization channel rejected a request");
+                Debug.Assert(false, "VectorManager quantization channel should never drop a request");
+            }
+        }
+
         /// <summary>
         /// Populate <see cref="quantizationAndImportTasks"/> with running tasks for handling any quantization requests.
         /// </summary>
@@ -90,10 +100,10 @@ namespace Garnet.server
         {
             for (var i = 0; i < quantizationAndImportTasks.Length; i++)
             {
-                quantizationAndImportTasks[i] = QuantizationOrImportTaskAsync(this, quantizationOrImportChannel.Reader, quantizationOrImportChannel.Writer);
+                quantizationAndImportTasks[i] = QuantizationTaskAsync(this, quantizationOrImportChannel.Reader, quantizationOrImportChannel.Writer);
             }
 
-            static async Task QuantizationOrImportTaskAsync(VectorManager self, ChannelReader<QuantizationOrImportState> reader, ChannelWriter<QuantizationOrImportState> writer)
+            static async Task QuantizationTaskAsync(VectorManager self, ChannelReader<QuantizationOrImportState> reader, ChannelWriter<QuantizationOrImportState> writer)
             {
                 // Force async
                 await Task.Yield();
@@ -185,7 +195,7 @@ namespace Garnet.server
                                             // Schedule backfill after quantization table is available
                                             for (var i = 0; i < self.quantizationAndImportTaskCount; i++)
                                             {
-                                                _ = writer.TryWrite(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, i, null));
+                                                self.EnqueueQuantization(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, i, null));
                                             }
                                         }
 
@@ -197,7 +207,7 @@ namespace Garnet.server
                                             self.logger?.LogError("Quantization backfill {step}/{total} failed for context {context}", state.StepIndex, self.quantizationAndImportTasks.Length, context);
 
                                             // Post a retry back on the channel
-                                            _ = writer.TryWrite(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, state.StepIndex, null));
+                                            self.EnqueueQuantization(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, state.StepIndex, null));
                                             break;
                                         }
 

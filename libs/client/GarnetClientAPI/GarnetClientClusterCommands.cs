@@ -36,7 +36,7 @@ namespace Garnet.client
         {
             var args = failoverOption == default ?
                 new Memory<byte>[] { FAILOVER } :
-                [FAILOVER, FailoverUtils.GetRespFormattedFailoverOption(failoverOption)];
+                [FAILOVER, FailoverUtils.GetFailoverOptionBytes(failoverOption)];
             return await ExecuteForStringResultWithCancellationAsync(CLUSTER, args, token: cancellationToken).ConfigureAwait(false) == "OK";
         }
     }

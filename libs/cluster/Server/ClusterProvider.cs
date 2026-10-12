@@ -34,12 +34,18 @@ namespace Garnet.cluster
         /// <summary>
         /// Get cluster username
         /// </summary>
-        public string ClusterUsername => authContainer.ClusterUsername;
+        public string ClusterUsername => ClusterAuth.ClusterUsername;
 
         /// <summary>
         /// Get cluster password
         /// </summary>
-        public string ClusterPassword => authContainer.ClusterPassword;
+        public string ClusterPassword => ClusterAuth.ClusterPassword;
+
+        /// <summary>
+        /// Current cluster authentication container, read with a memory barrier so reconnecting gossip
+        /// clients observe credential rotations performed through <see cref="UpdateClusterAuth"/>.
+        /// </summary>
+        internal ClusterAuthContainer ClusterAuth => Volatile.Read(ref authContainer);
 
         /// <summary>
         /// Create new cluster provider

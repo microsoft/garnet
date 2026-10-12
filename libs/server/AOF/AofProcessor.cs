@@ -152,16 +152,8 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            try
-            {
-                activeVectorManager?.WaitForVectorOperationsToComplete();
-            }
-            finally
-            {
-                activeVectorManager?.ShutdownReplayTasks();
-                activeRangeIndexManager?.DisposeIncompleteStreamReassembly();
-                aofReplayCoordinator?.Dispose();
-            }
+            activeRangeIndexManager?.DisposeIncompleteStreamReassembly();
+            aofReplayCoordinator?.Dispose();
         }
 
         private RespServerSession ObtainServerSession()

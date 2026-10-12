@@ -496,7 +496,11 @@ namespace Garnet.server
             }
 
             // Resume any cleanups we didn't complete before recovery
-            _ = cleanupTaskChannel.TryPublish();
+            if (!cleanupTaskChannel.TryPublish())
+            {
+                logger?.LogCritical("VectorManager cleanup channel rejected a recovery cleanup request");
+                Debug.Assert(false, "VectorManager cleanup channel should never drop a request");
+            }
         }
 
         /// <summary>
@@ -646,7 +650,12 @@ namespace Garnet.server
             cleanupGate.Dispose();
 
             // drain quantization work and stop the worker tasks
-            _ = quantizationOrImportChannel.Writer.TryComplete();
+            if (!quantizationOrImportChannel.Writer.TryComplete())
+            {
+                logger?.LogWarning("VectorManager quantization channel was already completed during disposal");
+                Debug.Fail("VectorManager quantization channel was already completed");
+            }
+
             while (quantizationOrImportChannel.Reader.TryRead(out _)) { }
             AsyncUtils.BlockingWait(Task.WhenAll(quantizationAndImportTasks));
         }
@@ -784,7 +793,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
+                    EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                 }
 
                 return VectorManagerResult.OK;
@@ -846,6 +855,8 @@ namespace Garnet.server
 
             if (!requestCleanupTaskChannel.TryPublish(context))
             {
+                logger?.LogCritical("VectorManager request cleanup channel rejected a delete request");
+                Debug.Assert(false, "VectorManager request cleanup channel should never drop a request");
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
 
@@ -887,7 +898,11 @@ namespace Garnet.server
                     throw new GarnetException($"Drop triggered multiple times for same index: {SpanByte.ToShortString(key)}");
                 }
 
-                _ = requestDropTaskChannel.TryPublish();
+                if (!requestDropTaskChannel.TryPublish())
+                {
+                    logger?.LogCritical("VectorManager request drop channel rejected an index drop");
+                    Debug.Assert(false, "VectorManager request drop channel should never drop a request");
+                }
             }
         }
 

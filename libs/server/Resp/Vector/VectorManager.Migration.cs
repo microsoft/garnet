@@ -267,7 +267,7 @@ namespace Garnet.server
                     // Post recreation the index might already need quantization - if so, queue it up
                     if (requestQuantization)
                     {
-                        _ = quantizationOrImportChannel.Writer.TryWrite(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
+                        EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
                     }
 
                     // For REPLICAs which are following, we need to fake up a write
