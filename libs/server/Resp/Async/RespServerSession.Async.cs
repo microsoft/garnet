@@ -46,6 +46,17 @@ namespace Garnet.server
     /// mid-transaction. A blocking command whose wait is unbounded should therefore bound it, or decline to
     /// wait when <c>txnManager.state == TxnState.Running</c>.
     /// </para>
+    /// <para>
+    /// That reasoning is about a wait with no bound on it. A pending device read is bounded and short, and
+    /// its locks are held for the device latency whether the session parks or the thread blocks, so parking
+    /// would not extend them. The pending-completion paths nonetheless drain on the thread while a
+    /// transaction runs, and not because it shortens the lock hold. Nothing thread-affine spans a
+    /// transaction -- <c>AcquireTransactional</c> records session state and each operation takes and
+    /// releases its own epoch -- but draining keeps the whole <c>MULTI</c>/<c>EXEC</c> replay on one stack,
+    /// rather than resuming into a partly replayed transaction, which no test covers. The cost is one
+    /// thread held for the device wait while that transaction's locks are held; converting these paths is
+    /// tracked follow-up work.
+    /// </para>
     /// </remarks>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
