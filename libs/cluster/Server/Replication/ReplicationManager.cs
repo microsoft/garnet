@@ -500,7 +500,11 @@ namespace Garnet.cluster
             ReplicaReplayDriverStore?.Dispose();
             ctsRepManager.Dispose();
             aofSyncDriverStore.Dispose();
+
+            storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
+            storeWrapper.DefaultDatabase.VectorManager?.ShutdownReplayTasks();
             aofProcessor?.Dispose();
+
             networkPool?.Dispose();
         }
 

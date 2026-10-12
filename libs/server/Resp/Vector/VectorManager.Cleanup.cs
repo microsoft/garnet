@@ -240,7 +240,11 @@ namespace Garnet.server
                     ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_3);
 
                     // Pump the cleanup task once we're done
-                    _ = cleanupTaskChannel.TryPublish();
+                    if (!cleanupTaskChannel.TryPublish())
+                    {
+                        logger?.LogCritical("VectorManager cleanup channel rejected a cleanup request");
+                        Debug.Assert(false, "VectorManager cleanup channel should never drop a request");
+                    }
                 }
                 catch (Exception e)
                 {
@@ -508,7 +512,8 @@ namespace Garnet.server
                                     // No need to wait for marking, since the record is already "deleted"
                                     if (!self.requestCleanupTaskChannel.TryPublish(context))
                                     {
-                                        self.logger?.LogWarning("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
+                                        self.logger?.LogCritical("Could not request delete of abandoned Vector Set {key}", SpanByte.ToShortString(key));
+                                        Debug.Assert(false, "VectorManager request cleanup channel should never drop a request");
                                     }
                                 }
 
