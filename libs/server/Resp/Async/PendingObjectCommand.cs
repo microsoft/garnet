@@ -58,10 +58,8 @@ namespace Garnet.server
                 return true;
             }
 
-            // A running transaction completes on this thread instead of parking, keeping the whole
-            // MULTI/EXEC replay on one stack at the cost of holding that thread for the device wait.
-            // This does not shorten the lock hold; see the transaction note in the class remarks.
-            if (txnManager.state == TxnState.Running)
+            // A consume that cannot park waits the read out on this thread instead; see CanSuspend.
+            if (!CanSuspend)
             {
                 storageSession.StartPendingLatency();
                 _ = storageApi.Object_CompletePending(out var completed, wait: true);

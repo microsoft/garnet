@@ -594,15 +594,26 @@ namespace Garnet.server
         /// <inheritdoc />
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {
-            var consumed = ConsumeCore(reqBuffer, bytesReceived, resume: null);
+            int consumed;
+
+            // Marks the pass unparkable for every command in it, so that a command with a bounded wait
+            // completes it here rather than parking with no receive loop to unwind to.
+            unparkableConsumeDepth++;
+            try
+            {
+                consumed = ConsumeCore(reqBuffer, bytesReceived, resume: null);
+            }
+            finally
+            {
+                unparkableConsumeDepth--;
+            }
+
             if (!asyncSuspended)
                 return consumed;
 
-            // A consumer with no receive loop to unwind to -- the embedded and in-process transports -- cannot
-            // park, so the suspended command is waited out here. Every transport that can park calls
-            // TryConsumeMessagesAsync and never reaches this. AsTask is what makes the wait possible at all:
-            // the underlying source is reusable, and blocking on one directly would read a result it may
-            // already have recycled.
+            // A command with no bounded wait -- a blocking list command -- has nowhere to park either, so it
+            // is waited out here. AsTask is what makes the wait possible at all: the underlying source is
+            // reusable, and blocking on one directly would read a result it may already have recycled.
             return AsyncUtils.BlockingWait(PublishSuspension().AsTask());
         }
 

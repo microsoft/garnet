@@ -104,15 +104,17 @@ namespace Garnet.server
         /// allowed and completing inline where it is not.
         /// </summary>
         /// <remarks>
-        /// A running transaction cannot park: it holds its key locks until it ends, so parking would hold
-        /// them for the whole wait, stalling every session that needs one of them.
+        /// The session parks for the I/O wherever the transport allows it, inside a transaction as much as
+        /// outside one: the read is bounded, its key locks are held for the device latency either way, and
+        /// the queued commands behind it are replayed by the parse loop, which handles a suspension. See the
+        /// transaction note in the class remarks, and <see cref="CanSuspend"/>.
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         bool FinishPendingGet<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
-            => txnManager.state == TxnState.Running
-                ? NetworkGETCompletePendingInline(ref storageApi)
-                : NetworkGETSuspending();
+            => CanSuspend
+                ? NetworkGETSuspending()
+                : NetworkGETCompletePendingInline(ref storageApi);
 
         /// <summary>
         /// GET
@@ -266,7 +268,7 @@ namespace Garnet.server
         /// <remarks>
         /// Reads that go to the device are waited on by suspending the session once, on the single completion
         /// covering the whole run, so the run gets the device overlap of a batched wait without holding a
-        /// thread for it. A running transaction completes in place instead.
+        /// thread for it. A consume that cannot park completes in place instead.
         /// </remarks>
         bool NetworkGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetAdvancedApi
@@ -359,10 +361,8 @@ namespace Garnet.server
                 sgPendingCount = c - firstPending;
                 sgScratchOffset = scratchOffset;
 
-                // A running transaction completes on this thread instead of parking, keeping the whole
-                // MULTI/EXEC replay on one stack at the cost of holding that thread for the device wait.
-                // This does not shorten the lock hold; see the transaction note in the class remarks.
-                if (txnManager.state == TxnState.Running)
+                // A consume that cannot park waits the run out on this thread instead; see CanSuspend.
+                if (!CanSuspend)
                 {
                     _ = storageApi.GET_CompletePending(outputArr, wait: true);
                     WriteCompletedSGGets();

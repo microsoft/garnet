@@ -56,6 +56,7 @@ namespace Garnet.test
                 logDir: TestUtils.MethodTestDir,
                 endpoint: TestUtils.EndPoint,
                 enableCluster: false,
+                enableLua: true,
                 lowMemory: true);
 
             deviceFactoryCreator = new DelayedReadDeviceFactoryCreator();
@@ -208,9 +209,10 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A transaction cannot suspend: it holds its key locks for the whole wait. The read is completed in
-        /// place instead, which must still produce the right reply. Two consecutive GETs, so the run takes
-        /// the scatter-gather path and exercises its in-place completion rather than the single-read one.
+        /// A transaction parks for a device read exactly as an ordinary command does, and the queued
+        /// commands replayed around the suspension still produce the right replies in the right order. Two
+        /// consecutive GETs, so the run takes the scatter-gather path and exercises its suspension rather
+        /// than the single-read one.
         /// </summary>
         [Test]
         public void GetInsideATransactionReadsBackAValueThatIsNoLongerInMemory()
@@ -503,8 +505,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// An MGET inside a transaction cannot suspend, because the transaction holds its key locks and
-        /// Tsavorite's epoch across the call, so it completes its device reads in place instead.
+        /// An MGET inside a transaction parks for its device reads like any other, and the replies it
+        /// writes on resume land in key order inside the transaction's reply array.
         /// </summary>
         [Test]
         public void MGetInsideATransactionReadsBackValuesThatAreNoLongerInMemory()
@@ -701,8 +703,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A running transaction holds its key locks and Tsavorite's epoch across the call, so it cannot
-        /// park. These commands have to fall back to completing in place and still answer correctly.
+        /// The unified-store commands park inside a running transaction as they do outside one, and each
+        /// still answers correctly when the transaction is replayed around the suspension.
         /// </summary>
         [Test]
         public void UnifiedCommandsInsideATransactionReadBackKeysThatAreNoLongerInMemory()
@@ -922,6 +924,224 @@ namespace Garnet.test
                     $"{sessionCount} concurrent device reads took {sw.Elapsed.TotalSeconds:F1}s against a single " +
                     $"read of {single.Elapsed.TotalSeconds:F1}s with {cappedWorkers} worker threads, which means " +
                     "they were serialized on thread-pool threads rather than suspended.");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                if (clamped)
+                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// The same point inside <c>MULTI</c>/<c>EXEC</c>: a transaction whose read misses memory parks for
+        /// the device and gives up its thread, so far more transactions read at once than there are threads
+        /// to hold them.
+        /// </summary>
+        /// <remarks>
+        /// A transaction used to drain its pending reads in place, which held a thread for the whole device
+        /// round trip. Restoring that makes this test serialize into waves of at most one transaction per
+        /// worker thread, and the elapsed time becomes a multiple of a single read rather than close to it.
+        /// The threshold is expressed against a measured single transaction, so a read needing more than one
+        /// device round trip does not look like starvation. See the Linux note on
+        /// <see cref="ManyConcurrentDeviceReadsOutnumberTheThreadPoolAndStillFinishTogether"/>.
+        /// </remarks>
+        [Test]
+        public void ManyConcurrentTransactionsReadingFromTheDeviceOutnumberTheThreadPool()
+        {
+            const int ReadDelayMs = 1000;
+
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
+            Populate();
+
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
+
+            var cappedWorkers = Math.Max(Environment.ProcessorCount, minWorkers);
+            var sessionCount = Math.Max(64, cappedWorkers * 4);
+
+            var clients = new RawClient[sessionCount];
+            var clamped = false;
+            try
+            {
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i] = new RawClient();
+
+                clamped = ThreadPool.SetMaxThreads(cappedWorkers, maxIo);
+                ClassicAssert.IsTrue(clamped,
+                    $"Could not clamp the worker pool to {cappedWorkers} from ({maxWorkers},{maxIo}) with a " +
+                    $"worker minimum of {minWorkers}, so this test cannot demonstrate thread starvation.");
+
+                deviceFactoryCreator.ReadDelayMs = ReadDelayMs;
+
+                // One transaction on its own, as the yardstick for what a single device round trip costs here.
+                var single = Stopwatch.StartNew();
+                ClassicAssert.AreEqual(TxnReply(0), RunTransaction(clients[0], 0));
+                single.Stop();
+
+                ClassicAssert.GreaterOrEqual(single.Elapsed.TotalMilliseconds, ReadDelayMs * 0.8,
+                    "A single transaction returned faster than the injected device delay, so it never went to the device.");
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+
+                var sw = Stopwatch.StartNew();
+                for (var i = 0; i < sessionCount; i++)
+                    SendTransaction(clients[i], i);
+
+                try
+                {
+                    for (var i = 0; i < sessionCount; i++)
+                        ClassicAssert.AreEqual(TxnReply(i), ReadTransactionReply(clients[i]), $"Wrong reply for {Key(i)}");
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"A session produced no reply within the socket timeout, with {sessionCount} " +
+                        $"concurrent transactional device reads against {cappedWorkers} worker threads: the reads " +
+                        $"are being drained on thread-pool threads rather than suspended. {e.Message}");
+                }
+                sw.Stop();
+
+                ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore, sessionCount,
+                    "Fewer device reads than sessions, so some of these reads were served from memory.");
+
+                ClassicAssert.Less(sw.Elapsed.TotalMilliseconds, single.Elapsed.TotalMilliseconds * 3,
+                    $"{sessionCount} concurrent transactional device reads took {sw.Elapsed.TotalSeconds:F1}s against " +
+                    $"a single one of {single.Elapsed.TotalSeconds:F1}s with {cappedWorkers} worker threads, which " +
+                    "means the transactions were drained on thread-pool threads rather than suspended.");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                if (clamped)
+                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+
+            // A single-key transaction, so the read inside it takes the single-read path rather than the
+            // scatter-gather one.
+            static void SendTransaction(RawClient client, int i)
+                => client.SendPipeline(["MULTI"], ["GET", Key(i)], ["EXEC"]);
+
+            static string ReadTransactionReply(RawClient client)
+            {
+                ClassicAssert.AreEqual("+OK\r\n", client.ReadReply());
+                ClassicAssert.AreEqual("+QUEUED\r\n", client.ReadReply());
+                return client.ReadReply();
+            }
+
+            static string RunTransaction(RawClient client, int i)
+            {
+                SendTransaction(client, i);
+                return ReadTransactionReply(client);
+            }
+
+            static string TxnReply(int i) => $"*1\r\n${ValueLength}\r\n{Value(i)}\r\n";
+        }
+
+        /// <summary>
+        /// A script's commands run on a nested consume with no receive loop to unwind to, so a read that
+        /// misses memory is waited out on that thread rather than parked. The values still have to come
+        /// back through the script, and the connection has to stay usable afterwards.
+        /// </summary>
+        /// <remarks>
+        /// Parking here would strand the reply: the resume re-enters the parse loop on the script's own
+        /// request buffer and finishes that batch, which is not the batch the client is waiting on. The
+        /// three commands cover the three pending paths a script reaches -- string, object and unified --
+        /// since <c>GET</c> and <c>SET</c> are served by the script engine directly.
+        /// </remarks>
+        [Test]
+        public void ScriptedReadsFromTheDeviceAnswerWithoutParkingTheSession()
+        {
+            Populate();
+            PopulateObjects();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var readsBefore = deviceFactoryCreator.ReadCount;
+
+            var strings = (RedisResult[])db.ScriptEvaluate(
+                "return redis.call('MGET', KEYS[1], KEYS[2])", [Key(0), Key(1)]);
+            ClassicAssert.AreEqual(Value(0), (string)strings[0]);
+            ClassicAssert.AreEqual(Value(1), (string)strings[1]);
+
+            var field = db.ScriptEvaluate("return redis.call('HGET', KEYS[1], ARGV[1])", [(RedisKey)HashKey(0)], ["f0"]);
+            ClassicAssert.AreEqual("0-0", (string)field);
+
+            var exists = db.ScriptEvaluate("return redis.call('EXISTS', KEYS[1], KEYS[2])", [Key(2), Key(3)]);
+            ClassicAssert.AreEqual(2, (long)exists);
+
+            ClassicAssert.Greater(deviceFactoryCreator.ReadCount - readsBefore, 0,
+                "No device reads, so none of these scripted reads left memory.");
+
+            // The nested consume must not have disturbed the connection it borrowed.
+            ClassicAssert.AreEqual(Value(4), (string)db.StringGet(Key(4)));
+        }
+
+        /// <summary>
+        /// A scripted read that misses memory must not need a second thread to finish. Waiting it out on
+        /// the thread that issued it needs no help; parking it would block that thread until some other
+        /// thread picks the resume up, so with the pool clamped the scripts outnumber the threads able to
+        /// release them.
+        /// </summary>
+        /// <remarks>
+        /// This is the deadlock vector the transport gate closes, and the reason a nested consume completes
+        /// its device reads in place rather than parking. See the Linux note on
+        /// <see cref="ManyConcurrentDeviceReadsOutnumberTheThreadPoolAndStillFinishTogether"/>.
+        /// </remarks>
+        [Test]
+        public void ManyConcurrentScriptedDeviceReadsDoNotNeedASecondThreadToFinish()
+        {
+            const int ReadDelayMs = 200;
+
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
+            Populate();
+
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
+
+            var cappedWorkers = Math.Max(Environment.ProcessorCount, minWorkers);
+            var sessionCount = Math.Max(64, cappedWorkers * 4);
+
+            var clients = new RawClient[sessionCount];
+            var clamped = false;
+            try
+            {
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i] = new RawClient();
+
+                clamped = ThreadPool.SetMaxThreads(cappedWorkers, maxIo);
+                ClassicAssert.IsTrue(clamped, "Could not clamp the worker pool, so this test proves nothing.");
+
+                deviceFactoryCreator.ReadDelayMs = ReadDelayMs;
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i].Send("EVAL", "return redis.call('MGET', KEYS[1])", "1", Key(i));
+
+                try
+                {
+                    for (var i = 0; i < sessionCount; i++)
+                        ClassicAssert.AreEqual($"*1\r\n${ValueLength}\r\n{Value(i)}\r\n", clients[i].ReadReply(),
+                            $"Wrong value for {Key(i)}");
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"A script produced no reply within the socket timeout, with {sessionCount} " +
+                        $"scripted device reads against {cappedWorkers} worker threads: a scripted read is " +
+                        $"parking and waiting for another thread to resume it. {e.Message}");
+                }
+
+                ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore, sessionCount,
+                    "Fewer device reads than scripts, so some of these reads were served from memory.");
             }
             finally
             {
@@ -1374,8 +1594,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// An object read inside a running transaction completes in place rather than suspending, because a
-        /// transaction holds its key locks until it ends and parking would hold them across the device wait.
+        /// An object read inside a running transaction parks for the device like any other read, and still
+        /// returns the object's contents once the transaction resumes.
         /// </summary>
         [Test]
         public void ObjectReadsInsideATransactionStillCompleteFromTheDevice()

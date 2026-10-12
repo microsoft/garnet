@@ -47,15 +47,18 @@ namespace Garnet.server
     /// wait when <c>txnManager.state == TxnState.Running</c>.
     /// </para>
     /// <para>
-    /// That reasoning is about a wait with no bound on it. A pending device read is bounded and short, and
-    /// its locks are held for the device latency whether the session parks or the thread blocks, so parking
-    /// would not extend them. The pending-completion paths nonetheless drain on the thread while a
-    /// transaction runs, and not because it shortens the lock hold. Nothing thread-affine spans a
-    /// transaction -- <c>AcquireTransactional</c> records session state and each operation takes and
-    /// releases its own epoch -- but draining keeps the whole <c>MULTI</c>/<c>EXEC</c> replay on one stack,
-    /// rather than resuming into a partly replayed transaction, which no test covers. The cost is one
-    /// thread held for the device wait while that transaction's locks are held; converting these paths is
-    /// tracked follow-up work.
+    /// That reasoning is about a wait with no bound on it, and it does not extend to a pending device read.
+    /// Such a read is bounded, and its locks are held for the device latency whether the session parks or
+    /// the thread blocks, so parking neither lengthens nor shortens the hold -- it only returns the thread.
+    /// Nothing thread-affine spans a transaction: <c>AcquireTransactional</c> records session state, the
+    /// locks live in the store's lock table, and each operation takes and releases its own epoch. Nor is a
+    /// transaction replayed on a stack of its own that a suspension would have to unwind:
+    /// <see cref="NetworkEXEC"/> rewinds the read head and returns, and the queued commands are re-parsed by
+    /// the ordinary parse loop, which stops at a suspension and picks up from the same read head on resume.
+    /// A pending read inside <c>MULTI</c>/<c>EXEC</c> therefore parks exactly as it does outside one.
+    /// </para>
+    /// <para>
+    /// What does decide between parking and waiting is the transport: see <see cref="CanSuspend"/>.
     /// </para>
     /// </remarks>
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
@@ -75,6 +78,25 @@ namespace Garnet.server
         /// Written and read only on the thread that holds the resource scope.
         /// </summary>
         bool asyncSuspended;
+
+        /// <summary>
+        /// Depth of consume passes with no receive loop to unwind to: those of the embedded and in-process
+        /// transports, and the nested pass a script runs its own commands through.
+        /// </summary>
+        int unparkableConsumeDepth;
+
+        /// <summary>
+        /// Whether a command running now may park the session rather than wait on this thread.
+        /// </summary>
+        /// <remarks>
+        /// Parking is a property of the transport driving the current consume, not of what the command is
+        /// doing or of what else the session holds. It needs a receive loop to unwind to that will leave the
+        /// receive buffer alone and issue nothing further until the resume, and only
+        /// <see cref="TryConsumeMessagesAsync"/> has one. Where there is none, a command whose wait is
+        /// bounded -- a pending device read -- completes it on this thread instead, spending the device
+        /// latency to keep the reply on the stack that asked for it.
+        /// </remarks>
+        internal bool CanSuspend => unparkableConsumeDepth == 0;
 
         /// <summary>
         /// Set while the suspended command keeps the per-batch scope -- response object, scratch buffers,
