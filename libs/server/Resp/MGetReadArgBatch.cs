@@ -24,9 +24,8 @@ namespace Garnet.server
         private bool pendingNullWrite;
         private Memory<(Status Status, StringOutput Output)> runningStatus;
 
-        // Index of the first read that went to the device, which is where runningStatus starts. Captured
-        // when the batch first goes pending so the completion half does not have to derive it from the
-        // parse state, which the batch may outlive when the session suspends for the I/O.
+        // Index of the first read that went to the device, which is where runningStatus starts. Every read
+        // before it was written straight to the output buffer, so the buffer neither holds nor replays them.
         private int asyncOffset;
 
         /// <inheritdoc/>

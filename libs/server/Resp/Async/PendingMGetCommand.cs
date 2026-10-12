@@ -35,8 +35,8 @@ namespace Garnet.server
         bool FinishPendingMGet<TGarnetApi>(in MGetReadArgBatch_SG batch, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // A running transaction holds its key locks for the whole wait, and its context holds Tsavorite's
-            // epoch across the call, which an asynchronous completion may not do.
+            // A running transaction holds its key locks until it ends. Parking here would hold them for the
+            // whole wait, stalling every session that needs one of them, so complete on this thread instead.
             if (txnManager.state == TxnState.Running)
             {
                 storageSession.StartPendingLatency();

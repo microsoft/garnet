@@ -470,6 +470,14 @@ namespace Garnet.server
         /// continuation has already fired, nothing will drive it again, and the garbage collector reclaims it
         /// along with the box. The box is not pooled, because an awaiter may still hold its resume delegate.
         /// </summary>
+        /// <remarks>
+        /// Everything the body would still have run is dropped with it, including the <c>finally</c> of a
+        /// <c>try</c> that spans its await. A suspendable body may therefore only put work the garbage
+        /// collector can finish -- returning a pooled buffer, disposing a memory owner, session-local
+        /// bookkeeping -- in such a <c>finally</c>. Anything a torn-down session must release to the rest of
+        /// the server, such as a lock, an epoch, or an entry in a server-wide structure, belongs in
+        /// <see cref="CancelAsyncCommands"/>, which runs on the teardown path itself.
+        /// </remarks>
         void AbandonSuspension()
         {
             resumeBox = null;

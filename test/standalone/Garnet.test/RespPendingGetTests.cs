@@ -1169,6 +1169,39 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A <c>GET</c> against a key of the wrong type answers the same way whether or not the batch shape
+        /// routes it through the scatter-gather path. <c>NextCommandMaybeGet</c> picks that path whenever
+        /// another <c>GET</c> is already in the buffer behind this one, so the two differ only by pipelining.
+        /// </summary>
+        [Test]
+        public void AWrongTypeGetAnswersTheSameWhetherOrNotItIsBatched()
+        {
+            const string ListKey = "wrongtype-list";
+            const string StringKey = "wrongtype-string";
+            const string StringValue = "value";
+
+            using var client = new RawClient();
+
+            ClassicAssert.AreEqual(":1\r\n", client.Execute("LPUSH", ListKey, "item"));
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("SET", StringKey, StringValue));
+
+            // Not followed by a GET, so this takes the single-read path.
+            var alone = client.Execute("GET", ListKey);
+
+            // Followed by a GET, so this takes the scatter-gather path.
+            client.SendPipeline(["GET", ListKey], ["GET", StringKey]);
+            var batched = client.ReadReply();
+            var trailing = client.ReadReply();
+
+            ClassicAssert.IsTrue(alone.StartsWith("-WRONGTYPE", StringComparison.Ordinal),
+                $"Unbatched GET of a list answered {alone}");
+            ClassicAssert.AreEqual(alone, batched,
+                "A batched GET of a list answered differently from an unbatched one");
+            ClassicAssert.AreEqual($"${StringValue.Length}\r\n{StringValue}\r\n", trailing,
+                "The GET behind the wrong-type one lost its reply");
+        }
+
+        /// <summary>
         /// Minimal synchronous RESP client. Unlike a multiplexer it never reorders or coalesces, and it needs
         /// no thread-pool thread of its own, so it can be used while the pool is deliberately exhausted.
         /// </summary>

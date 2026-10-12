@@ -130,11 +130,14 @@ namespace Garnet.server
             if (parseState.Count < 4)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BLMPOP));
 
-            if (!TryParseBlockingMPop(out var keys, out var timeout, out var directionTokenId, out var popCount))
+            if (!TryParseBlockingMPop(out var keys, out var timeout, out var directionTokenId))
                 return true;
 
             if (!parseState.TryGetOperationDirection(directionTokenId, out var popDirection))
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+
+            if (!TryParseBlockingMPopCount(directionTokenId, out var popCount))
+                return true;
 
             var cmdArgs = CollectionItemArgs.ForListPop(popDirection, popCount);
 
@@ -220,7 +223,7 @@ namespace Garnet.server
             if (parseState.Count < 4)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BZMPOP));
 
-            if (!TryParseBlockingMPop(out var keys, out var timeout, out var orderTokenId, out var popCount))
+            if (!TryParseBlockingMPop(out var keys, out var timeout, out var orderTokenId))
                 return true;
 
             var orderSpan = parseState.GetArgSliceByRef(orderTokenId).ReadOnlySpan;
@@ -232,6 +235,9 @@ namespace Garnet.server
                 lowScoresFirst = false;
             else
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+
+            if (!TryParseBlockingMPopCount(orderTokenId, out var popCount))
+                return true;
 
             var cmdArgs = CollectionItemArgs.ForSortedSetPop(lowScoresFirst, popCount);
 
@@ -277,13 +283,11 @@ namespace Garnet.server
         /// <param name="keys">Keys to observe, copied onto the pinned object heap.</param>
         /// <param name="timeout">Timeout in seconds, 0 to wait indefinitely.</param>
         /// <param name="selectorTokenId">Index of the selector token that follows the keys.</param>
-        /// <param name="popCount">Maximum number of elements to pop.</param>
         /// <returns>True if parsing succeeded; otherwise false, with a RESP error already written.</returns>
-        bool TryParseBlockingMPop(out byte[][] keys, out double timeout, out int selectorTokenId, out int popCount)
+        bool TryParseBlockingMPop(out byte[][] keys, out double timeout, out int selectorTokenId)
         {
             keys = null;
             selectorTokenId = default;
-            popCount = 1;
 
             var currTokenId = 0;
 
@@ -311,9 +315,28 @@ namespace Garnet.server
             for (var i = 0; i < keys.Length; i++)
                 keys[i] = BlockingKeys.Copy(parseState.GetArgSliceByRef(currTokenId++).ReadOnlySpan);
 
-            selectorTokenId = currTokenId++;
+            selectorTokenId = currTokenId;
+            return true;
+        }
 
-            if (parseState.Count != numKeys + 5)
+        /// <summary>
+        /// Reads the optional <c>COUNT count</c> that may follow the selector of <c>BLMPOP</c> and
+        /// <c>BZMPOP</c>.
+        /// </summary>
+        /// <remarks>
+        /// Separate from <see cref="TryParseBlockingMPop"/> so that the caller validates the selector first.
+        /// An unrecognized selector is a syntax error whatever follows it, and reading the count ahead of it
+        /// would report the count instead.
+        /// </remarks>
+        /// <param name="selectorTokenId">Index of the selector token, which the count follows.</param>
+        /// <param name="popCount">Maximum number of elements to pop; 1 when no count is given.</param>
+        /// <returns>True if parsing succeeded; otherwise false, with a RESP error already written.</returns>
+        bool TryParseBlockingMPopCount(int selectorTokenId, out int popCount)
+        {
+            popCount = 1;
+
+            var currTokenId = selectorTokenId + 1;
+            if (currTokenId == parseState.Count)
                 return true;
 
             var countKeyword = parseState.GetArgSliceByRef(currTokenId++);

@@ -357,7 +357,7 @@ namespace Garnet.cluster
             }
             else
             {
-                return SuspendOn(StartMigrationAsync(mSession), PendingReply.Ok);
+                return SuspendOn(StartMigrationAsync(mSession));
             }
 
             return true;

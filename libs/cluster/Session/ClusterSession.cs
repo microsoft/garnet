@@ -32,6 +32,8 @@ namespace Garnet.cluster
         /// </summary>
         enum PendingReply : byte
         {
+            /// <summary>No reply recorded; reaching <see cref="CompletePendingCommand"/> with it is a bug.</summary>
+            Unset,
             /// <summary>Simple OK.</summary>
             Ok,
             /// <summary>The error in <see cref="pendingError"/>.</summary>
@@ -186,6 +188,23 @@ namespace Garnet.cluster
             pendingCommand = wait;
             hasPendingCommand = true;
             pendingReply = reply;
+            return true;
+        }
+
+        /// <summary>
+        /// Hands over a wait whose body records its own reply through <see cref="SetPendingOutcome"/>.
+        /// </summary>
+        /// <remarks>
+        /// The body of an <c>async</c> method runs up to its first incomplete await before the call
+        /// returns, so one that finishes without suspending has already recorded its outcome by the time
+        /// this is reached. Naming a reply here would overwrite it, and a failed command would answer with
+        /// whatever its success reply was.
+        /// </remarks>
+        /// <param name="wait">The work the command must wait for.</param>
+        bool SuspendOn(ValueTask wait)
+        {
+            pendingCommand = wait;
+            hasPendingCommand = true;
             return true;
         }
 

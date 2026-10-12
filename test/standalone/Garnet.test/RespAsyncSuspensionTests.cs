@@ -890,6 +890,48 @@ namespace Garnet.test
                 "Close returned while a resume was inside the gate, so teardown would reclaim the receive buffer under it.");
         }
 
+        /// <summary>
+        /// Teardown can be reached from inside the scope: a fault in a resumed batch disposes the network
+        /// sender, which for a TLS connection is the network handler, which disposes the session. The close
+        /// that follows must not wait for the resume inside the gate, because that resume is the thread
+        /// calling it.
+        /// </summary>
+        /// <remarks>
+        /// The close runs on its own thread so that the wait this guards against fails the test on a
+        /// deadline rather than wedging the test run. The gate still has to end up closed: the resume
+        /// publishes that as it unwinds through <c>Exit</c>.
+        /// </remarks>
+        [Test]
+        public void ClosingAGateFromInsideItDoesNotWaitOnItself()
+        {
+            var round = new GateRound();
+            var entered = new ManualResetEventSlim();
+            var returned = false;
+
+            var holder = new Thread(() =>
+            {
+                if (!round.Gate.TryEnter())
+                    return;
+
+                entered.Set();
+
+                // Teardown reached from within the scope, as a faulting resumed batch reaches it.
+                round.Gate.Close();
+                Volatile.Write(ref returned, true);
+
+                // The resume unwinding out of the scope it still holds.
+                round.Gate.Exit();
+            })
+            { IsBackground = true, Name = nameof(ClosingAGateFromInsideItDoesNotWaitOnItself) };
+            holder.Start();
+
+            ClassicAssert.IsTrue(entered.Wait(TimeSpan.FromSeconds(30)), "The gate was never entered.");
+            ClassicAssert.IsTrue(holder.Join(TimeSpan.FromSeconds(30)),
+                "Close waited for the resume that was calling it, so a session faulting mid-resume hangs its thread.");
+            ClassicAssert.IsTrue(Volatile.Read(ref returned), "Close did not return.");
+            ClassicAssert.IsFalse(round.Gate.TryEnter(), "A closed gate admitted a resume.");
+        }
+
         /// <summary>One gate and whether its close has returned, as seen by the threads contending for it.</summary>
         sealed class GateRound
         {

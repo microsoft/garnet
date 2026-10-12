@@ -28,7 +28,15 @@ namespace Tsavorite.core
         internal CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs;
 
         /// <summary>Pending-completion driver pools, one per session functions wrapper type this session uses.</summary>
+        /// <remarks>
+        /// Append-only, and published with a release so a reader that sees a pool also sees its
+        /// <see cref="PendingCompletionDriverPool.Next"/>. Walking is therefore lock-free; only creation
+        /// takes <see cref="pendingDriverPoolsGate"/>, because a resumed session can reach this from the
+        /// thread that drove its completion while another thread is here for the same session.
+        /// </remarks>
         PendingCompletionDriverPool pendingDriverPools;
+
+        readonly object pendingDriverPoolsGate = new();
 
         readonly UnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> uContext;
         readonly TransactionalUnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
@@ -383,15 +391,24 @@ namespace Tsavorite.core
         private PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> PendingDrivers<TSessionFunctionsWrapper>()
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            for (var candidate = pendingDriverPools; candidate is not null; candidate = candidate.Next)
+            for (var candidate = Volatile.Read(ref pendingDriverPools); candidate is not null; candidate = candidate.Next)
             {
                 if (candidate is PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> pool)
                     return pool;
             }
 
-            var created = new PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper>(store) { Next = pendingDriverPools };
-            pendingDriverPools = created;
-            return created;
+            lock (pendingDriverPoolsGate)
+            {
+                for (var candidate = pendingDriverPools; candidate is not null; candidate = candidate.Next)
+                {
+                    if (candidate is PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> raced)
+                        return raced;
+                }
+
+                var created = new PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper>(store) { Next = pendingDriverPools };
+                Volatile.Write(ref pendingDriverPools, created);
+                return created;
+            }
         }
 
         /// <summary>
