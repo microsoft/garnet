@@ -106,6 +106,30 @@ namespace Garnet.server
         ValueTask<CompletedOutputIterator<UnifiedInput, UnifiedOutput, long>> Unified_CompletePendingAsync();
 
         /// <summary>
+        /// Reads the object store, reporting rather than waiting when the record is not in memory.
+        /// </summary>
+        /// <param name="key">Key to read.</param>
+        /// <param name="input">Input describing the read.</param>
+        /// <param name="output">Output for a read served from memory.</param>
+        /// <param name="pending">True if the read went to the device, leaving the status meaningless.</param>
+        GarnetStatus Read_ObjectStore_WithPending(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, out bool pending);
+
+        /// <summary>
+        /// Completes pending object-store operations on this session.
+        /// </summary>
+        /// <param name="completedOutputs">Outputs of the operations that completed.</param>
+        /// <param name="wait">Whether to wait for every outstanding operation.</param>
+        /// <returns>True if every outstanding operation completed.</returns>
+        bool Object_CompletePending(out CompletedOutputIterator<ObjectInput, ObjectOutput, long> completedOutputs, bool wait = false);
+
+        /// <summary>
+        /// Completes pending object-store operations without blocking the calling thread, so an operation
+        /// that went to disk does not hold the thread that issued it.
+        /// </summary>
+        /// <returns>The completed outputs, which the caller must dispose.</returns>
+        ValueTask<CompletedOutputIterator<ObjectInput, ObjectOutput, long>> Object_CompletePendingAsync();
+
+        /// <summary>
         /// Read batch of keys on main store.
         /// </summary>
         void ReadWithPrefetch<TBatch>(ref TBatch batch, long context = default)
