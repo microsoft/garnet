@@ -361,8 +361,7 @@ namespace Garnet.networking
         }
 
         /// <summary>
-        /// Starts a non-TLS receive pass: hands the received bytes to the session and, if the session consumes
-        /// them without suspending, finishes the pass inline.
+        /// Starts a non-TLS receive pass by handing the received bytes to the session.
         /// </summary>
         /// <param name="bytesTransferred">Bytes the socket just delivered.</param>
         /// <param name="demand">
@@ -370,10 +369,12 @@ namespace Garnet.networking
         /// <see cref="CompleteNetworkReceiveWithoutTLS"/>.
         /// </param>
         /// <returns>
-        /// Null if the pass is already finished, otherwise the session's consume. The caller owns driving that
-        /// to completion and then calling <see cref="CompleteNetworkReceiveWithoutTLS"/>. The consume carries
-        /// no such ownership itself: a suspended command may be resumed on another thread the instant it is
-        /// published, so the returned consume can be complete before the caller ever looks at it.
+        /// The session's consume. The caller owns finishing the pass: it must observe completion exactly once,
+        /// into a local, and call <see cref="CompleteNetworkReceiveWithoutTLS"/> either immediately or after
+        /// awaiting. Observing it twice is a bug -- a suspended command can be resumed on another thread the
+        /// instant the consume is published, so the two observations need not agree, and a pass believed
+        /// finished on the strength of the second one leaves its bytes unconsumed for the next pass to parse
+        /// again.
         /// </returns>
         /// <remarks>
         /// Split from its completion half so that the whole suspension path costs a single asynchronous frame.
@@ -381,7 +382,7 @@ namespace Garnet.networking
         /// </remarks>
 #pragma warning disable VSTHRD200 // Paired Begin/Complete halves of one receive pass; an "Async" suffix would
         // imply the method itself is awaited to completion, which it is not.
-        public unsafe ValueTask<int>? BeginNetworkReceiveWithoutTLS(int bytesTransferred, out int demand)
+        public unsafe ValueTask<int> BeginNetworkReceiveWithoutTLS(int bytesTransferred, out int demand)
         {
             networkBytesRead += bytesTransferred;
             transportReceiveBuffer = networkReceiveBuffer;
@@ -392,12 +393,7 @@ namespace Garnet.networking
             // consumed request as a zero-byte one.
             demand = networkBytesRead;
 
-            var consumed = BeginProcess();
-            if (!consumed.IsCompletedSuccessfully)
-                return consumed;
-
-            CompleteNetworkReceiveWithoutTLS(consumed.GetAwaiter().GetResultGuarded(), demand);
-            return null;
+            return BeginProcess();
         }
 #pragma warning restore VSTHRD200
 

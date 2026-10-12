@@ -43,9 +43,11 @@ namespace Embedded.server
                 await OnNetworkReceiveWithTLSAsync(request.buffer.Length);
             else
             {
-                var pending = BeginNetworkReceiveWithoutTLS(request.buffer.Length, out var demand);
-                if (pending.HasValue)
-                    CompleteNetworkReceiveWithoutTLS(await pending.Value.ConfigureAwait(false), demand);
+                var consume = BeginNetworkReceiveWithoutTLS(request.buffer.Length, out var demand);
+
+                // Awaiting observes the consume exactly once, and takes the synchronous path when it has
+                // already completed.
+                CompleteNetworkReceiveWithoutTLS(await consume.ConfigureAwait(false), demand);
             }
 
             Debug.Assert(networkBytesRead == 0);
