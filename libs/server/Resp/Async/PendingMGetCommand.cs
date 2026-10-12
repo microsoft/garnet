@@ -35,8 +35,9 @@ namespace Garnet.server
         bool FinishPendingMGet<TGarnetApi>(in MGetReadArgBatch_SG batch, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // A running transaction holds its key locks until it ends. Parking here would hold them for the
-            // whole wait, stalling every session that needs one of them, so complete on this thread instead.
+            // A running transaction completes on this thread instead of parking, keeping the whole
+            // MULTI/EXEC replay on one stack at the cost of holding that thread for the device wait.
+            // This does not shorten the lock hold; see the transaction note in the class remarks.
             if (txnManager.state == TxnState.Running)
             {
                 storageSession.StartPendingLatency();
