@@ -2,9 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -159,6 +162,69 @@ namespace Garnet.test
                         client.Execute("GET", $"durable-{i}"), $"Key durable-{i} was acknowledged but did not survive.");
             }
         }
+
+        /// <summary>
+        /// The commit a batch waits for can land between the moment the batch finds it outstanding and the
+        /// moment the suspending body awaits it, which runs that body to completion without ever suspending.
+        /// The batch still owes its replies a flush, so they must go out on that path too rather than being
+        /// dropped with the response object at the end of the batch.
+        /// </summary>
+        /// <remarks>
+        /// The window is a few instructions wide, so it is reached by volume. A commit interval just long
+        /// enough to outlast a write makes nearly every batch wait, and short enough that the commit lands
+        /// while it is waiting; the sessions then supply the repetitions. A batch that loses its flush leaves
+        /// its session waiting for a reply that will never come, which is what the bounded wait detects.
+        /// </remarks>
+        [Test]
+        public void ACommitLandingWhileTheBatchWaitsForItStillFlushesTheBatch()
+        {
+            const int SessionCount = 32;
+            const int WritesPerSession = 4000;
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, commitWait: true, commitFrequencyMs: 1);
+            server.Start();
+
+            var clients = new RawRespSession[SessionCount];
+            var wrongReplies = new ConcurrentQueue<string>();
+            var progress = new int[SessionCount];
+            try
+            {
+                for (var i = 0; i < SessionCount; i++)
+                    clients[i] = new RawRespSession();
+
+                var writers = new Task[SessionCount];
+                for (var i = 0; i < SessionCount; i++)
+                {
+                    var id = i;
+                    writers[i] = Task.Factory.StartNew(() =>
+                    {
+                        for (var w = 0; w < WritesPerSession; w++)
+                        {
+                            var reply = clients[id].Execute("SET", $"flush-{id}-{w}", "v");
+                            if (reply != Ok)
+                                wrongReplies.Enqueue($"Session {id} write {w} replied {reply}.");
+                            progress[id] = w + 1;
+                        }
+                    }, TaskCreationOptions.LongRunning);
+                }
+
+                if (!Task.WaitAll(writers, TimeSpan.FromSeconds(30)))
+                {
+                    var stalled = string.Join(", ", Enumerable.Range(0, SessionCount)
+                        .Where(i => progress[i] < WritesPerSession)
+                        .Select(i => $"session {i} at {progress[i]}/{WritesPerSession}"));
+                    Assert.Fail($"A commit-gated batch never reached the wire: {stalled}.");
+                }
+
+                ClassicAssert.IsEmpty(wrongReplies, string.Join(" ", wrongReplies));
+            }
+            finally
+            {
+                foreach (var c in clients)
+                    c?.AbortAndDispose();
+            }
+        }
+
         /// <summary>
         /// A command that faults without ending the session must not release the batch's acknowledgements:
         /// the writes behind them are still waiting for their commit, and the session carries on afterwards,

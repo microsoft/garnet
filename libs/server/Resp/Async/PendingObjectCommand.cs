@@ -10,39 +10,14 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// What to reply with when an object-store command finds no record.
-    /// </summary>
-    /// <remarks>
-    /// A tag rather than the bytes themselves, because the reply has to survive a suspension in a session
-    /// field and a <c>ReadOnlySpan&lt;byte&gt;</c> cannot be stored in one.
-    /// </remarks>
-    internal enum ObjectMissReply : byte
-    {
-        /// <summary><c>:0</c>, for commands that report how many elements they saw or changed.</summary>
-        Zero,
-
-        /// <summary>A null bulk string.</summary>
-        Null,
-
-        /// <summary>An empty array, for commands that return a collection.</summary>
-        EmptyArray,
-
-        /// <summary>
-        /// One null per field the command asked about, for the multi-field reads whose miss reply is an
-        /// array as long as their argument list. Read from the parse state, which survives a suspension.
-        /// </summary>
-        NullPerField,
-    }
-
-    /// <summary>
     /// The suspending half of the object-store read commands.
     /// </summary>
     /// <remarks>
     /// <para>
     /// A hash, set, list or sorted-set read whose record is not in memory goes to the device exactly as
     /// often as a <c>GET</c> does, and completing it in place held the network thread for the whole I/O.
-    /// These commands share one suspension because they share one shape: on a hit they write whatever the
-    /// operation serialized, and on a miss they write a fixed reply.
+    /// These commands share one suspension because they share one shape: on a hit they write what the
+    /// operation produced, and on a miss they write a reply fixed by the command and its arguments.
     /// </para>
     /// <para>
     /// This is the operation-in-flight kind of suspension, so it keeps the per-batch scope. The wait is
@@ -53,10 +28,10 @@ namespace Garnet.server
     internal sealed partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// The miss reply of the suspended object-store command. Only one command of a session is ever in
-        /// flight, so a single slot suffices.
+        /// How the suspended object-store command writes its reply. Only one command of a session is ever
+        /// in flight, so a single slot suffices.
         /// </summary>
-        ObjectMissReply pendingObjectMiss;
+        ObjectReplyShape pendingObjectReply;
 
         /// <summary>
         /// Writes the reply for an object-store read, waiting for the device first if the read did not find
@@ -70,10 +45,16 @@ namespace Garnet.server
         /// <returns>Always true: when the session parks, the reply is written on resume.</returns>
         bool CompleteObjectOp<TGarnetApi>(GarnetStatus status, ref ObjectOutput output, bool pending, ObjectMissReply miss, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
+            => CompleteObjectOp(status, ref output, pending, new ObjectReplyShape(miss), ref storageApi);
+
+        /// <inheritdoc cref="CompleteObjectOp{TGarnetApi}(GarnetStatus, ref ObjectOutput, bool, ObjectMissReply, ref TGarnetApi)"/>
+        /// <param name="shape">How this command writes its reply, on a hit and on a miss.</param>
+        bool CompleteObjectOp<TGarnetApi>(GarnetStatus status, ref ObjectOutput output, bool pending, ObjectReplyShape shape, ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
         {
             if (!pending)
             {
-                WriteObjectReply(status, ref output, miss);
+                WriteObjectReply(status, ref output, shape);
                 return true;
             }
 
@@ -85,11 +66,11 @@ namespace Garnet.server
                 _ = storageApi.Object_CompletePending(out var completed, wait: true);
                 storageSession.StopPendingLatency();
 
-                WriteCompletedObject(completed, miss);
+                WriteCompletedObject(completed, shape);
                 return true;
             }
 
-            pendingObjectMiss = miss;
+            pendingObjectReply = shape;
 
             ValueTask body;
             using (BeginAsyncCommand(retainBatchScope: true))
@@ -112,13 +93,13 @@ namespace Garnet.server
                 storageSession.StopPendingLatency();
             }
 
-            WriteCompletedObject(completed, pendingObjectMiss);
+            WriteCompletedObject(completed, pendingObjectReply);
         }
 
         /// <summary>
         /// Writes the reply for the one operation the completion carries, and disposes the iterator.
         /// </summary>
-        void WriteCompletedObject(CompletedOutputIterator<ObjectInput, ObjectOutput, long> completed, ObjectMissReply miss)
+        void WriteCompletedObject(CompletedOutputIterator<ObjectInput, ObjectOutput, long> completed, ObjectReplyShape shape)
         {
             using (completed)
             {
@@ -128,49 +109,111 @@ namespace Garnet.server
                 var status = completed.Current.Status;
                 var output = completed.Current.Output;
 
-                WriteObjectReply(StorageSession.InterpretObjectStoreStatus(status, ref output), ref output, miss);
+                WriteObjectReply(StorageSession.InterpretObjectStoreStatus(status, ref output), ref output, shape);
 
                 Debug.Assert(!completed.Next(), "A pending object-store operation produced more than one output");
             }
         }
 
         /// <summary>
-        /// Writes what the operation serialized, or the command's miss reply if it found no record.
+        /// Writes what the operation produced, or the command's miss reply if it found no record.
         /// </summary>
-        unsafe void WriteObjectReply(GarnetStatus status, ref ObjectOutput output, ObjectMissReply miss)
+        unsafe void WriteObjectReply(GarnetStatus status, ref ObjectOutput output, ObjectReplyShape shape)
         {
-            switch (status)
+            if (status == GarnetStatus.WRONGTYPE)
             {
-                case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    return;
-
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    return;
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
+                    SendAndReset();
+                return;
             }
 
-            switch (miss)
+            if (status != GarnetStatus.NOTFOUND)
+            {
+                WriteObjectHit(ref output, shape.Hit);
+                return;
+            }
+
+            // One element per argument for the replies that mirror their argument list, the key aside.
+            var args = parseState.Count - 1;
+
+            switch (shape.Miss)
             {
                 case ObjectMissReply.Zero:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                        SendAndReset();
+                    WriteZero();
                     break;
                 case ObjectMissReply.EmptyArray:
                     while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
                         SendAndReset();
                     break;
-                case ObjectMissReply.NullPerField:
-                    var fields = parseState.Count - 1;
-                    while (!RespWriteUtils.TryWriteArrayLength(fields, ref dcurr, dend))
-                        SendAndReset();
-
-                    for (var i = 0; i < fields; i++)
+                case ObjectMissReply.EmptySet:
+                    WriteEmptySet();
+                    break;
+                case ObjectMissReply.NullPerArg:
+                    WriteArrayLength(args);
+                    for (var i = 0; i < args; i++)
                         WriteNull();
+                    break;
+                case ObjectMissReply.MinusTwoPerCount:
+                    WriteArrayLength(shape.Count);
+                    for (var i = 0; i < shape.Count; i++)
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    break;
+                case ObjectMissReply.EmptyArrayIfFlagElseNull:
+                    if (shape.Flag)
+                    {
+                        while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                        WriteNull();
+                    break;
+                case ObjectMissReply.ZeroIfFlagElseZeroPerArg:
+                    if (shape.Flag)
+                        WriteZero();
+                    else
+                    {
+                        WriteArrayLength(args);
+                        for (var i = 0; i < args; i++)
+                            WriteZero();
+                    }
+                    break;
+                case ObjectMissReply.NullIfFlagElseNullArrayPerArg:
+                    if (shape.Flag)
+                        WriteNull();
+                    else
+                    {
+                        WriteArrayLength(args);
+                        for (var i = 0; i < args; i++)
+                            WriteNullArray();
+                    }
                     break;
                 default:
                     WriteNull();
+                    break;
+            }
+        }
+
+        /// <summary>Writes what the operation produced for a record it found.</summary>
+        unsafe void WriteObjectHit(ref ObjectOutput output, ObjectHitReply hit)
+        {
+            switch (hit)
+            {
+                case ObjectHitReply.Int32Result1:
+                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+
+                case ObjectHitReply.SerializedThenNullIfNegativeOne:
+                    ProcessOutput(output.SpanByteAndMemory);
+                    if (output.result1 == -1)
+                        WriteNull();
+                    break;
+
+                default:
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
         }
