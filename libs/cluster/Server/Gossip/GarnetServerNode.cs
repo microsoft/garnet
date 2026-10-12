@@ -18,9 +18,9 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly SslClientAuthenticationOptions tlsOptions;
         readonly LightEpoch epoch;
-        GarnetLightClient gc;
+        readonly GarnetLightClient gc;
         ClusterAuthContainer clientAuth;
-        readonly ExponentialBackoff backoff;
+        ExponentialBackoff backoff;
         readonly object initializationSync = new();
 
         long gossipSend;
@@ -160,7 +160,7 @@ namespace Garnet.cluster
                     return new(false);
 
                 RefreshClientAuthentication();
-                initializationTask = InitializeCoreAsync(Volatile.Read(ref gc));
+                initializationTask = InitializeCoreAsync(gc);
                 return new(initializationTask);
             }
 
@@ -168,9 +168,15 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-                    await client.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
-                    backoff.Reset();
+                    // Reuse the shared reset path so the previous linked token source is disposed
+                    // rather than overwritten and left rooted on ctsGossip until shutdown.
+                    ResetCts();
+
+                    // Pass the attempt token into the reconnect so it honors cancellation (e.g. gossip
+                    // shutdown) instead of only timing out the wait. WaitAsync still bounds how long the
+                    // gossip loop blocks here; a setup phase that ignores the token (e.g. AUTH) is torn
+                    // down when the next attempt's ReconnectAsync disposes the previous connection.
+                    await client.ReconnectAsync(cts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                     initialized = true;
                     return true;
                 }
@@ -191,8 +197,11 @@ namespace Garnet.cluster
                 if (ReferenceEquals(currentAuth, clientAuth))
                     return;
 
+                // Credentials rotated since this client last connected; update them in place so the next
+                // reconnect authenticates with them. The client is reused for the node's lifetime (no swap),
+                // so forwarding never observes a torn client reference or a client disposed mid-send.
                 clientAuth = currentAuth;
-                Volatile.Read(ref gc)?.UpdateAuth(currentAuth.ClusterUsername, currentAuth.ClusterPassword);
+                gc.UpdateAuth(currentAuth.ClusterUsername, currentAuth.ClusterPassword);
             }
         }
 
@@ -205,6 +214,19 @@ namespace Garnet.cluster
             {
                 initialized = false;
                 return backoff.RecordFailure();
+            }
+        }
+
+        /// <summary>
+        /// Records a successful gossip or MEET exchange and clears the reconnect backoff history.
+        /// Connection setup alone does not clear it, so a peer that accepts AUTH but keeps failing
+        /// GOSSIP continues to back off instead of resetting every reconnect.
+        /// </summary>
+        public void RecordConnectionSuccess()
+        {
+            lock (initializationSync)
+            {
+                backoff.Reset();
             }
         }
 
@@ -223,7 +245,7 @@ namespace Garnet.cluster
                 cts?.Dispose();
                 internalCts?.Cancel();
                 internalCts?.Dispose();
-                Volatile.Read(ref gc)?.Dispose();
+                gc?.Dispose();
             }
             catch { }
         }
@@ -233,7 +255,7 @@ namespace Garnet.cluster
         /// </summary>
         public (long ActiveMemoryUsageBytes, long MaxMemoryUsageBytes) GetClientMemoryUsage()
         {
-            var client = Volatile.Read(ref gc);
+            var client = gc;
             return client == null
                 ? default
                 : (client.ActiveMemoryUsageBytes, client.MaxMemoryUsageBytes);
@@ -294,8 +316,7 @@ namespace Garnet.cluster
         {
             try
             {
-                var client = Volatile.Read(ref gc);
-                using var resp = await client.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                using var resp = await gc.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
                 if (resp.Length > 0)
                 {
                     clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
@@ -332,8 +353,7 @@ namespace Garnet.cluster
         public Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            var client = Volatile.Read(ref gc);
-            return client.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            return gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
         }
 
         /// <summary>
@@ -357,6 +377,9 @@ namespace Garnet.cluster
             }
             else if (task.Status == TaskStatus.RanToCompletion)
             {
+                // A full gossip round completed without faulting; the peer accepts GOSSIP so the
+                // reconnect backoff history can be cleared.
+                RecordConnectionSuccess();
                 var configByteArray = GetMostRecentConfig();
                 UpdateGossipRecv();
 
@@ -388,13 +411,13 @@ namespace Garnet.cluster
         {
             var nowTicks = DateTimeOffset.UtcNow.Ticks;
             var last_io_seconds = gossipRecv == 0 ? 0 : (int)TimeSpan.FromTicks(nowTicks - gossipSend).TotalSeconds;
-            var client = Volatile.Read(ref gc);
+            var isConnected = gc.IsConnected;
 
             return new ConnectionInfo()
             {
                 ping = gossipSend,
                 pong = gossipRecv,
-                connected = client?.IsConnected ?? false,
+                connected = isConnected,
                 lastIO = last_io_seconds,
             };
         }
@@ -418,13 +441,15 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
-                var client = Volatile.Read(ref gc);
-                if (client == null || !client.IsConnected)
+                // The client is reused for the node's lifetime (gc is immutable), so the liveness check and
+                // send always target the same client; the dispose read lock above keeps the node's terminal
+                // disposal from tearing it down mid-send.
+                if (!gc.IsConnected)
                 {
                     logger?.LogError($"{nameof(TryClusterPublish)}: client not connected; skipping publish forwarding");
                     return;
                 }
-                client.ExecuteClusterPublishNoResponse(cmd, channel, message);
+                gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
             }
             finally
             {

@@ -108,14 +108,14 @@ namespace Garnet.client
         /// Issue a <c>CLUSTER FAILOVER</c> command to a replica node and return whether it was accepted.
         /// </summary>
         /// <param name="failoverOption">Failover option controlling the failover behavior.</param>
-        /// <param name="token">Cancellation token</param>
+        /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Task that completes with <c>true</c> when the server replied <c>OK</c>.</returns>
-        public async Task<bool> Failover(FailoverOption failoverOption = default, CancellationToken token = default)
+        public async Task<bool> Failover(FailoverOption failoverOption = default, CancellationToken cancellationToken = default)
         {
-            var args = failoverOption == default
-                ? new Memory<byte>[] { FAILOVER }
-                : [FAILOVER, FailoverUtils.GetRespFormattedFailoverOption(failoverOption)];
-            return await ExecuteForStringResultWithCancellationAsync(CLUSTER, args, token).ConfigureAwait(false) == "OK";
+            var args = failoverOption == default ?
+                new Memory<byte>[] { FAILOVER } :
+                [FAILOVER, FailoverUtils.GetFailoverOptionBytes(failoverOption)];
+            return await ExecuteForStringResultWithCancellationAsync(CLUSTER, args, token: cancellationToken).ConfigureAwait(false) == "OK";
         }
 
         /// <summary>
