@@ -253,6 +253,12 @@ namespace Garnet.server
         public int GossipDelay = 5;
 
         /// <summary>
+        /// Delay (in seconds) applied once to the whole gossip client collection after a configuration
+        /// swap before the previous clients begin graceful retirement.
+        /// </summary>
+        public int GossipClientSwapGraceSecs = 5;
+
+        /// <summary>
         /// Cluster node timeout is the amount of seconds a node must be unreachable. 
         /// </summary>
         public int ClusterTimeout = 60;

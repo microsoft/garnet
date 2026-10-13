@@ -62,6 +62,39 @@ namespace Garnet.cluster
             => clusterConnectionStore.GetConnectionInfo(nodeId, out info);
 
         /// <summary>
+        /// Grace period applied once to the whole gossip client collection after a swap before the previous
+        /// clients begin graceful retirement. Read live so a CONFIG SET is observed by the next swap.
+        /// Widening this window lets callers that selected a previous client just before the swap finish
+        /// issuing their requests against it rather than observing retirement.
+        /// </summary>
+        TimeSpan GossipClientSwapGrace
+            => TimeSpan.FromSeconds(clusterProvider.storeWrapper.runtimeServerConfig.GetSeconds(ServerConfigType.GOSSIP_CLIENT_SWAP_GRACE));
+
+        /// <summary>
+        /// Swaps every live gossip client for a new instance built from the current runtime configuration and
+        /// retires the previous clients gracefully in the background. Invoked when the GOSSIP_CLIENT
+        /// configuration group changes via CONFIG SET. No-op once gossip is shutting down.
+        /// </summary>
+        public void SwapGossipClients()
+        {
+            if (ctsGossip.IsCancellationRequested)
+                return;
+
+            var grace = GossipClientSwapGrace;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    clusterConnectionStore.SwapAllConnections(grace);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Failed to swap gossip clients after configuration change");
+                }
+            });
+        }
+
+        /// <summary>
         /// Get link status info for primary of this node.
         /// </summary>
         /// <param name="config">Snapshot of config to use for retrieving that information.</param>
@@ -175,9 +208,11 @@ namespace Garnet.cluster
                 if (gsn == null)
                 {
                     var endpoints = await Format.TryCreateEndpointAsync(address, port, tryConnect: true, logger: logger).ConfigureAwait(false);
-                    if (endpoints == null)
+                    if (endpoints == null || endpoints.Length == 0)
                     {
                         logger?.LogError("Invalid CLUSTER MEET endpoint!");
+                        gossipStats.UpdateMeetRequestsFailed();
+                        return;
                     }
                     gsn = new GarnetServerNode(clusterProvider, endpoints[0], tlsOptions?.TlsClientOptions, clusterConnectionStore.Epoch, logger: logger);
                     created = true;

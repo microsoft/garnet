@@ -867,6 +867,15 @@ namespace Garnet.test
             ClassicAssert.IsTrue(map.ContainsKey("gossip-network-buffer-size"));
             ClassicAssert.IsTrue(map.ContainsKey("gossip-max-out-of-line-rented-bytes"));
             ClassicAssert.IsTrue(map.ContainsKey("gossip-flush-result-allocation-mode"));
+
+            // The client-swap grace defaults to 5 seconds and round-trips through CONFIG SET.
+            ClassicAssert.AreEqual("5", Get(db, "gossip-client-swap-grace"));
+            ClassicAssert.IsTrue(map.ContainsKey("gossip-client-swap-grace"));
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-client-swap-grace", "10").ToString());
+            ClassicAssert.AreEqual("10", Get(db, "gossip-client-swap-grace"));
+            // Zero disables the grace window and is accepted.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-client-swap-grace", "0").ToString());
+            ClassicAssert.AreEqual("0", Get(db, "gossip-client-swap-grace"));
         }
 
         /// <summary>

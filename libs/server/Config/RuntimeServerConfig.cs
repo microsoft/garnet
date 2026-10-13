@@ -240,6 +240,10 @@ namespace Garnet.server
             RegisterReadWrite(ServerConfigType.GOSSIP_MAX_OUT_OF_LINE_RENTED_BYTES, "gossip-max-out-of-line-rented-bytes", ConfigKind.Int64, 0, long.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
             RegisterReadWrite(ServerConfigType.GOSSIP_FLUSH_RESULT_ALLOCATION_MODE, "gossip-flush-result-allocation-mode", ConfigKind.Enum, 0, 0, groupType: ServerConfigGroupType.GOSSIP_CLIENT, enumType: typeof(FlushResultAllocationMode));
 
+            RegisterReadWrite(ServerConfigType.GOSSIP_CLIENT_SWAP_GRACE, "gossip-client-swap-grace",
+                ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
+                timeUnit: ConfigTimeUnit.Seconds);
+
             return m;
         }
 
@@ -304,6 +308,7 @@ namespace Garnet.server
             values[(int)ServerConfigType.GOSSIP_MAX_CONCURRENT_NETWORK_SENDS] = gossipOptions.MaxConcurrentNetworkSends;
             values[(int)ServerConfigType.GOSSIP_MAX_OUT_OF_LINE_RENTED_BYTES] = gossipOptions.MaxOutOfLineRentedBytes;
             values[(int)ServerConfigType.GOSSIP_FLUSH_RESULT_ALLOCATION_MODE] = (long)gossipOptions.FlushResultAllocationMode;
+            values[(int)ServerConfigType.GOSSIP_CLIENT_SWAP_GRACE] = o.GossipClientSwapGraceSecs;
         }
 
         /// <summary>Current value of <paramref name="type"/> as a 32-bit integer, in its native unit.</summary>
@@ -601,6 +606,9 @@ namespace Garnet.server
 
         /// <summary>Canonical wire name of <paramref name="type"/>.</summary>
         public static string Name(ServerConfigType type) => Meta[(int)type].Name;
+
+        /// <summary>Logical configuration group <paramref name="type"/> belongs to, or <see cref="ServerConfigGroupType.NONE"/>.</summary>
+        public static ServerConfigGroupType GroupType(ServerConfigType type) => Meta[(int)type].GroupType;
 
         /// <summary>Resolve a config parameter name (honoring aliases) to a config type handled by this table.</summary>
         public static bool TryGetType(ReadOnlySpan<byte> name, out ServerConfigType type)

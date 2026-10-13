@@ -48,6 +48,12 @@ namespace Garnet.server
         GOSSIP_MAX_OUT_OF_LINE_RENTED_BYTES,
         GOSSIP_FLUSH_RESULT_ALLOCATION_MODE,
 
+        // Delay (seconds) applied once to the whole gossip client collection after a configuration
+        // swap before the previous clients begin graceful retirement. Read live at swap time; unlike the
+        // GOSSIP_* writer slots above it is not part of the GOSSIP_CLIENT group, so changing it does not
+        // itself trigger a client swap.
+        GOSSIP_CLIENT_SWAP_GRACE,
+
         // Runtime-adjustable options whose change requires a lifecycle action on a background task
         // (start / kill / restart), enacted through the ConfigMeta.UpdateAction during CONFIG SET.
         AOF_COMMIT_FREQ,

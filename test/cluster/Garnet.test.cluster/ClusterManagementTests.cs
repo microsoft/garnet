@@ -491,6 +491,61 @@ namespace Garnet.test.cluster
             return server.Info(section).FirstOrDefault(x => x.Key == section)?.FirstOrDefault(x => x.Key == statName).Value;
         }
 
+        [Test, Order(4)]
+        public async Task ClusterGossipClientConfigSwapTest()
+        {
+            var node_count = 3;
+            context.CreateInstances(node_count, metricsSamplingFrequency: 1);
+            context.CreateConnection();
+            var endpoints = context.clusterTestUtils.GetEndpoints();
+            for (int i = 0; i < endpoints.Length - 1; i++)
+                context.clusterTestUtils.Meet(i, i + 1, context.logger);
+
+            for (int i = 0; i < node_count; i++)
+                context.clusterTestUtils.WaitUntilNodeIsKnownByAllNodes(i);
+
+            await Task.Delay(1000).ConfigureAwait(false);
+
+            var server = context.clusterTestUtils.GetServer(0);
+
+            // Baseline: every gossip client reports the default out-of-line rented byte budget.
+            var defaultOptions = LightNetworkWriterOptions.Default;
+            var baselineMaxMemory = (node_count - 1) *
+                (defaultOptions.MaxMemoryFootprint() + defaultOptions.MaxOutOfLineRentedBytes);
+            ClassicAssert.AreEqual(baselineMaxMemory,
+                long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes")),
+                "Gossip maximum memory should start from the default client configuration.");
+
+            // Change a GOSSIP_CLIENT parameter at runtime: this must swap every gossip client for a new
+            // instance built from the updated configuration while the previous clients retire gracefully.
+            var newRentedBytes = defaultOptions.MaxOutOfLineRentedBytes * 2;
+            context.clusterTestUtils.ConfigSet(0, "gossip-max-out-of-line-rented-bytes",
+                newRentedBytes.ToString(), context.logger);
+
+            var expectedMaxMemory = (node_count - 1) *
+                (defaultOptions.MaxMemoryFootprint() + newRentedBytes);
+
+            // Wait for the swap to complete and the replacement clients to reconnect and report the new budget.
+            var swapped = false;
+            for (var i = 0; i < 40; i++)
+            {
+                await Task.Delay(500).ConfigureAwait(false);
+                if (long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes")) == expectedMaxMemory &&
+                    int.Parse(GetStat(server, "Stats", "gossip_open_connections")) == node_count - 1)
+                {
+                    swapped = true;
+                    break;
+                }
+            }
+
+            ClassicAssert.IsTrue(swapped,
+                "Gossip clients should be swapped to the updated configuration and reconnect after a config change.");
+
+            // The cluster view must remain intact after the swap.
+            ClassicAssert.AreEqual(node_count, context.clusterTestUtils.ClusterNodes(0).Nodes.Count(),
+                "Every node should still be known after the gossip-client swap.");
+        }
+
         [Test, Order(5)]
         public void ClusterKeySlotTest()
         {

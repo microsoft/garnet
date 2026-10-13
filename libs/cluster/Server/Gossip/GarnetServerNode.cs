@@ -103,6 +103,18 @@ namespace Garnet.cluster
                 logger: logger);
 
         /// <summary>
+        /// Creates a replacement node targeting the same endpoint and identity whose client is built from the
+        /// current runtime configuration. Used to swap in a gossip client that observes an updated GOSSIP_CLIENT
+        /// configuration group; the previous node is retired gracefully after the swap. The replacement starts
+        /// uninitialized and is connected by the next gossip round.
+        /// </summary>
+        internal GarnetServerNode CreateReplacement()
+            => new(clusterProvider, EndPoint, tlsOptions, epoch, logger)
+            {
+                NodeId = NodeId
+            };
+
+        /// <summary>
         /// Attempts to initialize the connection when its reconnect backoff permits.
         /// </summary>
         /// <returns>True when the connection is initialized; otherwise false.</returns>
@@ -444,6 +456,13 @@ namespace Garnet.cluster
                     return;
                 }
                 gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
+            }
+            catch (GarnetClientDisposedException)
+            {
+                // A node selected just before a configuration-driven swap may already be retiring; its client
+                // rejects new sends. Forwarding is best-effort, so drop this message rather than faulting the
+                // publish path — the caller may retry against the replacement that selectors now observe.
+                logger?.LogTrace($"{nameof(TryClusterPublish)}: client retiring; skipping publish forwarding");
             }
             finally
             {

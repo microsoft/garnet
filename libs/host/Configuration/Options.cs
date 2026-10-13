@@ -300,6 +300,10 @@ namespace Garnet
         public int GossipDelay { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("gossip-client-swap-grace", Required = false, HelpText = "Delay (in seconds) applied once to the whole gossip client collection after a configuration swap before the previous clients begin graceful retirement.")]
+        public int GossipClientSwapGraceSecs { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("cluster-timeout", Required = false, HelpText = "Cluster node timeout is the amount of seconds a node must be unreachable.")]
         public int ClusterTimeout { get; set; }
 
@@ -954,6 +958,7 @@ namespace Garnet
                 CompactionMaxSegments = CompactionMaxSegments,
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
+                GossipClientSwapGraceSecs = GossipClientSwapGraceSecs,
                 ClusterTimeout = ClusterTimeout,
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 FastCommitThrottleFreq = FastCommitThrottleFreq,

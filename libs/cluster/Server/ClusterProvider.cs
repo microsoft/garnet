@@ -119,6 +119,10 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
+        public void OnGossipClientConfigChanged()
+            => clusterManager?.SwapGossipClients();
+
+        /// <inheritdoc />
         public void Dispose()
         {
             clusterManager?.Dispose();
