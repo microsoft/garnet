@@ -282,6 +282,7 @@ namespace Garnet.server
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
+            this.lockEntireKeyspace = false;
 
             // Reset cluster key parse state
             if (clusterEnabled)
