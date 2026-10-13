@@ -63,7 +63,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Creates an uninitialized CacheSizeTracker. Call <see cref="Initialize"/> after
+        /// Creates an uninitialized CacheSizeTracker. Call <c>Initialize</c> after
         /// the store is created to subscribe to eviction notifications.
         /// </summary>
         public CacheSizeTracker() { }
@@ -73,9 +73,29 @@ namespace Garnet.server
         /// <param name="targetSize">Total memory size target</param>
         /// <param name="readCacheTargetSize">Target memory size for read cache</param>
         /// <param name="loggerFactory"></param>
-        /// <param name="indexMemoryBudget">Bytes of hash-index memory the configuration budgets for; see <see cref="Initialize"/></param>
-        public CacheSizeTracker(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null, long indexMemoryBudget = 0)
+        public CacheSizeTracker(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
+            => Initialize(store, targetSize, readCacheTargetSize, loggerFactory, indexMemoryBudget: 0);
+
+        /// <summary>Class to track and update cache size</summary>
+        /// <param name="store">Tsavorite store instance</param>
+        /// <param name="targetSize">Total memory size target</param>
+        /// <param name="readCacheTargetSize">Target memory size for read cache</param>
+        /// <param name="loggerFactory"></param>
+        /// <param name="indexMemoryBudget">Bytes of hash-index memory the configuration budgets for; see <c>Initialize</c></param>
+        public CacheSizeTracker(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory, long indexMemoryBudget)
             => Initialize(store, targetSize, readCacheTargetSize, loggerFactory, indexMemoryBudget);
+
+        /// <summary>
+        /// Initialize the tracker with a store. Wires the <see cref="LogSizeTracker"/> for
+        /// heap-size tracking. Tsavorite handles all creation-site and destruction-site
+        /// accounting internally via <c>logSizeTracker</c>.
+        /// </summary>
+        /// <param name="store">Tsavorite store instance</param>
+        /// <param name="targetSize">Total memory size target for the main log</param>
+        /// <param name="readCacheTargetSize">Target memory size for read cache</param>
+        /// <param name="loggerFactory">Logger factory</param>
+        public void Initialize(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
+            => Initialize(store, targetSize, readCacheTargetSize, loggerFactory, indexMemoryBudget: 0);
 
         /// <summary>
         /// Initialize the tracker with a store. Wires the <see cref="LogSizeTracker"/> for
@@ -91,7 +111,7 @@ namespace Garnet.server
         /// that grow with record count and that no index setting bounds, is charged against <paramref name="targetSize"/>
         /// so the log sheds pages as the index grows. Pass 0 to leave the index out of the log budget.
         /// </param>
-        public void Initialize(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null, long indexMemoryBudget = 0)
+        public void Initialize(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory, long indexMemoryBudget)
         {
             Debug.Assert(store != null);
             Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);

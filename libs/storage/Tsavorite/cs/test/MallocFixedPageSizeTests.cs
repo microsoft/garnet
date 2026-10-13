@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -274,7 +275,7 @@ namespace Tsavorite.test
 
             // count and the allocation index are int, so the page table cannot address more than int.MaxValue records.
             ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.MaxLevelCount, MallocFixedPageSize<HashBucket>.GetLevelCount(long.MaxValue));
-            ClassicAssert.LessOrEqual(MallocFixedPageSize<HashBucket>.MaxLevelCount * (granularity / MallocFixedPageSize<HashBucket>.RecordSize), int.MaxValue);
+            ClassicAssert.LessOrEqual((long)MallocFixedPageSize<HashBucket>.MaxLevelCount * MallocFixedPageSize<HashBucket>.RecordsPerPage, int.MaxValue);
         }
 
         [Test]
@@ -370,20 +371,22 @@ namespace Tsavorite.test
             using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 4);
 
             // A fresh allocator has handed out only its initial block, but has already committed level 0 and level 1.
-            ClassicAssert.AreEqual(granularity * 2, allocator.AllocatedSizeBytes,
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(2), allocator.AllocatedSizeBytes,
                 "Construction commits the first page and pre-allocates its successor");
             ClassicAssert.Less((long)allocator.GetMaxValidAddress() * MallocFixedPageSize<HashBucket>.RecordSize,
                 allocator.AllocatedSizeBytes, "Committed memory must exceed the size implied by the allocation count");
 
             // Crossing into the second page commits the third.
-            var recordsPerPage = granularity / MallocFixedPageSize<HashBucket>.RecordSize;
-            while (allocator.GetMaxValidAddress() <= recordsPerPage)
+            while (allocator.GetMaxValidAddress() <= MallocFixedPageSize<HashBucket>.RecordsPerPage)
                 _ = allocator.Allocate();
-            ClassicAssert.AreEqual(granularity * 3, allocator.AllocatedSizeBytes,
+            ClassicAssert.AreEqual(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(3), allocator.AllocatedSizeBytes,
                 "Reaching a page commits its successor");
 
-            ClassicAssert.LessOrEqual(allocator.AllocatedSizeBytes, allocator.MaxMemorySize,
-                "Committed memory can never exceed the budget the allocator was built for");
+            // Each page is over-allocated so its start can be sector-aligned, so a fully committed allocator costs
+            // slightly more than its budget. Reporting that is the point: it is memory the process has actually paid.
+            ClassicAssert.Greater(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(4), allocator.MaxMemorySize);
+            ClassicAssert.Less(MallocFixedPageSize<HashBucket>.GetCommittedSizeForPages(4), allocator.MaxMemorySize * 101 / 100,
+                "The alignment padding must stay a rounding error against the budget, not a second budget");
         }
 
         /// <summary>
@@ -432,6 +435,75 @@ namespace Tsavorite.test
                 "A reader must never observe an address past the last page the table can address");
             ClassicAssert.AreEqual(capacity, allocator.GetMaxValidAddress(),
                 "Rejections must roll back, leaving the high-water mark where the last successful allocation left it");
+        }
+
+        /// <summary>
+        /// While a reservation is held, a rejected ordinary allocation must not hand a reserved caller's address back
+        /// out. Ordinary and reserved allocations share one counter under two limits, so an ordinary rejection that
+        /// rolled the counter back would vacate an address that is still valid under the reserved limit, and the next
+        /// reserved caller would be handed an address a previous one already owns. Two overflow bucket chains would
+        /// then alias onto one bucket and the index would silently corrupt.
+        /// </summary>
+        [Test]
+        [Category(MallocFixedPageSizeCategory), Category(SmokeTestCategory)]
+        public void OrdinaryRejectionsDoNotHandOutAReservedAddressTwice()
+        {
+            var granularity = MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
+            using var allocator = new MallocFixedPageSize<HashBucket>(granularity * 2);
+
+            var capacity = allocator.MaxAllocationCount;
+            const long Reservation = 4096;
+            allocator.Reserve(Reservation);
+
+            // Exhaust everything ordinary allocations are entitled to, so every further one is rejected.
+            while (allocator.GetMaxValidAddress() < capacity - Reservation)
+                _ = allocator.Allocate();
+
+            using var stop = new CancellationTokenSource();
+            var rejecters = new Task[Environment.ProcessorCount];
+            for (var i = 0; i < rejecters.Length; i++)
+            {
+                rejecters[i] = Task.Run(() =>
+                {
+                    while (!stop.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            _ = allocator.Allocate();
+                        }
+                        catch (TsavoriteException)
+                        {
+                        }
+                    }
+                });
+            }
+
+            // Take the reservation from several threads while the rejections run, recording every address handed out.
+            var taken = new ConcurrentDictionary<long, byte>();
+            var duplicate = -1L;
+            var takers = new Task[4];
+            var perTaker = Reservation / takers.Length;
+            for (var i = 0; i < takers.Length; i++)
+            {
+                takers[i] = Task.Run(() =>
+                {
+                    for (var n = 0L; n < perTaker; n++)
+                    {
+                        var address = allocator.Allocate(useReservation: true);
+                        if (!taken.TryAdd(address, 0))
+                            _ = Interlocked.CompareExchange(ref duplicate, address, -1L);
+                    }
+                });
+            }
+
+            Task.WaitAll(takers);
+            stop.Cancel();
+            Task.WaitAll(rejecters);
+
+            ClassicAssert.AreEqual(-1L, Volatile.Read(ref duplicate),
+                "A reserved allocation was handed an address another reserved allocation already owns");
+            ClassicAssert.AreEqual(Reservation, taken.Count,
+                "Every reserved allocation must get a distinct address");
         }
     }
 }

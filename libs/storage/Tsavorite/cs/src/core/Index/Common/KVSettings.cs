@@ -56,7 +56,7 @@ namespace Tsavorite.core
         /// allocator commits whole pages and pre-allocates each page's successor, so a generation that has handed out
         /// nothing still holds this much.
         /// </summary>
-        public static long OverflowBucketFloorMemorySize => MallocFixedPageSize<HashBucket>.MinMemorySize;
+        public static long OverflowBucketFloorMemorySize => MallocFixedPageSize<HashBucket>.MinCommittedMemorySize;
 
         /// <summary>
         /// Resolve a threshold to the overflow-bucket ceiling in bytes for an index generation of a given size,
@@ -76,7 +76,7 @@ namespace Tsavorite.core
             // non-positive budget as "unconfigured" and substitutes its own much larger default.
             var requested = tableSizeBuckets * overflowThreshold * MallocFixedPageSize<HashBucket>.RecordSize / 100;
             if (requested < MallocFixedPageSize<HashBucket>.MinMemorySize)
-                requested = MallocFixedPageSize<HashBucket>.MinMemorySize;
+                requested = MallocFixedPageSize<HashBucket>.MinCommittedMemorySize;
             return MallocFixedPageSize<HashBucket>.GetLevelCount(requested) * MallocFixedPageSize<HashBucket>.MemorySizeGranularity;
         }
 

@@ -50,22 +50,37 @@ namespace Tsavorite.core
         private readonly T[][] values;
         private readonly IntPtr[] pointers;
 
-        /// <summary>Maximum number of records this allocator can hand out, after which <see cref="Allocate"/> and
+        /// <summary>Maximum number of records this allocator can hand out, after which <see cref="Allocate()"/> and
         /// <see cref="BulkAllocate"/> throw.</summary>
         internal long MaxAllocationCount => (long)levelCount * PageSize;
 
         /// <summary>Bytes of records the page table can address, which is the memory budget this instance was built for
-        /// rounded down to a whole number of pages.</summary>
+        /// rounded down to a whole number of pages. Each page costs a little more than this to commit; see
+        /// <see cref="GetCommittedSizeForPages"/>.</summary>
         internal long MaxMemorySize => MaxAllocationCount * RecordSize;
+
+        /// <summary>Records one page holds, which is the granularity of the allocation capacity.</summary>
+        internal static int RecordsPerPage => PageSize;
 
         /// <summary>Granularity of a memory budget: a budget is rounded down to a whole number of pages of this size.</summary>
         internal static long MemorySizeGranularity => (long)PageSize * RecordSize;
 
-        /// <summary>Bytes this allocator has actually committed. Pages are allocated whole and ahead of the records
-        /// handed out, so this exceeds the size implied by the allocation count and is what the process pays.</summary>
-        public long AllocatedSizeBytes => (long)Volatile.Read(ref allocatedPageCount) * PageSize * RecordSize;
+        /// <summary>Bytes this allocator has committed. Pages are allocated whole and ahead of the records handed out,
+        /// so this exceeds the size implied by the allocation count and is what the process pays.</summary>
+        public long AllocatedSizeBytes => GetCommittedSizeForPages(Volatile.Read(ref allocatedPageCount));
 
-        /// <summary>Budget used when none is configured: 16 GiB for 64-byte records.</summary>
+        /// <summary>
+        /// Bytes committed by <paramref name="pageCount"/> pages. A page array is over-allocated by
+        /// <see cref="SectorSize"/> records so its start can be sector-aligned, so a page costs that much more than the
+        /// <see cref="MemorySizeGranularity"/> it contributes to the budget. The overshoot is under 1% and is reported
+        /// rather than hidden, so whoever charges this allocator's memory sees what the process actually pays.
+        /// </summary>
+        internal static long GetCommittedSizeForPages(long pageCount) => pageCount * (PageSize + SectorSize) * RecordSize;
+
+        /// <summary>Smallest number of bytes a live allocator commits: <see cref="MinLevelCount"/> pages.</summary>
+        internal static long MinCommittedMemorySize => GetCommittedSizeForPages(MinLevelCount);
+
+        /// <summary>Budget used when none is configured: 16 GiB.</summary>
         internal static long DefaultMaxMemorySize => (long)LevelSize * PageSize * RecordSize;
 
         /// <summary>Smallest and largest budgets a level count can express, for validation messages.</summary>
@@ -95,7 +110,7 @@ namespace Tsavorite.core
         /// beyond <see cref="MaxMemorySizeLimit"/> from one that fits.
         /// </summary>
         internal static long GetMemorySizeForRecords(long recordCount)
-            => (recordCount * RecordSize + MemorySizeGranularity - 1) / MemorySizeGranularity * MemorySizeGranularity;
+            => (recordCount + PageSize - 1) / PageSize * MemorySizeGranularity;
 
         private volatile int writeCacheLevel;
 
@@ -272,10 +287,17 @@ namespace Tsavorite.core
         /// <summary>
         /// Allocate a block of size RecordSize.
         /// </summary>
+        /// <returns>The logicalAddress (index) of the block</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe long Allocate() => Allocate(useReservation: false);
+
+        /// <summary>
+        /// Allocate a block of size RecordSize, optionally drawing on capacity held by <see cref="Reserve"/>.
+        /// </summary>
         /// <param name="useReservation">Draw on capacity held by <see cref="Reserve"/>, for a caller that reserved it.</param>
         /// <returns>The logicalAddress (index) of the block</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe long Allocate(bool useReservation = false)
+        internal unsafe long Allocate(bool useReservation)
         {
 #if DEBUG
             Debug.Assert(allocationMode != AllocationMode.Bulk, "Cannot mix Single and Bulk allocation modes");
@@ -300,22 +322,55 @@ namespace Tsavorite.core
                 + " Raise IndexMemorySize, or set IndexMaxMemorySize to let the index grow, so that more entries fit the"
                 + " main bucket array. Raising IndexOverflowThreshold buys capacity at the cost of longer chains.";
 
+        /// <summary>
+        /// Take an address while <see cref="Reserve"/> is holding capacity, when ordinary and reserved allocations draw
+        /// from one counter under two different limits.
+        /// </summary>
+        /// <remarks>
+        /// A fetch-and-add cannot be rolled back in this window. An ordinary caller rejected at the ordinary limit
+        /// would vacate an address that is still valid under the reserved limit, so a reserved caller that had already
+        /// taken the address above it would see the next reserved caller handed that same address, aliasing two bucket
+        /// chains onto one bucket. Publishing the increment only when it is within the caller's own limit removes the
+        /// rollback, and with it the aliasing. Reached only during an index grow.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private long ReservedWindowAllocate(int blockSize, long limit)
+        {
+            var spinner = new SpinWait();
+            while (true)
+            {
+                var current = count;
+                if (current + (long)blockSize > limit)
+                    ThrowAllocatorFull(limit);
+                if (Interlocked.CompareExchange(ref count, current + blockSize, current) == current)
+                    return current;
+                spinner.SpinOnce();
+            }
+        }
+
         private unsafe long InternalAllocate(int blockSize, bool useReservation)
         {
             if (freeList.TryDequeue(out long result))
                 return result;
 
-            // An ordinary allocation may not encroach on capacity held by Reserve. useReservation is constant at each
-            // call site, so this folds away once inlined.
-            var limit = useReservation ? MaxAllocationCount : Volatile.Read(ref ordinaryAllocationLimit);
+            var ordinaryLimit = Volatile.Read(ref ordinaryAllocationLimit);
 
-            // Determine insertion index.
-            int index = Interlocked.Add(ref count, blockSize) - blockSize;
-            if (index + (long)blockSize > limit)
+            int index;
+            if (ordinaryLimit == MaxAllocationCount)
             {
-                // Undo the advance before throwing: repeated rejections would otherwise run count away and overflow int.
-                _ = Interlocked.Add(ref count, -blockSize);
-                ThrowAllocatorFull(limit);
+                // No reservation outstanding, so every caller shares one limit. A rejected allocation can then roll
+                // back safely: any caller that could take the address it vacates is held to the same limit and would
+                // be rejected at that address too. The rollback keeps repeated rejections from running count away.
+                index = Interlocked.Add(ref count, blockSize) - blockSize;
+                if (index + (long)blockSize > ordinaryLimit)
+                {
+                    _ = Interlocked.Add(ref count, -blockSize);
+                    ThrowAllocatorFull(ordinaryLimit);
+                }
+            }
+            else
+            {
+                index = (int)ReservedWindowAllocate(blockSize, useReservation ? MaxAllocationCount : ordinaryLimit);
             }
 
             int offset = index & PageSizeMask;
