@@ -402,6 +402,13 @@ namespace Garnet.cluster
                     // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                     if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                     {
+                        if (!current.CanUseGossipVersion(version))
+                        {
+                            logger?.LogWarning("Rejecting gossip version {version}: separate client and peer endpoints require version two", version);
+                            while (!RespWriteUtils.TryWriteError("ERR Separate client and peer endpoints require gossip version two", ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
                         if (version != gossipVersion)
                         {
                             gossipVersion = version;
@@ -430,7 +437,14 @@ namespace Garnet.cluster
             // Respond if configuration has changed or gossipWithMeet option is specified
             if (lastSentConfig != current || gossipWithMeet)
             {
-                var configByteArray = current.ToByteArray(gossipVersion);
+                if (!current.CanUseGossipVersion(gossipVersion))
+                {
+                    logger?.LogWarning("Rejecting gossip reply version {version}: separate client and peer endpoints require version two", gossipVersion);
+                    while (!RespWriteUtils.TryWriteError("ERR Separate client and peer endpoints require gossip version two", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+                var configByteArray = current.ToGossipByteArray(gossipVersion);
                 clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
                 WriteLargeBulkString(configByteArray);
                 lastSentConfig = current;

@@ -792,8 +792,9 @@ namespace Garnet.test.cluster
 
         private ClusterConfig ReadLiveConfig(int index)
         {
-            ClusterConfig config = ClusterConfig.FromByteArray((byte[])ExecuteNode(index, "CLUSTER", "GOSSIP", "WITHMEET", Array.Empty<byte>()));
-            return ClusterConfig.FromByteArray((byte[])ExecuteNode(index, "CLUSTER", "GOSSIP", "WITHMEET", config.ToByteArray(2)));
+            ClusterProvider provider = (ClusterProvider)context.nodes[index].Provider.StoreWrapper.clusterProvider;
+            ClusterConfig config = provider.clusterManager.CurrentConfig;
+            return ClusterConfig.FromByteArray((byte[])ExecuteNode(index, "CLUSTER", "GOSSIP", "WITHMEET", config.ToGossipByteArray(2)));
         }
 
         private void WaitForConfig(int index, Func<ClusterConfig, bool> predicate)
