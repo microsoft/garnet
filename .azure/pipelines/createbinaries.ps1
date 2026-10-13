@@ -107,66 +107,60 @@ $lastPwd = $pwd
 $string = $pwd.Path
 $position = $string.IndexOf(".azure")
 $basePath = $string.Substring(0,$position-1)  # take off slash off end as well
-$frameworks = @("net10.0")
-$profiles = @(
-	"linux-arm64-based", "linux-x64-based", "osx-arm64-based", "osx-x64-based",
-	"portable", "win-arm64-based-readytorun", "win-x64-based-readytorun"
-)
 Set-Location $basePath/main/GarnetServer
 
 if ($mode -eq 0 -or $mode -eq 1) {
-	# Build GarnetJSON module for each framework
+	# Build GarnetJSON module
 	Write-Host "** Building GarnetJSON module ...  **"
 	Set-Location $basePath/modules/GarnetJSON
-	foreach ($framework in $frameworks) {
-		dotnet build GarnetJSON.csproj -c Release -f $framework
-		if ($LASTEXITCODE -ne 0) { throw "GarnetJSON build failed for $framework." }
-	}
+	dotnet build GarnetJSON.csproj -c Release -f net10.0
 	Set-Location $basePath/main/GarnetServer
 
 	Write-Host "** Publish ... **"
-	foreach ($framework in $frameworks) {
-		foreach ($profile in $profiles) {
-			dotnet publish GarnetServer.csproj "-p:PublishProfile=$profile" -f $framework
-			if ($LASTEXITCODE -ne 0) { throw "GarnetServer publish failed for $framework ($profile)." }
-		}
+	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-arm64-based -f:net10.0
+	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-x64-based -f:net10.0
+	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-arm64-based -f:net10.0
+	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-x64-based -f:net10.0
+	dotnet publish GarnetServer.csproj -p:PublishProfile=portable -f:net10.0
+	dotnet publish GarnetServer.csproj -p:PublishProfile=win-arm64-based-readytorun -f:net10.0
+	dotnet publish GarnetServer.csproj -p:PublishProfile=win-x64-based-readytorun -f:net10.0
 
-		# Clean up all the extra files
-		CleanUpFiles "linux-arm64" "linux-x64" $framework
-		CleanUpFiles "linux-x64" "linux-x64" $framework
-		CleanUpFiles "osx-arm64" "linux-x64" $framework
-		CleanUpFiles "osx-x64" "linux-x64" $framework
-		#CleanUpFiles "portable" "win-x64" $framework # don't clean up all files for portable ... leave as is
-		CleanUpFiles "win-x64\Service" "win-x64" $framework $false
-		CleanUpFiles "win-x64" "win-x64" $framework
-		CleanUpFiles "win-arm64" "win-x64" $framework
+	# Clean up all the extra files
+	CleanUpFiles "linux-arm64" "linux-x64" "net10.0"
+	CleanUpFiles "linux-x64" "linux-x64" "net10.0"
+	CleanUpFiles "osx-arm64" "linux-x64" "net10.0"
+	CleanUpFiles "osx-x64" "linux-x64" "net10.0"
+	#CleanUpFiles "portable" "win-x64" "net10.0" # don't clean up all files for portable ... leave as is
+	CleanUpFiles "win-x64\Service" "win-x64" "net10.0" $false
+	CleanUpFiles "win-x64" "win-x64" "net10.0"
+	CleanUpFiles "win-arm64" "win-x64" "net10.0"
 
-		# Copy GarnetJSON.dll to all platforms
-		Write-Host "** Copying GarnetJSON.dll to extensions folders... **"
-		CopyGarnetJSON "linux-arm64" $framework
-		CopyGarnetJSON "linux-x64" $framework
-		CopyGarnetJSON "osx-arm64" $framework
-		CopyGarnetJSON "osx-x64" $framework
-		CopyGarnetJSON "portable" $framework
-		CopyGarnetJSON "win-x64" $framework
-		CopyGarnetJSON "win-arm64" $framework
-	}
+	# Copy GarnetJSON.dll to all platforms
+	Write-Host "** Copying GarnetJSON.dll to extensions folders... **"
+	CopyGarnetJSON "linux-arm64" "net10.0"
+	CopyGarnetJSON "linux-x64" "net10.0"
+	CopyGarnetJSON "osx-arm64" "net10.0"
+	CopyGarnetJSON "osx-x64" "net10.0"
+	CopyGarnetJSON "portable" "net10.0"
+	CopyGarnetJSON "win-x64" "net10.0"
+	CopyGarnetJSON "win-arm64" "net10.0"
 	Write-Host "** GarnetJSON.dll copied to all extensions folders **"
 }
 
 if ($mode -eq 0 -or $mode -eq 2) {
 
-	# Check that every framework has published files before creating archives
-	foreach ($framework in $frameworks) {
-		$publishedFilesFolder = "$basePath/main/GarnetServer/bin/Release/$framework/publish"
-		if (!(Test-Path $publishedFilesFolder)) {
-			Set-Location $lastPwd
-			throw "$publishedFilesFolder does not exist. Run .\CreateBinaries 1 to publish the binaries first."
-		}
+	# Make sure publish folder is there before trying to zip
+	$publishedFilesFolderNet10 = "$basePath/main/GarnetServer/bin/Release/net10.0/publish"
+
+	if (!(Test-Path $publishedFilesFolderNet10)) {
+		Write-Error "$publishedFilesFolderNet10 does not exist. Run .\CreateBinaries 1 to publish the binaries first."
+		Set-Location $lastPwd
+		exit
 	}
 	
-	# Create the directories for all target frameworks.
+	# Create the directories for the net10.0 binaries.
 	$directories = @("linux-arm64", "linux-x64", "osx-arm64", "osx-x64", "portable", "win-arm64", "win-x64")
+	$sourceFramework = @("net10.0")
 	$baseSourcePath = "$basePath/main/GarnetServer/bin/Release"
 	$destinationPath = "$basePath/main/GarnetServer/bin/Release/publish"
 	$zipfiledestinationPath = "$destinationPath/output"
@@ -187,14 +181,10 @@ if ($mode -eq 0 -or $mode -eq 2) {
 	}
 
 	foreach ($dir in $directories) {
-		foreach ($framework in $frameworks) {
-			$sourcePath = Join-Path -Path $baseSourcePath -ChildPath "$framework\publish\$dir"
+		foreach ($version in $sourceFramework) {
+			$sourcePath = Join-Path -Path $baseSourcePath -ChildPath "$version\publish\$dir"
 			$destDirPath = Join-Path -Path $destinationPath -ChildPath $dir
-			$destVersionPath = Join-Path -Path $destDirPath -ChildPath $framework
-
-			if (!(Test-Path $sourcePath)) {
-				throw "Publish path not found: $sourcePath"
-			}
+			$destVersionPath = Join-Path -Path $destDirPath -ChildPath $version
 
 			if (!(Test-Path $destVersionPath)) {
 				mkdir $destVersionPath
@@ -204,7 +194,7 @@ if ($mode -eq 0 -or $mode -eq 2) {
 		}
 	}
  
-	# Compress all target frameworks into the same archive
+	# Compress the files
 	Write-Host "** Compressing the files ... **"
 	7z a -mmt20 -mx5 -scsWIN -r win-x64-based-readytorun.zip ../win-x64/*
 	7z a -mmt20 -mx5 -scsWIN -r win-arm64-based-readytorun.zip ../win-arm64/*
