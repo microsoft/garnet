@@ -546,6 +546,176 @@ namespace Garnet.test.cluster
                 "Every node should still be known after the gossip-client swap.");
         }
 
+        [Test, Order(4)]
+        public async Task ClusterGossipClientConfigLateJoinTest()
+        {
+            var node_count = 3;
+            context.CreateInstances(node_count, metricsSamplingFrequency: 1);
+            context.CreateConnection();
+
+            // Meet only nodes 0 and 1 initially; node 2 joins later, after the configuration change.
+            context.clusterTestUtils.Meet(0, 1, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(0, 1, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0, context.logger);
+
+            await Task.Delay(1000).ConfigureAwait(false);
+
+            var server = context.clusterTestUtils.GetServer(0);
+            var defaultOptions = LightNetworkWriterOptions.Default;
+
+            // One gossip client (to node 1) reporting the default budget.
+            ClassicAssert.AreEqual(defaultOptions.MaxMemoryFootprint() + defaultOptions.MaxOutOfLineRentedBytes,
+                long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes")),
+                "Gossip maximum memory should start from the default client configuration.");
+
+            // Change a GOSSIP_CLIENT parameter at runtime. This swaps the existing client and bumps the
+            // gossip client configuration version.
+            var newRentedBytes = defaultOptions.MaxOutOfLineRentedBytes * 2;
+            context.clusterTestUtils.ConfigSet(0, "gossip-max-out-of-line-rented-bytes",
+                newRentedBytes.ToString(), context.logger);
+
+            // Wait for the swap of the existing client to settle on the new budget.
+            var swapped = false;
+            for (var i = 0; i < 40; i++)
+            {
+                await Task.Delay(500).ConfigureAwait(false);
+                if (long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes")) ==
+                    defaultOptions.MaxMemoryFootprint() + newRentedBytes &&
+                    int.Parse(GetStat(server, "Stats", "gossip_open_connections")) == 1)
+                {
+                    swapped = true;
+                    break;
+                }
+            }
+            ClassicAssert.IsTrue(swapped, "Existing gossip client should swap to the updated configuration.");
+
+            // Now MEET node 2. Its gossip client is added through GarnetClusterConnectionStore.AddConnectionAsync
+            // and must honor the updated configuration, not the options captured before the change.
+            context.clusterTestUtils.Meet(0, 2, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(0, 2, context.logger);
+
+            var expectedMaxMemory = 2 * (defaultOptions.MaxMemoryFootprint() + newRentedBytes);
+            var lateJoined = false;
+            for (var i = 0; i < 40; i++)
+            {
+                await Task.Delay(500).ConfigureAwait(false);
+                if (long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes")) == expectedMaxMemory &&
+                    int.Parse(GetStat(server, "Stats", "gossip_open_connections")) == 2)
+                {
+                    lateJoined = true;
+                    break;
+                }
+            }
+
+            ClassicAssert.IsTrue(lateJoined,
+                "A gossip client added after a configuration change must honor the updated configuration.");
+
+            ClassicAssert.AreEqual(node_count, context.clusterTestUtils.ClusterNodes(0).Nodes.Count(),
+                "Every node should be known after the late join.");
+        }
+
+        [Test, Order(4)]
+        public async Task ClusterGossipClientConfigStalePendingAddTest()
+        {
+            // This test isolates the stale-config guard in AddConnectionAsync: a gossip client is built (during
+            // a CLUSTER MEET handshake) against the current GOSSIP_CLIENT snapshot, the configuration is
+            // republished and its swap runs to completion while that add is still pending, and only then is the
+            // add released. The swap never saw the pending node, so the add detecting its captured snapshot is
+            // stale and rebuilding from the new configuration is the only thing that can give it the new
+            // options. The node 0 gossip loop is held off for the window so it cannot connect node 2 through
+            // the unguarded GetOrAddAsync path and mask the guard.
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var pause = ExceptionInjectionType.Cluster_Gossip_Pause_Before_AddConnection;
+            var suppressLoop = ExceptionInjectionType.Cluster_Gossip_Round_Fail;
+
+            var node_count = 3;
+            context.CreateInstances(node_count, metricsSamplingFrequency: 1);
+            context.CreateConnection();
+
+            // Meet nodes 0 and 1 first; node 2 is added later, mid-flight, while the config changes.
+            context.clusterTestUtils.Meet(0, 1, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(0, 1, context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(1, 0, context.logger);
+
+            await Task.Delay(1000).ConfigureAwait(false);
+
+            var server = context.clusterTestUtils.GetServer(0);
+            var defaultOptions = LightNetworkWriterOptions.Default;
+            var newRentedBytes = defaultOptions.MaxOutOfLineRentedBytes * 2;
+            var perConnectionNew = defaultOptions.MaxMemoryFootprint() + newRentedBytes;
+
+            // Fail every gossip round so the periodic loop never reaches InitConnectionsAsync. That keeps the
+            // loop from connecting node 2 through GetOrAddAsync (which is not guarded), leaving the MEET add as
+            // the only path that can place node 2 in the store. The MEET runs on its own task and is unaffected.
+            ExceptionInjectionHelper.EnableException(suppressLoop);
+            // Arm the pause so node 2's pending add parks before the connection-store write lock.
+            ExceptionInjectionHelper.EnableException(pause);
+            try
+            {
+                // MEET node 2. Its gossip client is constructed against the current (default) snapshot during
+                // the handshake, then its add parks at the injection point before taking the lock.
+                context.clusterTestUtils.Meet(0, 2, context.logger);
+
+                // Wait for the pending add to arrive at the pause (arrival clears the flag).
+                await ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+
+                // Republish the GOSSIP_CLIENT group while node 2's add is parked. The swap it triggers takes the
+                // write lock (free, since the add parks before acquiring it) and repoints the existing node 1
+                // client, but node 2 is not yet in the store so the swap misses it.
+                context.clusterTestUtils.ConfigSet(0, "gossip-max-out-of-line-rented-bytes",
+                    newRentedBytes.ToString(), context.logger);
+
+                // Wait until the swap of the existing node 1 client has settled on the new budget. This proves
+                // the swap completed before node 2 is added, so node 2 can only get the new options via the guard.
+                var swapped = false;
+                for (var i = 0; i < 40; i++)
+                {
+                    await Task.Delay(500).ConfigureAwait(false);
+                    if (long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes")) == perConnectionNew &&
+                        int.Parse(GetStat(server, "Stats", "gossip_open_connections")) == 1)
+                    {
+                        swapped = true;
+                        break;
+                    }
+                }
+                ClassicAssert.IsTrue(swapped, "The existing gossip client should swap before the pending add is released.");
+
+                // Re-enable to release the parked add. It now observes its captured snapshot is stale and
+                // rebuilds the client from the new configuration before advertising node 2.
+                ExceptionInjectionHelper.EnableException(pause);
+
+                // node 2 must appear with the new budget. Without the guard it would be added with the default
+                // budget, and with the loop suppressed nothing else would correct it, so this never matches.
+                var expectedMaxMemory = 2 * perConnectionNew;
+                var reconciled = false;
+                for (var i = 0; i < 40; i++)
+                {
+                    await Task.Delay(500).ConfigureAwait(false);
+                    if (int.Parse(GetStat(server, "Stats", "gossip_open_connections")) == 2 &&
+                        long.Parse(GetStat(server, "Stats", "gossip_max_memory_bytes")) == expectedMaxMemory)
+                    {
+                        reconciled = true;
+                        break;
+                    }
+                }
+
+                ClassicAssert.IsTrue(reconciled,
+                    "A gossip client whose add was pending across a config change must be rebuilt with the new configuration.");
+            }
+            finally
+            {
+                // Reached only after node 2 was added (the add passed the injection point) or after a failure,
+                // in which case server teardown suspends parking and releases any still-parked add. Let the
+                // gossip loop run again so the cluster can converge.
+                ExceptionInjectionHelper.DisableException(pause);
+                ExceptionInjectionHelper.DisableException(suppressLoop);
+            }
+
+            ClassicAssert.AreEqual(node_count, context.clusterTestUtils.ClusterNodes(0).Nodes.Count(),
+                "Every node should be known after the mid-flight add.");
+        }
+
         [Test, Order(5)]
         public void ClusterKeySlotTest()
         {

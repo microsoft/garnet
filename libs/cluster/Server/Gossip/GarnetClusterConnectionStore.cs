@@ -182,6 +182,22 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         public async Task<bool> AddConnectionAsync(GarnetServerNode conn)
         {
+            // Test hook: pause a pending add before the write lock is taken, so a CONFIG SET can republish the
+            // GOSSIP_CLIENT snapshot and let its swap run to completion (the swap takes this same lock) while
+            // this add is still parked. The swap then never sees this not-yet-added node, so when the add is
+            // released the stale-rebuild branch below is the only thing that can give it the new options.
+            // No-op outside DEBUG / when not enabled.
+            await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Cluster_Gossip_Pause_Before_AddConnection).ConfigureAwait(false);
+
+            // A connection built outside the write lock (e.g. during a CLUSTER MEET handshake) can carry a
+            // GOSSIP_CLIENT configuration that a swap superseded while it was being established. That node was
+            // not in the store when the swap repointed the live set, so it would persist with stale options.
+            // Detect it under the lock and insert a replacement built from the current configuration instead.
+            // The superseded node has finished its handshake, holds no outstanding requests, and was never
+            // advertised, so it is disposed immediately once the lock is released - no graceful drain or
+            // background task is needed, matching the synchronous reclamation the MEET caller already performs
+            // on its failure paths.
+            GarnetServerNode retire = null;
             try
             {
                 await AcquireWriteLockAsync().ConfigureAwait(false);
@@ -191,12 +207,26 @@ namespace Garnet.cluster
                 // Check if connection exists and fail if it does
                 if (UnsafeGetConnection(conn.NodeId, out _)) return false;
 
+                if (conn.IsGossipClientConfigStale)
+                {
+                    retire = conn;
+                    conn = conn.CreateReplacement();
+                }
+
                 // Add new connection
-                return UnsafeAddConnection(conn);
+                if (!UnsafeAddConnection(conn))
+                {
+                    // Add failed: discard any replacement we built and let the caller dispose its original.
+                    retire = retire != null ? conn : null;
+                    return false;
+                }
+
+                return true;
             }
             finally
             {
                 _lock.WriteUnlock();
+                retire?.Dispose();
             }
         }
 
@@ -223,7 +253,8 @@ namespace Garnet.cluster
                 // Return false because the connection was not added
                 if (UnsafeGetConnection(nodeId, out conn)) return (false, conn);
 
-                // Create connection to be added
+                // Create connection to be added. Built under the write lock, so it observes the current
+                // GOSSIP_CLIENT configuration and can never be stale (no version check needed here).
                 conn = new GarnetServerNode(clusterProvider, endpoint, tlsOptions?.TlsClientOptions, epoch, logger: logger)
                 {
                     NodeId = nodeId

@@ -23,6 +23,10 @@ namespace Garnet.cluster
         ExponentialBackoff backoff;
         readonly object initializationSync = new();
 
+        // Version of the GOSSIP_CLIENT configuration group this node's client options were built from. Compared
+        // against the live version to detect a superseding publish before the node is added to the store.
+        private readonly long gossipClientConfigVersion;
+
         long gossipSend;
         long gossipRecv;
         CancellationTokenSource cts = new();
@@ -53,6 +57,15 @@ namespace Garnet.cluster
         public bool IsInitialized => initialized;
 
         /// <summary>
+        /// True when the GOSSIP_CLIENT configuration group has been republished since this node's client was
+        /// built, so its options are stale and it should be rebuilt before being added to the store. Compared
+        /// by the group's monotonic version - a single lock-free long read, never a torn multi-parameter view.
+        /// </summary>
+        internal bool IsGossipClientConfigStale
+            => clusterProvider.storeWrapper.runtimeServerConfig
+                .GetConfigGroup(ServerConfigGroupType.GOSSIP_CLIENT).IsStale(gossipClientConfigVersion);
+
+        /// <summary>
         /// NodeId of remote node
         /// </summary>
         public string NodeId;
@@ -81,7 +94,13 @@ namespace Garnet.cluster
             this.EndPoint = endpoint;
             this.logger = logger;
             this.clientAuth = clusterProvider.ClusterAuth;
-            this.gc = CreateGarnetClient(clientAuth, clusterProvider.storeWrapper.runtimeServerConfig);
+            // Read the gossip options and the version they were published under in one consistent read. The
+            // version records which configuration this client was built against for the staleness check at
+            // add time; the options it carries are internally consistent (never a torn multi-parameter view).
+            var group = (IConfigGroup<LightNetworkWriterOptions>)clusterProvider.storeWrapper.runtimeServerConfig
+                .GetConfigGroup(ServerConfigGroupType.GOSSIP_CLIENT);
+            var networkWriterOptions = group.Read(out this.gossipClientConfigVersion);
+            this.gc = CreateGarnetClient(clientAuth, networkWriterOptions);
             this.backoff = new ExponentialBackoff();
             initialized = false;
             this.gossipRecv = 0;
@@ -89,14 +108,14 @@ namespace Garnet.cluster
             ResetCts();
         }
 
-        GarnetLightClient CreateGarnetClient(ClusterAuthContainer auth, RuntimeServerConfig runtimeServerConfig)
+        GarnetLightClient CreateGarnetClient(ClusterAuthContainer auth, LightNetworkWriterOptions networkWriterOptions)
             => new(
                 EndPoint,
                 tlsOptions,
                 authUsername: auth.ClusterUsername,
                 authPassword: auth.ClusterPassword,
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
-                networkWriterOptions: runtimeServerConfig.MaterializeConfigGroup<LightNetworkWriterOptions, GossipClientConfigMaterializer>(),
+                networkWriterOptions: networkWriterOptions,
                 timeoutMilliseconds: GetClientTimeoutMilliseconds(
                     clusterProvider.storeWrapper.runtimeServerConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
                 epoch: epoch,

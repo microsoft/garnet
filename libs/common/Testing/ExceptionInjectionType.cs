@@ -156,5 +156,11 @@ namespace Garnet.common
         /// token scan finds candidates but rejects every one of them.
         /// </summary>
         Replication_Fail_Replica_Unreadable_Checkpoint,
+        /// <summary>
+        /// Cluster gossip: pause at the top of a pending connection add (before the store write lock is taken),
+        /// so a test can republish the GOSSIP_CLIENT configuration while an add is in flight and verify the
+        /// pending node was built against the stale snapshot and is rebuilt before being advertised.
+        /// </summary>
+        Cluster_Gossip_Pause_Before_AddConnection,
     }
 }

@@ -46,6 +46,12 @@ namespace Garnet.server
 
         readonly long[] values = new long[TableSize];
 
+        // Logical configuration groups indexed by (int)ServerConfigGroupType, mirroring the Meta[]/values[]
+        // tables. Each group publishes its parameters together as one versioned, consistent unit so a reader
+        // never observes a partially-applied multi-parameter change. Built once; thereafter the array itself
+        // is read-only (only the interior groups mutate), so concurrent lookup needs no lock.
+        readonly IConfigGroup[] groups = BuildGroups();
+
         // Startup options are retained only to resolve read-only parameters that derive from live server
         // state. Runtime-adjustable values are seeded into the table at construction and are thereafter
         // read exclusively through the typed accessors so a CONFIG SET is observed everywhere.
@@ -58,6 +64,14 @@ namespace Garnet.server
 
         /// <summary>All configuration types handled by this table.</summary>
         public static ReadOnlySpan<ServerConfigType> RuntimeTypes => runtimeTypes;
+
+        /// <summary>
+        /// Returns the configuration group registered for <paramref name="type"/>, or <see langword="null"/>
+        /// for <see cref="ServerConfigGroupType.NONE"/> (ungrouped parameters). Consumers cast to the typed
+        /// <see cref="IConfigGroup{TOptions}"/> to read a group's materialized options, or use the non-generic
+        /// surface for versioned staleness checks.
+        /// </summary>
+        public IConfigGroup GetConfigGroup(ServerConfigGroupType type) => groups[(int)type];
 
         /// <summary>
         /// Create a runtime configuration seeded from the startup options.
@@ -88,6 +102,35 @@ namespace Garnet.server
                 if (i > max) max = i;
             }
             return max + 1;
+        }
+
+        /// <summary>
+        /// Sizes the group table from the largest declared <see cref="ServerConfigGroupType"/> value, mirroring
+        /// <see cref="ComputeTableSize"/> so the group enum needs no sentinel and gaps stay safe to index.
+        /// </summary>
+        static int ComputeGroupTableSize()
+        {
+            var max = 0;
+            foreach (var v in Enum.GetValuesAsUnderlyingType<ServerConfigGroupType>())
+            {
+                var i = (int)v;
+                if (i > max) max = i;
+            }
+            return max + 1;
+        }
+
+        /// <summary>
+        /// Builds the group table indexed by <see cref="ServerConfigGroupType"/>. Each registered group lands
+        /// at its own type's index; the NONE slot stays <see langword="null"/> (ungrouped parameters).
+        /// </summary>
+        static IConfigGroup[] BuildGroups()
+        {
+            var g = new IConfigGroup[ComputeGroupTableSize()];
+            Register(g, new GossipClientConfigGroup());
+            return g;
+
+            static void Register(IConfigGroup[] table, IConfigGroup group)
+                => table[(int)group.GetGroupType()] = group;
         }
 
         static ConfigMeta[] BuildMeta()
@@ -297,8 +340,8 @@ namespace Garnet.server
             values[(int)ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ] = o.ExpiredKeyDeletionScanFrequencySecs;
 
             // Seed the gossip (GarnetLightClient) network-writer slots from LightNetworkWriterOptions.Default.
-            // These values are intentionally not wired to any live gossip client; they are stored for CONFIG
-            // GET / SET only and are not propagated when changed.
+            // The slots are authoritative for CONFIG GET / SET; the live gossip clients consume the options
+            // materialized from them by the GOSSIP_CLIENT group, published once below.
             var gossipOptions = LightNetworkWriterOptions.Default;
             values[(int)ServerConfigType.GOSSIP_NETWORK_BUFFER_SIZE_BYTES] = gossipOptions.NetworkBufferSizeBytes;
             values[(int)ServerConfigType.GOSSIP_REQUEST_PAGE_SIZE_BYTES] = gossipOptions.RequestPageSizeBytes;
@@ -309,6 +352,26 @@ namespace Garnet.server
             values[(int)ServerConfigType.GOSSIP_MAX_OUT_OF_LINE_RENTED_BYTES] = gossipOptions.MaxOutOfLineRentedBytes;
             values[(int)ServerConfigType.GOSSIP_FLUSH_RESULT_ALLOCATION_MODE] = (long)gossipOptions.FlushResultAllocationMode;
             values[(int)ServerConfigType.GOSSIP_CLIENT_SWAP_GRACE] = o.GossipClientSwapGraceSecs;
+
+            // Publish the initial state of every configuration group so a consumer constructed before any
+            // CONFIG SET always reads consistent, already-materialized options (groups start dirty).
+            PublishDirtyGroups();
+        }
+
+        /// <summary>
+        /// Publishes every group marked dirty since the last call: re-materializes its options from the current
+        /// slots, bumps its version, and clears the flag. Called after a CONFIG SET batch (and once at Init), so
+        /// a multi-parameter group that had several members changed is published exactly once, atomically.
+        /// <paramref name="onPublished"/> is invoked once per group actually republished, letting the caller
+        /// notify downstream consumers (e.g. swap gossip clients).
+        /// </summary>
+        public void PublishDirtyGroups(Action<ServerConfigGroupType> onPublished = null)
+        {
+            foreach (var group in groups)
+            {
+                if (group != null && group.PublishIfDirty(this))
+                    onPublished?.Invoke(group.GetGroupType());
+            }
         }
 
         /// <summary>Current value of <paramref name="type"/> as a 32-bit integer, in its native unit.</summary>
@@ -408,20 +471,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Materializes a logical configuration group into its physical options struct by reading each
-        /// member parameter slot from the table on demand. Zero-allocation: the method is specialized by
-        /// the JIT over the value-type <typeparamref name="TMaterializer"/> (the materialize call is
-        /// devirtualized and inlinable) and <typeparamref name="TGroup"/> is returned by value.
-        /// </summary>
-        /// <typeparam name="TGroup">Physical options type produced from the group's parameter slots.</typeparam>
-        /// <typeparam name="TMaterializer">Struct materializer that reads the group's slots.</typeparam>
-        /// <returns>The materialized options for the group.</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public TGroup MaterializeConfigGroup<TGroup, TMaterializer>()
-            where TMaterializer : struct, IConfigGroupMaterializer<TGroup>
-            => default(TMaterializer).Materialize(this);
-
-        /// <summary>
         /// Validate <paramref name="value"/> and, if valid, update the slot for <paramref name="type"/>.
         /// </summary>
         /// <param name="type">Configuration parameter to update.</param>
@@ -517,6 +566,11 @@ namespace Garnet.server
                 return false;
             }
 
+            // Mark the owning group dirty so the next PublishDirtyGroups re-materializes it from the updated
+            // slots. Ungrouped parameters (NONE) have no group slot and need no publish.
+            if (meta.GroupType != ServerConfigGroupType.NONE)
+                groups[(int)meta.GroupType].MarkDirty();
+
             return true;
         }
 
@@ -606,9 +660,6 @@ namespace Garnet.server
 
         /// <summary>Canonical wire name of <paramref name="type"/>.</summary>
         public static string Name(ServerConfigType type) => Meta[(int)type].Name;
-
-        /// <summary>Logical configuration group <paramref name="type"/> belongs to, or <see cref="ServerConfigGroupType.NONE"/>.</summary>
-        public static ServerConfigGroupType GroupType(ServerConfigType type) => Meta[(int)type].GroupType;
 
         /// <summary>Resolve a config parameter name (honoring aliases) to a config type handled by this table.</summary>
         public static bool TryGetType(ReadOnlySpan<byte> name, out ServerConfigType type)
