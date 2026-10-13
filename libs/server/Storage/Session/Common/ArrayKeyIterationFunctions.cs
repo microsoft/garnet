@@ -170,7 +170,7 @@ namespace Garnet.server
 
             if (txnManager?.state == TxnState.Running)
             {
-                // If we're in a transaction, we've already locked everything - so skip lock acquisiton
+                // If we're in a transaction, we've already locked everything - so skip lock acquisition
                 _ = unifiedBasicContext.Session.UnsafeNullLockingIterateLookupSnapshot(ref unifiedStoreDbKeysFuncs);
             }
             else

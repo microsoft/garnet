@@ -117,7 +117,7 @@ namespace Tsavorite.core
                     continue;
                 }
 
-                // Unlock everyhting befor e areturn
+                // Unlock everyhting before a return
                 for (var lockedBucketIndex = 0; lockedBucketIndex < currBucketIndex; lockedBucketIndex++)
                 {
                     clientSession.store.InternalUnlockExclusive(lockedBucketIndex);
