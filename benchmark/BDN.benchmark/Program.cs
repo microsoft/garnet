@@ -102,26 +102,18 @@ public class BaseConfig : ManualConfig
             .WithRuntime(CoreRuntime.Core10_0)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
-        bool net10 = true;
         if (!string.IsNullOrEmpty(Program.bdnFramework))
         {
             var fws = Program.bdnFramework.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => p.ToLower()).ToArray();
             if (fws.Length == 0)
                 throw new ApplicationException("--frameworks must specify at least one value (e.g. net10.0, all)");
-            net10 = false;
             foreach (var fw in fws)
             {
-                _ = fw switch
-                {
-                    "net10.0" => net10 = true,
-                    "all" => net10 = true,
-                    _ => throw new ApplicationException($"Unrecognized bdnFramework value: {fw}"),
-                };
+                if (fw != "net10.0" && fw != "all")
+                    throw new ApplicationException($"Unrecognized bdnFramework value: {fw}");
             }
         }
 
-        if (!net10)
-            throw new ApplicationException("Should never encounter a situation where all frameworks are excluded");
         _ = AddJob(Net10BaseJob.WithId(".NET 10"));
 
         // Applies --opparams by excluding benchmark cases. It is added unconditionally because the params
