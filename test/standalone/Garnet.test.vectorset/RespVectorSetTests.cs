@@ -5817,7 +5817,7 @@ namespace Garnet.test
                 {
                     var eIx = j + startIx;
                     var elemId = ElementPrefix + eIx;
-                    var embRes = await outerDB.VectorSetGetApproximateVectorAsync(vectorSetKey, elemId).ConfigureAwait(false);
+                    using var embRes = await outerDB.VectorSetGetApproximateVectorAsync(vectorSetKey, elemId).ConfigureAwait(false);
                     ClassicAssert.True(embRes.Span.SequenceEqual([eIx, eIx, eIx, eIx]));
                 }
             }
