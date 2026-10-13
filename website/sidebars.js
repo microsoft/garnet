@@ -48,7 +48,7 @@ const sidebars = {
 		{type: 'category', label: 'Other Links', items: [
 			{type: 'link', label: 'Releases', href: 'https://github.com/microsoft/garnet/releases'},
                         {type: 'link', label: 'License', href: 'https://github.com/microsoft/garnet/blob/main/LICENSE'},
-                        {type: 'link', label: 'Privacy', href: 'https://privacy.microsoft.com/en-us/privacystatement'},
+                        {type: 'link', label: 'Privacy', href: 'https://go.microsoft.com/fwlink/?LinkId=521839'},
 			]}
 	],
 
