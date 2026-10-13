@@ -118,12 +118,12 @@ if ($mode -eq 0 -or $mode -eq 1) {
 
 	Write-Host "** Publish ... **"
 	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-arm64-based -f:net10.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-x64-based -f:net10.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-arm64-based -f:net10.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-x64-based -f:net10.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=portable -f:net10.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=win-arm64-based-readytorun -f:net10.0
-	dotnet publish GarnetServer.csproj -p:PublishProfile=win-x64-based-readytorun -f:net10.0
+	dotnet publish GarnetServer.csproj -p:PublishProfile=linux-x64-based -f:net10.0 
+	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-arm64-based -f:net10.0 
+	dotnet publish GarnetServer.csproj -p:PublishProfile=osx-x64-based -f:net10.0 
+	dotnet publish GarnetServer.csproj -p:PublishProfile=portable -f:net10.0 
+	dotnet publish GarnetServer.csproj -p:PublishProfile=win-arm64-based-readytorun -f:net10.0 
+	dotnet publish GarnetServer.csproj -p:PublishProfile=win-x64-based-readytorun -f:net10.0 
 
 	# Clean up all the extra files
 	CleanUpFiles "linux-arm64" "linux-x64" "net10.0"
@@ -151,7 +151,7 @@ if ($mode -eq 0 -or $mode -eq 2) {
 
 	# Make sure publish folder is there before trying to zip
 	$publishedFilesFolderNet10 = "$basePath/main/GarnetServer/bin/Release/net10.0/publish"
-
+	
 	if (!(Test-Path $publishedFilesFolderNet10)) {
 		Write-Error "$publishedFilesFolderNet10 does not exist. Run .\CreateBinaries 1 to publish the binaries first."
 		Set-Location $lastPwd
@@ -185,11 +185,11 @@ if ($mode -eq 0 -or $mode -eq 2) {
 			$sourcePath = Join-Path -Path $baseSourcePath -ChildPath "$version\publish\$dir"
 			$destDirPath = Join-Path -Path $destinationPath -ChildPath $dir
 			$destVersionPath = Join-Path -Path $destDirPath -ChildPath $version
-
+			
 			if (!(Test-Path $destVersionPath)) {
 				mkdir $destVersionPath
 			}
-
+			
 			Copy-Item -Path "$sourcePath\*" -Destination $destVersionPath -Recurse -Force
 		}
 	}
