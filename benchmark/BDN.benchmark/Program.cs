@@ -31,7 +31,7 @@ class Program
                 Console.WriteLine("Garnet: Example: dotnet run -f net10.0 -c Release -- --fw net10.0 --op none -f *RawStringOperations*");
                 Console.WriteLine("Garnet: ");
                 Console.WriteLine("Garnet: Custom options may appear anywhere in the BDN portion (except 'help' variants which must be first):");
-                Console.WriteLine("Garnet:   --frameworks or --fw:  Filter benchmarks by framework. Comma-separated list of net10.0 or all. Default is all.");
+                Console.WriteLine("Garnet:   --frameworks or --fw:  Filter benchmarks to specific framework(s). Comma-separated list of net10.0 or all. Default is all.");
                 Console.WriteLine("Garnet:   --opparams or --op:    Filter Operations benchmarks by which params to include. Comma-separated list of none, acl, aof, aad, all. Default is all.");
                 Console.WriteLine("Garnet:   --help or /? or -?:    (Must be first) Display this help message, followed by BDN help (filter with 'findstr Garnet:' if that is not desired).");
 
@@ -78,6 +78,8 @@ class Program
 
 public class BaseConfig : ManualConfig
 {
+    public Job Net10BaseJob { get; }
+
     public BaseConfig()
     {
         _ = AddLogger(ConsoleLogger.Default);
@@ -96,28 +98,31 @@ public class BaseConfig : ManualConfig
         // the reported allocation. These single-client benchmarks show no latency difference under Workstation GC.
         var baseJob = Job.Default.WithGcServer(false).WithGcConcurrent(false);
 
-        var availableJobs = new Dictionary<string, Job>
+        Net10BaseJob = baseJob
+            .WithRuntime(CoreRuntime.Core10_0)
+            .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
+
+        bool net10 = true;
+        if (!string.IsNullOrEmpty(Program.bdnFramework))
         {
-            ["net10.0"] = baseJob
-                .WithRuntime(CoreRuntime.Core10_0)
-                .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"))
-                .WithId(".NET 10"),
-        };
-        var frameworks = string.IsNullOrEmpty(Program.bdnFramework)
-            ? new[] { "all" }
-            : Program.bdnFramework.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => p.ToLower()).ToArray();
-        if (frameworks.Length == 0)
-            throw new ApplicationException("--frameworks must specify at least one value (e.g. net10.0, all)");
-        foreach (var framework in frameworks)
-        {
-            if (framework != "all" && !availableJobs.ContainsKey(framework))
-                throw new ApplicationException($"Unrecognized bdnFramework value: {framework}");
+            var fws = Program.bdnFramework.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(p => p.ToLower()).ToArray();
+            if (fws.Length == 0)
+                throw new ApplicationException("--frameworks must specify at least one value (e.g. net10.0, all)");
+            net10 = false;
+            foreach (var fw in fws)
+            {
+                _ = fw switch
+                {
+                    "net10.0" => net10 = true,
+                    "all" => net10 = true,
+                    _ => throw new ApplicationException($"Unrecognized bdnFramework value: {fw}"),
+                };
+            }
         }
 
-        IEnumerable<Job> selectedJobs = frameworks.Contains("all")
-            ? availableJobs.Values
-            : frameworks.Distinct().Select(framework => availableJobs[framework]);
-        _ = AddJob(selectedJobs.ToArray());
+        if (!net10)
+            throw new ApplicationException("Should never encounter a situation where all frameworks are excluded");
+        _ = AddJob(Net10BaseJob.WithId(".NET 10"));
 
         // Applies --opparams by excluding benchmark cases. It is added unconditionally because the params
         // default to all-enabled, in which case the filter admits everything.
