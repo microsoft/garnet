@@ -777,6 +777,99 @@ namespace Garnet.test
             ClassicAssert.Greater(response.Length, 0);
         }
 
+        /// <summary>
+        /// Graceful disposal on an idle client completes promptly, marks the client disposed, and
+        /// rejects any subsequent operation with <see cref="GarnetClientDisposedException"/> — the same
+        /// contract the gossip node relies on when it retires a connection.
+        /// </summary>
+        [Test]
+        public async Task DisposeGracefullyAsync_CompletesAndRejectsNewOperations()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            var db = TestUtils.GetGarnetLightClient();
+            await db.ConnectAsync().ConfigureAwait(false);
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await db.DisposeGracefullyAsync(cts.Token).ConfigureAwait(false);
+
+            ClassicAssert.IsTrue(db.Disposed);
+            _ = Assert.ThrowsAsync<GarnetClientDisposedException>(async () =>
+                await db.ExecuteForStringResultAsync(GET, ["anykey"]).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// Graceful disposal must not abort or strand requests that are already in flight. Requests admitted to
+        /// the ring before retirement flush and return their replies intact and in order; requests still queued
+        /// behind backpressure observe the retirement signal and are rejected cleanly with
+        /// <see cref="GarnetClientDisposedException"/> rather than aborted mid-flight or left to hang.
+        /// </summary>
+        [Test]
+        public async Task DisposeGracefullyAsync_DrainsInFlightRequests()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            var db = TestUtils.GetGarnetLightClient();
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+            const int requestCount = 256;
+            var expected = new string[requestCount];
+            var pending = new Task<string>[requestCount];
+            for (var i = 0; i < requestCount; i++)
+            {
+                var value = $"{i}:{new string((char)('a' + (i % 26)), 200)}";
+                expected[i] = value;
+                pending[i] = db.ExecuteForStringResultWithCancellationAsync(ECHO, [value], cts.Token);
+            }
+
+            // Start graceful disposal while the batch is still outstanding; already-admitted requests must
+            // drain, and any still queued behind backpressure must reject cleanly rather than abort or hang.
+            var disposeTask = db.DisposeGracefullyAsync(cts.Token).AsTask();
+
+            var completed = 0;
+            for (var i = 0; i < requestCount; i++)
+            {
+                try
+                {
+                    var result = await pending[i].WaitAsync(TimeSpan.FromSeconds(30), cts.Token).ConfigureAwait(false);
+                    ClassicAssert.AreEqual(expected[i], result);
+                    completed++;
+                }
+                catch (GarnetClientDisposedException)
+                {
+                    // Accepted but still queued behind backpressure at retirement: rejected cleanly.
+                }
+            }
+
+            await disposeTask.WaitAsync(TimeSpan.FromSeconds(30), cts.Token).ConfigureAwait(false);
+
+            ClassicAssert.Greater(completed, 0);
+            ClassicAssert.IsTrue(db.Disposed);
+        }
+
+        /// <summary>
+        /// Graceful disposal is safe to call on an already-disposed client and returns without throwing.
+        /// </summary>
+        [Test]
+        public async Task DisposeGracefullyAsync_OnDisposedClientIsNoOp()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            var db = TestUtils.GetGarnetLightClient();
+            await db.ConnectAsync().ConfigureAwait(false);
+            db.Dispose();
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            Assert.DoesNotThrowAsync(async () => await db.DisposeGracefullyAsync(cts.Token).ConfigureAwait(false));
+            ClassicAssert.IsTrue(db.Disposed);
+        }
+
         static LightNetworkWriter GetNetworkWriter(GarnetLightClient client)
             => (LightNetworkWriter)typeof(GarnetLightClient)
                 .GetField("networkWriter", BindingFlags.NonPublic | BindingFlags.Instance)

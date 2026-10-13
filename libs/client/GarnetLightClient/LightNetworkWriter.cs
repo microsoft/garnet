@@ -69,6 +69,7 @@ namespace Garnet.client
         readonly long minMemoryFootprintBytes;
         readonly long maxMemoryFootprintBytes;
 
+        int retiring;
         int closed;
         int disposed;
 
@@ -78,6 +79,12 @@ namespace Garnet.client
         public LightEpoch epoch => channel.epoch;
 
         internal bool Closed => Volatile.Read(ref closed) != 0;
+
+        /// <summary>
+        /// Whether the writer is quiescing for graceful retirement: new sends are rejected while the channel and
+        /// network handler stay alive so already-reserved requests continue to flush and drain their replies.
+        /// </summary>
+        internal bool Retiring => Volatile.Read(ref retiring) != 0;
 
         internal long ActiveMemoryUsageBytes
             => SaturatingAdd(
@@ -153,6 +160,26 @@ namespace Garnet.client
             Close();
             networkHandler.Dispose();
             networkPool?.Dispose();
+        }
+
+        /// <summary>
+        /// Begins graceful retirement without tearing down the channel. Flips the one-shot <see cref="Retiring"/>
+        /// flag so in-flight producers observe it in their scheduling loop and stop reserving new sends, and
+        /// disposes the out-of-line admission queue so parked admissions fault and new admissions are rejected.
+        /// Already-reserved requests keep flushing and their replies keep draining because the channel and
+        /// network handler remain alive; the caller completes the drain via <see cref="WaitForIdleAsync"/> and
+        /// then calls <see cref="Dispose"/>.
+        /// </summary>
+        /// <returns>True on the transition from active to retiring; false if already retiring or closed.</returns>
+        internal bool TryRetire()
+        {
+            if (Interlocked.Exchange(ref retiring, 1) != 0)
+                return false;
+
+            // Fault parked admissions and reject new ones. Admitted in-flight rentals release their bytes
+            // normally; release after dispose is accounting-only and safe.
+            memoryThrottle.Dispose();
+            return true;
         }
 
         internal void Close()

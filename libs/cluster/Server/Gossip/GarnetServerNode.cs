@@ -211,6 +211,40 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Gracefully disposes the node: stops accepting new gossip operations and waits for the
+        /// in-flight requests on the underlying client to drain before releasing resources. The
+        /// in-flight requests are drained first and only then are the cancellation sources torn down,
+        /// so a pending gossip round is allowed to complete rather than being aborted. Cancelling the
+        /// optional <paramref name="token"/> forces normal disposal of the client.
+        /// </summary>
+        /// <param name="token">Cancellation token bounding the graceful drain wait.</param>
+        public async ValueTask DisposeGracefullyAsync(CancellationToken token = default)
+        {
+            // Single write lock acquisition only
+            if (!dispose.TryCloseLock())
+            {
+                logger?.LogTrace("GarnetServerNode.Dispose called multiple times");
+                return;
+            }
+
+            try
+            {
+                if (gc != null)
+                    await gc.DisposeGracefullyAsync(token).ConfigureAwait(false);
+            }
+            catch { }
+            finally
+            {
+                if (cts != null)
+                    await cts.CancelAsync().ConfigureAwait(false);
+                cts?.Dispose();
+                if (internalCts != null)
+                    await internalCts.CancelAsync().ConfigureAwait(false);
+                internalCts?.Dispose();
+            }
+        }
+
+        /// <summary>
         /// Gets current and configured-maximum accounted memory for the active client.
         /// </summary>
         public (long ActiveMemoryUsageBytes, long MaxMemoryUsageBytes) GetClientMemoryUsage()

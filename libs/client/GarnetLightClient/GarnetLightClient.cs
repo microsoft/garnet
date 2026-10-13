@@ -45,9 +45,6 @@ namespace Garnet.client
 
         Socket socket;
         int disposed;
-        int acceptingOperations = 1;
-        int activeOperations;
-        readonly TaskCompletionSource operationsDrained = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         /// <inheritdoc />
         public bool Disposed => disposed > 0;
@@ -454,8 +451,10 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Stops accepting new operations, waits for accepted operations and their network activity to complete,
-        /// and then releases the client resources.
+        /// Begins graceful retirement and then releases the client resources. New operations are rejected, and
+        /// requests already admitted to the send ring are allowed to flush and drain their replies before the
+        /// channel is torn down. Operations still queued behind backpressure at retirement observe the signal
+        /// and fault with <see cref="GarnetClientDisposedException"/> rather than being aborted mid-flight.
         /// </summary>
         /// <param name="token">
         /// Cancellation token for the graceful wait. Cancellation forces normal disposal before it is propagated.
@@ -465,14 +464,24 @@ namespace Garnet.client
             if (Disposed)
                 return;
 
-            BeginRetirement();
+            // Quiesce: reject new sends and fault parked admissions, but keep the channel and network handler
+            // alive so already-reserved requests flush and their replies drain. If retirement cannot be started
+            // (already retiring/closed or no writer yet), fall back to normal disposal.
+            var writer = Volatile.Read(ref networkWriter);
+            if (writer == null || !writer.TryRetire())
+            {
+                Dispose();
+                return;
+            }
+
             try
             {
-                await operationsDrained.Task.WaitAsync(token).ConfigureAwait(false);
-
-                var writer = Volatile.Read(ref networkWriter);
-                if (writer != null)
-                    await writer.WaitForIdleAsync(token).ConfigureAwait(false);
+                await writer.WaitForIdleAsync(token).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // A concurrent hard Dispose may tear the channel down mid-drain; disposal below is the
+                // correct outcome, so swallow the teardown race rather than surfacing it to the caller.
             }
             finally
             {
@@ -484,7 +493,6 @@ namespace Garnet.client
         void Dispose(bool disposing)
 #pragma warning restore IDE0060 // Remove unused parameter
         {
-            BeginRetirement();
             if (Interlocked.Exchange(ref disposed, 1) != 0)
                 return;
 
@@ -495,52 +503,19 @@ namespace Garnet.client
                 epoch.Dispose();
         }
 
-        void BeginRetirement()
-        {
-            if (Interlocked.Exchange(ref acceptingOperations, 0) != 0 &&
-                Volatile.Read(ref activeOperations) == 0)
-                operationsDrained.TrySetResult();
-        }
-
-        bool TryEnterOperation()
-        {
-            if (Volatile.Read(ref acceptingOperations) == 0)
-                return false;
-
-            Interlocked.Increment(ref activeOperations);
-            if (Volatile.Read(ref acceptingOperations) != 0)
-                return true;
-
-            ExitOperation();
-            return false;
-        }
-
-        void ExitOperation()
-        {
-            var active = Interlocked.Decrement(ref activeOperations);
-            if (active == 0 && Volatile.Read(ref acceptingOperations) == 0)
-                operationsDrained.TrySetResult();
-        }
-
         /// <summary>
         /// Issue a command whose response completes the provided <paramref name="tcs"/>.
         /// </summary>
-        async ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
         {
-            if (!TryEnterOperation())
+            var writer = Volatile.Read(ref networkWriter);
+            if (Disposed || writer == null || writer.Retiring)
             {
                 CompleteOnFailure(tcs, disposeException);
-                return;
+                return ValueTask.CompletedTask;
             }
 
-            try
-            {
-                await InternalExecuteCoreAsync(tcs, respOp, args, token).ConfigureAwait(false);
-            }
-            finally
-            {
-                ExitOperation();
-            }
+            return InternalExecuteCoreAsync(tcs, respOp, args, token);
         }
 
         async ValueTask InternalExecuteCoreAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args, CancellationToken token)
@@ -636,7 +611,7 @@ namespace Garnet.client
                     while (true)
                     {
                         token.ThrowIfCancellationRequested();
-                        if (Disposed || writer.Closed || !ReferenceEquals(writer, Volatile.Read(ref networkWriter)) || !IsConnected)
+                        if (Disposed || writer.Closed || writer.Retiring || !ReferenceEquals(writer, Volatile.Read(ref networkWriter)) || !IsConnected)
                         {
                             if (!inline)
                             {
@@ -740,17 +715,11 @@ namespace Garnet.client
         /// </summary>
         void InternalExecuteNoResponse(ReadOnlyMemory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
-            if (!TryEnterOperation())
+            var writer = Volatile.Read(ref networkWriter);
+            if (Disposed || writer == null || writer.Retiring)
                 ThrowException(disposeException);
 
-            try
-            {
-                InternalExecuteNoResponseCore(respOp, subop, param1, param2, token);
-            }
-            finally
-            {
-                ExitOperation();
-            }
+            InternalExecuteNoResponseCore(respOp, subop, param1, param2, token);
         }
 
         void InternalExecuteNoResponseCore(ReadOnlyMemory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token)
@@ -825,7 +794,7 @@ namespace Garnet.client
                     while (true)
                     {
                         token.ThrowIfCancellationRequested();
-                        if (Disposed || writer.Closed || !ReferenceEquals(writer, Volatile.Read(ref networkWriter)) || !IsConnected)
+                        if (Disposed || writer.Closed || writer.Retiring || !ReferenceEquals(writer, Volatile.Read(ref networkWriter)) || !IsConnected)
                         {
                             if (!inline)
                             {
