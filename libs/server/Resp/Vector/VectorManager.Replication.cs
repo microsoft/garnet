@@ -531,7 +531,7 @@ namespace Garnet.server
             // Place all potential updates to a given element (regardless of Vector Set) on the same task so we respect the AOF ordering
             // 
             // For XVIMPORT we can distribute these randomly, because imports don't have element available and won't repeatedly set the same id anyway
-            var hashOrIndex = roundRobinReplays ? (uint)SpanByteComparer.StaticGetHashCode64(state.Element.Span) : Interlocked.Increment(ref nextRoundRobinIndex);
+            var hashOrIndex = roundRobinReplays ? Interlocked.Increment(ref nextRoundRobinIndex) : (uint)SpanByteComparer.StaticGetHashCode64(state.Element.Span);
             var replayChannelIndex = (int)(hashOrIndex % replicationReplayChannels.Length);
 
             // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
