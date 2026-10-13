@@ -62,38 +62,6 @@ namespace Garnet.cluster
         /// </summary>
         public EndPoint EndPoint;
 
-        /// <summary>
-        /// Default size of each request-ring page. In out-of-line mode, each page stores
-        /// fixed-size payload descriptors rather than payload bytes, so this controls how many
-        /// requests can be queued before page reuse must wait for an earlier flush to complete.
-        /// </summary>
-        const int defaultSendPageSize = 1 << 12;
-
-        /// <summary>
-        /// Default network send buffer size. Also bounds the maximum request chunk sent in one transport operation.
-        /// </summary>
-        const int defaultNetworkSendBufferSize = 1 << 13;
-
-        /// <summary>
-        /// Default number of pages in the request ring.
-        /// </summary>
-        const int defaultRequestPageCount = 2;
-
-        /// <summary>
-        /// Default number of response-expecting requests whose replies have not yet been consumed.
-        /// </summary>
-        const int defaultMaxOutstandingCompletions = 1 << 4;
-
-        /// <summary>
-        /// Default number of transport sends that may be in progress concurrently.
-        /// </summary>
-        const int defaultMaxConcurrentNetworkSends = 8;
-
-        /// <summary>
-        /// Default cap on pooled bytes reserved by out-of-line gossip requests awaiting local send completion.
-        /// </summary>
-        const long defaultMaxOutOfLineRentedBytes = 64L << 20;
-
         internal static int GetClientTimeoutMilliseconds(int clusterTimeoutSeconds)
             => clusterTimeoutSeconds <= 0 ? 0 : (int)Math.Min((long)clusterTimeoutSeconds * 1000, int.MaxValue);
 
@@ -113,7 +81,7 @@ namespace Garnet.cluster
             this.EndPoint = endpoint;
             this.logger = logger;
             this.clientAuth = clusterProvider.ClusterAuth;
-            this.gc = CreateGarnetClient(clientAuth);
+            this.gc = CreateGarnetClient(clientAuth, clusterProvider.storeWrapper.runtimeServerConfig);
             this.backoff = new ExponentialBackoff();
             initialized = false;
             this.gossipRecv = 0;
@@ -121,24 +89,16 @@ namespace Garnet.cluster
             ResetCts();
         }
 
-        GarnetLightClient CreateGarnetClient(ClusterAuthContainer auth)
+        GarnetLightClient CreateGarnetClient(ClusterAuthContainer auth, RuntimeServerConfig runtimeServerConfig)
             => new(
                 EndPoint,
                 tlsOptions,
                 authUsername: auth.ClusterUsername,
                 authPassword: auth.ClusterPassword,
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
-                networkWriterOptions: new LightNetworkWriterOptions(
-                    networkBufferSizeBytes: defaultNetworkSendBufferSize,
-                    requestPageSizeBytes: defaultSendPageSize,
-                    requestPageCount: defaultRequestPageCount,
-                    maxOutstandingRequests: defaultMaxOutstandingCompletions,
-                    maxOutstandingCompletions: defaultMaxOutstandingCompletions,
-                    maxConcurrentNetworkSends: defaultMaxConcurrentNetworkSends,
-                    maxOutOfLineRentedBytes: defaultMaxOutOfLineRentedBytes,
-                    flushResultAllocationMode: FlushResultAllocationMode.Buffered),
+                networkWriterOptions: runtimeServerConfig.MaterializeConfigGroup<LightNetworkWriterOptions, GossipClientConfigMaterializer>(),
                 timeoutMilliseconds: GetClientTimeoutMilliseconds(
-                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
+                    clusterProvider.storeWrapper.runtimeServerConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
                 epoch: epoch,
                 logger: logger);
 

@@ -68,7 +68,7 @@ namespace Garnet.cluster
             this.physicalSublogIdx = physicalSublogIdx;
             this.respSessionNetworkSender = respSessionNetworkSender;
             serverOptions = clusterProvider.serverOptions;
-            runtimeConfig = clusterProvider.storeWrapper.runtimeConfig;
+            runtimeConfig = clusterProvider.storeWrapper.runtimeServerConfig;
             appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
             replicationManager = clusterProvider.replicationManager;
             replayIterator = null;

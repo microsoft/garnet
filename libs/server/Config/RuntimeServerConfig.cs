@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
+using Garnet.client;
 using Garnet.common;
 
 namespace Garnet.server
@@ -38,6 +39,7 @@ namespace Garnet.server
         static readonly Dictionary<byte[], ServerConfigType>.AlternateLookup<ReadOnlySpan<byte>> NameToTypeSpanLookup =
             NameToType.GetAlternateLookup<ReadOnlySpan<byte>>();
 #endif
+
 
         // All types handled by this table (settable + read-only), for CONFIG GET *.
         static readonly ServerConfigType[] runtimeTypes = BuildRuntimeTypes();
@@ -92,21 +94,21 @@ namespace Garnet.server
         {
             var m = new ConfigMeta[TableSize];
 
-            void Set(ServerConfigType t, string name, ConfigKind kind, long min, long max, Type enumType = null,
+            void RegisterReadWrite(ServerConfigType t, string name, ConfigKind kind, long min, long max, ServerConfigGroupType groupType = ServerConfigGroupType.NONE, Type enumType = null,
                 ConfigTimeUnit timeUnit = ConfigTimeUnit.None, ConfigUpdateAction updateAction = null)
             {
                 if ((kind & ConfigKind.Enum) != 0)
                     EnsureSupportedEnum(enumType);
                 EnsureValidKind(name, kind, timeUnit);
-                m[(int)t] = new ConfigMeta(name, kind, min, max, enumType, IsRuntime: true, ReadOnly: false,
+                m[(int)t] = new ConfigMeta(name, kind, min, max, enumType, IsRuntime: true, IsReadOnly: false, GroupType: groupType,
                     timeUnit, UpdateAction: updateAction);
             }
 
-            void SetReadOnly(ServerConfigType t, string name, ConfigKind kind,
-                Func<GarnetServerOptions, string> formatter, ConfigTimeUnit timeUnit = ConfigTimeUnit.None)
+            void RegisterReadOnly(ServerConfigType t, string name, ConfigKind kind,
+                Func<GarnetServerOptions, string> formatter, ServerConfigGroupType groupType = ServerConfigGroupType.NONE, ConfigTimeUnit timeUnit = ConfigTimeUnit.None)
             {
                 EnsureValidKind(name, kind, timeUnit);
-                m[(int)t] = new ConfigMeta(name, kind, 0, 0, null, IsRuntime: true, ReadOnly: true,
+                m[(int)t] = new ConfigMeta(name, kind, 0, 0, null, IsRuntime: true, IsReadOnly: true, GroupType: groupType,
                     TimeUnit: timeUnit, ReadOnlyFormatter: formatter);
             }
 
@@ -116,94 +118,94 @@ namespace Garnet.server
             // GarnetServerOptions (the read-only fall-through) — no runtime slot is used.
             // NOTE: slave-read-only is intentionally not here because it is a fixed compatibility setting
             // handled directly by CONFIG GET.
-            SetReadOnly(ServerConfigType.TIMEOUT, "timeout",
-                ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, static _ => "0", ConfigTimeUnit.Seconds);
-            SetReadOnly(ServerConfigType.SAVE, "save", ConfigKind.String, static _ => "");
-            SetReadOnly(ServerConfigType.APPENDONLY, "appendonly", ConfigKind.Bool,
+            RegisterReadOnly(ServerConfigType.TIMEOUT, "timeout",
+                ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, static _ => "0", timeUnit: ConfigTimeUnit.Seconds);
+            RegisterReadOnly(ServerConfigType.SAVE, "save", ConfigKind.String, static _ => "");
+            RegisterReadOnly(ServerConfigType.APPENDONLY, "appendonly", ConfigKind.Bool,
                 static o => o.EnableAOF ? "yes" : "no");
-            SetReadOnly(ServerConfigType.DATABASES, "databases", ConfigKind.Int32,
+            RegisterReadOnly(ServerConfigType.DATABASES, "databases", ConfigKind.Int32,
                 static o => o.MaxDatabases.ToString(CultureInfo.InvariantCulture));
 
             // Read-only non-numeric parameters resolved directly from the startup options (file paths,
             // sockets, physical toggles). These have no runtime slot and are surfaced purely for CONFIG GET.
-            SetReadOnly(ServerConfigType.DIR, "dir", ConfigKind.String,
+            RegisterReadOnly(ServerConfigType.DIR, "dir", ConfigKind.String,
                 static o => o.CheckpointBaseDirectory);
-            SetReadOnly(ServerConfigType.LOGDIR, "logdir", ConfigKind.String,
+            RegisterReadOnly(ServerConfigType.LOGDIR, "logdir", ConfigKind.String,
                 static o => o.LogDir ?? string.Empty);
-            SetReadOnly(ServerConfigType.UNIXSOCKET, "unixsocket", ConfigKind.String,
+            RegisterReadOnly(ServerConfigType.UNIXSOCKET, "unixsocket", ConfigKind.String,
                 static o => o.UnixSocketPath ?? string.Empty);
-            SetReadOnly(ServerConfigType.CLUSTER_ENABLED, "cluster-enabled", ConfigKind.Bool,
+            RegisterReadOnly(ServerConfigType.CLUSTER_ENABLED, "cluster-enabled", ConfigKind.Bool,
                 static o => o.EnableCluster ? "yes" : "no");
 
             // Read-only AOF parameters resolved directly from the startup options. These describe the
             // physical AOF layout or startup-only toggles and require a restart to change, so CONFIG SET
             // rejects them; they have no runtime slot and are surfaced purely for CONFIG GET.
-            SetReadOnly(ServerConfigType.AOF_MEMORY, "aof-memory", ConfigKind.String,
+            RegisterReadOnly(ServerConfigType.AOF_MEMORY, "aof-memory", ConfigKind.String,
                 static o => o.AofMemorySize ?? string.Empty);
-            SetReadOnly(ServerConfigType.AOF_PAGE_SIZE, "aof-page-size", ConfigKind.String,
+            RegisterReadOnly(ServerConfigType.AOF_PAGE_SIZE, "aof-page-size", ConfigKind.String,
                 static o => o.AofPageSize ?? string.Empty);
-            SetReadOnly(ServerConfigType.AOF_SEGMENT_SIZE, "aof-segment-size", ConfigKind.String,
+            RegisterReadOnly(ServerConfigType.AOF_SEGMENT_SIZE, "aof-segment-size", ConfigKind.String,
                 static o => o.AofSegmentSize ?? string.Empty);
-            SetReadOnly(ServerConfigType.AOF_PHYSICAL_SUBLOG_COUNT, "aof-physical-sublog-count", ConfigKind.Int32,
+            RegisterReadOnly(ServerConfigType.AOF_PHYSICAL_SUBLOG_COUNT, "aof-physical-sublog-count", ConfigKind.Int32,
                 static o => o.AofPhysicalSublogCount.ToString(CultureInfo.InvariantCulture));
-            SetReadOnly(ServerConfigType.AOF_REPLAY_TASK_COUNT, "aof-replay-task-count", ConfigKind.Int32,
+            RegisterReadOnly(ServerConfigType.AOF_REPLAY_TASK_COUNT, "aof-replay-task-count", ConfigKind.Int32,
                 static o => o.AofReplayTaskCount.ToString(CultureInfo.InvariantCulture));
-            SetReadOnly(ServerConfigType.AOF_COMMIT_WAIT, "aof-commit-wait", ConfigKind.Bool,
+            RegisterReadOnly(ServerConfigType.AOF_COMMIT_WAIT, "aof-commit-wait", ConfigKind.Bool,
                 static o => o.WaitForCommit ? "yes" : "no");
-            SetReadOnly(ServerConfigType.AOF_SIZE_LIMIT, "aof-size-limit", ConfigKind.String,
+            RegisterReadOnly(ServerConfigType.AOF_SIZE_LIMIT, "aof-size-limit", ConfigKind.String,
                 static o => o.AofSizeLimit ?? string.Empty);
-            SetReadOnly(ServerConfigType.FAST_AOF_TRUNCATE, "fast-aof-truncate", ConfigKind.Bool,
+            RegisterReadOnly(ServerConfigType.FAST_AOF_TRUNCATE, "fast-aof-truncate", ConfigKind.Bool,
                 static o => o.FastAofTruncate ? "yes" : "no");
-            SetReadOnly(ServerConfigType.AOF_NULL_DEVICE, "aof-null-device", ConfigKind.Bool,
+            RegisterReadOnly(ServerConfigType.AOF_NULL_DEVICE, "aof-null-device", ConfigKind.Bool,
                 static o => o.UseAofNullDevice ? "yes" : "no");
 
-            Set(ServerConfigType.CLUSTER_NODE_TIMEOUT, "cluster-node-timeout",
+            RegisterReadWrite(ServerConfigType.CLUSTER_NODE_TIMEOUT, "cluster-node-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds);
-            Set(ServerConfigType.REPLICA_SYNC_DELAY, "replica-sync-delay",
+            RegisterReadWrite(ServerConfigType.REPLICA_SYNC_DELAY, "replica-sync-delay",
                 ConfigKind.Int32 | ConfigKind.Milliseconds | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Milliseconds);
-            Set(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES, "aof-replay-max-lag-bytes", ConfigKind.Int32, -1, int.MaxValue);
+            RegisterReadWrite(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES, "aof-replay-max-lag-bytes", ConfigKind.Int32, -1, int.MaxValue);
             // Primary-side replication backpressure budget (whole-log bytes). The always-constructed
             // AofBackpressure of every database reads plain fields, so ApplyAofSyncMaxLagUpdate pushes a
             // CONFIG SET straight into the live gate — no restart, no lifecycle task.
-            Set(ServerConfigType.AOF_SYNC_MAX_LAG_BYTES, "aof-sync-max-lag-bytes", ConfigKind.Int64, -1, long.MaxValue,
+            RegisterReadWrite(ServerConfigType.AOF_SYNC_MAX_LAG_BYTES, "aof-sync-max-lag-bytes", ConfigKind.Int64, -1, long.MaxValue,
                 updateAction: ApplyAofSyncMaxLagUpdate);
-            Set(ServerConfigType.AOF_TAIL_WITNESS_FREQ, "aof-tail-witness-freq",
+            RegisterReadWrite(ServerConfigType.AOF_TAIL_WITNESS_FREQ, "aof-tail-witness-freq",
                 ConfigKind.Int32 | ConfigKind.Milliseconds | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Milliseconds);
-            Set(ServerConfigType.REPL_DISKLESS_SYNC_DELAY, "repl-diskless-sync-delay",
+            RegisterReadWrite(ServerConfigType.REPL_DISKLESS_SYNC_DELAY, "repl-diskless-sync-delay",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds);
-            Set(ServerConfigType.REPL_ATTACH_TIMEOUT, "repl-attach-timeout",
+            RegisterReadWrite(ServerConfigType.REPL_ATTACH_TIMEOUT, "repl-attach-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds);
-            Set(ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT, "cluster-replication-reestablishment-timeout",
+            RegisterReadWrite(ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT, "cluster-replication-reestablishment-timeout",
                 ConfigKind.Int32 | ConfigKind.Seconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Seconds);
-            Set(ServerConfigType.COMPACTION_MAX_SEGMENTS, "compaction-max-segments", ConfigKind.Int32, 0, int.MaxValue);
-            Set(ServerConfigType.COMPACTION_FORCE_DELETE, "compaction-force-delete", ConfigKind.Bool, 0, 1);
-            Set(ServerConfigType.COMPACTION_TYPE, "compaction-type", ConfigKind.Enum, 0, 0, typeof(LogCompactionType));
-            Set(ServerConfigType.SLOWLOG_LOG_SLOWER_THAN, "slowlog-log-slower-than",
+            RegisterReadWrite(ServerConfigType.COMPACTION_MAX_SEGMENTS, "compaction-max-segments", ConfigKind.Int32, 0, int.MaxValue);
+            RegisterReadWrite(ServerConfigType.COMPACTION_FORCE_DELETE, "compaction-force-delete", ConfigKind.Bool, 0, 1);
+            RegisterReadWrite(ServerConfigType.COMPACTION_TYPE, "compaction-type", ConfigKind.Enum, 0, 0, enumType: typeof(LogCompactionType));
+            RegisterReadWrite(ServerConfigType.SLOWLOG_LOG_SLOWER_THAN, "slowlog-log-slower-than",
                 ConfigKind.Int32 | ConfigKind.Microseconds | ConfigKind.TimeSpan, 0, int.MaxValue,
                 timeUnit: ConfigTimeUnit.Microseconds);
-            Set(ServerConfigType.OBJECT_SCAN_COUNT_LIMIT, "object-scan-count-limit", ConfigKind.Int32, 0, int.MaxValue);
-            Set(ServerConfigType.SG_GET, "sg-get", ConfigKind.Bool, 0, 1);
+            RegisterReadWrite(ServerConfigType.OBJECT_SCAN_COUNT_LIMIT, "object-scan-count-limit", ConfigKind.Int32, 0, int.MaxValue);
+            RegisterReadWrite(ServerConfigType.SG_GET, "sg-get", ConfigKind.Bool, 0, 1);
 
             // Process-wide connection admission control. The listeners share one ConnectionLimit
             // object, so the update action pushes straight into the live accept path -- no restart
             // and no lifecycle task. -1 disables the limit.
-            Set(ServerConfigType.MAXCLIENTS, "maxclients", ConfigKind.Int32, -1, int.MaxValue,
+            RegisterReadWrite(ServerConfigType.MAXCLIENTS, "maxclients", ConfigKind.Int32, -1, int.MaxValue,
                 updateAction: ApplyMaxClientsUpdate);
 
             // AOF size-limit enforcement frequency (seconds): the background checkpoint-enforcement task
             // re-reads this each iteration, so CONFIG SET takes effect on the running task.
-            Set(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY, "aof-size-limit-enforce-frequency",
+            RegisterReadWrite(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY, "aof-size-limit-enforce-frequency",
                 ConfigKind.Int32, 0, int.MaxValue);
 
             // checkpoint-freq (seconds): 0 = disabled, > 0 = gap between scheduled checkpoints. The scheduler
             // re-reads this each iteration; the UpdateAction only wakes it so a change is observed promptly.
-            Set(ServerConfigType.CHECKPOINT_FREQ, "checkpoint-freq", ConfigKind.Int32, 0, int.MaxValue,
+            RegisterReadWrite(ServerConfigType.CHECKPOINT_FREQ, "checkpoint-freq", ConfigKind.Int32, 0, int.MaxValue,
                 updateAction: ApplyCheckpointFrequencyUpdate);
 
             // Background-task frequencies whose change is enacted by restarting / killing the owning task
@@ -214,15 +216,29 @@ namespace Garnet.server
             // A value of 0 (per-operation auto-commit) is baked into the AOF log at startup and cannot be
             // toggled on a live log; ApplyCommitFrequencyUpdate rejects moving to 0 and rejects any change
             // when the server started at 0.
-            Set(ServerConfigType.AOF_COMMIT_FREQ, "aof-commit-freq", ConfigKind.Int32, -1, int.MaxValue,
+            RegisterReadWrite(ServerConfigType.AOF_COMMIT_FREQ, "aof-commit-freq", ConfigKind.Int32, -1, int.MaxValue,
                 updateAction: ApplyCommitFrequencyUpdate);
             // expired-object-collection-freq (seconds): <= 0 = disabled (no task), > 0 = collection interval.
-            Set(ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ, "expired-object-collection-freq",
+            RegisterReadWrite(ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ, "expired-object-collection-freq",
                 ConfigKind.Int32, 0, int.MaxValue, updateAction: ApplyExpiredObjectCollectionUpdate);
             // expired-key-deletion-scan-freq (seconds): <= 0 = disabled (no task, on-demand EXPDELSCAN
             // allowed), > 0 = background scan interval.
-            Set(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ, "expired-key-deletion-scan-freq",
+            RegisterReadWrite(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ, "expired-key-deletion-scan-freq",
                 ConfigKind.Int32, -1, int.MaxValue, updateAction: ApplyExpiredKeyDeletionUpdate);
+
+            // GarnetLightClient (gossip) network-writer options. These are plain storage slots: CONFIG SET
+            // records the new value with no UpdateAction, so it is not propagated to any live gossip client,
+            // which keeps the options captured when it was constructed. Ranges only bound the stored value;
+            // the per-field constraints enforced by LightNetworkWriterOptions (power-of-two sizes,
+            // divisibility) are applied when a client is actually constructed, not here.
+            RegisterReadWrite(ServerConfigType.GOSSIP_NETWORK_BUFFER_SIZE_BYTES, "gossip-network-buffer-size", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
+            RegisterReadWrite(ServerConfigType.GOSSIP_REQUEST_PAGE_SIZE_BYTES, "gossip-request-page-size", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
+            RegisterReadWrite(ServerConfigType.GOSSIP_REQUEST_PAGE_COUNT, "gossip-request-page-count", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
+            RegisterReadWrite(ServerConfigType.GOSSIP_MAX_OUTSTANDING_REQUESTS, "gossip-max-outstanding-requests", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
+            RegisterReadWrite(ServerConfigType.GOSSIP_MAX_OUTSTANDING_COMPLETIONS, "gossip-max-outstanding-completions", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
+            RegisterReadWrite(ServerConfigType.GOSSIP_MAX_CONCURRENT_NETWORK_SENDS, "gossip-max-concurrent-network-sends", ConfigKind.Int32, 1, int.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
+            RegisterReadWrite(ServerConfigType.GOSSIP_MAX_OUT_OF_LINE_RENTED_BYTES, "gossip-max-out-of-line-rented-bytes", ConfigKind.Int64, 0, long.MaxValue, groupType: ServerConfigGroupType.GOSSIP_CLIENT);
+            RegisterReadWrite(ServerConfigType.GOSSIP_FLUSH_RESULT_ALLOCATION_MODE, "gossip-flush-result-allocation-mode", ConfigKind.Enum, 0, 0, groupType: ServerConfigGroupType.GOSSIP_CLIENT, enumType: typeof(FlushResultAllocationMode));
 
             return m;
         }
@@ -275,6 +291,19 @@ namespace Garnet.server
             values[(int)ServerConfigType.CHECKPOINT_FREQ] = o.CheckpointFrequencySecs;
             values[(int)ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ] = o.ExpiredObjectCollectionFrequencySecs;
             values[(int)ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ] = o.ExpiredKeyDeletionScanFrequencySecs;
+
+            // Seed the gossip (GarnetLightClient) network-writer slots from LightNetworkWriterOptions.Default.
+            // These values are intentionally not wired to any live gossip client; they are stored for CONFIG
+            // GET / SET only and are not propagated when changed.
+            var gossipOptions = LightNetworkWriterOptions.Default;
+            values[(int)ServerConfigType.GOSSIP_NETWORK_BUFFER_SIZE_BYTES] = gossipOptions.NetworkBufferSizeBytes;
+            values[(int)ServerConfigType.GOSSIP_REQUEST_PAGE_SIZE_BYTES] = gossipOptions.RequestPageSizeBytes;
+            values[(int)ServerConfigType.GOSSIP_REQUEST_PAGE_COUNT] = gossipOptions.RequestPageCount;
+            values[(int)ServerConfigType.GOSSIP_MAX_OUTSTANDING_REQUESTS] = gossipOptions.MaxOutstandingRequests;
+            values[(int)ServerConfigType.GOSSIP_MAX_OUTSTANDING_COMPLETIONS] = gossipOptions.MaxOutstandingCompletions;
+            values[(int)ServerConfigType.GOSSIP_MAX_CONCURRENT_NETWORK_SENDS] = gossipOptions.MaxConcurrentNetworkSends;
+            values[(int)ServerConfigType.GOSSIP_MAX_OUT_OF_LINE_RENTED_BYTES] = gossipOptions.MaxOutOfLineRentedBytes;
+            values[(int)ServerConfigType.GOSSIP_FLUSH_RESULT_ALLOCATION_MODE] = (long)gossipOptions.FlushResultAllocationMode;
         }
 
         /// <summary>Current value of <paramref name="type"/> as a 32-bit integer, in its native unit.</summary>
@@ -374,6 +403,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Materializes a logical configuration group into its physical options struct by reading each
+        /// member parameter slot from the table on demand. Zero-allocation: the method is specialized by
+        /// the JIT over the value-type <typeparamref name="TMaterializer"/> (the materialize call is
+        /// devirtualized and inlinable) and <typeparamref name="TGroup"/> is returned by value.
+        /// </summary>
+        /// <typeparam name="TGroup">Physical options type produced from the group's parameter slots.</typeparam>
+        /// <typeparam name="TMaterializer">Struct materializer that reads the group's slots.</typeparam>
+        /// <returns>The materialized options for the group.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public TGroup MaterializeConfigGroup<TGroup, TMaterializer>()
+            where TMaterializer : struct, IConfigGroupMaterializer<TGroup>
+            => default(TMaterializer).Materialize(this);
+
+        /// <summary>
         /// Validate <paramref name="value"/> and, if valid, update the slot for <paramref name="type"/>.
         /// </summary>
         /// <param name="type">Configuration parameter to update.</param>
@@ -384,7 +427,7 @@ namespace Garnet.server
         {
             error = null;
             ref readonly var meta = ref Meta[(int)type];
-            if (meta.ReadOnly)
+            if (meta.IsReadOnly)
             {
                 error = $"ERR Option '{meta.Name}' is read-only and cannot be set at runtime.";
                 return false;
@@ -652,7 +695,7 @@ namespace Garnet.server
         public string RespFormat(ServerConfigType type)
         {
             ref readonly var meta = ref Meta[(int)type];
-            if (meta.ReadOnly)
+            if (meta.IsReadOnly)
                 // Read-only fall-through: the value comes straight from the live startup options.
                 return meta.ReadOnlyFormatter?.Invoke(serverOptions) ?? string.Empty;
 

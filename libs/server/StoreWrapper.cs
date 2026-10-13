@@ -82,7 +82,7 @@ namespace Garnet.server
         /// Runtime-adjustable configuration values (seeded from <see cref="serverOptions"/> at startup,
         /// updated through CONFIG SET). Reachable across the server and cluster layers.
         /// </summary>
-        public readonly RuntimeServerConfig runtimeConfig;
+        public readonly RuntimeServerConfig runtimeServerConfig;
 
         /// <summary>
         /// Subscribe broker
@@ -220,7 +220,7 @@ namespace Garnet.server
             // CONFIG SET is observed consistently; otherwise seed a fresh table from the startup options.
             // A freshly created table is bound to this wrapper as its owner so update actions can enact
             // task lifecycle changes; a clone reuses the shared table (and its original owner).
-            this.runtimeConfig = runtimeConfig ?? new RuntimeServerConfig(serverOptions, this);
+            this.runtimeServerConfig = runtimeConfig ?? new RuntimeServerConfig(serverOptions, this);
             this.subscribeBroker = subscribeBroker;
             this.customCommandManager = customCommandManager;
             this.loggerFactory = loggerFactory;
@@ -323,7 +323,7 @@ namespace Garnet.server
             databaseManager: storeWrapper.databaseManager.Clone(recordToAof),
             clusterFactory: null,
             loggerFactory: storeWrapper.loggerFactory,
-            runtimeConfig: storeWrapper.runtimeConfig)
+            runtimeConfig: storeWrapper.runtimeServerConfig)
         {
         }
 
@@ -688,7 +688,7 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(runtimeConfig.GetInt(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY)), token).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromSeconds(runtimeServerConfig.GetInt(ServerConfigType.AOF_SIZE_LIMIT_ENFORCE_FREQUENCY)), token).ConfigureAwait(false);
                     if (token.IsCancellationRequested) break;
 
                     await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger).ConfigureAwait(false);
@@ -716,7 +716,7 @@ namespace Garnet.server
                     if (!await WaitForScheduledCheckpointAsync(token).ConfigureAwait(false))
                         continue;
 
-                    if (token.IsCancellationRequested || runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) <= 0 ||
+                    if (token.IsCancellationRequested || runtimeServerConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) <= 0 ||
                         (clusterProvider?.IsReplica() ?? false))
                         continue;
 
@@ -742,7 +742,7 @@ namespace Garnet.server
 
         async Task<bool> WaitForScheduledCheckpointAsync(CancellationToken token)
         {
-            var remainingSecs = runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ);
+            var remainingSecs = runtimeServerConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ);
             if (remainingSecs <= 0)
             {
                 await checkpointFrequencyChanged.WaitAsync(token).ConfigureAwait(false);
@@ -795,7 +795,7 @@ namespace Garnet.server
         {
             lock (taskLifecycleLock)
             {
-                if (runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) > 0)
+                if (runtimeServerConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) > 0)
                     return false;
 
                 taskManager.TryUnregister(TaskType.ScheduledCheckpointTask);
@@ -889,7 +889,7 @@ namespace Garnet.server
             {
                 await databaseManager.DoCompactionAsync(cancellationToken, logger).ConfigureAwait(false);
 
-                if (!runtimeConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE))
+                if (!runtimeServerConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE))
                     logger?.LogInformation("NOTE: Take a checkpoint (SAVE/BGSAVE) in order to actually delete the older data segments (files) from disk");
                 else
                     logger?.LogInformation("NOTE: Compaction will delete files, make sure checkpoint/recovery is not being used");
@@ -1131,14 +1131,14 @@ namespace Garnet.server
         // from runtimeConfig so both startup and a post-failover restart honor a runtime CONFIG SET.
         void TryStartCommitTask()
         {
-            var commitFrequencyMs = runtimeConfig.GetInt(ServerConfigType.AOF_COMMIT_FREQ);
+            var commitFrequencyMs = runtimeServerConfig.GetInt(ServerConfigType.AOF_COMMIT_FREQ);
             if (commitFrequencyMs > 0 && serverOptions.EnableAOF)
                 taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTaskAsync(commitFrequencyMs, token, logger));
         }
 
         void TryStartScheduledCheckpointTask()
         {
-            if (runtimeConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) > 0 &&
+            if (runtimeServerConfig.GetInt(ServerConfigType.CHECKPOINT_FREQ) > 0 &&
                 !taskManager.IsRegistered(TaskType.ScheduledCheckpointTask))
                 taskManager.RegisterAndRun(TaskType.ScheduledCheckpointTask, ScheduledCheckpointTaskAsync);
         }
@@ -1146,7 +1146,7 @@ namespace Garnet.server
         // Start the background object-collection task if enabled by the current runtime config.
         void TryStartObjectCollectTask()
         {
-            var frequencySecs = runtimeConfig.GetInt(ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ);
+            var frequencySecs = runtimeServerConfig.GetInt(ServerConfigType.EXPIRED_OBJECT_COLLECTION_FREQ);
             if (frequencySecs > 0)
                 taskManager.RegisterAndRun(TaskType.ObjectCollectTask, (token) => ObjectCollectTaskAsync(frequencySecs, token));
         }
@@ -1154,7 +1154,7 @@ namespace Garnet.server
         // Start the background expired-key-deletion scan task if enabled by the current runtime config.
         void TryStartExpiredKeyDeletionTask()
         {
-            var frequencySecs = runtimeConfig.GetInt(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ);
+            var frequencySecs = runtimeServerConfig.GetInt(ServerConfigType.EXPIRED_KEY_DELETION_SCAN_FREQ);
             if (frequencySecs > 0)
                 taskManager.RegisterAndRun(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTaskAsync(frequencySecs, token));
         }

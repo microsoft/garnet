@@ -79,7 +79,7 @@ namespace Garnet.server
                     else
                     {
                         name = RuntimeServerConfig.Name(configType);
-                        value = storeWrapper.runtimeConfig.RespFormat(configType);
+                        value = storeWrapper.runtimeServerConfig.RespFormat(configType);
                     }
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString(name, ref dcurr, dend))
@@ -195,7 +195,7 @@ namespace Garnet.server
                 {
                     foreach (var (type, value) in dynamicSets)
                     {
-                        if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
+                        if (!storeWrapper.runtimeServerConfig.TrySet(type, value, out var error))
                             AppendError(sbErrorMsg, error);
                     }
                 }

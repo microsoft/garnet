@@ -39,7 +39,7 @@ namespace Garnet.client
     /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
     /// <param name="maxOutOfLineRentedBytes">Maximum pooled out-of-line request bytes rented until local send completion. Zero disables throttling.</param>
     /// <param name="flushResultAllocationMode">Controls whether request-flush completion contexts are retained per request slot or allocated per operation.</param>
-    public readonly struct LightNetworkWriterOptions(
+    public struct LightNetworkWriterOptions(
         int networkBufferSizeBytes,
         int requestPageSizeBytes,
         int requestPageCount,
@@ -101,24 +101,24 @@ namespace Garnet.client
         /// Size of the fixed network send buffer and initial receive buffer.
         /// Also determines the maximum request chunk sent in one transport operation.
         /// </summary>
-        public int NetworkBufferSizeBytes { get; } = networkBufferSizeBytes;
+        public int NetworkBufferSizeBytes = networkBufferSizeBytes;
 
         /// <summary>
         /// Size of each request-ring page. This controls the maximum inline request size and,
         /// together with <see cref="RequestPageCount"/>, the request capacity awaiting local send completion.
         /// </summary>
-        public int RequestPageSizeBytes { get; } = GetRequestPageSizeBytes(requestPageSizeBytes);
+        public int RequestPageSizeBytes = GetRequestPageSizeBytes(requestPageSizeBytes);
 
         /// <summary>
         /// Number of circular pages in the request ring.
         /// </summary>
-        public int RequestPageCount { get; } = GetRequestPageCount(requestPageCount);
+        public int RequestPageCount = GetRequestPageCount(requestPageCount);
 
         /// <summary>
         /// Maximum number of minimum-allocation requests awaiting local send completion.
         /// Larger inline records consume multiple units of this capacity.
         /// </summary>
-        public int MaxOutstandingRequests { get; } = ValidateMaxOutstandingRequests(
+        public int MaxOutstandingRequests = ValidateMaxOutstandingRequests(
             requestPageSizeBytes,
             requestPageCount,
             maxOutstandingRequests);
@@ -133,24 +133,24 @@ namespace Garnet.client
         /// Maximum number of response-expecting requests whose replies have not yet been consumed.
         /// This capacity is independent of request pages, which are released on local send completion.
         /// </summary>
-        public int MaxOutstandingCompletions { get; } = maxOutstandingCompletions;
+        public int MaxOutstandingCompletions = maxOutstandingCompletions;
 
         /// <summary>
         /// Maximum number of transport sends that may be in progress concurrently.
         /// </summary>
-        public int MaxConcurrentNetworkSends { get; } = maxConcurrentNetworkSends;
+        public int MaxConcurrentNetworkSends = maxConcurrentNetworkSends;
 
         /// <summary>
         /// Maximum pooled bytes reserved by out-of-line requests that have not completed their local send.
         /// Zero disables memory admission throttling. Inline requests allocate no pooled payload and do not
         /// consume this capacity.
         /// </summary>
-        public long MaxOutOfLineRentedBytes { get; } = maxOutOfLineRentedBytes;
+        public long MaxOutOfLineRentedBytes = maxOutOfLineRentedBytes;
 
         /// <summary>
         /// Controls whether request-flush completion contexts are retained per request slot or allocated per operation.
         /// </summary>
-        public FlushResultAllocationMode FlushResultAllocationMode { get; } = ValidateFlushResultAllocationMode(flushResultAllocationMode);
+        public FlushResultAllocationMode FlushResultAllocationMode = ValidateFlushResultAllocationMode(flushResultAllocationMode);
 
         /// <summary>
         /// Estimates the fixed request-page, request-side-table, and completion-lane memory in bytes.
@@ -189,10 +189,10 @@ namespace Garnet.client
         static int Align(int size)
             => (size + (IntPtr.Size - 1)) & ~(IntPtr.Size - 1);
 
-        static FlushResultAllocationMode ValidateFlushResultAllocationMode(FlushResultAllocationMode mode)
+        public static FlushResultAllocationMode ValidateFlushResultAllocationMode(FlushResultAllocationMode mode)
             => Enum.IsDefined(mode) ? mode : throw new ArgumentOutOfRangeException(nameof(flushResultAllocationMode), mode, null);
 
-        static int ValidateMaxOutstandingRequests(int requestPageSizeBytes, int requestPageCount, int maxOutstandingRequests)
+        public static int ValidateMaxOutstandingRequests(int requestPageSizeBytes, int requestPageCount, int maxOutstandingRequests)
         {
             var pageSize = GetRequestPageSizeBytes(requestPageSizeBytes);
             var pageCount = GetRequestPageCount(requestPageCount);
@@ -212,14 +212,14 @@ namespace Garnet.client
             return maxOutstandingRequests;
         }
 
-        static int GetRequestPageCount(int requestPageCount)
+        public static int GetRequestPageCount(int requestPageCount)
         {
             if (requestPageCount <= 0 || requestPageCount > PageOffset.kPageMask)
                 throw new ArgumentOutOfRangeException(nameof(requestPageCount));
             return requestPageCount;
         }
 
-        static int GetRequestPageSizeBytes(int requestPageSizeBytes)
+        public static int GetRequestPageSizeBytes(int requestPageSizeBytes)
         {
             if (requestPageSizeBytes < DuplexRingRecordFormat.HeaderSize)
                 throw new ArgumentOutOfRangeException(nameof(requestPageSizeBytes), requestPageSizeBytes,

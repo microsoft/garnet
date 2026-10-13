@@ -22,7 +22,7 @@ namespace Garnet.cluster
         /// Cluster node timeout, read live so that a CONFIG SET is observed by in-flight gossip.
         /// </summary>
         public TimeSpan clusterTimeout
-            => clusterProvider.storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT);
+            => clusterProvider.storeWrapper.runtimeServerConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT);
         private volatile int numActiveTasks = 0;
         private readonly common.ReaderWriterLock activeMergeLock;
         public readonly GarnetClusterConnectionStore clusterConnectionStore;
