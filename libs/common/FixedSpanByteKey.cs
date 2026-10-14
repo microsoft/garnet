@@ -47,7 +47,7 @@ namespace Garnet.common
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #if NET9_0_OR_GREATER
-            get; 
+            get;
 #else
             get
             {
