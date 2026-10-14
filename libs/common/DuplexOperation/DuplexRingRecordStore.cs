@@ -166,16 +166,18 @@ namespace Garnet.client
         {
             Shape = new PageShape(ringPageSizeBytes, ringPageCount);
             if (maxOutstandingRequests == 0)
-                maxOutstandingRequests = checked(ringPageCount * Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize);
-            if (maxOutstandingRequests < ringPageCount || maxOutstandingRequests % ringPageCount != 0)
-                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests));
+                maxOutstandingRequests = checked(Shape.PageCount * Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize);
+            if (maxOutstandingRequests < Shape.PageCount || maxOutstandingRequests % Shape.PageCount != 0)
+                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
+                    $"Maximum outstanding requests must be a positive multiple of the ring page count ({Shape.PageCount}).");
 
-            requestSlotsPerPage = maxOutstandingRequests / ringPageCount;
+            requestSlotsPerPage = maxOutstandingRequests / Shape.PageCount;
             requestAllocationQuantumBytes = Shape.PageSizeBytes / requestSlotsPerPage;
             if (requestSlotsPerPage > Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize ||
                 Shape.PageSizeBytes % requestSlotsPerPage != 0 ||
                 requestAllocationQuantumBytes % DuplexRingRecordFormat.HeaderSize != 0)
-                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests));
+                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
+                    $"Maximum outstanding requests ({maxOutstandingRequests}) produces {requestSlotsPerPage} request slot(s) per {Shape.PageSizeBytes}-byte page; the per-page slot count must evenly divide the page size and yield an allocation quantum that is a multiple of the {DuplexRingRecordFormat.HeaderSize}-byte record header (computed quantum: {requestAllocationQuantumBytes} bytes).");
             requestSlots = new RequestSlot[maxOutstandingRequests];
 
             // Hold the per-page records in a single-page ring whose slots are the ring's pages, so page lookups
