@@ -333,10 +333,10 @@ On startup, configured addresses and ports replace those saved in `nodes.conf`.
 
 ### Upgrade compatibility
 
-Clusters with identical client and peer endpoints can upgrade directly to 2.3.0 without
+Clusters with identical client and peer endpoints can upgrade directly to 2.2.2 without
 first upgrading every node to 2.2.0.
 Keep existing addresses and ports throughout the rolling upgrade.
-Configure separate client and peer endpoints only after every node runs 2.3.0 or later.
+Configure separate client and peer endpoints only after every node runs 2.2.2 or later.
 
 :::warning Downgrade compatibility
 
