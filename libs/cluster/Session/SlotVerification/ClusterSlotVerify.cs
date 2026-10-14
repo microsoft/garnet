@@ -72,6 +72,10 @@ namespace Garnet.cluster
                 var IsLocal = config.IsLocal(_slot, enableReplicaReads: internalWriteSession);
                 var state = config.GetState(_slot);
 
+                if (config.LocalNodeRole == NodeRole.PRIMARY && !internalWriteSession &&
+                    clusterProvider.failoverManager.IsWritePaused)
+                    return new(SlotVerifiedState.CLUSTERDOWN, _slot);
+
                 if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
                 {
                     WaitForSlotToStabalize(_slot, keySlice, ref config);
@@ -95,10 +99,23 @@ namespace Garnet.cluster
                         };
                     }
 
+                    if (state == SlotState.MIGRATING)
+                    {
+                        var epoch = LocalCurrentEpoch;
+                        var canOperate = CanOperateOnKey(ref keySlice, _slot, readOnly: false);
+                        // Ensure that epoch did not change because otherwise it could mean
+                        // there is a state transitions at the node level that needs to be observe.
+                        if (epoch != LocalCurrentEpoch)
+                        {
+                            config = clusterProvider.clusterManager.CurrentConfig;
+                            goto tryAgain;
+                        }
+                        return canOperate ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot);
+                    }
+
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -142,7 +159,9 @@ namespace Garnet.cluster
 
                     config = clusterProvider.clusterManager.CurrentConfig;
                 }
-                while (config.GetState(slot) is SlotState.IMPORTING or SlotState.MIGRATING);
+                while ((config.GetState(slot) is SlotState.IMPORTING or SlotState.MIGRATING) &&
+                    (!clusterProvider.failoverManager.IsWritePaused || internalWriteSession ||
+                        config.LocalNodeRole != NodeRole.PRIMARY));
             }
         }
 

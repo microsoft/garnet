@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
@@ -16,6 +17,20 @@ namespace Garnet.cluster
         readonly ILogger logger;
         private SingleWriterMultiReaderLock failoverTaskLock;
         public volatile FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
+
+        bool pauseWrites;
+
+        /// <summary>
+        /// Whether local application-client writes are paused for failover.
+        /// </summary>
+        internal bool IsWritePaused => Volatile.Read(ref pauseWrites);
+
+        /// <summary>
+        /// Sets local write admission without changing cluster role or ownership.
+        /// </summary>
+        /// <param name="paused">Whether application-client writes should be paused.</param>
+        internal void PauseWrites(bool paused)
+            => Volatile.Write(ref pauseWrites, paused);
 
         /// <summary>
         /// Cluster node timeout, read live so that a CONFIG SET is observed by subsequent failover sessions.
