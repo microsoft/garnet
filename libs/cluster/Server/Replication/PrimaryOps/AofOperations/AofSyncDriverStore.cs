@@ -188,7 +188,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numDrivers; ++i)
                 {
                     var cr = syncDrivers[i];
-                    var (address, port) = current.GetWorkerAddressFromNodeId(cr.RemoteNodeId);
+                    var (address, port) = current.GetWorkerClientAddressFromNodeId(cr.RemoteNodeId);
                     replicaInfo.Add(new()
                     {
                         address = address,
