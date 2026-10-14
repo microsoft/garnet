@@ -43,10 +43,11 @@ namespace Garnet.test.cluster
             GarnetServerNode node = CreateNode(peer);
             try
             {
-                Task first = node.InitializeAsync().AsTask();
-                Task second = node.InitializeAsync().AsTask();
+                Task<bool> first = node.TryInitializeAsync().AsTask();
+                Task<bool> second = node.TryInitializeAsync().AsTask();
                 Assert.That(first, Is.SameAs(second));
-                await Task.WhenAll(first, second).WaitAsync(context.cts.Token);
+                bool[] initialized = await Task.WhenAll(first, second).WaitAsync(context.cts.Token);
+                Assert.That(initialized, Has.All.True);
                 ClusterConfig response = await node.TryMeetAsync(provider.clusterManager.CurrentConfig);
                 Assert.That(response.LocalNodeId, Is.EqualTo(provider.clusterManager.CurrentConfig.LocalNodeId));
                 ClusterConfig nextResponse = await node.TryMeetAsync(provider.clusterManager.CurrentConfig);
@@ -110,7 +111,7 @@ namespace Garnet.test.cluster
             GarnetServerNode node = CreateNode(peer);
             try
             {
-                await node.InitializeAsync();
+                Assert.That(await node.TryInitializeAsync(), Is.True);
                 Assert.That(node.TryGossip(), Is.True);
                 await peer.GossipRequested.Task.WaitAsync(context.cts.Token);
                 Assert.That(node.TryGossip(), Is.True);
@@ -193,7 +194,7 @@ namespace Garnet.test.cluster
             GarnetServerNode node = CreateNode(peer);
             try
             {
-                await node.InitializeAsync();
+                Assert.That(await node.TryInitializeAsync(), Is.True);
                 Assert.That(node.TryGossip(), Is.True);
                 await peer.GossipRequested.Task.WaitAsync(context.cts.Token);
                 while (node.TryGossip())
@@ -252,6 +253,43 @@ namespace Garnet.test.cluster
             }
         }
 
+        [TestCase(1, 1)]
+        [TestCase(1, 2)]
+        [TestCase(2, 2)]
+        public async Task ReconnectAttemptsTheLatestVersionWithTheSameClient(byte initialVersion, byte reconnectedVersion)
+        {
+            GarnetServerNode node = null;
+            try
+            {
+                await using (TestPeer peer = new(provider.clusterManager.CurrentConfig, initialVersion))
+                {
+                    node = CreateNode(peer);
+                    _ = await node.TryMeetAsync(provider.clusterManager.CurrentConfig);
+                    Assert.That(peer.LastRequestVersion, Is.EqualTo(initialVersion));
+                }
+
+                await using (TestPeer peer = new(provider.clusterManager.CurrentConfig, reconnectedVersion))
+                {
+                    Garnet.client.GarnetClient client = node.Client;
+                    TimeSpan retryDelay = node.RecordConnectionFailure();
+                    Assert.That(node.IsInitialized, Is.False);
+                    Assert.That(await node.TryInitializeAsync(), Is.False);
+                    await Task.Delay(retryDelay + TimeSpan.FromMilliseconds(50), context.cts.Token);
+                    Assert.That(await node.TryInitializeAsync(), Is.True);
+                    Assert.That(node.Client, Is.SameAs(client));
+                    _ = await node.TryMeetAsync(provider.clusterManager.CurrentConfig);
+                    byte[] expectedVersions = reconnectedVersion == 1 ? [2, 1] : [2];
+                    Assert.That(peer.RequestVersions, Is.EqualTo(expectedVersions));
+                    Assert.That(peer.RequestLengths, Has.All.GreaterThan(0));
+                    Assert.That(peer.InfoCount, Is.Zero);
+                }
+            }
+            finally
+            {
+                node?.Dispose();
+            }
+        }
+
         [Test]
         public async Task OlderPeerRetryResendsFullConfigurationBeforeHeartbeats()
         {
@@ -259,7 +297,7 @@ namespace Garnet.test.cluster
             GarnetServerNode node = CreateNode(peer);
             try
             {
-                await node.InitializeAsync();
+                Assert.That(await node.TryInitializeAsync(), Is.True);
                 GossipVersionNegotiation negotiation = new(node.Client, provider.clusterManager);
                 ClusterConfig response = await negotiation.ExchangeAsync(provider.clusterManager.CurrentConfig, withMeet: false, node.NodeId, context.cts.Token);
                 Assert.That(response.LocalNodeId, Is.EqualTo(node.NodeId));
@@ -320,7 +358,7 @@ namespace Garnet.test.cluster
             GarnetServerNode node = CreateNode(peer);
             try
             {
-                await node.InitializeAsync();
+                Assert.That(await node.TryInitializeAsync(), Is.True);
                 GossipVersionNegotiation negotiation = new(node.Client, provider.clusterManager);
                 Assert.ThrowsAsync<InvalidDataException>(async () => _ = await negotiation.ExchangeAsync(
                     provider.clusterManager.CurrentConfig, withMeet: true, node.NodeId, context.cts.Token));
@@ -341,7 +379,7 @@ namespace Garnet.test.cluster
             GarnetServerNode node = CreateNode(peer);
             try
             {
-                await node.InitializeAsync();
+                Assert.That(await node.TryInitializeAsync(), Is.True);
                 GossipVersionNegotiation negotiation = new(node.Client, provider.clusterManager);
                 _ = await negotiation.ExchangeAsync(provider.clusterManager.CurrentConfig, withMeet: true, node.NodeId, context.cts.Token);
                 ClusterConfig splitConfig = new ClusterConfig().InitializeLocalWorker(Generator.CreateHexId(), "127.0.0.1", ClusterTestContext.Port,
