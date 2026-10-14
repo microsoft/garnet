@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792016640696,
+  "lastUpdate": 1792016651477,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -329261,78 +329261,6 @@ window.BENCHMARK_DATA = {
       {
         "commit": {
           "author": {
-            "email": "ezhang3333@gmail.com",
-            "name": "ezhang3333",
-            "username": "ezhang3333"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "c323bbf7aa2783c1e9981edd387437d2618ff750",
-          "message": "[Cluster] Retire outdated checkpoints with shared indexes (#2144)\n\n* [Cluster] Retire outdated checkpoints with shared indexes\n\nSigned-off-by: Ethan Zhang <ezhang3333@gmail.com>\n\n* [Cluster] Cover checkpoint cleanup with an active checkpoint reader\n\nExercise the deletion loop while a replica pins a checkpoint entry, so the\nshared-index retirement path is verified against reader suspension as well.\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nSigned-off-by: Ethan Zhang <ezhang3333@gmail.com>\n\n---------\n\nSigned-off-by: Ethan Zhang <ezhang3333@gmail.com>\nCo-authored-by: Vasileios Zois <96085550+vazois@users.noreply.github.com>\nCo-authored-by: Claude Opus 5 <noreply@anthropic.com>",
-          "timestamp": "2026-09-21T13:29:32-07:00",
-          "tree_id": "3f7668de76fe43874df1de005cb9a5479e176985",
-          "url": "https://github.com/microsoft/garnet/commit/c323bbf7aa2783c1e9981edd387437d2618ff750"
-        },
-        "date": 1790023015213,
-        "tool": "benchmarkdotnet",
-        "benches": [
-          {
-            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AAD)",
-            "value": 17488.894770695613,
-            "unit": "ns",
-            "range": "± 61.91713675247515"
-          },
-          {
-            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AAD)",
-            "value": 18343.842491736777,
-            "unit": "ns",
-            "range": "± 40.62833795957179"
-          },
-          {
-            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: ACL)",
-            "value": 17465.162004743303,
-            "unit": "ns",
-            "range": "± 209.0483309351345"
-          },
-          {
-            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: ACL)",
-            "value": 21097.957720075334,
-            "unit": "ns",
-            "range": "± 312.43486488356746"
-          },
-          {
-            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AOF)",
-            "value": 17882.443389892578,
-            "unit": "ns",
-            "range": "± 404.89347284927146"
-          },
-          {
-            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AOF)",
-            "value": 17907.490641276043,
-            "unit": "ns",
-            "range": "± 135.46776116597385"
-          },
-          {
-            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: None)",
-            "value": 17362.77583195613,
-            "unit": "ns",
-            "range": "± 108.41524735222634"
-          },
-          {
-            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: None)",
-            "value": 18911.039079938615,
-            "unit": "ns",
-            "range": "± 199.68988517944564"
-          }
-        ]
-      },
-      {
-        "commit": {
-          "author": {
             "email": "15467143+TedHartMS@users.noreply.github.com",
             "name": "Ted Hart",
             "username": "TedHartMS"
@@ -332399,6 +332327,54 @@ window.BENCHMARK_DATA = {
             "value": 11497.029658726284,
             "unit": "ns",
             "range": "± 128.45592587123645"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "matrembl@microsoft.com",
+            "name": "Mathieu Tremblay",
+            "username": "Mathos1432"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "456925d8b36eb139d0a37937b85c085ab815c482",
+          "message": "[Cluster] Add separate peer endpoints and optimistic gossip in 2.2.2 (#2201)\n\n* [Cluster] Add separate client and peer endpoints\n\nAdd cluster-address and nullable cluster-port, separate client advertisements\nfrom peer routing, and enable configuration format version two.\n\nSet version 3.0.0 and require every existing node to run 2.2.0 or later\nbefore upgrading. Document bootstrap and upgrade requirements.\n\nCover endpoint discovery, redirects, migration, replication, failover,\nrecovery, and port validation with client and configuration tests.\n\n* [Tests] Fix hostname listeners and replica restart setup\n\n* [Tests] Wait for failover completion before client reads\n\n* [Cluster] Keep client-facing reports and failover errors on client endpoints\n\n* [Cluster] Negotiate gossip versions optimistically in Garnet 2.3.0\n\n* [Cluster] Skip failed peer initialization during publish forwarding\n\n* [Version] Release peer endpoint support as 2.2.2\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19\n\n* [Cluster] Offer highest supported gossip version during negotiation\n\nReply to unsupported gossip with a full configuration in the highest supported format without merging the payload or changing the selected connection state. Cover future-version probes, repeated offers, split endpoints, supported retries, and incompatible replies.\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19\n\n---------\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19",
+          "timestamp": "2026-10-14T18:17:21-04:00",
+          "tree_id": "ea6557e3cc11063c8efc5c509d755dbaee4a8327",
+          "url": "https://github.com/microsoft/garnet/commit/456925d8b36eb139d0a37937b85c085ab815c482"
+        },
+        "date": 1792016635944,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AAD)",
+            "value": 16604.013671875,
+            "unit": "ns",
+            "range": "± 145.94920525977824"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: ACL)",
+            "value": 17129.417521158855,
+            "unit": "ns",
+            "range": "± 136.10244427531399"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: AOF)",
+            "value": 17233.209737141926,
+            "unit": "ns",
+            "range": "± 180.6696579454855"
+          },
+          {
+            "name": "BDN.benchmark.Operations.PubSubOperations.Publish(Params: None)",
+            "value": 18287.413286921954,
+            "unit": "ns",
+            "range": "± 1087.939368433204"
           }
         ]
       }
