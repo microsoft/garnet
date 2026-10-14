@@ -178,7 +178,7 @@ namespace Tsavorite.core
             {
                 var bufferFilePosition = buffer.GetCurrentFilePosition();
                 Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
-                Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
+                // Sector-alignment padding can end at the next segment's start.
                 var increment = recordFilePosition - bufferFilePosition;
                 Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
 
@@ -192,7 +192,7 @@ namespace Tsavorite.core
 
                 Debug.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
                 if (!MoveToNextBuffer(out buffer))
-                    break;
+                    return false;
             }
             return true;
         }

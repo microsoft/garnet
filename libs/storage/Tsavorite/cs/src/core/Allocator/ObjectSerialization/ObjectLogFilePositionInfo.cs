@@ -147,7 +147,7 @@ namespace Tsavorite.core
                 throw new InvalidDataException($"Advancing position by {size:N} bytes exceeds maximum object log segment.");
 
             SegmentId = (int)nextSegmentId;
-            Offset += size & (SegmentSize - 1);
+            Offset = size & (SegmentSize - 1);
         }
 
         public void AdvanceToNextSegment()

@@ -97,9 +97,9 @@ namespace Tsavorite.core
         internal ObjectLogFilePositionInfo GetCurrentFilePosition()
         {
             var bufferFilePos = startFilePosition;
-            bufferFilePos.Offset += (uint)currentPosition;
+            bufferFilePos.Advance((uint)currentPosition);
 
-            // We only read from one segment into one buffer, so we should never exceed the segment size with this increment.
+            // An exhausted buffer at a segment boundary points to the start of the next segment.
             Debug.Assert(bufferFilePos.Offset < bufferFilePos.SegmentSize, $"Incremented bufferFilePos.Offset {bufferFilePos.Offset} should be < bufferFilePos.SegmentSize {bufferFilePos.SegmentSize}");
             return bufferFilePos;
         }
