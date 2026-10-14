@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792021820832,
+  "lastUpdate": 1792021894454,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -968555,510 +968555,6 @@ window.BENCHMARK_DATA = {
             "username": "web-flow"
           },
           "distinct": true,
-          "id": "058e36f37a3101fcdb4369c3102a4223b488b22f",
-          "message": "Normalize local-filesystem path composition and enable extended-length test paths (#2147)\n\n* Normalize local-filesystem path composition and enable extended-length test paths\n\nGarnet composed several local-filesystem paths by concatenating a forward\nslash onto a base directory. Windows normalizes \"/\" to \"\\\" in ordinary paths,\nbut not inside a Win32 extended-length (\"\\\\?\\\") path, where CreateFileW then\nfails with ERROR_INVALID_NAME.\n\nReplace that concatenation with Path.Combine at the six local-filesystem\nsites. The leading slash is dropped at each one because Path.Combine treats a\nrooted second argument as absolute and would discard the base directory. The\ncluster sites additionally guard a null CheckpointDir with string.Empty,\nmatching the convention already used by AppendOnlyFileBaseDirectory and\nCheckpointBaseDirectory. Azure blob, native runtime, and Linux /sys paths keep\ntheir forward slashes. On Linux Path.Combine yields \"/\", so behavior there is\nunchanged.\n\nWith the separators fixed, apply EnsureExtendedLengthPathIfNeeded to Garnet's\nTestUtils.UnitTestWorkingDir(), mirroring the helper already in Tsavorite's\nTestUtils. This fixes intermittent failures such as\nRespAdminCommandsTests.SeSaveRecoverMultipleObjectsTest when the repository is\nchecked out under a long path: LocalStorageDevice rejects non-extended paths\nlonger than WIN32_MAX_PATH - 11, and the deepest checkpoint files overflow\nthat limit. The failures are intermittent because the generated test directory\nname embeds a per-process randomized HashCode, so its length varies run to run.\n\nThe helper uses local constants rather than Tsavorite's Native32, whose\nmembers are internal; Garnet.test.cluster compiles this file via a linked\nCompile item and is not granted InternalsVisibleTo by Tsavorite.core.\n\n* Address review: keep cluster base name backend-neutral; fix test path composition\n\nCompose the \"cluster\" segment through FileDescriptor.directoryName instead of\nembedding it in the device factory's base name. The base name is\nbackend-neutral: for local storage it is a directory, but for Azure it is a\n\"container/prefix\" blob path that AzureStorageNamedDeviceFactory parses with\nSplit('/'). Applying Path.Combine to it on Windows produced\n\"container/prefix\\cluster\", which relocates nodes.conf and replication.conf\naway from the existing \"prefix/cluster\" blob hierarchy and prevents recovery\nof persisted cluster and replication state.\n\nEach factory already joins descriptor components with its own separator:\nLocalStorageNamedDeviceFactory uses Path.Combine, and\nAzureStorageNamedDeviceFactory uses GetSubDirectory, which joins with \"/\".\nPassing the segment as the descriptor directory is therefore correct on both\nbackends, and resolves to the same local file as before, so existing on-disk\nclusters are unaffected.\n\nAlso replace forward-slash concatenation in GarnetObjectTests.CreateStore.\nNow that the test working directory can be an extended-length path, that\nconcatenation produced a mixed-separator \"\\\\?\\...\\dir/hlog.log\" name, which\nWindows does not normalize inside an extended-length path.",
-          "timestamp": "2026-09-21T10:15:53-07:00",
-          "tree_id": "e01e87908997e93f12f9fa310726158e425f6faa",
-          "url": "https://github.com/microsoft/garnet/commit/058e36f37a3101fcdb4369c3102a4223b488b22f"
-        },
-        "date": 1790013376234,
-        "tool": "benchmarkdotnet",
-        "benches": [
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: AAD)",
-            "value": 71258.87125651042,
-            "unit": "ns",
-            "range": "± 633.4819466166754"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: AAD)",
-            "value": 94720.83658854167,
-            "unit": "ns",
-            "range": "± 978.1284335095157"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: AAD)",
-            "value": 90004.68139648438,
-            "unit": "ns",
-            "range": "± 991.841224579489"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: AAD)",
-            "value": 91156.53483072917,
-            "unit": "ns",
-            "range": "± 885.1833518844621"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: AAD)",
-            "value": 101727.34057617188,
-            "unit": "ns",
-            "range": "± 4075.860808062359"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: AAD)",
-            "value": 103339.8213704427,
-            "unit": "ns",
-            "range": "± 2195.4810223341024"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: AAD)",
-            "value": 80915.55989583333,
-            "unit": "ns",
-            "range": "± 895.2094856999956"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: AAD)",
-            "value": 115079.49505974265,
-            "unit": "ns",
-            "range": "± 2305.697834754468"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: AAD)",
-            "value": 106739.00233677456,
-            "unit": "ns",
-            "range": "± 749.7864852327072"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: AAD)",
-            "value": 110498.05802055028,
-            "unit": "ns",
-            "range": "± 2716.01192094332"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: AAD)",
-            "value": 126018.67739194399,
-            "unit": "ns",
-            "range": "± 6287.274320400908"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: AAD)",
-            "value": 124960.5576171875,
-            "unit": "ns",
-            "range": "± 3285.835028962041"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: ACL)",
-            "value": 67389.76004464286,
-            "unit": "ns",
-            "range": "± 700.7076000943566"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: ACL)",
-            "value": 97037.25673130581,
-            "unit": "ns",
-            "range": "± 777.1515791703272"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: ACL)",
-            "value": 97817.07502092634,
-            "unit": "ns",
-            "range": "± 1334.1129739208397"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: ACL)",
-            "value": 101139.55300071022,
-            "unit": "ns",
-            "range": "± 2445.1022214958084"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: ACL)",
-            "value": 114657.55471622242,
-            "unit": "ns",
-            "range": "± 2350.8951096563324"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: ACL)",
-            "value": 110164.64280348558,
-            "unit": "ns",
-            "range": "± 1217.014537074203"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: ACL)",
-            "value": 83664.07034737723,
-            "unit": "ns",
-            "range": "± 760.5202864465625"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: ACL)",
-            "value": 117734.19596354167,
-            "unit": "ns",
-            "range": "± 1571.94172848665"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: ACL)",
-            "value": 120251.94842998798,
-            "unit": "ns",
-            "range": "± 1981.808740139301"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: ACL)",
-            "value": 122474.41864013672,
-            "unit": "ns",
-            "range": "± 3787.422288500479"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: ACL)",
-            "value": 133287.02614524149,
-            "unit": "ns",
-            "range": "± 5720.821590285043"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: ACL)",
-            "value": 127081.708984375,
-            "unit": "ns",
-            "range": "± 3965.9989879428476"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: AOF)",
-            "value": 66827.26318359375,
-            "unit": "ns",
-            "range": "± 1091.7752464739451"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: AOF)",
-            "value": 120179.04097945603,
-            "unit": "ns",
-            "range": "± 4760.7385500052505"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: AOF)",
-            "value": 118304.1015625,
-            "unit": "ns",
-            "range": "± 2202.475591860594"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: AOF)",
-            "value": 113866.79221413353,
-            "unit": "ns",
-            "range": "± 4840.521971717687"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: AOF)",
-            "value": 125346.95281982422,
-            "unit": "ns",
-            "range": "± 2279.390405617642"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: AOF)",
-            "value": 121809.39841757015,
-            "unit": "ns",
-            "range": "± 4807.561864276841"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: AOF)",
-            "value": 83664.92041015625,
-            "unit": "ns",
-            "range": "± 2231.846458066972"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: AOF)",
-            "value": 131871.29855685763,
-            "unit": "ns",
-            "range": "± 2811.6781359484794"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: AOF)",
-            "value": 132626.56418372845,
-            "unit": "ns",
-            "range": "± 3839.182576824709"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: AOF)",
-            "value": 127568.83666992188,
-            "unit": "ns",
-            "range": "± 2808.663917465025"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: AOF)",
-            "value": 136276.20192307694,
-            "unit": "ns",
-            "range": "± 2038.90473824023"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: AOF)",
-            "value": 144413.54018702652,
-            "unit": "ns",
-            "range": "± 4203.045511619447"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: None)",
-            "value": 71249.0729437934,
-            "unit": "ns",
-            "range": "± 1491.2080560817335"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: None)",
-            "value": 96553.45458984375,
-            "unit": "ns",
-            "range": "± 4726.352445068867"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: None)",
-            "value": 93523.82914225261,
-            "unit": "ns",
-            "range": "± 2401.6782305088727"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: None)",
-            "value": 90203.36826869419,
-            "unit": "ns",
-            "range": "± 1450.0448007238388"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: None)",
-            "value": 99375.03574916294,
-            "unit": "ns",
-            "range": "± 1056.2347594676185"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: None)",
-            "value": 101170.537109375,
-            "unit": "ns",
-            "range": "± 1561.2598533569228"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: None)",
-            "value": 79680.04760742188,
-            "unit": "ns",
-            "range": "± 1670.7135329398257"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: None)",
-            "value": 117392.48372395833,
-            "unit": "ns",
-            "range": "± 2069.2990351915682"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: None)",
-            "value": 114904.94710286458,
-            "unit": "ns",
-            "range": "± 2031.9626418480836"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: None)",
-            "value": 109611.29231770833,
-            "unit": "ns",
-            "range": "± 1647.5190321505188"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: None)",
-            "value": 118718.72127757352,
-            "unit": "ns",
-            "range": "± 3805.9374399103604"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: None)",
-            "value": 116773.54997907366,
-            "unit": "ns",
-            "range": "± 981.3494679111366"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: AAD)",
-            "value": 56991.75681256234,
-            "unit": "ns",
-            "range": "± 1662.0665133160383"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: AAD)",
-            "value": 8815.688273111979,
-            "unit": "ns",
-            "range": "± 143.89859717279765"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: AAD)",
-            "value": 64209.86256318934,
-            "unit": "ns",
-            "range": "± 1242.259341443718"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: AAD)",
-            "value": 9244.48492867606,
-            "unit": "ns",
-            "range": "± 162.27492136642323"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: ACL)",
-            "value": 54380.87750603171,
-            "unit": "ns",
-            "range": "± 972.0019467135412"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: ACL)",
-            "value": 9108.51473600968,
-            "unit": "ns",
-            "range": "± 222.04829040841028"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: ACL)",
-            "value": 61011.58718532986,
-            "unit": "ns",
-            "range": "± 1279.107847369405"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: ACL)",
-            "value": 9344.314168294271,
-            "unit": "ns",
-            "range": "± 151.55294045050977"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: AOF)",
-            "value": 55570.47332763672,
-            "unit": "ns",
-            "range": "± 966.7038018181279"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: AOF)",
-            "value": 8804.721883138021,
-            "unit": "ns",
-            "range": "± 61.20645524914697"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: AOF)",
-            "value": 58678.547427528785,
-            "unit": "ns",
-            "range": "± 1303.3766033072463"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: AOF)",
-            "value": 9057.342529296875,
-            "unit": "ns",
-            "range": "± 93.95557973741869"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: None)",
-            "value": 49662.40670340402,
-            "unit": "ns",
-            "range": "± 538.8639595548553"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: None)",
-            "value": 8735.027160644531,
-            "unit": "ns",
-            "range": "± 127.78671562155259"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: None)",
-            "value": 56591.42822265625,
-            "unit": "ns",
-            "range": "± 454.3711770675592"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: None)",
-            "value": 8991.37461344401,
-            "unit": "ns",
-            "range": "± 91.87728333995972"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: AAD)",
-            "value": 27466.047014508928,
-            "unit": "ns",
-            "range": "± 258.673792397139"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: AAD)",
-            "value": 35231.38427734375,
-            "unit": "ns",
-            "range": "± 509.31349308754676"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: AAD)",
-            "value": 34255.694986979164,
-            "unit": "ns",
-            "range": "± 454.6216533868371"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: AAD)",
-            "value": 42846.363932291664,
-            "unit": "ns",
-            "range": "± 650.9236223461639"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: ACL)",
-            "value": 26742.494084284855,
-            "unit": "ns",
-            "range": "± 203.74531815667945"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: ACL)",
-            "value": 34477.54889594184,
-            "unit": "ns",
-            "range": "± 707.589656415281"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: ACL)",
-            "value": 33111.661783854164,
-            "unit": "ns",
-            "range": "± 268.82279202800675"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: ACL)",
-            "value": 42529.21590169271,
-            "unit": "ns",
-            "range": "± 460.2355764587062"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: AOF)",
-            "value": 39994.6142578125,
-            "unit": "ns",
-            "range": "± 617.5809112135082"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: AOF)",
-            "value": 47289.92919921875,
-            "unit": "ns",
-            "range": "± 554.33194171377"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: AOF)",
-            "value": 46483.14068134014,
-            "unit": "ns",
-            "range": "± 496.31382916653814"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: AOF)",
-            "value": 56869.437517438615,
-            "unit": "ns",
-            "range": "± 977.188955645387"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: None)",
-            "value": 26428.71595110212,
-            "unit": "ns",
-            "range": "± 205.2547427635965"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: None)",
-            "value": 33437.62948172433,
-            "unit": "ns",
-            "range": "± 410.7656611440879"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: None)",
-            "value": 32307.34375,
-            "unit": "ns",
-            "range": "± 583.2237091926922"
-          },
-          {
-            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: None)",
-            "value": 42922.32845530791,
-            "unit": "ns",
-            "range": "± 847.1919391048747"
-          }
-        ]
-      },
-      {
-        "commit": {
-          "author": {
-            "email": "15467143+TedHartMS@users.noreply.github.com",
-            "name": "Ted Hart",
-            "username": "TedHartMS"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
           "id": "e2176b7a70818aacfd0b0ad75b14a9b61e96863e",
           "message": "Refuse to serve when no HybridLog checkpoint is readable (#2153)",
           "timestamp": "2026-09-21T10:41:22-07:00",
@@ -989659,6 +989155,270 @@ window.BENCHMARK_DATA = {
             "value": 41134.313434103264,
             "unit": "ns",
             "range": "± 978.6502188781069"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "badrishc@microsoft.com",
+            "name": "Badrish Chandramouli",
+            "username": "badrishc"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8bc60763caaf72e91a36872e64cdbf6fb14e2c59",
+          "message": "[Tsavorite] Account hash index memory in the log budget and bound overflow buckets (#2229)\n\n* Charge unbudgeted hash-index memory against the log budget\n\nA Garnet node's resident memory grows with record count, independent of\nrecord size, and is bounded by no configured limit. LogSizeTracker budgets\nonly the hybrid log's pages and heap, so hash-index memory sits outside\nevery memory setting. IndexMemorySize and IndexMaxMemorySize bound only the\nmain bucket array; overflow buckets grow with the number of distinct keys at\none 64-byte, 7-entry bucket per 7 keys, and tiered storage tiers the log, not\nthe index. The log stays at its full configured size while the index grows\npast it, and the two sum past the machine's memory: field reproductions were\nSIGKILLed by the kernel at ~1.6 billion records per primary on a 62 GiB node\nat 10% disk utilization, with no OutOfMemoryException and no metric exposing\nthe term that grew.\n\nReport index memory beyond the configured index budget to LogSizeTracker,\nwhich subtracts it from the log's target sizes, floored at MinTargetPageCount\npages. The log then sheds pages as the index grows. This is best-effort\ncompensation, not a hard bound -- once the log reaches its floor there is\nnothing left to give back -- but it keeps the total within the configured\nbudget for the range that matters and makes the term observable before the\nprocess dies. Recovery samples the size itself, since it owns the log and\ndeliberately does not run the resizer.\n\nExpose IndexMemoryBudgetBytes and IndexMemoryChargedToLogBudgetBytes in\nINFO STORE, and log a warning as the charge doubles.\n\nTwo latent defects on the same path are fixed:\n\n- MallocFixedPageSize had no bounds check on its fixed 4096-entry page\n  table, so the overflow allocator wrote out of range at exactly 16 GiB,\n  surfacing as IndexOutOfRangeException from a write. It now reserves blocks\n  with a bounded CAS and throws a TsavoriteException naming the remedy,\n  without advancing count past capacity -- an over-capacity count would also\n  break BeginCheckpoint and distort GetMaxValidAddress.\n\n- DetermineEvictionRange advanced headAddress to the start of the next page\n  when a page's records were exhausted, but the record scan stops at\n  MinEvictionHeadAddressLag before the tail, which falls inside the tail page\n  when PageSize exceeds that lag. The resulting headAddress passed\n  TailAddress; ShiftHeadAddress caps HeadAddress at FlushedUntilAddress while\n  ShiftAddressesWithWait waits on the uncapped value, hanging the resizer\n  permanently. The round-up is now capped at the tail.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee\n\n* Bound hash index overflow buckets as a ratio of the index size\n\nOverflow buckets hold hash entries that do not fit the main bucket array.\nThey grow with the number of distinct keys, no index size setting bounds\nthem, and nothing but an index resize ever frees one, so a store with more\nkeys than its index was sized for grows overflow memory without limit until\nthe kernel OOM-kills the process.\n\nBound them with IndexOverflowThreshold (--index-overflow-threshold), a\npercentage of the main bucket count of the index generation they belong to,\ndefaulting to 300. Exceeding it fails the write that needed a new bucket with\nan error naming the settings that raise it.\n\nThe bound is a ratio rather than a byte size because an overflow bucket\nchains off a main bucket and is scanned by every read and upsert that probes\nit: the ratio is the average chain length. A byte ceiling large enough to be\ngenerous against a big index is an unusable scan against a small one, and the\nremedy for exhausting the bound is a larger index, not a larger ceiling.\n\nExpressing it in the same unit as IndexResizeThreshold also makes the\nrelationship between the two checkable. Both are percentages of the same\nquantity, so the invariant is just IndexOverflowThreshold >\nIndexResizeThreshold: a ceiling at or below the resize trigger would be\nreached before the resize that reclaims overflow buckets, turning a\nrecoverable growth step into a hard failure. Garnet validates this at startup\nand refuses to start on a conflict.\n\nEach generation installed by a resize recomputes its ceiling from its own\nbucket count, so the allowed chain length stays constant as the index grows,\nrather than halving at every grow. The resolved ceiling rounds down to a\nwhole allocator page, is floored at the smallest page table the allocator\nbuilds so a small index still holds a useful number of keys, and is capped by\nwhat the page table can address.\n\nThis changes default capacity. With the out-of-box IndexMemorySize=128m and\nno growth configured, a node now holds roughly 59M records before erroring,\nwhere previously it grew until it was killed. That is the point of the bound,\nbut it is a behavior change for any deployment relying on an undersized index.\n\nINFO STORE reports IndexOverflowThreshold and the resolved\nIndexOverflowMaxMemorySizeBytes alongside current use.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee\n\n* Address review findings on the overflow bound\n\nTwo independent reviews of the overflow-bucket bound found seven distinct\ndefects. Five were in the new code, two were pre-existing hazards the new\nbudget accounting can reach.\n\nA grow now reserves the buckets the split needs. Splitting inserts an entry\ninto both halves of the new table when the record is not in memory, which is\nthe common case under larger-than-memory operation, so the new generation can\nneed twice the old generation's entries. The threshold-derived ceiling does not\ncover that on its own, because it is quantized to whole allocator pages and\nclamped at both ends. Exhausting it mid-split would throw with a chunk claimed\nand never released, leaving SplitAllBuckets spinning forever, so the capacity\nis guaranteed before any state is mutated and the grow is refused outright if\nit cannot be.\n\nRecovery rebuilds the overflow allocator for the index it installs. A\ncheckpoint taken after the index had grown would otherwise load its buckets\nagainst a ceiling sized for the configured, smaller table, so a store that was\nhealthy before a restart would start refusing inserts after one.\n\nA threshold whose share of the bucket count rounds to nothing now floors at the\nsmallest page table. A zero reaching the allocator reads as \"unconfigured\" and\nsubstitutes the allocator's own much larger default, so the tightest thresholds\nproduced the loosest ceilings.\n\nThreshold validation now checks every index generation the store can actually\nreach, comparing resolved, quantized bucket counts against the resize trigger\nrather than the unquantized percentages.\n\nSumming the live and resizing generations' bucket counts promotes to 64 bits\nbefore multiplying, so the reported overflow size does not wrap.\n\nEviction returns incomplete rather than computing a negative evictable span\nwhen snapping down to a page start lands at or below the head address, which\nthe caller's lag gate alone does not prevent. ShiftAddressesWithWait waits on\nthe address the shift was actually capped to instead of the one requested,\nwhich could never be reached.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee\n\n* Address PR review findings on the overflow reservation and index accounting\n\n- Reserve the split's overflow buckets in the new allocator instead of only\n  sizing it, so concurrent writes during IN_PROGRESS_GROW cannot consume the\n  capacity the split needs. A split that throws leaves its chunk claimed and\n  SplitAllBuckets spins forever, so the capacity must be guaranteed up front.\n- Rebuild the overflow allocator on every recovery, not only when the table\n  size differs: a same-size checkpoint can carry more overflow than the\n  configured ratio permits.\n- Restore the two-argument TsavoriteBase constructor and delegate it to the\n  sizing constructor, keeping the public signature source compatible.\n- Report overflow memory from committed pages rather than handed-out buckets.\n  The allocator commits level 0 in its constructor and preallocates level 1,\n  so a fresh generation holds 8 MiB while reporting 16 buckets.\n- Correct the split requirement to twice the old generation's overflow\n  buckets. Each old bucket maps to exactly two new buckets, each providing\n  seven main slots, so only the old overflow chain needs new buckets.\n- Include the overflow floor in IndexMemoryBudgetBytes. That 8 MiB is the\n  cost of having an index at all, not of growth, and charging it to the log\n  crushed small log configurations to the eviction floor.\n- Call TestUtils.OnTearDown in the overflow budget fixture.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee\n\n* [Tsavorite] Keep overflow bucket allocation to a single atomic\n\nThe reservation added for index grow turned InternalAllocate's single\nInterlocked.Add into a CAS retry loop. That is per-record cost on the\noverflow allocation path, which FindOrCreateTag reaches once per chain\nextension.\n\nTake the block with one Interlocked.Add as before and check the index\nthe thread received. A rejected allocation rolls its block back, so\nrepeated rejections cannot run count away and overflow int. Indices are\nhanded out monotonically, so once one thread's index exceeds the limit\nevery later one does too: no valid allocation is lost or duplicated.\n\nGetMaxValidAddress clamps to MaxAllocationCount so the transient\novershoot is invisible to a concurrent reader; BeginCheckpoint derives\npage-table indices from it and would otherwise index past the last\nlevel.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee\n\n* [Tsavorite] Simplify the index split chain and memory budget configuration\n\nRefactor-only pass over the overflow accounting work; no behavior change.\n\n- SplitIndex: extract AppendToSplitChain, replacing six copies of the same\n  11-line append-and-grow block in SplitChunk.\n- MallocFixedPageSize: ThrowAllocatorFull no longer rolls back the allocation\n  counter as a side effect; the rollback is explicit at the call site. Add\n  GetMemorySizeForRecords so page-granularity arithmetic lives in the allocator\n  rather than at its callers. Reserve snapshots the allocation count once.\n- LogSizeTracker: collapse RefreshExternalMemorySize and\n  SampleExternalMemorySizeWithoutSignal into a single RefreshExternalMemorySize\n  that returns whether the external memory grew, leaving the signalling decision\n  to the caller. Drop a dead local in DetermineEvictionRange.\n- GarnetServerOptions: move the index memory budget and overflow ceiling\n  resolution out of GetSettings into ConfigureIndexMemory.\n- KVSettings: drop the unused MaxIndexOverflowMaxMemorySize.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee\n\n* [Tsavorite] Fix overflow allocator address aliasing during an index grow\n\nWhile Reserve holds capacity, ordinary and reserved allocations draw from\none counter under two different limits. An ordinary caller rejected at the\nordinary limit rolled the counter back, vacating an address still valid\nunder the reserved limit, so two reserved callers could be handed the same\naddress and alias two overflow bucket chains onto one bucket.\n\nReachable during IN_PROGRESS_GROW, where SplitIndex.AppendToSplitChain\nallocates with the reservation while the data path allocates ordinarily\nfrom the same allocator.\n\nAllocations now publish an increment only when it is within the caller's\nown limit, removing the rollback and with it the aliasing. The path is\nconfined to the grow window: Reserve runs before the allocator is\npublished, so with no reservation outstanding every caller shares one\nlimit and the steady-state path keeps its single Interlocked.Add. Under\none limit the rollback is provably safe, since any caller that could take\nthe vacated address would be rejected at it too.\n\nAlso in this change:\n\n- AllocatedSizeBytes now reports the per-page alignment padding. Each page\n  is over-allocated by SectorSize records, which the property omitted, so\n  the index undercharged the log budget by 0.78%.\n- Allocate() keeps its original signature; the reservation-aware overload\n  is internal, matching Reserve.\n- CacheSizeTracker's constructor and Initialize keep their original CLR\n  signatures, with the index budget on explicit overloads.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee\n\n* [Tsavorite] Charge the index to the log budget when a grow completes\n\nHide the level-count constructor of MallocFixedPageSize: callers size the\nallocator by memory budget, and tests now do the same.\n\nAn index grow doubles index memory in one step, which the log size tracker\nonly noticed at its next periodic sample up to ResizeTaskDelaySeconds later.\nSplitAllBuckets now resamples and signals the resizer once the superseded\ngeneration is released, so the log gives up its budget promptly. The signal\nis deliberately not raised while both generations are live: that peak is\nretracted moments later, and evicting against it costs log memory for nothing.\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee\n\n---------\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>\nCopilot-Session: 39b86442-3222-4fb0-befe-985f84f0c3ee",
+          "timestamp": "2026-10-14T16:32:39-07:00",
+          "tree_id": "8cd6e2bb7a67503aa8879f3444dceac4f3dfcbe1",
+          "url": "https://github.com/microsoft/garnet/commit/8bc60763caaf72e91a36872e64cdbf6fb14e2c59"
+        },
+        "date": 1792021851019,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: AAD)",
+            "value": 99495.11805943081,
+            "unit": "ns",
+            "range": "± 728.6756085101069"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: AAD)",
+            "value": 141869.24085115132,
+            "unit": "ns",
+            "range": "± 3024.0446401189442"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: AAD)",
+            "value": 133751.57645089287,
+            "unit": "ns",
+            "range": "± 1321.3380808028767"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: AAD)",
+            "value": 131187.38444010416,
+            "unit": "ns",
+            "range": "± 2049.02461078447"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: AAD)",
+            "value": 156850.15927269345,
+            "unit": "ns",
+            "range": "± 3709.1868549910128"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: AAD)",
+            "value": 143041.2451171875,
+            "unit": "ns",
+            "range": "± 2143.1021786519495"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: ACL)",
+            "value": 101123.50202287946,
+            "unit": "ns",
+            "range": "± 1587.8923002639249"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: ACL)",
+            "value": 142638.04361979166,
+            "unit": "ns",
+            "range": "± 2184.8642172799036"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: ACL)",
+            "value": 132467.76428222656,
+            "unit": "ns",
+            "range": "± 2431.592778292023"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: ACL)",
+            "value": 132112.5697544643,
+            "unit": "ns",
+            "range": "± 962.3086223092569"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: ACL)",
+            "value": 142101.357421875,
+            "unit": "ns",
+            "range": "± 2013.5189534999713"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: ACL)",
+            "value": 141277.9150390625,
+            "unit": "ns",
+            "range": "± 1519.7016540197221"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: AOF)",
+            "value": 96147.3859514509,
+            "unit": "ns",
+            "range": "± 1128.4046248705515"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: AOF)",
+            "value": 160847.13309151787,
+            "unit": "ns",
+            "range": "± 1327.4615926004722"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: AOF)",
+            "value": 147823.53352864584,
+            "unit": "ns",
+            "range": "± 1520.7239480697556"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: AOF)",
+            "value": 153606.81715745194,
+            "unit": "ns",
+            "range": "± 2438.2395216533455"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: AOF)",
+            "value": 159233.07334498354,
+            "unit": "ns",
+            "range": "± 3539.609706138012"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: AOF)",
+            "value": 166224.166015625,
+            "unit": "ns",
+            "range": "± 6708.478702012326"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetNx(Params: None)",
+            "value": 101627.24441827512,
+            "unit": "ns",
+            "range": "± 4075.58278093598"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetXx(Params: None)",
+            "value": 138333.70186941963,
+            "unit": "ns",
+            "range": "± 1720.3993440357287"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Increment(Params: None)",
+            "value": 138850.63639322916,
+            "unit": "ns",
+            "range": "± 1409.6170791308848"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Decrement(Params: None)",
+            "value": 132230.73893229166,
+            "unit": "ns",
+            "range": "± 2344.7430469542287"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.IncrementBy(Params: None)",
+            "value": 138595.49037388392,
+            "unit": "ns",
+            "range": "± 829.6973306994729"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.DecrementBy(Params: None)",
+            "value": 141216.162109375,
+            "unit": "ns",
+            "range": "± 2478.1042141593266"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: AAD)",
+            "value": 72369.37953404018,
+            "unit": "ns",
+            "range": "± 608.3096932603431"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: AAD)",
+            "value": 14545.543314615885,
+            "unit": "ns",
+            "range": "± 129.31229654737044"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: ACL)",
+            "value": 69405.87245396206,
+            "unit": "ns",
+            "range": "± 597.3879996749239"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: ACL)",
+            "value": 14951.450805664062,
+            "unit": "ns",
+            "range": "± 100.82581668954518"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: AOF)",
+            "value": 70607.97991071429,
+            "unit": "ns",
+            "range": "± 1984.430557815044"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: AOF)",
+            "value": 14678.392435709635,
+            "unit": "ns",
+            "range": "± 99.46868173460027"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetFound(Params: None)",
+            "value": 72493.75381469727,
+            "unit": "ns",
+            "range": "± 1371.9775582034829"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.GetNotFound(Params: None)",
+            "value": 15097.823378619025,
+            "unit": "ns",
+            "range": "± 310.02311069949667"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: AAD)",
+            "value": 41866.547775268555,
+            "unit": "ns",
+            "range": "± 765.8135705035712"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: AAD)",
+            "value": 52624.43115234375,
+            "unit": "ns",
+            "range": "± 768.7056660682398"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: ACL)",
+            "value": 39123.46676097197,
+            "unit": "ns",
+            "range": "± 696.0524475414844"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: ACL)",
+            "value": 54008.10994466146,
+            "unit": "ns",
+            "range": "± 827.6748015590567"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: AOF)",
+            "value": 52820.050455729164,
+            "unit": "ns",
+            "range": "± 883.2148759840345"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: AOF)",
+            "value": 65547.50081380208,
+            "unit": "ns",
+            "range": "± 1219.170330241728"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.Set(Params: None)",
+            "value": 37969.16748046875,
+            "unit": "ns",
+            "range": "± 460.8157713791547"
+          },
+          {
+            "name": "BDN.benchmark.Operations.LTM.RawStringOperations.SetEx(Params: None)",
+            "value": 51140.78898111979,
+            "unit": "ns",
+            "range": "± 671.8559389201359"
           }
         ]
       }
