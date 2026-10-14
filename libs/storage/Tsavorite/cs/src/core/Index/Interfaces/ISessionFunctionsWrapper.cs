@@ -36,20 +36,17 @@ namespace Tsavorite.core
         bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord;
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
         #endregion Upserts
 
         #region RMWs
         #region InitialUpdater
         bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             ;
         bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
         void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rMWInfo);
@@ -69,8 +66,7 @@ namespace Tsavorite.core
         #endregion InPlaceUpdater
 
         void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
         void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion RMWs
@@ -80,8 +76,7 @@ namespace Tsavorite.core
         void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
         bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
         void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
         #endregion Deletes
 

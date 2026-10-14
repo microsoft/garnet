@@ -19,8 +19,7 @@ namespace Tsavorite.core
         /// <param name="reset">Operation Type, whether it is reset or check</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalModifiedBitOperation<TKey>(TKey key, out RecordInfo modifiedInfo, bool reset = true)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             Debug.Assert(epoch.ThisInstanceProtected());
 

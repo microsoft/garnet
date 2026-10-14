@@ -33,16 +33,13 @@ namespace Tsavorite.benchmark
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public readonly long GetHashCode64<TKey>(TKey key)
-                where TKey : IKey
-                    , allows ref struct
+                where TKey : IKey, allows ref struct
                 => Utility.GetHashCode(key.KeyBytes.AsRef<FixedLengthKey>().value);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public bool Equals<TFirstKey, TSecondKey>(TFirstKey key1, TSecondKey key2)
-                where TFirstKey : IKey
-                    , allows ref struct
-                where TSecondKey : IKey
-                    , allows ref struct
+                where TFirstKey : IKey, allows ref struct
+                where TSecondKey : IKey, allows ref struct
                 => key1.KeyBytes.AsRef<FixedLengthKey>().value == key2.KeyBytes.AsRef<FixedLengthKey>().value;
         }
 

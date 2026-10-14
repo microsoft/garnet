@@ -265,8 +265,7 @@ namespace Tsavorite.core
 
         /// <summary>Get the hashcode for a key.</summary>
         public long GetKeyHash<TKey>(TKey key)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             => storeFunctions.GetKeyHashCode64(key);
 
         /// <summary>
@@ -490,8 +489,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Keep OperationState on the stack: the overwhelmingly common in-memory read never goes pending,
@@ -512,11 +510,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         [SkipLocalsInit] // Span<long> in here can be sizeable, so 0-init'ing isn't free
         internal unsafe void ContextReadWithPrefetch<TKey, TBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TBatch batch, TContext context, TSessionFunctionsWrapper sessionFunctions)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
-            , allows ref struct
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>, allows ref struct
         {
             // Per-batch read-copy options, with each Inherit field resolved against the session/store default so a
             // batch can override CopyFrom and/or CopyTo independently (e.g. copy small, frequently-read vector-index
@@ -643,8 +639,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context,
                 TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
@@ -661,8 +656,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
@@ -672,8 +666,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = new OperationState<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions, ref readOptions);
@@ -683,8 +676,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status ContextReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata,
                 TContext context, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStatus internalStatus;
@@ -699,8 +691,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input,
                 ReadOnlySpan<byte> srcStringValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);
@@ -719,8 +710,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input,
                 IHeapObject srcObjectValue, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);
@@ -739,8 +729,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextUpsert<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, long keyHash, ref TInput input,
                 in TSourceLogRecord inputLogRecord, ref TOutput output, out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -759,8 +748,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata,
                                                                           TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);
@@ -783,8 +771,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, int initialIORecordSize,
                                                                           out RecordMetadata recordMetadata, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);
@@ -801,8 +788,7 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ContextDelete<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, TContext context, TSessionFunctionsWrapper sessionFunctions)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var operationState = default(OperationState<TInput, TOutput, TContext>);

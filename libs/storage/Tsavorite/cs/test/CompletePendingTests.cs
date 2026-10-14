@@ -18,15 +18,12 @@ namespace Tsavorite.test
         internal long? forceCollisionHash;
 
         public long GetHashCode64<TKey>(TKey key)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             => forceCollisionHash ?? Utility.GetHashCode(key.KeyBytes.AsRef<KeyStruct>().kfield1);
 
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-                , allows ref struct
-            where TSecondKey : IKey
-                , allows ref struct
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => k1.KeyBytes.AsRef<KeyStruct>().kfield1 == k2.KeyBytes.AsRef<KeyStruct>().kfield1 && k1.KeyBytes.AsRef<KeyStruct>().kfield2 == k2.KeyBytes.AsRef<KeyStruct>().kfield2;
 
         public override string ToString() => $"forceHashCollision: {forceCollisionHash}";

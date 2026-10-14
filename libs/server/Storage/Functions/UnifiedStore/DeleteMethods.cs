@@ -46,8 +46,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
 

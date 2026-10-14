@@ -24,15 +24,12 @@ namespace Tsavorite.test.TransactionalUnsafeContext
         readonly Random rng = new(101);
 
         public bool Equals<TKeyFirst, TKeySecond>(TKeyFirst k1, TKeySecond k2)
-            where TKeyFirst : IKey
-                , allows ref struct
-            where TKeySecond : IKey
-                , allows ref struct
+            where TKeyFirst : IKey, allows ref struct
+            where TKeySecond : IKey, allows ref struct
             => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
         public long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             if (maxSleepMs > 0)
                 Thread.Sleep(rng.Next(maxSleepMs));

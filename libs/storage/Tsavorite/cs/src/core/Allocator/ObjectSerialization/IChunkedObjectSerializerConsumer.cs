@@ -43,8 +43,7 @@ namespace Tsavorite.core
         /// <param name="context">Caller state, passed through unchanged.</param>
         /// <returns>The number of value bytes consumed.</returns>
         int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
-            where TKey : IKey
-            , allows ref struct
+            where TKey : IKey, allows ref struct
             where TInput : IStoreInput;
     }
 }

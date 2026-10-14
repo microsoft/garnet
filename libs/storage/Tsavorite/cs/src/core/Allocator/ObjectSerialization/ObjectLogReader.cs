@@ -87,8 +87,7 @@ namespace Tsavorite.core
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
         public bool ReadRecordObjects<TKey>(ref LogRecord logRecord, TKey requestedKey, int segmentSizeBits)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             Debug.Assert(logRecord.DataHeader.RecordHasObjects, "Inline records should have been checked by the caller");
             Debug.Assert(logRecord.HasReuseObjectIdForSize, "ReadRecordObjects requires the ReuseObjectIdForSize flag to be set on the ObjectLogPosition");

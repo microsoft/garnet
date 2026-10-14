@@ -139,8 +139,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public int Consume<TContext, TKey, TInput>(ReadOnlySpan<byte> first, ReadOnlySpan<byte> second, bool isStart, bool isComplete, TKey key, ref TInput input, TContext context)
-            where TKey : IKey
-            , allows ref struct
+            where TKey : IKey, allows ref struct
             where TInput : IStoreInput
             => throw new NotSupportedException("Migration serializes only the object value; the key/inline portion are captured separately.");
     }

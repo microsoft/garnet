@@ -32,8 +32,7 @@ namespace Tsavorite.core
 
         /// <summary>Asserts the caller sized the record for the namespace of <paramref name="key"/>; a mismatch frames the record incorrectly.</summary>
         [Conditional("DEBUG")]
-        public static void AssertKeyCorrectlySized<TKey>(TKey key, in RecordSizeInfo sizeInfo) where TKey : IKey
-                , allows ref struct
+        public static void AssertKeyCorrectlySized<TKey>(TKey key, in RecordSizeInfo sizeInfo) where TKey : IKey, allows ref struct
         {
             var expectedExtendedSize = GetExtendedNamespaceSize(in key);
             Debug.Assert(sizeInfo.FieldInfo.ExtendedNamespaceSize == expectedExtendedSize, $"Extended namespace size {sizeInfo.FieldInfo.ExtendedNamespaceSize} does not match the key's required size {expectedExtendedSize}");
@@ -41,8 +40,7 @@ namespace Tsavorite.core
 
         /// <summary>The record space the namespace of <paramref name="key"/> requires ahead of the Key data; 0 if it needs none.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int GetExtendedNamespaceSize<TKey>(in TKey key) where TKey : IKey
-                , allows ref struct
+        public static int GetExtendedNamespaceSize<TKey>(in TKey key) where TKey : IKey, allows ref struct
             => key.HasNamespace ? GetExtendedNamespaceSize(key.NamespaceBytes) : 0;
 
         /// <summary>The record space <paramref name="namespaceBytes"/> requires ahead of the Key data; 0 if it needs none.</summary>

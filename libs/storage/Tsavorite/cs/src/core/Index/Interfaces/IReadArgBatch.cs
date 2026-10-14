@@ -12,8 +12,7 @@ namespace Tsavorite.core
     /// <typeparam name="TInput">Type of input</typeparam>
     /// <typeparam name="TOutput">Type of output</typeparam>
     public interface IReadArgBatch<TKey, TInput, TOutput>
-        where TKey : IKey
-            , allows ref struct
+        where TKey : IKey, allows ref struct
     {
         /// <summary>
         /// Count of keys/args/outputs.

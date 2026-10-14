@@ -124,8 +124,7 @@ namespace Tsavorite.core
         /// SAFETY: The <paramref name="requestKey"/> MUST be non-movable, such as on the stack, or pinned for the life of the IO operation.
         /// </remarks>
         internal void Prepare<TKey>(TKey requestKey, long logicalAddress, SectorAlignedBufferPool bufferPool)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             request.DisposeRecord();
             request.requestKey.Dispose();

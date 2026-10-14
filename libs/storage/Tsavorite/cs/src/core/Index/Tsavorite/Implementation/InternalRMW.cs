@@ -51,8 +51,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, ref TContext userContext,
                                     ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
@@ -250,8 +249,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void CreatePendingRMWContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
                 ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If a re-pend has already moved a populated pendingState onto operationState.pendingOp, reuse it; otherwise rent a
@@ -378,8 +376,7 @@ namespace Tsavorite.core
         private OperationStatus CreateNewRecordRMW<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TKey key, in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output,
                                                                                           ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions,
                                                                                           ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, bool doingCU, ref RMWInfo rmwInfo)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {

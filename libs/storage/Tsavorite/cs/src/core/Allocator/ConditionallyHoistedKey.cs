@@ -171,9 +171,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public bool KeysEqual<TOther>(TOther other) where TOther :
-            IKey
-            , allows ref struct
+        public bool KeysEqual<TOther>(TOther other) where TOther : IKey, allows ref struct
         {
             if (other.HasNamespace)
             {
@@ -219,8 +217,7 @@ namespace Tsavorite.core
         /// </list>
         /// </remarks>
         public static ConditionallyHoistedKey Create<TKey>(TKey key, SectorAlignedBufferPool bufferPool)
-            where TKey : IKey
-            , allows ref struct
+            where TKey : IKey, allows ref struct
         {
 
             if (key.IsEmpty)

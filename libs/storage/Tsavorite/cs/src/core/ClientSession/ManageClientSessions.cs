@@ -29,8 +29,7 @@ namespace Tsavorite.core
             ReadCopyOptions readCopyOptions = default,
             int initialIORecordSize = KVSettings.UseDefaultInitialIORecordSize,
             int? sessionIdOverride = null)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         {
             if (functions == null)

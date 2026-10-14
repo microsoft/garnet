@@ -48,8 +48,7 @@ namespace Garnet.server
         /// b. PostInitialWriter
         /// </summary>
         void WriteLogUpsert<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)

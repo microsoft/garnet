@@ -480,8 +480,7 @@ namespace Tsavorite.test.LogRecordTests
         }
 
         private void InitializeRecord<TKey>(TKey key, Span<byte> value, ref RecordSizeInfo sizeInfo, out LogRecord logRecord, out long expectedFillerLength, out long eTag, out long expiration)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             sizeInfo.FieldInfo = new()
             {

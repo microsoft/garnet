@@ -54,8 +54,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalRead<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output,
                                     TContext userContext, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions, bool isFromPending = false)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
@@ -236,8 +235,7 @@ namespace Tsavorite.core
         /// </returns>
         internal OperationStatus InternalReadAtAddress<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(long readAtAddress, TKey key, ref TInput input, ref TOutput output,
                                     ref ReadOptions readOptions, TContext userContext, ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             if (readAtAddress < hlogBase.BeginAddress)
@@ -325,8 +323,7 @@ namespace Tsavorite.core
         private void CreatePendingReadContext<TKey, TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey key, long keyHash, ref TInput input, ref TOutput output, TContext userContext,
                 ref OperationState<TInput, TOutput, TContext> operationState, TSessionFunctionsWrapper sessionFunctions,
                 long logicalAddress, long initialEntryAddress, long initialLatestLogicalAddress)
-             where TKey : IKey
-                , allows ref struct
+             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // If a re-pend has already moved a populated pendingState onto operationState.pendingOp, reuse it; otherwise rent a

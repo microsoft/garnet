@@ -320,8 +320,7 @@ namespace Tsavorite.test
         }
 
         internal static unsafe bool FindHashBucketEntryForKey<TKey, TStoreFunctions, TAllocator>(this TsavoriteKV<TStoreFunctions, TAllocator> store, TKey key, out HashBucketEntry entry)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -356,16 +355,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc />
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-                , allows ref struct
-            where TSecondKey : IKey
-                , allows ref struct
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => k1.KeyBytes.AsRef<int>() == k2.KeyBytes.AsRef<int>();
 
         /// <inheritdoc />
         public long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             => Utility.GetHashCode(k.KeyBytes.AsRef<int>());
     }
 
@@ -380,16 +376,13 @@ namespace Tsavorite.test
 
         /// <inheritdoc />
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-                , allows ref struct
-            where TSecondKey : IKey
-                , allows ref struct
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
         /// <inheritdoc />
         public long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             => Utility.GetHashCode(k.KeyBytes.AsRef<long>());
     }
 
@@ -401,15 +394,12 @@ namespace Tsavorite.test
         internal LongKeyComparerModulo(long mod) => this.mod = mod;
 
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-                , allows ref struct
-            where TSecondKey : IKey
-                , allows ref struct
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => k1.KeyBytes.AsSliceRef<long>() == k2.KeyBytes.AsSliceRef<long>();
 
         public long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             => mod == 0 ? k.KeyBytes.AsSliceRef<long>() : k.KeyBytes.AsSliceRef<long>() % mod;
     }
 
@@ -421,16 +411,13 @@ namespace Tsavorite.test
         internal SpanByteKeyComparerModulo(HashModulo mod) => modRange = mod;
 
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-                , allows ref struct
-            where TSecondKey : IKey
-                , allows ref struct
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         // Force collisions to create a chain
         public readonly long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             var value = SpanByteComparer.StaticGetHashCode64(k.KeyBytes);
             return modRange != HashModulo.NoMod ? value % (long)modRange : value;
@@ -441,8 +428,7 @@ namespace Tsavorite.test
     {
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
                 this ITsavoriteContext<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where Functions : ISessionFunctions<TInput, TOutput, TContext>
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
@@ -450,8 +436,7 @@ namespace Tsavorite.test
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator>(
                 this ITsavoriteContext<TKey, TInput, TOutput, TContext, Functions, TStoreFunctions, TAllocator> sessionContext, out RecordMetadata recordMetadata)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where Functions : ISessionFunctions<TInput, TOutput, TContext>
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>

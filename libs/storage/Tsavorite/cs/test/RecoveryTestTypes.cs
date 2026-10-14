@@ -35,15 +35,12 @@ namespace Tsavorite.test.recovery.sumstore
         public struct Comparer : IKeyComparer
         {
             public long GetHashCode64<TKey>(TKey key)
-                where TKey : IKey
-                    , allows ref struct
+                where TKey : IKey, allows ref struct
                 => Utility.GetHashCode(key.KeyBytes.AsRef<AdId>().adId);
 
             public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-                where TFirstKey : IKey
-                    , allows ref struct
-                where TSecondKey : IKey
-                    , allows ref struct
+                where TFirstKey : IKey, allows ref struct
+                where TSecondKey : IKey, allows ref struct
                 => k1.KeyBytes.AsRef<AdId>().adId == k2.KeyBytes.AsRef<AdId>().adId;
         }
     }

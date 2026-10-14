@@ -156,8 +156,7 @@ namespace Tsavorite.core
         /// <param name="dstLogicalAddress">Logical address of the destination record at the tail.</param>
         void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                ref LogRecord dstLogRecord, long dstLogicalAddress)
-            where TSourceLogRecord : ISourceLogRecord
-                , allows ref struct
+            where TSourceLogRecord : ISourceLogRecord, allows ref struct
         { }
 
         /// <summary>
@@ -237,8 +236,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                      ref LogRecord dstLogRecord, long dstLogicalAddress)
-            where TSourceLogRecord : ISourceLogRecord
-                , allows ref struct
+            where TSourceLogRecord : ISourceLogRecord, allows ref struct
         { }
 
         /// <inheritdoc/>
@@ -310,8 +308,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                      ref LogRecord dstLogRecord, long dstLogicalAddress)
-            where TSourceLogRecord : ISourceLogRecord
-                , allows ref struct
+            where TSourceLogRecord : ISourceLogRecord, allows ref struct
         { }
 
         /// <inheritdoc/>

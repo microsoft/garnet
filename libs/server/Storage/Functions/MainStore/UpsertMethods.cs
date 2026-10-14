@@ -106,8 +106,7 @@ namespace Garnet.server
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
@@ -117,8 +116,7 @@ namespace Garnet.server
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref StringInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             throw new GarnetException("String store should not be called with IHeapObject");

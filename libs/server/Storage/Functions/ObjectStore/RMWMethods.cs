@@ -15,8 +15,7 @@ namespace Garnet.server
     {
         /// <inheritdoc />
         public bool NeedInitialUpdate<TKey>(TKey key, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             var type = input.header.type;
 
@@ -250,8 +249,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref ObjectInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             if ((rmwInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF

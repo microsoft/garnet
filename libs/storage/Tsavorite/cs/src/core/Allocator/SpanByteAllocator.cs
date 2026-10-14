@@ -38,8 +38,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeRecord<TKey>(TKey key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             => newLogRecord.InitializeRecord(key, in sizeInfo);
 
         /// <inheritdoc/>
@@ -52,40 +51,35 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetRMWInitialRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetRMWInitialRecordSize(key, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, ReadOnlySpan<byte> value, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetUpsertRecordSize<TKey, TInput, TVariableLengthInput>(TKey key, IHeapObject value, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, value, ref input, varlenInput);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TKey key, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
             where TVariableLengthInput : IVariableLengthInput<TInput>
             => _this.GetUpsertRecordSize(key, in inputLogRecord, ref input, varlenInput);
 
         /// <summary>Get record size required for a new tombstone record</summary>
         public readonly RecordSizeInfo GetDeleteRecordSize<TKey>(TKey key)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             => _this.GetDeleteRecordSize(key);
 
         /// <inheritdoc/>

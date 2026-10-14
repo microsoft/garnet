@@ -527,8 +527,7 @@ namespace Tsavorite.core
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             RecordNamespace.AssertKeyCorrectlySized(key, in sizeInfo);
 
@@ -601,8 +600,7 @@ namespace Tsavorite.core
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void InitializeRecord<TKey>(TKey key, in RecordSizeInfo sizeInfo)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             RecordNamespace.AssertKeyCorrectlySized(key, in sizeInfo);
 

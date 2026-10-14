@@ -154,8 +154,7 @@ namespace Tsavorite.core
         /// the action is to be performed (such as by checking <see cref="UpsertInfo.UserData"/>
         /// </remarks>
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
 
         /// <summary>
@@ -166,8 +165,7 @@ namespace Tsavorite.core
         /// the action is to be performed (such as by checking <see cref="UpsertInfo.UserData"/>
         /// </remarks>
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
 
         #endregion Upserts
@@ -182,8 +180,7 @@ namespace Tsavorite.core
         /// <param name="output">The location where the result of the <paramref name="input"/> operation is to be copied</param>
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             ;
 
         /// <summary>
@@ -270,8 +267,7 @@ namespace Tsavorite.core
         /// the action is to be performed (such as by checking <see cref="RMWInfo.UserData"/>
         /// </remarks>
         void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
 
         /// <summary>
@@ -324,8 +320,7 @@ namespace Tsavorite.core
         /// the action is to be performed (such as by checking <see cref="DeleteInfo.UserData"/>
         /// </remarks>
         void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
-             where TKey : IKey
-            , allows ref struct
+             where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor;
         #endregion Deletes
 

@@ -86,8 +86,7 @@ namespace Garnet.server
         }
 
         public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref UnifiedInput input)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             // We know namespaces aren't present in string/object functions, so don't populate
             return new RecordFieldInfo
@@ -100,8 +99,7 @@ namespace Garnet.server
 
         public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value,
             ref UnifiedInput input)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             // During renames we might be moving a Vector Set or Ranged Index, if so we need to set the RecordType appropriately
             byte recordType;
@@ -126,8 +124,7 @@ namespace Garnet.server
         }
 
         public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref UnifiedInput input)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             return new RecordFieldInfo
             {
@@ -141,8 +138,7 @@ namespace Garnet.server
         public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key,
             in TSourceLogRecord inputLogRecord,
             ref UnifiedInput input)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
         {
             return new RecordFieldInfo

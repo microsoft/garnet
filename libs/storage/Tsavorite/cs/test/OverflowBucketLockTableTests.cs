@@ -18,15 +18,12 @@ namespace Tsavorite.test.LockTable
     internal class SingleBucketComparer : IKeyComparer
     {
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-                , allows ref struct
-            where TSecondKey : IKey
-                , allows ref struct
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => k1.KeyBytes.AsRef<long>() == k2.KeyBytes.AsRef<long>();
 
         public long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
 
             => 42L;
     }

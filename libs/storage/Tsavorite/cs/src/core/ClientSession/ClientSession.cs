@@ -14,8 +14,7 @@ namespace Tsavorite.core
     /// Thread-independent session interface to Tsavorite
     /// </summary>
     public sealed class ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : IClientSession, IDisposable
-         where TKey : IKey
-            , allows ref struct
+         where TKey : IKey, allows ref struct
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>

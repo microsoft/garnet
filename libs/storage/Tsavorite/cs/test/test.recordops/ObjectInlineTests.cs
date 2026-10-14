@@ -428,8 +428,7 @@ namespace Tsavorite.test.Objects
             }
 
             static RecordFieldInfo GetFieldInfo<TKey>(TKey key, ref TestObjectInput input)
-                where TKey : IKey
-                    , allows ref struct
+                where TKey : IKey, allows ref struct
                 => new()
                 {
                     KeySize = key.KeyBytes.Length,

@@ -267,8 +267,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
         public bool IterateKeyVersions<TKey, TScanFunctions>(ref TScanFunctions scanFunctions, TKey key)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TScanFunctions : IScanIteratorFunctions
             => allocatorBase.IterateKeyVersions(store, key, ref scanFunctions);
 

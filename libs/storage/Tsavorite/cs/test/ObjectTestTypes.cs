@@ -39,15 +39,12 @@ namespace Tsavorite.test
         public struct Comparer : IKeyComparer
         {
             public readonly long GetHashCode64<TKey>(TKey key)
-                where TKey : IKey
-                    , allows ref struct
+                where TKey : IKey, allows ref struct
                 => Utility.GetHashCode(key.KeyBytes.AsRef<TestObjectKey>().key);
 
             public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-                where TFirstKey : IKey
-                    , allows ref struct
-                where TSecondKey : IKey
-                    , allows ref struct
+                where TFirstKey : IKey, allows ref struct
+                where TSecondKey : IKey, allows ref struct
                 => k1.KeyBytes.AsRef<TestObjectKey>().key == k2.KeyBytes.AsRef<TestObjectKey>().key;
         }
     }

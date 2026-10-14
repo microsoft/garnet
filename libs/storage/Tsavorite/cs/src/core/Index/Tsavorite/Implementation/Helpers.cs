@@ -21,8 +21,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static LogRecord WriteNewRecordInfo<TKey>(TKey key, AllocatorBase<TStoreFunctions, TAllocator> log, long logicalAddress, long physicalAddress,
             in RecordSizeInfo sizeInfo, bool inNewVersion, long previousAddress)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
         {
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
             logRecord.InitializeHeadersForNewRecord(inNewVersion, previousAddress);

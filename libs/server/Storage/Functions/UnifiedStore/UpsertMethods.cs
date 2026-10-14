@@ -129,8 +129,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
@@ -139,8 +138,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref UnifiedInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
-            where TKey : IKey
-                , allows ref struct
+            where TKey : IKey, allows ref struct
             where TEpochAccessor : IEpochAccessor
         {
             if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
