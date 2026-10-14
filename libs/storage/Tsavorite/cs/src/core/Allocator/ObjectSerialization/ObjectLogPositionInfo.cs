@@ -40,11 +40,15 @@ namespace Tsavorite.core
         internal const int kUnusedBit63 = 63;
         internal const ulong kUnusedBit63Mask = 1UL << kUnusedBit63;
 
-        /// <summary>Bit position of an unused flag in <see cref="word"/>, available for a future format discriminator.
-        /// A headered overflow key always splits its exact 4 KB-page-count read extent across raw RDH KeyLength (high bits) and the objectId
-        /// hint (low bits), so no flag is needed to select that encoding.</summary>
-        internal const int kUnusedBit62 = 62;
-        internal const ulong kUnusedBit62Mask = 1UL << kUnusedBit62;
+        /// <summary>Bit position of the <c>HasDirectory</c> flag in <see cref="word"/>.
+        /// <para>When set, the position addresses a <b>directory record</b> rather than a single data chunk: the object's bytes are
+        /// spread over several chunks whose addresses and lengths the directory records. When clear -- the common case -- the position
+        /// addresses one data chunk, which the reader streams in a single IO with no framing to parse beyond the entry header. The
+        /// reader therefore learns the object's shape before issuing any IO.</para>
+        /// <para>This is a separate bit from the position's stamped/unstamped state and from the exact-size flags, so a single-chunk
+        /// object and a multi-chunk one are distinguished without consulting either.</para></summary>
+        internal const int kHasDirectoryBit = 62;
+        internal const ulong kHasDirectoryMask = 1UL << kHasDirectoryBit;
 
         /// <summary>Bit position of the <c>KeyIsExactSize</c> flag in <see cref="word"/>.
         /// When set, the out-of-line KEY's exact byte length (&lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is stored in the top
@@ -142,6 +146,18 @@ namespace Tsavorite.core
         /// <summary>Read the <c>ValueIsExactSize</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe bool GetValueIsExactSize(ulong* wordPtr) => (*wordPtr & kValueIsExactSizeMask) != 0;
+
+        /// <summary>Set the <c>HasDirectory</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void SetHasDirectory(ulong* wordPtr) => *wordPtr |= kHasDirectoryMask;
+
+        /// <summary>Read the <c>HasDirectory</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe bool GetHasDirectory(ulong* wordPtr) => (*wordPtr & kHasDirectoryMask) != 0;
+
+        /// <summary>Whether <paramref name="word"/> addresses a directory record rather than a single data chunk.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool WordHasDirectory(ulong word) => (word & kHasDirectoryMask) != 0;
 
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         /// <remarks>Part of the file-addressing group retired with the writer/reader port; see <see cref="SegmentSizeBits"/>.</remarks>

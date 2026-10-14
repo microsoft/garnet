@@ -200,37 +200,63 @@ namespace Tsavorite.test.Objects
 
         [Test]
         [Category("Smoke")]
-        public void ExactSizeFlagBitsAreDistinctAndAboveTheSegmentOffsetRange()
+        public void ExactSizeFlagBitsAreDistinctAndAboveTheAddressRange()
         {
             Assert.That(ObjectLogPositionInfo.kKeyIsExactSizeMask, Is.Not.EqualTo(ObjectLogPositionInfo.kValueIsExactSizeMask));
-            // Both flags live above the 60-bit segment+offset range and below the unused bit 63.
+            // Both flags live above the 60-bit address range and below the unused bit 63.
             Assert.That(ObjectLogPositionInfo.kKeyIsExactSizeMask & ObjectLogPositionInfo.AddressMask, Is.EqualTo(0UL));
             Assert.That(ObjectLogPositionInfo.kValueIsExactSizeMask & ObjectLogPositionInfo.AddressMask, Is.EqualTo(0UL));
             Assert.That(ObjectLogPositionInfo.kKeyIsExactSizeMask & ObjectLogPositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
             Assert.That(ObjectLogPositionInfo.kValueIsExactSizeMask & ObjectLogPositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
         }
 
+        /// <summary>
+        /// <c>HasDirectory</c> must be readable without consulting any other part of the word, because the reader uses it to learn an
+        /// object's shape before issuing any IO. It therefore cannot collide with the address, the exact-size flags, or the remaining
+        /// spare bit, and it must survive unstamping, which rewrites only the address bits.
+        /// </summary>
         [Test]
         [Category("Smoke")]
-        public unsafe void UnusedPositionBitsAreAvailableAndDistinct()
+        public unsafe void HasDirectoryIsIndependentOfEveryOtherFieldOfThePositionWord()
         {
-            // The two spare flag bits must not collide with each other, with the in-use flags, or with the segment+offset payload,
-            // so either is available for a future format discriminator.
-            Assert.That(ObjectLogPositionInfo.kUnusedBit63Mask, Is.Not.EqualTo(ObjectLogPositionInfo.kUnusedBit62Mask));
-            Assert.That(ObjectLogPositionInfo.kUnusedBit63Mask & ObjectLogPositionInfo.kUnusedBit62Mask, Is.EqualTo(0UL));
+            foreach (var otherMask in new[] { ObjectLogPositionInfo.AddressMask, ObjectLogPositionInfo.kKeyIsExactSizeMask,
+                                              ObjectLogPositionInfo.kValueIsExactSizeMask, ObjectLogPositionInfo.kUnusedBit63Mask })
+                Assert.That(ObjectLogPositionInfo.kHasDirectoryMask & otherMask, Is.EqualTo(0UL));
 
-            foreach (var unusedMask in new[] { ObjectLogPositionInfo.kUnusedBit63Mask, ObjectLogPositionInfo.kUnusedBit62Mask })
-            {
-                Assert.That(unusedMask & ObjectLogPositionInfo.AddressMask, Is.EqualTo(0UL));
-                Assert.That(unusedMask & ObjectLogPositionInfo.kKeyIsExactSizeMask, Is.EqualTo(0UL));
-                Assert.That(unusedMask & ObjectLogPositionInfo.kValueIsExactSizeMask, Is.EqualTo(0UL));
-            }
+            // Setting it leaves a realistic address and the other flags alone.
+            var address = 0x0ABCDEF012345UL & ObjectLogPositionInfo.AddressMask;
+            var word = address | ObjectLogPositionInfo.kUnusedBit63Mask;
+            ObjectLogPositionInfo.SetKeyIsExactSize(&word);
+            ObjectLogPositionInfo.SetHasDirectory(&word);
 
-            // An unstamped word leaves both spare bits untouched, so stamping one survives unstamping.
+            Assert.That(ObjectLogPositionInfo.GetHasDirectory(&word), Is.True);
+            Assert.That(ObjectLogPositionInfo.WordHasDirectory(word), Is.True);
+            Assert.That(ObjectLogPositionInfo.GetKeyIsExactSize(&word), Is.True);
+            Assert.That(ObjectLogPositionInfo.GetValueIsExactSize(&word), Is.False);
+            Assert.That(word & ObjectLogPositionInfo.AddressMask, Is.EqualTo(address));
+            Assert.That(word & ObjectLogPositionInfo.kUnusedBit63Mask, Is.Not.EqualTo(0UL));
+
+            // Unstamping rewrites only the address bits, so a stamped directory flag survives it.
+            ObjectLogPositionInfo.Unstamp(&word);
+            Assert.That(ObjectLogPositionInfo.IsUnstamped(&word), Is.True);
+            Assert.That(ObjectLogPositionInfo.GetHasDirectory(&word), Is.True);
+        }
+
+        [Test]
+        [Category("Smoke")]
+        public unsafe void Bit63RemainsAvailableAndDistinct()
+        {
+            // The remaining spare flag bit must not collide with any in-use field, so it stays available for a format discriminator.
+            Assert.That(ObjectLogPositionInfo.kUnusedBit63Mask & ObjectLogPositionInfo.AddressMask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogPositionInfo.kUnusedBit63Mask & ObjectLogPositionInfo.kKeyIsExactSizeMask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogPositionInfo.kUnusedBit63Mask & ObjectLogPositionInfo.kValueIsExactSizeMask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogPositionInfo.kUnusedBit63Mask & ObjectLogPositionInfo.kHasDirectoryMask, Is.EqualTo(0UL));
+
+            // An unstamped word leaves the spare bit untouched, so stamping it survives unstamping.
             ulong word = 0;
             ObjectLogPositionInfo.Unstamp(&word);
             Assert.That(word & ObjectLogPositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
-            Assert.That(word & ObjectLogPositionInfo.kUnusedBit62Mask, Is.EqualTo(0UL));
+            Assert.That(word & ObjectLogPositionInfo.kHasDirectoryMask, Is.EqualTo(0UL));
         }
 
         [TestCase(50UL, 3, 4050UL)]

@@ -41,6 +41,8 @@ Inline values never enter the object log. Migration and replication use an indep
 >   and format flags.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate that is
 >   replacing the hand-managed object-log file; see section 12.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDirectory.cs` - directory entry, record
+>   header, and layout arithmetic; see section 12.8.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ChunkHeader.cs` /
 >   `ChunkedRecordConstants.cs` - authoritative framing.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/OverflowByteArray.cs` - owned overflow storage and direct-IO slack.
@@ -188,10 +190,10 @@ an in-memory lookup, and `ObjectIdMap.GetSizeHint(slot)` extracts the high 9 bit
 The optional 8-byte object-log position combines an address and format flags:
 
 ```text
-63             62         61                 60                 59..0
-+--------------+----------+------------------+------------------+--------------+
-| cv7 reuse    | (unused) | KeyIsExactSize   | ValueIsExactSize | address      |
-+--------------+----------+------------------+------------------+--------------+
+63             62              61                 60                 59..0
++--------------+---------------+------------------+------------------+--------------+
+| cv7 reuse    | HasDirectory  | KeyIsExactSize   | ValueIsExactSize | address      |
++--------------+---------------+------------------+------------------+--------------+
 ```
 
 | Bit | Meaning |
@@ -199,7 +201,7 @@ The optional 8-byte object-log position combines an address and format flags:
 | 0..59 | Object-log address, about a 1 EB range (`ObjectLogPositionInfo.AddressMask`) |
 | 60 | `ValueIsExactSize` |
 | 61 | `KeyIsExactSize` |
-| 62 | Unused and available |
+| 62 | `HasDirectory` — the position addresses a directory record rather than a single data chunk (section 12.8) |
 | 63 | Unused and available; cv7 images carry a marker here that cv8 recovery ignores and clears |
 
 The address is flat. The current file-backed object log reaches it through a segment id and an offset, but those occupy
@@ -1182,3 +1184,63 @@ The two object logs have different write ordering, and this is the reason they h
 
 The main log's apparent sequentiality must still not be relied upon for addressing, for the reason given in section
 12.4.
+
+### 12.8 The directory
+
+A multi-chunk object records where its chunks are, rather than letting a reader discover them. **Position-word bit 62,
+`HasDirectory`**, says which shape a position has, and the reader learns that before issuing any IO:
+
+- **clear** — the common case — the position addresses a single data chunk: one IO, stream it, no framing to parse
+  beyond the entry header; and
+- **set** — the position addresses a *directory record* listing every chunk.
+
+A `DirectoryEntry` is 12 bytes:
+
+```text
+word0: bits  0..59  address of the chunk's first DATA byte
+       bit      60  IsDirectory
+       bits 61..63  spare
+word1: bits  0..26  data length
+       bits 27..31  spare
+```
+
+The address points at the data rather than at the entry header preceding it, so a reader issues exactly `Length` bytes
+with nothing to parse. **The benefit is not fewer IOs but the removal of a serial dependency**: in the old format read
+*k+1* could not be sized until read *k*'s framing had been parsed, so a large object's reads were strictly serialized.
+With the directory every read is known up front and the device queue can be saturated.
+
+The address field is the same 60 bits as the position word, bounded by the same `ObjectLogPositionInfo.AddressMask`.
+Twenty-seven length bits suffice because a chunk cannot exceed a page and its page allocation also holds its entry
+header, so a data length is strictly below the maximum page size; the encoder validates rather than relying on that.
+
+A directory record is a `DirectoryRecordHeader` followed by its entries:
+
+| Field | Meaning |
+|---|---|
+| `EntryCount` | Entries in **this** record |
+| `KeyEntryCount` | Entries belonging to the overflow key, counted over the **whole chain**; zero in a spine record |
+| `Flags` | `DirectoryIsCombined` |
+
+**Entries cover every data chunk**, in stream order, so `EntryCount` is the chunk count and the reader's loop has one
+shape. Summing each side's entry lengths gives exact component sizes, so an `OverflowByteArray` is allocated once at
+the right size and §6.3's rebase-at-actual-key-end discovery is retired.
+
+**Combined final record.** When the final chunk's remaining data and the accumulated directory fit one allocation
+together, they are written as one record and `DirectoryIsCombined` is set; otherwise the directory is its own record.
+There is no convergence problem in deciding this, because at that point both the remaining data size and the entry
+count are known — the final chunk has not been appended. The last entry then addresses the record's own tail, which is
+computable when the record is written because its address is known before it is filled, and a reader holding the record
+takes those bytes locally instead of issuing another read. The entry is still correct and uniform.
+
+**Multilevel directories are a backward spine.** When the entry list outgrows a record, it is written out, the list is
+cleared, and the **first** entry of the fresh list points back at the record just written with `IsDirectory` set. Always
+first and only, so decoding is trivial, depth is unbounded, and it costs no position-word bits and no format change. A
+reader tests entry zero; no header flag is needed. At a 1 MB record and 12-byte entries one directory record holds about
+87,000 entries, covering roughly 349 GB of 4 MB chunks, so a 1 TB object has about three.
+
+**No entry ever spans a page.** Data chunks never need to, because the writer chooses its cut points and closes a chunk
+at the page end. A directory record cannot be cut, so when it does not fit the remaining page it starts on the next one,
+wasting a tail bounded by the minimum useful chunk. A directory larger than a whole page is handled by the spine, not by
+splitting.
+
+The spare bits in both words read back as zero, so a later format can claim them and tell old entries from new.
