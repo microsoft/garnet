@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -23,7 +23,7 @@ namespace Tsavorite.core
         // The 32-bit objectId slot at keyAddress/valueAddress holds the ObjectIdMap index in its low bits. A 128 MB page with
         // a 32-byte minimum record holds at most 2^22 records, so the index needs at most 22 bits; the top 9 bits are
         // reclaimable to carry an out-of-line component's read-size HINT on the flushed/on-disk record. The hint's meaning is
-        // selected by the per-component ObjectLogFilePositionInfo.Key/ValueIsExactSize flag:
+        // selected by the per-component ObjectLogPositionInfo.Key/ValueIsExactSize flag:
         //   flag SET   -> the 9 bits are the EXACT byte length (0..511) of the out-of-line component; NO leading ChunkHeader.
         //   flag CLEAR -> for a VALUE, the 9 bits are a 4 KB-page count whose max value is the discovery sentinel; for a KEY they are the
         //                 low 9 bits of an exact page count whose high 10 bits are in raw RDH KeyLength.
@@ -58,7 +58,7 @@ namespace Tsavorite.core
         internal static int GetIndex(int slot) => slot == InvalidObjectId ? InvalidObjectId : (slot & ObjectIdIndexMask);
 
         /// <summary>Extract the out-of-line read-size hint from the top bits of an objectId slot. Its meaning depends on the record's
-        /// <see cref="ObjectLogFilePositionInfo.kKeyIsExactSizeMask"/> / <see cref="ObjectLogFilePositionInfo.kValueIsExactSizeMask"/> flag:
+        /// <see cref="ObjectLogPositionInfo.kKeyIsExactSizeMask"/> / <see cref="ObjectLogPositionInfo.kValueIsExactSizeMask"/> flag:
         /// flag set -&gt; exact byte length; flag clear -&gt; page count/sentinel for a value, or the low bits of an exact key page count.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int GetSizeHint(int slot) => (slot >> ObjectIdSizeHintShift) & ObjectIdSizeHintMask;

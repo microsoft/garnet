@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -359,7 +359,7 @@ namespace Tsavorite.test.LogRecordTests
             // Stamp a position so the unstamping below is observable rather than vacuous.
             var positionPtr = (ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
             *positionPtr = 0x1234;
-            Assert.That(ObjectLogFilePositionInfo.IsUnstamped(positionPtr), Is.False);
+            Assert.That(ObjectLogPositionInfo.IsUnstamped(positionPtr), Is.False);
 
             EmptyTolerantSerializer.DeserializeCallCount = 0;
 
@@ -374,7 +374,7 @@ namespace Tsavorite.test.LogRecordTests
             // EndOfStreamException from its unconditional first ReadByte.
             Assert.That(EmptyTolerantSerializer.DeserializeCallCount, Is.Zero, "the deserializer must not be invoked on an empty stream");
             Assert.That(logRecord.ValueObject, Is.Null, "the object must be recorded as absent");
-            Assert.That(ObjectLogFilePositionInfo.IsUnstamped(positionPtr), Is.True, "materializing must unstamp like a normal read");
+            Assert.That(ObjectLogPositionInfo.IsUnstamped(positionPtr), Is.True, "materializing must unstamp like a normal read");
         }
 
         [Test]

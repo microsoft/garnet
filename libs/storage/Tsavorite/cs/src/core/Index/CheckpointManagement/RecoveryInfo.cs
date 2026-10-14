@@ -114,17 +114,17 @@ namespace Tsavorite.core
         /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> taken at PERSISTENCE_CALLBACK (matching <see cref="mainLogRecoveryEndAddress"/>).
         /// This is incremented for any flushes due to ReadOnlyAddress growth during the snapshot.
         /// </summary>
-        internal ObjectLogFilePositionInfo hlogEndObjectLogTail;
+        internal ObjectLogPositionInfo hlogEndObjectLogTail;
 
         /// <summary>
         /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> at the start of the checkpoint (start of WAIT_FLUSH).
         /// </summary>
-        internal ObjectLogFilePositionInfo snapshotStartObjectLogTail;
+        internal ObjectLogPositionInfo snapshotStartObjectLogTail;
 
         /// <summary>
         /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> at the end of the checkpoint (at PERSISTENCE_CALLBACK).
         /// </summary>
-        internal ObjectLogFilePositionInfo snapshotEndObjectLogTail;
+        internal ObjectLogPositionInfo snapshotEndObjectLogTail;
 
         /// <summary>
         /// User cookie
@@ -139,7 +139,7 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Object-log segment size, in bytes, of the store that wrote this checkpoint. Appended in v8; zero for a v7 checkpoint, whose
-        /// metadata did not record it. This is the split point for <see cref="ObjectLogFilePositionInfo"/>'s packed segment/offset word,
+        /// metadata did not record it. This is the split point for <see cref="ObjectLogPositionInfo"/>'s packed segment/offset word,
         /// so recovering with a different value resolves every object-log position to a different segment and offset.
         /// </summary>
         public long objectLogSegmentSize;

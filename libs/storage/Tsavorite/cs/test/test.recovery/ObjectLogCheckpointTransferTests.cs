@@ -192,11 +192,11 @@ namespace Tsavorite.test.recovery.objects
             {
                 ++scanned;
                 var word = ReadPageHeaderObjectLogWord(Path.Combine(sourceDir, LogBaseName), page * MinKvLogPageSize);
-                if (word == ObjectLogFilePositionInfo.NotSet)
+                if (word == ObjectLogPositionInfo.NotSet)
                     continue;
                 ++stamped;
-                Assert.That(word & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.GreaterThanOrEqualTo(mainObjectLogEndAtCheckpoint),
-                    $"snapshot-region page {page} header holds object-log position {word & ObjectLogFilePositionInfo.SegmentAndOffsetMask}, which "
+                Assert.That(word & ObjectLogPositionInfo.AddressMask, Is.GreaterThanOrEqualTo(mainObjectLogEndAtCheckpoint),
+                    $"snapshot-region page {page} header holds object-log position {word & ObjectLogPositionInfo.AddressMask}, which "
                     + $"precedes the main object log's end at checkpoint ({mainObjectLogEndAtCheckpoint}); that is a snapshot-object-log position, not a main one");
             }
 
@@ -210,12 +210,12 @@ namespace Tsavorite.test.recovery.objects
         {
             var path = $"{logBaseName}.{pageStartAddress / MainLogSegmentSize}";
             if (!File.Exists(path))
-                return ObjectLogFilePositionInfo.NotSet;
+                return ObjectLogPositionInfo.NotSet;
 
             var offsetInSegment = pageStartAddress % MainLogSegmentSize;
             using var stream = File.OpenRead(path);
             if (offsetInSegment + PageHeader.Size > stream.Length)
-                return ObjectLogFilePositionInfo.NotSet;
+                return ObjectLogPositionInfo.NotSet;
 
             _ = stream.Seek(offsetInSegment, SeekOrigin.Begin);
             var bytes = new byte[PageHeader.Size];

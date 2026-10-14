@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -45,7 +45,7 @@ namespace Tsavorite.core
         /// <summary>
         /// The starting position in the file that we read this buffer from.
         /// </summary>
-        internal ObjectLogFilePositionInfo startFilePosition;
+        internal ObjectLogPositionInfo startFilePosition;
 
         internal int AvailableLength => endPosition - currentPosition;
 
@@ -75,7 +75,7 @@ namespace Tsavorite.core
         /// <param name="startPosition">Start position in the buffer (relative to start of buffer)</param>
         /// <param name="alignedReadLength">Number of bytes to read</param>
         /// <param name="callback">The <see cref="CircularDiskReadBuffer"/> callback.</param>
-        internal void ReadFromDevice(ObjectLogFilePositionInfo filePosition, int startPosition, uint alignedReadLength, DeviceIOCompletionCallback callback)
+        internal void ReadFromDevice(ObjectLogPositionInfo filePosition, int startPosition, uint alignedReadLength, DeviceIOCompletionCallback callback)
         {
             IncrementOrResetCountdown(ref countdownEvent);
             startFilePosition = filePosition;
@@ -114,7 +114,7 @@ namespace Tsavorite.core
                 countdownEvent.Wait();
         }
 
-        internal ObjectLogFilePositionInfo GetCurrentFilePosition()
+        internal ObjectLogPositionInfo GetCurrentFilePosition()
         {
             var bufferFilePos = startFilePosition;
             bufferFilePos.Advance((uint)currentPosition);

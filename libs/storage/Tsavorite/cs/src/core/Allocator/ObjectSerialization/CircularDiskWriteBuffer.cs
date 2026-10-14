@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -44,7 +44,7 @@ namespace Tsavorite.core
 
         /// <summary>Device address to write to (segment and offset); incremented with each buffer flush or out-of-line write by the caller; all of these should be aligned to sector size,
         /// so this address remains sector-aligned.</summary>
-        internal ObjectLogFilePositionInfo filePosition;
+        internal ObjectLogPositionInfo filePosition;
 
         /// <summary>If true, we own the file position and have initialized it, and we ignore the allocator's on PartialFlush begin and end. This is done for 
         /// writes to an objectLog device that is not the allocator's. If false, then we are using the allocator's and will initialize from it when begging a PartialFlush
@@ -97,7 +97,7 @@ namespace Tsavorite.core
             return buffer;
         }
 
-        internal ObjectLogFilePositionInfo GetNextRecordStartPosition()
+        internal ObjectLogPositionInfo GetNextRecordStartPosition()
         {
             var startFilePos = filePosition;
             var buffer = GetCurrentBuffer();
@@ -113,7 +113,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Resets start positions for the next partial flush.</summary>
-        internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogFilePositionInfo filePos)
+        internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogPositionInfo filePos)
         {
             // We start every partial flush with the first buffer, starting at position 0.
             if (!ownFilePosition)
@@ -150,7 +150,7 @@ namespace Tsavorite.core
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endObjectLogFilePosition">The ending file position after the partial flush is complete</param>
         internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
-                DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogFilePositionInfo endObjectLogFilePosition)
+                DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogPositionInfo endObjectLogFilePosition)
         {
             // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log page write, and
             // when the countdownCallbackAndContext.Decrement hits 0 again, we're done with this partial flush range and will call the external callback.

@@ -57,7 +57,7 @@ namespace Tsavorite.core
         /// <c>SetDeserializedValueObject</c>, so the stamp cannot be used to decide whether bytes are available.</para></summary>
         long objectDataBudget = -1;
         /// <summary>Current record's object-log start position, used to convert framing-relative offsets to absolute read endpoints.</summary>
-        ObjectLogFilePositionInfo recordStartPosition;
+        ObjectLogPositionInfo recordStartPosition;
         /// <summary>Headerless-prefix DATA bytes still to serve before the first ChunkHeader.</summary>
         long objectPrefixRemaining;
         /// <summary>DATA bytes still to serve in the current chunk.</summary>
@@ -93,9 +93,9 @@ namespace Tsavorite.core
         /// records are consumed.</param>
         /// <param name="hardReadEndPosition">Exclusive durable tail in the same object-log address space as
         /// <paramref name="filePosition"/>. For a snapshot object log with no supplied logical tail, pass a position whose word is
-        /// <see cref="ObjectLogFilePositionInfo.NotSet"/> and whose segment-size bits match the reader; the reader must not use the main
+        /// <see cref="ObjectLogPositionInfo.NotSet"/> and whose segment-size bits match the reader; the reader must not use the main
         /// object-log tail as a cross-device bound. An unset main tail likewise disables the bound during early recovery.</param>
-        internal void OnBeginReadRecords(ObjectLogFilePositionInfo filePosition, ulong totalLength, ObjectLogFilePositionInfo hardReadEndPosition)
+        internal void OnBeginReadRecords(ObjectLogPositionInfo filePosition, ulong totalLength, ObjectLogPositionInfo hardReadEndPosition)
         {
             inDeserialize = false;
             deserializedLength = 0UL;
@@ -143,7 +143,7 @@ namespace Tsavorite.core
             // lengths from the split RDH+objectId-slot encoding for a downlevel (cv7) record.
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
             var isLegacy = logRecord.IsDownlevelObjectLogRecord(checkpointVersion);
-            recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
+            recordStartPosition = new ObjectLogPositionInfo(positionWord, segmentSizeBits);
             var initialLength = logRecord.DataHeader.KeyIsOverflow ? (ulong)keyLength : valueLength;
             var initialEnd = recordStartPosition;
             initialEnd.Advance(initialLength);
@@ -292,7 +292,7 @@ namespace Tsavorite.core
                 throw new TsavoriteException("ReadBuffers are required to ReadOverflowKeyHashCodeForRecovery");
 
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _, checkpointVersion);
-            recordStartPosition = new ObjectLogFilePositionInfo(positionWord, segmentSizeBits);
+            recordStartPosition = new ObjectLogPositionInfo(positionWord, segmentSizeBits);
             if (!readBuffers.OnBeginRecord(recordStartPosition))
                 throw new TsavoriteException("ReadOverflowKeyHashCodeForRecovery found no data available in ReadBuffers");
 
@@ -323,7 +323,7 @@ namespace Tsavorite.core
             if (readBuffers is null)
                 throw new TsavoriteException("ReadBuffers are required to CopyRecordObjectsFollowingFraming");
 
-            recordStartPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, segmentSizeBits);
+            recordStartPosition = new ObjectLogPositionInfo(snapshotPositionWord, segmentSizeBits);
             var initialLength = logRecord.DataHeader.KeyIsOverflow ? (ulong)keyLength : valueLength;
             var initialEnd = recordStartPosition;
             initialEnd.Advance(initialLength);

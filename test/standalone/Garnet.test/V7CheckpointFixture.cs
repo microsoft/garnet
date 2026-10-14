@@ -117,7 +117,7 @@ namespace Garnet.test
                     if (!logRecord.Info.Valid || logRecord.DataHeader.RecordIsInline)
                         continue;
                     var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
-                    if ((word & ObjectLogFilePositionInfo.kUnusedBit63Mask) != 0)
+                    if ((word & ObjectLogPositionInfo.kUnusedBit63Mask) != 0)
                         ++downlevel;
                 }
             }
@@ -175,7 +175,7 @@ namespace Garnet.test
             // A component the current format frames with a leading ChunkHeader is NOT byte-identical to v7 dense, so reusing its bytes
             // would silently misframe the fixture rather than exercise the up-conversion. The exact-size flag is precisely the
             // "headerless, and the extent is the true length" condition this reuse depends on.
-            ClassicAssert.AreNotEqual(0UL, positionWord & ObjectLogFilePositionInfo.kValueIsExactSizeMask,
+            ClassicAssert.AreNotEqual(0UL, positionWord & ObjectLogPositionInfo.kValueIsExactSizeMask,
                 "fixture value is not stored exact-size/headerless, so its current bytes are not v7 dense");
             ClassicAssert.LessOrEqual((long)valueLength, (long)RecordDataHeader.kOutOfLineExactSizeCutoff, "fixture value is too large to reuse as v7 dense bytes");
 
@@ -192,7 +192,7 @@ namespace Garnet.test
             logRecord.SetDataHeader(dataHeader);
 
             // Keep the segment+offset; set the unused bit 63; clear the current size-hint flags.
-            *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kUnusedBit63Mask;
+            *objectLogPositionPtr = (positionWord & ObjectLogPositionInfo.AddressMask) | ObjectLogPositionInfo.kUnusedBit63Mask;
         }
 
         /// <summary>

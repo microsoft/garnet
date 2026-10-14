@@ -25,7 +25,7 @@ namespace Tsavorite.core
         /// <summary>Object log recovery device, obtained from CheckpointManager.</summary>
         public IDevice objectLogRecoveryDevice;
         /// <summary>Exclusive durable end of <see cref="objectLogRecoveryDevice"/> in the snapshot object-log address space.</summary>
-        public ObjectLogFilePositionInfo objectLogRecoveryReadEnd;
+        public ObjectLogPositionInfo objectLogRecoveryReadEnd;
 
         /// <summary>The current head address; updated as pages are evicted during recovery.</summary>
         public long headAddress;
@@ -1141,7 +1141,7 @@ namespace Tsavorite.core
         /// <param name="options">The recovery options</param>
         /// <returns>The final headAddress (lowest resident address) after reading the snapshot pages and loading objects</returns>
         private async ValueTask<long> RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress,
-            long snapshotStartAddress, long snapshotEndAddress, ObjectLogFilePositionInfo snapshotObjectLogReadEnd,
+            long snapshotStartAddress, long snapshotEndAddress, ObjectLogPositionInfo snapshotObjectLogReadEnd,
             long nextVersion, Guid guid, long headAddress, RecoveryOptions options,
             CancellationToken cancellationToken)
         {
@@ -1508,7 +1508,7 @@ namespace Tsavorite.core
         /// <param name="recoveryStatus">The allocated <see cref="RecoveryStatus"/> instance</param>
         /// <param name="numPagesToReadPerIteration">The number of pages to read per iteration</param>
         private void GetSnapshotPageRangesToRead(long scanFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress,
-            ObjectLogFilePositionInfo snapshotObjectLogReadEnd, Guid guid,
+            ObjectLogPositionInfo snapshotObjectLogReadEnd, Guid guid,
             out int startPage, out int endPage, out int snapshotEndPage, out RecoveryStatus recoveryStatus, out int numPagesToReadPerIteration)
         {
             // Compute startPage and endPage
@@ -1653,7 +1653,7 @@ namespace Tsavorite.core
         private unsafe bool RecoverFromPage(long recoverFromAddress, long pageFromAddressOffset, long pageUntilAddressOffset,
                                      long pageStartLogicalAddress, long pageStartPhysicalAddress, in RecoveryOptions options,
                                      bool isSnapshotPage, ref CircularDiskReadBuffer isolatedKeyReadBuffers,
-                                     IDevice objectLogRecoveryDevice, ObjectLogFilePositionInfo objectLogRecoveryReadEnd)
+                                     IDevice objectLogRecoveryDevice, ObjectLogPositionInfo objectLogRecoveryReadEnd)
         {
             Debug.Assert(pageFromAddressOffset >= hlogBase.pageHeaderSize, $"fromLogicalAddressInPage {pageFromAddressOffset} must be >= hlogBase.pageHeaderSize {hlogBase.pageHeaderSize} (which may be 0)");
             Debug.Assert(pageUntilAddressOffset <= hlogBase.GetPageSize(), $"pageSize {pageUntilAddressOffset} must be <= PageSize {hlogBase.GetPageSize()}");

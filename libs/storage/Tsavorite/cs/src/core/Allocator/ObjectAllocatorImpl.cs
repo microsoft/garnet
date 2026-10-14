@@ -33,7 +33,7 @@ namespace Tsavorite.core
         internal ObjectPage[] objectPages;
 
         /// <summary>The position information for the next write to the object log.</summary>
-        ObjectLogFilePositionInfo objectLogTail;
+        ObjectLogPositionInfo objectLogTail;
 
         /// <summary>
         /// We use the LastIssued here because we don't want <see cref="OnPagesMarkedReadOnlyWorker"/> to wait for IO to complete which is when
@@ -127,7 +127,7 @@ namespace Tsavorite.core
         /// separate from <see cref="objectLogTail"/> -- which continues to bound reads of the downlevel <see cref="objectLogDevice"/>
         /// throughout the conversion -- so a read bound is never applied to the write device or vice versa. The two are swapped by
         /// <see cref="CompleteObjectLogUpgrade"/>.</summary>
-        private ObjectLogFilePositionInfo upgradeObjectLogTail;
+        private ObjectLogPositionInfo upgradeObjectLogTail;
 
         /// <summary>Whether a downlevel object-log up-conversion is in progress; set for the duration of the ascending conversion pass.</summary>
         private bool isUpgradingObjectLog;
@@ -719,11 +719,11 @@ namespace Tsavorite.core
                 }
 
                 var pageHeader = *(PageHeader*)buffer.aligned_pointer;
-                if (pageHeader.objectLogLowestPositionWord != ObjectLogFilePositionInfo.NotSet)
+                if (pageHeader.objectLogLowestPositionWord != ObjectLogPositionInfo.NotSet)
                 {
                     // Recovery verifies that the checkpoint's ObjectLogSegmentSize matches the settings the store was opened with, so the
                     // live objectLogTail's segment bits are the same bits the page header was stamped under.
-                    var objectLogPosition = new ObjectLogFilePositionInfo(pageHeader.objectLogLowestPositionWord, objectLogTail.SegmentSizeBits);
+                    var objectLogPosition = new ObjectLogPositionInfo(pageHeader.objectLogLowestPositionWord, objectLogTail.SegmentSizeBits);
                     objectLogSegment = objectLogPosition.SegmentId;
                 }
             }
@@ -757,20 +757,20 @@ namespace Tsavorite.core
         /// bound belongs to that reader's snapshot object-log address space. Otherwise, the allocator's <see cref="objectLogTail"/> bounds
         /// only its main object-log device once that tail is set. An unset main tail during early recovery, or a non-main reader without
         /// an explicit bound, selects an unbounded logical read rather than applying a tail from another device.</summary>
-        ObjectLogFilePositionInfo GetObjectLogReadHardEnd(CircularDiskReadBuffer readBuffers, ObjectLogFilePositionInfo suppliedHardEnd = default)
+        ObjectLogPositionInfo GetObjectLogReadHardEnd(CircularDiskReadBuffer readBuffers, ObjectLogPositionInfo suppliedHardEnd = default)
             => suppliedHardEnd.HasData
                 ? suppliedHardEnd
                 : readBuffers.UsesDevice(objectLogDevice)
                 ? objectLogTail
-                : new ObjectLogFilePositionInfo(ObjectLogFilePositionInfo.NotSet, objectLogTail.SegmentSizeBits);
+                : new ObjectLogPositionInfo(ObjectLogPositionInfo.NotSet, objectLogTail.SegmentSizeBits);
 
         /// <inheritdoc/>
         internal override int LowestObjectLogSegmentInUse => lowestObjectLogSegmentInUse;
         /// <inheritdoc/>
-        internal override ObjectLogFilePositionInfo GetObjectLogTail() => objectLogTail;
+        internal override ObjectLogPositionInfo GetObjectLogTail() => objectLogTail;
 
         /// <inheritdoc/>
-        internal override ObjectLogFilePositionInfo GetLowestObjectLogPositionForPage(int page)
+        internal override ObjectLogPositionInfo GetLowestObjectLogPositionForPage(int page)
         {
             var pageIndex = GetPageIndexForPage(page);
             if (!IsAllocated(pageIndex))
@@ -779,7 +779,7 @@ namespace Tsavorite.core
             return ((PageHeader*)pagePhysicalAddress)->GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits);
         }
         /// <inheritdoc/>
-        internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail)
+        internal override void SetObjectLogTail(ObjectLogPositionInfo tail)
         {
             Debug.Assert(!objectLogTail.HasData, $"SetObjectLogTail should be called only when we have not already set objectLogTail, such as in Recovery");
 
@@ -834,14 +834,14 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer readBuffers, IDevice objectLogDevice,
-            int checkpointVersion, ObjectLogFilePositionInfo hardReadEndPosition = default)
+            int checkpointVersion, ObjectLogPositionInfo hardReadEndPosition = default)
         {
             // The transient objectIdMap is not populated during recovery Pass 1 (index build), so LogRecord.Key cannot resolve an overflow
             // key. Read just this record's overflow key bytes from the object log — the main object log for FoldOver/hybrid-log pages, or the
             // snapshot object log (passed as objectLogDevice) for snapshot pages — and hash them. Overflow keys are rare and Recovery is a rare
             // startup operation, so the extra per-record IO is acceptable. objectLogTail.SegmentSizeBits is the static object-log segment size
             // (set at construction from config), valid for decoding both the main and snapshot object-log positions.
-            var startPosition = new ObjectLogFilePositionInfo(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _, checkpointVersion), objectLogTail.SegmentSizeBits);
+            var startPosition = new ObjectLogPositionInfo(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _, checkpointVersion), objectLogTail.SegmentSizeBits);
             //
             // The key is read through the streaming ring rather than as one direct read into a caller-allocated buffer, even though the
             // record bounds the key's whole on-disk extent. For a headered key that bound is an exact 4 KB page count covering
@@ -964,7 +964,7 @@ namespace Tsavorite.core
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool RecordHasNoReadablePosition(in LogRecord logRecord)
-            => ObjectLogFilePositionInfo.WordIsUnstamped(logRecord.RawObjectLogPositionWord);
+            => ObjectLogPositionInfo.WordIsUnstamped(logRecord.RawObjectLogPositionWord);
 
         protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
             => WriteAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
@@ -1277,7 +1277,7 @@ namespace Tsavorite.core
                                             copyKeyLength, copyValueLength, asyncResult.recoverySnapshotObjectLogDevice,
                                             asyncResult.recoverySnapshotObjectLogReadEnd, out snapshotObjectReadBuffers);
 
-                                        var snapshotPosition = new ObjectLogFilePositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
+                                        var snapshotPosition = new ObjectLogPositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
                                         logWriter.AlignNextRecordStartLike(snapshotPosition);
                                         var mainRecordPosition = logWriter.GetNextRecordStartPosition();
                                         logRecord.RepointObjectLogPosition(mainRecordPosition);
@@ -1371,10 +1371,10 @@ namespace Tsavorite.core
         /// <param name="snapshotObjectLogDevice">The snapshot object-log device to read from.</param>
         /// <param name="readBuffers">Outputs the created read buffers; the caller disposes them.</param>
         private ObjectLogReader<TStoreFunctions> CreateSnapshotObjectReader(ulong firstPositionWord,
-            int firstKeyLength, ulong firstValueLength, IDevice snapshotObjectLogDevice, ObjectLogFilePositionInfo hardReadEndPosition,
+            int firstKeyLength, ulong firstValueLength, IDevice snapshotObjectLogDevice, ObjectLogPositionInfo hardReadEndPosition,
             out CircularDiskReadBuffer readBuffers)
         {
-            var startPosition = new ObjectLogFilePositionInfo(firstPositionWord, objectLogTail.SegmentSizeBits);
+            var startPosition = new ObjectLogPositionInfo(firstPositionWord, objectLogTail.SegmentSizeBits);
             readBuffers = CreateCircularReadBuffers(snapshotObjectLogDevice, logger);
             var reader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             reader.OnBeginReadRecords(startPosition, firstKeyLength > 0 ? (ulong)firstKeyLength : firstValueLength,
@@ -1534,7 +1534,7 @@ namespace Tsavorite.core
                 return true;
 
             // This is a runtime pending read of the live log, which is written in the current object-log format, so decode as current.
-            var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, HybridLogRecoveryInfo.CheckpointVersion), objectLogTail.SegmentSizeBits);
+            var startPosition = new ObjectLogPositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, HybridLogRecoveryInfo.CheckpointVersion), objectLogTail.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
             // 'using' is OK here as we complete the object reads before returning.
@@ -1642,10 +1642,10 @@ namespace Tsavorite.core
         /// <param name="hardReadEndPosition">Exclusive durable endpoint in the selected object-log address space</param>
         /// <param name="minAddressOffsetOnPage">First record offset to scan; callers use this to split a page at an object-log address-space boundary</param>
         private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap,
-            CircularDiskReadBuffer readBuffers, int checkpointVersion, ObjectLogFilePositionInfo hardReadEndPosition = default,
+            CircularDiskReadBuffer readBuffers, int checkpointVersion, ObjectLogPositionInfo hardReadEndPosition = default,
             long minAddressOffsetOnPage = PageHeader.Size)
         {
-            ObjectLogFilePositionInfo startPosition = new(), initialEndPosition = new();
+            ObjectLogPositionInfo startPosition = new(), initialEndPosition = new();
             var recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
             var endAddress = pageStartPhysicalAddress + maxAddressOffsetOnPage;
 
@@ -1676,7 +1676,7 @@ namespace Tsavorite.core
                     if (RecordHasNoReadablePosition(in logRecord))
                         continue;
 
-                    var position = new ObjectLogFilePositionInfo(
+                    var position = new ObjectLogPositionInfo(
                         logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion),
                         objectLogTail.SegmentSizeBits);
 
@@ -1776,7 +1776,7 @@ namespace Tsavorite.core
             // hold the on-disk values. Estimate the page's
             // object-log bytes as the span from the first object record's start position to the last object record's start position plus
             // that last record's size hints. This is a best guess (the eviction/budget logic tolerates an over-estimate).
-            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
+            ObjectLogPositionInfo startPosition = new(), endPosition = new();
             var endKeyLength = 0;
             ulong endValueLength = 0;
 
@@ -1840,12 +1840,12 @@ namespace Tsavorite.core
             var pageIndex = GetPageIndexForPage(page);
             if (!IsAllocated(pageIndex))
                 return;
-            ((PageHeader*)pagePointers[pageIndex])->objectLogLowestPositionWord = ObjectLogFilePositionInfo.NotSet;
+            ((PageHeader*)pagePointers[pageIndex])->objectLogLowestPositionWord = ObjectLogPositionInfo.NotSet;
         }
 
         /// <inheritdoc/>
         internal override void LoadObjectsForRecoveryPass2(int page, long fromAddress, long untilAddress, IDevice objectLogDevice, int checkpointVersion,
-            ObjectLogFilePositionInfo hardReadEndPosition = default)
+            ObjectLogPositionInfo hardReadEndPosition = default)
         {
             var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
             var address = Math.Max(fromAddress, pageStartAddress);

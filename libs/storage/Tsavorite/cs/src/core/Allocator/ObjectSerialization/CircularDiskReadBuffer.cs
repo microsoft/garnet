@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -44,7 +44,7 @@ namespace Tsavorite.core
         /// <summary>Sector-aligned address at which the next sequential <c>IDevice.ReadAsync</c> request will start. It is advanced when a
         /// request is submitted, not when that request completes or its bytes are consumed, so its current address is also the exclusive
         /// submitted-IO high-water since the ring was initialized or last reset by <see cref="RepositionAfterDirectRead"/>.</summary>
-        internal ObjectLogFilePositionInfo nextFileReadPosition;
+        internal ObjectLogPositionInfo nextFileReadPosition;
 
         /// <summary>Fixed exclusive endpoint of the current record's initial hint range, clamped to
         /// <see cref="hardReadEndAddress"/>. This preserves caller-requested read-ahead while framing changes dynamic demand.</summary>
@@ -173,10 +173,10 @@ namespace Tsavorite.core
         /// <param name="totalLength">Initial read extent for the current record(s). It may be based on size hints; framing can later
         /// extend or tighten demand through <see cref="SetDynamicReadThrough"/>.</param>
         /// <param name="hardReadEndPosition">Exclusive durable tail in the same object-log address space as
-        /// <paramref name="startFilePosition"/>. Supply a position whose word is <see cref="ObjectLogFilePositionInfo.NotSet"/> and whose
+        /// <paramref name="startFilePosition"/>. Supply a position whose word is <see cref="ObjectLogPositionInfo.NotSet"/> and whose
         /// segment-size bits match the reader when that address space has no known tail. An unset main tail has the same unbounded effect.
         /// Neither case substitutes a tail from another object-log device.</param>
-        internal void OnBeginReadRecords(ObjectLogFilePositionInfo startFilePosition, ulong totalLength, ObjectLogFilePositionInfo hardReadEndPosition)
+        internal void OnBeginReadRecords(ObjectLogPositionInfo startFilePosition, ulong totalLength, ObjectLogPositionInfo hardReadEndPosition)
         {
             ObjectDisposedException.ThrowIf(disposed, nameof(CircularDiskReadBuffer));
 
@@ -225,7 +225,7 @@ namespace Tsavorite.core
         /// <param name="exclusiveEnd">New component/chunk demand endpoint in the reader's object-log address space.</param>
         /// <param name="isDiscoveryWindow">Whether this is a speculative discovery endpoint. Discovery may clamp to the known hard tail;
         /// an authoritative framing endpoint beyond that tail indicates truncation or corruption and throws.</param>
-        internal void SetDynamicReadThrough(ObjectLogFilePositionInfo exclusiveEnd, bool isDiscoveryWindow = false)
+        internal void SetDynamicReadThrough(ObjectLogPositionInfo exclusiveEnd, bool isDiscoveryWindow = false)
         {
             Debug.Assert(exclusiveEnd.SegmentSizeBits == nextFileReadPosition.SegmentSizeBits, "Endpoint and reader must use the same segment size");
             if (exclusiveEnd.CurrentAddress > hardReadEndAddress)
@@ -275,7 +275,7 @@ namespace Tsavorite.core
         /// <param name="recordFilePosition">Object-log position stored in the record being read.</param>
         /// <returns><c>false</c> only when the current ring buffer has no data at entry; otherwise <c>true</c> after attempting to advance.
         /// A subsequent stream read reports exhaustion if the target lay exactly beyond the available buffers.</returns>
-        internal bool OnBeginRecord(ObjectLogFilePositionInfo recordFilePosition)
+        internal bool OnBeginRecord(ObjectLogPositionInfo recordFilePosition)
         {
             var buffer = buffers[currentIndex] ?? throw new TsavoriteException(
                 $"Internal error in read buffer sequencing; empty buffer[{currentIndex}] encountered with required endpoint {RequiredEndAddress}");
@@ -345,7 +345,7 @@ namespace Tsavorite.core
         /// containing sector in <see cref="deferredBufferStartPosition"/> without submitting a read. A later dynamic-demand increase uses
         /// that offset for the first refill, so consumption resumes exactly at the payload end rather than at the sector boundary.</remarks>
         /// <param name="logicalPosition">Exclusive logical payload endpoint at which subsequent ring consumption must resume.</param>
-        internal void RepositionAfterDirectRead(ObjectLogFilePositionInfo logicalPosition)
+        internal void RepositionAfterDirectRead(ObjectLogPositionInfo logicalPosition)
         {
             for (var ii = 0; ii < buffers.Length; ii++)
             {
@@ -377,7 +377,7 @@ namespace Tsavorite.core
         /// <param name="source">Sector-aligned object-log position at which the direct read begins.</param>
         /// <param name="destination">Sector-aligned pointer into a pinned destination allocation.</param>
         /// <param name="length">Sector-aligned byte count.</param>
-        internal void ReadDirect(ObjectLogFilePositionInfo source, IntPtr destination, long length)
+        internal void ReadDirect(ObjectLogPositionInfo source, IntPtr destination, long length)
         {
             Debug.Assert(source.Offset % objectLogDevice.SectorSize == 0, "Direct-read source must be sector aligned");
             Debug.Assert(destination.ToInt64() % objectLogDevice.SectorSize == 0, "Direct-read destination must be sector aligned");

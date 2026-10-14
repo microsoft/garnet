@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Runtime.InteropServices;
@@ -56,7 +56,7 @@ namespace Tsavorite.core
             this = default;
             headerVersion = CurrentHeaderVersion;
             recordVersion = CurrentRecordVersion;
-            objectLogLowestPositionWord = ObjectLogFilePositionInfo.NotSet;
+            objectLogLowestPositionWord = ObjectLogPositionInfo.NotSet;
         }
 
         internal static unsafe void Initialize(long physicalAddressOfStartOfPage) => (*(PageHeader*)physicalAddressOfStartOfPage).Initialize();
@@ -67,9 +67,9 @@ namespace Tsavorite.core
         /// <param name="position">The position in the object log.</param>
         /// <param name="force">Overwrite an already-stamped position. Used when up-converting a downlevel object log, where the page's
         /// existing stamp refers to the downlevel device that the conversion is replacing.</param>
-        internal void SetLowestObjectLogPosition(in ObjectLogFilePositionInfo position, bool force = false)
+        internal void SetLowestObjectLogPosition(in ObjectLogPositionInfo position, bool force = false)
         {
-            if (force || objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet)
+            if (force || objectLogLowestPositionWord == ObjectLogPositionInfo.NotSet)
                 objectLogLowestPositionWord = position.word;
         }
 
@@ -77,8 +77,8 @@ namespace Tsavorite.core
         /// Get the lowest object-log position on this main-log page, if ObjectAllocator.
         /// </summary>
         /// <param name="segmentBits">The number of bits in the object log's segments.</param>
-        internal ObjectLogFilePositionInfo GetLowestObjectLogPosition(int segmentBits)
-            => objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet ? new() : new(objectLogLowestPositionWord, segmentBits);
+        internal ObjectLogPositionInfo GetLowestObjectLogPosition(int segmentBits)
+            => objectLogLowestPositionWord == ObjectLogPositionInfo.NotSet ? new() : new(objectLogLowestPositionWord, segmentBits);
 
         public override readonly string ToString()
             => $"HeaderVer {headerVersion}, RecordVer {recordVersion}, lowObjLogPos {objectLogLowestPositionWord}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";

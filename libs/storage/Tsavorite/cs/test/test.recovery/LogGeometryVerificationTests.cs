@@ -17,7 +17,7 @@ namespace Tsavorite.test.recovery
     /// <summary>
     /// Verifies that recovery rejects a checkpoint whose recorded log geometry does not match the geometry this store is
     /// configured with. PageSize and SegmentSize determine how logical addresses resolve to segment files and offsets, and
-    /// ObjectLogSegmentSize is the bit position at which <see cref="ObjectLogFilePositionInfo"/> splits its packed
+    /// ObjectLogSegmentSize is the bit position at which <see cref="ObjectLogPositionInfo"/> splits its packed
     /// segment/offset word; recovering under any of the wrong values reads the wrong bytes with nothing else to detect it.
     ///
     /// The downlevel (v7) skip is covered by <see cref="V7DownlevelRecoveryTests"/>: v7 metadata records no geometry, so all

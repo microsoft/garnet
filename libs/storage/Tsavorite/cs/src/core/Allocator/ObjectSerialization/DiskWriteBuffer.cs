@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -80,7 +80,7 @@ namespace Tsavorite.core
             return countdownEvent;
         }
 
-        internal void FlushToDevice(ref ObjectLogFilePositionInfo filePosition, DeviceIOCompletionCallback callback, DiskWriteCallbackContext pageWriteCallbackContext)
+        internal void FlushToDevice(ref ObjectLogPositionInfo filePosition, DeviceIOCompletionCallback callback, DiskWriteCallbackContext pageWriteCallbackContext)
         {
             Debug.Assert(currentPosition <= endPosition, $"currentPosition ({currentPosition}) cannot exceed endPosition ({endPosition})");
 

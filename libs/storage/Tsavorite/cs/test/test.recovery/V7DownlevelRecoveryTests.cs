@@ -393,7 +393,7 @@ namespace Tsavorite.test.recovery
             logRecord.SetDataHeader(dataHeader);
 
             // Keep the segment+offset; set the unused bit 63; clear the current size-hint flags (bits 60-62).
-            *objectLogPositionPtr = (positionWord & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kUnusedBit63Mask;
+            *objectLogPositionPtr = (positionWord & ObjectLogPositionInfo.AddressMask) | ObjectLogPositionInfo.kUnusedBit63Mask;
         }
 
         // Build a Snapshot checkpoint of inline-key + object-value records, transformed to a DENSE v7 snapshot object log so the
@@ -528,9 +528,9 @@ namespace Tsavorite.test.recovery
             var snapshotDenseEnd = denseSnapshotObjectLog.Position;
             WriteDenseObjectLogFile(FindSnapshotSegmentZero(checkpointDir, token, "snapshot.obj.dat"), denseSnapshotObjectLog);
 
-            info.hlogEndObjectLogTail = new ObjectLogFilePositionInfo((ulong)denseMainObjectLog.Position, segmentSizeBits);
-            info.snapshotStartObjectLogTail = new ObjectLogFilePositionInfo(DenseObjectLogStart, segmentSizeBits);
-            info.snapshotEndObjectLogTail = new ObjectLogFilePositionInfo((ulong)snapshotDenseEnd, segmentSizeBits);
+            info.hlogEndObjectLogTail = new ObjectLogPositionInfo((ulong)denseMainObjectLog.Position, segmentSizeBits);
+            info.snapshotStartObjectLogTail = new ObjectLogPositionInfo(DenseObjectLogStart, segmentSizeBits);
+            info.snapshotEndObjectLogTail = new ObjectLogPositionInfo((ulong)snapshotDenseEnd, segmentSizeBits);
             info.beginAddressObjectLogSegment = 0;
             checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
         }
@@ -714,7 +714,7 @@ namespace Tsavorite.test.recovery
             File.WriteAllBytes(objectLogSegment, denseBytes);
 
             // Point the object-log tail fields at the dense end and re-serialize the metadata at target version 7.
-            info.hlogEndObjectLogTail = new ObjectLogFilePositionInfo((ulong)denseEnd, segmentSizeBits);
+            info.hlogEndObjectLogTail = new ObjectLogPositionInfo((ulong)denseEnd, segmentSizeBits);
             info.snapshotStartObjectLogTail = info.hlogEndObjectLogTail;
             info.snapshotEndObjectLogTail = info.hlogEndObjectLogTail;
             info.beginAddressObjectLogSegment = 0;
@@ -742,7 +742,7 @@ namespace Tsavorite.test.recovery
             }
             logRecord.SetDataHeader(dataHeader);
 
-            *objectLogPositionPtr = (denseOffset & ObjectLogFilePositionInfo.SegmentAndOffsetMask) | ObjectLogFilePositionInfo.kUnusedBit63Mask;
+            *objectLogPositionPtr = (denseOffset & ObjectLogPositionInfo.AddressMask) | ObjectLogPositionInfo.kUnusedBit63Mask;
         }
 
         // The bytes TestLargeObjectValue.Serializer writes: a 4-byte little-endian length followed by the payload.
@@ -1467,7 +1467,7 @@ namespace Tsavorite.test.recovery
                     if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
                     {
                         var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
-                        ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kUnusedBit63Mask,
+                        ClassicAssert.AreEqual(0UL, word & ObjectLogPositionInfo.kUnusedBit63Mask,
                             $"record at {offset} was not up-converted: unused bit 63 is still set");
 
                         // The page header stamps where the page's objects begin, so it must agree with the first record that has objects.
@@ -1481,8 +1481,8 @@ namespace Tsavorite.test.recovery
                         if (!sawPageObjectRecord)
                         {
                             sawPageObjectRecord = true;
-                            ClassicAssert.AreNotEqual(ObjectLogFilePositionInfo.NotSet, pageHeaderPosition, $"page {page} has object records but no stamped object-log position");
-                            ClassicAssert.AreEqual(word & ObjectLogFilePositionInfo.SegmentAndOffsetMask, pageHeaderPosition & ObjectLogFilePositionInfo.SegmentAndOffsetMask,
+                            ClassicAssert.AreNotEqual(ObjectLogPositionInfo.NotSet, pageHeaderPosition, $"page {page} has object records but no stamped object-log position");
+                            ClassicAssert.AreEqual(word & ObjectLogPositionInfo.AddressMask, pageHeaderPosition & ObjectLogPositionInfo.AddressMask,
                                 $"page {page} header object-log position does not match its first object record");
                         }
                         ++objectRecordCount;
@@ -1527,9 +1527,9 @@ namespace Tsavorite.test.recovery
                     if (logRecord.Info.Valid && !logRecord.DataHeader.RecordIsInline)
                     {
                         var word = *(ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
-                        ClassicAssert.AreNotEqual(0UL, word & ObjectLogFilePositionInfo.kUnusedBit63Mask, "unused bit 63 should be set on a v7 record");
-                        ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kKeyIsExactSizeMask, "KeyIsExactSize should be clear on a v7 record");
-                        ClassicAssert.AreEqual(0UL, word & ObjectLogFilePositionInfo.kValueIsExactSizeMask, "ValueIsExactSize should be clear on a v7 record");
+                        ClassicAssert.AreNotEqual(0UL, word & ObjectLogPositionInfo.kUnusedBit63Mask, "unused bit 63 should be set on a v7 record");
+                        ClassicAssert.AreEqual(0UL, word & ObjectLogPositionInfo.kKeyIsExactSizeMask, "KeyIsExactSize should be clear on a v7 record");
+                        ClassicAssert.AreEqual(0UL, word & ObjectLogPositionInfo.kValueIsExactSizeMask, "ValueIsExactSize should be clear on a v7 record");
                         ++objectRecordCount;
                     }
                 }

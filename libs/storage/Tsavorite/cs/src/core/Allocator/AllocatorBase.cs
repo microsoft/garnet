@@ -33,9 +33,9 @@ namespace Tsavorite.core
         /// <summary>Returns the lowest segment in use in the object log; will be zero unless the database has been truncated.</summary>
         internal virtual int LowestObjectLogSegmentInUse => 0;
         /// <summary>Get the ObjectLog tail position, if this is ObjectAllocator.</summary>
-        internal virtual ObjectLogFilePositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
+        internal virtual ObjectLogPositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
         /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
-        internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
+        internal virtual void SetObjectLogTail(ObjectLogPositionInfo tail) { }
 
         /// <summary>Begin up-converting a downlevel object log: subsequent recovery flushes append current-format object bytes to the
         /// upgrade device while reads continue to resolve against the downlevel device.</summary>
@@ -57,7 +57,7 @@ namespace Tsavorite.core
         internal virtual long CalculatePageObjectSizes(int page, long startAddress, long untilAddress, int checkpointVersion) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
         internal virtual void LoadObjectsForRecoveryPass2(int page, long fromAddress, long untilAddress, IDevice objectLogDevice, int checkpointVersion,
-            ObjectLogFilePositionInfo hardReadEndPosition = default)
+            ObjectLogPositionInfo hardReadEndPosition = default)
         { }
 
         /// <summary>Return a recovered snapshot-region page that stays resident to the state a freshly allocated page would have, so a
@@ -127,12 +127,12 @@ namespace Tsavorite.core
 
         /// <summary>Return the first object-log position recorded in the header of <paramref name="page"/>, or an unset position when
         /// this allocator has no object log or the page contains no out-of-line records.</summary>
-        internal virtual ObjectLogFilePositionInfo GetLowestObjectLogPositionForPage(int page) => new();
+        internal virtual ObjectLogPositionInfo GetLowestObjectLogPositionForPage(int page) => new();
         /// <summary>Compute the hash code of a record's overflow key during recovery Pass 1 (index build) by reading the key bytes from
         /// the object log, since the objectIdMap is not yet populated so <see cref="LogRecord.Key"/> cannot resolve it. Only implemented
         /// by the object allocator; other allocators never have overflow keys, so this is never called for them.</summary>
         internal virtual long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer readBuffers, IDevice objectLogDevice,
-            int checkpointVersion, ObjectLogFilePositionInfo hardReadEndPosition = default)
+            int checkpointVersion, ObjectLogPositionInfo hardReadEndPosition = default)
             => throw new TsavoriteException("Overflow keys are only supported by the object allocator");
     }
 
@@ -937,7 +937,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// Checkpoints below <see cref="HybridLogRecoveryInfo.LogGeometryCheckpointVersion"/> record no geometry (all three values
         /// are zero), so nothing can be verified for them. That is unavoidable: <c>ObjectLogSegmentSize</c> in particular is the bit
-        /// position at which <see cref="ObjectLogFilePositionInfo"/> splits its packed segment/offset word, and it is taken solely
+        /// position at which <see cref="ObjectLogPositionInfo"/> splits its packed segment/offset word, and it is taken solely
         /// from settings at construction, so a downlevel recovery with the wrong value misresolves every object-log position with
         /// nothing to detect it. The assumed values are logged so an operator can confirm them against the original configuration.
         /// </remarks>
@@ -2717,7 +2717,7 @@ namespace Tsavorite.core
                     recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
                     recoverySnapshotObjectLogReadEnd = snapshotObjectLogReadEndWord == 0
                         ? default
-                        : new ObjectLogFilePositionInfo(snapshotObjectLogReadEndWord, GetObjectLogTail().SegmentSizeBits),
+                        : new ObjectLogPositionInfo(snapshotObjectLogReadEndWord, GetObjectLogTail().SegmentSizeBits),
                     recoveryFormerFlushedUntilAddress = formerFlushedUntilAddress,
                     checkpointVersion = checkpointVersion,
                     flushBuffers = flushBuffers

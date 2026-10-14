@@ -357,7 +357,7 @@ namespace Tsavorite.core
 
         /// <summary>The initial read-ahead extent (bytes) for
         /// an out-of-line value derived from its objectId size hint (see <see cref="ObjectIdMap.GetSizeHint"/>) and the record's
-        /// <see cref="ObjectLogFilePositionInfo.kValueIsExactSizeMask"/> flag. Exact flag set -&gt; that many bytes (headerless); else the
+        /// <see cref="ObjectLogPositionInfo.kValueIsExactSizeMask"/> flag. Exact flag set -&gt; that many bytes (headerless); else the
         /// 4 KB-page count * 4 KB, or one 4 MB read buffer when the hint is at the <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> sentinel
         /// (the reader learns the true length from the ChunkHeader(s) and extends).</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

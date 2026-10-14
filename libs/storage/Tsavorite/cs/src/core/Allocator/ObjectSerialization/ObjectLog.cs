@@ -81,10 +81,10 @@ namespace Tsavorite.core
         /// <remarks>
         /// Two independent ceilings bound an object-log address, and this is the lower of them.
         /// <list type="bullet">
-        /// <item><description>An object-log position must fit the address field of <see cref="ObjectLogFilePositionInfo"/>, whose
-        /// remaining bits are flags, so addresses stop below <see cref="ObjectLogFilePositionInfo.SegmentAndOffsetMask"/>. The all-ones
+        /// <item><description>An object-log position must fit the address field of <see cref="ObjectLogPositionInfo"/>, whose
+        /// remaining bits are flags, so addresses stop below <see cref="ObjectLogPositionInfo.AddressMask"/>. The all-ones
         /// value itself is excluded because it is the unstamped marker (see
-        /// <see cref="ObjectLogFilePositionInfo.WordIsUnstamped"/>).</description></item>
+        /// <see cref="ObjectLogPositionInfo.WordIsUnstamped"/>).</description></item>
         /// <item><description>The allocator's tail is a <c>PageOffset</c> whose page number is a signed 32-bit field, so it runs out
         /// after <see cref="int.MaxValue"/> pages.</description></item>
         /// </list>
@@ -281,7 +281,7 @@ namespace Tsavorite.core
         /// <summary>The lower of the position-word and page-number address ceilings for a log of this page size; see
         /// <see cref="MaxExclusiveAddress"/>.</summary>
         internal static long ComputeMaxExclusiveAddress(int pageSizeBits)
-            => Math.Min((long)int.MaxValue << pageSizeBits, (long)ObjectLogFilePositionInfo.SegmentAndOffsetMask);
+            => Math.Min((long)int.MaxValue << pageSizeBits, (long)ObjectLogPositionInfo.AddressMask);
 
         private void CheckAddressCeiling(long logicalAddress, int allocatedLength)
         {

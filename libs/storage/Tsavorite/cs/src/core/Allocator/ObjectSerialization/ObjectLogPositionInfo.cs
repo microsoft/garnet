@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -8,18 +8,26 @@ using System.Runtime.CompilerServices;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Represents the information about the segment and offset of a location within the object log file.
+    /// A location within the object log: a flat logical address in the low bits of <see cref="word"/>, plus format flags above it.
     /// </summary>
-    internal struct ObjectLogFilePositionInfo
+    /// <remarks>
+    /// The address is flat even though the current file-backed object log still reaches it through segment arithmetic: a segment id and
+    /// offset occupy exactly the address bits, so <c>word &amp; <see cref="AddressMask"/></c> is the address either way. The segment
+    /// members below exist only for that file arithmetic and are removed once the writer and reader address <see cref="ObjectLog"/>
+    /// instead of a file.
+    /// </remarks>
+    internal struct ObjectLogPositionInfo
     {
         /// <summary>Indicates the word has not been set.</summary>
         internal const ulong NotSet = ulong.MaxValue;
 
-        /// <summary>Number of bits in <see cref="word"/> used for segment + offset (low bits). 60 bits gives a 1 EB Object Log size range.</summary>
-        internal const int NumSegmentAndOffsetBits = 60;
+        /// <summary>Number of low bits of <see cref="word"/> holding the address. 60 bits gives a 1 EB object-log range.</summary>
+        internal const int NumAddressBits = 60;
 
-        /// <summary>Mask for the segment + offset portion of <see cref="word"/>.</summary>
-        internal const ulong SegmentAndOffsetMask = (1UL << NumSegmentAndOffsetBits) - 1;
+        /// <summary>Mask for the address portion of <see cref="word"/>.</summary>
+        /// <remarks>Public because it is the authority on how far an object-log address may reach, which
+        /// <see cref="ObjectLog"/> enforces on allocation and the directory format uses to bound an entry's address field.</remarks>
+        public const ulong AddressMask = (1UL << NumAddressBits) - 1;
 
         // ── Flag bits in the top 4 bits of word (bits 60-63) ─────────────────────────
 
@@ -54,7 +62,10 @@ namespace Tsavorite.core
         internal const int kValueIsExactSizeBit = 60;
         internal const ulong kValueIsExactSizeMask = 1UL << kValueIsExactSizeBit;
 
-        /// <summary>Object log segment size bits</summary>
+        /// <summary>Object log segment size bits.</summary>
+        /// <remarks>File addressing only, and removed with the rest of the segment members once the writer and reader address
+        /// <see cref="ObjectLog"/> instead of a file. It is not part of the position: the segment id and offset derived from it occupy
+        /// exactly the <see cref="AddressMask"/> bits, so the word is the same either way.</remarks>
         internal int SegmentSizeBits;
 
         /// <summary>The word containing the data.</summary>
@@ -65,38 +76,38 @@ namespace Tsavorite.core
 
         /// <summary>Set the ObjectLogPosition at <paramref name="wordPtr"/> to the unstamped marker, preserving its flag bits.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void Unstamp(ulong* wordPtr) => *wordPtr |= SegmentAndOffsetMask;
+        internal static unsafe void Unstamp(ulong* wordPtr) => *wordPtr |= AddressMask;
 
         /// <summary>Whether <paramref name="word"/> is an ObjectLogPosition that no flush ever stamped with a position.</summary>
         /// <remarks>
         /// The single place that knows the unstamped encoding; callers must not compare against <see cref="NotSet"/> themselves.
-        /// <para>The marker lives entirely in the segment+offset bits -- all of them set, which no real position reaches because it
+        /// <para>The marker lives entirely in the address bits -- all of them set, which no real position reaches because it
         /// would be the last addressable byte of a 1 EB object log. Keeping it out of the flag bits is what lets a record be
-        /// unstamped without disturbing <c>KeyIsExactSize</c>/<c>ValueIsExactSize</c>, and leaves position 0 unambiguous: it is
-        /// offset 0 of segment 0, not "never stamped". The all-ones <see cref="NotSet"/> word satisfies this test too, so words
+        /// unstamped without disturbing <c>KeyIsExactSize</c>/<c>ValueIsExactSize</c>, and leaves address 0 unambiguous: it is
+        /// the first byte of the log, not "never stamped". The all-ones <see cref="NotSet"/> word satisfies this test too, so words
         /// written before the flags were separated still read as unstamped.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool WordIsUnstamped(ulong word) => (word & SegmentAndOffsetMask) == SegmentAndOffsetMask;
+        internal static bool WordIsUnstamped(ulong word) => (word & AddressMask) == AddressMask;
 
         /// <summary>Whether the ObjectLogPosition at <paramref name="wordPtr"/> was never stamped with a position.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static unsafe bool IsUnstamped(ulong* wordPtr) => WordIsUnstamped(*wordPtr);
 
         /// <summary>
-        /// Default initialization; leaves IsSet false. ObjectLogFilePositionInfo must be instantiated by new(), not default; we don't have arrays of this,
+        /// Default initialization; leaves IsSet false. ObjectLogPositionInfo must be instantiated by new(), not default; we don't have arrays of this,
         /// and fields are initalized with some overload of new().
         /// </summary>
-        public ObjectLogFilePositionInfo()
+        public ObjectLogPositionInfo()
         {
             SegmentSizeBits = 0;
             word = NotSet;
         }
 
         /// <summary>
-        /// Initialize the ObjectLogFilePositionInfo with the given word (containing segment and offset) and segment size bits.
+        /// Initialize the ObjectLogPositionInfo with the given word (containing segment and offset) and segment size bits.
         /// </summary>
-        internal ObjectLogFilePositionInfo(ulong word, int segSizeBits)
+        internal ObjectLogPositionInfo(ulong word, int segSizeBits)
         {
             SegmentSizeBits = segSizeBits;
             this.word = word;
@@ -133,6 +144,7 @@ namespace Tsavorite.core
         public static unsafe bool GetValueIsExactSize(ulong* wordPtr) => (*wordPtr & kValueIsExactSizeMask) != 0;
 
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
+        /// <remarks>Part of the file-addressing group retired with the writer/reader port; see <see cref="SegmentSizeBits"/>.</remarks>
         public ulong Offset
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -152,19 +164,20 @@ namespace Tsavorite.core
         }
 
         /// <summary>The current segment in the file.</summary>
+        /// <remarks>Part of the file-addressing group retired with the writer/reader port; see <see cref="SegmentSizeBits"/>.</remarks>
         public int SegmentId
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get
             {
-                var mask = (ulong)((1L << (NumSegmentAndOffsetBits - SegmentSizeBits)) - 1L);
+                var mask = (ulong)((1L << (NumAddressBits - SegmentSizeBits)) - 1L);
                 return (int)((word >> SegmentSizeBits) & mask);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                var mask = (ulong)((1L << (NumSegmentAndOffsetBits - SegmentSizeBits)) - 1L);
+                var mask = (ulong)((1L << (NumAddressBits - SegmentSizeBits)) - 1L);
                 word = (word & ~(mask << SegmentSizeBits)) | (((ulong)value & mask) << SegmentSizeBits);
             }
         }
@@ -173,7 +186,7 @@ namespace Tsavorite.core
         {
             get
             {
-                var seg = 1L << (NumSegmentAndOffsetBits - SegmentSizeBits);
+                var seg = 1L << (NumAddressBits - SegmentSizeBits);
                 return seg > int.MaxValue ? int.MaxValue : (int)seg;
             }
         }
@@ -209,9 +222,12 @@ namespace Tsavorite.core
             Offset = 0;
         }
 
+        /// <summary>The position as a flat object-log address.</summary>
+        /// <remarks>Equivalent to <c>word &amp; <see cref="AddressMask"/></c>: the segment id and offset below occupy exactly those
+        /// bits. Computed from them only while the object log is a file; it becomes the mask once that is no longer true.</remarks>
         public readonly ulong CurrentAddress => ((ulong)SegmentId << SegmentSizeBits) | Offset;
 
-        public static ulong operator -(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
+        public static ulong operator -(ObjectLogPositionInfo left, ObjectLogPositionInfo right)
         {
             if (left.SegmentSizeBits != right.SegmentSizeBits)
                 throw new InvalidDataException("Object-log positions must have the same segment size to compute distance.");

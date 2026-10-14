@@ -37,7 +37,7 @@ Inline values never enter the object log. Migration and replication use an indep
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/CircularDiskReadBuffer.cs` / `DiskReadBuffer.cs` -
 >   read-ahead and direct reads.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDmaAlignment.cs` - direct-IO alignment.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogFilePositionInfo.cs` - position arithmetic
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogPositionInfo.cs` - position arithmetic
 >   and format flags.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate that is
 >   replacing the hand-managed object-log file; see section 12.
@@ -189,27 +189,31 @@ The optional 8-byte object-log position combines an address and format flags:
 
 ```text
 63             62         61                 60                 59..0
-+--------------+----------+------------------+------------------+------------------+
-| cv7 reuse    | (unused) | KeyIsExactSize   | ValueIsExactSize | segment + offset |
-+--------------+----------+------------------+------------------+------------------+
++--------------+----------+------------------+------------------+--------------+
+| cv7 reuse    | (unused) | KeyIsExactSize   | ValueIsExactSize | address      |
++--------------+----------+------------------+------------------+--------------+
 ```
 
 | Bit | Meaning |
 |---|---|
-| 0..59 | Object-log segment and offset (about 1 EB address range) |
+| 0..59 | Object-log address, about a 1 EB range (`ObjectLogPositionInfo.AddressMask`) |
 | 60 | `ValueIsExactSize` |
 | 61 | `KeyIsExactSize` |
 | 62 | Unused and available |
 | 63 | Unused and available; cv7 images carry a marker here that cv8 recovery ignores and clears |
+
+The address is flat. The current file-backed object log reaches it through a segment id and an offset, but those occupy
+exactly these bits, so the word holds the same value either way; the segment arithmetic is an implementation detail of
+addressing a file and goes away with it (see section 12).
 
 The key and value flags are independent because one record can have, for example, a 100-byte headerless overflow key
 and a 5 MB framed object value.
 
 #### Stamped versus unstamped
 
-The low 60 bits carry a position, so there is no spare value that means "no position": offset 0 of segment 0 is a real
-location. The unstamped state is therefore encoded by setting *all* 60 address bits, which the flag bits survive
-unchanged. `ObjectLogFilePositionInfo` owns this encoding — `Unstamp` sets it, `WordIsUnstamped`/`IsUnstamped` test it,
+The low 60 bits carry a position, so there is no spare value that means "no position": address 0 is a real location.
+The unstamped state is therefore encoded by setting *all* 60 address bits, which the flag bits survive
+unchanged. `ObjectLogPositionInfo` owns this encoding — `Unstamp` sets it, `WordIsUnstamped`/`IsUnstamped` test it,
 and callers must not compare against `NotSet` themselves. The legacy all-ones `NotSet` word satisfies the same test, so
 older words read as unstamped without a version check.
 
@@ -819,7 +823,7 @@ The modulo-8 preservation is required because the first object header is aligned
 Moving identical bytes to a different residue would move the expected first-header location and make the copy
 unreadable.
 
-Snapshot and main positions are never subtracted. `ObjectLogFilePositionInfo.operator -` validates segment-size and
+Snapshot and main positions are never subtracted. `ObjectLogPositionInfo.operator -` validates segment-size and
 ordering, but address-space identity is a caller invariant.
 
 ### 7.5 cv7 recovery
@@ -1041,7 +1045,7 @@ Indentation is call depth. Component branches and lifetime changes are included 
 - For values, objectId hint 511 with the exact flag clear means one 4 MB discovery window.
 - Parsed authoritative lengths are checked against the known main object-log hard tail.
 - Main and snapshot object-log positions are never mixed for subtraction or hard bounds.
-- `ObjectLogFilePositionInfo.Advance()` is used for segment-crossing arithmetic; direct IO splits at segment boundaries.
+- `ObjectLogPositionInfo.Advance()` is used for segment-crossing arithmetic; direct IO splits at segment boundaries.
 - Object headers are absolute 8-byte aligned; snapshot relocation preserves the source modulo-8 start.
 - Direct-read pins remain alive through every callback.
 - `OverflowByteArray` leading/trailing slack covers sector overlap; logical length excludes that slack.

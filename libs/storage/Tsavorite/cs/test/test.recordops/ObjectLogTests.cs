@@ -485,7 +485,7 @@ namespace Tsavorite.test.Objects
         public void TheAllocatorPageNumberIsAlwaysTheBindingCeiling(
             [Values(LogSettings.kMinPageSizeBits, ObjectLog.DefaultPageSizeBits, LogSettings.kMaxPageSizeBits)] int pageSizeBits)
         {
-            var positionCeiling = (long)ObjectLogFilePositionInfo.SegmentAndOffsetMask;
+            var positionCeiling = (long)ObjectLogPositionInfo.AddressMask;
             var pageNumberCeiling = (long)int.MaxValue << pageSizeBits;
 
             Assert.That(pageNumberCeiling, Is.LessThan(positionCeiling));

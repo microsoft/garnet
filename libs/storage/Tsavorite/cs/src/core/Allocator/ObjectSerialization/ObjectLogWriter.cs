@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -52,7 +52,7 @@ namespace Tsavorite.core
         int currentChunkHeaderBufferPos;
 
         /// <summary>Object-log position captured at the start of the current value-object serialization.</summary>
-        ObjectLogFilePositionInfo objectStartPosition;
+        ObjectLogPositionInfo objectStartPosition;
 
         /// <summary>The on-disk extent through the end of the first framed chunk of the most recently serialized value object:
         /// headerless prefix + 8-align padding + first ChunkHeader + first chunk data. For a headerless object this is its exact data
@@ -85,10 +85,10 @@ namespace Tsavorite.core
         /// <remarks>This is a no-op because we have already flushed under control of the Write() and OnPartialFlushComplete() methods.</remarks>
         public void FlushAndReset(CancellationToken cancellationToken = default) { }
 
-        internal ObjectLogFilePositionInfo GetNextRecordStartPosition() => flushBuffers.GetNextRecordStartPosition();
+        internal ObjectLogPositionInfo GetNextRecordStartPosition() => flushBuffers.GetNextRecordStartPosition();
 
         /// <summary>Resets start positions for the next partial flush.</summary>
-        internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogFilePositionInfo filePosition)
+        internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogPositionInfo filePosition)
         {
             valueObjectBytesWritten = 0;
             inSerialize = false;
@@ -107,7 +107,7 @@ namespace Tsavorite.core
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
         internal void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
-                DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogFilePositionInfo endFilePosition)
+                DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogPositionInfo endFilePosition)
             => flushBuffers.OnPartialFlushComplete(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress,
                 externalCallback, externalContext, ref endFilePosition);
 
@@ -159,7 +159,7 @@ namespace Tsavorite.core
 
         /// <summary>Pad between records so the next record starts at the same modulo-8 offset as <paramref name="sourcePosition"/>.
         /// Snapshot recovery uses this before a verbatim copy because the first object ChunkHeader is located by absolute 8-alignment.</summary>
-        internal void AlignNextRecordStartLike(in ObjectLogFilePositionInfo sourcePosition)
+        internal void AlignNextRecordStartLike(in ObjectLogPositionInfo sourcePosition)
         {
             var destination = flushBuffers.GetNextRecordStartPosition();
             var padding = (int)((sourcePosition.Offset - destination.Offset) & 7);

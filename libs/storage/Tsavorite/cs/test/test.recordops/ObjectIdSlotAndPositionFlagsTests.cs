@@ -8,7 +8,7 @@ using Tsavorite.core;
 namespace Tsavorite.test.Objects
 {
     /// <summary>
-    /// Unit tests for the object-log out-of-line size-hint primitives: the <see cref="ObjectLogFilePositionInfo"/> position-word
+    /// Unit tests for the object-log out-of-line size-hint primitives: the <see cref="ObjectLogPositionInfo"/> position-word
     /// Key/ValueIsExactSize flag bits, and the <see cref="ObjectIdMap"/> objectId-slot index/size-hint bit layout. An out-of-line
     /// component whose byte length is &lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> stores its exact length in the top bits of
     /// its objectId slot (no leading ChunkHeader), flagged in the record's position word. Larger keys combine those bits with raw
@@ -156,17 +156,17 @@ namespace Tsavorite.test.Objects
         static int RoundUpToPage(int length)
             => ((length + RecordDataHeader.kFlushPageSize - 1) / RecordDataHeader.kFlushPageSize) * RecordDataHeader.kFlushPageSize;
 
-        // ── ObjectLogFilePositionInfo exact-size flag bits ───────────────────────────────────────────────
+        // ── ObjectLogPositionInfo exact-size flag bits ───────────────────────────────────────────────
 
         [Test]
         [Category("Smoke")]
         public unsafe void KeyIsExactSizeFlagSetsAndClears()
         {
             ulong word = 0;
-            Assert.That(ObjectLogFilePositionInfo.GetKeyIsExactSize(&word), Is.False);
-            ObjectLogFilePositionInfo.SetKeyIsExactSize(&word);
-            Assert.That(ObjectLogFilePositionInfo.GetKeyIsExactSize(&word), Is.True);
-            Assert.That(word, Is.EqualTo(ObjectLogFilePositionInfo.kKeyIsExactSizeMask));
+            Assert.That(ObjectLogPositionInfo.GetKeyIsExactSize(&word), Is.False);
+            ObjectLogPositionInfo.SetKeyIsExactSize(&word);
+            Assert.That(ObjectLogPositionInfo.GetKeyIsExactSize(&word), Is.True);
+            Assert.That(word, Is.EqualTo(ObjectLogPositionInfo.kKeyIsExactSizeMask));
         }
 
         [Test]
@@ -174,10 +174,10 @@ namespace Tsavorite.test.Objects
         public unsafe void ValueIsExactSizeFlagSetsAndClears()
         {
             ulong word = 0;
-            Assert.That(ObjectLogFilePositionInfo.GetValueIsExactSize(&word), Is.False);
-            ObjectLogFilePositionInfo.SetValueIsExactSize(&word);
-            Assert.That(ObjectLogFilePositionInfo.GetValueIsExactSize(&word), Is.True);
-            Assert.That(word, Is.EqualTo(ObjectLogFilePositionInfo.kValueIsExactSizeMask));
+            Assert.That(ObjectLogPositionInfo.GetValueIsExactSize(&word), Is.False);
+            ObjectLogPositionInfo.SetValueIsExactSize(&word);
+            Assert.That(ObjectLogPositionInfo.GetValueIsExactSize(&word), Is.True);
+            Assert.That(word, Is.EqualTo(ObjectLogPositionInfo.kValueIsExactSizeMask));
         }
 
         [Test]
@@ -185,29 +185,29 @@ namespace Tsavorite.test.Objects
         public unsafe void ExactSizeFlagsAreIndependentAndDoNotDisturbOtherBits()
         {
             // Start with a realistic segment+offset payload plus the (bit-63) unused flag set.
-            ulong segmentAndOffset = 0x0ABCDEF012345UL & ObjectLogFilePositionInfo.SegmentAndOffsetMask;
-            ulong word = segmentAndOffset | ObjectLogFilePositionInfo.kUnusedBit63Mask;
+            ulong segmentAndOffset = 0x0ABCDEF012345UL & ObjectLogPositionInfo.AddressMask;
+            ulong word = segmentAndOffset | ObjectLogPositionInfo.kUnusedBit63Mask;
 
-            ObjectLogFilePositionInfo.SetKeyIsExactSize(&word);
-            ObjectLogFilePositionInfo.SetValueIsExactSize(&word);
+            ObjectLogPositionInfo.SetKeyIsExactSize(&word);
+            ObjectLogPositionInfo.SetValueIsExactSize(&word);
 
-            Assert.That(ObjectLogFilePositionInfo.GetKeyIsExactSize(&word), Is.True);
-            Assert.That(ObjectLogFilePositionInfo.GetValueIsExactSize(&word), Is.True);
-            Assert.That(word & ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.Not.EqualTo(0UL), "existing flag preserved");
+            Assert.That(ObjectLogPositionInfo.GetKeyIsExactSize(&word), Is.True);
+            Assert.That(ObjectLogPositionInfo.GetValueIsExactSize(&word), Is.True);
+            Assert.That(word & ObjectLogPositionInfo.kUnusedBit63Mask, Is.Not.EqualTo(0UL), "existing flag preserved");
             // The segment+offset payload is untouched by the flag bits.
-            Assert.That(word & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(segmentAndOffset));
+            Assert.That(word & ObjectLogPositionInfo.AddressMask, Is.EqualTo(segmentAndOffset));
         }
 
         [Test]
         [Category("Smoke")]
         public void ExactSizeFlagBitsAreDistinctAndAboveTheSegmentOffsetRange()
         {
-            Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask, Is.Not.EqualTo(ObjectLogFilePositionInfo.kValueIsExactSizeMask));
+            Assert.That(ObjectLogPositionInfo.kKeyIsExactSizeMask, Is.Not.EqualTo(ObjectLogPositionInfo.kValueIsExactSizeMask));
             // Both flags live above the 60-bit segment+offset range and below the unused bit 63.
-            Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(0UL));
-            Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(0UL));
-            Assert.That(ObjectLogFilePositionInfo.kKeyIsExactSizeMask & ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
-            Assert.That(ObjectLogFilePositionInfo.kValueIsExactSizeMask & ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogPositionInfo.kKeyIsExactSizeMask & ObjectLogPositionInfo.AddressMask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogPositionInfo.kValueIsExactSizeMask & ObjectLogPositionInfo.AddressMask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogPositionInfo.kKeyIsExactSizeMask & ObjectLogPositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogPositionInfo.kValueIsExactSizeMask & ObjectLogPositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
         }
 
         [Test]
@@ -216,21 +216,21 @@ namespace Tsavorite.test.Objects
         {
             // The two spare flag bits must not collide with each other, with the in-use flags, or with the segment+offset payload,
             // so either is available for a future format discriminator.
-            Assert.That(ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.Not.EqualTo(ObjectLogFilePositionInfo.kUnusedBit62Mask));
-            Assert.That(ObjectLogFilePositionInfo.kUnusedBit63Mask & ObjectLogFilePositionInfo.kUnusedBit62Mask, Is.EqualTo(0UL));
+            Assert.That(ObjectLogPositionInfo.kUnusedBit63Mask, Is.Not.EqualTo(ObjectLogPositionInfo.kUnusedBit62Mask));
+            Assert.That(ObjectLogPositionInfo.kUnusedBit63Mask & ObjectLogPositionInfo.kUnusedBit62Mask, Is.EqualTo(0UL));
 
-            foreach (var unusedMask in new[] { ObjectLogFilePositionInfo.kUnusedBit63Mask, ObjectLogFilePositionInfo.kUnusedBit62Mask })
+            foreach (var unusedMask in new[] { ObjectLogPositionInfo.kUnusedBit63Mask, ObjectLogPositionInfo.kUnusedBit62Mask })
             {
-                Assert.That(unusedMask & ObjectLogFilePositionInfo.SegmentAndOffsetMask, Is.EqualTo(0UL));
-                Assert.That(unusedMask & ObjectLogFilePositionInfo.kKeyIsExactSizeMask, Is.EqualTo(0UL));
-                Assert.That(unusedMask & ObjectLogFilePositionInfo.kValueIsExactSizeMask, Is.EqualTo(0UL));
+                Assert.That(unusedMask & ObjectLogPositionInfo.AddressMask, Is.EqualTo(0UL));
+                Assert.That(unusedMask & ObjectLogPositionInfo.kKeyIsExactSizeMask, Is.EqualTo(0UL));
+                Assert.That(unusedMask & ObjectLogPositionInfo.kValueIsExactSizeMask, Is.EqualTo(0UL));
             }
 
             // An unstamped word leaves both spare bits untouched, so stamping one survives unstamping.
             ulong word = 0;
-            ObjectLogFilePositionInfo.Unstamp(&word);
-            Assert.That(word & ObjectLogFilePositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
-            Assert.That(word & ObjectLogFilePositionInfo.kUnusedBit62Mask, Is.EqualTo(0UL));
+            ObjectLogPositionInfo.Unstamp(&word);
+            Assert.That(word & ObjectLogPositionInfo.kUnusedBit63Mask, Is.EqualTo(0UL));
+            Assert.That(word & ObjectLogPositionInfo.kUnusedBit62Mask, Is.EqualTo(0UL));
         }
 
         [TestCase(50UL, 3, 4050UL)]
@@ -240,7 +240,7 @@ namespace Tsavorite.test.Objects
         public void PositionAdvanceHandlesSegmentBoundaries(ulong distance, int expectedSegment, ulong expectedOffset)
         {
             const int segmentBits = 12;
-            ObjectLogFilePositionInfo position = new(((ulong)3 << segmentBits) | 4000, segmentBits);
+            ObjectLogPositionInfo position = new(((ulong)3 << segmentBits) | 4000, segmentBits);
 
             position.Advance(distance);
 
@@ -251,8 +251,8 @@ namespace Tsavorite.test.Objects
         [Test]
         public void PositionSubtractionRejectsReversedPositions()
         {
-            ObjectLogFilePositionInfo earlier = new(100, 12);
-            ObjectLogFilePositionInfo later = new(200, 12);
+            ObjectLogPositionInfo earlier = new(100, 12);
+            ObjectLogPositionInfo later = new(200, 12);
 
             Assert.Throws<System.IO.InvalidDataException>(() => _ = earlier - later);
         }
@@ -260,8 +260,8 @@ namespace Tsavorite.test.Objects
         [Test]
         public void PositionSubtractionRejectsDifferentSegmentSizes()
         {
-            ObjectLogFilePositionInfo left = new(200, 12);
-            ObjectLogFilePositionInfo right = new(100, 13);
+            ObjectLogPositionInfo left = new(200, 12);
+            ObjectLogPositionInfo right = new(100, 13);
 
             Assert.Throws<System.IO.InvalidDataException>(() => _ = left - right);
         }
