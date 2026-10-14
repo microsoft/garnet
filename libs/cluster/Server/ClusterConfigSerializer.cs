@@ -36,6 +36,27 @@ namespace Garnet.cluster
         /// </summary>
         public byte[] ToByteArray() => ToByteArray(MaximumSupportedClusterConfigVersion);
 
+        internal bool CanUseGossipVersion(byte version)
+        {
+            if (!IsSupportedVersion(version))
+                return false;
+            if (version >= 2)
+                return true;
+            for (int index = 1; index < workers.Length; index++)
+            {
+                if (workers[index].Address != workers[index].PeerAddress || workers[index].Port != workers[index].PeerPort)
+                    return false;
+            }
+            return true;
+        }
+
+        internal byte[] ToGossipByteArray(byte version)
+        {
+            if (version == 1 && !CanUseGossipVersion(version))
+                throw new InvalidDataException("Gossip version one cannot represent separate client and peer endpoints.");
+            return ToByteArray(version);
+        }
+
         /// <summary>
         /// Serialize config using the specified format version.
         /// </summary>
