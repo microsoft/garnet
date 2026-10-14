@@ -39,6 +39,8 @@ Inline values never enter the object log. Migration and replication use an indep
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDmaAlignment.cs` - direct-IO alignment.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogFilePositionInfo.cs` - position arithmetic
 >   and format flags.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate that is
+>   replacing the hand-managed object-log file; see section 12.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ChunkHeader.cs` /
 >   `ChunkedRecordConstants.cs` - authoritative framing.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/OverflowByteArray.cs` - owned overflow storage and direct-IO slack.
@@ -1068,3 +1070,111 @@ The following formats are separate and must not borrow each other's length seman
 - object-log file: objectId initial hints plus `ChunkHeader` authoritative framing;
 - migration/replication wire record: explicit network component framing described in the companion document; and
 - [AOF](../aof-record-layout.md): operation serialization, not a `DiskLogRecord` object-log image.
+
+---
+
+## 12. ObjectLog: the log-structured substrate
+
+> **Status: in progress.** `ObjectLog` exists and is tested, but nothing above it uses it yet. Sections 1-11 describe
+> the format as it is written and read today. This section describes the substrate that replaces the hand-managed
+> object-log file underneath them, and will grow as each layer is ported onto it.
+
+### 12.1 What it is and why
+
+The object log has been a file that the allocator addressed by segment and offset, extended by hand, and truncated by
+deleting segments. `ObjectLog` replaces that with a log-structured store composed over `TsavoriteLogAllocatorImpl`,
+which already provides concurrent allocation, a page ring, flushing, eviction, and truncation.
+
+The motivating requirement is retiring `CacheSerializedObjectData`, which preserves a `(v)` record's image during a
+Snapshot checkpoint by serializing it into a managed `byte[]` on the RMW thread - materializing the whole object in
+memory exactly where that hurts most. Writing those bytes to the object log instead needs three things the old object
+log could not do: concurrent allocation, stamping a record's position outside a flush, and a durability deadline later
+than "now". All three fall out of the allocator.
+
+`ObjectLog` **composes** the allocator rather than wrapping `TsavoriteLog` or sharing a base class with it. The overlap
+with `TsavoriteLog` proper is about sixty lines of entry framing; the divergence is its entire commit, recovery,
+iterator, and read surface.
+
+### 12.2 No commit protocol, and no new files
+
+`TryRecoverLatest` is off and `Commit()` is never called, so there are no commit files and no commit records in the
+log. `info.dat` remains the sole authority on object-log tails: recovery reads a tail from checkpoint metadata and
+positions the log with `ObjectLog.RestoreTail`, which sets the head to the tail so recovered content is read from the
+device on demand rather than paged in wholesale. Durability is a wait on `FlushedUntilAddress`.
+
+`hlog_objs[_<dbId>]`, `snapshot.obj.dat`, and `info.dat` keep their current paths and roles. The substrate change adds
+no files on disk.
+
+Device-level segmentation does not disappear; it simply stops being part of an address. `ObjectLogSettings.SegmentSizeBits`
+is file segmentation for the device, and an object-log position becomes a flat logical address.
+
+### 12.3 Scope discipline
+
+Allocation and the fill that follows it must happen inside one `BeginScope` / `EndScope` pair, because a physical
+address is stable only while the epoch is held.
+
+A physical address must not be retained across a later `Allocate` on the same scope. An allocation that cannot be
+satisfied has to wait for a flush, and it drops the epoch to let that flush and the page close make progress; after it
+resumes, an earlier page may have been closed. Bytes already written there are safe - they are on the device by the
+time the page is freed - but a pointer into them is not.
+
+### 12.4 Page-bounded allocation
+
+An allocation never spans a page, because a read translates to one device extent and a device extent cannot cross a
+page. `Allocate(numBytes, minPartialBytes, out allocatedLength)` is how a chunk is cut at a page end: when both the
+page remainder and what is left over are at least `minPartialBytes`, the allocation is satisfied by the remainder and
+the caller is told how much it actually received, then allocates the rest separately. When either side would be too
+small, the whole allocation moves to the next page and the page tail is wasted.
+
+**This is why chunk sizes are not derivable, and why a directory is required even in the sequential main log.** Once
+the stream falls out of page alignment, a buffer writes what fits and continues at the start of the next page, so chunk
+sizes alternate irregularly according to where within a page the record began. Reconstructing boundaries from a total
+length plus page geometry would mean reproducing the writer's cutting decisions exactly - buffer sizing, entry-header
+size, alignment rounding, page-tail handling - and would silently misread existing data if any of those changed. The
+directory records what the writer did instead of re-deriving it.
+
+### 12.5 Buffer and page sizing
+
+`IStreamBuffer.BufferSize` is a plain 4 MB constant; it no longer derives from `LogSettings.kMinObjectLogSegmentSizeBits`.
+
+`ObjectLog`'s default page is twice that, 8 MB: a page at least twice the buffer means a full buffer usually fits with
+room to spare, so page-tail cuts are occasional rather than near-universal. Page size is configurable, trading mutable
+memory against flush throughput, and in production must stay at or above the buffer size because a chunk cannot exceed
+a page. That relation is the writer's constraint rather than the log's, so `ObjectLog` itself enforces only
+`LogSettings.kMinPageSizeBits`; tests need both the buffer size and the page size settable far below the defaults, or
+every multi-chunk case would need a 16 MB object.
+
+The default page count is eight. The writer runs up to four concurrent fill buffers, so the mutable region has to cover
+at least that many pages; eight pages at the default mutable fraction leaves seven. Counting this page ring in
+`LogSizeTracker` is separate work.
+
+### 12.6 The address ceiling
+
+Two independent ceilings bound an object-log address, and `ObjectLog` enforces the lower of them on every allocation's
+end address:
+
+- an object-log position must fit the address field of the position word, whose remaining bits are flags, so addresses
+  stop below the all-ones value - which is itself excluded, being the unstamped marker; and
+- the allocator's tail is a `PageOffset` whose page number is a signed 32-bit field, so it runs out after
+  `int.MaxValue` pages.
+
+**The page-number ceiling is always the binding one** at the page sizes this log permits: it reaches the 60-bit
+position ceiling only at a page of 2^29 bytes, above `LogSettings.kMaxPageSizeBits`. At the 8 MB default the limit is
+2^54 bytes, or 18 PB ever written. Both are checked through one value so a future page-size change cannot quietly swap
+which one applies.
+
+Exceeding it throws rather than wrapping, because truncating into the flag bits or wrapping the page number would be
+silent corruption. The address space is monotonic over the log's lifetime - it counts every byte ever written, not
+bytes live - so this is reached only after sustained writes over many years, and the remedy named in the exception is a
+checkpoint, which starts a fresh object log.
+
+### 12.7 Sequential and non-sequential object logs
+
+The two object logs have different write ordering, and this is the reason they have different guarantees:
+
+- the **main object log is strictly sequential** - only the ReadOnly flush worker writes it; and
+- the **checkpoint (snapshot) object log is not** - captures that preserve `(v)` images interleave with the Snapshot
+  worker.
+
+The main log's apparent sequentiality must still not be relied upon for addressing, for the reason given in section
+12.4.

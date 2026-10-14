@@ -18,7 +18,10 @@ namespace Tsavorite.core
         internal const int NoValueChunkContinuationBit = 0;
 
         /// <summary>The size of the buffer used for writing data to and reading it from the disk. Must be a sector multiple.</summary>
-        internal const int BufferSize = 1 << LogSettings.kMinObjectLogSegmentSizeBits;
+        /// <remarks>Sized independently of any segment or page constant. <see cref="ObjectLog"/>'s default page size is twice this, so a
+        /// full buffer fits a page with room to spare; the page size is configurable but must stay at or above this, because a chunk
+        /// cannot exceed a page.</remarks>
+        internal const int BufferSize = 4 * 1024 * 1024;
 
         /// <summary>Default Initial IO size to read; may be overridden by operation-level, session-level, or store-level specification.
         /// Sized to comfortably cover a typical small record (header + small key + small value)

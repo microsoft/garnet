@@ -38,6 +38,7 @@ namespace Tsavorite.test
         internal const string ObjectIdMapCategory = "ObjectIdMap";
         internal const string OverflowFieldCategory = "OverflowField";
         internal const string LogRecordCategory = "LogRecord";
+        internal const string ObjectLogCategory = "ObjectLog";
 
         // Use 4KB page size for tests, independent of device sector size
         public const int MinKvLogPageSizeBits = LogSettings.kMinPageSizeBits;
