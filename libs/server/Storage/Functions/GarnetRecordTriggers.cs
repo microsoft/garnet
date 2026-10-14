@@ -202,10 +202,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                               ref LogRecord dstLogRecord, long dstLogicalAddress)
-            where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TSourceLogRecord : ISourceLogRecord, allows ref struct
         {
             // Only act on RangeIndex records.
             // Check the SOURCE's RecordType, not the destination's: Tsavorite's

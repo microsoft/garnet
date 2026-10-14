@@ -39,21 +39,12 @@ namespace Tsavorite.test
         public struct Comparer : IKeyComparer
         {
             public readonly long GetHashCode64<TKey>(TKey key)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 => Utility.GetHashCode(key.KeyBytes.AsRef<KeyStruct>().kfield1);
 
             public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey key1, TSecondKey key2)
-                where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
-                where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TFirstKey : IKey, allows ref struct
+                where TSecondKey : IKey, allows ref struct
             {
                 var k1 = key1.KeyBytes.AsRef<KeyStruct>();
                 var k2 = key2.KeyBytes.AsRef<KeyStruct>();
@@ -93,10 +84,7 @@ namespace Tsavorite.test
         public struct Comparer : IKeyComparer
         {
             public readonly long GetHashCode64<TKey>(TKey key)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
             {
                 HashCode code = new();
                 code.AddBytes(key.KeyBytes);
@@ -110,14 +98,8 @@ namespace Tsavorite.test
             }
 
             public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey key1, TSecondKey key2)
-                where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
-                where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TFirstKey : IKey, allows ref struct
+                where TSecondKey : IKey, allows ref struct
             {
                 if (key1.HasNamespace)
                 {
