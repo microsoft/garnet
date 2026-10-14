@@ -19,9 +19,7 @@ namespace Tsavorite.core
         /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64"/></returns>
         long GetKeyHash<TKey>(TKey key)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             ;
     }
 
@@ -30,9 +28,7 @@ namespace Tsavorite.core
     /// </summary>
     public interface ITsavoriteContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteContext
         where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -187,9 +183,7 @@ namespace Tsavorite.core
         /// </summary>
         void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
             where TBatch : IReadArgBatch<TKey, TInput, TOutput>
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             ;
 
         /// <summary>
@@ -318,9 +312,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord diskLogRecord)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -332,9 +324,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -356,9 +346,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TOpKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>

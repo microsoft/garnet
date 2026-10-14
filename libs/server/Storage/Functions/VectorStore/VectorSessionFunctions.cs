@@ -201,9 +201,7 @@ namespace Garnet.server
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
         public readonly RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref VectorInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             var effectiveWriteDesiredSize = input.WriteDesiredSize;
 
@@ -218,25 +216,19 @@ namespace Garnet.server
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref VectorInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref VectorInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         => ObjectOperationsNotExpected<RecordFieldInfo>();
 
         /// <summary>Length of value object, when populated by Upsert using given log record</summary>
         public readonly RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref VectorInput input)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSourceLogRecord : ISourceLogRecord
         => new() { KeySize = key.KeyBytes.Length, ValueSize = inputLogRecord.ValueSpan.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
         #endregion Variable Length
@@ -245,9 +237,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool NeedInitialUpdate<TKey>(TKey key, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             Debug.Assert(key.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
@@ -504,9 +494,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref VectorInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         {
         }
@@ -514,18 +502,14 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref VectorInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         => ObjectOperationsNotExpected<bool>();
 
         /// <inheritdoc/>
         public void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref VectorInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         {
         }
@@ -533,9 +517,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor
         {
         }

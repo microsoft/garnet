@@ -15,9 +15,7 @@ namespace Tsavorite.core
     /// </summary>
     public sealed class ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : IClientSession, IDisposable
          where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>

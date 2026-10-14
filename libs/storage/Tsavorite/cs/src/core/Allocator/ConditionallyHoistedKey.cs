@@ -173,9 +173,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool KeysEqual<TOther>(TOther other) where TOther :
             IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
         {
             if (other.HasNamespace)
             {
@@ -222,9 +220,7 @@ namespace Tsavorite.core
         /// </remarks>
         public static ConditionallyHoistedKey Create<TKey>(TKey key, SectorAlignedBufferPool bufferPool)
             where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
         {
 
             if (key.IsEmpty)

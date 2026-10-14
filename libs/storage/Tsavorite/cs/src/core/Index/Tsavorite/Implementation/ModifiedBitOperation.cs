@@ -20,9 +20,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal OperationStatus InternalModifiedBitOperation<TKey>(TKey key, out RecordInfo modifiedInfo, bool reset = true)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             Debug.Assert(epoch.ThisInstanceProtected());
 

@@ -155,9 +155,7 @@ namespace Tsavorite.core
         /// </remarks>
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor;
 
         /// <summary>
@@ -169,9 +167,7 @@ namespace Tsavorite.core
         /// </remarks>
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor;
 
         #endregion Upserts
@@ -187,9 +183,7 @@ namespace Tsavorite.core
         /// <param name="rmwInfo">Information about this update operation and its context</param>
         bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             ;
 
         /// <summary>
@@ -277,9 +271,7 @@ namespace Tsavorite.core
         /// </remarks>
         void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor;
 
         /// <summary>
@@ -333,9 +325,7 @@ namespace Tsavorite.core
         /// </remarks>
         void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor;
         #endregion Deletes
 

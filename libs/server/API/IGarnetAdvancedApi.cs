@@ -66,9 +66,7 @@ namespace Garnet.server
         /// </summary>
         void ReadWithPrefetch<TBatch>(ref TBatch batch, long context = default)
             where TBatch : IReadArgBatch<FixedSpanByteKey, StringInput, StringOutput>
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             ;
     }
 }

@@ -884,9 +884,7 @@ namespace Garnet.server
         internal unsafe void EnqueueObjectChunked<TKey, TInput>(AofEntryType opType, long version, int sessionId, TKey key, IHeapObject value,
                 ref TInput input, IObjectSerializer<IHeapObject> objectSerializer, IEpochAccessor epochAccessor, out long logicalAddress)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TInput : IStoreInput
         {
             // Carry the key into the (struct-field-based) chunked serializer via ConditionallyHoistedKey. A pinned key (the common

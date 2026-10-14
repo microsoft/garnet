@@ -37,15 +37,11 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord;
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor;
         void PostUpsertOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor;
         #endregion Upserts
 
@@ -53,9 +49,7 @@ namespace Tsavorite.core
         #region InitialUpdater
         bool NeedInitialUpdate<TKey>(TKey key, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             ;
         bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rmwInfo);
         void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ref TOutput output, ref RMWInfo rMWInfo);
@@ -76,9 +70,7 @@ namespace Tsavorite.core
 
         void PostRMWOperation<TKey, TEpochAccessor>(TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor;
         void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata);
         #endregion RMWs
@@ -89,9 +81,7 @@ namespace Tsavorite.core
         bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
         void PostDeleteOperation<TKey, TEpochAccessor>(TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
              where TKey : IKey
-#if NET9_0_OR_GREATER
             , allows ref struct
-#endif
             where TEpochAccessor : IEpochAccessor;
         #endregion Deletes
 

@@ -13,9 +13,7 @@ namespace Garnet.server
     /// buffer as a <see cref="ReadOnlySpan{T}"/>, without allocating.
     /// </summary>
     internal sealed class ConfigNameComparer : IEqualityComparer<byte[]>
-#if NET9_0_OR_GREATER
         , IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>
-#endif
     {
         /// <summary>Shared instance; the comparer is stateless.</summary>
         internal static readonly ConfigNameComparer Instance = new();
@@ -59,10 +57,8 @@ namespace Garnet.server
             return hash;
         }
 
-#if NET9_0_OR_GREATER
         /// <inheritdoc/>
         public byte[] Create(ReadOnlySpan<byte> alternate) => alternate.ToArray();
-#endif
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static byte ToUpperAscii(byte value)

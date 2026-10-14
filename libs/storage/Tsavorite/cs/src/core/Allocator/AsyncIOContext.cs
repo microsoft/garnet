@@ -125,9 +125,7 @@ namespace Tsavorite.core
         /// </remarks>
         internal void Prepare<TKey>(TKey requestKey, long logicalAddress, SectorAlignedBufferPool bufferPool)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
         {
             request.DisposeRecord();
             request.requestKey.Dispose();

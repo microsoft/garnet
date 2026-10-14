@@ -11,9 +11,7 @@ namespace Garnet.server
     /// Byte array equality comparer
     /// </summary>
     public sealed class ByteArrayComparer : IEqualityComparer<byte[]>
-#if NET9_0_OR_GREATER
         , IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>
-#endif
     {
         /// <summary>
         /// The default instance.

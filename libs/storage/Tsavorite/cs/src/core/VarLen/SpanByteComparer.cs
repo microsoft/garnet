@@ -21,9 +21,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetHashCode64<TKey>(TKey key)
             where TKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
              => StaticGetHashCode64(key.KeyBytes);
 
         /// <summary>
@@ -36,13 +34,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
             where TFirstKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             where TSecondKey : IKey
-#if NET9_0_OR_GREATER
                 , allows ref struct
-#endif
             => StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         /// <summary>
