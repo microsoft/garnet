@@ -278,15 +278,11 @@ namespace Garnet.cluster
 
                     if (lastGsn != null)
                     {
-                        await lastGsn.InitializeAsync().ConfigureAwait(false);
+                        initTask = lastGsn.InitializeAsync();
                     }
                 }
-                else
-                {
-                    await initTask.ConfigureAwait(false);
-                }
 
-                if (lastGsn != null)
+                if (lastGsn != null && await TryInitializeForPublishAsync(initTask, lastGsn.NodeId).ConfigureAwait(false))
                 {
                     lastGsn.TryClusterPublish(cmd, channel.Span, message.Span);
                 }
@@ -303,10 +299,25 @@ namespace Garnet.cluster
 
                     // Initialize GarnetServerNode
                     // Thread-Safe initialization executes only once
-                    await gsn.InitializeAsync().ConfigureAwait(false);
+                    if (!await TryInitializeForPublishAsync(gsn.InitializeAsync(), nodeId).ConfigureAwait(false))
+                        continue;
 
                     // Publish to remote nodes
                     gsn.TryClusterPublish(cmd, channel.Span, message.Span);
+                }
+            }
+
+            async ValueTask<bool> TryInitializeForPublishAsync(ValueTask initializationTask, string nodeId)
+            {
+                try
+                {
+                    await initializationTask.ConfigureAwait(false);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Failed to initialize connection to {nodeId}; skipping publish forwarding", nodeId);
+                    return false;
                 }
             }
         }
