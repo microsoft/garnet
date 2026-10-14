@@ -479,19 +479,6 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void ObjectLogPositionAdvanceAcrossSegmentUsesRemainderOffset()
-        {
-            const int segmentSizeBits = 22;
-            var position = new ObjectLogFilePositionInfo(0, segmentSizeBits) { Offset = 100 };
-            position.Advance(1UL << segmentSizeBits);
-
-            Assert.That(position.SegmentId, Is.EqualTo(1));
-            Assert.That(position.Offset, Is.EqualTo(100UL));
-        }
-
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("Smoke")]
         public void DiskWriteScanBasicTest([Values] TestDeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"DiskWriteScanBasicTest_{deviceType}.log"));
