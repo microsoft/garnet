@@ -33,9 +33,7 @@ namespace Garnet.server
         /// </summary>
         private const int VectorRecordReadOverheadBytes = 64;
 
-        public unsafe
-            ref
-            struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
+        public unsafe ref struct VectorReadBatch : IReadArgBatch<VectorElementKey, VectorInput, VectorOutput>
         {
             /// <summary>
             /// Total number of keys in batch.
