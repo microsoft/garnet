@@ -39,3 +39,5 @@ The following GUI tools have been tested with Garnet:
 - [LibreDB Studio](https://github.com/libredb/libredb-studio), an open source web-based database IDE, which connects
   to Garnet as a Redis connection. Its key browser, command editor and session list work with Garnet, and its overview
   shows the Garnet version beside the Redis version Garnet advertises.
+- [VisuaLeaf](https://visualeaf.com/), a cross-platform desktop database client, which connects to Garnet as a Redis
+  connection. Its key browser (`SCAN` with key types), key viewer and logical-database list work with Garnet.
