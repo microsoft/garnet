@@ -1206,6 +1206,22 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency, epoch: epoch);
         }
 
+        public static GarnetLightClient GetLightGarnetClient(EndPoint endpoint = null, bool useTLS = false, bool recordLatency = false, client.LightEpoch epoch = null)
+        {
+            SslClientAuthenticationOptions sslOptions = null;
+            if (useTLS)
+            {
+                sslOptions = new SslClientAuthenticationOptions
+                {
+                    ClientCertificates = [GetClientCertificate()],
+                    TargetHost = "GarnetTest",
+                    AllowRenegotiation = false,
+                    RemoteCertificateValidationCallback = ValidateServerCertificate,
+                };
+            }
+            return new GarnetLightClient(endpoint ?? EndPoint, sslOptions, epoch: epoch);
+        }
+
         public static GarnetLightClient GetGarnetLightClient(
             EndPoint endpoint = null,
             bool useTLS = false,

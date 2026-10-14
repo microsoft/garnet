@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
@@ -175,9 +176,8 @@ namespace Garnet.cluster
         /// Issue gossip and attach request to replica
         /// </summary>
         /// <param name="replicaId">Replica-id to issue gossip and attache request</param>
-        /// <param name="configByteArray">Serialized local cluster config data</param>
         /// <returns></returns>
-        private async Task BroadcastConfigAndRequestAttachAsync(string replicaId, byte[] configByteArray)
+        private async Task BroadcastConfigAndRequestAttachAsync(string replicaId)
         {
             // Force async
             await Task.Yield();
@@ -195,40 +195,26 @@ namespace Garnet.cluster
                 }
 
                 // Force send updated config to replica
-                var resp = await client.GossipAsync(configByteArray).WaitAsync(failoverTimeout, cts.Token).ConfigureAwait(false);
+                GossipVersionNegotiation negotiation = new(client, clusterProvider.clusterManager);
+                using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+                timeout.CancelAfter(failoverTimeout);
+                ClusterConfig other = await negotiation.ExchangeAsync(newConfig, withMeet: false, replicaId, timeout.Token).ConfigureAwait(false);
 
                 try
                 {
                     var current = clusterProvider.clusterManager.CurrentConfig;
-                    if (resp.Length > 0)
+                    if (other != null)
                     {
-                        clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
-                        var returnedConfigArray = resp.Span.ToArray();
-
-                        // Validate config version before full deserialization
-                        if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
-                        {
-                            logger?.LogWarning("Received failover gossip response with incompatible config version: {version}", version);
-                        }
+                        // Check if gossip is from a node that is known and trusted before merging
+                        if (current.IsKnown(other.LocalNodeId))
+                            _ = clusterProvider.clusterManager.TryMerge(other);
                         else
-                        {
-                            var other = ClusterConfig.FromByteArray(returnedConfigArray);
-
-                            // Check if gossip is from a node that is known and trusted before merging
-                            if (current.IsKnown(other.LocalNodeId))
-                                _ = clusterProvider.clusterManager.TryMerge(other);
-                            else
-                                logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
-                        }
+                            logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }
                 }
                 catch (Exception ex)
                 {
                     logger?.LogCritical(ex, "IssueAttachReplicas faulted");
-                }
-                finally
-                {
-                    resp.Dispose();
                 }
 
                 var (localAddress, localPort) = oldConfig.GetWorkerAddress(ClusterConfig.LOCAL_WORKER_ID);
@@ -257,7 +243,6 @@ namespace Garnet.cluster
             // Get replica ids for old primary from old configuration
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var replicaIds = newConfig.GetReplicaIds(oldPrimaryId);
-            var configByteArray = newConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
             var attachReplicaTasks = new List<Task>();
 
             // If DEFAULT failover try to make old primary replica of this new primary
@@ -271,7 +256,7 @@ namespace Garnet.cluster
             {
                 try
                 {
-                    attachReplicaTasks.Add(BroadcastConfigAndRequestAttachAsync(replicaId, configByteArray));
+                    attachReplicaTasks.Add(BroadcastConfigAndRequestAttachAsync(replicaId));
                 }
                 catch (Exception ex)
                 {

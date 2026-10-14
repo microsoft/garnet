@@ -19,6 +19,7 @@ namespace Garnet.cluster
         readonly SslClientAuthenticationOptions tlsOptions;
         readonly LightEpoch epoch;
         readonly GarnetLightClient gc;
+        GossipVersionNegotiation gossipNegotiation;
         ClusterAuthContainer clientAuth;
         ExponentialBackoff backoff;
         readonly object initializationSync = new();
@@ -75,6 +76,8 @@ namespace Garnet.cluster
         /// </summary>
         public EndPoint EndPoint;
 
+        public GarnetLightClient Client => gc;
+
         internal static int GetClientTimeoutMilliseconds(int clusterTimeoutSeconds)
             => clusterTimeoutSeconds <= 0 ? 0 : (int)Math.Min((long)clusterTimeoutSeconds * 1000, int.MaxValue);
 
@@ -101,6 +104,7 @@ namespace Garnet.cluster
                 .GetConfigGroup(ServerConfigGroupType.GOSSIP_CLIENT);
             var networkWriterOptions = group.Read(out this.gossipClientConfigVersion);
             this.gc = CreateGarnetClient(clientAuth, networkWriterOptions);
+            gossipNegotiation = new(gc, clusterProvider.clusterManager);
             this.backoff = new ExponentialBackoff();
             initialized = false;
             this.gossipRecv = 0;
@@ -163,11 +167,10 @@ namespace Garnet.cluster
                     // rather than overwritten and left rooted on ctsGossip until shutdown.
                     ResetCts();
 
-                    // Pass the attempt token into the reconnect so it honors cancellation (e.g. gossip
-                    // shutdown) instead of only timing out the wait. WaitAsync still bounds how long the
-                    // gossip loop blocks here; a setup phase that ignores the token (e.g. AUTH) is torn
-                    // down when the next attempt's ReconnectAsync disposes the previous connection.
-                    await client.ReconnectAsync(cts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
+                    using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+                    timeout.CancelAfter(clusterProvider.clusterManager.clusterTimeout);
+                    await client.ReconnectAsync(timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
+                    gossipNegotiation = new(client, clusterProvider.clusterManager);
                     initialized = true;
                     return true;
                 }
@@ -312,10 +315,9 @@ namespace Garnet.cluster
         /// Keep track of updated config per connection. Useful when gossip sampling so as to ensure updates are propagated
         /// </summary>
         /// <returns></returns>
-        byte[] GetMostRecentConfig()
+        ClusterConfig GetMostRecentConfig()
         {
             var conf = clusterProvider.clusterManager.CurrentConfig;
-            byte[] byteArray;
             if (conf != lastConfig)
             {
                 lastConfig = conf;
@@ -323,38 +325,26 @@ namespace Garnet.cluster
                     // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
                     // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
                     lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
-                byteArray = lastConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
             }
-            else
-            {
-                byteArray = [];
-            }
-            return byteArray;
+            return conf;
         }
 
         /// <summary>
-        /// Schedule a Gossip task for provided serialized configuration
+        /// Send the latest configuration using the negotiated gossip version.
         /// </summary>
-        /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private async Task GossipAsync(byte[] configByteArray)
+        private async Task GossipAsync()
         {
+            if (!await TryInitializeAsync().ConfigureAwait(false))
+                throw new GarnetException("Cannot send gossip before the peer connection is initialized.");
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            timeout.CancelAfter(gossipNegotiation.IsNegotiated ? clusterProvider.clusterManager.gossipDelay : clusterProvider.clusterManager.clusterTimeout);
+            var other = await gossipNegotiation.ExchangeAsync(GetMostRecentConfig(), withMeet: false, NodeId, timeout.Token).ConfigureAwait(false);
+
             try
             {
-                using var resp = await gc.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
-                if (resp.Length > 0)
+                if (other != null)
                 {
-                    clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
-                    var returnedConfigArray = resp.Span.ToArray();
-
-                    // Validate config version before full deserialization
-                    if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
-                    {
-                        logger?.LogWarning("Received gossip response with incompatible config version: {version}", version);
-                        return;
-                    }
-
-                    var other = ClusterConfig.FromByteArray(returnedConfigArray);
                     var current = clusterProvider.clusterManager.CurrentConfig;
                     // Check if gossip is from a node that is known and trusted before merging
                     if (current.IsKnown(other.LocalNodeId))
@@ -373,12 +363,16 @@ namespace Garnet.cluster
         /// <summary>
         /// Issue gossip meet with meet to force receiving node to trust an untrusted node
         /// </summary>
-        /// <param name="configByteArray"></param>
+        /// <param name="config"></param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
+        public async Task<ClusterConfig> TryMeetAsync(ClusterConfig config)
         {
             UpdateGossipSend();
-            return gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            if (!await TryInitializeAsync().ConfigureAwait(false))
+                throw new GarnetException("Cannot send MEET before the peer connection is initialized.");
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            timeout.CancelAfter(clusterProvider.clusterManager.clusterTimeout);
+            return await gossipNegotiation.ExchangeAsync(config, withMeet: true, NodeId, timeout.Token).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -388,16 +382,11 @@ namespace Garnet.cluster
         public bool TryGossip()
         {
             var task = gossipTask;
-            // If first time we are sending gossip make sure to send latest version
             if (task == null)
             {
                 // Issue first time gossip
-                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
-                gossipTask = GossipAsync(configArray);
+                gossipTask = GossipAsync();
                 UpdateGossipSend();
-                clusterProvider.clusterManager.gossipStats.gossip_full_send++;
-                // Track bytes send
-                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configArray.Length);
                 return true;
             }
             else if (task.Status == TaskStatus.RanToCompletion)
@@ -405,23 +394,15 @@ namespace Garnet.cluster
                 // A full gossip round completed without faulting; the peer accepts GOSSIP so the
                 // reconnect backoff history can be cleared.
                 RecordConnectionSuccess();
-                var configByteArray = GetMostRecentConfig();
                 UpdateGossipRecv();
 
                 // Issue new gossip that can be either zero packet size or an updated configuration
-                gossipTask = GossipAsync(configByteArray);
+                gossipTask = GossipAsync();
                 UpdateGossipSend();
-
-                // Track number of full vs empty (ping) sends
-                if (configByteArray.Length > 0)
-                    clusterProvider.clusterManager.gossipStats.gossip_full_send++;
-                else
-                    clusterProvider.clusterManager.gossipStats.gossip_empty_send++;
-
-                // Track bytes send
-                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
                 return true;
             }
+            if (!task.IsCompleted)
+                return true;
             logger?.LogWarning(task.Exception, "GOSSIP round faulted");
             ResetCts();
             gossipTask = null;

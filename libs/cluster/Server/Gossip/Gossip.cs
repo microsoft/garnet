@@ -196,7 +196,6 @@ namespace Garnet.cluster
             GarnetServerNode gsn = null;
             var conf = CurrentConfig;
             var nodeId = conf.GetWorkerNodeIdFromAddress(address, port);
-            MemoryResult<byte> resp = default;
             var created = false;
 
             gossipStats.UpdateMeetRequestsRecv();
@@ -227,48 +226,28 @@ namespace Garnet.cluster
                 }
 
                 // Send full config in Gossip
-                resp = await gsn.TryMeetAsync(conf.ToByteArray(ClusterConfig.OutboundGossipVersion)).ConfigureAwait(false);
-                if (resp.Length > 0)
-                {
-                    var respArray = resp.Span.ToArray();
+                ClusterConfig other = await gsn.TryMeetAsync(conf).ConfigureAwait(false);
+                nodeId = other.LocalNodeId;
+                gsn.NodeId = nodeId;
 
-                    // Validate config version before full deserialization
-                    if (!ClusterConfig.TryPeekVersion(respArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
-                    {
-                        logger?.LogWarning("MEET response has incompatible config version: {version}", version);
-                        if (created) gsn?.Dispose();
-                        gossipStats.UpdateMeetRequestsFailed();
-                    }
-                    else
-                    {
-                        var other = ClusterConfig.FromByteArray(respArray);
-                        nodeId = other.LocalNodeId;
-                        gsn.NodeId = nodeId;
+                logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
+                // Merge without a check because node is trusted as meet was issued by admin
+                _ = TryMerge(other, acquireLock);
 
-                        logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
-                        // Merge without a check because node is trusted as meet was issued by admin
-                        _ = TryMerge(other, acquireLock);
+                gossipStats.UpdateMeetRequestsSucceed();
+                gsn.RecordConnectionSuccess();
 
-                        gossipStats.UpdateMeetRequestsSucceed();
-                        gsn.RecordConnectionSuccess();
-
-                        // If failed to add newly created connection dispose of it to reclaim resources
-                        // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
-                        // After connection is added we are no longer the owner. Background gossip task will be owner
-                        if (created && !await clusterConnectionStore.AddConnectionAsync(gsn).ConfigureAwait(false))
-                            gsn.Dispose();
-                    }
-                }
+                // If failed to add newly created connection dispose of it to reclaim resources
+                // Dispose only connections that this meet task has created to avoid conflicts with existing connections from gossip main thread
+                // After connection is added we are no longer the owner. Background gossip task will be owner
+                if (created && !await clusterConnectionStore.AddConnectionAsync(gsn).ConfigureAwait(false))
+                    gsn.Dispose();
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Meet terminated with error");
                 if (created) gsn?.Dispose();
                 gossipStats.UpdateMeetRequestsFailed();
-            }
-            finally
-            {
-                resp.Dispose();
             }
         }
 
