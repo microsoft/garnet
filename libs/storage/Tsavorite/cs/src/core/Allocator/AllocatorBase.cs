@@ -2417,6 +2417,34 @@ namespace Tsavorite.core
 
         private SectorAlignedMemory GetAndPopulateReadBuffer(long fromLogicalAddress, int numBytes, out ulong alignedReadStart, out uint alignedReadLength)
         {
+            ComputeAlignedReadExtent(fromLogicalAddress, numBytes, out alignedReadStart, out alignedReadLength, out var validOffset);
+
+            // Rent the read-destination buffer with clearOnReturn=false: the device read
+            // will fully overwrite [aligned_pointer .. aligned_pointer + alignedReadLength)
+            // and downstream consumers bound their access by valid_offset / available_bytes,
+            // so the historical Array.Clear on Return is pure waste here (~4-8 KB of memory
+            // bandwidth per pending read).
+            var record = bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
+            record.valid_offset = validOffset;
+            record.available_bytes = (int)alignedReadLength - validOffset;
+            record.required_bytes = numBytes;
+            return record;
+        }
+
+        /// <summary>
+        /// Translate a logical address and byte count into the sector-aligned device read that covers them.
+        /// </summary>
+        /// <remarks>
+        /// Separated from <see cref="GetAndPopulateReadBuffer"/> so a caller that reads into a buffer it already owns
+        /// can reuse the translation without renting one from <see cref="bufferPool"/>.
+        /// </remarks>
+        /// <param name="fromLogicalAddress">Logical address of the first byte wanted.</param>
+        /// <param name="numBytes">Number of bytes wanted from <paramref name="fromLogicalAddress"/>.</param>
+        /// <param name="alignedReadStart">Sector-aligned device offset to read from.</param>
+        /// <param name="alignedReadLength">Sector-aligned length to read, clamped so it cannot cross the page end.</param>
+        /// <param name="validOffset">Offset within the read at which <paramref name="fromLogicalAddress"/> lands.</param>
+        internal void ComputeAlignedReadExtent(long fromLogicalAddress, int numBytes, out ulong alignedReadStart, out uint alignedReadLength, out int validOffset)
+        {
             var readStart = (ulong)(GetFileOffsetOfPage(GetPage(fromLogicalAddress)) + GetOffsetOnPage(fromLogicalAddress));
             alignedReadStart = (ulong)RoundDown((long)readStart, sectorSize);
             var alignedReadEnd = (ulong)RoundUp((long)readStart + numBytes, sectorSize);
@@ -2436,16 +2464,7 @@ namespace Tsavorite.core
             if (alignedReadStart + alignedReadLength > pageEndInFile)
                 alignedReadLength = (uint)(pageEndInFile - alignedReadStart);
 
-            // Rent the read-destination buffer with clearOnReturn=false: the device read
-            // will fully overwrite [aligned_pointer .. aligned_pointer + alignedReadLength)
-            // and downstream consumers bound their access by valid_offset / available_bytes,
-            // so the historical Array.Clear on Return is pure waste here (~4-8 KB of memory
-            // bandwidth per pending read).
-            var record = bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
-            record.valid_offset = (int)(readStart - alignedReadStart);
-            record.available_bytes = (int)(alignedReadLength - record.valid_offset);
-            record.required_bytes = numBytes;
-            return record;
+            validOffset = (int)(readStart - alignedReadStart);
         }
 
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event (but it is still created in the
