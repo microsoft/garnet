@@ -139,7 +139,7 @@ namespace Tsavorite.test
 
             // A small level count exercises the same exhaustion path as the production level count without allocating its capacity.
             const int LevelCount = 3;
-            using var allocator = new MallocFixedPageSize<byte>(LevelCount);
+            using var allocator = new MallocFixedPageSize<byte>(MallocFixedPageSize<byte>.MemorySizeGranularity * LevelCount);
 
             var capacity = allocator.GetPageSize() * (long)LevelCount;
             ClassicAssert.AreEqual(capacity, allocator.MaxAllocationCount);
@@ -185,7 +185,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
 
             const int LevelCount = 2;
-            using var allocator = new MallocFixedPageSize<byte>(LevelCount);
+            using var allocator = new MallocFixedPageSize<byte>(MallocFixedPageSize<byte>.MemorySizeGranularity * LevelCount);
 
             var capacity = allocator.GetPageSize() * (long)LevelCount;
             var chunkSize = MallocFixedPageSize<byte>.AllocateChunkSize;
@@ -223,7 +223,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
 
             const int LevelCount = 2;
-            using var allocator = new MallocFixedPageSize<HashBucket>(LevelCount);
+            using var allocator = new MallocFixedPageSize<HashBucket>(MallocFixedPageSize<HashBucket>.MemorySizeGranularity * LevelCount);
 
             var capacity = allocator.GetPageSize() * (long)LevelCount;
             while (allocator.GetMaxValidAddress() < capacity)

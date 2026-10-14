@@ -128,6 +128,18 @@ namespace Tsavorite.core
         public long OverflowBucketAllocations => overflowBucketsAllocator.NumAllocations;
 
         /// <summary>
+        /// Resample <see cref="IndexTotalSizeBytes"/> into the log size tracker, waking the resizer if it grew. Called
+        /// where index memory steps by a whole generation at once, so the log is not left over budget until the
+        /// resizer's next periodic sample.
+        /// </summary>
+        internal void RefreshIndexMemoryCharge()
+        {
+            var sizeTracker = hlogBase.logSizeTracker;
+            if (sizeTracker is not null && sizeTracker.RefreshExternalMemorySize())
+                sizeTracker.Signal();
+        }
+
+        /// <summary>
         /// Hybrid log used by this Tsavorite instance
         /// </summary>
         public LogAccessor<TStoreFunctions, TAllocator> Log { get; }

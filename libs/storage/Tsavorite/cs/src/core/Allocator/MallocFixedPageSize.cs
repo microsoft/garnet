@@ -156,7 +156,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Create new instance with an explicit level count.
         /// </summary>
-        internal unsafe MallocFixedPageSize(int levelCount, ILogger logger = null)
+        private unsafe MallocFixedPageSize(int levelCount, ILogger logger)
         {
             // Level 0 is allocated below and every level-0 allocation pre-allocates level 1, so two levels are the minimum.
             Debug.Assert(levelCount >= MinLevelCount, "levelCount must be at least MinLevelCount");
