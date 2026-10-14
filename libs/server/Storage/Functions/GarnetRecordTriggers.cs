@@ -16,7 +16,7 @@ namespace Garnet.server
     {
         /// <summary>
         /// Cache size tracker for heap size accounting.
-        /// Created before the store and initialized after via <see cref="CacheSizeTracker.Initialize"/>.
+        /// Created before the store and initialized after via <c>CacheSizeTracker.Initialize</c>.
         /// May be <c>null</c> if memory tracking is disabled.
         /// </summary>
         internal readonly CacheSizeTracker cacheSizeTracker;
