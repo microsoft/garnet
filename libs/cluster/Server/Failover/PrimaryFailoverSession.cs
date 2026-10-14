@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Net;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
@@ -105,19 +106,19 @@ namespace Garnet.cluster
         {
             try
             {
-                // Change local node role to suspend any write workload
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
-                var localId = clusterProvider.clusterManager.CurrentConfig.LocalNodeId;
-                var oldRole = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
-                var replicas = clusterProvider.clusterManager.CurrentConfig.GetReplicaIds(localId);
-                clusterProvider.clusterManager.TryStopWrites(replicas[0]);
-                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                clusterProvider.failoverManager.PauseWrites(true);
+                if (!await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false) || cts.IsCancellationRequested)
+                    return false;
 
                 status = FailoverStatus.WAITING_FOR_SYNC;
                 var newPrimary = await WaitForFirstReplicaSyncAsync().ConfigureAwait(false);
                 if (newPrimary == null) return false;
 
                 status = FailoverStatus.TAKING_OVER_AS_PRIMARY;
+                var endpoint = (IPEndPoint)newPrimary.EndPoint;
+                var replicaId = oldConfig.GetWorkerNodeIdFromAddress(endpoint.Address.ToString(), endpoint.Port);
+                clusterProvider.clusterManager.TryStopWrites(replicaId);
                 var success = await InitiateReplicaTakeOverAsync(newPrimary).ConfigureAwait(false);
                 if (!success) return false;
             }
@@ -127,6 +128,7 @@ namespace Garnet.cluster
             }
             finally
             {
+                clusterProvider.failoverManager.PauseWrites(false);
                 status = FailoverStatus.NO_FAILOVER;
             }
             return true;
