@@ -46,23 +46,22 @@ namespace Garnet.test.cluster
         /// recovers) rather than tied to a precise moment in time, so the test does not depend on
         /// gossip timing.
         /// </summary>
-        [Test, Order(1), CancelAfter(120_000)]
-        public void ClusterPublishSurvivesPeerNodeShutdown()
+        [TestCase(2), TestCase(3), Order(1), CancelAfter(120_000)]
+        public void ClusterPublishSurvivesPeerNodeShutdown(int nodeCount)
         {
-            const int nodeCount = 2;
             const int publisherIndex = 0;
             const int peerIndex = 1;
 
             context.CreateInstances(nodeCount, disablePubSub: false);
             context.CreateConnection();
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 2, replica_count: 0, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: nodeCount, replica_count: 0, logger: context.logger);
 
             // Verify both nodes are up and know about each other before we start publishing.
             context.clusterTestUtils.WaitUntilNodeIsKnown(publisherIndex, peerIndex, context.logger);
             context.clusterTestUtils.WaitUntilNodeIsKnown(peerIndex, publisherIndex, context.logger);
 
             var publisherEndpoint = context.clusterTestUtils.GetEndPoint(publisherIndex);
-            var peerEndpoint = context.clusterTestUtils.GetEndPoint(peerIndex);
+            var peerEndpoint = context.clusterTestUtils.GetEndPoint(nodeCount - 1);
 
             var channel = RedisChannel.Literal("test-forward-channel");
             const string channelName = "test-forward-channel";
@@ -103,7 +102,8 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(baselineDelivered,
                 "Baseline publish was not forwarded/delivered while both nodes were up");
 
-            subscriber.Unsubscribe(channel);
+            if (nodeCount == 2)
+                subscriber.Unsubscribe(channel);
 
             // Shut down the peer node. The publisher still lists it as a cluster peer that owns slots,
             // so publish forwarding now targets a node whose gossip client connection is down.
@@ -152,6 +152,15 @@ namespace Garnet.test.cluster
 
             ClassicAssert.GreaterOrEqual(lateSuccesses, requiredLateSuccesses,
                 $"PUBLISH on the surviving node did not recover after peer shutdown. Last error: {lastPublishError}");
+
+            if (nodeCount == 3)
+            {
+                delivered.Reset();
+                Assert.DoesNotThrow(() => pubRedis.GetServer(publisherEndpoint).Execute(0, "PUBLISH", [channelName, message]));
+                ClassicAssert.IsTrue(delivered.Wait(TimeSpan.FromSeconds(5)),
+                    "Publish was not forwarded to the remaining healthy peer after another peer shut down");
+                subscriber.Unsubscribe(channel);
+            }
 
             // Final sanity: the surviving node still serves commands.
             ClassicAssert.IsTrue(NodeResponds(publisherIndex), "Surviving node was unresponsive at end of test");
