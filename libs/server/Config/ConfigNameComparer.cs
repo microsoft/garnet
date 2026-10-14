@@ -12,8 +12,7 @@ namespace Garnet.server
     /// it also serves as the alternate comparer so a name can be looked up directly from the network
     /// buffer as a <see cref="ReadOnlySpan{T}"/>, without allocating.
     /// </summary>
-    internal sealed class ConfigNameComparer : IEqualityComparer<byte[]>
-        , IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>
+    internal sealed class ConfigNameComparer : IEqualityComparer<byte[]>, IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>
     {
         /// <summary>Shared instance; the comparer is stateless.</summary>
         internal static readonly ConfigNameComparer Instance = new();

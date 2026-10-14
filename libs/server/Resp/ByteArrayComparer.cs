@@ -10,8 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Byte array equality comparer
     /// </summary>
-    public sealed class ByteArrayComparer : IEqualityComparer<byte[]>
-        , IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>
+    public sealed class ByteArrayComparer : IEqualityComparer<byte[]>, IAlternateEqualityComparer<ReadOnlySpan<byte>, byte[]>
     {
         /// <summary>
         /// The default instance.
