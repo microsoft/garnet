@@ -19,7 +19,7 @@ namespace Garnet.cluster
                 if (!gclient.IsConnected)
                     await gclient.ConnectAsync().ConfigureAwait(false);
 
-                return await gclient.ExecuteClusterFailReplicationOffsetAsync(clusterProvider.replicationManager.ReplicationOffset).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
+                return await gclient.ExecuteClusterFailReplicationOffsetAsync(clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -52,7 +52,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < tasks.Length; i++)
                 {
                     var replicationOffset = AofAddress.FromString(await tasks[i].ConfigureAwait(false));
-                    if (completedTask == tasks[i] && replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
+                    if (completedTask == tasks[i] && replicationOffset.EqualsAll(clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress))
                         return clients[i];
                 }
                 return null;
@@ -71,7 +71,7 @@ namespace Garnet.cluster
                 }
 
                 var replicationOffset = AofAddress.FromString(await syncTask.ConfigureAwait(false));
-                if (!replicationOffset.EqualsAll(clusterProvider.replicationManager.ReplicationOffset))
+                if (!replicationOffset.EqualsAll(clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress))
                     return null;
                 else
                     return clients[0];
