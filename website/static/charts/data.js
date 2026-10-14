@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792016502720,
+  "lastUpdate": 1792016513097,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -950755,78 +950755,6 @@ window.BENCHMARK_DATA = {
       {
         "commit": {
           "author": {
-            "email": "15467143+TedHartMS@users.noreply.github.com",
-            "name": "Ted Hart",
-            "username": "TedHartMS"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "e2176b7a70818aacfd0b0ad75b14a9b61e96863e",
-          "message": "Refuse to serve when no HybridLog checkpoint is readable (#2153)",
-          "timestamp": "2026-09-21T10:41:22-07:00",
-          "tree_id": "ad1d9774a9a08847b58fb69e946b655f24be9874",
-          "url": "https://github.com/microsoft/garnet/commit/e2176b7a70818aacfd0b0ad75b14a9b61e96863e"
-        },
-        "date": 1790012820268,
-        "tool": "benchmarkdotnet",
-        "benches": [
-          {
-            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: AAD)",
-            "value": 87353.86193847656,
-            "unit": "ns",
-            "range": "± 22.691482205982357"
-          },
-          {
-            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: AAD)",
-            "value": 100307.69603620257,
-            "unit": "ns",
-            "range": "± 207.2921715567431"
-          },
-          {
-            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: ACL)",
-            "value": 41533.02950032552,
-            "unit": "ns",
-            "range": "± 28.008098851654346"
-          },
-          {
-            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: ACL)",
-            "value": 54114.0790616549,
-            "unit": "ns",
-            "range": "± 44.91010343429059"
-          },
-          {
-            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: AOF)",
-            "value": 116523.96296037946,
-            "unit": "ns",
-            "range": "± 79.05459329364663"
-          },
-          {
-            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: AOF)",
-            "value": 136992.83368791852,
-            "unit": "ns",
-            "range": "± 388.43244206297726"
-          },
-          {
-            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: None)",
-            "value": 87454.36122349331,
-            "unit": "ns",
-            "range": "± 561.6566775726385"
-          },
-          {
-            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: None)",
-            "value": 104984.91822160993,
-            "unit": "ns",
-            "range": "± 130.14417518571952"
-          }
-        ]
-      },
-      {
-        "commit": {
-          "author": {
             "email": "ezhang3333@gmail.com",
             "name": "ezhang3333",
             "username": "ezhang3333"
@@ -953893,6 +953821,54 @@ window.BENCHMARK_DATA = {
             "value": 140648.6966458834,
             "unit": "ns",
             "range": "± 224.16299865285538"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "matrembl@microsoft.com",
+            "name": "Mathieu Tremblay",
+            "username": "Mathos1432"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "456925d8b36eb139d0a37937b85c085ab815c482",
+          "message": "[Cluster] Add separate peer endpoints and optimistic gossip in 2.2.2 (#2201)\n\n* [Cluster] Add separate client and peer endpoints\n\nAdd cluster-address and nullable cluster-port, separate client advertisements\nfrom peer routing, and enable configuration format version two.\n\nSet version 3.0.0 and require every existing node to run 2.2.0 or later\nbefore upgrading. Document bootstrap and upgrade requirements.\n\nCover endpoint discovery, redirects, migration, replication, failover,\nrecovery, and port validation with client and configuration tests.\n\n* [Tests] Fix hostname listeners and replica restart setup\n\n* [Tests] Wait for failover completion before client reads\n\n* [Cluster] Keep client-facing reports and failover errors on client endpoints\n\n* [Cluster] Negotiate gossip versions optimistically in Garnet 2.3.0\n\n* [Cluster] Skip failed peer initialization during publish forwarding\n\n* [Version] Release peer endpoint support as 2.2.2\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19\n\n* [Cluster] Offer highest supported gossip version during negotiation\n\nReply to unsupported gossip with a full configuration in the highest supported format without merging the payload or changing the selected connection state. Cover future-version probes, repeated offers, split endpoints, supported retries, and incompatible replies.\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19\n\n---------\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19",
+          "timestamp": "2026-10-14T18:17:21-04:00",
+          "tree_id": "ea6557e3cc11063c8efc5c509d755dbaee4a8327",
+          "url": "https://github.com/microsoft/garnet/commit/456925d8b36eb139d0a37937b85c085ab815c482"
+        },
+        "date": 1792016506969,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: AAD)",
+            "value": 142229.54330679087,
+            "unit": "ns",
+            "range": "± 599.0801585395224"
+          },
+          {
+            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: ACL)",
+            "value": 79606.2210129958,
+            "unit": "ns",
+            "range": "± 272.5739934629408"
+          },
+          {
+            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: AOF)",
+            "value": 193465.55330984932,
+            "unit": "ns",
+            "range": "± 514.2497847152765"
+          },
+          {
+            "name": "BDN.benchmark.Operations.TxnOperations.MultiExec(Params: None)",
+            "value": 143657.88295200892,
+            "unit": "ns",
+            "range": "± 487.51387522430196"
           }
         ]
       }
