@@ -46,7 +46,10 @@ namespace Client.benchmark
         [Option("maxsends", Default = 8, HelpText = "Maximum concurrent transport sends, applied to BOTH clients (GarnetClient networkSendThrottleMax and GarnetLightClient maxConcurrentNetworkSends).")]
         public int MaxConcurrentSends { get; set; }
 
-        [Option("outstanding", Default = 512, HelpText = "GarnetLightClient request/completion ring capacity (maxOutstandingRequests and maxOutstandingCompletions). Must exceed total in-flight ops (threads*batch) so the duplex ring is not the bottleneck; GarnetClient's equivalent (maxOutstandingTasks) stays at its large default.")]
+        [Option("outstanding", Default = 512, HelpText = "GarnetLightClient completion-ring capacity (maxOutstandingCompletions) and the floor for the byte-sized request ring. The request ring is sized in BYTES from threads*batch so its quantum stays at the 8-byte record header and it is not under-provisioned (maxOutstandingRequests counts quanta, not whole requests). GarnetClient's equivalent (maxOutstandingTasks) stays at its large default.")]
         public int Outstanding { get; set; }
+
+        [Option("shared-socket", Default = false, HelpText = "Topology: when false (default) each worker thread owns its own client/connection; when true all workers submit concurrently to ONE shared client/connection, exercising the duplex ring's many-producer send coalescing on a single socket.")]
+        public bool SharedSocket { get; set; }
     }
 }

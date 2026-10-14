@@ -21,13 +21,23 @@ namespace Client.benchmark
 
         static void Run(BenchmarkOptions opts)
         {
+            // Workers are dedicated threads that block on Task.WhenAll(...).GetAwaiter().GetResult(), so every
+            // in-flight operation's async continuation and the client's flush continuation resume on the thread
+            // pool. With the pool's default slow thread injection those continuations can starve under a
+            // CPU-contended launcher, corrupting (or appearing to hang) the measurement. Pre-provision enough
+            // pool threads that forward progress never waits on thread-pool hill-climbing.
+            var minPoolThreads = Math.Max(8192, Math.Max(Environment.ProcessorCount, (opts.Threads * Math.Max(1, opts.Batch)) + 16));
+            ThreadPool.GetMinThreads(out _, out var minIo);
+            ThreadPool.SetMinThreads(minPoolThreads, minIo);
+
             using var server = new ServerWrapper();
             var endpoint = server.EndPoint;
             var value = new string('v', opts.ValueLength);
 
             Console.WriteLine($"Server {server.Host}:{server.Port} | arm={opts.Client} threads={opts.Threads} batch={opts.Batch} " +
                 $"warmup={opts.WarmupSeconds}s duration={opts.DurationSeconds}s valuelen={opts.ValueLength} " +
-                $"netbuf={opts.NetworkBufferBytes} maxsends={opts.MaxConcurrentSends} outstanding={opts.Outstanding}");
+                $"netbuf={opts.NetworkBufferBytes} maxsends={opts.MaxConcurrentSends} outstanding={opts.Outstanding} " +
+                $"topology={(opts.SharedSocket ? "shared-socket" : "per-thread-socket")}");
 
             var epoch = new LightEpoch();
             try
@@ -36,10 +46,10 @@ namespace Client.benchmark
                 {
                     ClientArm.GarnetClient => WorkloadRunner.Run<GarnetClientDriverFactory, GarnetClientDriver>(
                         new GarnetClientDriverFactory(endpoint, Key, value, opts), epoch,
-                        opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds),
+                        opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds, opts.SharedSocket),
                     ClientArm.GarnetLightClient => WorkloadRunner.Run<GarnetLightClientDriverFactory, GarnetLightClientDriver>(
                         new GarnetLightClientDriverFactory(endpoint, Key, value, opts), epoch,
-                        opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds),
+                        opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds, opts.SharedSocket),
                     _ => throw new ArgumentOutOfRangeException(nameof(opts)),
                 };
 
@@ -56,6 +66,7 @@ namespace Client.benchmark
             Console.WriteLine();
             Console.WriteLine("================ Results ================");
             Console.WriteLine($" Arm          : {opts.Client}");
+            Console.WriteLine($" Topology     : {(opts.SharedSocket ? "shared-socket (one connection, all workers)" : "per-thread-socket (one connection per worker)")}");
             Console.WriteLine($" Threads      : {opts.Threads}");
             Console.WriteLine($" Batch        : {r.Batch}" + (r.Batch > 1 ? " (in-flight ops/worker; latency is per-batch group)" : ""));
             Console.WriteLine($" Duration (s) : {r.Seconds:F2}");

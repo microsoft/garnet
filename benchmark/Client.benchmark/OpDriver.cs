@@ -109,15 +109,28 @@ namespace Client.benchmark
 
         public GarnetLightClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch)
         {
-            // Match GarnetClient's network buffer and concurrent-send ceiling, and size the request/completion
-            // ring from --outstanding so the duplex ring is not an artificial bottleneck under many threads.
-            // Four 8-KiB request pages keep the per-request allocation quantum (pageSize/(outstanding/pages))
-            // a multiple of the 8-byte record header for any power-of-two --outstanding that is a multiple of 4.
+            // The request ring is byte-addressed: an inline record reserves ceil(recordBytes / quantum) quanta,
+            // so maxOutstandingRequests counts 8-byte quanta, NOT whole requests. A small GET/SET record spans
+            // several quanta, so sizing the request ring equal to threads*batch (as the completion ring is sized)
+            // under-provisions it ~4x and throttles many-producer batches -- most visibly on a shared socket,
+            // where all producers contend on one ring and collapse to a fraction of GarnetClient's throughput.
+            // Size the request ring in BYTES to hold the offered in-flight load with headroom (mirroring
+            // GarnetClient's byte-addressed send buffer) and keep the allocation quantum at the 8-byte record
+            // header so capacity tracks page bytes rather than the slot count.
+            const int headerSize = 8;                   // DuplexRingRecordFormat.HeaderSize
+            const int requestPageCount = 4;
+            const int bytesPerInflightRecord = 64;      // header + small inline GET/SET payload, with headroom
+            var offered = Math.Max(1, opts.Threads * opts.Batch);
+            var targetRingBytes = Math.Max((long)opts.NetworkBufferBytes, (long)offered * bytesPerInflightRecord);
+            var requestPageSizeBytes = 1 << 13;
+            while ((long)requestPageSizeBytes * requestPageCount < targetRingBytes)
+                requestPageSizeBytes <<= 1;
+            var maxOutstandingRequests = requestPageSizeBytes / headerSize * requestPageCount; // quantum == headerSize
             var options = new LightNetworkWriterOptions(
                 networkBufferSizeBytes: opts.NetworkBufferBytes,
-                requestPageSizeBytes: 1 << 13,
-                requestPageCount: 4,
-                maxOutstandingRequests: opts.Outstanding,
+                requestPageSizeBytes: requestPageSizeBytes,
+                requestPageCount: requestPageCount,
+                maxOutstandingRequests: maxOutstandingRequests,
                 maxOutstandingCompletions: opts.Outstanding,
                 maxConcurrentNetworkSends: opts.MaxConcurrentSends,
                 maxOutOfLineRentedBytes: 64L << 20,

@@ -46,24 +46,34 @@ namespace Client.benchmark
     {
         static readonly long HistogramUpperBound = TimeStamp.Seconds(100);
 
-        public static RunResult Run<TFactory, TDriver>(TFactory factory, LightEpoch epoch, int threads, int batch, int warmupSeconds, int durationSeconds)
+        public static RunResult Run<TFactory, TDriver>(TFactory factory, LightEpoch epoch, int threads, int batch, int warmupSeconds, int durationSeconds, bool sharedSocket)
             where TFactory : struct, IDriverFactory<TDriver>
             where TDriver : struct, IOpDriver
         {
             if (batch < 1)
                 batch = 1;
 
+            // Per-thread topology: one client/connection per worker (the default). Shared-socket topology: a
+            // single client/connection that every worker submits to concurrently, which is the many-producer
+            // one-ring workload the duplex send path is designed to coalesce. Each driver is a readonly struct
+            // wrapping a reference-typed client, so replicating one driver across the array shares the same
+            // underlying client and socket; only the distinct instances are connected and disposed.
+            var distinct = sharedSocket ? 1 : threads;
+            var pool = new TDriver[distinct];
+            for (var i = 0; i < distinct; i++)
+            {
+                pool[i] = factory.Create(epoch);
+                pool[i].Connect();
+            }
+
             var drivers = new TDriver[threads];
             for (var i = 0; i < threads; i++)
-            {
-                drivers[i] = factory.Create(epoch);
-                drivers[i].Connect();
-            }
+                drivers[i] = pool[sharedSocket ? 0 : i];
 
             try
             {
                 // Seed the shared key once; the server-side value is visible to every connection.
-                drivers[0].SeedAsync().GetAwaiter().GetResult();
+                pool[0].SeedAsync().GetAwaiter().GetResult();
 
                 if (warmupSeconds > 0)
                     _ = RunPhase(drivers, batch, warmupSeconds, record: false);
@@ -72,7 +82,7 @@ namespace Client.benchmark
             }
             finally
             {
-                foreach (var d in drivers)
+                foreach (var d in pool)
                     d.Dispose();
             }
         }
