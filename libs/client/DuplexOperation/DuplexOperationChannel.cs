@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -37,6 +38,22 @@ namespace Garnet.client
     {
         /// <summary>Transmit one request chunk and preserve <paramref name="context"/> for send completion.</summary>
         void Send(byte[] buffer, int offset, int length, object context);
+
+        /// <summary>
+        /// Whether this transport can coalesce a run of single-chunk records into one scatter/gather send. When
+        /// false (e.g. TLS, which has no gather primitive) the ring sends each record individually and never
+        /// calls <see cref="SendGather"/>.
+        /// </summary>
+        bool SupportsGather { get; }
+
+        /// <summary>
+        /// Transmit a coalesced run of single-chunk request payloads (<paramref name="batch"/>) in one gather
+        /// send. On success the transport must invoke each record's completion exactly once via
+        /// <see cref="DuplexOperationAsyncFlushResult{TRequestContext}.CompleteChunk"/> (passing the batch as the
+        /// completion context fans out to every record) and release the batch. Only called when
+        /// <see cref="SupportsGather"/> is true.
+        /// </summary>
+        void SendGather(GatherSendBatch batch);
 
         /// <summary>Handle a request-flush failure.</summary>
         void OnFlushError(Exception exception);
@@ -101,6 +118,9 @@ namespace Garnet.client
         readonly ILogger logger;
         readonly int maxSendChunkSizeBytes;
         readonly FlushResultAllocationMode flushResultAllocationMode;
+
+        // Pool of fixed-capacity gather-send holders, created only when the transport can coalesce sends.
+        readonly SimpleObjectPool<GatherSendBatch> gatherPool;
 
         bool disposed;
 
@@ -174,6 +194,15 @@ namespace Garnet.client
             // coexist with the address layout for any configured page size.
             Debug.Assert(PageOffset.kPageBits + store.Shape.PageSizeBits <= DuplexRingRecordFormat.TagShift,
                 "Descriptor address space must leave the most-significant byte free for the payload kind tag.");
+
+            // A single flush can hold at most RequestSlotCount records (records occupy fixed allocation quanta),
+            // so a gather holder sized to that count never overflows. Only create the pool when the transport
+            // can actually coalesce sends.
+            if (transport.SupportsGather)
+            {
+                var slotCount = store.RequestSlotCount;
+                gatherPool = new SimpleObjectPool<GatherSendBatch>(() => new GatherSendBatch(slotCount, gatherPool));
+            }
         }
 
         /// <inheritdoc />
@@ -328,6 +357,15 @@ namespace Garnet.client
             var flushFailed = false;
             var disposedBail = false;
 
+            // Coalesce a contiguous run of single-chunk record payloads into one scatter/gather send. Each
+            // record still registers and completes its own flush part, so slot-freeing and flushedUntil
+            // accounting are unchanged; only the socket send is batched. Holders are pooled (allocation-free in
+            // steady state); a fresh one is checked out per dispatched send so an in-flight send's completion
+            // can read it while the next batch accumulates into a different holder. Gather is only attempted
+            // when the transport supports it (e.g. not TLS); otherwise every record streams individually.
+            var canGather = transport.SupportsGather;
+            GatherSendBatch batch = null;
+
             var flushPage = startPage;
             while (true)
             {
@@ -404,6 +442,7 @@ namespace Garnet.client
                 flushPage = (flushPage + 1) & PageOffset.kPageMask;
             }
 
+            FlushBatch(); // Dispatch any remaining coalesced single-chunk records.
             controller.CompleteFlushPart(); // Release the scanner-owned range sentinel.
 
             void ProcessRequestContext(byte[] buffer, int baseOffset, int length, TRequestContext request, long address, DuplexOperationAsyncFlushResult<TRequestContext> flushContext, ref bool flushFailed)
@@ -435,6 +474,20 @@ namespace Garnet.client
                 result.Initialize(request, chunkCount, controller, perOperationAllocation);
                 controller.RegisterFlushPart();
 
+                if (chunkCount == 1 && canGather)
+                {
+                    // Defer into the coalescing batch; the single gather send dispatched at batch flush
+                    // completes this record's one chunk.
+                    batch ??= gatherPool.Checkout();
+                    batch.Append(buffer, baseOffset, length, result);
+                    return;
+                }
+
+                // A multi-chunk record cannot join the gather (its chunks need distinct completions), and when
+                // gather is unsupported every record streams here. Flush the records accumulated before this one
+                // to preserve wire order, then stream its chunks directly.
+                FlushBatch();
+
                 var dispatchedChunks = 0;
                 try
                 {
@@ -455,6 +508,56 @@ namespace Garnet.client
                     // the same completion routine the network callback uses.
                     for (var i = dispatchedChunks; i < chunkCount; i++)
                         DuplexOperationAsyncFlushResult<TRequestContext>.CompleteChunk(result);
+                }
+            }
+
+            void FlushBatch()
+            {
+                if (batch == null)
+                    return;
+
+                // Hand ownership of the holder to the dispatched send; clear the field so the next batch checks
+                // out a fresh holder instead of mutating one an in-flight gather completion still reads.
+                var current = batch;
+                batch = null;
+
+                if (current.RecordCount == 1)
+                {
+                    // A lone record does not benefit from a scatter/gather send; use the plain per-record path
+                    // (its own send completion finalizes the record), then return the holder to the pool.
+                    var segment = current[0];
+                    var context = current.ContextAt(0);
+                    try
+                    {
+                        transport.Send(segment.Array, segment.Offset, segment.Count, context);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "Exception sending a coalesced single request");
+                        flushFailed = true;
+                        transport.OnFlushError(ex);
+                        DuplexOperationAsyncFlushResult<TRequestContext>.CompleteChunk(context);
+                    }
+                    current.Release();
+                    return;
+                }
+
+                try
+                {
+                    // On success the send completion fans out per-record completions and releases the holder.
+                    transport.SendGather(current);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Exception sending a coalesced request batch");
+                    flushFailed = true;
+                    transport.OnFlushError(ex);
+
+                    // No network completion will arrive for an un-dispatched batch, so complete each record's
+                    // single chunk here via the same routine the network callback uses, then release the holder.
+                    for (var i = 0; i < current.RecordCount; i++)
+                        DuplexOperationAsyncFlushResult<TRequestContext>.CompleteChunk(current.ContextAt(i));
+                    current.Release();
                 }
             }
 

@@ -2,13 +2,15 @@
 // Licensed under the MIT license.
 
 using CommandLine;
+using LightEpoch = Garnet.client.LightEpoch;
 
 namespace Client.benchmark
 {
     /// <summary>
     /// Entry point for the in-process client micro-benchmark. A single real Garnet
-    /// server is hosted over loopback and exercised by one client instance (GarnetClient
-    /// or GarnetLightClient) driven by a configurable number of parallel threads.
+    /// server is hosted over loopback and exercised by one client type (GarnetClient
+    /// or GarnetLightClient) driven by a configurable number of parallel threads, each
+    /// owning its own connection and all sharing one epoch.
     /// </summary>
     internal sealed class Program
     {
@@ -24,30 +26,28 @@ namespace Client.benchmark
             var value = new string('v', opts.ValueLength);
 
             Console.WriteLine($"Server {server.Host}:{server.Port} | arm={opts.Client} threads={opts.Threads} batch={opts.Batch} " +
-                $"warmup={opts.WarmupSeconds}s duration={opts.DurationSeconds}s valuelen={opts.ValueLength}");
+                $"warmup={opts.WarmupSeconds}s duration={opts.DurationSeconds}s valuelen={opts.ValueLength} " +
+                $"netbuf={opts.NetworkBufferBytes} maxsends={opts.MaxConcurrentSends} outstanding={opts.Outstanding}");
 
-            var result = opts.Client switch
-            {
-                ClientArm.GarnetClient => RunArm(new GarnetClientDriver(endpoint, Key, value), opts),
-                ClientArm.GarnetLightClient => RunArm(new GarnetLightClientDriver(endpoint, Key, value), opts),
-                _ => throw new ArgumentOutOfRangeException(nameof(opts)),
-            };
-
-            PrintResult(opts, result);
-        }
-
-        static RunResult RunArm<TDriver>(TDriver driver, BenchmarkOptions opts)
-            where TDriver : struct, IOpDriver
-        {
+            var epoch = new LightEpoch();
             try
             {
-                driver.Connect();
-                driver.SeedAsync().GetAwaiter().GetResult();
-                return WorkloadRunner.Run(driver, opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds);
+                var result = opts.Client switch
+                {
+                    ClientArm.GarnetClient => WorkloadRunner.Run<GarnetClientDriverFactory, GarnetClientDriver>(
+                        new GarnetClientDriverFactory(endpoint, Key, value, opts), epoch,
+                        opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds),
+                    ClientArm.GarnetLightClient => WorkloadRunner.Run<GarnetLightClientDriverFactory, GarnetLightClientDriver>(
+                        new GarnetLightClientDriverFactory(endpoint, Key, value, opts), epoch,
+                        opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds),
+                    _ => throw new ArgumentOutOfRangeException(nameof(opts)),
+                };
+
+                PrintResult(opts, result);
             }
             finally
             {
-                driver.Dispose();
+                epoch.Dispose();
             }
         }
 

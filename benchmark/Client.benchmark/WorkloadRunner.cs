@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using HdrHistogram;
+using LightEpoch = Garnet.client.LightEpoch;
 
 namespace Client.benchmark
 {
@@ -24,17 +25,20 @@ namespace Client.benchmark
     }
 
     /// <summary>
-    /// Closed-loop workload runner: a configurable number of dedicated worker threads share one
-    /// client and issue the measured operation in a tight loop. Each worker keeps <c>batch</c>
-    /// operations in flight (firing them without awaiting, then blocking on <see cref="Task.WhenAll(Task[])"/>),
-    /// which lets concurrent async operations share wire flushes (pipelining). Generic over the
-    /// concrete <c>TDriver</c> struct so the per-op call is a constrained, devirtualized invocation.
+    /// Closed-loop workload runner: a configurable number of dedicated worker threads each drive
+    /// their own client connection and issue the measured operation in a tight loop. Each worker
+    /// keeps <c>batch</c> operations in flight (firing them without awaiting, then blocking on
+    /// <see cref="Task.WhenAll(Task[])"/>), which lets concurrent async operations share wire
+    /// flushes (pipelining). Generic over the concrete <c>TDriver</c> struct so the per-op call is
+    /// a constrained, devirtualized invocation.
     /// </summary>
     /// <remarks>
     /// Workers run on dedicated <see cref="Thread"/> instances (not the thread pool), mirroring
     /// Resp.benchmark's online runner. Blocking the pool from the workers would starve the async
     /// response-completion continuations inside <see cref="Garnet.client.GarnetClient"/> and
-    /// deadlock the closed loop. When <c>batch</c> &gt; 1 a recorded latency sample measures the
+    /// deadlock the closed loop. The clients are not safe for concurrent use from multiple threads,
+    /// so each worker owns a dedicated client connection; all connections of a run share one
+    /// <see cref="LightEpoch"/>. When <c>batch</c> &gt; 1 a recorded latency sample measures the
     /// whole group's completion time (matching Resp.benchmark's online <c>--itp</c> accounting),
     /// while throughput counts every individual operation.
     /// </remarks>
@@ -42,21 +46,41 @@ namespace Client.benchmark
     {
         static readonly long HistogramUpperBound = TimeStamp.Seconds(100);
 
-        public static RunResult Run<TDriver>(TDriver driver, int threads, int batch, int warmupSeconds, int durationSeconds)
+        public static RunResult Run<TFactory, TDriver>(TFactory factory, LightEpoch epoch, int threads, int batch, int warmupSeconds, int durationSeconds)
+            where TFactory : struct, IDriverFactory<TDriver>
             where TDriver : struct, IOpDriver
         {
             if (batch < 1)
                 batch = 1;
 
-            if (warmupSeconds > 0)
-                _ = RunPhase(driver, threads, batch, warmupSeconds, record: false);
+            var drivers = new TDriver[threads];
+            for (var i = 0; i < threads; i++)
+            {
+                drivers[i] = factory.Create(epoch);
+                drivers[i].Connect();
+            }
 
-            return RunPhase(driver, threads, batch, durationSeconds, record: true);
+            try
+            {
+                // Seed the shared key once; the server-side value is visible to every connection.
+                drivers[0].SeedAsync().GetAwaiter().GetResult();
+
+                if (warmupSeconds > 0)
+                    _ = RunPhase(drivers, batch, warmupSeconds, record: false);
+
+                return RunPhase(drivers, batch, durationSeconds, record: true);
+            }
+            finally
+            {
+                foreach (var d in drivers)
+                    d.Dispose();
+            }
         }
 
-        static RunResult RunPhase<TDriver>(TDriver driver, int threads, int batch, int seconds, bool record)
+        static RunResult RunPhase<TDriver>(TDriver[] drivers, int batch, int seconds, bool record)
             where TDriver : struct, IOpDriver
         {
+            var threads = drivers.Length;
             var histograms = new LongHistogram[threads];
             var counts = new long[threads];
             var startGate = new ManualResetEventSlim(false);
@@ -69,6 +93,7 @@ namespace Client.benchmark
                 histograms[id] = new LongHistogram(1, HistogramUpperBound, 2);
                 workers[id] = new Thread(() =>
                 {
+                    var driver = drivers[id];
                     var hist = histograms[id];
                     var inflight = new Task[batch];
                     startGate.Wait();

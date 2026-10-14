@@ -39,5 +39,14 @@ namespace Client.benchmark
 
         [Option("valuelength", Default = 8, HelpText = "Length in bytes of the seeded value read by GET.")]
         public int ValueLength { get; set; }
+
+        [Option("networkbuffer", Default = 1 << 17, HelpText = "Network send/receive buffer size in bytes, applied to BOTH clients (GarnetClient bufferSize and GarnetLightClient networkBufferSizeBytes) so the two arms run with comparable buffers. GarnetLightClient's own default is far smaller (8 KiB).")]
+        public int NetworkBufferBytes { get; set; }
+
+        [Option("maxsends", Default = 8, HelpText = "Maximum concurrent transport sends, applied to BOTH clients (GarnetClient networkSendThrottleMax and GarnetLightClient maxConcurrentNetworkSends).")]
+        public int MaxConcurrentSends { get; set; }
+
+        [Option("outstanding", Default = 512, HelpText = "GarnetLightClient request/completion ring capacity (maxOutstandingRequests and maxOutstandingCompletions). Must exceed total in-flight ops (threads*batch) so the duplex ring is not the bottleneck; GarnetClient's equivalent (maxOutstandingTasks) stays at its large default.")]
+        public int Outstanding { get; set; }
     }
 }

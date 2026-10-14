@@ -53,6 +53,15 @@ namespace Garnet.client
                     }
                     break;
 
+                case GatherSendBatch batch:
+                    // One gather send carried several single-chunk records; finalize each, then return the
+                    // holder to its pool for reuse.
+                    var batchCount = batch.RecordCount;
+                    for (var i = 0; i < batchCount; i++)
+                        CompleteChunk(batch.ContextAt(i));
+                    batch.Release();
+                    break;
+
                 default:
                     Debug.Fail($"Unexpected network flush context type {context?.GetType().FullName ?? "null"}.");
                     break;

@@ -55,6 +55,11 @@ namespace Garnet.client
                     tcpSender.SendResponse(buffer, offset, length, context);
             }
 
+            public bool SupportsGather => !useTls;
+
+            public void SendGather(GatherSendBatch batch)
+                => tcpSender.SendResponseGather(batch, batch);
+
             public void OnFlushError(Exception exception)
                 => networkHandler.Dispose();
         }

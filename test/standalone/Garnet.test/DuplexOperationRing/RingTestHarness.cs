@@ -130,6 +130,11 @@ namespace Garnet.test
             public void Send(byte[] buffer, int offset, int length, object context)
                 => owner.Send(buffer, offset, length, context);
 
+            public bool SupportsGather => true;
+
+            public void SendGather(GatherSendBatch batch)
+                => owner.SendGather(batch);
+
             public void OnFlushError(Exception exception)
                 => owner.OnFlushError(exception);
         }
@@ -224,6 +229,39 @@ namespace Garnet.test
                 deferredCompletions.Enqueue(context);
             else
                 CompleteSend(context);
+        }
+
+        // Mirrors the real transport's gather send: the whole run shares one send-call index (so an injected
+        // failure is atomic for the batch and the channel completes every context), then each record is
+        // reassembled and completed exactly as a per-record send would be.
+        void SendGather(GatherSendBatch batch)
+        {
+            var idx = Interlocked.Increment(ref sendCallIndex) - 1;
+            var predicate = failPredicate;
+            if (predicate != null && predicate(idx))
+                throw new System.IO.IOException($"injected gather send failure at call {idx}");
+
+            var recordCount = batch.RecordCount;
+            for (var i = 0; i < recordCount; i++)
+            {
+                var segment = batch[i];
+                var context = batch.ContextAt(i);
+                var acc = reassembly.GetOrAdd(context, _ => new List<byte>());
+                lock (acc)
+                {
+                    for (var j = 0; j < segment.Count; j++)
+                        acc.Add(segment.Array[segment.Offset + j]);
+                }
+
+                if (deferCompletions)
+                    deferredCompletions.Enqueue(context);
+                else
+                    CompleteSend(context);
+            }
+
+            // This harness completes each record's context individually (never handing the batch to
+            // CompleteChunk), so return the holder to its pool here, mirroring the gather case in CompleteChunk.
+            batch.Release();
         }
 
         void CompleteSend(object context)
