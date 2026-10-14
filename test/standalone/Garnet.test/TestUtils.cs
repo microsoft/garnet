@@ -471,6 +471,7 @@ namespace Garnet.test
             bool aclStrictCustomCommands = true,
             string indexSize = "1m",
             string indexMaxSize = default,
+            int indexOverflowThreshold = default,
             string[] extensionBinPaths = null,
             bool extensionAllowUnsignedAssemblies = true,
             bool getSG = false,
@@ -653,6 +654,9 @@ namespace Garnet.test
 
             if (indexMaxSize != default)
                 opts.IndexMaxMemorySize = indexMaxSize;
+
+            if (indexOverflowThreshold != default)
+                opts.IndexOverflowThreshold = indexOverflowThreshold;
 
             if (!string.IsNullOrEmpty(aofPageSize))
                 opts.AofPageSize = aofPageSize;

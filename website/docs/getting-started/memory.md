@@ -33,9 +33,61 @@ reasoning for this is:
 ### Overflow buckets
 
 Each hash bucket has 7 entries (slots) that store the root of a chain of records stored in the log. If the hash bucket for
-a given key is full, we overflow into extra buckets called overflow buckets that are allocated dynamically. While these
-cannot be controlled or bounded, they are typically very small and can be ignored. In case your index was sized too small, 
-they can take up more space, and to combat this, you can dynamically grow the index as described [below](#auto-resizing-index).
+a given key is full, we overflow into extra buckets called overflow buckets that are allocated dynamically.
+
+Overflow buckets are not a rounding error at scale. Because an overflow bucket is the same 64-byte, 7-entry structure as a
+main bucket, index memory is roughly `64 * (K / 7 + B / 2)` bytes for `K` keys over `B` main buckets: a per-key term of
+about `64 / 7 = 9.14` bytes plus the main array itself, which is about half empty when sized by the `K * 16` rule above.
+Two readings follow. Sized per that rule the index costs about **16 bytes per key**, most of it the main array. Sized far
+too small for the keys stored, the main array term vanishes and the cost converges on the **9.14 bytes per key** floor,
+which no index setting can go below. Shrinking the index therefore saves less than it appears to: below the `K * 16` point
+it mostly converts main-bucket memory into overflow memory, and lengthens the chain every lookup must walk.
+
+Several consequences matter when sizing a machine:
+
+* `IndexMemorySize` and `IndexMaxMemorySize` bound only the main hash bucket array. They are not a bound on total index memory.
+* The index holds an entry for **every distinct key**, including keys whose records live only on disk. Tiered storage
+  ([compaction](compaction)) tiers the *log*, not the *index*, so a node's capacity is ultimately bounded by
+  **record count**, not by data size. One billion keys costs at least 8.5 GiB of index regardless of value size, and about
+  15 GiB if the index is sized for them.
+* Overflow bucket memory is never returned. A bucket is freed only when a concurrent allocation loses the race to install
+  it, not when records are deleted or expire, and the allocator's pages are pinned so the garbage collector can neither
+  compact nor release them. The only event that releases overflow buckets is an index [resize](#auto-resizing-index),
+  which rebuilds the index into a fresh allocator; once the index reaches `IndexMaxMemorySize` no resize occurs, and
+  overflow memory only increases for the lifetime of the process.
+* Overflow buckets are bounded by `IndexOverflowThreshold` (`--index-overflow-threshold`), a percentage of the main
+  bucket count of the index generation they belong to, defaulting to **300** (three overflow buckets per main bucket).
+  Reaching it fails the write that needed a new bucket, with an error naming the settings that raise it, rather than
+  letting the process grow until it is OOM-killed. The bound is a ratio rather than a byte size because an overflow
+  bucket chains off a main bucket and is scanned by reads and upserts: the ratio *is* the average chain length, so
+  capacity bought far beyond the index size is too slow to be worth having, and the remedy for exhausting it is a larger
+  index rather than a larger ceiling. Each generation installed by a [resize](#auto-resizing-index) is sized from its own
+  bucket count, so the allowed chain length stays constant as the index grows. The resulting ceiling rounds down to a
+  whole 4 MiB allocator page, is floored at 8 MiB so that a very small index still holds a useful number of keys, and
+  cannot exceed the 128 GiB the page table can address. `INFO STORE` reports the threshold as `IndexOverflowThreshold`
+  and the resolved ceiling as `IndexOverflowMaxMemorySizeBytes`, alongside current use as `IndexOverflowMemorySizeBytes`.
+* An index resize is the peak of index memory use, not a step change: the superseded hash table and its overflow
+  generation stay allocated until the split completes, so a resize transiently needs both generations at once.
+
+To make this visible, index memory **beyond** the configured index budget (the larger of `IndexMemorySize` and
+`IndexMaxMemorySize`) is charged against `LogMemorySize`. The log sheds pages to make room for it, so the two no longer sum
+past the memory the machine has, and a store with more keys than the index was sized for degrades into disk I/O instead of
+growing without bound. A warning is logged when this charge grows.
+
+This compensation is best-effort, not a hard bound. The log can only shed down to a floor of a few pages; once it reaches
+that floor there is nothing left to give back, and further index growth is again unbudgeted. Charging it buys headroom and
+makes the problem observable and diagnosable well before the process dies, but a node whose key count greatly exceeds what
+it was provisioned for still needs to be resharded or given more memory. The relevant `INFO STORE` fields are:
+
+* `IndexMemorySizeBytes` — the main hash bucket array.
+* `IndexOverflowMemorySizeBytes` — overflow buckets in use.
+* `IndexTotalMemorySizeBytes` — the sum of the two, i.e. actual index memory.
+* `IndexMemoryBudgetBytes` — the configured index budget.
+* `IndexMemoryChargedToLogBudgetBytes` — index memory charged against the log budget. The log's effective budget is reduced
+  by this much, or down to its floor, whichever is less.
+
+If `IndexMemoryChargedToLogBudgetBytes` is large and growing, the machine is storing more keys than it was provisioned for:
+add nodes, or reduce `LogMemorySize` so the remaining budget is honest.
 
 ### Auto-Resizing Index
 
@@ -46,6 +98,16 @@ of the total number of hash buckets. This threshold is specified using `IndexRes
 
 We also support `IndexMaxMemorySize` (`--index-max-size`) which identifies the maximum size until which the index
 will grow in size. We do not support index size shrinking at this point.
+
+Because a resize is the only event that reclaims overflow buckets, reaching `IndexMaxMemorySize` is significant beyond
+the main array: growth stops permanently, and from that point overflow memory only climbs for the lifetime of the
+process. `IndexOverflowThreshold` (`--index-overflow-threshold`) bounds that growth.
+
+`IndexOverflowThreshold` and `IndexResizeThreshold` are deliberately expressed in the same unit — both are percentages
+of the main hash bucket count — because both bound the same quantity. The ordering between them is the whole invariant:
+a ceiling at or below the resize threshold would be reached before the resize that reclaims overflow buckets, turning a
+recoverable growth step into a hard failure. Garnet validates `IndexOverflowThreshold > IndexResizeThreshold` at startup
+and refuses to start on a conflict. The defaults (300 and 50) clear it by a wide margin.
 
 ## Hybrid Log
 
