@@ -42,7 +42,7 @@ Inline values never enter the object log. Migration and replication use an indep
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate that is
 >   replacing the hand-managed object-log file; see section 12.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDirectory.cs` - directory entry, record
->   header, and layout arithmetic; see section 12.8.
+>   header, and layout arithmetic; see section 12.9.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ChunkHeader.cs` /
 >   `ChunkedRecordConstants.cs` - authoritative framing.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/OverflowByteArray.cs` - owned overflow storage and direct-IO slack.
@@ -201,7 +201,7 @@ The optional 8-byte object-log position combines an address and format flags:
 | 0..59 | Object-log address, about a 1 EB range (`ObjectLogPositionInfo.AddressMask`) |
 | 60 | `ValueIsExactSize` |
 | 61 | `KeyIsExactSize` |
-| 62 | `HasDirectory` — the position addresses a directory record rather than a single data chunk (section 12.8) |
+| 62 | `HasDirectory` — the position addresses a directory record rather than a single data chunk (section 12.9) |
 | 63 | Unused and available; cv7 images carry a marker here that cv8 recovery ignores and clears |
 
 The address is flat. The current file-backed object log reaches it through a segment id and an offset, but those occupy
@@ -1124,7 +1124,30 @@ satisfied has to wait for a flush, and it drops the epoch to let that flush and 
 resumes, an earlier page may have been closed. Bytes already written there are safe - they are on the device by the
 time the page is freed - but a pointer into them is not.
 
-### 12.4 Page-bounded allocation
+Two consequences that are easy to get wrong:
+
+- **A failed flush must be detected on the wait path, not only on the retry path.** A failed flush never advances
+  `FlushedUntilAddress`, so the page an allocation is waiting for can never be freed — and the failure also signals
+  and *replaces* `flushEvent`. A waiter that checked only for disposal would wake, capture the fresh unsignalled
+  event, and park forever. `ObjectLog` therefore checks for flush failure both before parking and after waking;
+  checking only after waking misses a failure recorded before the waiter arrived.
+- **Waiting for a flush while holding the epoch must drain it.** Flush completion runs from work queued on the epoch's
+  drain list, so a holder that merely spun would block the progress it is waiting for. `WaitForFlush` drains when the
+  calling thread holds the epoch and yields when it does not.
+
+### 12.4 Reads
+
+A read is served from memory when its address is at or above `HeadAddress`, and from the device otherwise. Both the
+decision and the device submission happen under one epoch acquisition: range validation reads `BeginAddress` and
+`TailAddress`, and the device read resolves a segment handle, so letting protection lapse between those steps would let
+a concurrent `Truncate` retire the segment the read is about to resolve. Protection is released before awaiting
+completion, since the rented buffer and its in-flight read belong to the call rather than to the page ring.
+
+A device may report success having transferred fewer bytes than requested — a truncated or externally altered file does
+exactly that. Because the read buffer is rented without clearing, copying the full request on a short read would return
+whatever the previous tenant left behind, so a short read is treated as a failure.
+
+### 12.5 Page-bounded allocation
 
 An allocation never spans a page, because a read translates to one device extent and a device extent cannot cross a
 page. `Allocate(numBytes, minPartialBytes, out allocatedLength)` is how a chunk is cut at a page end: when both the
@@ -1139,7 +1162,7 @@ length plus page geometry would mean reproducing the writer's cutting decisions 
 size, alignment rounding, page-tail handling - and would silently misread existing data if any of those changed. The
 directory records what the writer did instead of re-deriving it.
 
-### 12.5 Buffer and page sizing
+### 12.6 Buffer and page sizing
 
 `IStreamBuffer.BufferSize` is a plain 4 MB constant; it no longer derives from `LogSettings.kMinObjectLogSegmentSizeBits`.
 
@@ -1154,7 +1177,7 @@ The default page count is eight. The writer runs up to four concurrent fill buff
 at least that many pages; eight pages at the default mutable fraction leaves seven. Counting this page ring in
 `LogSizeTracker` is separate work.
 
-### 12.6 The address ceiling
+### 12.7 The address ceiling
 
 Two independent ceilings bound an object-log address, and `ObjectLog` enforces the lower of them on every allocation's
 end address:
@@ -1166,15 +1189,25 @@ end address:
 
 **The page-number ceiling is always the binding one** at the page sizes this log permits: it reaches the 60-bit
 position ceiling only at a page of 2^29 bytes, above `LogSettings.kMaxPageSizeBits`. At the 8 MB default the limit is
-2^54 bytes, or 18 PB ever written. Both are checked through one value so a future page-size change cannot quietly swap
-which one applies.
+roughly 2^54 bytes, or 18 PB ever written. Both are checked through one value so a future page-size change cannot
+quietly swap which one applies.
+
+The page-number term also reserves headroom above the highest allocatable page rather than running to `int.MaxValue`.
+The allocator computes `pageIndex + 1` and `BufferSize + GetPage(...)` on **signed 32-bit** page numbers while deciding
+whether a page can be reused; near the limit those additions overflow and misclassify a page, and they happen inside
+the allocator, below `ObjectLog`, where the ceiling check cannot observe them.
+
+The ceiling is enforced **both before and after** the allocation. The allocator advances its tail before returning an
+address, so a check that ran only afterwards would fail the call and still leave the tail past the ceiling — which a
+later checkpoint would then record as the object-log tail. The post-allocation check stays authoritative, because the
+pre-check races with concurrent allocators.
 
 Exceeding it throws rather than wrapping, because truncating into the flag bits or wrapping the page number would be
-silent corruption. The address space is monotonic over the log's lifetime - it counts every byte ever written, not
-bytes live - so this is reached only after sustained writes over many years, and the remedy named in the exception is a
+silent corruption. The address space is monotonic over the log's lifetime — it counts every byte ever written, not
+bytes live — so this is reached only after sustained writes over many years, and the remedy named in the exception is a
 checkpoint, which starts a fresh object log.
 
-### 12.7 Sequential and non-sequential object logs
+### 12.8 Sequential and non-sequential object logs
 
 The two object logs have different write ordering, and this is the reason they have different guarantees:
 
@@ -1183,9 +1216,9 @@ The two object logs have different write ordering, and this is the reason they h
   worker.
 
 The main log's apparent sequentiality must still not be relied upon for addressing, for the reason given in section
-12.4.
+12.5.
 
-### 12.8 The directory
+### 12.9 The directory
 
 A multi-chunk object records where its chunks are, rather than letting a reader discover them. **Position-word bit 62,
 `HasDirectory`**, says which shape a position has, and the reader learns that before issuing any IO:
@@ -1194,13 +1227,25 @@ A multi-chunk object records where its chunks are, rather than letting a reader 
   beyond the entry header; and
 - **set** — the position addresses a *directory record* listing every chunk.
 
+`HasDirectory` is read through `ObjectLogPositionInfo.WordHasDirectory`, which reports false whenever the position is
+unstamped. That is not a convenience: a never-stamped record's position word is `NotSet` — **all** 64 bits, flag bits
+included — because that is what record initialization writes, so a raw mask test would report a directory on every
+freshly initialized record. A directory cannot exist without a position, so the two states are mutually exclusive by
+construction.
+
+> **A single chunk does not by itself imply no directory.** A record with *both* an overflow key and an out-of-line
+> value can have both fit in one chunk, and nothing then records where the key ends and the value begins — the rounded
+> size hints plus a total length do not identify the split. The rule for that case is still being settled; see the
+> capture-path blockers in the working plan. Do not implement the writer on the assumption that "fits one allocation"
+> means `HasDirectory` is clear.
+
 A `DirectoryEntry` is 12 bytes:
 
 ```text
 word0: bits  0..59  address of the chunk's first DATA byte
        bit      60  IsDirectory
        bits 61..63  spare
-word1: bits  0..26  data length
+word1: bits  0..26  data length, biased by one
        bits 27..31  spare
 ```
 
@@ -1210,8 +1255,9 @@ with nothing to parse. **The benefit is not fewer IOs but the removal of a seria
 With the directory every read is known up front and the device queue can be saturated.
 
 The address field is the same 60 bits as the position word, bounded by the same `ObjectLogPositionInfo.AddressMask`.
-Twenty-seven length bits suffice because a chunk cannot exceed a page and its page allocation also holds its entry
-header, so a data length is strictly below the maximum page size; the encoder validates rather than relying on that.
+The length is **biased by one** because the largest possible chunk is a full page — `1 << kMaxPageSizeBits`, which does
+not fit in that many bits — while a zero length is meaningless. Storing the length directly would reject exactly the
+full-page chunk that a record starting on a page boundary produces.
 
 A directory record is a `DirectoryRecordHeader` followed by its entries:
 

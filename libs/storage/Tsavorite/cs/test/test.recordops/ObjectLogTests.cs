@@ -442,6 +442,46 @@ namespace Tsavorite.test.Objects
             Assert.That(appended, Is.GreaterThanOrEqualTo(recoveredTail));
             VerifyRead(log, appended, RecordLength, seed: 99, "record appended after recovery");
         }
+
+        /// <summary>
+        /// Appending after recovery and then flushing must not destroy the recovered bytes sharing the tail page.
+        /// </summary>
+        /// <remarks>
+        /// A flush writes whole sectors. If recovery leaves the partial tail page unloaded, the page buffer holds zeros below the
+        /// recovered tail, and the first flush after recovery writes those zeros over the recovered bytes in the same sector. The
+        /// records must therefore still read back correctly <i>after</i> a post-recovery flush, not merely before one.
+        /// </remarks>
+        [Test, Category(ObjectLogCategory), Category(SmokeTestCategory)]
+        public void RecoveredContentSurvivesTheFirstFlushAfterRecovery()
+        {
+            const int RecordLength = 300;
+            var addresses = new List<long>();
+
+            var log = CreateLog();
+            for (var ii = 0; ii < 40; ++ii)
+                addresses.Add(Write(log, RecordLength, (byte)ii));
+            var recoveredTail = log.FlushTail(wait: true);
+            var recoveredBegin = log.BeginAddress;
+
+            // The tail must land mid-page for this to be meaningful: the hazard is the partially filled page.
+            Assert.That(log.GetOffsetOnPage(recoveredTail), Is.Not.EqualTo(0), "Test geometry must leave a partially filled tail page");
+
+            log.Dispose();
+            objectLog = null;
+            device.Dispose();
+
+            device = CreateDevice();
+            log = CreateLog();
+            log.RestoreTail(recoveredBegin, recoveredTail);
+
+            // Append and flush, which rewrites the sector the recovered tail shares.
+            _ = Write(log, RecordLength, seed: 99);
+            _ = log.FlushTail(wait: true);
+
+            // Every recovered record must still be intact.
+            for (var ii = 0; ii < addresses.Count; ++ii)
+                VerifyRead(log, addresses[ii], RecordLength, (byte)ii, $"recovered record {ii} after a post-recovery flush");
+        }
         #endregion
 
         #region Address ceiling
@@ -486,10 +526,58 @@ namespace Tsavorite.test.Objects
             [Values(LogSettings.kMinPageSizeBits, ObjectLog.DefaultPageSizeBits, LogSettings.kMaxPageSizeBits)] int pageSizeBits)
         {
             var positionCeiling = (long)ObjectLogPositionInfo.AddressMask;
-            var pageNumberCeiling = (long)int.MaxValue << pageSizeBits;
+            var ceiling = ObjectLog.ComputeMaxExclusiveAddress(pageSizeBits, ObjectLog.DefaultPageCount);
 
-            Assert.That(pageNumberCeiling, Is.LessThan(positionCeiling));
-            Assert.That(ObjectLog.ComputeMaxExclusiveAddress(pageSizeBits), Is.EqualTo(pageNumberCeiling));
+            Assert.That(ceiling, Is.LessThan(positionCeiling), "The page-number ceiling must bind before the position-word ceiling");
+        }
+
+        /// <summary>
+        /// The ceiling must leave headroom above the highest allocatable page. The allocator computes <c>pageIndex + 1</c> and
+        /// <c>BufferSize + GetPage(...)</c> on signed 32-bit page numbers while deciding whether a page can be reused; near
+        /// <see cref="int.MaxValue"/> those additions overflow and misclassify a page, inside the allocator where the ceiling check
+        /// cannot observe it.
+        /// </summary>
+        [Test, Category(ObjectLogCategory)]
+        public void TheCeilingReservesHeadroomForTheAllocatorsPageArithmetic(
+            [Values(LogSettings.kMinPageSizeBits, ObjectLog.DefaultPageSizeBits, LogSettings.kMaxPageSizeBits)] int pageSizeBits,
+            [Values(ObjectLog.MinPageCount, ObjectLog.DefaultPageCount, 1024)] int pageCount)
+        {
+            var ceiling = ObjectLog.ComputeMaxExclusiveAddress(pageSizeBits, pageCount);
+            var lastAllowedPage = (ceiling - 1) >> pageSizeBits;
+            var bufferSize = (long)Utility.NextPowerOf2(pageCount);
+
+            Assert.That(lastAllowedPage + bufferSize + 1, Is.LessThan(int.MaxValue),
+                "page + BufferSize and pageIndex + 1 must both stay within a signed 32-bit page number");
+        }
+
+        /// <summary>
+        /// A rejected allocation must not leave the tail past the ceiling. The allocator advances its tail before returning an
+        /// address, so a check that only ran afterwards would fail the call yet still corrupt the tail that a later checkpoint
+        /// records as the object-log tail.
+        /// </summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ARejectedAllocationLeavesTheTailAtOrBelowTheCeiling()
+        {
+            const int Length = 64;
+            var ceiling = (3L << PageSizeBits) + Length;
+
+            var log = CreateLog(settings => settings.MaxExclusiveAddressOverride = ceiling);
+            var scope = log.BeginScope();
+            try
+            {
+                while (log.TailAddress + Length < ceiling)
+                    _ = log.Allocate(Length);
+                _ = log.Allocate(Length);
+                Assert.That(log.TailAddress, Is.EqualTo(ceiling));
+
+                _ = Assert.Throws<TsavoriteException>(() => _ = log.Allocate(1));
+                Assert.That(log.TailAddress, Is.LessThanOrEqualTo(ceiling),
+                    "A rejected allocation must not advance the tail past the ceiling");
+            }
+            finally
+            {
+                log.EndScope(scope);
+            }
         }
         #endregion
     }

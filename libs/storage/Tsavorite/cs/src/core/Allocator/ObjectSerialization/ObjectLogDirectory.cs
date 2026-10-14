@@ -15,26 +15,27 @@ namespace Tsavorite.core
     /// word0: bits  0..59  address of the chunk's first DATA byte
     ///        bit      60  IsDirectory
     ///        bits 61..63  spare
-    /// word1: bits  0..26  data length
+    /// word1: bits  0..26  data length, biased by one (see below)
     ///        bits 27..31  spare
     /// </code>
     /// <para>The address points at the data, not at the entry header that precedes it on the page, so a reader issues exactly
     /// <see cref="Length"/> bytes of IO with no framing to parse. That is what removes the serial dependency the old format had, where
     /// read <i>k+1</i> could not be sized until read <i>k</i>'s framing had been parsed.</para>
-    /// <para><b>Why 27 length bits suffice.</b> A chunk cannot exceed a page, and a chunk's page allocation also holds its entry
-    /// header, so the data length is strictly below <c>1 &lt;&lt; LogSettings.kMaxPageSizeBits</c> (27). The constructor still
-    /// validates it rather than relying on that argument holding forever.</para>
+    /// <para><b>Why the length is biased.</b> A chunk cannot exceed a page, so the largest possible chunk is a full page --
+    /// <c>1 &lt;&lt; LogSettings.kMaxPageSizeBits</c>, which does not fit in that many bits. A zero length is meaningless (a chunk with
+    /// no data is never recorded), so the field stores <c>length - 1</c> and covers the whole range 1 through one full page inclusive.
+    /// Storing the length directly would reject exactly the full-page chunk that a record starting on a page boundary produces.</para>
     /// </remarks>
     internal readonly struct DirectoryEntry
     {
         /// <summary>Encoded size in bytes. This is the on-disk size, not <c>sizeof</c> the managed struct, which pads to 16.</summary>
         internal const int Size = 12;
 
-        /// <summary>Number of low bits of <c>word1</c> holding the chunk's data length.</summary>
+        /// <summary>Number of low bits of <c>word1</c> holding the biased chunk length.</summary>
         internal const int NumLengthBits = LogSettings.kMaxPageSizeBits;
 
-        /// <summary>Largest data length an entry can describe.</summary>
-        internal const int MaxLength = (1 << NumLengthBits) - 1;
+        /// <summary>Largest data length an entry can describe: one full page at the maximum page size.</summary>
+        internal const int MaxLength = 1 << NumLengthBits;
 
         private const uint LengthMask = (1u << NumLengthBits) - 1;
 
@@ -59,7 +60,7 @@ namespace Tsavorite.core
                 ThrowLength(length);
 
             word0 = (ulong)address | (isDirectory ? kIsDirectoryMask : 0UL);
-            word1 = (uint)length;
+            word1 = (uint)(length - 1);
         }
 
         private DirectoryEntry(ulong word0, uint word1)
@@ -72,7 +73,7 @@ namespace Tsavorite.core
         internal long Address => (long)(word0 & ObjectLogPositionInfo.AddressMask);
 
         /// <summary>Exact number of data bytes at <see cref="Address"/>.</summary>
-        internal int Length => (int)(word1 & LengthMask);
+        internal int Length => (int)(word1 & LengthMask) + 1;
 
         /// <summary>Whether <see cref="Address"/> is another directory record rather than data.</summary>
         internal bool IsDirectory => (word0 & kIsDirectoryMask) != 0;

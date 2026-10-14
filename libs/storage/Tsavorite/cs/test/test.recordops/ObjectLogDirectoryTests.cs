@@ -58,16 +58,19 @@ namespace Tsavorite.test.Objects
         }
 
         /// <summary>
-        /// Twenty-seven length bits suffice because a chunk cannot exceed a page and its page allocation also holds its entry header,
-        /// so the data length is strictly below the maximum page size. The constructor validates it regardless.
+        /// The largest possible chunk is a full page, which is why the length field is biased by one: a record starting exactly on a
+        /// page boundary produces a full-page chunk, and storing the length directly would reject it.
         /// </summary>
         [Test, Category(ObjectLogCategory)]
-        public void EntryLengthRangeCoversTheLargestPossibleChunk()
+        public void EntryLengthRangeCoversAFullPageChunk()
         {
             Assert.That(DirectoryEntry.NumLengthBits, Is.EqualTo(LogSettings.kMaxPageSizeBits));
-            Assert.That(DirectoryEntry.MaxLength, Is.EqualTo((1 << LogSettings.kMaxPageSizeBits) - 1));
-            Assert.That(DirectoryEntry.MaxLength, Is.LessThan(1 << LogSettings.kMaxPageSizeBits),
-                "A full-page data chunk is impossible because the page allocation also holds the entry header");
+            Assert.That(DirectoryEntry.MaxLength, Is.EqualTo(1 << LogSettings.kMaxPageSizeBits),
+                "A full-page chunk must be representable; ObjectLog writes no per-chunk entry header that would make it impossible");
+
+            // The boundary, both sides of the bias.
+            Assert.That(RoundTrip(new DirectoryEntry(0, DirectoryEntry.MaxLength)).Length, Is.EqualTo(DirectoryEntry.MaxLength));
+            Assert.That(RoundTrip(new DirectoryEntry(0, 1)).Length, Is.EqualTo(1));
 
             _ = Assert.Throws<TsavoriteException>(() => _ = new DirectoryEntry(0, 0));
             _ = Assert.Throws<TsavoriteException>(() => _ = new DirectoryEntry(0, -1));
@@ -85,7 +88,7 @@ namespace Tsavorite.test.Objects
             var word1 = *(uint*)(buffer + sizeof(ulong));
 
             Assert.That(word0 >> (DirectoryEntry.kIsDirectoryBit + 1), Is.EqualTo(0UL), "word0 bits 61..63 are spare");
-            Assert.That(word1 >> DirectoryEntry.NumLengthBits, Is.EqualTo(0U), "word1 bits 27..31 are spare");
+            Assert.That(word1 >> DirectoryEntry.NumLengthBits, Is.EqualTo(0U), "word1 bits 27..31 are spare even at the maximum length");
         }
 
         /// <summary>Entries are written back to back, so the encoded size must be exactly the stride.</summary>

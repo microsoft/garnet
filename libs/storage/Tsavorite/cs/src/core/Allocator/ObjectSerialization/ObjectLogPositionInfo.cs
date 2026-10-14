@@ -87,9 +87,9 @@ namespace Tsavorite.core
         /// The single place that knows the unstamped encoding; callers must not compare against <see cref="NotSet"/> themselves.
         /// <para>The marker lives entirely in the address bits -- all of them set, which no real position reaches because it
         /// would be the last addressable byte of a 1 EB object log. Keeping it out of the flag bits is what lets a record be
-        /// unstamped without disturbing <c>KeyIsExactSize</c>/<c>ValueIsExactSize</c>, and leaves address 0 unambiguous: it is
-        /// the first byte of the log, not "never stamped". The all-ones <see cref="NotSet"/> word satisfies this test too, so words
-        /// written before the flags were separated still read as unstamped.</para>
+        /// unstamped without disturbing <c>KeyIsExactSize</c>/<c>ValueIsExactSize</c>, and leaves every real address unambiguous.
+        /// The all-ones <see cref="NotSet"/> word satisfies this test too, so words written before the flags were separated still
+        /// read as unstamped.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool WordIsUnstamped(ulong word) => (word & AddressMask) == AddressMask;
@@ -148,16 +148,23 @@ namespace Tsavorite.core
         public static unsafe bool GetValueIsExactSize(ulong* wordPtr) => (*wordPtr & kValueIsExactSizeMask) != 0;
 
         /// <summary>Set the <c>HasDirectory</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
+        /// <remarks>Only meaningful on a word that is being, or has been, stamped with a position; see <see cref="WordHasDirectory"/>.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static unsafe void SetHasDirectory(ulong* wordPtr) => *wordPtr |= kHasDirectoryMask;
 
         /// <summary>Read the <c>HasDirectory</c> flag bit on the position word pointed to by <paramref name="wordPtr"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe bool GetHasDirectory(ulong* wordPtr) => (*wordPtr & kHasDirectoryMask) != 0;
+        public static unsafe bool GetHasDirectory(ulong* wordPtr) => WordHasDirectory(*wordPtr);
 
         /// <summary>Whether <paramref name="word"/> addresses a directory record rather than a single data chunk.</summary>
+        /// <remarks>
+        /// False whenever the word is unstamped, which is not merely a convenience: a never-stamped record's word is
+        /// <see cref="NotSet"/> -- <b>all</b> 64 bits, flag bits included -- because that is what record initialization writes. A raw
+        /// mask test would therefore report a directory on every freshly initialized record. A directory cannot exist without a
+        /// position, so "unstamped" and "has a directory" are mutually exclusive by construction.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool WordHasDirectory(ulong word) => (word & kHasDirectoryMask) != 0;
+        public static bool WordHasDirectory(ulong word) => !WordIsUnstamped(word) && (word & kHasDirectoryMask) != 0;
 
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         /// <remarks>Part of the file-addressing group retired with the writer/reader port; see <see cref="SegmentSizeBits"/>.</remarks>

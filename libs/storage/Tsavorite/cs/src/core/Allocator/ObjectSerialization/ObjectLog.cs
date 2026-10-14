@@ -91,6 +91,10 @@ namespace Tsavorite.core
         /// The page-number ceiling is always the binding one at the page sizes this log permits: it reaches the 60-bit position ceiling
         /// only at a page of 2^29 bytes, above <see cref="LogSettings.kMaxPageSizeBits"/>. Both are checked through this single value so
         /// a future page-size change cannot quietly swap which one applies.
+        /// <para>The page-number term reserves headroom above the highest allocatable page rather than running to
+        /// <see cref="int.MaxValue"/>. The allocator computes <c>pageIndex + 1</c> and <c>BufferSize + GetPage(...)</c> on signed
+        /// 32-bit page numbers while deciding whether a page can be reused; those additions overflow near the limit and misclassify a
+        /// page, and they happen inside the allocator, below this class, where the ceiling check cannot observe them.</para>
         /// <para>Truncating into the flag bits, or wrapping the page number, would be silent corruption, so this is enforced on every
         /// allocation's end address rather than left to arithmetic.</para>
         /// </remarks>
@@ -124,7 +128,7 @@ namespace Tsavorite.core
 
             MaxExclusiveAddress = settings.MaxExclusiveAddressOverride > 0
                 ? settings.MaxExclusiveAddressOverride
-                : ComputeMaxExclusiveAddress(settings.PageSizeBits);
+                : ComputeMaxExclusiveAddress(settings.PageSizeBits, settings.PageCount);
 
             var logSettings = new LogSettings
             {
@@ -148,9 +152,17 @@ namespace Tsavorite.core
             catch
             {
                 // The constructor is about to throw, so this instance's Dispose will never run; release what was taken above.
-                allocator?.Dispose();
-                if (isEpochOwned)
-                    epoch.Dispose();
+                // The epoch release is in a finally because a throwing allocator Dispose would otherwise leak one of the process-wide
+                // LightEpoch instance slots on every failed construction.
+                try
+                {
+                    allocator?.Dispose();
+                }
+                finally
+                {
+                    if (isEpochOwned)
+                        epoch.Dispose();
+                }
                 throw;
             }
         }
@@ -235,6 +247,13 @@ namespace Tsavorite.core
             if (numBytes <= 0 || numBytes > PageSize)
                 ThrowAllocationSize(numBytes);
 
+            // Check before allocating as well as after. The allocator advances its tail before returning an address, so a ceiling
+            // violation detected only afterwards leaves the tail permanently past the ceiling -- which a later checkpoint would then
+            // record as the object-log tail. The post-allocation check below remains authoritative, because this one races with
+            // concurrent allocators; this one keeps the common case from corrupting the tail on its way to failing.
+            if (TailAddress + numBytes > MaxExclusiveAddress)
+                ThrowAddressCeilingExceeded(TailAddress, numBytes);
+
             while (true)
             {
                 var localFlushEvent = allocator.flushEvent;
@@ -249,6 +268,12 @@ namespace Tsavorite.core
                 // being flushed. Drop the epoch so the flush and page close can make progress, then retry.
                 Debug.Assert(logicalAddress == 0, $"Expected RETRY_LATER (0) but got {logicalAddress}");
 
+                // A failed flush never frees the page this retry needs, and a failure also Set()s flushEvent and replaces it -- so
+                // without this check the wait below returns, the loop captures the fresh unsignaled event, and parks forever.
+                // Checked before the wait as well as after, because the failure may already have happened and swapped the event.
+                // TryAllocateRetryNow only reaches ThrowIfFlushFailedForAllocation on its RETRY_NOW path, never on RETRY_LATER.
+                allocator.ThrowIfFlushFailedForAllocation();
+
                 epoch.Suspend();
                 try
                 {
@@ -262,6 +287,7 @@ namespace Tsavorite.core
                 // Disposal permanently signals flushEvent, so without this the wait above stops blocking and this loop spins on an
                 // allocation that no flush can satisfy.
                 allocator.ThrowIfDisposed();
+                allocator.ThrowIfFlushFailedForAllocation();
             }
         }
 
@@ -278,10 +304,18 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Span<byte> AsSpan(long logicalAddress, int length) => new(GetPhysicalAddress(logicalAddress), length);
 
-        /// <summary>The lower of the position-word and page-number address ceilings for a log of this page size; see
+        /// <summary>The lower of the position-word and page-number address ceilings for a log of this page size and page-ring size; see
         /// <see cref="MaxExclusiveAddress"/>.</summary>
-        internal static long ComputeMaxExclusiveAddress(int pageSizeBits)
-            => Math.Min((long)int.MaxValue << pageSizeBits, (long)ObjectLogPositionInfo.AddressMask);
+        /// <param name="pageSizeBits">Page size in bits.</param>
+        /// <param name="pageCount">Pages in the circular buffer, which bounds the page-index arithmetic needing headroom.</param>
+        internal static long ComputeMaxExclusiveAddress(int pageSizeBits, int pageCount)
+        {
+            // Headroom covers the largest constant the allocator adds to a page number while deciding reuse: its BufferSize (the
+            // power-of-two page-ring size), plus slack for the pageIndex + 1 lookahead.
+            var headroomPages = (long)Utility.NextPowerOf2(pageCount) + 4;
+            var maxExclusivePage = int.MaxValue - headroomPages;
+            return Math.Min(maxExclusivePage << pageSizeBits, (long)ObjectLogPositionInfo.AddressMask);
+        }
 
         private void CheckAddressCeiling(long logicalAddress, int allocatedLength)
         {
@@ -311,53 +345,86 @@ namespace Tsavorite.core
         /// object's reads up front, which is the whole point of recording chunk addresses.</remarks>
         internal void Read(long logicalAddress, int numBytes, Span<byte> destination)
         {
-            ValidateReadRange(logicalAddress, numBytes, destination.Length);
-
+            // Validate, choose the path, and submit all under one epoch acquisition. Validation reads BeginAddress and TailAddress,
+            // and the device read resolves a segment handle, so letting protection lapse between any of those steps would allow a
+            // concurrent Truncate to retire the segment the read is about to resolve.
             var scopeAcquiredEpoch = BeginScope();
+            SectorAlignedMemory memory = null;
+            ReadContext context = null;
+            var validOffset = 0;
             try
             {
+                ValidateReadRange(logicalAddress, numBytes, destination.Length);
+
                 // An address at or above HeadAddress cannot be evicted while this scope holds the epoch, so the copy is safe.
                 if (logicalAddress >= allocator.HeadAddress)
                 {
                     new ReadOnlySpan<byte>(GetPhysicalAddress(logicalAddress), numBytes).CopyTo(destination);
                     return;
                 }
+
+                // Below HeadAddress, and HeadAddress never passes FlushedUntilAddress, so these bytes are on the device.
+                memory = SubmitDeviceRead(logicalAddress, numBytes, out context, out validOffset);
             }
             finally
             {
+                // Released before awaiting completion so a blocking wait cannot stall the drain list. The buffer and its in-flight
+                // read are owned by this call, not by the page ring, so they do not depend on continued protection.
                 EndScope(scopeAcquiredEpoch);
             }
 
-            // Below HeadAddress, and HeadAddress never passes FlushedUntilAddress, so these bytes are on the device.
-            ReadFromDevice(logicalAddress, numBytes, destination);
-        }
-
-        private void ReadFromDevice(long logicalAddress, int numBytes, Span<byte> destination)
-        {
-            allocator.ComputeAlignedReadExtent(logicalAddress, numBytes, out var alignedReadStart, out var alignedReadLength, out var validOffset);
-
-            var memory = allocator.bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
             try
             {
-                using var completed = new ManualResetEventSlim(initialState: false);
-                var context = new ReadContext(completed);
-                device.ReadAsync(alignedReadStart, (IntPtr)memory.aligned_pointer, alignedReadLength, ReadCallback, context);
-                completed.Wait();
-
-                if (context.ErrorCode != 0)
-                    throw new TsavoriteException($"Object log read of {numBytes} bytes at address {logicalAddress} failed with error code {context.ErrorCode}", context.Exception);
-
-                new ReadOnlySpan<byte>(memory.aligned_pointer + validOffset, numBytes).CopyTo(destination);
+                context.Completed.Wait();
+                CompleteDeviceRead(logicalAddress, numBytes, context, memory, validOffset, destination);
             }
             finally
             {
                 memory.Return();
+                context.Completed.Dispose();
             }
         }
 
-        private sealed class ReadContext(ManualResetEventSlim completed)
+        private SectorAlignedMemory SubmitDeviceRead(long logicalAddress, int numBytes, out ReadContext context, out int validOffset)
         {
-            internal readonly ManualResetEventSlim Completed = completed;
+            allocator.ComputeAlignedReadExtent(logicalAddress, numBytes, out var alignedReadStart, out var alignedReadLength, out validOffset);
+
+            var memory = allocator.bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
+            context = new ReadContext(alignedReadLength);
+            try
+            {
+                device.ReadAsync(alignedReadStart, (IntPtr)memory.aligned_pointer, alignedReadLength, ReadCallback, context);
+            }
+            catch
+            {
+                memory.Return();
+                throw;
+            }
+            return memory;
+        }
+
+        private void CompleteDeviceRead(long logicalAddress, int numBytes, ReadContext context, SectorAlignedMemory memory, int validOffset, Span<byte> destination)
+        {
+            if (context.ErrorCode != 0)
+                throw new TsavoriteException($"Object log read of {numBytes} bytes at address {logicalAddress} failed with error code {context.ErrorCode}", context.Exception);
+
+            // A device may report success having transferred fewer bytes than asked for -- a truncated or externally altered file does
+            // exactly this. The buffer is rented without clearing, so copying the full request on a short read would hand back whatever
+            // the previous tenant left in the shortfall. Treat insufficient coverage as a failure, as the object allocator's own read
+            // completion does.
+            if (context.BytesTransferred < (uint)(validOffset + numBytes))
+                throw new TsavoriteException(
+                    $"Object log read of {numBytes} bytes at address {logicalAddress} returned only {context.BytesTransferred} of"
+                    + $" {context.RequestedBytes} requested bytes; the device reported success but did not cover the requested range");
+
+            new ReadOnlySpan<byte>(memory.aligned_pointer + validOffset, numBytes).CopyTo(destination);
+        }
+
+        private sealed class ReadContext(uint requestedBytes)
+        {
+            internal readonly ManualResetEventSlim Completed = new(initialState: false);
+            internal readonly uint RequestedBytes = requestedBytes;
+            internal uint BytesTransferred;
             internal uint ErrorCode;
             internal Exception Exception;
         }
@@ -366,6 +433,7 @@ namespace Tsavorite.core
         {
             var readContext = (ReadContext)context;
             readContext.ErrorCode = errorCode;
+            readContext.BytesTransferred = numBytes;
             readContext.Exception = ioException;
             readContext.Completed.Set();
         }
@@ -401,12 +469,18 @@ namespace Tsavorite.core
 
         /// <summary>Wait until <paramref name="untilAddress"/> is on the device. The caller is responsible for having requested a flush
         /// that covers it (see <see cref="FlushTail"/>).</summary>
+        /// <remarks>Safe to call while holding the epoch: the flush is completed by work queued on the epoch's drain list, so a holder
+        /// that merely spun would block the very progress it is waiting for.</remarks>
         internal void WaitForFlush(long untilAddress)
         {
+            var holdsEpoch = epoch.ThisInstanceProtected();
             while (!disposed && FlushedUntilAddress < untilAddress)
             {
                 allocator.ThrowIfFlushFailedForAllocation();
-                _ = Thread.Yield();
+                if (holdsEpoch)
+                    epoch.ProtectAndDrain();
+                else
+                    _ = Thread.Yield();
             }
         }
 
@@ -431,10 +505,27 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="beginAddress">Recovered begin address.</param>
         /// <param name="tailAddress">Recovered tail address; appends resume here.</param>
-        /// <remarks>Nothing is preloaded into memory: the head is set to the tail, so recovered content is read from the device on
-        /// demand rather than paged in wholesale.</remarks>
+        /// <remarks>
+        /// Only the page containing <paramref name="tailAddress"/> is loaded, and only when the tail falls mid-page. **That load is
+        /// required for correctness, not for read performance.** A flush writes whole sectors, so the first flush after recovery
+        /// rewrites the sector the recovered tail sits in; if the page buffer were left zeroed below the tail, that flush would write
+        /// zeros over the recovered bytes sharing the sector and silently destroy them. Everything below the tail page stays on the
+        /// device and is read on demand, which is the point of giving the object log little memory.
+        /// </remarks>
         internal void RestoreTail(long beginAddress, long tailAddress)
-            => allocator.RestoreHybridLog(beginAddress, headAddress: tailAddress, fromAddress: tailAddress, untilAddress: tailAddress);
+        {
+            if (beginAddress < LogAddress.FirstValidAddress)
+                throw new TsavoriteException($"Object log begin address {beginAddress} is below the first valid address {LogAddress.FirstValidAddress}");
+            if (tailAddress < beginAddress)
+                throw new TsavoriteException($"Object log tail address {tailAddress} is below its begin address {beginAddress}");
+
+            // Load from the start of the tail's page, so a partially filled tail page is read back before anything appends to it.
+            var headAddress = tailAddress - allocator.GetOffsetOnPage(tailAddress);
+            if (headAddress < beginAddress)
+                headAddress = beginAddress;
+
+            allocator.RestoreHybridLog(beginAddress, headAddress, fromAddress: tailAddress, untilAddress: tailAddress);
+        }
 
         /// <inheritdoc/>
         public void Dispose()
