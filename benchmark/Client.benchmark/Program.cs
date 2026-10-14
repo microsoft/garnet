@@ -36,7 +36,8 @@ namespace Client.benchmark
 
             Console.WriteLine($"Server {server.Host}:{server.Port} | arm={opts.Client} threads={opts.Threads} batch={opts.Batch} " +
                 $"warmup={opts.WarmupSeconds}s duration={opts.DurationSeconds}s valuelen={opts.ValueLength} " +
-                $"netbuf={opts.NetworkBufferBytes} maxsends={opts.MaxConcurrentSends} outstanding={opts.Outstanding} " +
+                $"netbuf={opts.NetworkBufferBytes} maxsends={opts.MaxConcurrentSends} " +
+                $"max-requests={opts.MaxOutstandingRequests} max-completions={opts.MaxOutstandingCompletions} " +
                 $"topology={(opts.SharedSocket ? "shared-socket" : "per-thread-socket")}");
 
             var epoch = new LightEpoch();

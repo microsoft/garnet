@@ -109,29 +109,40 @@ namespace Client.benchmark
 
         public GarnetLightClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch)
         {
-            // The request ring is byte-addressed: an inline record reserves ceil(recordBytes / quantum) quanta,
-            // so maxOutstandingRequests counts 8-byte quanta, NOT whole requests. A small GET/SET record spans
-            // several quanta, so sizing the request ring equal to threads*batch (as the completion ring is sized)
-            // under-provisions it ~4x and throttles many-producer batches -- most visibly on a shared socket,
-            // where all producers contend on one ring and collapse to a fraction of GarnetClient's throughput.
-            // Size the request ring in BYTES to hold the offered in-flight load with headroom (mirroring
-            // GarnetClient's byte-addressed send buffer) and keep the allocation quantum at the 8-byte record
-            // header so capacity tracks page bytes rather than the slot count.
+            // Both duplex rings must hold the offered in-flight load (threads*batch) or producers stall.
+            // The benchmark sizes them from offered load by default so GarnetLightClient matches GarnetClient
+            // out of the box; LightNetworkWriterOptions keeps its own small library defaults untouched.
+            //
+            // The request ring is byte-addressed (quantum == record header), so maxOutstandingRequests counts
+            // 8-byte quanta, NOT whole requests -- a small GET/SET record spans several quanta. Size it in
+            // BYTES to hold the offered load with headroom (mirroring GarnetClient's byte-addressed send
+            // buffer) and derive maxOutstandingRequests from the page geometry so the quantum stays at the
+            // record header. --max-requests raises the request-slot floor; --max-completions overrides the
+            // completion-ring capacity.
             const int headerSize = 8;                   // DuplexRingRecordFormat.HeaderSize
             const int requestPageCount = 4;
             const int bytesPerInflightRecord = 64;      // header + small inline GET/SET payload, with headroom
             var offered = Math.Max(1, opts.Threads * opts.Batch);
-            var targetRingBytes = Math.Max((long)opts.NetworkBufferBytes, (long)offered * bytesPerInflightRecord);
+
+            var requestSlotFloor = Math.Max(offered, opts.MaxOutstandingRequests);
+            var targetRingBytes = Math.Max((long)opts.NetworkBufferBytes, (long)requestSlotFloor * bytesPerInflightRecord);
             var requestPageSizeBytes = 1 << 13;
             while ((long)requestPageSizeBytes * requestPageCount < targetRingBytes)
                 requestPageSizeBytes <<= 1;
             var maxOutstandingRequests = requestPageSizeBytes / headerSize * requestPageCount; // quantum == headerSize
+
+            // One completion slot per in-flight reply (no page-size constraint); hold the offered load with
+            // headroom by default so replies are never completion-throttled.
+            var maxOutstandingCompletions = opts.MaxOutstandingCompletions > 0
+                ? opts.MaxOutstandingCompletions
+                : Math.Max(512, offered * 2);
+
             var options = new LightNetworkWriterOptions(
                 networkBufferSizeBytes: opts.NetworkBufferBytes,
                 requestPageSizeBytes: requestPageSizeBytes,
                 requestPageCount: requestPageCount,
                 maxOutstandingRequests: maxOutstandingRequests,
-                maxOutstandingCompletions: opts.Outstanding,
+                maxOutstandingCompletions: maxOutstandingCompletions,
                 maxConcurrentNetworkSends: opts.MaxConcurrentSends,
                 maxOutOfLineRentedBytes: 64L << 20,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);

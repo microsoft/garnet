@@ -46,8 +46,11 @@ namespace Client.benchmark
         [Option("maxsends", Default = 8, HelpText = "Maximum concurrent transport sends, applied to BOTH clients (GarnetClient networkSendThrottleMax and GarnetLightClient maxConcurrentNetworkSends).")]
         public int MaxConcurrentSends { get; set; }
 
-        [Option("outstanding", Default = 512, HelpText = "GarnetLightClient completion-ring capacity (maxOutstandingCompletions) and the floor for the byte-sized request ring. The request ring is sized in BYTES from threads*batch so its quantum stays at the 8-byte record header and it is not under-provisioned (maxOutstandingRequests counts quanta, not whole requests). GarnetClient's equivalent (maxOutstandingTasks) stays at its large default.")]
-        public int Outstanding { get; set; }
+        [Option("max-requests", Default = 0, HelpText = "GarnetLightClient request-ring capacity in 8-byte quanta (maxOutstandingRequests); a small GET/SET record spans several quanta, so this counts quanta, NOT whole requests. Default 0 auto-sizes the request ring in BYTES from the offered load (threads*batch) so it matches GarnetClient's byte-addressed send buffer; a positive value raises the request-slot floor. GarnetClient has no request-slot cap.")]
+        public int MaxOutstandingRequests { get; set; }
+
+        [Option("max-completions", Default = 0, HelpText = "GarnetLightClient completion-ring capacity (maxOutstandingCompletions). Default 0 auto-sizes it to the offered load (threads*batch) with headroom so GarnetLightClient is not completion-throttled and matches GarnetClient. GarnetClient's equivalent (maxOutstandingTasks) stays at its large default.")]
+        public int MaxOutstandingCompletions { get; set; }
 
         [Option("shared-socket", Default = false, HelpText = "Topology: when false (default) each worker thread owns its own client/connection; when true all workers submit concurrently to ONE shared client/connection, exercising the duplex ring's many-producer send coalescing on a single socket.")]
         public bool SharedSocket { get; set; }

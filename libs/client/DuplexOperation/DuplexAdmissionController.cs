@@ -333,7 +333,13 @@ namespace Garnet.client
                     if (AggressiveFlushShiftReadOnlyBump())
                         return;
                 }
-                ongoingAggressiveShiftReadOnly = 0;
+                // Release the flusher role with a full StoreLoad fence in one atomic operation. Without the
+                // fence a concurrent producer that advanced the tail but observed the flag still held would
+                // bail, while this thread could re-read a stale tail, see no work, and exit, stranding that
+                // request unflushed. The fence guarantees the re-check below observes any request published
+                // before release. The matching producer-side fence is the interlocked tail publication in the
+                // allocate path, so both halves of the handshake are ordered.
+                Interlocked.Exchange(ref ongoingAggressiveShiftReadOnly, 0);
                 idleStateChanged.Set();
             } while (ToShift() && ongoingAggressiveShiftReadOnly == 0 &&
                      Interlocked.CompareExchange(ref ongoingAggressiveShiftReadOnly, 1, 0) == 0);

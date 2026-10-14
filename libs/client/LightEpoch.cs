@@ -324,6 +324,11 @@ namespace Garnet.client
         public void Suspend()
         {
             Release();
+            // Publish the Release (localCurrentEpoch = 0) and order it before the drainCount read.
+            // Without this StoreLoad barrier a suspending thread can miss a concurrent BumpCurrentEpoch
+            // increment, skip SuspendDrain, and thus skip the barrier that would publish its Release;
+            // the true last-out thread then scans a stale entry, bails, and the pending action is never drained.
+            Thread.MemoryBarrier();
             if (drainCount > 0) SuspendDrain();
         }
 
