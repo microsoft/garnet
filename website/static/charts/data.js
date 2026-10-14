@@ -1,81 +1,9 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792016494289,
+  "lastUpdate": 1792016502720,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
     "Operations.BasicOperations (ubuntu-latest  net8.0 Release)": [
-      {
-        "commit": {
-          "author": {
-            "email": "15467143+TedHartMS@users.noreply.github.com",
-            "name": "Ted Hart",
-            "username": "TedHartMS"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "e2176b7a70818aacfd0b0ad75b14a9b61e96863e",
-          "message": "Refuse to serve when no HybridLog checkpoint is readable (#2153)",
-          "timestamp": "2026-09-21T10:41:22-07:00",
-          "tree_id": "ad1d9774a9a08847b58fb69e946b655f24be9874",
-          "url": "https://github.com/microsoft/garnet/commit/e2176b7a70818aacfd0b0ad75b14a9b61e96863e"
-        },
-        "date": 1790012885153,
-        "tool": "benchmarkdotnet",
-        "benches": [
-          {
-            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: AAD)",
-            "value": 2133.105926660391,
-            "unit": "ns",
-            "range": "± 2.19148001123339"
-          },
-          {
-            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: AAD)",
-            "value": 1865.9529247283936,
-            "unit": "ns",
-            "range": "± 27.349004337928992"
-          },
-          {
-            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: ACL)",
-            "value": 1861.9251299540201,
-            "unit": "ns",
-            "range": "± 2.7013337035574265"
-          },
-          {
-            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: ACL)",
-            "value": 1566.035026550293,
-            "unit": "ns",
-            "range": "± 1.874725288796371"
-          },
-          {
-            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: AOF)",
-            "value": 1884.5534394582112,
-            "unit": "ns",
-            "range": "± 3.3793366901447994"
-          },
-          {
-            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: AOF)",
-            "value": 1566.584116744995,
-            "unit": "ns",
-            "range": "± 3.865121495938625"
-          },
-          {
-            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: None)",
-            "value": 1795.2579225393442,
-            "unit": "ns",
-            "range": "± 1.8028842871077597"
-          },
-          {
-            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: None)",
-            "value": 1565.1358273824055,
-            "unit": "ns",
-            "range": "± 2.9219646049492147"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -3145,6 +3073,54 @@ window.BENCHMARK_DATA = {
             "value": 1691.0560440650354,
             "unit": "ns",
             "range": "± 2.9285451980875283"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "matrembl@microsoft.com",
+            "name": "Mathieu Tremblay",
+            "username": "Mathos1432"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "456925d8b36eb139d0a37937b85c085ab815c482",
+          "message": "[Cluster] Add separate peer endpoints and optimistic gossip in 2.2.2 (#2201)\n\n* [Cluster] Add separate client and peer endpoints\n\nAdd cluster-address and nullable cluster-port, separate client advertisements\nfrom peer routing, and enable configuration format version two.\n\nSet version 3.0.0 and require every existing node to run 2.2.0 or later\nbefore upgrading. Document bootstrap and upgrade requirements.\n\nCover endpoint discovery, redirects, migration, replication, failover,\nrecovery, and port validation with client and configuration tests.\n\n* [Tests] Fix hostname listeners and replica restart setup\n\n* [Tests] Wait for failover completion before client reads\n\n* [Cluster] Keep client-facing reports and failover errors on client endpoints\n\n* [Cluster] Negotiate gossip versions optimistically in Garnet 2.3.0\n\n* [Cluster] Skip failed peer initialization during publish forwarding\n\n* [Version] Release peer endpoint support as 2.2.2\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19\n\n* [Cluster] Offer highest supported gossip version during negotiation\n\nReply to unsupported gossip with a full configuration in the highest supported format without merging the payload or changing the selected connection state. Cover future-version probes, repeated offers, split endpoints, supported retries, and incompatible replies.\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19\n\n---------\n\nCopilot-Session: 792f9457-7c13-4dad-a4f0-eff79ae90a19",
+          "timestamp": "2026-10-14T18:17:21-04:00",
+          "tree_id": "ea6557e3cc11063c8efc5c509d755dbaee4a8327",
+          "url": "https://github.com/microsoft/garnet/commit/456925d8b36eb139d0a37937b85c085ab815c482"
+        },
+        "date": 1792016490187,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: AAD)",
+            "value": 965.4955819901966,
+            "unit": "ns",
+            "range": "± 21.216303920805547"
+          },
+          {
+            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: ACL)",
+            "value": 828.4806908198765,
+            "unit": "ns",
+            "range": "± 10.090008326760548"
+          },
+          {
+            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: AOF)",
+            "value": 864.43380762736,
+            "unit": "ns",
+            "range": "± 7.968999410755855"
+          },
+          {
+            "name": "BDN.benchmark.Operations.BasicOperations.InlinePing(Params: None)",
+            "value": 797.9076778888702,
+            "unit": "ns",
+            "range": "± 15.188505597420564"
           }
         ]
       }
