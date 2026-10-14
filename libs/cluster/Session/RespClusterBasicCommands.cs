@@ -386,6 +386,7 @@ namespace Garnet.cluster
 
             clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
             var current = clusterProvider.clusterManager.CurrentConfig;
+            bool unsupportedVersion = false;
 
             // Try merge if not just a ping message
             if (gossipMessage.Length > 0)
@@ -394,6 +395,7 @@ namespace Garnet.cluster
                 if (!ClusterConfig.TryPeekVersion(gossipMessage, out var version) || !ClusterConfig.IsSupportedVersion(version))
                 {
                     logger?.LogWarning("Received gossip with incompatible config version: {version}", version);
+                    unsupportedVersion = true;
                 }
                 else
                 {
@@ -434,20 +436,22 @@ namespace Garnet.cluster
                 }
             }
 
-            // Respond if configuration has changed or gossipWithMeet option is specified
-            if (lastSentConfig != current || gossipWithMeet)
+            byte replyVersion = unsupportedVersion ? ClusterConfig.MaximumSupportedClusterConfigVersion : gossipVersion;
+            if (lastSentConfig != current || gossipWithMeet || unsupportedVersion)
             {
-                if (!current.CanUseGossipVersion(gossipVersion))
+                if (!current.CanUseGossipVersion(replyVersion))
                 {
-                    logger?.LogWarning("Rejecting gossip reply version {version}: separate client and peer endpoints require version two", gossipVersion);
+                    logger?.LogWarning("Rejecting gossip reply version {version}: separate client and peer endpoints require version two", replyVersion);
                     while (!RespWriteUtils.TryWriteError("ERR Separate client and peer endpoints require gossip version two", ref dcurr, dend))
                         SendAndReset();
                     return true;
                 }
-                var configByteArray = current.ToGossipByteArray(gossipVersion);
+                var configByteArray = current.ToGossipByteArray(replyVersion);
                 clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
                 WriteLargeBulkString(configByteArray);
-                lastSentConfig = current;
+                // A version offer does not update the configuration cache for the selected format.
+                if (!unsupportedVersion)
+                    lastSentConfig = current;
             }
             else
             {

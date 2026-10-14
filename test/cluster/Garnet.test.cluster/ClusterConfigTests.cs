@@ -487,7 +487,7 @@ namespace Garnet.test.cluster
             var response = (byte[])server.Execute("CLUSTER", "GOSSIP", "WITHMEET", SerializeFormatFixture(version, workers));
 
             Assert.That(ClusterConfig.IsSupportedVersion(version), Is.EqualTo(supported));
-            Assert.That(response[0], Is.EqualTo(version == 2 ? 2 : 1));
+            Assert.That(response[0], Is.EqualTo(supported ? version : ClusterConfig.MaximumSupportedClusterConfigVersion));
             var nodes = context.clusterTestUtils.ClusterNodes(0);
             Assert.That(nodes.Nodes.Any(node => node.NodeId == workers[1].Nodeid), Is.EqualTo(supported));
         }

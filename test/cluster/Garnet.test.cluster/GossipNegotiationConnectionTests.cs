@@ -67,6 +67,7 @@ namespace Garnet.test.cluster
         [TestCase("permission")]
         [TestCase("truncated")]
         [TestCase("unsupported")]
+        [TestCase("unsupportedOlder")]
         [TestCase("empty")]
         [TestCase("identity")]
         public async Task InvalidOrDeniedGossipDoesNotDowngrade(string failure)
@@ -78,7 +79,7 @@ namespace Garnet.test.cluster
             await using TestPeer peer = new(responseConfig, supportedVersion: 1)
             {
                 DenyGossip = failure == "permission",
-                ReplyBytes = failure == "truncated" ? [1] : failure == "unsupported" ? [3] : failure == "empty" ? [] : null
+                ReplyBytes = failure == "truncated" ? [1] : failure == "unsupported" ? [3] : failure == "unsupportedOlder" ? [0] : failure == "empty" ? [] : null
             };
             GarnetServerNode node = CreateNode(peer);
             try

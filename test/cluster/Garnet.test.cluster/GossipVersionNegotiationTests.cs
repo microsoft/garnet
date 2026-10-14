@@ -53,6 +53,82 @@ namespace Garnet.test.cluster
             Assert.That(context.clusterTestUtils.GetServer(0).ClusterNodes().Nodes.Count(), Is.EqualTo(2));
         }
 
+        [TestCase(false, false)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        public void UnsupportedGossipAlwaysReturnsHighestSupportedVersion(bool separateEndpoints, bool withMeet)
+        {
+            CreateServer(separateEndpoints);
+            using GarnetClient client = TestUtils.GetGarnetClient(context.endpoints[0]);
+            client.Connect();
+            ClusterProvider provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            ClusterConfig original = provider.clusterManager.CurrentConfig;
+            if (!separateEndpoints)
+            {
+                using MemoryResult<byte> initial = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
+                Assert.That(initial.Span[0], Is.EqualTo(ClusterConfig.MinimumSupportedClusterConfigVersion));
+            }
+
+            // The unreadable version header must be handled without interpreting its payload.
+            byte[] unsupported = [(byte)(ClusterConfig.MaximumSupportedClusterConfigVersion + 1)];
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                using MemoryResult<byte> response = (withMeet ? client.GossipWithMeetAsync(unsupported) : client.GossipAsync(unsupported))
+                    .GetAwaiter().GetResult();
+                Assert.That(response.Span[0], Is.EqualTo(ClusterConfig.MaximumSupportedClusterConfigVersion));
+                Assert.That(response.Span.ToArray(), Is.EqualTo(original.ToByteArray()));
+                Assert.That(provider.clusterManager.CurrentConfig, Is.SameAs(original));
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void FutureVersionRequestCanRetryWithVersionTwo(bool separateEndpoints)
+        {
+            CreateServer(separateEndpoints);
+            using GarnetClient client = TestUtils.GetGarnetClient(context.endpoints[0]);
+            client.Connect();
+            ClusterProvider provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            ClusterConfig config = CreatePeerConfig(separateEndpoints);
+            byte[] unsupported = config.ToByteArray();
+            unsupported[0] = (byte)(ClusterConfig.MaximumSupportedClusterConfigVersion + 1);
+            using MemoryResult<byte> offered = client.GossipWithMeetAsync(unsupported).GetAwaiter().GetResult();
+            Assert.That(offered.Span[0], Is.EqualTo(2));
+            Assert.That(provider.clusterManager.CurrentConfig.IsKnown(config.LocalNodeId), Is.False);
+
+            GossipVersionNegotiation negotiation = new(client, provider.clusterManager);
+            ClusterConfig response = negotiation.ExchangeAsync(config, withMeet: true, expectedNodeId: null, context.cts.Token).GetAwaiter().GetResult();
+            Assert.That(response.LocalNodeId, Is.EqualTo(provider.clusterManager.CurrentConfig.LocalNodeId));
+            Assert.That(negotiation.IsNegotiated, Is.True);
+            Worker accepted = provider.clusterManager.CurrentConfig.GetWorkerFromNodeId(config.LocalNodeId);
+            Worker expected = config.GetWorkerFromNodeId(config.LocalNodeId);
+            Assert.That(accepted.PeerAddress, Is.EqualTo(expected.PeerAddress));
+            Assert.That(accepted.PeerPort, Is.EqualTo(expected.PeerPort));
+            _ = negotiation.ExchangeAsync(config, withMeet: false, response.LocalNodeId, context.cts.Token).GetAwaiter().GetResult();
+            Assert.That(negotiation.ExchangeAsync(config, withMeet: false, response.LocalNodeId, context.cts.Token).GetAwaiter().GetResult(), Is.Null);
+        }
+
+        [Test]
+        public void UnsupportedGossipDoesNotChangeTheSelectedReplyVersion()
+        {
+            CreateServer(separateEndpoints: false);
+            using GarnetClient client = TestUtils.GetGarnetClient(context.endpoints[0]);
+            client.Connect();
+            using MemoryResult<byte> initialOffer = client.GossipAsync(new byte[] { 3 }).GetAwaiter().GetResult();
+            Assert.That(initialOffer.Span[0], Is.EqualTo(2));
+            using MemoryResult<byte> initialHeartbeat = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
+            Assert.That(initialHeartbeat.Span[0], Is.EqualTo(1));
+            ClusterConfig config = CreatePeerConfig();
+            using MemoryResult<byte> accepted = client.GossipWithMeetAsync(config.ToByteArray(1)).GetAwaiter().GetResult();
+            using MemoryResult<byte> offer = client.GossipAsync(new byte[] { 3 }).GetAwaiter().GetResult();
+            Assert.That(offer.Span[0], Is.EqualTo(2));
+            using MemoryResult<byte> updated = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
+            Assert.That(updated.Span[0], Is.EqualTo(1));
+            using MemoryResult<byte> unchanged = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
+            Assert.That(unchanged.Length, Is.Zero);
+        }
+
         [Test]
         public void SplitEndpointsRejectLegacyMeetBeforeMerging()
         {

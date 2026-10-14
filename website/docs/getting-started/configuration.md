@@ -333,6 +333,11 @@ On startup, configured addresses and ports replace those saved in `nodes.conf`.
 
 ### Upgrade compatibility
 
+Gossip starts with the sender's highest supported format. A receiver that cannot read that format replies
+with a full configuration in its own highest supported format. The sender retries in that format if it is
+supported locally. A successful exchange selects the format for that connection; reconnecting starts negotiation
+again. Older releases retain their existing response behavior.
+
 Clusters with identical client and peer endpoints can upgrade directly to 2.2.2 without
 first upgrading every node to 2.2.0.
 Keep existing addresses and ports throughout the rolling upgrade.
