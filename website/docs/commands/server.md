@@ -353,6 +353,7 @@ REPLICAOF <host port | NO ONE>
 ```
 
 The REPLICAOF command can change the replication settings of a replica on the fly.
+Accepts a known node's client or peer endpoint. Replication uses its peer endpoint.
 
 #### Resp Reply
 

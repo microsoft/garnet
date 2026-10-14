@@ -16,13 +16,20 @@ namespace Garnet.cluster
     internal sealed class GarnetServerNode
     {
         readonly ClusterProvider clusterProvider;
+        readonly SslClientAuthenticationOptions tlsOptions;
+        readonly LightEpoch epoch;
         readonly GarnetClient gc;
+        GossipVersionNegotiation gossipNegotiation;
+        ClusterAuthContainer clientAuth;
+        ExponentialBackoff backoff;
+        readonly object initializationSync = new();
 
         long gossipSend;
         long gossipRecv;
         CancellationTokenSource cts = new();
         CancellationTokenSource internalCts = new();
-        volatile int initialized = 0;
+        volatile bool initialized;
+        Task<bool> initializationTask;
         readonly ILogger logger = null;
         SingleWriterMultiReaderLock dispose;
 
@@ -45,6 +52,11 @@ namespace Garnet.cluster
         /// GarnetClient connection
         /// </summary>
         public GarnetClient Client => gc;
+
+        /// <summary>
+        /// Whether the client connection has been initialized successfully.
+        /// </summary>
+        public bool IsInitialized => initialized;
 
         /// <summary>
         /// NodeId of remote node
@@ -75,42 +87,127 @@ namespace Garnet.cluster
         /// <param name="clusterProvider"></param>
         /// <param name="endpoint">The endpoint of the remote node</param>
         /// <param name="tlsOptions"></param>
+        /// <param name="epoch"></param>
         /// <param name="logger"></param>
         public GarnetServerNode(ClusterProvider clusterProvider, EndPoint endpoint, SslClientAuthenticationOptions tlsOptions, LightEpoch epoch, ILogger logger = null)
         {
-            var opts = clusterProvider.storeWrapper.serverOptions;
             this.clusterProvider = clusterProvider;
+            this.tlsOptions = tlsOptions;
+            this.epoch = epoch;
             this.EndPoint = endpoint;
-            this.gc = new GarnetClient(
-                endpoint,
-                tlsOptions,
-                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
-                maxOutstandingTasks: defaultMaxOutstandingTask,
-                timeoutMilliseconds: GetClientTimeoutMilliseconds(
-                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
-                authUsername: clusterProvider.clusterManager.clusterProvider.ClusterUsername,
-                authPassword: clusterProvider.clusterManager.clusterProvider.ClusterPassword,
-                epoch: epoch,
-                clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
-                logger: logger);
-            this.initialized = 0;
             this.logger = logger;
+            this.clientAuth = clusterProvider.ClusterAuth;
+            this.gc = CreateGarnetClient(clientAuth);
+            gossipNegotiation = new(gc, clusterProvider.clusterManager);
+            this.backoff = new ExponentialBackoff();
+            initialized = false;
             this.gossipRecv = 0;
             this.gossipSend = 0;
             ResetCts();
         }
 
-        /// <summary>
-        /// Initialize connection and cancellation tokens.
-        /// Initialization is performed only once
-        /// </summary>
-        public ValueTask InitializeAsync()
+        GarnetClient CreateGarnetClient(ClusterAuthContainer auth)
         {
-            // Ensure initialize executes only once
-            if (initialized != 0 || Interlocked.CompareExchange(ref initialized, 1, 0) != 0) return default;
+            var opts = clusterProvider.storeWrapper.serverOptions;
+            return new GarnetClient(
+                EndPoint,
+                tlsOptions,
+                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
+                maxOutstandingTasks: defaultMaxOutstandingTask,
+                timeoutMilliseconds: GetClientTimeoutMilliseconds(
+                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
+                authUsername: auth.ClusterUsername,
+                authPassword: auth.ClusterPassword,
+                epoch: epoch,
+                clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
+                logger: logger);
+        }
 
-            cts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.clusterManager.ctsGossip.Token, internalCts.Token);
-            return new(gc.ReconnectAsync().WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token));
+        /// <summary>
+        /// Attempts to initialize the connection when its reconnect backoff permits.
+        /// </summary>
+        /// <returns>True when the connection is initialized; otherwise false.</returns>
+        public ValueTask<bool> TryInitializeAsync()
+        {
+            lock (initializationSync)
+            {
+                if (initialized)
+                    return new(true);
+
+                if (initializationTask is { IsCompleted: false })
+                    return new(initializationTask);
+
+                if (!backoff.CanAttempt())
+                    return new(false);
+
+                RefreshClientAuthentication();
+                initializationTask = InitializeCoreAsync(gc);
+                return new(initializationTask);
+            }
+
+            async Task<bool> InitializeCoreAsync(GarnetClient client)
+            {
+                try
+                {
+                    // Reuse the shared reset path so the previous linked token source is disposed
+                    // rather than overwritten and left rooted on ctsGossip until shutdown.
+                    ResetCts();
+
+                    using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+                    timeout.CancelAfter(clusterProvider.clusterManager.clusterTimeout);
+                    await client.ReconnectAsync(timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false);
+                    gossipNegotiation = new(client, clusterProvider.clusterManager);
+                    initialized = true;
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    initialized = false;
+                    ResetCts();
+                    var retryDelay = backoff.RecordFailure();
+                    logger?.LogWarning(ex, "Could not establish connection to remote node [{nodeId} {endpoint}]; retrying in {retryDelay}",
+                        NodeId, EndPoint, retryDelay);
+                    return false;
+                }
+            }
+
+            void RefreshClientAuthentication()
+            {
+                var currentAuth = clusterProvider.ClusterAuth;
+                if (ReferenceEquals(currentAuth, clientAuth))
+                    return;
+
+                // Credentials rotated since this client last connected; update them in place so the next
+                // reconnect authenticates with them. The client is reused for the node's lifetime (no swap),
+                // so forwarding never observes a torn client reference or a client disposed mid-send.
+                clientAuth = currentAuth;
+                gc.UpdateAuth(currentAuth.ClusterUsername, currentAuth.ClusterPassword);
+            }
+        }
+
+        /// <summary>
+        /// Records a connection failure and returns the delay before reconnection may be attempted.
+        /// </summary>
+        public TimeSpan RecordConnectionFailure()
+        {
+            lock (initializationSync)
+            {
+                initialized = false;
+                return backoff.RecordFailure();
+            }
+        }
+
+        /// <summary>
+        /// Records a successful gossip or MEET exchange and clears the reconnect backoff history.
+        /// Connection setup alone does not clear it, so a peer that accepts AUTH but keeps failing
+        /// GOSSIP continues to back off instead of resetting every reconnect.
+        /// </summary>
+        public void RecordConnectionSuccess()
+        {
+            lock (initializationSync)
+            {
+                backoff.Reset();
+            }
         }
 
         public void Dispose()
@@ -159,10 +256,9 @@ namespace Garnet.cluster
         /// Keep track of updated config per connection. Useful when gossip sampling so as to ensure updates are propagated
         /// </summary>
         /// <returns></returns>
-        byte[] GetMostRecentConfig()
+        ClusterConfig GetMostRecentConfig()
         {
             var conf = clusterProvider.clusterManager.CurrentConfig;
-            byte[] byteArray;
             if (conf != lastConfig)
             {
                 lastConfig = conf;
@@ -170,38 +266,26 @@ namespace Garnet.cluster
                     // NOTE: We update replication offset for sublog-0 because this info is used in CLUSTER NODES
                     // and we cannot have multiple replication offsets without changing the expected CLUSTER NODES response
                     lastConfig.LazyUpdateLocalReplicationOffset(clusterProvider.replicationManager.GetReplicationOffset(0));
-                byteArray = lastConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
             }
-            else
-            {
-                byteArray = [];
-            }
-            return byteArray;
+            return conf;
         }
 
         /// <summary>
-        /// Schedule a Gossip task for provided serialized configuration
+        /// Send the latest configuration using the negotiated gossip version.
         /// </summary>
-        /// <param name="configByteArray"></param>
         /// <returns></returns>
-        private async Task GossipAsync(byte[] configByteArray)
+        private async Task GossipAsync()
         {
+            if (!await TryInitializeAsync().ConfigureAwait(false))
+                throw new GarnetException("Cannot send gossip before the peer connection is initialized.");
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            timeout.CancelAfter(gossipNegotiation.IsNegotiated ? clusterProvider.clusterManager.gossipDelay : clusterProvider.clusterManager.clusterTimeout);
+            ClusterConfig other = await gossipNegotiation.ExchangeAsync(GetMostRecentConfig(), withMeet: false, NodeId, timeout.Token).ConfigureAwait(false);
+
             try
             {
-                using var resp = await gc.GossipAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.gossipDelay, cts.Token).ConfigureAwait(false);
-                if (resp.Length > 0)
+                if (other != null)
                 {
-                    clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(resp.Length);
-                    var returnedConfigArray = resp.Span.ToArray();
-
-                    // Validate config version before full deserialization
-                    if (!ClusterConfig.TryPeekVersion(returnedConfigArray, out var version) || !ClusterConfig.IsSupportedVersion(version))
-                    {
-                        logger?.LogWarning("Received gossip response with incompatible config version: {version}", version);
-                        return;
-                    }
-
-                    var other = ClusterConfig.FromByteArray(returnedConfigArray);
                     var current = clusterProvider.clusterManager.CurrentConfig;
                     // Check if gossip is from a node that is known and trusted before merging
                     if (current.IsKnown(other.LocalNodeId))
@@ -213,18 +297,23 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogCritical(ex, "GOSSIP faulted processing response");
+                throw;
             }
         }
 
         /// <summary>
         /// Issue gossip meet with meet to force receiving node to trust an untrusted node
         /// </summary>
-        /// <param name="configByteArray"></param>
+        /// <param name="config"></param>
         /// <returns></returns>
-        public Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
+        public async Task<ClusterConfig> TryMeetAsync(ClusterConfig config)
         {
             UpdateGossipSend();
-            return gc.GossipWithMeetAsync(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            if (!await TryInitializeAsync().ConfigureAwait(false))
+                throw new GarnetException("Cannot send MEET before the peer connection is initialized.");
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            timeout.CancelAfter(clusterProvider.clusterManager.clusterTimeout);
+            return await gossipNegotiation.ExchangeAsync(config, withMeet: true, NodeId, timeout.Token).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -234,37 +323,27 @@ namespace Garnet.cluster
         public bool TryGossip()
         {
             var task = gossipTask;
-            // If first time we are sending gossip make sure to send latest version
             if (task == null)
             {
                 // Issue first time gossip
-                var configArray = clusterProvider.clusterManager.CurrentConfig.ToByteArray(ClusterConfig.OutboundGossipVersion);
-                gossipTask = GossipAsync(configArray);
+                gossipTask = GossipAsync();
                 UpdateGossipSend();
-                clusterProvider.clusterManager.gossipStats.gossip_full_send++;
-                // Track bytes send
-                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configArray.Length);
                 return true;
             }
             else if (task.Status == TaskStatus.RanToCompletion)
             {
-                var configByteArray = GetMostRecentConfig();
+                // A full gossip round completed without faulting; the peer accepts GOSSIP so the
+                // reconnect backoff history can be cleared.
+                RecordConnectionSuccess();
                 UpdateGossipRecv();
 
                 // Issue new gossip that can be either zero packet size or an updated configuration
-                gossipTask = GossipAsync(configByteArray);
+                gossipTask = GossipAsync();
                 UpdateGossipSend();
-
-                // Track number of full vs empty (ping) sends
-                if (configByteArray.Length > 0)
-                    clusterProvider.clusterManager.gossipStats.gossip_full_send++;
-                else
-                    clusterProvider.clusterManager.gossipStats.gossip_empty_send++;
-
-                // Track bytes send
-                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
                 return true;
             }
+            if (!task.IsCompleted)
+                return true;
             logger?.LogWarning(task.Exception, "GOSSIP round faulted");
             ResetCts();
             gossipTask = null;
@@ -308,6 +387,9 @@ namespace Garnet.cluster
                 }
 
                 locked = true;
+                // The client is reused for the node's lifetime (gc is immutable), so the liveness check and
+                // send always target the same client; the dispose read lock above keeps the node's terminal
+                // disposal from tearing it down mid-send.
                 if (!gc.IsConnected)
                 {
                     logger?.LogError($"{nameof(TryClusterPublish)}: client not connected; skipping publish forwarding");

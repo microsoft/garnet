@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using Garnet.common;
 using Garnet.server;
@@ -252,8 +253,11 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var endpoint = current.GetEndpointFromNodeId(nodeId);
-            while (!RespWriteUtils.TryWriteAsciiBulkString(endpoint.ToString(), ref dcurr, dend))
+            Worker worker = current.GetWorkerFromNodeId(nodeId);
+            string endpoint = worker.Role == NodeRole.UNASSIGNED
+                ? "unassigned:0"
+                : new IPEndPoint(IPAddress.Parse(worker.Address), worker.Port).ToString();
+            while (!RespWriteUtils.TryWriteAsciiBulkString(endpoint, ref dcurr, dend))
                 SendAndReset();
             return true;
         }
@@ -382,6 +386,7 @@ namespace Garnet.cluster
 
             clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
             var current = clusterProvider.clusterManager.CurrentConfig;
+            bool unsupportedVersion = false;
 
             // Try merge if not just a ping message
             if (gossipMessage.Length > 0)
@@ -390,6 +395,7 @@ namespace Garnet.cluster
                 if (!ClusterConfig.TryPeekVersion(gossipMessage, out var version) || !ClusterConfig.IsSupportedVersion(version))
                 {
                     logger?.LogWarning("Received gossip with incompatible config version: {version}", version);
+                    unsupportedVersion = true;
                 }
                 else
                 {
@@ -398,6 +404,13 @@ namespace Garnet.cluster
                     // GossipWithMeet messages are only send through a call to CLUSTER MEET at the remote node
                     if (gossipWithMeet || current.IsKnown(other.LocalNodeId))
                     {
+                        if (!current.CanUseGossipVersion(version))
+                        {
+                            logger?.LogWarning("Rejecting gossip version {version}: separate client and peer endpoints require version two", version);
+                            while (!RespWriteUtils.TryWriteError("ERR Separate client and peer endpoints require gossip version two", ref dcurr, dend))
+                                SendAndReset();
+                            return true;
+                        }
                         if (version != gossipVersion)
                         {
                             gossipVersion = version;
@@ -423,13 +436,22 @@ namespace Garnet.cluster
                 }
             }
 
-            // Respond if configuration has changed or gossipWithMeet option is specified
-            if (lastSentConfig != current || gossipWithMeet)
+            byte replyVersion = unsupportedVersion ? ClusterConfig.MaximumSupportedClusterConfigVersion : gossipVersion;
+            if (lastSentConfig != current || gossipWithMeet || unsupportedVersion)
             {
-                var configByteArray = current.ToByteArray(gossipVersion);
+                if (!current.CanUseGossipVersion(replyVersion))
+                {
+                    logger?.LogWarning("Rejecting gossip reply version {version}: separate client and peer endpoints require version two", replyVersion);
+                    while (!RespWriteUtils.TryWriteError("ERR Separate client and peer endpoints require gossip version two", ref dcurr, dend))
+                        SendAndReset();
+                    return true;
+                }
+                var configByteArray = current.ToGossipByteArray(replyVersion);
                 clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
                 WriteLargeBulkString(configByteArray);
-                lastSentConfig = current;
+                // A version offer does not update the configuration cache for the selected format.
+                if (!unsupportedVersion)
+                    lastSentConfig = current;
             }
             else
             {
@@ -514,14 +536,13 @@ namespace Garnet.cluster
             // Expecting exactly 2 arguments
             if (parseState.Count != 2)
             {
-                invalidParameters = true;
+                logger?.LogError("Cluster publish was rejected because it expected 2 arguments but received {argumentCount}", parseState.Count);
                 return true;
             }
 
             if (clusterProvider.storeWrapper.subscribeBroker == null)
             {
-                while (!RespWriteUtils.TryWriteError("ERR PUBLISH is disabled, enable it with --pubsub option."u8, ref dcurr, dend))
-                    SendAndReset();
+                logger?.LogError("Cluster publish was rejected because pub/sub is disabled; enable it with --pubsub");
                 return true;
             }
 

@@ -34,12 +34,18 @@ namespace Garnet.cluster
         /// <summary>
         /// Get cluster username
         /// </summary>
-        public string ClusterUsername => authContainer.ClusterUsername;
+        public string ClusterUsername => ClusterAuth.ClusterUsername;
 
         /// <summary>
         /// Get cluster password
         /// </summary>
-        public string ClusterPassword => authContainer.ClusterPassword;
+        public string ClusterPassword => ClusterAuth.ClusterPassword;
+
+        /// <summary>
+        /// Current cluster authentication container, read with a memory barrier so reconnecting gossip
+        /// clients observe credential rotations performed through <see cref="UpdateClusterAuth"/>.
+        /// </summary>
+        internal ClusterAuthContainer ClusterAuth => Volatile.Read(ref authContainer);
 
         /// <summary>
         /// Create new cluster provider
@@ -238,7 +244,7 @@ namespace Garnet.cluster
             {
                 if (role == NodeRole.REPLICA)
                 {
-                    var (address, port) = config.GetLocalNodePrimaryAddress();
+                    var (address, port) = config.GetWorkerClientAddressFromNodeId(config.LocalNodePrimaryId);
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
                     var replicationOffsetAccLag = storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
                     var replicationOffsetVectorLag = storeWrapper.appendOnlyFile.Log.TailAddress.Diff(replicationManager.ReplicationOffset);
@@ -297,7 +303,7 @@ namespace Garnet.cluster
             var config = clusterManager.CurrentConfig;
             clusterManager.GetConnectionInfo(config.LocalNodePrimaryId, out var connection);
 
-            var (address, port) = config.GetLocalNodePrimaryAddress();
+            var (address, port) = config.GetWorkerClientAddressFromNodeId(config.LocalNodePrimaryId);
             var info = new RoleInfo()
             {
                 address = address,

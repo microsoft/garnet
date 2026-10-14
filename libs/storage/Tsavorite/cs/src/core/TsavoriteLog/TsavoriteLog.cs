@@ -782,6 +782,15 @@ namespace Tsavorite.core
         public int UnsafeGetLogPageSizeBits() => allocator.LogPageSizeBits;
 
         /// <summary>
+        /// Returns true if an entry whose serialized payload totals <paramref name="totalLength"/> bytes
+        /// fits within a single log page, accounting for the per-entry header and 4-byte alignment. An
+        /// entry larger than a page can never be enqueued (the Enqueue and TryEnqueue overloads all throw
+        /// for it), so callers that can tolerate oversized inputs should check this first and choose an
+        /// alternate path.
+        /// </summary>
+        public bool EntryFitsOnPage(int totalLength) => headerSize + Align(totalLength) <= allocator.PageSize;
+
+        /// <summary>
         /// The allocator's sector-aligned buffer pool, exposed so callers (e.g. the AOF chunked-object write path) can create a
         /// <see cref="ConditionallyHoistedKey"/> for keys they need to carry into the (struct-field-based) chunked serializer.
         /// May be null for allocators that never do buffered IO; a pinned key never dereferences it.
