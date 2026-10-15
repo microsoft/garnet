@@ -778,10 +778,7 @@ namespace Garnet.test
             TestContext.Out.WriteLine($"park={withPark:F0} B  no-park={withoutPark:F0} B  per park={perPark:F0} B");
 
             // Calibrated by removing [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))] from the command
-            // bodies and re-measuring: pooled costs 45 B per park on net8 and under 20 B on net10, unpooled
-            // costs 195 B. The floor is not zero because the network handler's own continuation frame
-            // (AwaitProcessAsync) uses the default builder, which boxes its state machine on .NET 8; that is
-            // one allocation on the park path only, and the no-park path stays at zero. The bound sits
+            // bodies and re-measuring: pooled costs under 20 B per park, unpooled costs 195 B. The bound sits
             // between the two so it still catches a lost pool without tracking the runtime's own box churn.
             ClassicAssert.Less(perPark, 128,
                 "Parking allocates per command: a pool on the suspension path is being missed.");

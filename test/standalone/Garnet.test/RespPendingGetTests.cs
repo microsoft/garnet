@@ -1174,21 +1174,21 @@ namespace Garnet.test
         /// </para>
         /// <para>
         /// Calibration, all from Linux, which is where the bound is enforced. Both the floor and the spread
-        /// depend on the runtime and on what else the machine is doing, so each leg carries its own bound and
-        /// each bound is set from the loaded numbers, which are the ones CI reproduces.
+        /// depend on the runtime and on what else the machine is doing, so the bound is set from the loaded
+        /// numbers, which are the ones CI reproduces.
         /// </para>
         /// <list type="table">
-        /// <listheader><term>variant</term><description>net10.0 / net8.0</description></listheader>
-        /// <item><term>as written, machine busy</term><description>23-34 B / 62-71 B</description></item>
-        /// <item><term>as written, machine idle</term><description>-29 to -43 B / -3 to -7 B</description></item>
+        /// <listheader><term>variant</term><description>net10.0</description></listheader>
+        /// <item><term>as written, machine busy</term><description>23-34 B</description></item>
+        /// <item><term>as written, machine idle</term><description>-29 to -43 B</description></item>
         /// <item><term>driver parked on the <c>ValueTask</c> wait instead of registering itself as a work
         /// item, so completing a plain delegate makes the thread pool box it; idle</term>
-        /// <description>-4 to 2 B / 24 to 26 B</description></item>
-        /// <item><term>the same, busy</term><description>53-65 B / 89-100 B</description></item>
+        /// <description>-4 to 2 B</description></item>
+        /// <item><term>the same, busy</term><description>53-65 B</description></item>
         /// <item><term>driver replaced by the two compiler-generated async frames it subsumes; busy</term>
-        /// <description>52-74 B / not measured</description></item>
+        /// <description>52-74 B</description></item>
         /// <item><term>uncancellable wait routed back through the semaphore; busy</term>
-        /// <description>153-172 B / not measured</description></item>
+        /// <description>153-172 B</description></item>
         /// </list>
         /// <para>
         /// The whole table shifts by tens of bytes with load, because load changes how often a receive
@@ -1248,11 +1248,7 @@ namespace Garnet.test
             if (!OperatingSystem.IsLinux())
                 return;
 
-#if NET8_0
-            const int Bound = 80;
-#else
             const int Bound = 45;
-#endif
             ClassicAssert.Less(perRead, Bound,
                 "A park on the pending-read path allocates more than it should: the reusable waiter was bypassed, the pooled driver was replaced by async frames, or the driver stopped parking as a work item.");
 #endif
