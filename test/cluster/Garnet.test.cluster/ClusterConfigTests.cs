@@ -718,6 +718,70 @@ namespace Garnet.test.cluster
                 Is.EquivalentTo(["203.0.113.1", "203.0.113.2"]));
         }
 
+        [TestCase(0)]
+        [TestCase(1)]
+        public void SameOwnerGossipPreservesImportingSlot(long sourceEpoch)
+        {
+            ClusterConfig source = new ClusterConfig().InitializeLocalWorker(new string('a', 40), "127.0.0.1",
+                ClusterTestContext.Port, sourceEpoch, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            Assert.That(source.TryAddSlots([1234], out _, out ClusterConfig assigned), Is.True);
+            source = assigned;
+            ClusterConfig target = new ClusterConfig().InitializeLocalWorker(new string('b', 40), "127.0.0.1",
+                ClusterTestContext.Port + 1, 2, Garnet.cluster.NodeRole.PRIMARY, null, "").Merge(source, EmptyBanList);
+            target = target.UpdateSlotState(1234, target.GetWorkerIdFromNodeId(source.LocalNodeId), SlotState.IMPORTING);
+
+            ClusterConfig merged = target.Merge(source, EmptyBanList);
+            Assert.That(merged.GetState(1234), Is.EqualTo(SlotState.IMPORTING));
+            Assert.That(merged.GetNodeIdFromSlot(1234), Is.EqualTo(source.LocalNodeId));
+        }
+
+        [Test]
+        public void NewOwnerGossipCanReplaceImportingSlot()
+        {
+            ClusterConfig source = new ClusterConfig().InitializeLocalWorker(new string('a', 40), "127.0.0.1",
+                ClusterTestContext.Port, 1, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            Assert.That(source.TryAddSlots([1234], out _, out ClusterConfig assigned), Is.True);
+            ClusterConfig target = new ClusterConfig().InitializeLocalWorker(new string('b', 40), "127.0.0.1",
+                ClusterTestContext.Port + 1, 2, Garnet.cluster.NodeRole.PRIMARY, null, "").Merge(assigned, EmptyBanList);
+            target = target.UpdateSlotState(1234, target.GetWorkerIdFromNodeId(source.LocalNodeId), SlotState.IMPORTING);
+            ClusterConfig newOwner = new ClusterConfig().InitializeLocalWorker(new string('c', 40), "127.0.0.1",
+                ClusterTestContext.Port + 2, 3, Garnet.cluster.NodeRole.PRIMARY, null, "");
+            Assert.That(newOwner.TryAddSlots([1234], out _, out ClusterConfig newClaim), Is.True);
+
+            ClusterConfig merged = target.Merge(newClaim, EmptyBanList);
+            Assert.That(merged.GetState(1234), Is.EqualTo(SlotState.STABLE));
+            Assert.That(merged.GetNodeIdFromSlot(1234), Is.EqualTo(newOwner.LocalNodeId));
+        }
+
+        [Test]
+        public void DelayedZeroEpochGossipDoesNotLoseMigratedValue()
+        {
+            CreateSeparateEndpointCluster(2);
+            ClusterProvider[] providers = context.nodes.Select(node => (ClusterProvider)node.Provider.StoreWrapper.clusterProvider).ToArray();
+            int source = providers[0].clusterManager.CurrentConfig.LocalNodeConfigEpoch == 0 ? 0 : 1;
+            int target = 1 - source;
+            Assert.That(providers[source].clusterManager.CurrentConfig.LocalNodeConfigEpoch, Is.Zero);
+            const string key = "{peer}key";
+            ushort slot = HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            string sourceId = providers[source].clusterManager.CurrentConfig.LocalNodeId;
+            string targetId = providers[target].clusterManager.CurrentConfig.LocalNodeId;
+            Assert.That(ExecuteNode(source, "CLUSTER", "ADDSLOTS", (int)slot).ToString(), Is.EqualTo("OK"));
+            Assert.That(ExecuteNode(source, "SET", key, "value").ToString(), Is.EqualTo("OK"));
+            WaitForConfig(target, config => config.GetNodeIdFromSlot(slot) == sourceId);
+            byte[] delayedGossip = providers[source].clusterManager.CurrentConfig.ToGossipByteArray(2);
+            Assert.That(ExecuteNode(target, "CLUSTER", "SETSLOT", (int)slot, "IMPORTING", sourceId).ToString(), Is.EqualTo("OK"));
+            Assert.That(ExecuteNode(source, "CLUSTER", "SETSLOT", (int)slot, "MIGRATING", targetId).ToString(), Is.EqualTo("OK"));
+
+            using Garnet.client.GarnetClient gossipClient = TestUtils.GetGarnetClient(context.endpoints[target]);
+            gossipClient.Connect();
+            using MemoryResult<byte> gossipReply = gossipClient.GossipAsync(delayedGossip).GetAwaiter().GetResult();
+            Assert.That(ExecuteNode(source, "MIGRATE", $"203.0.113.{target + 1}", 17001 + target, "", 0, 10000, "KEYS", key).ToString(), Is.EqualTo("OK"));
+            Assert.That(ExecuteNode(target, "CLUSTER", "SETSLOT", (int)slot, "NODE", targetId).ToString(), Is.EqualTo("OK"));
+            Assert.That(ExecuteNode(source, "CLUSTER", "SETSLOT", (int)slot, "NODE", targetId).ToString(), Is.EqualTo("OK"));
+            Assert.That(ExecuteNode(target, "GET", key).ToString(), Is.EqualTo("value"));
+            Assert.That(ExecuteNode(source, "DBSIZE").ToString(), Is.EqualTo("0"));
+        }
+
         [Test]
         public void SeparateEndpointsRefreshAfterOwnerRestartTest()
         {
