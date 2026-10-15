@@ -52,17 +52,11 @@ namespace Garnet.cluster
                 }
 
                 // Transmit keys from store (skipping VectorSet and RangeIndex keys, which are handled out-of-band)
-#if NET9_0_OR_GREATER
                 var vectorSetLookup = indexesToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
                 var rangeIndexLookup = rangeIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
                 bool ShouldSkipKey(PinnedSpanByte key) =>
                     (indexesToMigrate.Count > 0 && vectorSetLookup.ContainsKey(key.ReadOnlySpan)) ||
                     (rangeIndexKeysToMigrate.Count > 0 && rangeIndexLookup.Contains(key.ReadOnlySpan));
-#else
-                bool ShouldSkipKey(PinnedSpanByte key) =>
-                    (indexesToMigrate.Count > 0 && indexesToMigrate.ContainsKey(key.ToArray())) ||
-                    (rangeIndexKeysToMigrate.Count > 0 && rangeIndexKeysToMigrate.Contains(key.ToArray()));
-#endif
                 if (!await migrateTask.TransmitKeysAsync(ShouldSkipKey).ConfigureAwait(false))
                 {
                     logger?.LogError("Failed transmitting keys from store");

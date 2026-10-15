@@ -126,7 +126,7 @@ namespace Garnet.networking
                     cancellationToken.ThrowIfCancellationRequested();
                     copiedBytes = Math.Min(garnetNetworkHandler.networkBytesRead - garnetNetworkHandler.networkReadHead, buffer.Length);
 
-                    // .NET 8 SslStream does zero-byte reads, so we need to handle that case by
+                    // SslStream may perform zero-byte reads, so handle that case by
                     // breaking if there is new data, but we were given a zero-byte buffer
                     if (copiedBytes > 0 || garnetNetworkHandler.networkBytesRead - garnetNetworkHandler.networkReadHead > 0)
                         break;

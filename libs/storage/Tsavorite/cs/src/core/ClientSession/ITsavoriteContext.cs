@@ -18,10 +18,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>The hashcode of the key; created and returned by <see cref="IKeyComparer.GetHashCode64"/></returns>
         long GetKeyHash<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             ;
     }
 
@@ -29,10 +26,7 @@ namespace Tsavorite.core
     /// Interface for Tsavorite operations
     /// </summary>
     public interface ITsavoriteContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteContext
-        where TKey : IKey
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
+        where TKey : IKey, allows ref struct
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -186,10 +180,7 @@ namespace Tsavorite.core
         /// Read batch operation, which attempts to prefetch as an optimization.
         /// </summary>
         void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
-            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>, allows ref struct
             ;
 
         /// <summary>
@@ -317,10 +308,7 @@ namespace Tsavorite.core
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
         Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord diskLogRecord)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TOpKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -331,10 +319,7 @@ namespace Tsavorite.core
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
         Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TOpKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>
@@ -355,10 +340,7 @@ namespace Tsavorite.core
         /// <param name="diskLogRecord">Log record that was read from disk</param>
         /// <returns></returns>
         Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TOpKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord;
 
         /// <summary>

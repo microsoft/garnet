@@ -45,9 +45,7 @@ namespace Garnet.server
     {
         public HashSet<byte[]> Set { get; }
 
-#if NET9_0_OR_GREATER
         private readonly HashSet<byte[]>.AlternateLookup<ReadOnlySpan<byte>> setLookup;
-#endif
 
         /// <summary>
         ///  Constructor
@@ -57,9 +55,7 @@ namespace Garnet.server
         {
             Set = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
-#if NET9_0_OR_GREATER
             setLookup = Set.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
         }
 
         /// <summary>
@@ -78,9 +74,7 @@ namespace Garnet.server
                 UpdateSize(item);
             }
 
-#if NET9_0_OR_GREATER
             setLookup = Set.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
         }
 
         /// <summary>
@@ -91,9 +85,7 @@ namespace Garnet.server
         {
             Set = set;
 
-#if NET9_0_OR_GREATER
             setLookup = Set.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
 
         }
 

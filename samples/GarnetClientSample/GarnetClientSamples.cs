@@ -253,11 +253,7 @@ namespace GarnetClientSample
 
         static X509Certificate2 GetClientCertificate(string filename, string password)
         {
-#if NET9_0_OR_GREATER
             return X509CertificateLoader.LoadPkcs12FromFile(filename, password);
-#else
-            return new X509Certificate2(filename, password);
-#endif
         }
 
         SslClientAuthenticationOptions GetSslOpts() => useTLS ? new()

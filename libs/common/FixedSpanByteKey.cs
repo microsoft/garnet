@@ -4,9 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-#if !NET9_0_OR_GREATER
-using System.Runtime.InteropServices;
-#endif
 using Tsavorite.core;
 
 namespace Garnet.common
@@ -17,17 +14,8 @@ namespace Garnet.common
     /// In addition to the span being pinned during, it must also be "fixed" - that is unmoving and not-reused over the whole lifetime of a Tsavorite operation.
     /// This is inclusive of asynchronous completions.
     /// </summary>
-    public readonly
-#if NET9_0_OR_GREATER
-        ref
-#endif
-        struct FixedSpanByteKey : IKey
+    public readonly ref struct FixedSpanByteKey : IKey
     {
-#if !NET9_0_OR_GREATER
-        private readonly unsafe void* ptr;
-        private readonly int len;
-#endif
-
         /// <inheritdoc/>
         public readonly bool IsPinned
         {
@@ -46,17 +34,7 @@ namespace Garnet.common
         public readonly ReadOnlySpan<byte> KeyBytes
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#if NET9_0_OR_GREATER
-            get; 
-#else
-            get
-            {
-                unsafe
-                {
-                    return new(ptr, len);
-                }
-            }
-#endif
+            get;
         }
 
         /// <inheritdoc/>
@@ -77,15 +55,7 @@ namespace Garnet.common
 
         private FixedSpanByteKey(ReadOnlySpan<byte> key)
         {
-#if NET9_0_OR_GREATER
             KeyBytes = key;
-#else
-            unsafe
-            {
-                ptr = Unsafe.AsPointer(ref MemoryMarshal.GetReference(key));
-            }
-            len = key.Length;
-#endif
         }
 
         /// <inheritdoc/>

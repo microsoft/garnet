@@ -30,22 +30,13 @@ namespace Tsavorite.test.Revivification
         }
 
         public bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => defaultComparer.Equals(k1, k2);
 
         // The hash code ends with 0 so mod Ten isn't so helpful, so shift
         public long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             => (defaultComparer.GetHashCode64(k) >> 4) % collisionRange;
     }
 }
@@ -1767,20 +1758,14 @@ namespace Tsavorite.test.Revivification
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void VerifyKey<TKey>(TKey functionsKey)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
             {
                 if (keyComparer is not null)
                     ClassicAssert.IsTrue(keyComparer.Equals(expectedKey, functionsKey));
             }
 
             private void VerifyKeyAndValue<TKey>(TKey functionsKey, ReadOnlySpan<byte> functionsValue)
-                      where TKey : IKey
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                      where TKey : IKey, allows ref struct
             {
                 if (keyComparer is not null)
                     ClassicAssert.IsTrue(keyComparer.Equals(expectedKey, functionsKey), "functionsKey does not equal expectedKey");

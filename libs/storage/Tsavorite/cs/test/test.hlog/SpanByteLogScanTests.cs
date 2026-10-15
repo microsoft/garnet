@@ -21,22 +21,13 @@ namespace Tsavorite.test.spanbyte
         internal SpanByteComparerModulo(long mod) => this.mod = mod;
 
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
 
         // Force collisions to create a chain
         public readonly long GetHashCode64<TKey>(TKey k)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             long hash = SpanByteComparer.StaticGetHashCode64(k.KeyBytes);
             return mod > 0 ? hash % mod : hash;

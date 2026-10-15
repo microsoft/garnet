@@ -13,10 +13,7 @@ namespace Tsavorite.core
     /// Tsavorite Context implementation that allows Transactional control of locking and automatic epoch management. For advanced use only.
     /// </summary>
     public readonly struct TransactionalContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> : ITsavoriteContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>, ITransactionalContext
-        where TKey : IKey
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
+        where TKey : IKey, allows ref struct
         where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -352,10 +349,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public long GetKeyHash<TOpKey>(TOpKey key)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TOpKey : IKey, allows ref struct
             => clientSession.store.GetKeyHash(key);
 
         /// <inheritdoc/>
@@ -470,10 +464,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
-            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
-#if NET9_0_OR_GREATER
-            , allows ref struct
-#endif
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>, allows ref struct
         {
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -649,10 +640,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, in TSourceLogRecord diskLogRecord)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TOpKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
         {
             TInput input = default;
@@ -664,10 +652,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord diskLogRecord)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TOpKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
         {
             TOutput output = default;
@@ -684,10 +669,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TOpKey, TSourceLogRecord>(TOpKey key, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
-            where TOpKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TOpKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());

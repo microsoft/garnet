@@ -118,10 +118,8 @@ namespace Resp.benchmark
                 || sslPolicyErrors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
                 return false;
 
-#pragma warning disable SYSLIB0057 // Required while Resp.benchmark still targets net8.0.
             using var serverCertificate = new X509Certificate2(certificate);
-            using var issuerCertificate = new X509Certificate2(issuerCertificatePath);
-#pragma warning restore SYSLIB0057
+            using var issuerCertificate = X509CertificateLoader.LoadCertificateFromFile(issuerCertificatePath);
             using var validationChain = new X509Chain();
             validationChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
             validationChain.ChainPolicy.CustomTrustStore.Add(issuerCertificate);
