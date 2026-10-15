@@ -39,10 +39,10 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.AttachReplicaToPrimary(replicaIndex, PrimaryIndex, logger: context.logger);
         }
 
-#if DEBUG
         [Test]
         public void VectorSetDisklessCheckpointDoesNotWriteToAof()
         {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
             const string Key = "{vsdisk}checkpoint-no-aof";
             SetupDisklessCluster(2);
             PopulateVectorSet(PrimaryIndex, Key, count: 200);
@@ -74,7 +74,6 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.ResumeParking();
             }
         }
-#endif
 
         /// <summary>
         /// Populated sets travel by diskless full sync, then the replica reads them. This catches

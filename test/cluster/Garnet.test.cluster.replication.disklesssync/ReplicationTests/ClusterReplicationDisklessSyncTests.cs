@@ -4,9 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-#if DEBUG
 using Garnet.common;
-#endif
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -178,11 +176,11 @@ namespace Garnet.test.cluster
             Validate(primaryIndex, replicaIndex, disableObjects);
         }
 
-#if DEBUG
         [Test]
         [Category("REPLICATION")]
         public void ClusterDisklessCheckpointDoesNotWriteToAof()
         {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
             const int primaryIndex = 0;
             const int replicaIndex = 1;
             context.CreateInstances(2, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
@@ -219,7 +217,6 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.ResumeParking();
             }
         }
-#endif
 
         /// <summary>
         /// Full diskless sync of records larger than the replication send buffer (2 &lt;&lt; AofPageSizeBits), which exercises the
