@@ -269,6 +269,71 @@ namespace Garnet.test.cluster
         static unsafe PinnedSpanByte MakePinnedKey(IntPtr pointer, int length)
             => PinnedSpanByte.FromPinnedPointer((byte*)pointer, length);
 
+        [Test, CancelAfter(120_000)]
+        public async Task PrimaryFailoverDrainsPostPauseSessionsBeforeTakeover()
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            using var firstConnection = new TcpClient();
+            using var incomingConnection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var first = await ConnectIdleSessionAsync(firstConnection, deadline.Token);
+            var incoming = await ConnectIdleSessionAsync(incomingConnection, deadline.Token);
+            first.AcquireCurrentEpoch();
+            try
+            {
+                var initialEpoch = first.LocalCurrentEpoch;
+                var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+                Assert.That(context.clusterTestUtils.GetServer(0).Execute(
+                    "FAILOVER", "TO", endpoint.Address.ToString(), endpoint.Port, "TIMEOUT", 30_000).ToString(), Is.EqualTo("OK"));
+                Assert.That(() => primary.garnetEpoch.GetCurrentEpoch(), Is.GreaterThan(initialEpoch).After(5_000, 10));
+                Assert.That(primary.failoverManager.IsWritePaused, Is.True);
+
+                // This request can retain the primary snapshot without blocking the initial pause barrier.
+                incoming.AcquireCurrentEpoch();
+                var incomingEpoch = incoming.LocalCurrentEpoch;
+                var config = primary.clusterManager.CurrentConfig;
+                Assert.That(config.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+                Assert.That(incomingEpoch, Is.GreaterThan(initialEpoch));
+                first.ReleaseCurrentEpoch();
+
+                Assert.That(() => primary.clusterManager.CurrentConfig.LocalNodeRole,
+                    Is.EqualTo(ClusterNodeRole.REPLICA).After(5_000, 10));
+                Assert.That(() => primary.garnetEpoch.GetCurrentEpoch(), Is.GreaterThan(incomingEpoch).After(5_000, 10),
+                    "Demotion must start a new epoch barrier for requests that entered after the pause.");
+                Assert.That(primary.failoverManager.IsWritePaused, Is.True);
+                Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA),
+                    "The selected replica must not promote while a request retains the old primary snapshot.");
+
+                var keyBytes = "handoff-paused-write"u8.ToArray();
+                var pin = GCHandle.Alloc(keyBytes, GCHandleType.Pinned);
+                try
+                {
+                    var key = MakePinnedKey(pin.AddrOfPinnedObject(), keyBytes.Length);
+                    var verify = typeof(ClusterSession).GetMethod("SingleKeySlotVerify", BindingFlags.Instance | BindingFlags.NonPublic);
+                    object[] args = [config, key, false, false, false, (int)HashSlotUtils.HashSlot(key)];
+                    var result = (ClusterSlotVerificationResult)verify.Invoke(incoming, args);
+                    Assert.That(result.state, Is.EqualTo(SlotVerifiedState.CLUSTERDOWN),
+                        "A request with a stale primary snapshot must still observe the write pause.");
+                }
+                finally
+                {
+                    pin.Free();
+                }
+            }
+            finally
+            {
+                first.ReleaseCurrentEpoch();
+                incoming.ReleaseCurrentEpoch();
+            }
+
+            context.clusterTestUtils.WaitForNoFailover(0, context.logger);
+            context.clusterTestUtils.WaitForNoFailover(1, context.logger);
+            Assert.That(primary.failoverManager.IsWritePaused, Is.False);
+            Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA));
+            Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+        }
+
         [TestCase(false, false)]
         [TestCase(false, true)]
         [TestCase(true, false)]
