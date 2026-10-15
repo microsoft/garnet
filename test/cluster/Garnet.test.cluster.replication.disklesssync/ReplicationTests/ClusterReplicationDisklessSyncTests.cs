@@ -195,12 +195,11 @@ namespace Garnet.test.cluster
                 _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, async: true, logger: context.logger);
                 ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
                 ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(replicaIndex), "The entire checkpoint must arrive without appending to the replica AOF");
-            }
 
-            // Recovery wakes asynchronously, so keep parking suspended until sync completes.
-            using var parking = ExceptionInjectionHelper.SuspendParkingScope();
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
-            Validate(primaryIndex, replicaIndex, disableObjects: true);
+                ExceptionInjectionHelper.EnableException(pause);
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+                Validate(primaryIndex, replicaIndex, disableObjects: true);
+            }
         }
 
         /// <summary>

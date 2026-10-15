@@ -54,14 +54,13 @@ namespace Garnet.test.cluster
                 _ = context.clusterTestUtils.ClusterReplicate(ReplicaIndex, PrimaryIndex, async: true, logger: context.logger);
                 ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(System.TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
                 ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(ReplicaIndex), "Vector Set checkpoint import must not append to the replica AOF before recovery resets it");
-            }
 
-            // Recovery wakes asynchronously, so keep parking suspended until sync completes.
-            using var parking = ExceptionInjectionHelper.SuspendParkingScope();
-            context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
-            context.clusterTestUtils.ReadOnly(ReplicaIndex);
-            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
-            AssertOwnsItsIndex(ReplicaIndex, PrimaryIndex, Key);
+                ExceptionInjectionHelper.EnableException(pause);
+                context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
+                context.clusterTestUtils.ReadOnly(ReplicaIndex);
+                AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
+                AssertOwnsItsIndex(ReplicaIndex, PrimaryIndex, Key);
+            }
         }
 
         /// <summary>

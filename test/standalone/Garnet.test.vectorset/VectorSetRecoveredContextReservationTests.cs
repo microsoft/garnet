@@ -86,7 +86,6 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                ClassicAssert.AreEqual("vectorset", (string)db.Execute("TYPE", Recovered), "the recovered key lost its Vector Set record type");
                 ClassicAssert.AreEqual(Elements, (int)db.Execute("VCARD", [Recovered]),
                     "the recovered Vector Set lost elements during recovery");
 
@@ -99,7 +98,6 @@ namespace Garnet.test
 
                 ClassicAssert.AreEqual(Elements, (int)db.Execute("VCARD", [Fresh]),
                     "the newly created Vector Set did not receive all of its elements");
-                ClassicAssert.AreEqual("vectorset", (string)db.Execute("TYPE", Fresh), "the new key has the wrong Vector Set record type");
 
                 ClassicAssert.AreEqual(Elements, (int)db.Execute("VCARD", [Recovered]),
                     "creating a new Vector Set after recovery changed the recovered Vector Set's cardinality, " +

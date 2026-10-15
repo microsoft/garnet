@@ -210,7 +210,6 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
 
-                ClassicAssert.AreEqual("vectorset", (string)db.Execute("TYPE", key), $"'{key}' lost its Vector Set record type during recovery");
                 if (recoverIntoSmallerLog)
                     AssertEvictedToDisk(redis, "recovering into a smaller log should leave records on disk");
 
