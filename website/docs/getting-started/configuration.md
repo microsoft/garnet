@@ -80,9 +80,11 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | ----------- | ----------- | ----------- | ----------- | ----------- |
 | **Port** | ```--port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port to run server on |
 | **Address** | ```--bind``` | ```string``` | IP Address in v4/v6 format | Whitespace or comma separated string of IP addresses to bind server to (default: any) |
-| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Port that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | IP address that this node advertises to other nodes to connect to for gossiping. |
-| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Hostname that this node advertises to other nodes to connect to for gossiping. |
+| **ClusterAnnouncePort** | ```--cluster-announce-port``` | ```int``` | Integer in range:<br/>[0, 65535] | Client port. Zero uses the listening port. Nodes use this unless ClusterPort is set. |
+| **ClusterAnnounceIp** | ```--cluster-announce-ip``` | ```string``` | IP Address in v4/v6 format | Client address. Nodes use this unless ClusterAddress is set. |
+| **ClusterAnnounceHostname** | ```--cluster-announce-hostname``` | ```string``` |  | Client hostname. |
+| **ClusterAddress** | ```--cluster-address``` | ```string``` | IPv4 or IPv6 address, except ```0.0.0.0``` and ```::``` | Peer address. Defaults to the client address. Does not change the listening address. |
+| **ClusterPort** | ```--cluster-port``` | ```int``` | Integer in range:<br/>[1, 65535] | Peer port. Defaults to the client port. Does not change the listening port. |
 | **ClusterPreferredEndpointType** | ```--cluster-preferred-endpoint-type``` | ```ClusterPreferredEndpointType``` | ip, hostname, unknown | Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown) |
 | **LogMemorySize** | ```-m```<br/>```--memory``` | ```string``` | Memory size | Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2 |
 | **PageSize** | ```-p```<br/>```--page``` | ```string``` | Memory size | Size of each main-log page in bytes (rounds down to power of 2; minimum 512). |
@@ -227,6 +229,7 @@ For all available command line settings, run `GarnetServer.exe -h` or `GarnetSer
 | **ExtensionAllowUnsignedAssemblies** | ```--extension-allow-unsigned``` | ```bool``` |  | Allow loading custom commands from digitally unsigned assemblies (not recommended) |
 | **IndexResizeFrequencySecs** | ```--index-resize-freq``` | ```int``` | Integer in range:<br/>[1, MaxValue] | Hash-index resize check frequency in seconds |
 | **IndexResizeThreshold** | ```--index-resize-threshold``` | ```int``` | Integer in range:<br/>[1, 100] | Hash-index Overflow bucket count over total index size in percentage to trigger index resize |
+| **IndexOverflowThreshold** | ```--index-overflow-threshold``` | ```int``` | Integer in range:<br/>[1, 10000] | Hash-index overflow bucket count over total index size in percentage at which allocation fails. Same unit as --index-resize-threshold and must exceed it. Overflow buckets hold hash entries that do not fit the main bucket array, so they grow with the number of distinct keys rather than with the size of the data, and no index size setting bounds them. They also chain linearly and are scanned by reads and upserts, so this is the average chain length allowed: 300 permits three overflow buckets per main bucket. Exceeding it fails the write with a clear error instead of growing until the process is OOM-killed. |
 | **MaxInlineKeySize** | ```--max-inline-key-size``` | ```string``` | Memory size | Maximum size of a key stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. "1k", "128"). Must be in range [0, 1022] bytes; default is 1022. |
 | **MaxInlineValueSize** | ```--max-inline-value-size``` | ```string``` | Memory size | Maximum size of a value stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. "4k", "15m"). Must be in range [0, 16777214] bytes; default is min (1m, PageSize / 2). |
 | **InitialIORecordSize** | ```--initial-io-record-size``` | ```string``` | Memory size | Initial IO read size for records on disk. Accepts a memory size (e.g. 4k, 8k). Default is 128 bytes. |
@@ -297,13 +300,54 @@ when no valid checkpoint could be selected.
 
 ---
 
-## Cluster configuration compatibility
+## Separate peer and client endpoints
 
-:::warning Breaking change
+`--cluster-announce-ip`, `--cluster-announce-port`, and `--cluster-announce-hostname`
+set the addresses and ports returned to clients, including `MOVED` and `ASK` responses.
+`--cluster-preferred-endpoint-type` controls the addresses in `MOVED` and `ASK` responses.
 
-Garnet 2.2.0 writes persisted cluster configuration in format version two. After `nodes.conf`
-has been rewritten, the node cannot be rolled back to a Garnet version earlier than 2.2.0
-that only supports format version one. Back up the cluster configuration before upgrading.
+`--cluster-address` and `--cluster-port` set the peer address and port used between nodes.
+Omitted settings use the corresponding client values.
+The port must be between 1 and 65535.
+
+`CLUSTER NODES`, `CLUSTER ENDPOINT`, `INFO replication`, and `ROLE` return client addresses and ports.
+Errors from `CLUSTER FAILOVER` also report client addresses and ports.
+Get peer addresses and ports from the server configuration.
+`REPLICAOF`, `FAILOVER TO`, and `MIGRATE` accept known client or peer endpoints but connect
+through the peer endpoint.
+
+`CLUSTER MEET` connects to the supplied address and port.
+The target must be reachable from the node executing the command, not necessarily from the client.
+Use peer addresses when client addresses are unreachable between nodes.
+
+Example with separate client and peer addresses:
+
+```text
+--bind 10.0.0.4 --port 6379
+--cluster-announce-ip 203.0.113.4 --cluster-announce-port 17004
+--cluster-announce-hostname cache.example.com --cluster-preferred-endpoint-type hostname
+--cluster-address 10.0.0.4 --cluster-port 6379
+```
+
+Configure listening ports, networking, and certificates separately.
+On startup, configured addresses and ports replace those saved in `nodes.conf`.
+
+### Upgrade compatibility
+
+Gossip starts with the sender's highest supported format. A receiver that cannot read that format replies
+with a full configuration in its own highest supported format. The sender retries in that format if it is
+supported locally. A successful exchange selects the format for that connection; reconnecting starts negotiation
+again. Older releases retain their existing response behavior.
+
+Clusters with identical client and peer endpoints can upgrade directly to 2.2.2 without
+first upgrading every node to 2.2.0.
+Keep existing addresses and ports throughout the rolling upgrade.
+Configure separate client and peer endpoints only after every node runs 2.2.2 or later.
+
+:::warning Downgrade compatibility
+
+Back up `nodes.conf` before upgrading to 2.2.0 or later. Versions older than 2.2.0 cannot
+read this file once it has been rewritten by 2.2.0 or later.
 
 :::
 

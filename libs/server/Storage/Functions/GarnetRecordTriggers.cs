@@ -16,7 +16,7 @@ namespace Garnet.server
     {
         /// <summary>
         /// Cache size tracker for heap size accounting.
-        /// Created before the store and initialized after via <see cref="CacheSizeTracker.Initialize"/>.
+        /// Created before the store and initialized after via <c>CacheSizeTracker.Initialize</c>.
         /// May be <c>null</c> if memory tracking is disabled.
         /// </summary>
         internal readonly CacheSizeTracker cacheSizeTracker;
@@ -202,10 +202,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                               ref LogRecord dstLogRecord, long dstLogicalAddress)
-            where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TSourceLogRecord : ISourceLogRecord, allows ref struct
         {
             // Only act on RangeIndex records.
             // Check the SOURCE's RecordType, not the destination's: Tsavorite's
