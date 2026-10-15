@@ -216,8 +216,16 @@ and a 5 MB framed object value.
 The low 60 bits carry a position, so there is no spare value that means "no position": address 0 is a real location.
 The unstamped state is therefore encoded by setting *all* 60 address bits, which the flag bits survive
 unchanged. `ObjectLogPositionInfo` owns this encoding — `Unstamp` sets it, `WordIsUnstamped`/`IsUnstamped` test it,
-and callers must not compare against `NotSet` themselves. The legacy all-ones `NotSet` word satisfies the same test, so
-older words read as unstamped without a version check.
+and callers must not compare against `NotSet` themselves.
+
+`NotSet` — the word a position carries before any flush stamps it — is itself a **60-bit** value, leaving every flag
+bit clear. That matters beyond tidiness: a flag is a claim about the position, and an unstamped word makes no claims.
+When `NotSet` was all-ones, every freshly initialized record read as "has a directory", and a protocol that tries to
+acquire ownership by setting a flag bit would find the bit already set — a no-op rather than a transition.
+
+Words written before `NotSet` was narrowed are still all-ones. They remain correctly recognized as unstamped, because
+every test for that goes through `WordIsUnstamped`, which examines only the address bits. Flag **readers** must
+therefore reject an unstamped word rather than testing their bit in isolation, which is what `WordHasDirectory` does.
 
 A record is unstamped at every point where it gains components that have not been written to the object log
 (`InitializeRecord`, `TrySetValueObject`, and the overflow key/value setters), and again by
@@ -1228,16 +1236,15 @@ A multi-chunk object records where its chunks are, rather than letting a reader 
 - **set** — the position addresses a *directory record* listing every chunk.
 
 `HasDirectory` is read through `ObjectLogPositionInfo.WordHasDirectory`, which reports false whenever the position is
-unstamped. That is not a convenience: a never-stamped record's position word is `NotSet` — **all** 64 bits, flag bits
-included — because that is what record initialization writes, so a raw mask test would report a directory on every
-freshly initialized record. A directory cannot exist without a position, so the two states are mutually exclusive by
-construction.
+unstamped — a directory cannot exist without a position. This is what makes the flag safe to read on a word that came
+from a downlevel image, where the unstamped marker was all-ones and every flag bit therefore appears set.
 
-> **A single chunk does not by itself imply no directory.** A record with *both* an overflow key and an out-of-line
-> value can have both fit in one chunk, and nothing then records where the key ends and the value begins — the rounded
-> size hints plus a total length do not identify the split. The rule for that case is still being settled; see the
-> capture-path blockers in the working plan. Do not implement the writer on the assumption that "fits one allocation"
-> means `HasDirectory` is clear.
+> **A record with both an overflow key and an out-of-line value always has a directory**, even when both fit one
+> chunk, because nothing else records where the key ends and the value begins. "Fits one allocation" never implies
+> `HasDirectory` is clear. A chunk holding the end of the key and the start of the value carries **two entries at the
+> same address** — one per component, each with its own length — and a reader resolves an entry's offset as
+> `address + sum(lengths of preceding entries sharing that address)`, issuing one IO per distinct address. At most two
+> entries can share an address, since there are only two components.
 
 A `DirectoryEntry` is 12 bytes:
 

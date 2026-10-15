@@ -69,7 +69,7 @@ namespace Tsavorite.core
         /// existing stamp refers to the downlevel device that the conversion is replacing.</param>
         internal void SetLowestObjectLogPosition(in ObjectLogPositionInfo position, bool force = false)
         {
-            if (force || objectLogLowestPositionWord == ObjectLogPositionInfo.NotSet)
+            if (force || ObjectLogPositionInfo.WordIsUnstamped(objectLogLowestPositionWord))
                 objectLogLowestPositionWord = position.word;
         }
 
@@ -78,7 +78,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="segmentBits">The number of bits in the object log's segments.</param>
         internal ObjectLogPositionInfo GetLowestObjectLogPosition(int segmentBits)
-            => objectLogLowestPositionWord == ObjectLogPositionInfo.NotSet ? new() : new(objectLogLowestPositionWord, segmentBits);
+            => ObjectLogPositionInfo.WordIsUnstamped(objectLogLowestPositionWord) ? new() : new(objectLogLowestPositionWord, segmentBits);
 
         public override readonly string ToString()
             => $"HeaderVer {headerVersion}, RecordVer {recordVersion}, lowObjLogPos {objectLogLowestPositionWord}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";

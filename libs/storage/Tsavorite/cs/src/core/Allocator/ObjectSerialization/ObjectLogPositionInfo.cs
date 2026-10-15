@@ -18,9 +18,6 @@ namespace Tsavorite.core
     /// </remarks>
     internal struct ObjectLogPositionInfo
     {
-        /// <summary>Indicates the word has not been set.</summary>
-        internal const ulong NotSet = ulong.MaxValue;
-
         /// <summary>Number of low bits of <see cref="word"/> holding the address. 60 bits gives a 1 EB object-log range.</summary>
         internal const int NumAddressBits = 60;
 
@@ -28,6 +25,19 @@ namespace Tsavorite.core
         /// <remarks>Public because it is the authority on how far an object-log address may reach, which
         /// <see cref="ObjectLog"/> enforces on allocation and the directory format uses to bound an entry's address field.</remarks>
         public const ulong AddressMask = (1UL << NumAddressBits) - 1;
+
+        /// <summary>The word a position carries before any flush has stamped it: the unstamped address marker, with every flag clear.</summary>
+        /// <remarks>
+        /// <b>This is a 60-bit value, not all-ones.</b> It must leave the flag bits clear, because a flag is a claim about the position
+        /// and an unstamped word makes no claims. When this was all-ones, every freshly initialized record read as "has a directory"
+        /// and a capture protocol that tries to claim a flag bit by setting it found the bit already set -- a no-op rather than an
+        /// ownership transition.
+        /// <para>Words written before this was narrowed are still all-ones. They remain correctly recognized as unstamped, because
+        /// every test for that goes through <see cref="WordIsUnstamped"/>, which looks only at the address bits. Flag <i>readers</i>
+        /// must therefore reject an unstamped word rather than testing their bit in isolation -- see <see cref="WordHasDirectory"/>.
+        /// Never compare a word against this constant for equality; use <see cref="WordIsUnstamped"/>.</para>
+        /// </remarks>
+        internal const ulong NotSet = AddressMask;
 
         // ── Flag bits in the top 4 bits of word (bits 60-63) ─────────────────────────
 
@@ -76,7 +86,11 @@ namespace Tsavorite.core
         internal ulong word;
 
         internal readonly bool IsSet => SegmentSizeBits != 0;
-        internal readonly bool HasData => word != 0 && word != NotSet;
+
+        /// <summary>Whether this position carries a real object-log location.</summary>
+        /// <remarks>Tests the unstamped encoding rather than comparing against <see cref="NotSet"/>, so a legacy all-ones word is
+        /// still recognized as carrying nothing.</remarks>
+        internal readonly bool HasData => word != 0 && !WordIsUnstamped(word);
 
         /// <summary>Set the ObjectLogPosition at <paramref name="wordPtr"/> to the unstamped marker, preserving its flag bits.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -88,8 +102,7 @@ namespace Tsavorite.core
         /// <para>The marker lives entirely in the address bits -- all of them set, which no real position reaches because it
         /// would be the last addressable byte of a 1 EB object log. Keeping it out of the flag bits is what lets a record be
         /// unstamped without disturbing <c>KeyIsExactSize</c>/<c>ValueIsExactSize</c>, and leaves every real address unambiguous.
-        /// The all-ones <see cref="NotSet"/> word satisfies this test too, so words written before the flags were separated still
-        /// read as unstamped.</para>
+        /// Because only the address bits are examined, a legacy all-ones word reads as unstamped too.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool WordIsUnstamped(ulong word) => (word & AddressMask) == AddressMask;

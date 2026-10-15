@@ -192,7 +192,7 @@ namespace Tsavorite.test.recovery.objects
             {
                 ++scanned;
                 var word = ReadPageHeaderObjectLogWord(Path.Combine(sourceDir, LogBaseName), page * MinKvLogPageSize);
-                if (word == ObjectLogPositionInfo.NotSet)
+                if (ObjectLogPositionInfo.WordIsUnstamped(word))
                     continue;
                 ++stamped;
                 Assert.That(word & ObjectLogPositionInfo.AddressMask, Is.GreaterThanOrEqualTo(mainObjectLogEndAtCheckpoint),

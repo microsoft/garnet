@@ -719,7 +719,7 @@ namespace Tsavorite.core
                 }
 
                 var pageHeader = *(PageHeader*)buffer.aligned_pointer;
-                if (pageHeader.objectLogLowestPositionWord != ObjectLogPositionInfo.NotSet)
+                if (!ObjectLogPositionInfo.WordIsUnstamped(pageHeader.objectLogLowestPositionWord))
                 {
                     // Recovery verifies that the checkpoint's ObjectLogSegmentSize matches the settings the store was opened with, so the
                     // live objectLogTail's segment bits are the same bits the page header was stamped under.

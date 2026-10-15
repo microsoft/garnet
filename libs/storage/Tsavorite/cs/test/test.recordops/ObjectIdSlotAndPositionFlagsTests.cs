@@ -211,6 +211,45 @@ namespace Tsavorite.test.Objects
         }
 
         /// <summary>
+        /// A never-stamped position word must leave <b>every flag bit clear</b>. This is what makes a flag bit usable as a claim: a
+        /// capture protocol that acquires ownership by setting a bit needs that bit to be genuinely clear beforehand, otherwise the
+        /// set is a no-op rather than an ownership transition. It is also why a freshly initialized record does not read as having a
+        /// directory.
+        /// </summary>
+        [Test]
+        [Category("Smoke")]
+        public unsafe void ANeverStampedWordHasEveryFlagBitClear()
+        {
+            Assert.That(ObjectLogPositionInfo.NotSet, Is.EqualTo(ObjectLogPositionInfo.AddressMask),
+                "NotSet must be the 60-bit unstamped address marker, not all-ones");
+
+            foreach (var flagMask in new[] { ObjectLogPositionInfo.kUnusedBit63Mask, ObjectLogPositionInfo.kHasDirectoryMask,
+                                             ObjectLogPositionInfo.kKeyIsExactSizeMask, ObjectLogPositionInfo.kValueIsExactSizeMask })
+                Assert.That(ObjectLogPositionInfo.NotSet & flagMask, Is.EqualTo(0UL));
+
+            var word = ObjectLogPositionInfo.NotSet;
+            Assert.That(ObjectLogPositionInfo.IsUnstamped(&word), Is.True);
+            Assert.That(ObjectLogPositionInfo.GetHasDirectory(&word), Is.False);
+            Assert.That(ObjectLogPositionInfo.GetKeyIsExactSize(&word), Is.False);
+            Assert.That(ObjectLogPositionInfo.GetValueIsExactSize(&word), Is.False);
+        }
+
+        /// <summary>
+        /// A word written before <c>NotSet</c> was narrowed is all-ones, so its flag bits are set even though it carries no position.
+        /// It must still read as unstamped, and its flags must not be believed.
+        /// </summary>
+        [Test]
+        [Category("Smoke")]
+        public unsafe void ALegacyAllOnesWordStillReadsAsUnstampedAndClaimsNothing()
+        {
+            var word = ulong.MaxValue;
+
+            Assert.That(ObjectLogPositionInfo.IsUnstamped(&word), Is.True);
+            Assert.That(ObjectLogPositionInfo.GetHasDirectory(&word), Is.False,
+                "an unstamped word cannot denote a directory, however its raw bits read");
+        }
+
+        /// <summary>
         /// <c>HasDirectory</c> must be readable from a stamped position without consulting anything else, because the reader uses it
         /// to learn an object's shape before issuing any IO. It therefore cannot collide with the address, the exact-size flags, or
         /// the remaining spare bit.
@@ -246,10 +285,9 @@ namespace Tsavorite.test.Objects
         }
 
         /// <summary>
-        /// A never-stamped position word is <see cref="ObjectLogPositionInfo.NotSet"/> — <b>all</b> 64 bits, flag bits included —
-        /// because that is what record initialization writes (<c>LogRecord</c>'s optional-field setup). A raw mask test for
-        /// <c>HasDirectory</c> would therefore report true on every freshly initialized record. A directory cannot exist without a
-        /// position, so the accessor must report false whenever the word is unstamped.
+        /// A never-stamped position word is the 60-bit unstamped marker with every flag clear, so a raw bit test is correct for a
+        /// freshly initialized record. The guard in <c>WordHasDirectory</c> still matters for a legacy all-ones word, which carries
+        /// set flag bits while denoting no position at all.
         /// </summary>
         [Test]
         [Category("Smoke")]
@@ -257,17 +295,16 @@ namespace Tsavorite.test.Objects
         {
             var word = ObjectLogPositionInfo.NotSet;
 
-            Assert.That(word & ObjectLogPositionInfo.kHasDirectoryMask, Is.Not.EqualTo(0UL),
-                "Precondition: the raw bit really is set in a never-stamped word, which is the trap being guarded");
             Assert.That(ObjectLogPositionInfo.IsUnstamped(&word), Is.True);
-
             Assert.That(ObjectLogPositionInfo.GetHasDirectory(&word), Is.False);
             Assert.That(ObjectLogPositionInfo.WordHasDirectory(word), Is.False);
 
-            // The same holds for an unstamped word that reached that state through Unstamp rather than initialization.
+            // The same holds for an unstamped word that reached that state through Unstamp rather than initialization, where the raw
+            // bit really is set.
             ulong unstamped = 0;
             ObjectLogPositionInfo.SetHasDirectory(&unstamped);
             ObjectLogPositionInfo.Unstamp(&unstamped);
+            Assert.That(unstamped & ObjectLogPositionInfo.kHasDirectoryMask, Is.Not.EqualTo(0UL));
             Assert.That(ObjectLogPositionInfo.GetHasDirectory(&unstamped), Is.False);
         }
 
