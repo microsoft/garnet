@@ -156,5 +156,9 @@ namespace Garnet.common
         /// token scan finds candidates but rejects every one of them.
         /// </summary>
         Replication_Fail_Replica_Unreadable_Checkpoint,
+        /// <summary>
+        /// Pause after applying a diskless checkpoint record, before AOF recovery resets its addresses.
+        /// </summary>
+        Replication_Pause_After_Diskless_Checkpoint_Upsert,
     }
 }

@@ -188,6 +188,18 @@ namespace Garnet.server
             => activeVectorManager?.WaitForVectorOperationsToComplete();
 
         /// <summary>
+        /// Apply a streamed checkpoint record without recording it in the AOF.
+        /// </summary>
+        public GarnetStatus SetCheckpointRecord(in DiskLogRecord record)
+        {
+            var status = aofReplayCoordinator.GetReplayContext(0).respServerSession.basicGarnetApi.SET(in record);
+#if DEBUG
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Replication_Pause_After_Diskless_Checkpoint_Upsert);
+#endif
+            return status;
+        }
+
+        /// <summary>
         /// Extracts sequence number and participant count from a transaction header entry.
         /// For single-physical-log + multi-replay, uses entry address; for multi-physical-log, uses embedded sequence number.
         /// </summary>

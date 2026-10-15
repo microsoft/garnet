@@ -178,6 +178,49 @@ namespace Garnet.test.cluster
             Validate(primaryIndex, replicaIndex, disableObjects);
         }
 
+#if DEBUG
+        [Test]
+        [Category("REPLICATION")]
+        public void ClusterDisklessCheckpointDoesNotWriteToAof()
+        {
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            context.CreateInstances(2, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryIndex, primaryIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaIndex, replicaIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryIndex, replicaIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryIndex, replicaIndex, logger: context.logger);
+            PopulatePrimary(primaryIndex, disableObjects: true, performRMW: false);
+
+            string ReplicaTail() => context.nodes[replicaIndex].Metrics.GetInfoMetrics(InfoMetricsType.PERSISTENCE).Single(item => item.Name == "TailAddress").Value;
+            var initialTail = ReplicaTail();
+            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_After_Diskless_Checkpoint_Upsert;
+            ExceptionInjectionHelper.EnableException(pause);
+            var parkingSuspended = false;
+            try
+            {
+                _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, async: true, logger: context.logger);
+                ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
+                ClassicAssert.AreEqual(initialTail, ReplicaTail());
+
+                ExceptionInjectionHelper.SuspendParking();
+                parkingSuspended = true;
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+                Validate(primaryIndex, replicaIndex, disableObjects: true);
+            }
+            finally
+            {
+                if (!parkingSuspended)
+                    ExceptionInjectionHelper.SuspendParking();
+                ExceptionInjectionHelper.DisableException(pause);
+                ExceptionInjectionHelper.ResumeParking();
+            }
+        }
+#endif
+
         /// <summary>
         /// Full diskless sync of records larger than the replication send buffer (2 &lt;&lt; AofPageSizeBits), which exercises the
         /// chunked (MigrationRecordSpanType.ChunkedLogRecord) streaming path: DiskLogRecord.Serialize streams each large record
