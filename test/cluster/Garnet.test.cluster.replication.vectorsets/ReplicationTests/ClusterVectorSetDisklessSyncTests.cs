@@ -48,7 +48,7 @@ namespace Garnet.test.cluster
             PopulateVectorSet(PrimaryIndex, Key, count: 200);
 
             var initialTail = context.GetAofTailAddress(ReplicaIndex);
-            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_After_Diskless_Snapshot_Record;
+            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery;
             using (ExceptionInjectionHelper.EnabledScope(pause))
             {
                 _ = context.clusterTestUtils.ClusterReplicate(ReplicaIndex, PrimaryIndex, async: true, logger: context.logger);
@@ -56,7 +56,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(ReplicaIndex), "Vector Set checkpoint import must not append to the replica AOF before recovery resets it");
             }
 
-            // Releases the parked record; it wakes asynchronously, so parking stays suspended until the sync completes.
+            // Recovery wakes asynchronously, so keep parking suspended until sync completes.
             using var parking = ExceptionInjectionHelper.SuspendParkingScope();
             context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
             context.clusterTestUtils.ReadOnly(ReplicaIndex);

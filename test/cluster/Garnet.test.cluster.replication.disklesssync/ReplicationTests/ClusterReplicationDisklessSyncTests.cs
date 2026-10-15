@@ -183,7 +183,7 @@ namespace Garnet.test.cluster
             ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
             const int primaryIndex = 0;
             const int replicaIndex = 1;
-            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_After_Diskless_Snapshot_Record;
+            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery;
             context.CreateInstances(2, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             context.clusterTestUtils.MeetAndAssignSlots(primaryIndex, 2, context.logger);
@@ -194,10 +194,10 @@ namespace Garnet.test.cluster
             {
                 _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, async: true, logger: context.logger);
                 ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
-                ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(replicaIndex));
+                ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(replicaIndex), "The entire checkpoint must arrive without appending to the replica AOF");
             }
 
-            // Releases the parked record; it wakes asynchronously, so parking stays suspended until the sync completes.
+            // Recovery wakes asynchronously, so keep parking suspended until sync completes.
             using var parking = ExceptionInjectionHelper.SuspendParkingScope();
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
             Validate(primaryIndex, replicaIndex, disableObjects: true);

@@ -157,8 +157,8 @@ namespace Garnet.common
         /// </summary>
         Replication_Fail_Replica_Unreadable_Checkpoint,
         /// <summary>
-        /// Pause after applying a diskless snapshot record, before AOF recovery resets its addresses.
+        /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>
-        Replication_Pause_After_Diskless_Snapshot_Record,
+        Replication_Pause_Before_Diskless_Snapshot_Recovery,
     }
 }
