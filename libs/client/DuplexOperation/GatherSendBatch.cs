@@ -10,7 +10,7 @@ namespace Garnet.client
 {
     /// <summary>
     /// A reusable, fixed-capacity holder for a contiguous run of single-chunk request payloads coalesced into
-    /// one scatter/gather network send. It exposes its payload segments as the <see cref="IList{T}"/> consumed
+    /// one network send. It exposes its payload segments as the <see cref="IList{T}"/> consumed
     /// by <c>SocketAsyncEventArgs.BufferList</c> (only <see cref="Count"/> and the indexer are used) while also
     /// carrying the matching per-record send-completion contexts.
     /// <para>
@@ -26,6 +26,7 @@ namespace Garnet.client
         readonly object[] contexts;
         readonly SimpleObjectPool<GatherSendBatch> pool;
         int count;
+        int byteCount;
 
         internal GatherSendBatch(int capacity, SimpleObjectPool<GatherSendBatch> pool)
         {
@@ -37,6 +38,9 @@ namespace Garnet.client
         /// <summary>Number of records accumulated so far.</summary>
         internal int RecordCount => count;
 
+        /// <summary>Total payload bytes accumulated so far.</summary>
+        internal int ByteCount => byteCount;
+
         /// <summary>Send-completion context for the record at <paramref name="index"/>.</summary>
         internal object ContextAt(int index) => contexts[index];
 
@@ -46,6 +50,18 @@ namespace Garnet.client
             segments[count] = new ArraySegment<byte>(buffer, offset, length);
             contexts[count] = context;
             count++;
+            byteCount += length;
+        }
+
+        /// <summary>Copy the payload segments, in wire order, into a contiguous TLS plaintext buffer.</summary>
+        internal void CopyPayloadTo(Span<byte> destination)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var segment = segments[i];
+                segment.AsSpan().CopyTo(destination);
+                destination = destination[segment.Count..];
+            }
         }
 
         /// <summary>Clear references and return this holder to its pool for reuse.</summary>
@@ -58,6 +74,7 @@ namespace Garnet.client
                 contexts[i] = null;
             }
             count = 0;
+            byteCount = 0;
             pool.Return(this);
         }
 

@@ -40,15 +40,15 @@ namespace Garnet.client
         void Send(byte[] buffer, int offset, int length, object context);
 
         /// <summary>
-        /// Whether this transport can coalesce a run of single-chunk records into one scatter/gather send. When
-        /// false (e.g. TLS, which has no gather primitive) the ring sends each record individually and never
+        /// Whether this transport can coalesce a run of single-chunk records into one send. When
+        /// false the ring sends each record individually and never
         /// calls <see cref="SendGather"/>.
         /// </summary>
         bool SupportsGather { get; }
 
         /// <summary>
-        /// Transmit a coalesced run of single-chunk request payloads (<paramref name="batch"/>) in one gather
-        /// send. On success the transport must invoke each record's completion exactly once via
+        /// Transmit a coalesced run of single-chunk request payloads (<paramref name="batch"/>) using scatter/gather
+        /// or a contiguous copy. On success the transport must invoke each record's completion exactly once via
         /// <see cref="DuplexOperationAsyncFlushResult{TRequestContext}.CompleteChunk"/> (passing the batch as the
         /// completion context fans out to every record) and release the batch. Only called when
         /// <see cref="SupportsGather"/> is true.
@@ -357,12 +357,12 @@ namespace Garnet.client
             var flushFailed = false;
             var disposedBail = false;
 
-            // Coalesce a contiguous run of single-chunk record payloads into one scatter/gather send. Each
+            // Coalesce a contiguous run of single-chunk record payloads into one bounded send. Each
             // record still registers and completes its own flush part, so slot-freeing and flushedUntil
             // accounting are unchanged; only the socket send is batched. Holders are pooled (allocation-free in
             // steady state); a fresh one is checked out per dispatched send so an in-flight send's completion
             // can read it while the next batch accumulates into a different holder. Gather is only attempted
-            // when the transport supports it (e.g. not TLS); otherwise every record streams individually.
+            // when the transport supports it; otherwise every record streams individually.
             var canGather = transport.SupportsGather;
             GatherSendBatch batch = null;
 
@@ -476,6 +476,16 @@ namespace Garnet.client
 
                 if (chunkCount == 1 && canGather)
                 {
+                    if (batch != null && length > chunkSize - batch.ByteCount)
+                    {
+                        FlushBatch();
+                        if (flushFailed)
+                        {
+                            DuplexOperationAsyncFlushResult<TRequestContext>.CompleteChunk(result);
+                            return;
+                        }
+                    }
+
                     // Defer into the coalescing batch; the single gather send dispatched at batch flush
                     // completes this record's one chunk.
                     batch ??= gatherPool.Checkout();
@@ -487,6 +497,12 @@ namespace Garnet.client
                 // gather is unsupported every record streams here. Flush the records accumulated before this one
                 // to preserve wire order, then stream its chunks directly.
                 FlushBatch();
+                if (flushFailed)
+                {
+                    for (var i = 0; i < chunkCount; i++)
+                        DuplexOperationAsyncFlushResult<TRequestContext>.CompleteChunk(result);
+                    return;
+                }
 
                 var dispatchedChunks = 0;
                 try

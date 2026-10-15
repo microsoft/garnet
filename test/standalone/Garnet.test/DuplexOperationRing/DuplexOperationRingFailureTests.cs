@@ -29,6 +29,35 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
+        [TestCase(64, FlushResultAllocationMode.Buffered)]
+        [TestCase(160, FlushResultAllocationMode.Buffered)]
+        [TestCase(64, FlushResultAllocationMode.PerOperation)]
+        [TestCase(160, FlushResultAllocationMode.PerOperation)]
+        public async Task BoundedGatherFailureCompletesClaimedRequestsWithoutFurtherSends(int nextPayloadLength, FlushResultAllocationMode allocationMode)
+        {
+            using var h = new RingTestHarness(
+                pageSize: 64, pageCount: 4, maxOutstandingRequests: 32,
+                completionCapacity: 16, maxSendChunkSizeBytes: 128,
+                flushResultAllocationMode: allocationMode);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            h.SetFailurePredicate(_ => true);
+            for (var i = 0; i < 6; i++)
+            {
+                var length = i == 2 ? nextPayloadLength : 64;
+                await h.EnqueueAsync(RingPayload.Create(i + 1, length), expectCompletion: false, cts.Token, drain: false).ConfigureAwait(false);
+            }
+
+            h.Pump();
+            await h.Ring.WaitForIdleAsync(cts.Token).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(1, h.FlushErrors.Count);
+            ClassicAssert.IsEmpty(h.SendLengths);
+            ClassicAssert.AreEqual(0, h.CompletedCount);
+            h.AssertNoBufferLeaks();
+            if (allocationMode == FlushResultAllocationMode.PerOperation)
+                ClassicAssert.AreEqual(0, h.AllocatedFlushContextCount);
+        }
+
         /// <summary>1c — a transport that throws must surface via onFlushError, not hang, and leak no buffers.</summary>
         [TestCase(FlushResultAllocationMode.Buffered)]
         [TestCase(FlushResultAllocationMode.PerOperation)]

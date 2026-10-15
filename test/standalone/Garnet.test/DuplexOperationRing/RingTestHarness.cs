@@ -151,6 +151,7 @@ namespace Garnet.test
         long nextRequestId;
 
         readonly ConcurrentQueue<Exception> flushErrors = new();
+        readonly ConcurrentQueue<int> sendLengths = new();
         readonly ConcurrentQueue<object> deferredCompletions = new();
         volatile Func<int, bool> failPredicate;
         volatile bool deferCompletions;
@@ -174,6 +175,7 @@ namespace Garnet.test
         internal int CompletedCount => Volatile.Read(ref completedCount);
         internal IReadOnlyCollection<byte[]> Completed => completed;
         internal IReadOnlyCollection<Exception> FlushErrors => flushErrors;
+        internal IReadOnlyCollection<int> SendLengths => sendLengths;
         internal int MaxInlinePayloadSize => Ring.MaxInlinePayloadSize;
         internal int DeferredCompletionCount => deferredCompletions.Count;
         internal int AllocatedFlushContextCount => Ring.AllocatedFlushContextCount;
@@ -215,6 +217,7 @@ namespace Garnet.test
             var predicate = failPredicate;
             if (predicate != null && predicate(idx))
                 throw new System.IO.IOException($"injected send failure at call {idx}");
+            sendLengths.Enqueue(length);
 
             var acc = reassembly.GetOrAdd(context, _ => new List<byte>());
             // A request's chunks are dispatched sequentially on one flush thread, so there is no cross-chunk
@@ -240,6 +243,7 @@ namespace Garnet.test
             var predicate = failPredicate;
             if (predicate != null && predicate(idx))
                 throw new System.IO.IOException($"injected gather send failure at call {idx}");
+            sendLengths.Enqueue(batch.ByteCount);
 
             var recordCount = batch.RecordCount;
             for (var i = 0; i < recordCount; i++)
@@ -289,7 +293,7 @@ namespace Garnet.test
         /// Enqueue one payload, replicating the client's ring dance: hold the epoch across allocate, register
         /// (inline reserve or out-of-line publish) and drain; wait on the request lane under back-pressure.
         /// </summary>
-        internal async Task EnqueueAsync(byte[] payload, bool expectCompletion, CancellationToken token)
+        internal async Task EnqueueAsync(byte[] payload, bool expectCompletion, CancellationToken token, bool drain = true)
         {
             var totalLength = payload.Length;
             var size = Ring.GetRecordSize(totalLength, out var inline);
@@ -354,7 +358,8 @@ namespace Garnet.test
                 }
 
                 epoch.ProtectAndDrain();
-                Ring.DrainRequests();
+                if (drain)
+                    Ring.DrainRequests();
             }
             finally
             {

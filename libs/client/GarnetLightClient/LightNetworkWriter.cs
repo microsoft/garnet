@@ -35,15 +35,18 @@ namespace Garnet.client
         {
             readonly ClientTcpNetworkSender tcpSender;
             readonly GarnetLightClientTcpNetworkHandler networkHandler;
+            readonly LimitedFixedBufferPool networkPool;
             readonly bool useTls;
 
             internal RingTransport(
                 ClientTcpNetworkSender tcpSender,
                 GarnetLightClientTcpNetworkHandler networkHandler,
+                LimitedFixedBufferPool networkPool,
                 bool useTls)
             {
                 this.tcpSender = tcpSender;
                 this.networkHandler = networkHandler;
+                this.networkPool = networkPool;
                 this.useTls = useTls;
             }
 
@@ -55,10 +58,23 @@ namespace Garnet.client
                     tcpSender.SendResponse(buffer, offset, length, context);
             }
 
-            public bool SupportsGather => !useTls;
+            public bool SupportsGather => true;
 
             public void SendGather(GatherSendBatch batch)
-                => tcpSender.SendResponseGather(batch, batch);
+            {
+                if (!useTls)
+                {
+                    tcpSender.SendResponseGather(batch, batch);
+                    return;
+                }
+
+                var allocationSize = LightRequestContext.GetRequestBufferAllocationSize(networkPool, batch.ByteCount);
+                using var buffer = networkPool.Get(allocationSize, PoolEntryBufferType.TransportSendBuffer);
+                ObjectDisposedException.ThrowIf(buffer is null, networkPool);
+                batch.CopyPayloadTo(buffer.entry);
+                // SendResponse consumes the plaintext synchronously and completes every gathered record.
+                networkHandler.SendResponse(buffer.entry, 0, batch.ByteCount, batch);
+            }
 
             public void OnFlushError(Exception exception)
                 => networkHandler.Dispose();
@@ -150,7 +166,7 @@ namespace Garnet.client
                 options.MaxOutstandingRequests,
                 options.MaxOutstandingCompletions,
                 networkBufferSettings.sendBufferSize,
-                new RingTransport(tcpSender, handler, useTls),
+                new RingTransport(tcpSender, handler, networkPool, useTls),
                 epoch,
                 options.FlushResultAllocationMode,
                 logger);

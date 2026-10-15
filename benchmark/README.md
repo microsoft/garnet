@@ -22,6 +22,11 @@ workload. The transport mode is printed with the results.
 The light client's rings auto-size from `threads * batch`. Use `--max-requests` and
 `--max-completions` to override the request-slot floor and completion capacity.
 
+`GarnetLightClient` coalesces single-chunk requests into batches bounded by the
+network send-buffer size. Plaintext uses socket scatter/gather; TLS copies each
+batch into a pooled contiguous buffer for one stream write. Single requests and
+multi-chunk payloads retain their direct send paths.
+
 ## Resp.benchmark
 
 **Garnet** project contains a Benchmark tool for running RESP benchmarking using different clients, different workloads and different strategies for measuring throughput, performance and latency.

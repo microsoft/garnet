@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -29,6 +30,55 @@ namespace Garnet.test
         public void TearDown()
         {
             TestUtils.OnTearDown();
+        }
+
+        [Test]
+        public void GatherCopyPreservesSegmentOffsetsAndResetsOnRelease()
+        {
+            SimpleObjectPool<GatherSendBatch> pool = null;
+            pool = new SimpleObjectPool<GatherSendBatch>(() => new GatherSendBatch(4, pool));
+            var batch = pool.Checkout();
+            var first = new byte[] { 99, 1, 2, 99 };
+            var second = new byte[] { 99, 99, 3, 4, 5, 99 };
+            batch.Append(first, 1, 2, new object());
+            batch.Append(second, 2, 3, new object());
+
+            ClassicAssert.AreEqual(5, batch.ByteCount);
+            var copied = new byte[batch.ByteCount];
+            batch.CopyPayloadTo(copied);
+            CollectionAssert.AreEqual(new byte[] { 1, 2, 3, 4, 5 }, copied);
+            batch.Release();
+
+            var reused = pool.Checkout();
+            ClassicAssert.AreSame(batch, reused);
+            ClassicAssert.AreEqual(0, reused.RecordCount);
+            ClassicAssert.AreEqual(0, reused.ByteCount);
+            reused.Append(second, 2, 3, new object());
+            var nextCopy = new byte[reused.ByteCount];
+            reused.CopyPayloadTo(nextCopy);
+            CollectionAssert.AreEqual(new byte[] { 3, 4, 5 }, nextCopy);
+            reused.Release();
+        }
+
+        [TestCase(FlushResultAllocationMode.Buffered)]
+        [TestCase(FlushResultAllocationMode.PerOperation)]
+        public async Task GatherBatchesRespectSendBufferLimitAndMultiChunkOrder(FlushResultAllocationMode allocationMode)
+        {
+            using var h = new RingTestHarness(
+                pageSize: 64, pageCount: 4, maxOutstandingRequests: 32,
+                completionCapacity: 16, maxSendChunkSizeBytes: 128,
+                flushResultAllocationMode: allocationMode);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var lengths = new[] { 64, 64, 64, 160, 64, 64 };
+            for (var i = 0; i < lengths.Length; i++)
+                await h.EnqueueAsync(RingPayload.Create(i + 1, lengths[i]), expectCompletion: false, cts.Token, drain: false).ConfigureAwait(false);
+
+            await h.DrainUntilAsync(lengths.Length, DrainTimeout, cts.Token).ConfigureAwait(false);
+
+            CollectionAssert.AreEqual(new[] { 128, 64, 128, 32, 128 }, h.SendLengths);
+            h.AssertReceived([1, 2, 3, 4, 5, 6]);
+            h.AssertNoBufferLeaks();
+            ClassicAssert.IsEmpty(h.FlushErrors);
         }
 
         [TestCase(FlushResultAllocationMode.Buffered)]

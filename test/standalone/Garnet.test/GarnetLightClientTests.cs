@@ -203,6 +203,55 @@ namespace Garnet.test
             await Task.WhenAll(producerTasks).ConfigureAwait(false);
         }
 
+        [Test, NonParallelizable]
+        public async Task GatheredMixedPipelinePreservesReplies(
+            [Values] bool useTLS,
+            [Values(FlushResultAllocationMode.Buffered, FlushResultAllocationMode.PerOperation)] FlushResultAllocationMode allocationMode)
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
+            server.Start();
+
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 4,
+                maxOutstandingRequests: 128,
+                maxOutstandingCompletions: 128,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 1 << 20,
+                flushResultAllocationMode: allocationMode);
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            const int producers = 8;
+            const int perProducer = 128;
+            var lengths = new[] { 0, 7, 160, 240, 300, 1024, 17, 99 };
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            var tasks = new Task[producers];
+            for (var p = 0; p < producers; p++)
+            {
+                var producer = p;
+                tasks[p] = Task.Run(async () =>
+                {
+                    var pending = new Task<string>[perProducer];
+                    var expected = new string[perProducer];
+                    for (var i = 0; i < perProducer; i++)
+                    {
+                        var value = $"{producer}:{i}:{new string((char)('a' + producer), lengths[i % lengths.Length])}";
+                        expected[i] = value;
+                        pending[i] = db.ExecuteForStringResultWithCancellationAsync(ECHO, [value], cts.Token);
+                    }
+
+                    var actual = await Task.WhenAll(pending).WaitAsync(cts.Token).ConfigureAwait(false);
+                    CollectionAssert.AreEqual(expected, actual);
+                }, cts.Token);
+            }
+
+            await Task.WhenAll(tasks).WaitAsync(cts.Token).ConfigureAwait(false);
+            ClassicAssert.AreEqual("PONG", await db.PingAsync(cts.Token).ConfigureAwait(false));
+            await GetNetworkWriter(db).WaitForIdleAsync(cts.Token).ConfigureAwait(false);
+        }
+
         [Test]
         public async Task PeerDisconnectFaultsPublishedCompletion()
         {
