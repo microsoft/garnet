@@ -99,7 +99,6 @@ namespace Tsavorite.core
             var bufferFilePos = startFilePosition;
             bufferFilePos.Advance((uint)currentPosition);
 
-            // An exhausted buffer at a segment boundary points to the start of the next segment.
             Debug.Assert(bufferFilePos.Offset < bufferFilePos.SegmentSize, $"Incremented bufferFilePos.Offset {bufferFilePos.Offset} should be < bufferFilePos.SegmentSize {bufferFilePos.SegmentSize}");
             return bufferFilePos;
         }

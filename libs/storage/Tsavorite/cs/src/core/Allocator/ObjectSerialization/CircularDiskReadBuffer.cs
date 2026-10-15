@@ -178,7 +178,6 @@ namespace Tsavorite.core
             {
                 var bufferFilePosition = buffer.GetCurrentFilePosition();
                 Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
-                // Sector-alignment padding can end at the next segment's start.
                 var increment = recordFilePosition - bufferFilePosition;
                 Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
 
