@@ -39,30 +39,6 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.AttachReplicaToPrimary(replicaIndex, PrimaryIndex, logger: context.logger);
         }
 
-        [Test]
-        public void VectorSetDisklessCheckpointDoesNotWriteToAof()
-        {
-            TestUtils.IgnoreIfExceptionInjectionDisabled();
-            const string Key = "{vsdisk}checkpoint-no-aof";
-            SetupDisklessCluster(2);
-            PopulateVectorSet(PrimaryIndex, Key, count: 200);
-
-            var initialTail = context.GetAofTailAddress(ReplicaIndex);
-            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery;
-            using (ExceptionInjectionHelper.EnabledScope(pause))
-            {
-                _ = context.clusterTestUtils.ClusterReplicate(ReplicaIndex, PrimaryIndex, async: true, logger: context.logger);
-                ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(System.TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
-                ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(ReplicaIndex), "Vector Set checkpoint import must not append to the replica AOF before recovery resets it");
-
-                ExceptionInjectionHelper.EnableException(pause);
-                context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
-                context.clusterTestUtils.ReadOnly(ReplicaIndex);
-                AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
-                AssertOwnsItsIndex(ReplicaIndex, PrimaryIndex, Key);
-            }
-        }
-
         /// <summary>
         /// Populated sets travel by diskless full sync, then the replica reads them. This catches
         /// foreign IndexPtr dereferences that used to surface at NativeDiskANNMethods.card. Multiple

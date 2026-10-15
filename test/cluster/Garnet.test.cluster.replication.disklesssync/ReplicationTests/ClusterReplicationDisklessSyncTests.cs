@@ -196,6 +196,7 @@ namespace Garnet.test.cluster
                 ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
                 ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(replicaIndex), "The entire checkpoint must arrive without appending to the replica AOF");
 
+                // ResetAndWait clears the flag on arrival; re-enabling it releases recovery.
                 ExceptionInjectionHelper.EnableException(pause);
                 context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
                 Validate(primaryIndex, replicaIndex, disableObjects: true);
