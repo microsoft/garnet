@@ -60,18 +60,19 @@ namespace Client.benchmark
             // underlying client and socket; only the distinct instances are connected and disposed.
             var distinct = sharedSocket ? 1 : threads;
             var pool = new TDriver[distinct];
-            for (var i = 0; i < distinct; i++)
-            {
-                pool[i] = factory.Create(epoch);
-                pool[i].Connect();
-            }
-
-            var drivers = new TDriver[threads];
-            for (var i = 0; i < threads; i++)
-                drivers[i] = pool[sharedSocket ? 0 : i];
-
+            var created = 0;
             try
             {
+                while (created < pool.Length)
+                {
+                    pool[created] = factory.Create(epoch);
+                    pool[created++].Connect();
+                }
+
+                var drivers = new TDriver[threads];
+                for (var i = 0; i < threads; i++)
+                    drivers[i] = pool[sharedSocket ? 0 : i];
+
                 // Seed the shared key once; the server-side value is visible to every connection.
                 pool[0].SeedAsync().GetAwaiter().GetResult();
 
@@ -82,8 +83,8 @@ namespace Client.benchmark
             }
             finally
             {
-                foreach (var d in pool)
-                    d.Dispose();
+                for (var i = 0; i < created; i++)
+                    pool[i].Dispose();
             }
         }
 
