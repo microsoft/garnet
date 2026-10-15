@@ -54,29 +54,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void DisabledWithFeatureFlag()
-        {
-            // Restart with Vector Sets disabled
-            TearDown();
-
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = CreateGarnetServer(tryRecover: false, enableVectorSetPreview: false);
-
-            server.Start();
-
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            ReadOnlySpan<RespCommand> vectorSetCommands = [RespCommand.VADD, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB, RespCommand.VGETATTR, RespCommand.VINFO, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VSIM];
-            foreach (var cmd in vectorSetCommands)
-            {
-                // Should all fault before any validation
-                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
-                ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
-            }
-        }
-
-        [Test]
         public void WrongTypeForVectorSetOpsOnNonVectorSetKeys()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -3239,7 +3216,7 @@ namespace Garnet.test
             // Recreate the server with a tiny main log + storage tiering so inserts spill to disk.
             TearDown();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableVectorSetPreview: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
             server.Start();
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -4720,7 +4697,7 @@ namespace Garnet.test
 
             // failOnRecoveryError surfaces a recovery failure that the server would otherwise log and continue
             // past, leaving a partially recovered store behind.
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true, aofMemorySize: DefaultAOFMemorySize, enableVectorSetPreview: true, failOnRecoveryError: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true, aofMemorySize: DefaultAOFMemorySize, failOnRecoveryError: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -4740,13 +4717,13 @@ namespace Garnet.test
         /// Create a new GarnetServer instance with a small enough log that ordinary writes flush pages.
         /// </summary>
         private static GarnetServer CreateSmallPageGarnetServer(bool tryRecover)
-        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, aofMemorySize: DefaultAOFMemorySize, enableVectorSetPreview: true, lowMemory: true, memorySize: "64m", pageSize: "16k", failOnRecoveryError: true);
+        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, aofMemorySize: DefaultAOFMemorySize, lowMemory: true, memorySize: "64m", pageSize: "16k", failOnRecoveryError: true);
 
         /// <summary>
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
-        private static GarnetServer CreateGarnetServer(bool tryRecover, bool enableVectorSetPreview = true)
-        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, aofMemorySize: DefaultAOFMemorySize, enableVectorSetPreview: enableVectorSetPreview);
+        private static GarnetServer CreateGarnetServer(bool tryRecover)
+        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, aofMemorySize: DefaultAOFMemorySize);
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "opts")]
         private static extern ref GarnetServerOptions GetOpts(GarnetServer server);

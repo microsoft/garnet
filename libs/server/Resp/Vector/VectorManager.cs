@@ -165,13 +165,6 @@ namespace Garnet.server
         /// </summary>
         internal DiskANNService Service { get; } = new DiskANNService();
 
-        /// <summary>
-        /// Whether or not Vector Set preview is enabled.
-        /// 
-        /// TODO: This goes away once we're stable.
-        /// </summary>
-        public bool IsEnabled { get; }
-
         private bool initialized;
 
         private readonly ILogger logger;
@@ -196,8 +189,6 @@ namespace Garnet.server
         public VectorManager(int dbId, GarnetServerOptions serverOptions, Func<IMessageConsumer> getTempSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
-
-            IsEnabled = serverOptions.EnableVectorSetPreview;
 
             // Destination for copying the small graph "stub" records back into memory on disk read (see
             // VectorReadBatch.ReadCopyOptions): the read cache when it is enabled (keeps the writable main log
@@ -275,7 +266,7 @@ namespace Garnet.server
         /// </summary>
         public void Initialize()
         {
-            if (!IsEnabled || initialized) return;
+            if (initialized) return;
 
             initialized = true;
 
@@ -300,8 +291,6 @@ namespace Garnet.server
         /// </param>
         public void ReconcileRecoveredState(bool requireNoReservedContexts = false)
         {
-            if (!IsEnabled) return;
-
             // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
             using var session = (RespServerSession)getTempSession();
             if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
@@ -581,7 +570,7 @@ namespace Garnet.server
             if (record.HasNamespace)
             {
                 var ns = record.NamespaceBytes;
-                if (IsEnabled && ns.Length == 1 && ns[0] == MetadataNamespace)
+                if (ns.Length == 1 && ns[0] == MetadataNamespace)
                 {
                     // Context metadata load needs to be saved off
                     RecoveredContextMetadata(ref record);
@@ -593,10 +582,7 @@ namespace Garnet.server
                 // are disabled - otherwise enabling them later would follow a pointer into a dead address space
                 ClearIndexPointer(record.ValueSpan);
 
-                if (IsEnabled)
-                {
-                    RecoveredVectorSetIndexKey(ref record);
-                }
+                RecoveredVectorSetIndexKey(ref record);
             }
         }
 

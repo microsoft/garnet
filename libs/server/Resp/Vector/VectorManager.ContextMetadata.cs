@@ -544,11 +544,6 @@ namespace Garnet.server
         /// </summary>
         internal FlushGuard BeginFlush()
         {
-            if (!IsEnabled)
-            {
-                return default;
-            }
-
             return new FlushGuard(this);
         }
 

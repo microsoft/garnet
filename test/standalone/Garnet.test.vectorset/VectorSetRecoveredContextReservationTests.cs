@@ -47,8 +47,7 @@ namespace Garnet.test
                 pageSize: "16k",
                 enableAOF: true,
                 aofMemorySize: "2g",
-                tryRecover: tryRecover,
-                enableVectorSetPreview: true);
+                tryRecover: tryRecover);
             server.Start();
         }
 
