@@ -73,11 +73,7 @@ namespace Garnet.server.TLS
             if (IsPemFile(fileName))
                 return GetCertificateFromPemFile(fileName, password);
 
-#if NET9_0_OR_GREATER
             return X509CertificateLoader.LoadPkcs12FromFile(fileName, password);
-#else
-            return new X509Certificate2(fileName, password);
-#endif
         }
 
         /// <summary>
@@ -91,13 +87,7 @@ namespace Garnet.server.TLS
 
             // The certificate above carries an ephemeral key set, which isn't supported by SslStream on
             // all platforms. Re-import it via PKCS#12 to get a certificate with a persisted key set.
-#if NET9_0_OR_GREATER
             return X509CertificateLoader.LoadPkcs12(pemCertificate.Export(X509ContentType.Pkcs12), password: null);
-#else
-#pragma warning disable SYSLIB0057 // Type or member is obsolete
-            return new X509Certificate2(pemCertificate.Export(X509ContentType.Pkcs12));
-#pragma warning restore SYSLIB0057
-#endif
         }
 
         /// <summary>

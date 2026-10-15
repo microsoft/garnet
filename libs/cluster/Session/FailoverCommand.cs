@@ -75,7 +75,8 @@ namespace Garnet.cluster
             // Validate failing over node config
             if (replicaPort != -1 && replicaAddress != string.Empty)
             {
-                var replicaNodeId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(replicaAddress, replicaPort);
+                var replicaNodeId = clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddress(replicaAddress, replicaPort) ??
+                    clusterProvider.clusterManager.CurrentConfig.GetWorkerNodeIdFromAddressOrHostname(replicaAddress, replicaPort);
                 if (replicaNodeId == null)
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_UNKNOWN_ENDPOINT, ref dcurr, dend))
@@ -97,6 +98,9 @@ namespace Garnet.cluster
                         SendAndReset();
                     return true;
                 }
+
+                replicaAddress = worker.PeerAddress;
+                replicaPort = worker.PeerPort;
             }
 
             // Try abort ongoing failover

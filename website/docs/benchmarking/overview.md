@@ -37,7 +37,7 @@ test/BDNPerfTests/run_bdnperftest.ps1
 
 1) First parameter (optional) is the BDN test. For example, Operations.BasicOperations (default), Operations.ObjectOperations, Cluster.ClusterMigrate, Lua.LuaScripts etc
 
-1a) Second parameter (optional) is the framework to run, net8.0 (default) or net10.0. Only that framework is benchmarked and gated.
+1a) Second parameter (optional) is the framework to run, net10.0 (default). Only that framework is benchmarked and gated.
      
 2) It will verify found Allocated vs expected Allocated (giving it 10% tolerance) and show results in the output.
      

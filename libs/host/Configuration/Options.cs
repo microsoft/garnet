@@ -46,15 +46,23 @@ namespace Garnet
         public string Address { get; set; }
 
         [IntRangeValidation(0, 65535)]
-        [Option("cluster-announce-port", Required = false, HelpText = "Port that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-port", Required = false, HelpText = "Client-advertised port. Also used by peers unless cluster-port is set.")]
         public int ClusterAnnouncePort { get; set; }
 
         [IpAddressValidation(false)]
-        [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-ip", Required = false, HelpText = "Client-advertised IP address. Also used by peers unless cluster-address is set.")]
         public string ClusterAnnounceIp { get; set; }
 
-        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname that this node advertises to other nodes to connect to for gossiping.")]
+        [Option("cluster-announce-hostname", Required = false, HelpText = "Client-advertised hostname.")]
         public string ClusterAnnounceHostname { get; set; }
+
+        [ClusterAddressValidation]
+        [Option("cluster-address", Required = false, HelpText = "IP address advertised for peer connections. Defaults to the client-advertised IP address.")]
+        public string ClusterAddress { get; set; }
+
+        [ClusterPortValidation]
+        [Option("cluster-port", Required = false, HelpText = "Port advertised for peer connections. Defaults to the client-advertised port.")]
+        public int? ClusterPort { get; set; }
 
         [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown)")]
         public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
@@ -86,6 +94,7 @@ namespace Garnet
         [MemorySizeValidation(false)]
         [Option("index-max-size", Required = false, HelpText = "Max size of hash index in bytes (rounds down to power of 2)")]
         public string IndexMaxMemorySize { get; set; }
+
 
         [OptionValidation]
         [Option("use-native-allocator", Required = false, HelpText = "Route large memory regions (log pages / hash index / recovery frames) through a native (off-managed-heap) direct-VM allocator (mmap/VirtualAlloc) instead of the GC heap. No native library is required. When enabled, this memory is outside the managed GC heap: size GCHeapHardLimit to leave headroom and monitor 'native_allocator_bytes' in INFO memory.")]
@@ -633,6 +642,10 @@ namespace Garnet
         [Option("index-resize-threshold", Required = false, HelpText = "Hash-index Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
 
+        [IntRangeValidation(1, 10000, isRequired: false)]
+        [Option("index-overflow-threshold", Required = false, HelpText = "Hash-index overflow bucket count over total index size in percentage at which allocation fails. Same unit as --index-resize-threshold and must exceed it. Overflow buckets chain linearly and are scanned by reads and upserts, so this is the average chain length allowed: 300 permits three overflow buckets per main bucket.")]
+        public int IndexOverflowThreshold { get; set; }
+
         [MemorySizeValidation(isRequired: false)]
         [Option("max-inline-key-size", Required = false, HelpText = "Maximum size of a key stored inline in the in-memory portion of the main log. Accepts a memory size (e.g. \"1k\", \"128\"). Must be in range [0, 1022] bytes; default is 1022.")]
         public string MaxInlineKeySize { get; set; }
@@ -809,17 +822,13 @@ namespace Garnet
                 throw new GarnetException($"Invalid endpoint format {Address} {Port}.");
 
             EndPoint[] clusterAnnounceEndpoint = null;
-            if (ClusterAnnounceIp != null)
+            if (ClusterAnnounceIp != null || ClusterAnnouncePort != 0)
             {
                 ClusterAnnouncePort = ClusterAnnouncePort == 0 ? Port : ClusterAnnouncePort;
-                clusterAnnounceEndpoint = Format.TryCreateEndpoint(ClusterAnnounceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
-                if (clusterAnnounceEndpoint == null || !endpoints.Any(endpoint =>
-                    endpoint is IPEndPoint listenEp && clusterAnnounceEndpoint[0] is IPEndPoint announceEp &&
-                    listenEp.Port == announceEp.Port &&
-                    (listenEp.Address.Equals(announceEp.Address) ||
-                     listenEp.Address.Equals(IPAddress.Any) ||
-                     listenEp.Address.Equals(IPAddress.IPv6Any))))
-                    throw new GarnetException("Cluster announce endpoint does not match list of listen endpoints provided!");
+                var announceIp = ClusterAnnounceIp ?? endpoints.OfType<IPEndPoint>().First().Address.ToString();
+                clusterAnnounceEndpoint = Format.TryCreateEndpoint(announceIp, ClusterAnnouncePort, tryConnect: false, logger: logger);
+                if (clusterAnnounceEndpoint == null)
+                    throw new GarnetException("Invalid cluster announce endpoint!");
             }
 
             if (!string.IsNullOrEmpty(UnixSocketPath))
@@ -900,6 +909,8 @@ namespace Garnet
                 EndPoints = endpoints,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 ClusterAnnounceHostname = ClusterAnnounceHostname,
+                ClusterAddress = ClusterAddress,
+                ClusterPort = ClusterPort,
                 ClusterPreferredEndpointType = ClusterPreferredEndpointType,
                 LogMemorySize = LogMemorySize,
                 PageSize = PageSize,
@@ -1041,6 +1052,7 @@ namespace Garnet
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
+                IndexOverflowThreshold = IndexOverflowThreshold,
                 MaxInlineKeySize = MaxInlineKeySize,
                 MaxInlineValueSize = MaxInlineValueSize,
                 InitialIORecordSize = InitialIORecordSize,

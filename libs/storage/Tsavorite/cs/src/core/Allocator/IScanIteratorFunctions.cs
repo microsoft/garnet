@@ -69,10 +69,7 @@ namespace Tsavorite.core
     internal interface IPushScanIterator
     {
         bool BeginGetPrevInMemory<TKey>(TKey key, out LogRecord logRecord, out bool continueOnDisk)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             ;
         void EndGetPrevInMemory();
 

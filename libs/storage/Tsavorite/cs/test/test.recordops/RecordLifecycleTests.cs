@@ -192,10 +192,7 @@ namespace Tsavorite.test
             public readonly void OnCheckpoint(CheckpointTrigger trigger, Guid checkpointToken) { }
             public readonly void PostCopyToTail<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, long srcLogicalAddress,
                                                                   ref LogRecord dstLogRecord, long dstLogicalAddress)
-                where TSourceLogRecord : ISourceLogRecord
-#if NET9_0_OR_GREATER
-                    , allows ref struct
-#endif
+                where TSourceLogRecord : ISourceLogRecord, allows ref struct
             { }
             public readonly void OnTruncate(long newBeginAddress) { }
         }
