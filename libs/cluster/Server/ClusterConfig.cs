@@ -1255,10 +1255,6 @@ namespace Garnet.cluster
 
                 if (senderConfig.IsPrimary)
                 {
-                    // Repeated ownership claims must not cancel a local import from the same source.
-                    if (currentOwnerId == assignToWorkerId && newSlotMap[i]._state == SlotState.IMPORTING)
-                        continue;
-
                     // Sender is claimant of this node and is a primary, hence it can update the state of this slot, if its config epoch is higher than the old epoch.
                     if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
                         continue;
