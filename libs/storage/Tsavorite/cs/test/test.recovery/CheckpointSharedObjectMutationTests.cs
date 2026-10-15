@@ -41,6 +41,14 @@ namespace Tsavorite.test.recovery
 
             internal int DoSerializeCount;
 
+            /// <summary>The value of <c>Items.Count</c> at each <see cref="DoSerialize"/> call, in order. This is the
+            /// discriminator between "the preserved image held the wrong bytes" and "the preserved image was correct but
+            /// something re-serialized the live object afterwards".</summary>
+            internal readonly List<int> SerializedItemCounts = [];
+
+            /// <summary>The call stack at each <see cref="DoSerialize"/>, so a failing run names the second caller.</summary>
+            internal readonly List<string> SerializedStacks = [];
+
             internal SharedListHeapObject(List<int> items)
             {
                 Items = items;
@@ -55,6 +63,14 @@ namespace Tsavorite.test.recovery
             public override void DoSerialize(BinaryWriter writer)
             {
                 _ = Interlocked.Increment(ref DoSerializeCount);
+                lock (SerializedItemCounts)
+                {
+                    // Capture a stack only for a repeat serialization: the first call is the preserved-image capture and is
+                    // not interesting, and taking a stack there slows it enough to close the race being investigated.
+                    if (SerializedItemCounts.Count > 0)
+                        SerializedStacks.Add(Environment.StackTrace);
+                    SerializedItemCounts.Add(Items.Count);
+                }
                 writer.Write(Items.Count);
 
                 // foreach over the shared list: throws InvalidOperationException if another thread mutates it.
@@ -78,6 +94,7 @@ namespace Tsavorite.test.recovery
         {
             public override void Deserialize(out IHeapObject obj)
             {
+                _ = reader.ReadBoolean();   // the isNull type byte written by WriteType
                 var count = reader.ReadInt32();
                 var items = new List<int>(count);
                 for (var i = 0; i < count; i++)
@@ -85,7 +102,14 @@ namespace Tsavorite.test.recovery
                 obj = new SharedListHeapObject(items);
             }
 
-            public override void Serialize(IHeapObject obj) => ((SharedListHeapObject)obj).DoSerialize(writer);
+            /// <remarks>
+            /// Must go through <see cref="IHeapObject.Serialize"/>, not straight to <c>DoSerialize</c>. Only
+            /// <c>HeapObjectBase.Serialize</c> consults the serialization phase and the preserved <c>(v)</c> bytes; calling
+            /// <c>DoSerialize</c> directly bypasses that and serializes the live object, which during a checkpoint is the
+            /// one the superseding record has already mutated. It also skips <c>WriteType</c>, which
+            /// <see cref="Deserialize"/> expects.
+            /// </remarks>
+            public override void Serialize(IHeapObject obj) => obj.Serialize(writer);
         }
 
         /// <summary>Pauses the checkpoint state machine on entry to a chosen phase so the test can act in that window.</summary>
@@ -246,34 +270,29 @@ namespace Tsavorite.test.recovery
             => await RecoveredVersionCarriesItsOwnContentCore(checkpointType).ConfigureAwait(false);
 
         /// <summary>
-        /// The Snapshot case of <see cref="RecoveredVersionCarriesItsOwnContent"/>, which fails <b>intermittently</b> and is
-        /// marked <see cref="ExplicitAttribute"/> pending investigation rather than deleted.
+        /// The Snapshot case of <see cref="RecoveredVersionCarriesItsOwnContent"/>.
         /// </summary>
         /// <remarks>
-        /// Observed roughly one run in six: Snapshot recovers the <c>(v)</c> record — address 64, below the pre-RCU tail of
-        /// 96 — carrying 9 items, which is <c>(v+1)</c>'s content. FoldOver under the identical sequence passes every run.
+        /// This failed intermittently (~1 run in 3-6) until the cause was found, and the cause was in this fixture rather
+        /// than in the store: <c>SharedListSerializer.Serialize</c> called <c>DoSerialize</c> directly instead of
+        /// <see cref="IHeapObject.Serialize"/>. Only <c>HeapObjectBase.Serialize</c> consults the serialization phase and
+        /// the preserved <c>(v)</c> bytes, so going straight to <c>DoSerialize</c> serialized the live object — which, during
+        /// a checkpoint, is the one the superseding record has already mutated.
         /// <para>
-        /// The <c>DoSerializeCount</c> assertion above passes even on the failing runs, so the <c>(v)</c> image <b>was</b>
-        /// preserved and the failure is not "the cache declined to fire". That makes this a race between preserving the
-        /// image and the snapshot flush choosing which bytes to write, not a missing-guard problem — and an intermittent
-        /// one, which is why a single passing run proves nothing here.
-        /// <para>
-        /// <c>(v)</c> is in the mutable region throughout, so it is not being recovered from a later main-log flush.
-        /// The remaining candidate is the snapshot flush coordination, which is installed during <c>WAIT_FLUSH</c>
-        /// (<c>SnapshotCheckpointSMTask</c>) while an RMW can need the image from <c>IN_PROGRESS</c> onward; a null
-        /// coordination makes <c>CheckpointNeedsSourceImage</c> answer conservatively true, so lateness alone would cache
-        /// more rather than less, and the ordering nearer the flush is what needs examining.
-        /// </para>
+        /// A stack captured on the second serialization named the path precisely:
+        /// <c>AsyncFlushPagesForSnapshot</c> → <c>WriteAsyncToDeviceForSnapshot</c> → <c>WriteAsync</c> →
+        /// <c>ObjectLogWriter.WriteRecordObjects</c> → <c>ObjectLogWriter.DoSerialize</c> → the serializer. The recorded
+        /// item counts were <c>[8, 9]</c>: the image was preserved correctly at 8, then the live object was serialized
+        /// again at 9 and that is what landed.
         /// </para>
         /// <para>
-        /// Resolve before retiring the serialized-object cache: if it is a real defect it must be fixed independently, and
-        /// if it is a fixture artifact this test needs correcting so it guards the right thing. Run it in a loop, not once.
+        /// Intermittent because it depended on whether the page had already been flushed before the mutation. That is why
+        /// a single passing run proved nothing here, and why the fixture bug survived: the test passed most of the time.
         /// </para>
         /// </remarks>
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        [Explicit("Intermittent (~1 in 6): Snapshot recovers (v) carrying (v+1) content, with the image provably preserved. See the remarks; must be resolved before cache-removal.")]
         public async Task RecoveredVersionCarriesItsOwnContent_Snapshot()
             => await RecoveredVersionCarriesItsOwnContentCore(CheckpointType.Snapshot).ConfigureAwait(false);
 
@@ -307,6 +326,8 @@ namespace Tsavorite.test.recovery
                 shared.Add(ii);
 
             long sourceTail, newRecordTail;
+            int[] serializedCounts;
+            string[] serializedStacks;
             SharedListHeapObject sourceObject = null;
             var writeStore = CreateStore(ckptLog, ckptObjLog, dir);
             try
@@ -344,9 +365,21 @@ namespace Tsavorite.test.recovery
                 Assert.That(sourceObject.DoSerializeCount, Is.GreaterThanOrEqualTo(1),
                     $"{checkpointType}: the (v) object was never serialized during the RMW, so its pre-mutation image was "
                     + "never preserved -- CheckpointNeedsSourceImage returned false for this record");
+                int[] countsAtRmw;
+                lock (sourceObject.SerializedItemCounts)
+                    countsAtRmw = [.. sourceObject.SerializedItemCounts];
+                Assert.That(countsAtRmw[0], Is.EqualTo(InitialCount),
+                    $"{checkpointType}: the preserved (v) image already held {countsAtRmw[0]} items, so it was captured "
+                    + "after the successor mutated the shared collection rather than before");
 
                 pause.Release.Set();
                 await writeStore.CompleteCheckpointAsync().ConfigureAwait(false);
+
+                lock (sourceObject.SerializedItemCounts)
+                {
+                    serializedCounts = [.. sourceObject.SerializedItemCounts];
+                    serializedStacks = [.. sourceObject.SerializedStacks];
+                }
             }
             finally
             {
@@ -376,8 +409,11 @@ namespace Tsavorite.test.recovery
                 Assert.That(recovered.Items, Has.Count.EqualTo(expected),
                     $"{checkpointType} recovered the {(recoveredIsSourceVersion ? "(v)" : "(v+1)")} record at address "
                     + $"{functions.LastReadAddress} (v below {sourceTail}, v+1 at or above it) carrying "
-                    + $"{recovered.Items.Count} items, but that version's content is {expected} items. A (v) record with "
-                    + $"{InitialCount + 1} items means it was written from the collection its successor had already mutated");
+                    + $"{recovered.Items.Count} items, but that version's content is {expected} items. "
+                    + $"(v) was serialized {serializedCounts.Length} time(s) with item counts [{string.Join(", ", serializedCounts)}]: "
+                    + "a single 8 means the preserved image was correct and something else wrote the record, while a "
+                    + "trailing 9 means the live, already-mutated object was serialized again after the image was taken."
+                    + $"{Environment.NewLine}Callers:{Environment.NewLine}{string.Join(Environment.NewLine + "----" + Environment.NewLine, serializedStacks)}");
 
                 if (recoveredIsSourceVersion)
                     Assert.That(recovered.Items, Does.Not.Contain(RmwValue),
