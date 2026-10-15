@@ -46,7 +46,7 @@ namespace Client.benchmark
         [Option("maxsends", Default = 8, HelpText = "Maximum concurrent transport sends, applied to BOTH clients (GarnetClient networkSendThrottleMax and GarnetLightClient maxConcurrentNetworkSends).")]
         public int MaxConcurrentSends { get; set; }
 
-        [Option("max-requests", Default = 0, HelpText = "GarnetLightClient request-ring capacity in 8-byte quanta (maxOutstandingRequests); a small GET/SET record spans several quanta, so this counts quanta, NOT whole requests. Default 0 auto-sizes the request ring in BYTES from the offered load (threads*batch) so it matches GarnetClient's byte-addressed send buffer; a positive value raises the request-slot floor. GarnetClient has no request-slot cap.")]
+        [Option("max-requests", Default = 0, HelpText = "GarnetLightClient request capacity (maxOutstandingRequests): the number of requests, of any size, awaiting local send completion (max 32768). Default 0 auto-sizes it to the offered load (threads*batch) with headroom; the inline request buffer is sized separately in bytes from the offered load. GarnetClient has no request-count cap.")]
         public int MaxOutstandingRequests { get; set; }
 
         [Option("max-completions", Default = 0, HelpText = "GarnetLightClient completion-ring capacity (maxOutstandingCompletions). Default 0 auto-sizes it to the offered load (threads*batch) with headroom so GarnetLightClient is not completion-throttled and matches GarnetClient. GarnetClient's equivalent (maxOutstandingTasks) stays at its large default.")]

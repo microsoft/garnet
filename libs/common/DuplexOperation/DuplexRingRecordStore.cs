@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -11,7 +10,7 @@ using Garnet.common;
 namespace Garnet.client
 {
     /// <summary>
-    /// Kind of a scheduled request: its payload bytes live either inline in a ring page or out-of-line in a
+    /// Kind of a scheduled request: its payload bytes live either inline in the inline buffer or out-of-line in a
     /// separately rented buffer. Stored in the dense request-id-indexed schedule entry.
     /// </summary>
     internal enum RequestKind : byte
@@ -22,7 +21,7 @@ namespace Garnet.client
         OutOfLine = 0x00,
 
         /// <summary>
-        /// The request bytes are packed contiguously in a ring page at the scheduled address.
+        /// The request bytes are packed contiguously in the inline buffer at the scheduled address.
         /// </summary>
         Inline = 0x01,
     }
@@ -32,85 +31,17 @@ namespace Garnet.client
         internal const int HeaderSize = sizeof(long);
         internal const int CompletionSlotSize = 64;
 
-        /// <summary>Ring bytes an out-of-line request advances the tail by, purely for ordering/backpressure.</summary>
-        internal const int OutOfLineThrottleBytes = HeaderSize;
-    }
-
-    /// <summary>
-    /// Immutable geometry of a power-of-two page ring: the page size and count, plus the
-    /// address ↔ (page, offset) arithmetic that keys off them. Holds no position/cursor state.
-    /// </summary>
-    internal readonly struct PageShape
-    {
-        /// <summary>Size of each page, in bytes.</summary>
-        internal int PageSizeBytes { get; }
-
-        /// <summary>Log2 of <see cref="PageSizeBytes"/>.</summary>
-        internal int PageSizeBits { get; }
-
-        /// <summary>Mask isolating the in-page byte offset (<see cref="PageSizeBytes"/> - 1).</summary>
-        internal int PageSizeMask { get; }
-
-        /// <summary>Number of physical pages in the ring.</summary>
-        internal int PageCount { get; }
-
-        internal PageShape(int pageSizeBytes, int pageCount)
-        {
-            PageSizeBytes = pageSizeBytes;
-            PageSizeBits = System.Numerics.BitOperations.Log2((uint)pageSizeBytes);
-            PageSizeMask = pageSizeBytes - 1;
-            PageCount = pageCount;
-        }
-
-        /// <summary>Byte offset of <paramref name="address"/> within its page.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetOffsetInPage(long address) => address & PageSizeMask;
-
-        /// <summary>Page index of <paramref name="address"/> (not wrapped to the physical ring page count).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetUnwrappedPageIndex(long address) => address >> PageSizeBits;
-
-        /// <summary>Physical ring slot: the logical page wrapped to <see cref="PageCount"/>.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int GetPhysicalPageIndex(long address) => (int)(GetUnwrappedPageIndex(address) & (PageCount - 1));
-
-        /// <summary>Composes a logical address from a page index and an in-page byte offset.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long PackAddress(long page, long offset) => (page << PageSizeBits) | (uint)offset;
-    }
-
-    /// <summary>
-    /// Narrow, non-generic view of the request-id-indexed schedule that the admission controller needs to
-    /// drive its frontier: whether a request id has been published. Keeps the (non-generic) controller
-    /// decoupled from the schedule's generic request/completion/flush context types while still owning the
-    /// frontier logic itself.
-    /// </summary>
-    internal interface IScheduleReadIndex
-    {
-        /// <summary>Whether the producer owning <paramref name="requestId"/> has published its schedule entry.</summary>
-        bool IsSchedulePublished(int requestId);
+        /// <summary>Largest supported inline-buffer capacity, in bytes.</summary>
+        internal const int MaxInlineBufferCapacity = 1 << 30;
     }
 
     /// <summary>
     /// Physical request and completion storage for a duplex operation ring.
     /// </summary>
     internal sealed unsafe class DuplexRingRecordStore<TRequestContext, TCompletionContext, TFlushContext>
-        : IScheduleReadIndex
         where TRequestContext : struct, IDisposable
         where TFlushContext : class
     {
-        unsafe struct RingPage
-        {
-            internal readonly byte[] value;
-            internal readonly long pointer;
-
-            internal RingPage(int pageSize)
-            {
-                value = GC.AllocateArray<byte>(pageSize, true);
-                pointer = (long)Unsafe.AsPointer(ref value[0]);
-            }
-        }
-
         // Keep adjacent producer-published completions on separate cache lines.
         [StructLayout(LayoutKind.Sequential, Size = DuplexRingRecordFormat.CompletionSlotSize)]
         struct CompletionSlot
@@ -135,7 +66,7 @@ namespace Garnet.client
         // Upper bound on schedulable requests; mirrors the dense request-id field width enforced client-side.
         const int MaxSchedulableRequests = 1 << 15;
 
-        readonly RingBoundedBuffer<RingPage> bufferPages;
+        readonly RingBoundedBuffer<byte> inlineDataBuffer;
         readonly ScheduleSlot[] scheduleArray;
         readonly TFlushContext[] flushResults;
         readonly int scheduleMask;
@@ -144,15 +75,19 @@ namespace Garnet.client
         int closed;
         int allFlushContextsAllocated;
 
-        internal PageShape Shape { get; }
+        /// <summary>Size of the circular inline payload buffer, in bytes (a power of two).</summary>
+        internal int InlineBufferCapacity { get; }
         internal int CompletionCapacity { get; }
         internal int ScheduleCapacity { get; }
 
         /// <summary>Maximum number of requests that may be outstanding (awaiting local send) at once.</summary>
         internal int MaxOutstandingRequests { get; }
 
-        /// <summary>Largest payload that fits contiguously in one ring page and can be written inline.</summary>
-        internal int MaxInlinePayloadSize => Shape.PageSizeBytes;
+        /// <summary>
+        /// Largest payload written inline. Bounded by half the inline buffer so a record that does not fit
+        /// before the buffer end can always be placed at the start of the next lap once earlier records flush.
+        /// </summary>
+        internal int MaxInlinePayloadSize { get; }
 
         /// <summary>Count of flush-result contexts allocated so far (one may be cached per schedule slot).</summary>
         internal int AllocatedFlushContextCount
@@ -182,22 +117,23 @@ namespace Garnet.client
             int maxOutstandingRequests,
             int completionCapacity)
         {
-            Shape = new PageShape(ringPageSizeBytes, ringPageCount);
+            if ((long)ringPageSizeBytes * ringPageCount > DuplexRingRecordFormat.MaxInlineBufferCapacity)
+                throw new ArgumentOutOfRangeException(nameof(ringPageCount), ringPageCount,
+                    $"Inline buffer capacity must not exceed {DuplexRingRecordFormat.MaxInlineBufferCapacity} bytes.");
+
+            // Pinned because producers write inline payloads through raw pointers obtained under the epoch.
+            inlineDataBuffer = new RingBoundedBuffer<byte>(ringPageSizeBytes, ringPageCount, pinned: true);
+            InlineBufferCapacity = inlineDataBuffer.Capacity;
+            MaxInlinePayloadSize = Math.Min(ringPageSizeBytes, InlineBufferCapacity / 2);
             if (maxOutstandingRequests == 0)
                 maxOutstandingRequests = Math.Clamp(
-                    checked(Shape.PageCount * Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize),
-                    Shape.PageCount,
+                    InlineBufferCapacity / DuplexRingRecordFormat.HeaderSize,
+                    ringPageCount,
                     MaxSchedulableRequests);
             if (maxOutstandingRequests is < 1 or > MaxSchedulableRequests)
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
                     $"Maximum outstanding requests must be between 1 and {MaxSchedulableRequests}.");
             MaxOutstandingRequests = maxOutstandingRequests;
-
-            // Hold the ring pages in a single-page ring whose slots are the ring's pages, so page lookups
-            // reuse the buffer's wrap-around indexer instead of a hand-written modulo.
-            bufferPages = new RingBoundedBuffer<RingPage>(pageSize: ringPageCount, pageCount: 1);
-            for (var i = 0; i < ringPageCount; i++)
-                bufferPages[i] = new RingPage(ringPageSizeBytes);
 
             CompletionCapacity = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, completionCapacity));
             completionMask = CompletionCapacity - 1;
@@ -209,31 +145,29 @@ namespace Garnet.client
             flushResults = new TFlushContext[ScheduleCapacity];
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private long GetPhysicalAddress(long logicalAddress)
-        {
-            var offset = (int)Shape.GetOffsetInPage(logicalAddress);
-            return bufferPages[Shape.GetUnwrappedPageIndex(logicalAddress)].pointer + offset;
-        }
-
         /// <summary>
-        /// Ring bytes a command of <paramref name="payloadLength"/> advances the tail by, and whether it is
-        /// written inline. An inline record packs its whole payload contiguously into one page (byte-granular,
-        /// no header). An out-of-line record keeps its payload in a separately rented buffer and advances the
-        /// tail by a fixed nominal amount purely so the byte-driven read-only machinery keeps flushing.
+        /// Inline-buffer bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written
+        /// inline. An inline record packs its whole payload contiguously into the inline buffer (byte-granular,
+        /// no header). An out-of-line record keeps its payload in a separately rented buffer and reserves no
+        /// inline bytes; it is throttled by the schedule capacity alone.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int GetRecordSize(int payloadLength, out bool isInline)
         {
             isInline = (uint)payloadLength <= (uint)MaxInlinePayloadSize;
-            return isInline ? payloadLength : DuplexRingRecordFormat.OutOfLineThrottleBytes;
+            return isInline ? payloadLength : 0;
         }
 
-        internal byte[] GetPageBuffer(long page) => bufferPages[page].value;
+        /// <summary>The pinned inline payload buffer.</summary>
+        internal byte[] InlineBuffer => inlineDataBuffer.Array;
 
-        /// <summary>Pointer to the inline payload destination for a reserved ring <paramref name="address"/>.</summary>
+        /// <summary>Offset in <see cref="InlineBuffer"/> of the free-running inline <paramref name="address"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal byte* GetInlineWritePointer(long address) => (byte*)GetPhysicalAddress(address);
+        internal int GetInlineBufferOffset(long address) => inlineDataBuffer.GetOffset(address);
+
+        /// <summary>Pointer to the inline payload destination for a reserved inline <paramref name="address"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal byte* GetInlineWritePointer(long address) => (byte*)Unsafe.AsPointer(ref inlineDataBuffer[address]);
 
         /// <summary>Flush-result context cached for the schedule slot of <paramref name="requestId"/>, if any.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -297,39 +231,6 @@ namespace Garnet.client
 
             schedule = default;
             return false;
-        }
-
-        /// <summary>
-        /// Non-claiming probe: true if the schedule entry for <paramref name="requestId"/> is published (and
-        /// not yet claimed). Used by the read-only frontier to avoid advancing past a reserved-but-unpublished
-        /// request, which the flusher could not send and would otherwise orphan.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsSchedulePublished(int requestId)
-        {
-            var slot = requestId & scheduleMask;
-            return Volatile.Read(ref scheduleArray[slot].published) == (long)requestId + 1;
-        }
-
-        /// <summary>
-        /// Ring byte footprint of the schedule entry for <paramref name="requestId"/>: the ring
-        /// <paramref name="address"/> the record occupies, returning the number of ring bytes it consumed (its
-        /// inline payload length, or the out-of-line throttle stride). The caller must own the flush of this
-        /// entry, which the read-only frontier only hands out after observing it published. Claiming leaves the
-        /// footprint fields intact, and the slot is not reused until the flush releases its reservation, so the
-        /// read is valid whether or not the entry has since been claimed.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int GetScheduleFootprint(int requestId, out long address)
-        {
-            var slot = requestId & scheduleMask;
-            // Acquire read orders the field reads after the producer's release publish.
-            var published = Volatile.Read(ref scheduleArray[slot].published);
-            Debug.Assert(Math.Abs(published) == (long)requestId + 1);
-            address = scheduleArray[slot].address;
-            return scheduleArray[slot].kind == RequestKind.Inline
-                ? scheduleArray[slot].payloadLength
-                : DuplexRingRecordFormat.OutOfLineThrottleBytes;
         }
 
         internal void RegisterCompletion(int ticket, TCompletionContext completion)

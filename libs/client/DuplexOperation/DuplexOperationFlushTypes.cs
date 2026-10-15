@@ -7,7 +7,8 @@ using System.Threading;
 namespace Garnet.client
 {
     /// <summary>
-    /// Reusable payload async flush result for the request lane of a duplex operation ring.
+    /// Reusable flush result for one transport payload of the request lane: either a single out-of-line request
+    /// or a coalesced run of inline requests (which own no buffer and carry a default request).
     /// </summary>
     sealed class DuplexOperationAsyncFlushResult<TRequestContext>
         where TRequestContext : struct, IRequestContext
@@ -51,15 +52,6 @@ namespace Garnet.client
                         request.Dispose();
                         admission.CompleteFlushPart();
                     }
-                    break;
-
-                case GatherSendBatch batch:
-                    // One gather send carried several single-chunk records; finalize each, then return the
-                    // holder to its pool for reuse.
-                    var batchCount = batch.RecordCount;
-                    for (var i = 0; i < batchCount; i++)
-                        CompleteChunk(batch.ContextAt(i));
-                    batch.Release();
                     break;
 
                 default:

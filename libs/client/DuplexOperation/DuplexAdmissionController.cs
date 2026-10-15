@@ -12,10 +12,10 @@ using Tsavorite.core;
 namespace Garnet.client
 {
     /// <summary>
-    /// A paired reservation for one duplex operation. The request address, dense request id, and optional
-    /// completion ticket are issued by one atomic allocator advance and therefore retain the same relative
-    /// ordering. The <see cref="requestId"/> counts every scheduled operation (including fire-and-forget ones
-    /// that carry no completion ticket) and indexes the dense request-side schedule table.
+    /// A paired reservation for one duplex operation. The inline address, dense request id, and optional
+    /// completion ticket are issued by one compare-and-swap of the allocator cursor and therefore retain the
+    /// same relative ordering. The <see cref="requestId"/> counts every scheduled operation (including
+    /// fire-and-forget ones that carry no completion ticket) and indexes the dense request-side schedule table.
     /// </summary>
     internal readonly struct DuplexOperationReservation
     {
@@ -34,27 +34,33 @@ namespace Garnet.client
     /// <summary>
     /// Coordinates admission and backpressure for paired request/completion operations. Request capacity is
     /// released by network flushes, while completion capacity is released independently by received replies.
+    /// <para>
+    /// A producer reserves its (inline address, completion ticket, request id) with a compare-and-swap that
+    /// commits only when every limit holds, so a request id exists only once its producer may write it. The
+    /// producer holds the epoch from that reservation until it publishes the schedule entry, and drains only
+    /// after publishing. The flusher snapshots the tail and flushes <c>[readOnlyRequestId, tail)</c> from an
+    /// epoch-bump callback, which cannot run until every producer that reserved an id in that range has
+    /// published it and released or refreshed the epoch.
+    /// </para>
     /// </summary>
     internal sealed class DuplexAdmissionController : IDisposable
     {
-        const long PageWrapDistance = 1L << (LightPageAndOffset.kPageBits - 1);
-
-        // Bounded progressive backoff budget for byte-ring backpressure before parking on a flush. Kept small
-        // because the backpressure window is short (a straddle normalization or a flush completion) and the
-        // slow path is a cheap event wait; SpinOnce escalates to scheduler yields within this budget so a
-        // spinning producer never starves the thread that drives the flush.
+        // Bounded progressive backoff budget for inline-buffer backpressure before parking on a flush. Kept small
+        // because the backpressure window is short (a flush completion) and the slow path is a cheap event wait;
+        // SpinOnce escalates to scheduler yields within this budget so a spinning producer never starves the
+        // thread that drives the flush.
         const int BackpressureSpinBudget = 16;
 
-        readonly PageShape shape;
+        readonly int inlineBufferCapacity;
         readonly int completionCapacity;
         readonly int scheduleCapacity;
         readonly LightEpoch epoch;
         readonly Action<int, int> onPagesMarkedReadOnly;
-        readonly IScheduleReadIndex schedule;
 
-        LightPageAndOffset tailPageOffset;
-        long flushedUntilAddress;
+        LightPageAndOffset tail;
+        long flushedInlineAddress;
         int readOnlyRequestId;
+        long readOnlyInlineAddress;
         long completionUntil;
         long activeFlushUntilAddress;
         int completionReservations;
@@ -68,12 +74,12 @@ namespace Garnet.client
         CompletionEvent completionFreed;
         CompletionEvent idleStateChanged;
 
-        internal int CompletionTail => tailPageOffset.TaskId;
+        internal int CompletionTail => tail.TaskId;
 
         internal int ActivePerOperationFlushResultCount => Volatile.Read(ref activePerOperationFlushResults);
 
         internal bool IsIdle
-            => GetTailAddress() == Volatile.Read(ref flushedUntilAddress) &&
+            => GetTailAddress() == Volatile.Read(ref flushedInlineAddress) &&
                Volatile.Read(ref completionReservations) == 0 &&
                Volatile.Read(ref scheduleReservations) == 0 &&
                Volatile.Read(ref activeFlushCount) == 0 &&
@@ -81,19 +87,18 @@ namespace Garnet.client
                Volatile.Read(ref ongoingAggressiveShiftReadOnly) == 0;
 
         internal DuplexAdmissionController(
-            PageShape shape,
+            int inlineBufferCapacity,
             int completionCapacity,
             int scheduleCapacity,
             LightEpoch epoch,
-            Action<int, int> onPagesMarkedReadOnly,
-            IScheduleReadIndex schedule)
+            Action<int, int> onPagesMarkedReadOnly)
         {
-            this.shape = shape;
+            Debug.Assert(System.Numerics.BitOperations.IsPow2(inlineBufferCapacity));
+            this.inlineBufferCapacity = inlineBufferCapacity;
             this.completionCapacity = completionCapacity;
             this.scheduleCapacity = scheduleCapacity;
             this.epoch = epoch;
             this.onPagesMarkedReadOnly = onPagesMarkedReadOnly;
-            this.schedule = schedule;
 
             requestFreed.Initialize();
             completionFreed.Initialize();
@@ -125,26 +130,17 @@ namespace Garnet.client
             }
         }
 
+        /// <summary>Free-running inline address one past the last reserved inline byte.</summary>
         internal long GetTailAddress()
         {
             LightPageAndOffset local = default;
-            local.PageAndOffset = tailPageOffset.PageAndOffset;
-            return GetTailAddressFrom(local);
-        }
-
-        long GetTailAddressFrom(LightPageAndOffset local)
-        {
-            if (local.Offset >= shape.PageSizeBytes)
-            {
-                local.Page = (local.Page + 1) & (int)LightPageAndOffset.kPageMask;
-                local.Offset = 0;
-            }
-            return (((long)local.Page) << shape.PageSizeBits) | (uint)local.Offset;
+            local.Value = Volatile.Read(ref tail.Value);
+            return local.InlineAddress;
         }
 
         /// <summary>
-        /// Attempts to reserve the ordered request address and optional completion ticket for one operation.
-        /// On backpressure, returns false and identifies the capacity event that the caller should await.
+        /// Attempts to reserve the ordered inline address, request id and optional completion ticket for one
+        /// operation. On backpressure, returns false and identifies the capacity event that the caller should await.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryScheduleOperation(
@@ -153,14 +149,13 @@ namespace Garnet.client
             out DuplexOperationReservation reservation,
             out CompletionEvent waitEvent)
         {
-            // Byte-ring backpressure (the schedule claim is already held) clears within a few straddle
-            // normalizations or flush completions. Kick the flusher once, then spin that window with a bounded
-            // progressive policy: it begins CPU-local but escalates to scheduler yields so a spinning producer
-            // can never starve the thread driving the flush. The spin body does no CompletionEvent.Set() work:
-            // each Set() allocates a SemaphoreSlim and takes its internal monitor lock, so re-driving the flush
-            // on every iteration convoys every producer on that lock and starves the flusher (the original
-            // livelock). On exhaustion, release the schedule claim and let the caller park on the next flush,
-            // which is signalled by CompleteFlushPart advancing flushedUntilAddress.
+            // Inline-buffer backpressure (the schedule claim is already held) clears on a flush completion. Kick
+            // the flusher once, then spin that window with a bounded progressive policy: it begins CPU-local but
+            // escalates to scheduler yields so a spinning producer can never starve the thread driving the flush.
+            // The spin body does no CompletionEvent.Set() work: each Set() allocates a SemaphoreSlim and takes
+            // its internal monitor lock, so re-driving the flush on every iteration convoys every producer on
+            // that lock and starves the flusher. On exhaustion, release the claims and let the caller park on
+            // the next flush, which is signalled by CompleteFlushPart advancing the flushed inline address.
             var spinner = ConfiguredSpinWait.BoundedProgressive(BackpressureSpinBudget);
             var completionReserved = false;
             var scheduleReserved = false;
@@ -194,28 +189,23 @@ namespace Garnet.client
                 }
 
                 waitEvent = requestFreed;
-                var requestAddress = TryReserveRequest(requestSize, out var completionTicket, out var requestId, expectsCompletion);
-                if (requestAddress >= 0)
-                {
-                    reservation = new DuplexOperationReservation(requestAddress, completionTicket, requestId);
+                if (TryReserveRequest(requestSize, expectsCompletion, out reservation))
                     return true;
-                }
 
                 if (!flushKicked)
                 {
-                    // Kick the flusher once so a read-only bump is initiated for the published prefix. Repeating
-                    // DrainRequests every iteration is what convoyed all producers on CompletionEvent.Set's
-                    // SemaphoreSlim monitor lock, so it is done exactly once per backpressure episode.
+                    // Kick the flusher once so the unflushed prefix is handed to a flush. Repeating DrainRequests
+                    // every iteration convoys all producers on CompletionEvent.Set's SemaphoreSlim monitor lock,
+                    // so it is done exactly once per backpressure episode. This producer holds no request id here,
+                    // so a synchronously fired flush callback cannot wait on it.
                     DrainRequests();
                     flushKicked = true;
                 }
 
-                // Drain the epoch every iteration. Producers hold the epoch while spinning here; the flush
-                // advances flushedUntilAddress through epoch.BumpCurrentEpoch(onPagesMarkedReadOnly), whose
-                // epoch transition cannot complete until every other holder drains or suspends. Without this
-                // drain the bump stalls, the flushed watermark never advances, the straddled tail never
-                // unparks, and the spin never terminates. ProtectAndDrain performs no Set() work unless a
-                // flush actually completes, so it does not reintroduce the convoy.
+                // Drain the epoch every iteration. The flush runs from an epoch-bump callback that cannot fire
+                // until every other holder drains or suspends, so a spinning holder must refresh its epoch for
+                // the flushed inline address to advance. ProtectAndDrain performs no Set() work unless a flush
+                // actually completes, so it does not reintroduce the convoy.
                 epoch.ProtectAndDrain();
 
                 if (spinner.TryWait())
@@ -230,65 +220,49 @@ namespace Garnet.client
             }
         }
 
+        /// <summary>
+        /// Advances the cursor by one request id, one completion ticket when <paramref name="expectsCompletion"/>,
+        /// and <paramref name="size"/> inline bytes, committing only if the inline bytes fit. A record that would
+        /// run past the end of the inline buffer starts at the beginning of the next lap instead; the skipped gap
+        /// is never sent (the flusher locates every record by its own address) and is counted against the
+        /// inline capacity until it is flushed past. Returns false, changing nothing, on inline backpressure.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        long TryReserveRequest(int size, out ushort completionTicket, out ushort requestId, bool expectsCompletion)
+        bool TryReserveRequest(int size, bool expectsCompletion, out DuplexOperationReservation reservation)
         {
-            LightPageAndOffset localTailPageOffset = default;
-            localTailPageOffset.PageAndOffset = tailPageOffset.PageAndOffset;
-
-            if (localTailPageOffset.Offset > shape.PageSizeBytes)
+            while (true)
             {
-                completionTicket = 0;
-                requestId = 0;
-                if (NeedToWait(localTailPageOffset.Page + 1))
-                    return -1;
-                return -2;
-            }
+                LightPageAndOffset local = default;
+                local.Value = Volatile.Read(ref tail.Value);
+                var address = local.InlineAddress;
 
-            localTailPageOffset.PageAndOffset = expectsCompletion
-                ? Interlocked.Add(ref tailPageOffset.PageAndOffset, size + LightPageAndOffset.kTaskIncrement + LightPageAndOffset.kRequestIncrement)
-                : Interlocked.Add(ref tailPageOffset.PageAndOffset, size + LightPageAndOffset.kRequestIncrement);
-
-            completionTicket = (ushort)localTailPageOffset.PrevTaskId;
-            var prevRequestCount = (ushort)localTailPageOffset.PrevRequestCount;
-            requestId = prevRequestCount;
-            var page = localTailPageOffset.Page;
-            var offset = localTailPageOffset.Offset - size;
-
-            if (localTailPageOffset.Offset > shape.PageSizeBytes)
-            {
-                var pageIndex = (localTailPageOffset.Page + 1) & (int)LightPageAndOffset.kPageMask;
-                if (offset > shape.PageSizeBytes)
+                if (size > 0)
                 {
-                    if (NeedToWait(pageIndex))
-                        return -1;
-                    return -2;
+                    var offset = address & (inlineBufferCapacity - 1);
+                    if (offset + size > inlineBufferCapacity)
+                        address += inlineBufferCapacity - offset;
+
+                    var used = LightPageAndOffset.InlineDistance(Volatile.Read(ref flushedInlineAddress), address + size);
+                    if (used > inlineBufferCapacity)
+                    {
+                        // The flushed address can only trail the tail, so a distance beyond the capacity is either
+                        // genuine backpressure or a tail that moved after it was read (a later flush then makes
+                        // the distance wrap). Only report backpressure against an unchanged tail.
+                        if (Volatile.Read(ref tail.Value) != local.Value)
+                            continue;
+                        reservation = default;
+                        return false;
+                    }
                 }
 
-                DrainRequests();
-
-                if (NeedToWait(pageIndex))
+                var taskId = local.TaskId;
+                var requestId = local.RequestCount;
+                var next = LightPageAndOffset.Pack(address + size, expectsCompletion ? taskId + 1 : taskId, requestId + 1);
+                if (Interlocked.CompareExchange(ref tail.Value, next, local.Value) == local.Value)
                 {
-                    localTailPageOffset.TaskId = completionTicket;
-                    localTailPageOffset.RequestCount = prevRequestCount;
-                    localTailPageOffset.Offset = shape.PageSizeBytes;
-                    Interlocked.Exchange(ref tailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
-                    return -1;
+                    reservation = new DuplexOperationReservation(address & LightPageAndOffset.kInlineAddressMask, (ushort)taskId, (ushort)requestId);
+                    return true;
                 }
-
-                localTailPageOffset.Page = pageIndex;
-                localTailPageOffset.Offset = size;
-                tailPageOffset = localTailPageOffset;
-                page = pageIndex;
-                offset = 0;
-            }
-
-            return (((long)page) << shape.PageSizeBits) | (uint)offset;
-
-            bool NeedToWait(int nextPage)
-            {
-                var limit = (shape.PageCount + (int)shape.GetUnwrappedPageIndex(Volatile.Read(ref flushedUntilAddress))) & (int)LightPageAndOffset.kPageMask;
-                return nextPage >= limit && nextPage - limit < PageWrapDistance;
             }
         }
 
@@ -327,7 +301,7 @@ namespace Garnet.client
         }
 
         // Give back reservations taken but not used by an attempt that bailed on byte-ring backpressure, without
-        // signalling. The attempt is about to park on requestFreed; the flush that frees ring bytes (always
+        // signalling. The attempt is about to park on requestFreed; the flush that frees inline bytes (always
         // possible when bailing, since backpressure means unflushed data exists) sets requestFreed and wakes it.
         // Broadcasting here instead would make every flush wakeup fan out into N re-bails, each re-broadcasting,
         // convoying all producers on CompletionEvent.Set's SemaphoreSlim monitor lock.
@@ -348,15 +322,14 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Opens a flush of a request-id range whose last record occupies <paramref name="lastConsumedBytes"/>
-        /// ring bytes at <paramref name="lastAddress"/>. Request ids are assigned in ring byte order, so the end
-        /// of the last record is the end of the whole range; it becomes the flushed watermark once every part of
-        /// the range completes.
+        /// Opens a flush of the request-id range handed out by the most recent read-only bump. The inline address
+        /// snapshotted with that range's end becomes the flushed inline address once every part of the range
+        /// completes.
         /// </summary>
-        internal void BeginFlushRange(long lastAddress, int lastConsumedBytes)
+        internal void BeginFlushRange()
         {
             Debug.Assert(Volatile.Read(ref activeFlushCount) == 0);
-            activeFlushUntilAddress = ByteEndAddress(lastAddress, lastConsumedBytes);
+            activeFlushUntilAddress = readOnlyInlineAddress;
             // Keep a scanner-owned sentinel so synchronous send callbacks cannot retire the range mid-scan.
             Volatile.Write(ref activeFlushCount, 1);
         }
@@ -375,10 +348,9 @@ namespace Garnet.client
                 Debug.Assert(count >= 0);
                 if (count == 0)
                 {
-                    // Flushes are serialized (BeginFlushRange asserts no overlap), so the flushed watermark only
-                    // moves forward; a plain store avoids the wrapped-address half-space compare that a full ring
-                    // can hit exactly (see AggressiveFlushShiftReadOnlyBump).
-                    Volatile.Write(ref flushedUntilAddress, activeFlushUntilAddress);
+                    // Flushes are serialized (BeginFlushRange asserts no overlap), so the flushed inline address
+                    // only moves forward and a plain store suffices.
+                    Volatile.Write(ref flushedInlineAddress, activeFlushUntilAddress);
                     requestFreed.Set();
                     idleStateChanged.Set();
                     AggressiveShiftReadOnlyRunner(true);
@@ -428,55 +400,38 @@ namespace Garnet.client
                 // Release the flusher role with a full StoreLoad fence in one atomic operation. Without the
                 // fence a concurrent producer that advanced the tail but observed the flag still held would
                 // bail, while this thread could re-read a stale tail, see no work, and exit, stranding that
-                // request unflushed. The fence guarantees the re-check below observes any request published
-                // before release. The matching producer-side fence is the interlocked tail publication in the
-                // allocate path, so both halves of the handshake are ordered.
+                // request unflushed. The fence guarantees the re-check below observes any request reserved
+                // before release. The matching producer-side fence is the interlocked tail compare-and-swap.
                 Interlocked.Exchange(ref ongoingAggressiveShiftReadOnly, 0);
                 idleStateChanged.Set();
-            } while (ToFlush() && ongoingAggressiveShiftReadOnly == 0 &&
+            } while (ToShift() && ongoingAggressiveShiftReadOnly == 0 &&
                      Interlocked.CompareExchange(ref ongoingAggressiveShiftReadOnly, 1, 0) == 0);
 
             bool ToShift()
             {
-                // Detect pending flush work in the request-id space, not the byte space. The 3-bit page field
-                // gives only an 8-page wrapped byte address, whose half-space wrap distance a full ring
-                // (pageCount pages) can reach exactly, making a wrapped-byte "is the tail ahead" compare
-                // ambiguous and able to falsely report no work (wedging the frontier with producers parked
-                // forever). The 15-bit request-id space dwarfs the maximum outstanding requests, so the masked
-                // difference is the unambiguous count of reserved-but-unflushed requests.
+                // The 15-bit request-id space dwarfs the maximum outstanding requests, so the masked difference
+                // is the unambiguous count of reserved-but-unflushed requests.
                 LightPageAndOffset snapshot = default;
-                snapshot.PageAndOffset = Volatile.Read(ref tailPageOffset.PageAndOffset);
+                snapshot.Value = Volatile.Read(ref tail.Value);
                 return ((snapshot.RequestCount - readOnlyRequestId) & (int)LightPageAndOffset.kRequestMask) != 0;
             }
 
-            // The tail is ahead AND the next request to flush has actually been published. The publication
-            // probe is what makes the re-check safe without spinning: when a producer reserved a request id
-            // (advancing the tail) but has not yet published it, ToShift is true yet there is nothing to flush.
-            // Re-reading the published sentinel here, after the StoreLoad fence above, either observes that
-            // producer's release publish (so this thread flushes it) or does not (so the producer's own
-            // post-publish DrainRequests will), closing the same handshake the fence protects for the tail.
-            bool ToFlush() => ToShift() && schedule.IsSchedulePublished(readOnlyRequestId);
-
             bool AggressiveFlushShiftReadOnlyBump()
             {
-                // Snapshot the packed tail once; the frontier advances in the request-id space only.
+                // Snapshot the tail once: its request id ends the flush range and its inline address is where
+                // that range's inline bytes end. Every id in the range may still be unpublished, but each owning
+                // producer holds the epoch until it publishes, so the bump callback cannot flush the range
+                // before all of it is published.
                 LightPageAndOffset snapshot = default;
-                snapshot.PageAndOffset = Volatile.Read(ref tailPageOffset.PageAndOffset);
-                var tailRequestId = snapshot.RequestCount;
+                snapshot.Value = Volatile.Read(ref tail.Value);
                 var oldRequestId = readOnlyRequestId;
+                var newRequestId = snapshot.RequestCount;
+                if (newRequestId == oldRequestId)
+                    return false;
 
-                // Gate the advance on publication: a request id is reserved (and bumps the tail) before its
-                // payload is published, and publication can lag across producers or across the straddle path's
-                // own internal DrainRequests. Advancing the frontier to the raw tail would let the flusher walk
-                // past a reserved-but-unpublished request, skip it, and then reuse its slot — orphaning the
-                // request (leaking its out-of-line buffer and never sending it). The gate stops the frontier at
-                // the first unpublished request. The flush derives the range's ring byte end from its slots.
-                var gatedRequestId = GateFrontierOnPublication(oldRequestId, tailRequestId);
-                if (gatedRequestId == oldRequestId)
-                    return false; // Next request not yet published; its producer's publish will re-drive this.
-
-                readOnlyRequestId = gatedRequestId;
-                epoch.BumpCurrentEpoch(() => onPagesMarkedReadOnly(oldRequestId, gatedRequestId));
+                readOnlyRequestId = newRequestId;
+                readOnlyInlineAddress = snapshot.InlineAddress;
+                epoch.BumpCurrentEpoch(() => onPagesMarkedReadOnly(oldRequestId, newRequestId));
                 return true;
             }
 
@@ -492,38 +447,6 @@ namespace Garnet.client
                     epoch.Suspend();
                 }
             }
-        }
-
-        /// <summary>
-        /// Walks the half-open request-id range <c>[fromRequestId, untilRequestId)</c> in order and returns the
-        /// first request id whose owning producer has not yet published its schedule entry (equal to
-        /// <paramref name="untilRequestId"/> when all are published). The frontier must not advance past an
-        /// unpublished request: the flusher cannot send it, would skip its slot, and the slot would later be
-        /// reused by a wrapped request id — orphaning the request (leaking any out-of-line buffer and never
-        /// transmitting it).
-        /// </summary>
-        int GateFrontierOnPublication(int fromRequestId, int untilRequestId)
-        {
-            var count = (untilRequestId - fromRequestId) & (int)LightPageAndOffset.kRequestMask;
-            var published = 0;
-            while (published < count &&
-                   schedule.IsSchedulePublished((fromRequestId + published) & (int)LightPageAndOffset.kRequestMask))
-                published++;
-
-            return (fromRequestId + published) & (int)LightPageAndOffset.kRequestMask;
-        }
-
-        /// <summary>
-        /// Ring byte address immediately after a record that occupies <paramref name="consumedBytes"/> starting
-        /// at <paramref name="address"/>, normalized so a record that fills a page rolls to the next logical
-        /// page (matching the tail's page-advance and wrapping at the logical page count).
-        /// </summary>
-        long ByteEndAddress(long address, int consumedBytes)
-        {
-            var raw = address + consumedBytes;
-            var page = (raw >> shape.PageSizeBits) & (int)LightPageAndOffset.kPageMask;
-            var offset = raw & shape.PageSizeMask;
-            return (page << shape.PageSizeBits) | offset;
         }
     }
 }

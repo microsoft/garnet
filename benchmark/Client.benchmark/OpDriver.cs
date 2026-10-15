@@ -113,26 +113,25 @@ namespace Client.benchmark
             // The benchmark sizes them from offered load by default so GarnetLightClient matches GarnetClient
             // out of the box; LightNetworkWriterOptions keeps its own small library defaults untouched.
             //
-            // The request ring is byte-addressed (quantum == record header), so maxOutstandingRequests counts
-            // 8-byte quanta, NOT whole requests -- a small GET/SET record spans several quanta. Size it in
-            // BYTES to hold the offered load with headroom (mirroring GarnetClient's byte-addressed send
-            // buffer) and derive maxOutstandingRequests from the page geometry so the quantum stays at the
-            // record header. --max-requests raises the request-slot floor; --max-completions overrides the
-            // completion-ring capacity.
-            const int headerSize = 8;                   // DuplexRingRecordFormat.HeaderSize
+            // The inline request buffer is sized in BYTES to hold the offered load with headroom (mirroring
+            // GarnetClient's byte-addressed send buffer). Request and completion capacities count requests,
+            // one per in-flight operation regardless of size; --max-requests and --max-completions override them.
             const int requestPageCount = 4;
-            const int bytesPerInflightRecord = 64;      // header + small inline GET/SET payload, with headroom
+            const int bytesPerInflightRecord = 64;      // small inline GET/SET payload, with headroom
+            const int maxRequestIds = 1 << 15;          // LightPageAndOffset request-id space
             var offered = Math.Max(1, opts.Threads * opts.Batch);
 
-            var requestSlotFloor = Math.Max(offered, opts.MaxOutstandingRequests);
-            var targetRingBytes = Math.Max((long)opts.NetworkBufferBytes, (long)requestSlotFloor * bytesPerInflightRecord);
+            var targetRingBytes = Math.Max((long)opts.NetworkBufferBytes, (long)offered * bytesPerInflightRecord);
             var requestPageSizeBytes = 1 << 13;
             while ((long)requestPageSizeBytes * requestPageCount < targetRingBytes)
                 requestPageSizeBytes <<= 1;
-            var maxOutstandingRequests = requestPageSizeBytes / headerSize * requestPageCount; // quantum == headerSize
 
-            // One completion slot per in-flight reply (no page-size constraint); hold the offered load with
-            // headroom by default so replies are never completion-throttled.
+            var maxOutstandingRequests = opts.MaxOutstandingRequests > 0
+                ? opts.MaxOutstandingRequests
+                : Math.Min(maxRequestIds, Math.Max(512, offered * 2));
+
+            // One completion slot per in-flight reply; hold the offered load with headroom by default so
+            // replies are never completion-throttled.
             var maxOutstandingCompletions = opts.MaxOutstandingCompletions > 0
                 ? opts.MaxOutstandingCompletions
                 : Math.Max(512, offered * 2);

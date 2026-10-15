@@ -55,11 +55,6 @@ namespace Garnet.client
                     tcpSender.SendResponse(buffer, offset, length, context);
             }
 
-            public bool SupportsGather => !useTls;
-
-            public void SendGather(GatherSendBatch batch)
-                => tcpSender.SendResponseGather(batch, batch);
-
             public void OnFlushError(Exception exception)
                 => networkHandler.Dispose();
         }
@@ -237,22 +232,22 @@ namespace Garnet.client
             => channel.TryScheduleOperation(requestSize, expectsResponse, out reservation, out waitEvent);
 
         /// <summary>
-        /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline
-        /// (its whole payload packed into one page) or out-of-line (an 8-byte descriptor plus a rented buffer).
+        /// Inline-buffer bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written
+        /// inline (its whole payload packed into the inline buffer) or out-of-line (a rented buffer, no inline bytes).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetRecordSize(int payloadLength, out bool isInline)
             => channel.GetRecordSize(payloadLength, out isInline);
 
         /// <summary>
-        /// Reserve an inline record and return a pointer to write its payload directly into page memory,
+        /// Reserve an inline record and return a pointer to write its payload directly into the inline buffer,
         /// skipping the pooled buffer. The caller must hold the epoch, fill the payload, then call
         /// <see cref="PublishInlineRecord"/> to publish it.
         /// </summary>
         public unsafe byte* RegisterInlineRecord(long address)
             => channel.RegisterInlineRecord(address);
 
-        /// <summary>Publish an inline record whose payload has already been written into page memory.</summary>
+        /// <summary>Publish an inline record whose payload has already been written into the inline buffer.</summary>
         public void PublishInlineRecord(int requestId, long address, int payloadLength)
             => channel.PublishInlineRecord(requestId, address, payloadLength);
 

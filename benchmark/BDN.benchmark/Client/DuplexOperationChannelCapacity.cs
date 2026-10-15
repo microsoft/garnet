@@ -44,19 +44,6 @@ namespace BDN.benchmark.Client
             public void Send(byte[] buffer, int offset, int length, object context)
                 => state.ProcessRequest(buffer, offset, length, context);
 
-            public bool SupportsGather => true;
-
-            public void SendGather(GatherSendBatch batch)
-            {
-                var recordCount = batch.RecordCount;
-                for (var i = 0; i < recordCount; i++)
-                {
-                    var segment = batch[i];
-                    state.ProcessRequest(segment.Array, segment.Offset, segment.Count, batch.ContextAt(i));
-                }
-                batch.Release();
-            }
-
             public void OnFlushError(Exception exception)
                 => state.RecordFlushError(exception);
         }
@@ -66,6 +53,7 @@ namespace BDN.benchmark.Client
             readonly object[] pendingFlushes;
 
             long checksum;
+            long sentBytes;
             int pendingCount;
             int completedCount;
             int capacityErrors;
@@ -75,6 +63,7 @@ namespace BDN.benchmark.Client
             string firstFlushError;
 
             internal long Checksum => Volatile.Read(ref checksum);
+            internal long SentBytes => Volatile.Read(ref sentBytes);
             internal int Errors => Volatile.Read(ref capacityErrors) +
             Volatile.Read(ref flushErrors) +
             Volatile.Read(ref classificationErrors) +
@@ -92,6 +81,7 @@ namespace BDN.benchmark.Client
                 for (var i = offset; i < end; i++)
                     next = unchecked((next * 31) + buffer[i]);
                 Interlocked.Add(ref checksum, next);
+                Interlocked.Add(ref sentBytes, length);
 
                 var index = Interlocked.Increment(ref pendingCount) - 1;
                 if ((uint)index >= (uint)pendingFlushes.Length)
@@ -120,14 +110,17 @@ namespace BDN.benchmark.Client
                 return true;
             }
 
-            internal void ResetPendingFlushes(int expectedCount)
+            // Inline runs are coalesced into one send, so the number of sends is at most the number of records.
+            internal bool HasPendingFlushes => Volatile.Read(ref completedCount) < Volatile.Read(ref pendingCount);
+
+            internal void ResetPendingFlushes()
             {
-                if (Volatile.Read(ref pendingCount) != expectedCount ||
-                    Volatile.Read(ref completedCount) != expectedCount)
+                if (Volatile.Read(ref pendingCount) != Volatile.Read(ref completedCount))
                     Interlocked.Increment(ref capacityErrors);
 
                 Volatile.Write(ref pendingCount, 0);
                 Volatile.Write(ref completedCount, 0);
+                Volatile.Write(ref sentBytes, 0);
             }
 
             internal void RecordFlushError(Exception exception)
@@ -244,7 +237,6 @@ namespace BDN.benchmark.Client
         long ExecuteBurst(int requestCount, int recordSize, byte[] source, bool inline)
         {
             var scheduledCount = 0;
-            var completedCount = 0;
             epoch.Resume();
             try
             {
@@ -261,9 +253,7 @@ namespace BDN.benchmark.Client
                         channel.DrainRequests();
                         epoch.Suspend();
 
-                        if (transportState.TryCompleteOnePendingFlush())
-                            completedCount++;
-                        else
+                        if (!transportState.TryCompleteOnePendingFlush())
                             Thread.Yield();
 
                         epoch.Resume();
@@ -276,14 +266,15 @@ namespace BDN.benchmark.Client
 
                     if (inline)
                     {
-                        var destination = channel.RegisterInlineRecord(reservation.requestAddress, source.Length);
+                        var destination = channel.RegisterInlineRecord(reservation.requestAddress);
                         source.AsSpan().CopyTo(new Span<byte>(destination, source.Length));
+                        channel.PublishInlineRecord(reservation.requestId, reservation.requestAddress, source.Length);
                     }
                     else
                     {
                         var request = LightRequestContext.RentRequestBuffer(requestPool, source.Length);
                         source.AsSpan().CopyTo(request.Buffer);
-                        channel.RegisterOfflineRecord(reservation.requestAddress, request);
+                        channel.RegisterOfflineRecord(reservation.requestId, reservation.requestAddress, request);
                     }
 
                 }
@@ -296,8 +287,9 @@ namespace BDN.benchmark.Client
                 epoch.Suspend();
             }
 
+            var expectedBytes = (long)scheduledCount * source.Length;
             var spinner = new SpinWait();
-            while (completedCount < scheduledCount)
+            while (transportState.SentBytes < expectedBytes || transportState.HasPendingFlushes)
             {
                 epoch.Resume();
                 try
@@ -310,13 +302,11 @@ namespace BDN.benchmark.Client
                     epoch.Suspend();
                 }
 
-                if (transportState.TryCompleteOnePendingFlush())
-                    completedCount++;
-                else
+                if (!transportState.TryCompleteOnePendingFlush())
                     spinner.SpinOnce();
             }
 
-            transportState.ResetPendingFlushes(scheduledCount);
+            transportState.ResetPendingFlushes();
 
             long result = transportState.Checksum;
             for (var i = 0; i < scheduledCount; i++)

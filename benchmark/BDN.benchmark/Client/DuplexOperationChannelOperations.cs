@@ -50,19 +50,6 @@ namespace BDN.benchmark.Client
             public void Send(byte[] buffer, int offset, int length, object context)
                 => state.ProcessRequest(buffer, offset, length, context);
 
-            public bool SupportsGather => true;
-
-            public void SendGather(GatherSendBatch batch)
-            {
-                var recordCount = batch.RecordCount;
-                for (var i = 0; i < recordCount; i++)
-                {
-                    var segment = batch[i];
-                    state.ProcessRequest(segment.Array, segment.Offset, segment.Count, batch.ContextAt(i));
-                }
-                batch.Release();
-            }
-
             public void OnFlushError(Exception exception)
                 => state.RecordFlushError(exception);
         }
@@ -237,12 +224,13 @@ namespace BDN.benchmark.Client
 
                 if (inline)
                 {
-                    var destination = channel.RegisterInlineRecord(reservation.requestAddress, source.Length);
+                    var destination = channel.RegisterInlineRecord(reservation.requestAddress);
                     source.AsSpan().CopyTo(new Span<byte>(destination, source.Length));
+                    channel.PublishInlineRecord(reservation.requestId, reservation.requestAddress, source.Length);
                 }
                 else
                 {
-                    channel.RegisterOfflineRecord(reservation.requestAddress, request);
+                    channel.RegisterOfflineRecord(reservation.requestId, reservation.requestAddress, request);
                     requestRegistered = true;
                 }
 

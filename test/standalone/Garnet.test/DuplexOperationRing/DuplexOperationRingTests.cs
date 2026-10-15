@@ -57,6 +57,36 @@ namespace Garnet.test
             h.AssertNoBufferLeaks();
         }
 
+        [Test]
+        public async Task InlineRunIsSentAsOneCoalescedPayload()
+        {
+            const int RecordCount = 16;
+            using var h = new RingTestHarness(
+                pageSize: 1024,
+                pageCount: 2,
+                maxOutstandingRequests: 64,
+                completionCapacity: 64,
+                maxSendChunkSizeBytes: 4096);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            h.DeferCompletions();
+
+            // The first send stays in flight, so every later record accumulates behind the ongoing flush.
+            await h.EnqueueAsync(RingPayload.Create(1, 64), expectCompletion: false, cts.Token).ConfigureAwait(false);
+            await h.PumpUntilAsync(() => h.DeferredCompletionCount == 1, DrainTimeout, cts.Token).ConfigureAwait(false);
+            for (var i = 2; i <= RecordCount; i++)
+                await h.EnqueueAsync(RingPayload.Create(i, 32 + i), expectCompletion: false, cts.Token).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, h.SendCallCount);
+
+            // Completing the first send lets the next flush send the whole accumulated inline run at once.
+            ClassicAssert.IsTrue(h.CompleteOneDeferredChunk());
+            await h.PumpUntilAsync(() => h.DeferredCompletionCount == 1, DrainTimeout, cts.Token).ConfigureAwait(false);
+            ClassicAssert.AreEqual(2, h.SendCallCount);
+            ClassicAssert.IsTrue(h.CompleteOneDeferredChunk());
+
+            await h.DrainUntilAsync(RecordCount, DrainTimeout, cts.Token).ConfigureAwait(false);
+            h.AssertReceived(Enumerable.Range(1, RecordCount).Select(i => (long)i));
+        }
+
         [TestCase(FlushResultAllocationMode.Buffered)]
         [TestCase(FlushResultAllocationMode.PerOperation)]
         public async Task RecordSizingIsByteGranular(FlushResultAllocationMode allocationMode)
@@ -80,8 +110,8 @@ namespace Garnet.test
             // A payload exactly the size of a page still fits inline (occupies a full page).
             ClassicAssert.AreEqual(1024, h.Ring.GetRecordSize(1024, out var maximumInline));
             ClassicAssert.IsTrue(maximumInline);
-            // Anything larger than a page is out-of-line; it only advances the tail by the throttle stride.
-            ClassicAssert.AreEqual(DuplexRingRecordFormat.OutOfLineThrottleBytes, h.Ring.GetRecordSize(1025, out var outOfLine));
+            // Anything larger is out-of-line; it reserves no inline bytes.
+            ClassicAssert.AreEqual(0, h.Ring.GetRecordSize(1025, out var outOfLine));
             ClassicAssert.IsFalse(outOfLine);
 
             var payloadSizes = new[] { 16, 300, 1024 };
@@ -154,6 +184,57 @@ namespace Garnet.test
             }
 
             await h.DrainUntilAsync(operationCount, DrainTimeout, cts.Token).ConfigureAwait(false);
+
+            h.AssertReceived(expectedIds);
+            h.AssertNoBufferLeaks();
+            ClassicAssert.IsEmpty(h.FlushErrors);
+        }
+
+        /// <summary>
+        /// Response-expecting claims past the 15-bit request-id and completion-ticket wraps, with odd payload sizes
+        /// that cycle a small inline buffer through many laps (including records that skip to the next lap).
+        /// </summary>
+        [Test]
+        public async Task TicketAndInlineBufferWrap_PreserveOrderAndPayload()
+        {
+            var total = (1 << LightPageAndOffset.kRequestBits) + 4099;
+            using var h = new RingTestHarness(pageSize: 64, pageCount: 4, maxOutstandingRequests: 16, completionCapacity: 8, maxSendChunkSizeBytes: 64);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+            var producerDone = 0;
+            var reader = Task.Run(async () =>
+            {
+                var advanced = 0;
+                while (Volatile.Read(ref producerDone) == 0 || h.CompletionTail != advanced)
+                {
+                    var issued = h.CompletionTail;
+                    var delta = (int)((issued - advanced) & LightPageAndOffset.kTaskMask);
+                    if (delta > 0)
+                    {
+                        h.AdvanceCompletions(delta);
+                        advanced = issued;
+                    }
+                    else
+                    {
+                        await Task.Yield();
+                    }
+                }
+            }, cts.Token);
+
+            var expectedIds = new List<long>(total);
+            var maxInline = h.MaxInlinePayloadSize;
+            for (var i = 0; i < total; i++)
+            {
+                long id = i + 1;
+                expectedIds.Add(id);
+                // Odd sizes from the header up to just past the inline limit so records straddle the buffer end.
+                var size = RingPayload.HeaderSize + ((i * 7) % (maxInline - RingPayload.HeaderSize + 2));
+                await h.EnqueueAsync(RingPayload.Create(id, size), expectCompletion: true, cts.Token).ConfigureAwait(false);
+            }
+
+            Volatile.Write(ref producerDone, 1);
+            await h.DrainUntilAsync(total, DrainTimeout, cts.Token).ConfigureAwait(false);
+            await reader.WaitAsync(cts.Token).ConfigureAwait(false);
 
             h.AssertReceived(expectedIds);
             h.AssertNoBufferLeaks();

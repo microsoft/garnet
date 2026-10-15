@@ -534,9 +534,9 @@ namespace Garnet.client
                 }
             }
 
-            // The choice between an inline record (serialized straight into the ring page, no pooled buffer) and
-            // an out-of-line record (an 8-byte descriptor in the page plus a separately rented payload buffer) is
-            // automatic and driven solely by whether the whole command fits in a single ring page. The decision
+            // The choice between an inline record (serialized straight into the inline buffer, no pooled buffer) and
+            // an out-of-line record (a separately rented payload buffer) is automatic and driven solely by whether
+            // the whole command fits the maximum inline payload size. The decision
             // depends only on totalLength versus fixed page geometry, not on the current page fill, so it is
             // loop-invariant and made once here rather than re-evaluated per allocation attempt.
             var recordSize = writer.GetRecordSize(totalLength, out var inline);
@@ -548,7 +548,7 @@ namespace Garnet.client
             var payloadRegistered = false;
 
             // Serialize the command's RESP bytes into the span [curr, end). Shared by both paths so the wire
-            // format lives in one place; the caller supplies either page memory (inline) or the rented buffer.
+            // format lives in one place; the caller supplies either inline-buffer memory (inline) or the rented buffer.
             unsafe void SerializeCommand(byte* curr, byte* end)
             {
                 if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
@@ -655,7 +655,7 @@ namespace Garnet.client
                     {
                         if (inline)
                         {
-                            // Serialize straight into page memory. The epoch acquired above is held continuously
+                            // Serialize straight into the inline buffer. The epoch acquired above is held continuously
                             // across the reserve and this write (no Suspend/await between the successful allocate
                             // and here). The schedule entry is published only after the payload is fully written
                             // (release-fenced inside PublishInlineRecord), so a concurrent flush cannot observe

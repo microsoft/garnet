@@ -130,11 +130,6 @@ namespace Garnet.test
             public void Send(byte[] buffer, int offset, int length, object context)
                 => owner.Send(buffer, offset, length, context);
 
-            public bool SupportsGather => true;
-
-            public void SendGather(GatherSendBatch batch)
-                => owner.SendGather(batch);
-
             public void OnFlushError(Exception exception)
                 => owner.OnFlushError(exception);
         }
@@ -177,6 +172,9 @@ namespace Garnet.test
         internal int MaxInlinePayloadSize => Ring.MaxInlinePayloadSize;
         internal int DeferredCompletionCount => deferredCompletions.Count;
         internal int AllocatedFlushContextCount => Ring.AllocatedFlushContextCount;
+
+        /// <summary>Number of transport send calls issued so far.</summary>
+        internal int SendCallCount => Volatile.Read(ref sendCallIndex);
 
         /// <summary>Number of completion tickets the ring has issued so far (response-expecting claims).</summary>
         internal int CompletionTail => Ring.CompletionTail;
@@ -229,39 +227,8 @@ namespace Garnet.test
                 CompleteSend(context);
         }
 
-        // Mirrors the real transport's gather send: the whole run shares one send-call index (so an injected
-        // failure is atomic for the batch and the channel completes every context), then each record is
-        // reassembled and completed exactly as a per-record send would be.
-        void SendGather(GatherSendBatch batch)
-        {
-            var idx = Interlocked.Increment(ref sendCallIndex) - 1;
-            var predicate = failPredicate;
-            if (predicate != null && predicate(idx))
-                throw new System.IO.IOException($"injected gather send failure at call {idx}");
-
-            var recordCount = batch.RecordCount;
-            for (var i = 0; i < recordCount; i++)
-            {
-                var segment = batch[i];
-                var context = batch.ContextAt(i);
-                var acc = reassembly.GetOrAdd(context, _ => new List<byte>());
-                lock (acc)
-                {
-                    for (var j = 0; j < segment.Count; j++)
-                        acc.Add(segment.Array[segment.Offset + j]);
-                }
-
-                if (deferCompletions)
-                    deferredCompletions.Enqueue(context);
-                else
-                    CompleteSend(context);
-            }
-
-            // This harness completes each record's context individually (never handing the batch to
-            // CompleteChunk), so return the holder to its pool here, mirroring the gather case in CompleteChunk.
-            batch.Release();
-        }
-
+        // A context carries either one out-of-line payload or a coalesced run of inline payloads; each RingPayload
+        // records its own length, so the reassembled bytes are split back into individual payloads here.
         void CompleteSend(object context)
         {
             var result = (DuplexOperationAsyncFlushResult<TestRequest>)context;
@@ -274,11 +241,25 @@ namespace Garnet.test
             {
                 if (reassembly.TryRemove(context, out var acc))
                 {
-                    byte[] payload;
+                    byte[] bytes;
                     lock (acc)
-                        payload = acc.ToArray();
-                    completed.Add(payload);
-                    Interlocked.Increment(ref completedCount);
+                        bytes = acc.ToArray();
+
+                    var offset = 0;
+                    while (offset < bytes.Length)
+                    {
+                        var length = bytes.Length - offset;
+                        if (length >= RingPayload.HeaderSize)
+                        {
+                            var declared = BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(offset + 8));
+                            if (declared >= RingPayload.HeaderSize && declared <= length)
+                                length = declared;
+                        }
+
+                        completed.Add(bytes.AsSpan(offset, length).ToArray());
+                        Interlocked.Increment(ref completedCount);
+                        offset += length;
+                    }
                 }
             }
         }

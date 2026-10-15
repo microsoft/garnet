@@ -405,7 +405,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(options.MaxOutstandingCompletions, options.MaxOutstandingRequests);
             ClassicAssert.AreEqual(16, options.MaxOutstandingRequests);
             ClassicAssert.AreEqual(4096, options.RequestPageSizeBytes);
-            ClassicAssert.AreEqual(512, options.RequestAllocationQuantumBytes);
             ClassicAssert.AreEqual(9_728, options.MinMemoryFootprint());
             ClassicAssert.AreEqual(10_624, options.MaxMemoryFootprint());
 
@@ -441,9 +440,14 @@ namespace Garnet.test
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 64L << 20,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            ClassicAssert.AreEqual(256, boundedRequestOptions.RequestAllocationQuantumBytes);
             ClassicAssert.AreEqual(6_400, boundedRequestOptions.MinMemoryFootprint());
             ClassicAssert.AreEqual(6_848, boundedRequestOptions.MaxMemoryFootprint());
+
+            // Request capacity counts requests, independent of page geometry; the side table rounds up to a power of two.
+            var oddRequestOptions = new LightNetworkWriterOptions(
+                1 << 13, 1 << 10, 2, 5, 1 << 6, 8, 1024, FlushResultAllocationMode.Buffered);
+            ClassicAssert.AreEqual(5, oddRequestOptions.MaxOutstandingRequests);
+            ClassicAssert.AreEqual(6_400, oddRequestOptions.MinMemoryFootprint());
 
             var positionalOptions = new LightNetworkWriterOptions(
                 1 << 13, 1 << 10, 2, 64, 64, 8, 1024, FlushResultAllocationMode.Buffered);
@@ -551,12 +555,24 @@ namespace Garnet.test
         }
 
         [TestCase(0)]
+        [TestCase(-1)]
+        [TestCase((1 << LightPageAndOffset.kRequestBits) + 1)]
+        public void MaxOutstandingRequestsMustFitRequestIdSpace(int maxOutstandingRequests)
+        {
+            var exception = Assert.Throws<ArgumentOutOfRangeException>(() => CreateRequestCountOptions(maxOutstandingRequests));
+            ClassicAssert.AreEqual("maxOutstandingRequests", exception.ParamName);
+        }
+
+        [TestCase(1)]
         [TestCase(3)]
         [TestCase(10)]
         [TestCase(512)]
-        public void MaxOutstandingRequestsMustProduceAlignedPerPageCapacity(int maxOutstandingRequests)
-        {
-            var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new LightNetworkWriterOptions(
+        [TestCase(1 << LightPageAndOffset.kRequestBits)]
+        public void MaxOutstandingRequestsIsIndependentOfPageGeometry(int maxOutstandingRequests)
+            => ClassicAssert.AreEqual(maxOutstandingRequests, CreateRequestCountOptions(maxOutstandingRequests).MaxOutstandingRequests);
+
+        static LightNetworkWriterOptions CreateRequestCountOptions(int maxOutstandingRequests)
+            => new(
                 networkBufferSizeBytes: 256,
                 requestPageSizeBytes: 256,
                 requestPageCount: 2,
@@ -564,10 +580,7 @@ namespace Garnet.test
                 maxOutstandingCompletions: 8,
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 512,
-                flushResultAllocationMode: FlushResultAllocationMode.Buffered));
-
-            ClassicAssert.AreEqual("maxOutstandingRequests", exception.ParamName);
-        }
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
 
         [Test]
         public async Task RequestMemoryThrottleRejectsOversizedOutOfLineRequestWithoutLeak()

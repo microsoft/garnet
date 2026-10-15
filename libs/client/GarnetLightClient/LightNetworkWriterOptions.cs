@@ -30,11 +30,14 @@ namespace Garnet.client
     /// </remarks>
     /// <param name="networkBufferSizeBytes">Fixed send-buffer size, initial receive-buffer size, and maximum send chunk size.</param>
     /// <param name="requestPageSizeBytes">
-    /// Size of each request-ring page, rounded down to a power of two. Must be at least
+    /// Maximum inline request size, rounded down to a power of two. Must be at least
     /// <see cref="DuplexRingRecordFormat.HeaderSize"/>.
     /// </param>
-    /// <param name="requestPageCount">Number of circular request-ring pages.</param>
-    /// <param name="maxOutstandingRequests">Maximum number of minimum-allocation requests awaiting local send completion.</param>
+    /// <param name="requestPageCount">Power-of-two multiplier of <paramref name="requestPageSizeBytes"/> giving the inline request buffer capacity.</param>
+    /// <param name="maxOutstandingRequests">
+    /// Maximum number of requests awaiting local send completion, regardless of size; between 1 and
+    /// 2^<see cref="LightPageAndOffset.kRequestBits"/>.
+    /// </param>
     /// <param name="maxOutstandingCompletions">Maximum number of response completions awaiting replies.</param>
     /// <param name="maxConcurrentNetworkSends">Maximum number of concurrent transport sends.</param>
     /// <param name="maxOutOfLineRentedBytes">Maximum pooled out-of-line request bytes rented until local send completion. Zero disables throttling.</param>
@@ -74,8 +77,8 @@ namespace Garnet.client
         /// Request pages: 2 pages * 4,096 bytes = 8 KiB of pinned payload storage.
         /// </description></item>
         /// <item><description>
-        /// Request side table: 16 slots, matching the completion lane, with a 512-byte request-allocation quantum;
-        /// each <c>LightRequestContext</c> plus flush-context reference is approximately 32 bytes,
+        /// Request side table: 16 slots, matching the completion lane; each <c>LightRequestContext</c> plus
+        /// flush-context reference is approximately 32 bytes,
         /// for approximately 0.5 KiB.
         /// </description></item>
         /// <item><description>
@@ -104,8 +107,8 @@ namespace Garnet.client
         public int NetworkBufferSizeBytes = networkBufferSizeBytes;
 
         /// <summary>
-        /// Size of each request-ring page. This controls the maximum inline request size and,
-        /// together with <see cref="RequestPageCount"/>, the request capacity awaiting local send completion.
+        /// Maximum inline request size. Together with <see cref="RequestPageCount"/> it sets the inline request
+        /// buffer capacity awaiting local send completion.
         /// </summary>
         public int RequestPageSizeBytes = GetRequestPageSizeBytes(requestPageSizeBytes);
 
@@ -115,19 +118,14 @@ namespace Garnet.client
         public int RequestPageCount = GetRequestPageCount(requestPageCount);
 
         /// <summary>
-        /// Maximum number of minimum-allocation requests awaiting local send completion.
-        /// Larger inline records consume multiple units of this capacity.
+        /// Maximum number of requests awaiting local send completion. Each inline or out-of-line request
+        /// consumes one unit regardless of its size; inline payload bytes are bounded separately by the
+        /// inline request buffer.
         /// </summary>
-        public int MaxOutstandingRequests = ValidateMaxOutstandingRequests(
-            requestPageSizeBytes,
-            requestPageCount,
-            maxOutstandingRequests);
+        public int MaxOutstandingRequests = ValidateMaxOutstandingRequests(maxOutstandingRequests);
 
-        /// <summary>
-        /// Minimum number of request-ring bytes reserved by every inline or out-of-line operation.
-        /// </summary>
-        public int RequestAllocationQuantumBytes
-            => RequestPageSizeBytes / (MaxOutstandingRequests / RequestPageCount);
+        // The request side table is allocated at the next power of two of MaxOutstandingRequests.
+        int RequestSlotCount => (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)MaxOutstandingRequests);
 
         /// <summary>
         /// Maximum number of response-expecting requests whose replies have not yet been consumed.
@@ -164,7 +162,7 @@ namespace Garnet.client
             checked
             {
                 var requestPageBytes = (long)RequestPageSizeBytes * RequestPageCount;
-                var requestSideTableBytes = (long)MaxOutstandingRequests * RequestSlotSizeBytes;
+                var requestSideTableBytes = (long)RequestSlotCount * RequestSlotSizeBytes;
                 var completionLaneBytes = (long)MaxOutstandingCompletions * DuplexRingRecordFormat.CompletionSlotSize;
                 return requestPageBytes + requestSideTableBytes + completionLaneBytes;
             }
@@ -182,7 +180,7 @@ namespace Garnet.client
         {
             checked
             {
-                return MinMemoryFootprint() + ((long)MaxOutstandingRequests * FlushContextSizeBytes);
+                return MinMemoryFootprint() + ((long)RequestSlotCount * FlushContextSizeBytes);
             }
         }
 
@@ -192,26 +190,15 @@ namespace Garnet.client
         public static FlushResultAllocationMode ValidateFlushResultAllocationMode(FlushResultAllocationMode mode)
             => Enum.IsDefined(mode) ? mode : throw new ArgumentOutOfRangeException(nameof(flushResultAllocationMode), mode, null);
 
-        public static int ValidateMaxOutstandingRequests(int requestPageSizeBytes, int requestPageCount, int maxOutstandingRequests)
+        public static int ValidateMaxOutstandingRequests(int maxOutstandingRequests)
         {
-            var pageSize = GetRequestPageSizeBytes(requestPageSizeBytes);
-            var pageCount = GetRequestPageCount(requestPageCount);
-            if (maxOutstandingRequests <= 0 || maxOutstandingRequests % pageCount != 0)
+            if (maxOutstandingRequests <= 0)
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
-                    "Maximum outstanding requests must be positive and evenly divisible across request pages.");
+                    "Maximum outstanding requests must be positive.");
 
             if (maxOutstandingRequests > (1 << LightPageAndOffset.kRequestBits))
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
                     $"Maximum outstanding requests must not exceed the {LightPageAndOffset.kRequestBits}-bit request-id space ({1 << LightPageAndOffset.kRequestBits}).");
-
-            var slotsPerPage = maxOutstandingRequests / pageCount;
-            if (slotsPerPage > pageSize / DuplexRingRecordFormat.HeaderSize ||
-                pageSize % slotsPerPage != 0 ||
-                (pageSize / slotsPerPage) % DuplexRingRecordFormat.HeaderSize != 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
-                    "Maximum outstanding requests must produce an allocation quantum that evenly divides each page and is aligned to the request header.");
-            }
 
             return maxOutstandingRequests;
         }
@@ -231,8 +218,9 @@ namespace Garnet.client
 
         public static int GetRequestPageCount(int requestPageCount)
         {
-            if (requestPageCount <= 0 || requestPageCount > LightPageAndOffset.kPageMask)
-                throw new ArgumentOutOfRangeException(nameof(requestPageCount));
+            if (requestPageCount <= 0 || !System.Numerics.BitOperations.IsPow2(requestPageCount))
+                throw new ArgumentOutOfRangeException(nameof(requestPageCount), requestPageCount,
+                    "Request page count must be a positive power of two.");
             return requestPageCount;
         }
 
