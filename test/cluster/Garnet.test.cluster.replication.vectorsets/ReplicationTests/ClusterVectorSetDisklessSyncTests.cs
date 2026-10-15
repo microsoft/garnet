@@ -47,32 +47,21 @@ namespace Garnet.test.cluster
             SetupDisklessCluster(2);
             PopulateVectorSet(PrimaryIndex, Key, count: 200);
 
-            string ReplicaTail() => context.nodes[ReplicaIndex].Metrics.GetInfoMetrics(InfoMetricsType.PERSISTENCE).Single(item => item.Name == "TailAddress").Value;
-            var initialTail = ReplicaTail();
+            var initialTail = context.GetAofTailAddress(ReplicaIndex);
             const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_After_Diskless_Snapshot_Record;
-            ExceptionInjectionHelper.EnableException(pause);
-            var parkingSuspended = false;
-            try
+            using (ExceptionInjectionHelper.EnabledScope(pause))
             {
                 _ = context.clusterTestUtils.ClusterReplicate(ReplicaIndex, PrimaryIndex, async: true, logger: context.logger);
                 ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(System.TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
-                ClassicAssert.AreEqual(initialTail, ReplicaTail(), "Vector Set checkpoint import must not append to the replica AOF before recovery resets it");
-
-                ExceptionInjectionHelper.SuspendParking();
-                parkingSuspended = true;
-                context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
-                context.clusterTestUtils.ReadOnly(ReplicaIndex);
-                AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
-                AssertOwnsItsIndex(ReplicaIndex, PrimaryIndex, Key);
+                ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(ReplicaIndex), "Vector Set checkpoint import must not append to the replica AOF before recovery resets it");
             }
-            finally
-            {
-                if (!parkingSuspended)
-                    ExceptionInjectionHelper.SuspendParking();
 
-                ExceptionInjectionHelper.DisableException(pause);
-                ExceptionInjectionHelper.ResumeParking();
-            }
+            // Releases the parked record; it wakes asynchronously, so parking stays suspended until the sync completes.
+            using var parking = ExceptionInjectionHelper.SuspendParkingScope();
+            context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
+            context.clusterTestUtils.ReadOnly(ReplicaIndex);
+            AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
+            AssertOwnsItsIndex(ReplicaIndex, PrimaryIndex, Key);
         }
 
         /// <summary>

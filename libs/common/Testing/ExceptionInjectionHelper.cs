@@ -167,6 +167,24 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Suspends parking until the returned scope is disposed.
+        /// </summary>
+        public static ParkingSuspension SuspendParkingScope()
+        {
+            SuspendParking();
+            return new ParkingSuspension();
+        }
+
+        /// <summary>
+        /// Resumes parking when disposed.
+        /// </summary>
+        public readonly struct ParkingSuspension : IDisposable
+        {
+            /// <inheritdoc/>
+            public void Dispose() => ResumeParking();
+        }
+
+        /// <summary>
         /// Ends a <see cref="SuspendParking"/> scope. Parking resumes once every scope has ended.
         /// </summary>
         [Conditional("DEBUG")]
