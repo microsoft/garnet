@@ -188,13 +188,13 @@ namespace Garnet.server
             => activeVectorManager?.WaitForVectorOperationsToComplete();
 
         /// <summary>
-        /// Apply a streamed checkpoint record without recording it in the AOF.
+        /// Apply a streamed diskless-sync snapshot record without recording it in the AOF.
         /// </summary>
-        public GarnetStatus SetCheckpointRecord(in DiskLogRecord record)
+        public GarnetStatus ApplySnapshotRecord(in DiskLogRecord record)
         {
             var status = aofReplayCoordinator.GetReplayContext(0).respServerSession.basicGarnetApi.SET(in record);
 #if DEBUG
-            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Replication_Pause_After_Diskless_Checkpoint_Upsert);
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Replication_Pause_After_Diskless_Snapshot_Record);
 #endif
             return status;
         }

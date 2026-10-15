@@ -49,7 +49,7 @@ namespace Garnet.test.cluster
 
             string ReplicaTail() => context.nodes[ReplicaIndex].Metrics.GetInfoMetrics(InfoMetricsType.PERSISTENCE).Single(item => item.Name == "TailAddress").Value;
             var initialTail = ReplicaTail();
-            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_After_Diskless_Checkpoint_Upsert;
+            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_After_Diskless_Snapshot_Record;
             ExceptionInjectionHelper.EnableException(pause);
             var parkingSuspended = false;
             try

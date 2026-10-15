@@ -569,7 +569,7 @@ namespace Garnet.cluster
                         // Streamed records carry the primary's native handle and bypass the RMW path that maintains the context reservation
                         vectorManager?.SanitizeAndTrackIngestedRecordIfApplicable(ref diskLogRecord);
 
-                        _ = clusterProvider.replicationManager.AofProcessor.SetCheckpointRecord(in diskLogRecord);
+                        _ = clusterProvider.replicationManager.AofProcessor.ApplySnapshotRecord(in diskLogRecord);
                         storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                         diskLogRecord.Dispose();
                         diskLogRecord = default; // prevent double-trigger in catch
@@ -601,7 +601,7 @@ namespace Garnet.cluster
                                 // Streamed records carry the primary's native handle and bypass the RMW path that maintains the context reservation
                                 vectorManager?.SanitizeAndTrackIngestedRecordIfApplicable(ref diskLogRecord);
 
-                                _ = clusterProvider.replicationManager.AofProcessor.SetCheckpointRecord(in diskLogRecord);
+                                _ = clusterProvider.replicationManager.AofProcessor.ApplySnapshotRecord(in diskLogRecord);
                                 storeWrapper.storeFunctions.OnDisposeDiskRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                                 diskLogRecord.Dispose();
                                 diskLogRecord = default; // prevent double-trigger in catch
