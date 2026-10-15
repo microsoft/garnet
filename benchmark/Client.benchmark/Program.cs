@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using CommandLine;
+using Microsoft.Extensions.Logging;
 using LightEpoch = Garnet.client.LightEpoch;
 
 namespace Client.benchmark
@@ -30,11 +31,12 @@ namespace Client.benchmark
             ThreadPool.GetMinThreads(out _, out var minIo);
             ThreadPool.SetMinThreads(minPoolThreads, minIo);
 
-            using var server = new ServerWrapper();
+            using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
+            using var server = new ServerWrapper(loggerFactory: loggerFactory, enableTLS: opts.EnableTLS);
             var endpoint = server.EndPoint;
             var value = new string('v', opts.ValueLength);
 
-            Console.WriteLine($"Server {server.Host}:{server.Port} | arm={opts.Client} threads={opts.Threads} batch={opts.Batch} " +
+            Console.WriteLine($"Server {server.Host}:{server.Port} | arm={opts.Client} tls={opts.EnableTLS} threads={opts.Threads} batch={opts.Batch} " +
                 $"warmup={opts.WarmupSeconds}s duration={opts.DurationSeconds}s valuelen={opts.ValueLength} " +
                 $"netbuf={opts.NetworkBufferBytes} maxsends={opts.MaxConcurrentSends} " +
                 $"max-requests={opts.MaxOutstandingRequests} max-completions={opts.MaxOutstandingCompletions} " +
@@ -46,10 +48,10 @@ namespace Client.benchmark
                 var result = opts.Client switch
                 {
                     ClientArm.GarnetClient => WorkloadRunner.Run<GarnetClientDriverFactory, GarnetClientDriver>(
-                        new GarnetClientDriverFactory(endpoint, Key, value, opts), epoch,
+                        new GarnetClientDriverFactory(endpoint, Key, value, opts, server.TlsClientOptions), epoch,
                         opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds, opts.SharedSocket),
                     ClientArm.GarnetLightClient => WorkloadRunner.Run<GarnetLightClientDriverFactory, GarnetLightClientDriver>(
-                        new GarnetLightClientDriverFactory(endpoint, Key, value, opts), epoch,
+                        new GarnetLightClientDriverFactory(endpoint, Key, value, opts, server.TlsClientOptions), epoch,
                         opts.Threads, opts.Batch, opts.WarmupSeconds, opts.DurationSeconds, opts.SharedSocket),
                     _ => throw new ArgumentOutOfRangeException(nameof(opts)),
                 };
@@ -68,6 +70,7 @@ namespace Client.benchmark
             Console.WriteLine("================ Results ================");
             Console.WriteLine($" Arm          : {opts.Client}");
             Console.WriteLine($" Topology     : {(opts.SharedSocket ? "shared-socket (one connection, all workers)" : "per-thread-socket (one connection per worker)")}");
+            Console.WriteLine($" TLS          : {(opts.EnableTLS ? "Enabled" : "Disabled")}");
             Console.WriteLine($" Threads      : {opts.Threads}");
             Console.WriteLine($" Batch        : {r.Batch}" + (r.Batch > 1 ? " (in-flight ops/worker; latency is per-batch group)" : ""));
             Console.WriteLine($" Duration (s) : {r.Seconds:F2}");

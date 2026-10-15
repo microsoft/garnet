@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Net;
+using System.Net.Security;
 using System.Text;
 using Garnet.client;
 using LightEpoch = Garnet.client.LightEpoch;
@@ -52,10 +53,11 @@ namespace Client.benchmark
         readonly string key;
         readonly string value;
 
-        public GarnetClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch)
+        public GarnetClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch, SslClientAuthenticationOptions tlsOptions)
         {
             client = new GarnetClient(
                 endpoint,
+                tlsOptions: tlsOptions,
                 bufferSize: opts.NetworkBufferBytes,
                 networkSendThrottleMax: opts.MaxConcurrentSends,
                 epoch: epoch);
@@ -81,16 +83,18 @@ namespace Client.benchmark
         readonly string key;
         readonly string value;
         readonly BenchmarkOptions opts;
+        readonly SslClientAuthenticationOptions tlsOptions;
 
-        public GarnetClientDriverFactory(EndPoint endpoint, string key, string value, BenchmarkOptions opts)
+        public GarnetClientDriverFactory(EndPoint endpoint, string key, string value, BenchmarkOptions opts, SslClientAuthenticationOptions tlsOptions)
         {
             this.endpoint = endpoint;
             this.key = key;
             this.value = value;
             this.opts = opts;
+            this.tlsOptions = tlsOptions;
         }
 
-        public GarnetClientDriver Create(LightEpoch epoch) => new(endpoint, key, value, opts, epoch);
+        public GarnetClientDriver Create(LightEpoch epoch) => new(endpoint, key, value, opts, epoch, tlsOptions);
     }
 
     /// <summary>
@@ -107,7 +111,7 @@ namespace Client.benchmark
         readonly Memory<byte>[] getArgs;
         readonly Memory<byte>[] setArgs;
 
-        public GarnetLightClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch)
+        public GarnetLightClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch, SslClientAuthenticationOptions tlsOptions)
         {
             // Both duplex rings must hold the offered in-flight load (threads*batch) or producers stall.
             // The benchmark sizes them from offered load by default so GarnetLightClient matches GarnetClient
@@ -145,7 +149,7 @@ namespace Client.benchmark
                 maxConcurrentNetworkSends: opts.MaxConcurrentSends,
                 maxOutOfLineRentedBytes: 64L << 20,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            client = new GarnetLightClient(endpoint, networkWriterOptions: options, epoch: epoch);
+            client = new GarnetLightClient(endpoint, tlsOptions: tlsOptions, networkWriterOptions: options, epoch: epoch);
             var keyBytes = Encoding.UTF8.GetBytes(key);
             var valueBytes = Encoding.UTF8.GetBytes(value);
             getArgs = [keyBytes];
@@ -170,15 +174,17 @@ namespace Client.benchmark
         readonly string key;
         readonly string value;
         readonly BenchmarkOptions opts;
+        readonly SslClientAuthenticationOptions tlsOptions;
 
-        public GarnetLightClientDriverFactory(EndPoint endpoint, string key, string value, BenchmarkOptions opts)
+        public GarnetLightClientDriverFactory(EndPoint endpoint, string key, string value, BenchmarkOptions opts, SslClientAuthenticationOptions tlsOptions)
         {
             this.endpoint = endpoint;
             this.key = key;
             this.value = value;
             this.opts = opts;
+            this.tlsOptions = tlsOptions;
         }
 
-        public GarnetLightClientDriver Create(LightEpoch epoch) => new(endpoint, key, value, opts, epoch);
+        public GarnetLightClientDriver Create(LightEpoch epoch) => new(endpoint, key, value, opts, epoch, tlsOptions);
     }
 }

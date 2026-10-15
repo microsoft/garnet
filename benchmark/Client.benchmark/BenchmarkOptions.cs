@@ -25,6 +25,9 @@ namespace Client.benchmark
         [Option("client", Default = ClientArm.GarnetLightClient, HelpText = "Client implementation to benchmark: GarnetClient or GarnetLightClient.")]
         public ClientArm Client { get; set; }
 
+        [Option("tls", Default = false, HelpText = "Enable TLS on the loopback server and benchmark clients using a temporary self-signed certificate.")]
+        public bool EnableTLS { get; set; }
+
         [Option('t', "threads", Default = 1, HelpText = "Number of parallel worker threads sharing the single client.")]
         public int Threads { get; set; }
 
