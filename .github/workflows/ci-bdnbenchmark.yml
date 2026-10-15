@@ -43,12 +43,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0', 'net10.0' ]
+        framework: [ 'net10.0' ]
         include:
           - framework: net10.0
             gh-pages-branch: continuousbenchmark
-          - framework: net8.0
-            gh-pages-branch: continuousbenchmark_net80
         configuration: [ 'Release' ]
         test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.LTM.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.JsonOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Operations.TxnOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
     steps:
@@ -67,14 +65,14 @@ jobs:
         continue-on-error: false
 
       - name: Upload test results to artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: ./test/BDNPerfTests/results
         if: ${{ always() }}
 
       - name: Upload Error Log to artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ErrorLog-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
           path: ./test/BDNPerfTests/errorlog

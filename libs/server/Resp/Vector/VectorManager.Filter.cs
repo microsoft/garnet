@@ -4,9 +4,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
-#if NET9_0_OR_GREATER
 using System.Runtime.CompilerServices;
-#endif
 using System.Runtime.InteropServices;
 
 namespace Garnet.server
@@ -266,11 +264,7 @@ namespace Garnet.server
         {
             Debug.Assert(InlineFilterStatePtr != null, "Shouldn't call without pinning a filter state");
             ref var state
-#if NET9_0_OR_GREATER
                 = ref Unsafe.AsRef<InlineFilterState>(InlineFilterStatePtr);
-#else
-                = ref *InlineFilterStatePtr;
-#endif
 
             // 3. Rebuild ExprProgram from thread-static state pointers
             var program = new ExprProgram

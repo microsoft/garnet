@@ -2,7 +2,7 @@
 
 testname=ClusterTLSRPrimaryCheckpointRetrieve
 config=Release
-framework=net8.0
+framework=net10.0
 
 # First run does build
 dotnet test -c $config --logger:"console;verbosity=detailed" --framework:$framework --filter $testname

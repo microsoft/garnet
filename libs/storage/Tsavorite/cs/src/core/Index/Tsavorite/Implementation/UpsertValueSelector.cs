@@ -15,10 +15,7 @@ namespace Tsavorite.core
         {
             static abstract RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, TKey key,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>;
 
@@ -39,10 +36,7 @@ namespace Tsavorite.core
 
             static abstract void PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, TEpochAccessor>(TKey key, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions, TEpochAccessor epochAccessor)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TEpochAccessor : IEpochAccessor;
@@ -52,10 +46,7 @@ namespace Tsavorite.core
         {
             public static RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, TKey key,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>
                 => allocator.GetUpsertRecordSize(key, valueSpan, ref input, varlenInput);
@@ -80,10 +71,7 @@ namespace Tsavorite.core
 
             public static void PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, TEpochAccessor>(TKey key, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions, TEpochAccessor epochAccessor)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TEpochAccessor : IEpochAccessor
@@ -94,10 +82,7 @@ namespace Tsavorite.core
         {
             public static RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, TKey key,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>
                 => allocator.GetUpsertRecordSize(key, valueObject, ref input, varlenInput);
@@ -122,10 +107,7 @@ namespace Tsavorite.core
 
             public static void PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, TEpochAccessor>(TKey key, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions, TEpochAccessor epochAccessor)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TEpochAccessor : IEpochAccessor
@@ -136,10 +118,7 @@ namespace Tsavorite.core
         {
             public static RecordSizeInfo GetUpsertRecordSize<TKey, TSourceLogRecord, TInput, TVariableLengthInput>(TAllocator allocator, TKey key,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref TInput input, TVariableLengthInput varlenInput)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 where TSourceLogRecord : ISourceLogRecord
                 where TVariableLengthInput : IVariableLengthInput<TInput>
                 => allocator.GetUpsertRecordSize(key, in inputLogRecord, ref input, varlenInput);
@@ -164,10 +143,7 @@ namespace Tsavorite.core
 
             public static void PostUpsertOperation<TKey, TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper, TEpochAccessor>(TKey key, ref TInput input,
                     ReadOnlySpan<byte> valueSpan, IHeapObject valueObject, in TSourceLogRecord inputLogRecord, ref UpsertInfo upsertInfo, TSessionFunctionsWrapper sessionFunctions, TEpochAccessor epochAccessor)
-                where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+                where TKey : IKey, allows ref struct
                 where TSourceLogRecord : ISourceLogRecord
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
                 where TEpochAccessor : IEpochAccessor

@@ -1268,7 +1268,9 @@ namespace Tsavorite.core
             {
                 try
                 {
-                    _ = ShiftHeadAddress(newHeadAddress);
+                    // ShiftHeadAddress caps the shift at FlushedUntilAddress and returns where it actually shifted to.
+                    // ClosedUntilAddress can only reach that capped value, so the wait below must use it.
+                    newHeadAddress = ShiftHeadAddress(newHeadAddress);
                 }
                 finally
                 {
@@ -1281,7 +1283,7 @@ namespace Tsavorite.core
             }
 
             // Epoch already protected, so launch the shift and wait for eviction to complete
-            _ = ShiftHeadAddress(newHeadAddress);
+            newHeadAddress = ShiftHeadAddress(newHeadAddress);
 
             // We wait for ClosedUntilAddress here to ensure eviction scan is complete
             while (waitForEviction && !disposed && ClosedUntilAddress < newHeadAddress)
