@@ -450,8 +450,7 @@ namespace Tsavorite.test
                 PageSize = MinKvLogPageSize,
                 ObjectLogSegmentSize = 1L << 22,
                 MaxInlineValueSize = 0
-            }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer()),
-                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            }, StoreFunctions.Create(comparer, () => new TestObjectValue.Serializer()), (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
             var value = new byte[valueLength];
