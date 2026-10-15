@@ -177,8 +177,6 @@ namespace Garnet.test
         internal int MaxInlinePayloadSize => Ring.MaxInlinePayloadSize;
         internal int DeferredCompletionCount => deferredCompletions.Count;
         internal int AllocatedFlushContextCount => Ring.AllocatedFlushContextCount;
-        internal int RequestAllocationQuantumBytes => Ring.RequestAllocationQuantumBytes;
-        internal int RequestSlotCount => Ring.RequestSlotCount;
 
         /// <summary>Number of completion tickets the ring has issued so far (response-expecting claims).</summary>
         internal int CompletionTail => Ring.CompletionTail;
@@ -310,6 +308,7 @@ namespace Garnet.test
             {
                 long address;
                 int taskId;
+                int requestId;
                 while (true)
                 {
                     token.ThrowIfCancellationRequested();
@@ -322,6 +321,7 @@ namespace Garnet.test
                     {
                         taskId = reservation.completionTicket;
                         address = reservation.requestAddress;
+                        requestId = reservation.requestId;
                         break;
                     }
 
@@ -343,13 +343,14 @@ namespace Garnet.test
                 {
                     unsafe
                     {
-                        var curr = Ring.RegisterInlineRecord(address, totalLength);
+                        var curr = Ring.RegisterInlineRecord(address);
                         new ReadOnlySpan<byte>(payload).CopyTo(new Span<byte>(curr, totalLength));
                     }
+                    Ring.PublishInlineRecord(requestId, address, totalLength);
                 }
                 else
                 {
-                    Ring.RegisterOfflineRecord(address, outOfLineRequest);
+                    Ring.RegisterOfflineRecord(requestId, address, outOfLineRequest);
                     outOfLineRequestRegistered = true;
                 }
 
@@ -362,7 +363,9 @@ namespace Garnet.test
                 // If publication threw (teardown), the ring never took ownership — dispose it here so
                 // the exactly-once accounting and budget reservation are both released.
                 if (outOfLineRequestCreated && !outOfLineRequestRegistered)
+                {
                     outOfLineRequest.Dispose();
+                }
             }
         }
 

@@ -46,7 +46,7 @@ namespace Garnet.test
             {
                 round++;
                 var pageSizeBytes = 128 << rng.Next(0, 5);      // 128 .. 2048
-                var pageCount = 1 << rng.Next(1, 4);            // 2 .. 8 (power of two)
+                var pageCount = 1 << rng.Next(1, 3);            // 2 .. 4 (power of two)
                 var completionCapacity = 1 << rng.Next(3, 7);  // 8 .. 64 (power of two)
                 var maxSendChunkSizeBytes = 32 << rng.Next(0, 5); // 32 .. 512
                 var producers = rng.Next(1, 9);

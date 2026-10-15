@@ -59,7 +59,7 @@ namespace Garnet.test
 
         [TestCase(FlushResultAllocationMode.Buffered)]
         [TestCase(FlushResultAllocationMode.PerOperation)]
-        public async Task RequestCapacityControlsAllocationQuantum(FlushResultAllocationMode allocationMode)
+        public async Task RecordSizingIsByteGranular(FlushResultAllocationMode allocationMode)
         {
             using var h = new RingTestHarness(
                 pageSize: 1024,
@@ -70,15 +70,18 @@ namespace Garnet.test
                 flushResultAllocationMode: allocationMode);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-            ClassicAssert.AreEqual(8, h.RequestSlotCount);
-            ClassicAssert.AreEqual(256, h.RequestAllocationQuantumBytes);
-            ClassicAssert.AreEqual(256, h.Ring.GetRecordSize(16, out var smallInline));
+            // Inline payloads advance the byte tail by their exact length (no quantum rounding, no in-page header).
+            ClassicAssert.AreEqual(16, h.Ring.GetRecordSize(16, out var smallInline));
             ClassicAssert.IsTrue(smallInline);
-            ClassicAssert.AreEqual(512, h.Ring.GetRecordSize(300, out var largerInline));
+            ClassicAssert.AreEqual(300, h.Ring.GetRecordSize(300, out var largerInline));
             ClassicAssert.IsTrue(largerInline);
-            ClassicAssert.AreEqual(1024, h.Ring.GetRecordSize(1016, out var maximumInline));
+            ClassicAssert.AreEqual(1023, h.Ring.GetRecordSize(1023, out var nearBoundaryInline));
+            ClassicAssert.IsTrue(nearBoundaryInline);
+            // A payload exactly the size of a page still fits inline (occupies a full page).
+            ClassicAssert.AreEqual(1024, h.Ring.GetRecordSize(1024, out var maximumInline));
             ClassicAssert.IsTrue(maximumInline);
-            ClassicAssert.AreEqual(256, h.Ring.GetRecordSize(1024, out var outOfLine));
+            // Anything larger than a page is out-of-line; it only advances the tail by the throttle stride.
+            ClassicAssert.AreEqual(DuplexRingRecordFormat.OutOfLineThrottleBytes, h.Ring.GetRecordSize(1025, out var outOfLine));
             ClassicAssert.IsFalse(outOfLine);
 
             var payloadSizes = new[] { 16, 300, 1024 };
@@ -100,7 +103,7 @@ namespace Garnet.test
             const int pageSize = 4096;
             using var h = new RingTestHarness(
                 pageSize: pageSize,
-                pageCount: 8,
+                pageCount: 4,
                 maxOutstandingRequests: 4096,
                 completionCapacity: 64,
                 maxSendChunkSizeBytes: maxSendChunkSizeBytes,
@@ -207,7 +210,7 @@ namespace Garnet.test
 
             // Completion capacity deliberately far smaller than the outstanding count, so producers block on
             // completion-lane back-pressure until the reader advances the reply watermark.
-            using var h = new RingTestHarness(pageSize: 512, pageCount: 8, maxOutstandingRequests: 512, completionCapacity: 8, maxSendChunkSizeBytes: 256);
+            using var h = new RingTestHarness(pageSize: 512, pageCount: 4, maxOutstandingRequests: 512, completionCapacity: 8, maxSendChunkSizeBytes: 256);
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
             var readerDone = new CancellationTokenSource();
@@ -495,14 +498,14 @@ namespace Garnet.test
                         ClassicAssert.IsTrue(reserved);
                         var address = reservation.requestAddress;
 
-                        // Publish only even slots; odd slots stay at the 0xFF page fill (Uninitialized), which the
-                        // teardown walk must stride over by a single descriptor without misreading the next record.
+                        // Publish only even slots; odd slots stay reserved-but-unpublished (schedule slot
+                        // published == 0), which the teardown walk must skip without reclaiming a buffer.
                         if ((i % 2) == 0)
                         {
                             var id = nextId++;
                             h.TrackOutOfLine(id);
                             var payload = RingPayload.Create(id, 200);
-                            h.Ring.RegisterOfflineRecord(address, new TestRequest(payload, payload.Length, id, h.DisposeCounts));
+                            h.Ring.RegisterOfflineRecord(reservation.requestId, address, new TestRequest(payload, payload.Length, id, h.DisposeCounts));
                         }
                     }
                 }

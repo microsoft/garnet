@@ -651,7 +651,7 @@ namespace Garnet.test
                 requestPageSizeBytes: 1 << 12,
                 requestPageCount: 2,
                 maxOutstandingRequests: 64,
-                maxOutstandingCompletions: 1 << 19,
+                maxOutstandingCompletions: 1 << LightPageAndOffset.kTaskBits,
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 0,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);

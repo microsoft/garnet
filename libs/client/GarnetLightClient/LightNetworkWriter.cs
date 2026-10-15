@@ -246,15 +246,19 @@ namespace Garnet.client
 
         /// <summary>
         /// Reserve an inline record and return a pointer to write its payload directly into page memory,
-        /// skipping the pooled buffer. The caller must hold the epoch and fill exactly
-        /// <paramref name="payloadLength"/> bytes.
+        /// skipping the pooled buffer. The caller must hold the epoch, fill the payload, then call
+        /// <see cref="PublishInlineRecord"/> to publish it.
         /// </summary>
-        public unsafe byte* RegisterInlineRecord(long address, int payloadLength)
-            => channel.RegisterInlineRecord(address, payloadLength);
+        public unsafe byte* RegisterInlineRecord(long address)
+            => channel.RegisterInlineRecord(address);
 
-        /// <summary>Register (store and publish) a request record at the descriptor address.</summary>
-        public void RegisterOfflineRecord(long address, LightRequestContext payload)
-            => channel.RegisterOfflineRecord(address, payload);
+        /// <summary>Publish an inline record whose payload has already been written into page memory.</summary>
+        public void PublishInlineRecord(int requestId, long address, int payloadLength)
+            => channel.PublishInlineRecord(requestId, address, payloadLength);
+
+        /// <summary>Register (store and publish) an out-of-line request record.</summary>
+        public void RegisterOfflineRecord(int requestId, long address, LightRequestContext payload)
+            => channel.RegisterOfflineRecord(requestId, address, payload);
 
         /// <summary>Register (store and publish) a completion for the given ticket.</summary>
         public void RegisterCompletion(int ticket, TcsWrapper completion)

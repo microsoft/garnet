@@ -133,7 +133,7 @@ namespace Garnet.client
         /// Maximum number of response-expecting requests whose replies have not yet been consumed.
         /// This capacity is independent of request pages, which are released on local send completion.
         /// </summary>
-        public int MaxOutstandingCompletions = maxOutstandingCompletions;
+        public int MaxOutstandingCompletions = ValidateMaxOutstandingCompletions(maxOutstandingCompletions);
 
         /// <summary>
         /// Maximum number of transport sends that may be in progress concurrently.
@@ -200,6 +200,10 @@ namespace Garnet.client
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
                     "Maximum outstanding requests must be positive and evenly divisible across request pages.");
 
+            if (maxOutstandingRequests > (1 << LightPageAndOffset.kRequestBits))
+                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
+                    $"Maximum outstanding requests must not exceed the {LightPageAndOffset.kRequestBits}-bit request-id space ({1 << LightPageAndOffset.kRequestBits}).");
+
             var slotsPerPage = maxOutstandingRequests / pageCount;
             if (slotsPerPage > pageSize / DuplexRingRecordFormat.HeaderSize ||
                 pageSize % slotsPerPage != 0 ||
@@ -212,9 +216,22 @@ namespace Garnet.client
             return maxOutstandingRequests;
         }
 
+        public static int ValidateMaxOutstandingCompletions(int maxOutstandingCompletions)
+        {
+            if (maxOutstandingCompletions <= 0)
+                throw new ArgumentOutOfRangeException(nameof(maxOutstandingCompletions), maxOutstandingCompletions,
+                    "Maximum outstanding completions must be positive.");
+
+            if (maxOutstandingCompletions > (1 << LightPageAndOffset.kTaskBits))
+                throw new ArgumentOutOfRangeException(nameof(maxOutstandingCompletions), maxOutstandingCompletions,
+                    $"Maximum outstanding completions must not exceed the {LightPageAndOffset.kTaskBits}-bit completion-ticket space ({1 << LightPageAndOffset.kTaskBits}).");
+
+            return maxOutstandingCompletions;
+        }
+
         public static int GetRequestPageCount(int requestPageCount)
         {
-            if (requestPageCount <= 0 || requestPageCount > PageOffset.kPageMask)
+            if (requestPageCount <= 0 || requestPageCount > LightPageAndOffset.kPageMask)
                 throw new ArgumentOutOfRangeException(nameof(requestPageCount));
             return requestPageCount;
         }

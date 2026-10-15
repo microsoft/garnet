@@ -102,9 +102,9 @@ namespace Garnet.client
         internal int MaxInlinePayloadSize => store.MaxInlinePayloadSize;
 
         /// <summary>
-        /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline
-        /// (its whole payload packed into one page after an 8-byte header) or out-of-line (an 8-byte descriptor
-        /// pointing at a separately rented payload buffer).
+        /// Ring bytes a command of <paramref name="payloadLength"/> advances the tail by, and whether it is
+        /// written inline (its whole payload packed contiguously into one page) or out-of-line (its payload
+        /// held in a separately rented buffer while the tail advances by a fixed nominal amount).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int GetRecordSize(int payloadLength, out bool isInline)
@@ -131,8 +131,6 @@ namespace Garnet.client
             => flushResultAllocationMode == FlushResultAllocationMode.Buffered
                 ? store.AllocatedFlushContextCount
                 : controller.ActivePerOperationFlushResultCount;
-        internal int RequestAllocationQuantumBytes => store.RequestAllocationQuantumBytes;
-        internal int RequestSlotCount => store.RequestSlotCount;
 
         /// <summary>
         /// Create a duplex back-pressured ring over a single connection.
@@ -148,7 +146,7 @@ namespace Garnet.client
         /// <param name="ringPageSizeBytes">Size in bytes of each descriptor page; rounds down to a power of two and
         /// bounds how many requests can be queued before page reuse waits for an earlier flush.</param>
         /// <param name="ringPageCount">Number of circular pages backing the request lane. Must not exceed
-        /// <see cref="PageOffset.kPageMask"/>.</param>
+        /// <see cref="LightPageAndOffset.kPageMask"/>.</param>
         /// <param name="maxOutstandingRequests">Maximum number of minimum-allocation requests awaiting local send completion. Zero derives the current header-granularity capacity.</param>
         /// <param name="completionCapacity">Maximum number of outstanding response-expecting requests; rounds
         /// up to a power of two and bounds the completion lane before producers back-pressure on replies.</param>
@@ -168,7 +166,7 @@ namespace Garnet.client
             FlushResultAllocationMode flushResultAllocationMode = FlushResultAllocationMode.Buffered,
             ILogger logger = null)
         {
-            if (ringPageCount is <= 0 or > (int)PageOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
+            if (ringPageCount is <= 0 or > (int)LightPageAndOffset.kPageMask) throw new ArgumentOutOfRangeException(nameof(ringPageCount));
             if (!Enum.IsDefined(flushResultAllocationMode)) throw new ArgumentOutOfRangeException(nameof(flushResultAllocationMode));
 
             this.epoch = epoch;
@@ -185,22 +183,16 @@ namespace Garnet.client
             controller = new DuplexAdmissionController(
                 store.Shape,
                 store.CompletionCapacity,
+                store.MaxOutstandingRequests,
                 epoch,
-                store.SetPageLastOffset,
-                OnPagesMarkedReadOnly);
+                OnPagesMarkedReadOnly,
+                store);
 
-            // A descriptor's low 56 bits must hold the full log address, so the page-index bits plus the
-            // in-page offset bits must fit below the tag byte. This bounds how the descriptor codec can
-            // coexist with the address layout for any configured page size.
-            Debug.Assert(PageOffset.kPageBits + store.Shape.PageSizeBits <= DuplexRingRecordFormat.TagShift,
-                "Descriptor address space must leave the most-significant byte free for the payload kind tag.");
-
-            // A single flush can hold at most RequestSlotCount records (records occupy fixed allocation quanta),
-            // so a gather holder sized to that count never overflows. Only create the pool when the transport
-            // can actually coalesce sends.
+            // A single flush can claim at most one record per outstanding request, so a gather holder sized to
+            // the schedule capacity never overflows. Only create the pool when the transport can coalesce sends.
             if (transport.SupportsGather)
             {
-                var slotCount = store.RequestSlotCount;
+                var slotCount = store.ScheduleCapacity;
                 gatherPool = new SimpleObjectPool<GatherSendBatch>(() => new GatherSendBatch(slotCount, gatherPool));
             }
         }
@@ -248,53 +240,50 @@ namespace Garnet.client
 
         /// <summary>
         /// Reserve an inline record at <paramref name="address"/> and return a pointer to write its payload
-        /// bytes directly into page memory, skipping the pooled buffer entirely. The producing thread must
-        /// hold the epoch. The descriptor header (kind + payload length) is written <b>before</b> the caller
-        /// fills the payload, so any concurrent teardown walk recovers this record's size and strides over the
-        /// payload region instead of misreading it; the memory barrier orders that header ahead of the payload
-        /// writes. Inline records own no side-table entry — their bytes live in the page and are freed on flush
-        /// like any other record — so no post-publish reclaim is needed.
-        /// <para>
-        /// Flush-safety of this early header publish rests entirely on the epoch: the flusher
-        /// (<see cref="AsyncFlushRequestContext"/>) runs only as the drain-list action queued by
-        /// <see cref="LightEpoch.BumpCurrentEpoch(System.Action)"/> when read-only shifts (see
-        /// <c>AggressiveFlushShiftReadOnlyBump</c>), so it cannot read this record until every producer that
-        /// held the epoch at shift time has drained. Unlike out-of-line records — whose payload lives in a pool
-        /// buffer written in full before the descriptor is published — inline has no data-ordering backstop, so
-        /// <b>the caller MUST hold the epoch continuously from the tail-advancing <see cref="TryScheduleOperation"/>
-        /// through the completed payload write</b> (no <c>Suspend</c>, no <c>await</c> in between). Releasing
-        /// the epoch mid-write would let a concurrent flush observe this header with an unwritten payload.
-        /// </para>
+        /// bytes directly into page memory, skipping the pooled buffer entirely. This only returns the write
+        /// destination; it publishes nothing. The caller writes the payload and then calls
+        /// <see cref="PublishInlineRecord"/> to make the record visible to the flusher. Because publication
+        /// happens after the payload is written (release-fenced inside <see cref="DuplexRingRecordStore{TR,TC,TF}.RegisterSchedule"/>),
+        /// a claimer that observes the schedule entry also observes the fully-written payload.
         /// </summary>
-        /// <param name="address">Descriptor address returned by <see cref="TryScheduleOperation"/> for an
+        /// <param name="address">Ring address returned by <see cref="TryScheduleOperation"/> for an
         /// inline-sized allocation (see <see cref="GetRecordSize"/>).</param>
-        /// <param name="payloadLength">Number of payload bytes the caller will write.</param>
-        /// <returns>Pointer to the first payload byte (immediately after the 8-byte header).</returns>
-        internal unsafe byte* RegisterInlineRecord(long address, int payloadLength)
+        /// <returns>Pointer to the first payload byte in page memory.</returns>
+        internal unsafe byte* RegisterInlineRecord(long address)
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
-            return store.RegisterInlineRecord(address, payloadLength, default);
+            return store.GetInlineWritePointer(address);
         }
 
         /// <summary>
-        /// Register (store and publish) a request request at the descriptor address, making it eligible for
-        /// flushing. Publication writes the descriptor's self-key into page memory; the producing thread must
-        /// hold the epoch, so the flusher (which validates key == address only after the epoch barrier) never
-        /// observes a partially-written slot.
-        /// <para>
-        /// The word is tagged <see cref="RequestKind.OutOfLine"/> with the log address in its low 56
-        /// bits; since that tag is <c>0x00</c> the published word is byte-identical to the raw address and can
-        /// never collide with the uninitialized empty sentinel.
-        /// </para>
+        /// Publish an inline record whose payload has already been written into page memory, making it eligible
+        /// for flushing. The dense request-id schedule entry is published last (release-fenced), so the flusher
+        /// never observes the entry before the payload bytes.
         /// </summary>
-        /// <param name="address"></param>
-        /// <param name="request"></param>
-        internal void RegisterOfflineRecord(long address, TRequestContext request)
+        /// <param name="requestId">Dense request id from the operation's reservation.</param>
+        /// <param name="address">Ring address the payload was written to.</param>
+        /// <param name="payloadLength">Number of payload bytes written.</param>
+        internal void PublishInlineRecord(int requestId, long address, int payloadLength)
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
-            store.RegisterRequest(address, request);
+            store.RegisterSchedule(requestId, address, RequestKind.Inline, payloadLength, default);
+        }
+
+        /// <summary>
+        /// Register (store and publish) an out-of-line request, making it eligible for flushing. The request's
+        /// payload lives in its rented buffer; the dense request-id schedule entry records the context and is
+        /// published last (release-fenced), so the flusher observes a fully-initialized entry.
+        /// </summary>
+        /// <param name="requestId">Dense request id from the operation's reservation.</param>
+        /// <param name="address">Ring address reserved for throttling this request.</param>
+        /// <param name="request">Request context owning the out-of-line payload buffer.</param>
+        internal void RegisterOfflineRecord(int requestId, long address, TRequestContext request)
+        {
+            Debug.Assert(epoch.ThisInstanceProtected());
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed), this);
+            store.RegisterSchedule(requestId, address, RequestKind.OutOfLine, request.Length, request);
         }
 
         #endregion
@@ -340,22 +329,24 @@ namespace Garnet.client
 
         #endregion
 
-        void OnPagesMarkedReadOnly(long oldReadOnlyAddress, long newReadOnlyAddress)
-            => AsyncFlushRequestContext(oldReadOnlyAddress, newReadOnlyAddress);
+        void OnPagesMarkedReadOnly(int oldRequestId, int newRequestId)
+            => AsyncFlushRequestContext(oldRequestId, newRequestId);
 
         /// <summary>
-        /// Flush an address range of request descriptors to the network. Only the request buffer is sent;
-        /// the completion (if any) lives in the completion lane and is untouched here.
+        /// Flush a dense request-id range of scheduled requests to the network. The flusher walks requests in
+        /// request-id order (not by ring address), claiming each schedule entry exactly once. Inline payloads
+        /// are read directly from page memory at each entry's own address; out-of-line payloads are read from
+        /// their rented buffers. Only request bytes are sent; the completion (if any) lives in the completion
+        /// lane and is untouched here. The ring byte end of the range, which gates ring-page reuse once the
+        /// range is flushed, is taken from the last entry's footprint: request ids are assigned in ring byte
+        /// order, so the last entry's end is the range's end.
         /// </summary>
-        /// <param name="fromAddress"></param>
-        /// <param name="untilAddress"></param>
-        void AsyncFlushRequestContext(long fromAddress, long untilAddress)
+        void AsyncFlushRequestContext(int fromRequestId, int untilRequestId)
         {
-            var startPage = store.Shape.GetUnwrappedPageIndex(fromAddress);
-            var endPage = store.Shape.GetUnwrappedPageIndex(untilAddress);
-            controller.BeginFlushRange(untilAddress);
+            var count = (untilRequestId - fromRequestId) & (int)LightPageAndOffset.kRequestMask;
+            var lastConsumedBytes = store.GetScheduleFootprint((untilRequestId - 1) & (int)LightPageAndOffset.kRequestMask, out var lastAddress);
+            controller.BeginFlushRange(lastAddress, lastConsumedBytes);
             var flushFailed = false;
-            var disposedBail = false;
 
             // Coalesce a contiguous run of single-chunk record payloads into one scatter/gather send. Each
             // record still registers and completes its own flush part, so slot-freeing and flushedUntil
@@ -366,86 +357,49 @@ namespace Garnet.client
             var canGather = transport.SupportsGather;
             GatherSendBatch batch = null;
 
-            var flushPage = startPage;
-            while (true)
+            var released = 0;
+            for (var i = 0; i < count; i++)
             {
-                long startOffset = 0, endOffset = store.Shape.PageSizeBytes;
-                if (flushPage == startPage) startOffset = store.Shape.GetOffsetInPage(fromAddress);
-                if (flushPage == endPage) endOffset = store.Shape.GetOffsetInPage(untilAddress);
+                // Once disposed there is no live connection to send on, and Dispose independently reclaims
+                // every unclaimed schedule entry. Bail before claiming the next request so remaining ones fall
+                // to Dispose; requests we already claimed were sent or disposed above.
+                if (Volatile.Read(ref disposed))
+                    break;
 
-                var realEndOffset = store.ConsumePageEndOffset(flushPage, endOffset);
+                var requestId = (fromRequestId + i) & (int)LightPageAndOffset.kRequestMask;
+                if (!store.TryClaimSchedule(requestId, out var schedule))
+                    continue; // Already reclaimed by teardown.
+                released++;
 
-                if ((startOffset & (DuplexRingRecordFormat.HeaderSize - 1)) != 0 ||
-                    (realEndOffset & (DuplexRingRecordFormat.HeaderSize - 1)) != 0)
+                var request = schedule.request;
+                var flushContext = store.GetFlushResult(requestId);
+
+                if (flushFailed)
                 {
-                    FailOnRequestFlush(ref flushFailed, $"Out-of-line flush range {flushPage}:{startOffset}-{realEndOffset} is not aligned to {DuplexRingRecordFormat.HeaderSize}-byte records.");
-                    realEndOffset -= (realEndOffset - startOffset) & (DuplexRingRecordFormat.HeaderSize - 1);
+                    if (schedule.kind == RequestKind.OutOfLine)
+                        request.Dispose();
+                    continue;
                 }
 
-                for (var offset = startOffset; offset < realEndOffset;)
+                if (schedule.kind == RequestKind.Inline)
                 {
-                    // Once disposed there is no live connection to send on, and Dispose independently walks
-                    // every page (from offset 0, with the same variable stride) to reclaim any record we have
-                    // not yet claimed. Bail before claiming the next record so those fall to Dispose; records
-                    // we already claimed in earlier iterations were sent or disposed above. Records past the
-                    // taken bit are skipped by Dispose, so we must not claim one here and then abandon it.
-                    if (Volatile.Read(ref disposed))
+                    // Header-free inline payload lives contiguously in page memory at the scheduled address.
+                    if (schedule.payloadLength > 0)
                     {
-                        disposedBail = true;
-                        break;
+                        var page = store.Shape.GetUnwrappedPageIndex(schedule.address);
+                        var pageOffset = (int)store.Shape.GetOffsetInPage(schedule.address);
+                        ProcessRequestContext(store.GetPageBuffer(page), pageOffset, schedule.payloadLength, request, requestId, flushContext, ref flushFailed);
                     }
-                    var address = store.Shape.PackAddress(flushPage, offset);
-
-                    // Claim the record, recovering its stride whether or not we win the claim.
-                    var won = store.TryClaimRequest(address, out var kind, out var recordSize, out var payloadLength, out var key, out var request, out var flushContext);
-                    if (!won)
-                    {
-                        offset += recordSize; // Empty slot or taken by teardown.
-                        continue;
-                    }
-
-                    if (kind == RequestKind.OutOfLine && key != address)
-                    {
-                        FailOnRequestFlush(ref flushFailed, $"Out-of-line request key {key} does not match its log address {address}.");
-                        request.Dispose();
-                        offset += recordSize;
-                        continue;
-                    }
-
-                    if (flushFailed)
-                    {
-                        request.Dispose();
-                        offset += recordSize;
-                        continue;
-                    }
-
-                    if (kind == RequestKind.Inline)
-                    {
-                        // Header-only inline records carry no payload; skip the send path entirely.
-                        if (payloadLength > 0)
-                            ProcessRequestContext(store.GetPageBuffer(flushPage), (int)(offset + DuplexRingRecordFormat.HeaderSize), payloadLength, request, address, flushContext, ref flushFailed);
-                    }
-                    else if (kind == RequestKind.OutOfLine)
-                        ProcessRequestContext(request.Buffer, 0, request.Length, request, address, flushContext, ref flushFailed);
-                    else
-                    {
-                        // A won claim is always Inline or OutOfLine; any other kind here means an uninitialized
-                        // or corrupted descriptor slipped past the claim, so fail the flush instead of sending it.
-                        FailOnRequestFlush(ref flushFailed, $"Claimed record at {address} has unexpected kind {kind}.");
-                        request.Dispose();
-                    }
-
-                    offset += recordSize;
                 }
-
-                if (disposedBail || flushPage == endPage) break;
-                flushPage = (flushPage + 1) & PageOffset.kPageMask;
+                else
+                    ProcessRequestContext(request.Buffer, 0, request.Length, request, requestId, flushContext, ref flushFailed);
             }
 
             FlushBatch(); // Dispatch any remaining coalesced single-chunk records.
+            controller.ReleaseScheduleReservations(released); // Free the schedule slots the flush consumed.
             controller.CompleteFlushPart(); // Release the scanner-owned range sentinel.
 
-            void ProcessRequestContext(byte[] buffer, int baseOffset, int length, TRequestContext request, long address, DuplexOperationAsyncFlushResult<TRequestContext> flushContext, ref bool flushFailed)
+            void ProcessRequestContext(byte[] buffer, int baseOffset, int length, TRequestContext request, int requestId, DuplexOperationAsyncFlushResult<TRequestContext> flushContext, ref bool flushFailed)
             {
                 // An empty payload has nothing to send, and the chunk-count protocol below assumes length >= 1:
                 // bumping count without dispatching a chunk would leave the flush count permanently unbalanced
@@ -464,7 +418,7 @@ namespace Garnet.client
                 {
                     result = new DuplexOperationAsyncFlushResult<TRequestContext>();
                     if (flushResultAllocationMode == FlushResultAllocationMode.Buffered)
-                        store.SetFlushContext(address, result);
+                        store.SetFlushResult(requestId, result);
                     else
                     {
                         controller.RegisterPerOperationFlushResult();
@@ -559,16 +513,6 @@ namespace Garnet.client
                         DuplexOperationAsyncFlushResult<TRequestContext>.CompleteChunk(current.ContextAt(i));
                     current.Release();
                 }
-            }
-
-            void FailOnRequestFlush(ref bool flushFailed, string message)
-            {
-                if (flushFailed)
-                    return;
-
-                flushFailed = true;
-                logger?.LogError("{Message}", message);
-                transport.OnFlushError(new InvalidOperationException(message));
             }
         }
     }

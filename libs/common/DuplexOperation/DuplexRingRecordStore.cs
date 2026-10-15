@@ -11,32 +11,29 @@ using Garnet.common;
 namespace Garnet.client
 {
     /// <summary>
-    /// Payload framing of a request-lane descriptor, carried in the most-significant byte (bits [56..63])
-    /// of the 8-byte descriptor word. The low 56 bits carry the per-kind metadata.
+    /// Kind of a scheduled request: its payload bytes live either inline in a ring page or out-of-line in a
+    /// separately rented buffer. Stored in the dense request-id-indexed schedule entry.
     /// </summary>
     internal enum RequestKind : byte
     {
         /// <summary>
-        /// The descriptor references request bytes held in the request side-table.
+        /// The request bytes live out-of-line in a rented buffer referenced by the schedule entry.
         /// </summary>
         OutOfLine = 0x00,
 
         /// <summary>
-        /// The descriptor is followed by request bytes in the same page.
+        /// The request bytes are packed contiguously in a ring page at the scheduled address.
         /// </summary>
         Inline = 0x01,
-
-        /// <summary>
-        /// Empty or claimed descriptor.
-        /// </summary>
-        Uninitialized = 0xFF,
     }
 
     internal static class DuplexRingRecordFormat
     {
         internal const int HeaderSize = sizeof(long);
-        internal const int TagShift = 56;
         internal const int CompletionSlotSize = 64;
+
+        /// <summary>Ring bytes an out-of-line request advances the tail by, purely for ordering/backpressure.</summary>
+        internal const int OutOfLineThrottleBytes = HeaderSize;
     }
 
     /// <summary>
@@ -83,9 +80,22 @@ namespace Garnet.client
     }
 
     /// <summary>
+    /// Narrow, non-generic view of the request-id-indexed schedule that the admission controller needs to
+    /// drive its frontier: whether a request id has been published. Keeps the (non-generic) controller
+    /// decoupled from the schedule's generic request/completion/flush context types while still owning the
+    /// frontier logic itself.
+    /// </summary>
+    internal interface IScheduleReadIndex
+    {
+        /// <summary>Whether the producer owning <paramref name="requestId"/> has published its schedule entry.</summary>
+        bool IsSchedulePublished(int requestId);
+    }
+
+    /// <summary>
     /// Physical request and completion storage for a duplex operation ring.
     /// </summary>
     internal sealed unsafe class DuplexRingRecordStore<TRequestContext, TCompletionContext, TFlushContext>
+        : IScheduleReadIndex
         where TRequestContext : struct, IDisposable
         where TFlushContext : class
     {
@@ -93,15 +103,11 @@ namespace Garnet.client
         {
             internal readonly byte[] value;
             internal readonly long pointer;
-            internal long lastOffset;
 
             internal RingPage(int pageSize)
             {
                 value = GC.AllocateArray<byte>(pageSize, true);
-                // Address zero is a valid descriptor, so empty storage uses the all-ones sentinel.
-                value.AsSpan().Fill(0xFF);
                 pointer = (long)Unsafe.AsPointer(ref value[0]);
-                lastOffset = 0;
             }
         }
 
@@ -113,45 +119,57 @@ namespace Garnet.client
             internal TCompletionContext completion;
         }
 
-        struct RequestSlot
+        // Dense request-id-indexed schedule entry. Published by the reserving producer and claimed exactly
+        // once by the flusher, mirroring the <see cref="CompletionSlot"/> publish/claim protocol. The entry
+        // records where the request bytes live (<see cref="address"/>) plus the request context, so the flusher
+        // can walk requests in dense request-id order instead of by ring address.
+        internal struct ScheduleSlot
         {
+            internal long published;
+            internal long address;
+            internal int payloadLength;
+            internal RequestKind kind;
             internal TRequestContext request;
-            internal TFlushContext flushContext;
         }
 
-        const long PayloadMetaMask = (1L << DuplexRingRecordFormat.TagShift) - 1;
-        const long TakenBit = 1L << 63;
-        const int RecordAlignment = 8;
+        // Upper bound on schedulable requests; mirrors the dense request-id field width enforced client-side.
+        const int MaxSchedulableRequests = 1 << 15;
 
         readonly RingBoundedBuffer<RingPage> bufferPages;
-        readonly RequestSlot[] requestSlots;
+        readonly ScheduleSlot[] scheduleArray;
+        readonly TFlushContext[] flushResults;
+        readonly int scheduleMask;
         readonly CompletionSlot[] completions;
         readonly int completionMask;
-        readonly int requestAllocationQuantumBytes;
-        readonly int requestSlotsPerPage;
         int closed;
         int allFlushContextsAllocated;
 
         internal PageShape Shape { get; }
         internal int CompletionCapacity { get; }
-        internal int MaxInlinePayloadSize => Shape.PageSizeBytes - DuplexRingRecordFormat.HeaderSize;
-        internal int RequestAllocationQuantumBytes => requestAllocationQuantumBytes;
-        internal int RequestSlotCount => requestSlots.Length;
+        internal int ScheduleCapacity { get; }
+
+        /// <summary>Maximum number of requests that may be outstanding (awaiting local send) at once.</summary>
+        internal int MaxOutstandingRequests { get; }
+
+        /// <summary>Largest payload that fits contiguously in one ring page and can be written inline.</summary>
+        internal int MaxInlinePayloadSize => Shape.PageSizeBytes;
+
+        /// <summary>Count of flush-result contexts allocated so far (one may be cached per schedule slot).</summary>
         internal int AllocatedFlushContextCount
         {
             get
             {
                 if (Volatile.Read(ref allFlushContextsAllocated) != 0)
-                    return requestSlots.Length;
+                    return flushResults.Length;
 
                 var count = 0;
-                for (var i = 0; i < requestSlots.Length; i++)
+                for (var i = 0; i < flushResults.Length; i++)
                 {
-                    if (Volatile.Read(ref requestSlots[i].flushContext) != null)
+                    if (Volatile.Read(ref flushResults[i]) != null)
                         count++;
                 }
 
-                if (count == requestSlots.Length)
+                if (count == flushResults.Length)
                     Volatile.Write(ref allFlushContextsAllocated, 1);
 
                 return count;
@@ -166,21 +184,16 @@ namespace Garnet.client
         {
             Shape = new PageShape(ringPageSizeBytes, ringPageCount);
             if (maxOutstandingRequests == 0)
-                maxOutstandingRequests = checked(Shape.PageCount * Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize);
-            if (maxOutstandingRequests < Shape.PageCount || maxOutstandingRequests % Shape.PageCount != 0)
+                maxOutstandingRequests = Math.Clamp(
+                    checked(Shape.PageCount * Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize),
+                    Shape.PageCount,
+                    MaxSchedulableRequests);
+            if (maxOutstandingRequests is < 1 or > MaxSchedulableRequests)
                 throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
-                    $"Maximum outstanding requests must be a positive multiple of the ring page count ({Shape.PageCount}).");
+                    $"Maximum outstanding requests must be between 1 and {MaxSchedulableRequests}.");
+            MaxOutstandingRequests = maxOutstandingRequests;
 
-            requestSlotsPerPage = maxOutstandingRequests / Shape.PageCount;
-            requestAllocationQuantumBytes = Shape.PageSizeBytes / requestSlotsPerPage;
-            if (requestSlotsPerPage > Shape.PageSizeBytes / DuplexRingRecordFormat.HeaderSize ||
-                Shape.PageSizeBytes % requestSlotsPerPage != 0 ||
-                requestAllocationQuantumBytes % DuplexRingRecordFormat.HeaderSize != 0)
-                throw new ArgumentOutOfRangeException(nameof(maxOutstandingRequests), maxOutstandingRequests,
-                    $"Maximum outstanding requests ({maxOutstandingRequests}) produces {requestSlotsPerPage} request slot(s) per {Shape.PageSizeBytes}-byte page; the per-page slot count must evenly divide the page size and yield an allocation quantum that is a multiple of the {DuplexRingRecordFormat.HeaderSize}-byte record header (computed quantum: {requestAllocationQuantumBytes} bytes).");
-            requestSlots = new RequestSlot[maxOutstandingRequests];
-
-            // Hold the per-page records in a single-page ring whose slots are the ring's pages, so page lookups
+            // Hold the ring pages in a single-page ring whose slots are the ring's pages, so page lookups
             // reuse the buffer's wrap-around indexer instead of a hand-written modulo.
             bufferPages = new RingBoundedBuffer<RingPage>(pageSize: ringPageCount, pageCount: 1);
             for (var i = 0; i < ringPageCount; i++)
@@ -189,32 +202,11 @@ namespace Garnet.client
             CompletionCapacity = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, completionCapacity));
             completionMask = CompletionCapacity - 1;
             completions = new CompletionSlot[CompletionCapacity];
-        }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int AlignedRecordSize(int size)
-        {
-            var alignedSize = (size + (RecordAlignment - 1)) & ~(RecordAlignment - 1);
-            return ((alignedSize + requestAllocationQuantumBytes - 1) / requestAllocationQuantumBytes) * requestAllocationQuantumBytes;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int AlignedInlineRecordSize(int payloadLength)
-            => AlignedRecordSize(DuplexRingRecordFormat.HeaderSize + payloadLength);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long EncodeDescriptor(RequestKind kind, long meta)
-            => ((long)(byte)kind << DuplexRingRecordFormat.TagShift) | (meta & PayloadMetaMask);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static long DecodeMeta(long word) => word & PayloadMetaMask;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int ComputeSlot(long address)
-        {
-            var pageIndex = Shape.GetPhysicalPageIndex(address);
-            var offset = (int)Shape.GetOffsetInPage(address);
-            return (pageIndex * requestSlotsPerPage) + (offset / requestAllocationQuantumBytes);
+            ScheduleCapacity = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)maxOutstandingRequests);
+            scheduleMask = ScheduleCapacity - 1;
+            scheduleArray = new ScheduleSlot[ScheduleCapacity];
+            flushResults = new TFlushContext[ScheduleCapacity];
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -225,108 +217,120 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Ring bytes a command of <paramref name="payloadLength"/> reserves, and whether it is written inline.
-        /// An inline record packs its whole payload into one page after an 8-byte header; otherwise the record
-        /// contains an 8-byte out-of-line descriptor pointing at a separately rented payload buffer. Both record
-        /// forms reserve whole request-allocation quanta.
+        /// Ring bytes a command of <paramref name="payloadLength"/> advances the tail by, and whether it is
+        /// written inline. An inline record packs its whole payload contiguously into one page (byte-granular,
+        /// no header). An out-of-line record keeps its payload in a separately rented buffer and advances the
+        /// tail by a fixed nominal amount purely so the byte-driven read-only machinery keeps flushing.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int GetRecordSize(int payloadLength, out bool isInline)
         {
             isInline = (uint)payloadLength <= (uint)MaxInlinePayloadSize;
-            return isInline ? AlignedInlineRecordSize(payloadLength) : requestAllocationQuantumBytes;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetPageLastOffset(int page, long offset)
-        {
-            Debug.Assert(bufferPages[page].lastOffset == 0);
-            bufferPages[page].lastOffset = offset;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long ConsumePageEndOffset(long page, long endOffset)
-        {
-            ref var ringPage = ref bufferPages[page];
-            if (ringPage.lastOffset <= 0 || endOffset <= ringPage.lastOffset)
-                return endOffset;
-
-            var realEndOffset = ringPage.lastOffset;
-            ringPage.lastOffset = 0;
-            return realEndOffset;
+            return isInline ? payloadLength : DuplexRingRecordFormat.OutOfLineThrottleBytes;
         }
 
         internal byte[] GetPageBuffer(long page) => bufferPages[page].value;
 
+        /// <summary>Pointer to the inline payload destination for a reserved ring <paramref name="address"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryClaimRequest(long address, out RequestKind kind, out int recordSize, out int payloadLength, out long key, out TRequestContext request, out TFlushContext flushContext)
-        {
-            request = default;
-            flushContext = default;
-            payloadLength = 0;
-            var recPtr = (long*)GetPhysicalAddress(address);
-            var word = Volatile.Read(ref *recPtr);
-            var tag = (byte)((ulong)word >> DuplexRingRecordFormat.TagShift);
+        internal byte* GetInlineWritePointer(long address) => (byte*)GetPhysicalAddress(address);
 
-            if (tag == (byte)RequestKind.Uninitialized)
-            {
-                kind = RequestKind.Uninitialized;
-                recordSize = requestAllocationQuantumBytes;
-                key = default;
-                return false;
-            }
+        /// <summary>Flush-result context cached for the schedule slot of <paramref name="requestId"/>, if any.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal TFlushContext GetFlushResult(int requestId) => Volatile.Read(ref flushResults[requestId & scheduleMask]);
 
-            key = DecodeMeta(word);
-            if ((tag & (byte)RequestKind.Inline) != 0)
-            {
-                kind = RequestKind.Inline;
-                payloadLength = (int)key;
-                recordSize = AlignedInlineRecordSize(payloadLength);
-            }
-            else
-            {
-                kind = RequestKind.OutOfLine;
-                recordSize = requestAllocationQuantumBytes;
-            }
+        /// <summary>Caches a reusable flush-result context for the schedule slot of <paramref name="requestId"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetFlushResult(int requestId, TFlushContext flushContext)
+            => Volatile.Write(ref flushResults[requestId & scheduleMask], flushContext);
 
-            // Preserve metadata while claiming so a losing walker can still recover the record stride.
-            if ((word & TakenBit) != 0 ||
-                Interlocked.CompareExchange(ref *recPtr, word | TakenBit, word) != word)
-                return false;
-
-            var slot = ComputeSlot(address);
-            request = requestSlots[slot].request;
-            requestSlots[slot].request = default;
-            flushContext = Volatile.Read(ref requestSlots[slot].flushContext);
-            return true;
-        }
-
-        internal void RegisterRequest(long address, TRequestContext request)
+        /// <summary>
+        /// Publishes a dense request-id-indexed schedule entry locating the request bytes and carrying its
+        /// request context. Mirrors <see cref="RegisterCompletion"/>: the producer writes the payload fields
+        /// first and publishes the <see cref="ScheduleSlot.published"/> sentinel last, so a claimer that
+        /// observes the sentinel also observes a fully initialized entry (and, for inline records, the payload
+        /// bytes the producer already wrote into the page).
+        /// </summary>
+        internal void RegisterSchedule(int requestId, long address, RequestKind kind, int payloadLength, TRequestContext request)
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref closed) != 0, this);
-            var slot = ComputeSlot(address);
-            requestSlots[slot].request = request;
-            var ptr = (long*)GetPhysicalAddress(address);
-            *ptr = EncodeDescriptor(RequestKind.OutOfLine, address);
+            var slot = requestId & scheduleMask;
+            scheduleArray[slot].address = address;
+            scheduleArray[slot].kind = kind;
+            scheduleArray[slot].payloadLength = payloadLength;
+            scheduleArray[slot].request = request;
+            Volatile.Write(ref scheduleArray[slot].published, (long)requestId + 1);
 
-            if (Volatile.Read(ref closed) != 0 &&
-                TryClaimRequest(address, out var kind, out _, out _, out _, out var reclaimed, out _) &&
-                kind == RequestKind.OutOfLine)
-                reclaimed.Dispose();
+            // Only out-of-line records own a buffer that teardown must reclaim. A concurrent teardown sets
+            // closed then walks the schedule, so this publish races that walk. The walk pairs its closed-store
+            // with a full fence before reading published; we pair our published-store with a full fence before
+            // reading closed, so (Dekker) at least one side observes the other's write and reclaims the buffer
+            // exactly once. The barrier is confined to the out-of-line path, leaving the inline publish
+            // hot path with just the release write.
+            if (kind == RequestKind.OutOfLine)
+            {
+                Interlocked.MemoryBarrier();
+                if (Volatile.Read(ref closed) != 0 &&
+                    TryClaimSchedule(requestId, out var reclaimed) && reclaimed.kind == RequestKind.OutOfLine)
+                    reclaimed.request.Dispose();
+            }
         }
 
-        internal byte* RegisterInlineRecord(long address, int payloadLength, TRequestContext request)
+        /// <summary>
+        /// Claims a schedule entry exactly once, mirroring <see cref="TryClaimCompletion"/>: the published
+        /// sentinel is atomically flipped negative so concurrent claimers cannot both observe the same request.
+        /// On success the entry is returned by value and the stored request context is cleared so the store no
+        /// longer references it (ownership transfers to the caller).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryClaimSchedule(int requestId, out ScheduleSlot schedule)
         {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref closed) != 0, this);
-            requestSlots[ComputeSlot(address)].request = request;
-            var basePtr = GetPhysicalAddress(address);
-            Volatile.Write(ref *(long*)basePtr, EncodeDescriptor(RequestKind.Inline, payloadLength));
-            Interlocked.MemoryBarrier();
-            return (byte*)(basePtr + DuplexRingRecordFormat.HeaderSize);
+            var slot = requestId & scheduleMask;
+            var expected = (long)requestId + 1;
+            if (Volatile.Read(ref scheduleArray[slot].published) == expected &&
+                Interlocked.CompareExchange(ref scheduleArray[slot].published, -expected, expected) == expected)
+            {
+                schedule = scheduleArray[slot];
+                scheduleArray[slot].request = default;
+                return true;
+            }
+
+            schedule = default;
+            return false;
         }
 
-        internal void SetFlushContext(long address, TFlushContext flushContext)
-            => Volatile.Write(ref requestSlots[ComputeSlot(address)].flushContext, flushContext);
+        /// <summary>
+        /// Non-claiming probe: true if the schedule entry for <paramref name="requestId"/> is published (and
+        /// not yet claimed). Used by the read-only frontier to avoid advancing past a reserved-but-unpublished
+        /// request, which the flusher could not send and would otherwise orphan.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsSchedulePublished(int requestId)
+        {
+            var slot = requestId & scheduleMask;
+            return Volatile.Read(ref scheduleArray[slot].published) == (long)requestId + 1;
+        }
+
+        /// <summary>
+        /// Ring byte footprint of the schedule entry for <paramref name="requestId"/>: the ring
+        /// <paramref name="address"/> the record occupies, returning the number of ring bytes it consumed (its
+        /// inline payload length, or the out-of-line throttle stride). The caller must own the flush of this
+        /// entry, which the read-only frontier only hands out after observing it published. Claiming leaves the
+        /// footprint fields intact, and the slot is not reused until the flush releases its reservation, so the
+        /// read is valid whether or not the entry has since been claimed.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int GetScheduleFootprint(int requestId, out long address)
+        {
+            var slot = requestId & scheduleMask;
+            // Acquire read orders the field reads after the producer's release publish.
+            var published = Volatile.Read(ref scheduleArray[slot].published);
+            Debug.Assert(Math.Abs(published) == (long)requestId + 1);
+            address = scheduleArray[slot].address;
+            return scheduleArray[slot].kind == RequestKind.Inline
+                ? scheduleArray[slot].payloadLength
+                : DuplexRingRecordFormat.OutOfLineThrottleBytes;
+        }
 
         internal void RegisterCompletion(int ticket, TCompletionContext completion)
         {
@@ -369,21 +373,16 @@ namespace Garnet.client
             if (Interlocked.Exchange(ref closed, 1) != 0)
                 return;
 
-            // Live records are contiguous from offset zero. Stale bytes after the live tail may decode as
-            // invalid framing, so stop when a recovered stride leaves the page.
-            for (var page = 0; page < Shape.PageCount; page++)
+            // Reclaim any out-of-line payload buffers still owned by unclaimed schedule entries.
+            for (var slot = 0; slot < scheduleArray.Length; slot++)
             {
-                for (var offset = 0; offset < Shape.PageSizeBytes;)
-                {
-                    var address = Shape.PackAddress(page, offset);
-                    if (TryClaimRequest(address, out var kind, out var recordSize, out _, out _, out var request, out _) &&
-                        kind == RequestKind.OutOfLine)
-                        request.Dispose();
+                var published = Volatile.Read(ref scheduleArray[slot].published);
+                if (published <= 0)
+                    continue;
 
-                    if (recordSize <= 0 || offset + recordSize > Shape.PageSizeBytes)
-                        break;
-                    offset += recordSize;
-                }
+                var requestId = (int)(published - 1);
+                if (TryClaimSchedule(requestId, out var schedule) && schedule.kind == RequestKind.OutOfLine)
+                    schedule.request.Dispose();
             }
         }
     }

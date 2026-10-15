@@ -151,11 +151,11 @@ namespace Garnet.client
             this.authentication = new(authUsername, authPassword);
             this.clientName = clientName != null ? ["SETNAME"u8.ToArray(), Encoding.ASCII.GetBytes(clientName)] : null;
 
-            if (options.MaxOutstandingCompletions > PageOffset.kTaskMask + 1)
-                ThrowException(new Exception($"Maximum outstanding tasks supported is {PageOffset.kTaskMask + 1}"));
+            if (options.MaxOutstandingCompletions > LightPageAndOffset.kTaskMask + 1)
+                ThrowException(new Exception($"Maximum outstanding tasks supported is {LightPageAndOffset.kTaskMask + 1}"));
 
             if (options.MaxOutstandingCompletions != (int)Utility.PreviousPowerOf2(options.MaxOutstandingCompletions))
-                ThrowException(new Exception($"Maximum outstanding tasks should be a power of two, up to {PageOffset.kTaskMask + 1}"));
+                ThrowException(new Exception($"Maximum outstanding tasks should be a power of two, up to {LightPageAndOffset.kTaskMask + 1}"));
 
             this.networkWriterOptions = options;
             this.sslOptions = tlsOptions;
@@ -608,6 +608,7 @@ namespace Garnet.client
 
                     int taskId;
                     long address;
+                    int requestId;
                     while (true)
                     {
                         token.ThrowIfCancellationRequested();
@@ -630,6 +631,7 @@ namespace Garnet.client
                         {
                             taskId = reservation.completionTicket;
                             address = reservation.requestAddress;
+                            requestId = reservation.requestId;
                             break;
                         }
 
@@ -655,18 +657,19 @@ namespace Garnet.client
                         {
                             // Serialize straight into page memory. The epoch acquired above is held continuously
                             // across the reserve and this write (no Suspend/await between the successful allocate
-                            // and here), which is what keeps the early-published inline header safe: a concurrent
-                            // flush cannot read this record until this producer drains at ProtectAndDrain below.
-                            // Do not introduce an await between the reserve and the completed payload write.
+                            // and here). The schedule entry is published only after the payload is fully written
+                            // (release-fenced inside PublishInlineRecord), so a concurrent flush cannot observe
+                            // this record before its bytes. Do not introduce an await before the publish.
                             unsafe
                             {
-                                var curr = writer.RegisterInlineRecord(address, totalLength);
+                                var curr = writer.RegisterInlineRecord(address);
                                 SerializeCommand(curr, curr + totalLength);
                             }
+                            writer.PublishInlineRecord(requestId, address, totalLength);
                         }
                         else
                         {
-                            writer.RegisterOfflineRecord(address, payload);
+                            writer.RegisterOfflineRecord(requestId, address, payload);
                         }
                     }
                     catch (ObjectDisposedException)
@@ -791,6 +794,7 @@ namespace Garnet.client
                     writer.epoch.Resume();
 
                     long address;
+                    int requestId;
                     while (true)
                     {
                         token.ThrowIfCancellationRequested();
@@ -811,6 +815,7 @@ namespace Garnet.client
                             out var flushEvent))
                         {
                             address = reservation.requestAddress;
+                            requestId = reservation.requestId;
                             break;
                         }
 
@@ -832,13 +837,14 @@ namespace Garnet.client
                     {
                         unsafe
                         {
-                            var curr = writer.RegisterInlineRecord(address, totalLength);
+                            var curr = writer.RegisterInlineRecord(address);
                             SerializeCommand(curr, curr + totalLength, arraySize, respOp.Span, subop, param1, param2);
                         }
+                        writer.PublishInlineRecord(requestId, address, totalLength);
                     }
                     else
                     {
-                        writer.RegisterOfflineRecord(address, payload);
+                        writer.RegisterOfflineRecord(requestId, address, payload);
                     }
                     payloadRegistered = true;
 
@@ -939,7 +945,7 @@ namespace Garnet.client
             while (writer != null && c != writer.CompletionTail)
             {
                 DisposeOffset(writer, c);
-                c = (c + 1) & (int)PageOffset.kTaskMask;
+                c = (c + 1) & (int)LightPageAndOffset.kTaskMask;
             }
         }
 
@@ -966,14 +972,14 @@ namespace Garnet.client
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void ConsumeTcsOffset()
         {
-            tcsOffset = (tcsOffset + 1) & (int)PageOffset.kTaskMask;
+            tcsOffset = (tcsOffset + 1) & (int)LightPageAndOffset.kTaskMask;
             networkWriter.AdvanceReplied(1);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void ConsumeTcsOffset(LightNetworkWriter writer)
         {
-            tcsOffset = (tcsOffset + 1) & (int)PageOffset.kTaskMask;
+            tcsOffset = (tcsOffset + 1) & (int)LightPageAndOffset.kTaskMask;
             writer.AdvanceReplied(1);
         }
 
