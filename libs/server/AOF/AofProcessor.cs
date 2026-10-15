@@ -193,9 +193,7 @@ namespace Garnet.server
         public GarnetStatus ApplySnapshotRecord(in DiskLogRecord record)
         {
             var status = aofReplayCoordinator.GetReplayContext(0).respServerSession.basicGarnetApi.SET(in record);
-#if DEBUG
             ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Replication_Pause_After_Diskless_Snapshot_Record);
-#endif
             return status;
         }
 
