@@ -119,6 +119,10 @@ namespace Garnet.cluster
                 var endpoint = (IPEndPoint)newPrimary.EndPoint;
                 var replicaId = oldConfig.GetWorkerNodeIdFromAddress(endpoint.Address.ToString(), endpoint.Port);
                 clusterProvider.clusterManager.TryStopWrites(replicaId);
+                // Drain requests that captured the primary configuration while writes were paused.
+                if (!await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false) || cts.IsCancellationRequested)
+                    return false;
+
                 var success = await InitiateReplicaTakeOverAsync(newPrimary).ConfigureAwait(false);
                 if (!success) return false;
             }
