@@ -2317,6 +2317,7 @@ namespace Garnet.test
                 {
                     var db = redis.GetDatabase(0);
 
+                    AssertVectorSetRecordType(db, "foo");
                     var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "NOQUANT", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
                     ClassicAssert.AreEqual(1, (int)res2);
                 }
@@ -2353,6 +2354,7 @@ namespace Garnet.test
                 {
                     var db = redis.GetDatabase(0);
 
+                    AssertVectorSetRecordType(db, "foo");
                     var res2 = (byte[][])db.Execute("VSIM", ["foo", "XB8", queryData]);
                     ClassicAssert.AreEqual(expectedVSimResult.Length, res2.Length);
                     for (var i = 0; i < res2.Length; i++)
@@ -2396,6 +2398,7 @@ namespace Garnet.test
                 {
                     var db = redis.GetDatabase(0);
 
+                    AssertVectorSetRecordType(db, "foo");
                     var res2 = (byte[][])db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }]);
                     ClassicAssert.AreEqual(expectedVSimResult.Length, res2.Length);
                     for (var i = 0; i < res2.Length; i++)
@@ -2433,6 +2436,7 @@ namespace Garnet.test
                 {
                     var db = redis.GetDatabase(0);
 
+                    AssertVectorSetRecordType(db, "foo");
                     var res2 = (int)db.Execute("VDIM", ["foo"]);
                     ClassicAssert.AreEqual(addData1.Length, res2);
                 }
@@ -2466,6 +2470,7 @@ namespace Garnet.test
                 {
                     var db = redis.GetDatabase(0);
 
+                    AssertVectorSetRecordType(db, "foo");
                     var res2 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
                     ClassicAssert.AreEqual(res2.Length, addData1.Length);
 
@@ -2507,6 +2512,7 @@ namespace Garnet.test
                 {
                     var db = redis.GetDatabase(0);
 
+                    AssertVectorSetRecordType(db, "foo");
                     var res1 = (int)db.Execute("VREM", ["foo", new byte[] { 0, 0, 0, 0 }]);
                     ClassicAssert.AreEqual(1, res1);
 
@@ -3518,6 +3524,7 @@ namespace Garnet.test
                     var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
                     ClassicAssert.IsFalse(existsRes);
 
+                    AssertVectorSetRecordType(dbRecovery, DestKey);
                     var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
                     ClassicAssert.AreEqual(3, vembRes.Length);
                     ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
@@ -3577,6 +3584,7 @@ namespace Garnet.test
                     var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
                     ClassicAssert.IsFalse(existsRes);
 
+                    AssertVectorSetRecordType(dbRecovery, DestKey);
                     var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
                     ClassicAssert.AreEqual(3, vembRes.Length);
                     ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
@@ -3636,6 +3644,7 @@ namespace Garnet.test
                     var existsRes = await dbRecovery.KeyExistsAsync(SourceKey);
                     ClassicAssert.IsFalse(existsRes);
 
+                    AssertVectorSetRecordType(dbRecovery, DestKey);
                     var vembRes = (string[])await dbRecovery.ExecuteAsync("VEMB", DestKey, "foo");
                     ClassicAssert.AreEqual(3, vembRes.Length);
                     ClassicAssert.AreEqual(1f, float.Parse(vembRes[0]));
@@ -4643,6 +4652,7 @@ namespace Garnet.test
 
                 foreach (var key in new[] { "flushed", "snapshotted" })
                 {
+                    AssertVectorSetRecordType(db, key);
                     var embedding = (string[])db.Execute("VEMB", [key, element]);
                     ClassicAssert.AreEqual(8, embedding?.Length ?? 0, $"VEMB {key} did not return the recovered embedding");
                 }
@@ -4729,12 +4739,16 @@ namespace Garnet.test
 
                 foreach (var key in new[] { "before", "during" })
                 {
+                    AssertVectorSetRecordType(db, key);
                     var embedding = (string[])db.Execute("VEMB", [key, element]);
                     ClassicAssert.AreEqual(8, embedding?.Length ?? 0, $"VEMB {key} did not return the recovered embedding");
                 }
             }
         }
 #endif
+
+        private static void AssertVectorSetRecordType(IDatabase database, string key)
+            => ClassicAssert.AreEqual("vectorset", (string)database.Execute("TYPE", key), $"'{key}' has the wrong record type");
 
         /// <summary>
         /// Create a new GarnetServer instance with a small enough log that ordinary writes flush pages.

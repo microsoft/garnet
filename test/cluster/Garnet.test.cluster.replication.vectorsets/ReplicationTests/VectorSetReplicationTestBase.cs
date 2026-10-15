@@ -86,6 +86,7 @@ namespace Garnet.test.cluster
         /// <summary>Reads VINFO size.</summary>
         protected long VectorSetSize(int nodeIndex, string key)
         {
+            AssertVectorSetRecordType(nodeIndex, key);
             var reply = context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(nodeIndex), "VINFO", [key], logger: context.logger);
 
             // Execute returns failures as bulk strings, so non-array replies mean the read failed.
@@ -199,6 +200,34 @@ namespace Garnet.test.cluster
         {
             ReadPersistedIndexFields(nodeIndex, key, out var ctx, out _);
             return ctx;
+        }
+
+        /// <summary>Asserts that a key is stored as a Vector Set index record.</summary>
+        protected void AssertVectorSetRecordType(int nodeIndex, string key)
+            => ClassicAssert.AreEqual(VectorManager.RecordType, ReadRecordType(nodeIndex, key), $"node {nodeIndex} stores '{key}' with the wrong record type");
+
+        private unsafe byte ReadRecordType(int nodeIndex, string key)
+        {
+            var storeWrapper = GetStoreWrapper(context.nodes[nodeIndex]);
+            var database = storeWrapper.DefaultDatabase;
+            using var session = new StorageSession(storeWrapper, new ScratchBufferBuilder(), new ScratchBufferAllocator(), null, null, database.Id, null, database.VectorManager, null);
+            var input = new UnifiedInput(RespCommand.RENAME);
+            var output = new UnifiedOutput();
+            try
+            {
+                ReadOptions readOptions = new() { CopyOptions = ReadCopyOptions.None };
+                var status = session.unifiedBasicContext.Read((FixedSpanByteKey)Encoding.ASCII.GetBytes(key), ref input, ref output, ref readOptions);
+                if (status.IsPending)
+                    StorageSession.CompletePendingForUnifiedStoreSession(ref status, ref output, ref session.unifiedBasicContext);
+
+                ClassicAssert.IsTrue(status.Found, $"could not read the record for '{key}' on node {nodeIndex}");
+                fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                    return new LogRecord(recordPtr, session.functionsState.transientObjectIdMap).RecordType;
+            }
+            finally
+            {
+                output.Dispose();
+            }
         }
 
         private void ReadPersistedIndexFields(int nodeIndex, string key, out ulong ctx, out nint indexPtr)
@@ -320,6 +349,8 @@ namespace Garnet.test.cluster
         /// </summary>
         protected void AssertOwnsItsIndex(int nodeIndex, int otherNodeIndex, string key)
         {
+            AssertVectorSetRecordType(otherNodeIndex, key);
+            AssertVectorSetRecordType(nodeIndex, key);
             var otherPtr = ReadPersistedIndexPtr(otherNodeIndex, key);
             var nodePtr = ReadPersistedIndexPtr(nodeIndex, key);
 
@@ -347,7 +378,7 @@ namespace Garnet.test.cluster
         }
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
-        private static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
+        protected static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
 
         #endregion
     }
