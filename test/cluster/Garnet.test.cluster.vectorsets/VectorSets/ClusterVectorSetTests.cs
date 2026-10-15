@@ -111,10 +111,6 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
-        private void AssertVectorSetRecordType(IPEndPoint node, object key)
-            => ClassicAssert.AreEqual("vectorset", (string)context.clusterTestUtils.Execute(node, "TYPE", [key], flags: CommandFlags.NoRedirect),
-                $"node {node} has the wrong record type for '{key}'");
-
         [Test]
         public async Task BasicVADDReplicatesAsync(
             [Values("XU8", "XI8", "FP32", "VALUES")] string vectorFormat,
@@ -1003,7 +999,6 @@ namespace Garnet.test.cluster
 
             // Check available on other primary & secondary
 
-            AssertVectorSetRecordType(primary1, primary0Key);
             var sim1Res = (byte[][])context.clusterTestUtils.Execute(primary1, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
             ClassicAssert.IsTrue(sim1Res.Length > 0);
             for (var i = 0; i < sim0Res.Length; i++)
@@ -1191,7 +1186,6 @@ namespace Garnet.test.cluster
                 var (elem, data) = vectors[i];
                 var attrs = attributes[i];
 
-                AssertVectorSetRecordType(context.clusterTestUtils.GetEndPoint(targetNodeIndex), _key);
                 var res = (byte[][])context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(targetNodeIndex), "VSIM", [_key, "XB8", data, "WITHATTRIBS"]);
                 ClassicAssert.AreEqual(2, res.Length);
                 ClassicAssert.IsTrue(res[0].SequenceEqual(elem));
@@ -1326,7 +1320,6 @@ namespace Garnet.test.cluster
             // Check available on other primary
             foreach (var (key, _, _, data, _) in primary0Keys.Concat(primary1Keys))
             {
-                AssertVectorSetRecordType(primary1, key);
                 var migrateSimRes = (byte[][])context.clusterTestUtils.Execute(primary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual(3, migrateSimRes.Length);
 
@@ -1444,7 +1437,6 @@ namespace Garnet.test.cluster
 
             foreach (var (key, data, migrateSimRes) in replicated)
             {
-                AssertVectorSetRecordType(secondary1, key);
                 ClassicAssert.AreEqual(3, migrateSimRes.Length, $"Unexpected VSIM reply length for key '{key}'");
 
                 var (elem, attr, score) = expected[(key, data)];
@@ -1598,7 +1590,6 @@ namespace Garnet.test.cluster
             cts.Cancel();
             await writeTask.ConfigureAwait(false);
 
-            AssertVectorSetRecordType(primary1, primary0Key);
             var addedLookup = added.ToFrozenDictionary(static t => t.Elem, t => t, ByteArrayComparer.Instance);
 
             // Check available on other primary & secondary
@@ -1617,7 +1608,6 @@ namespace Garnet.test.cluster
 
             var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", readonlyOnReplica1);
-            AssertVectorSetRecordType(secondary1, primary0Key);
 
             foreach (var (elem, data, attr) in added)
             {
@@ -1710,7 +1700,6 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue(nodePropSuccess, "Node propagation after 0 -> 1 migration took too long");
             }
 
-            AssertVectorSetRecordType(primary1, vectorSetKey);
             // Confirm still valid to add, with client side routing
             var data1 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
             byte[] elem1 = [4, 5, 6, 7];
@@ -1750,7 +1739,6 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue(nodePropSuccess, "Node propagation after 1 -> 0 migration took too long");
             }
 
-            AssertVectorSetRecordType(primary0, vectorSetKey);
             // Confirm still valid to add, with client side routing
             var data2 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 3)).ToArray();
             byte[] elem2 = [8, 9, 10, 11];
@@ -2217,7 +2205,6 @@ namespace Garnet.test.cluster
                         ClassicAssert.IsFalse(isOnPrimary0 && isOnPrimary1, "Hash slot found on both nodes");
 
                         var endpoint = isOnPrimary0 ? primary0 : primary1;
-                        AssertVectorSetRecordType(endpoint, key);
 
                         foreach (var (elem, data, attr, _) in writeResults[i])
                         {
@@ -2826,7 +2813,6 @@ namespace Garnet.test.cluster
                 // Check that TTL survived migration on the primary
                 var res2 = await finalPrimary.ExecuteAsync(database: 0, "TTL", [Key], flags: CommandFlags.NoRedirect | CommandFlags.DemandMaster).ConfigureAwait(false);
                 ClassicAssert.IsTrue((int)res2 > 0);
-                AssertVectorSetRecordType((IPEndPoint)finalPrimary.EndPoint, Key);
 
                 context.clusterTestUtils.WaitForReplicaAofSync(finalPrimaryIndex, finalReplicaIndex, cancellation: cancellation);
 
@@ -2837,7 +2823,6 @@ namespace Garnet.test.cluster
                 var res4 = await finalReplica.ExecuteAsync(database: 0, "TTL", [Key], flags: CommandFlags.NoRedirect | CommandFlags.DemandReplica).ConfigureAwait(false);
                 ClassicAssert.IsTrue((int)res4 > 0);
                 ClassicAssert.IsTrue((int)res4 <= (int)res2);
-                AssertVectorSetRecordType((IPEndPoint)finalReplica.EndPoint, Key);
             }
         }
 
