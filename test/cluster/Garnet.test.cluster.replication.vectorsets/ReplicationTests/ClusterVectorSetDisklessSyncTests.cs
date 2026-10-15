@@ -39,6 +39,43 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.AttachReplicaToPrimary(replicaIndex, PrimaryIndex, logger: context.logger);
         }
 
+#if DEBUG
+        [Test]
+        public void VectorSetDisklessCheckpointDoesNotWriteToAof()
+        {
+            const string Key = "{vsdisk}checkpoint-no-aof";
+            SetupDisklessCluster(2);
+            PopulateVectorSet(PrimaryIndex, Key, count: 200);
+
+            string ReplicaTail() => context.nodes[ReplicaIndex].Metrics.GetInfoMetrics(InfoMetricsType.PERSISTENCE).Single(item => item.Name == "TailAddress").Value;
+            var initialTail = ReplicaTail();
+            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_After_Diskless_Checkpoint_Upsert;
+            ExceptionInjectionHelper.EnableException(pause);
+            var parkingSuspended = false;
+            try
+            {
+                _ = context.clusterTestUtils.ClusterReplicate(ReplicaIndex, PrimaryIndex, async: true, logger: context.logger);
+                ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(System.TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
+                ClassicAssert.AreEqual(initialTail, ReplicaTail(), "Vector Set checkpoint import must not append to the replica AOF before recovery resets it");
+
+                ExceptionInjectionHelper.SuspendParking();
+                parkingSuspended = true;
+                context.clusterTestUtils.WaitForReplicasConnected(PrimaryIndex, 1, logger: context.logger);
+                context.clusterTestUtils.ReadOnly(ReplicaIndex);
+                AssertFullyReplicated(PrimaryIndex, ReplicaIndex, Key);
+                AssertOwnsItsIndex(ReplicaIndex, PrimaryIndex, Key);
+            }
+            finally
+            {
+                if (!parkingSuspended)
+                    ExceptionInjectionHelper.SuspendParking();
+
+                ExceptionInjectionHelper.DisableException(pause);
+                ExceptionInjectionHelper.ResumeParking();
+            }
+        }
+#endif
+
         /// <summary>
         /// Populated sets travel by diskless full sync, then the replica reads them. This catches
         /// foreign IndexPtr dereferences that used to surface at NativeDiskANNMethods.card. Multiple
