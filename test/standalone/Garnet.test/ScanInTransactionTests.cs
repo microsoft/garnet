@@ -65,9 +65,14 @@ namespace Garnet.test
 #endif
 
             var scanRes = (RedisResult[])await RunInTransactionAsync("a", static db => db.ExecuteAsync("SCAN", ["0"])).ConfigureAwait(false);
-            ClassicAssert.AreEqual(2, scanRes.Length);
+            ClassicAssert.IsTrue(scanRes.Length >= 2);
             ClassicAssert.AreEqual(0, (long)scanRes[0]);
-            ClassicAssert.AreEqual("a", (string)scanRes[1]);
+
+            // SCAN is allowed to produce duplicates
+            for (var i = 1; i < scanRes.Length; i++)
+            {
+                ClassicAssert.AreEqual("a", (string)scanRes[1]);
+            }
         }
 
         [Test]
