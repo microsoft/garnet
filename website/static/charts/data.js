@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792022476109,
+  "lastUpdate": 1792022617431,
   "repoUrl": "https://github.com/microsoft/garnet",
   "entries": {
     "Benchmark": [],
@@ -922927,366 +922927,6 @@ window.BENCHMARK_DATA = {
       {
         "commit": {
           "author": {
-            "email": "15467143+TedHartMS@users.noreply.github.com",
-            "name": "Ted Hart",
-            "username": "TedHartMS"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "e2176b7a70818aacfd0b0ad75b14a9b61e96863e",
-          "message": "Refuse to serve when no HybridLog checkpoint is readable (#2153)",
-          "timestamp": "2026-09-21T10:41:22-07:00",
-          "tree_id": "ad1d9774a9a08847b58fb69e946b655f24be9874",
-          "url": "https://github.com/microsoft/garnet/commit/e2176b7a70818aacfd0b0ad75b14a9b61e96863e"
-        },
-        "date": 1790014176473,
-        "tool": "benchmarkdotnet",
-        "benches": [
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: AAD)",
-            "value": 37600.23640950521,
-            "unit": "ns",
-            "range": "± 166.44444488570568"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: AAD)",
-            "value": 44590.33732096354,
-            "unit": "ns",
-            "range": "± 300.07343238684933"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: AAD)",
-            "value": 52198.729654947914,
-            "unit": "ns",
-            "range": "± 379.84043604257783"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: AAD)",
-            "value": 140483.8604266827,
-            "unit": "ns",
-            "range": "± 1362.1706084839484"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: AAD)",
-            "value": 2621.5150833129883,
-            "unit": "ns",
-            "range": "± 18.130757103915045"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: AAD)",
-            "value": 151703.74407087054,
-            "unit": "ns",
-            "range": "± 1442.7056509996535"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: AAD)",
-            "value": 3063289.453125,
-            "unit": "ns",
-            "range": "± 52697.73629009039"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: AAD)",
-            "value": 43776.376597086586,
-            "unit": "ns",
-            "range": "± 1111.664435165235"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: AAD)",
-            "value": 54909.2944995777,
-            "unit": "ns",
-            "range": "± 1828.5294246179108"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: AAD)",
-            "value": 60215.80374581473,
-            "unit": "ns",
-            "range": "± 520.7482958586343"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: AAD)",
-            "value": 303256.5743582589,
-            "unit": "ns",
-            "range": "± 2117.409166386221"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: AAD)",
-            "value": 5723.513194492885,
-            "unit": "ns",
-            "range": "± 41.768931508684666"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: AAD)",
-            "value": 300390.615234375,
-            "unit": "ns",
-            "range": "± 3759.7969441801265"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: AAD)",
-            "value": 2797314.9088541665,
-            "unit": "ns",
-            "range": "± 43672.44426467737"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: ACL)",
-            "value": 38378.82436116537,
-            "unit": "ns",
-            "range": "± 154.19039304756768"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: ACL)",
-            "value": 44385.27791341146,
-            "unit": "ns",
-            "range": "± 578.0810174747407"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: ACL)",
-            "value": 52962.159016927086,
-            "unit": "ns",
-            "range": "± 210.1074161362579"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: ACL)",
-            "value": 140171.08503069196,
-            "unit": "ns",
-            "range": "± 1232.8357173152708"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: ACL)",
-            "value": 2524.9576822916665,
-            "unit": "ns",
-            "range": "± 42.56949980140067"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: ACL)",
-            "value": 145359.2754657452,
-            "unit": "ns",
-            "range": "± 1094.454412713562"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: ACL)",
-            "value": 3035850,
-            "unit": "ns",
-            "range": "± 61470.39781871091"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: ACL)",
-            "value": 41911.67704264323,
-            "unit": "ns",
-            "range": "± 265.4443450208384"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: ACL)",
-            "value": 52468.17741394043,
-            "unit": "ns",
-            "range": "± 906.2170351687275"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: ACL)",
-            "value": 59701.71274038462,
-            "unit": "ns",
-            "range": "± 703.5262396898727"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: ACL)",
-            "value": 285087.38141741074,
-            "unit": "ns",
-            "range": "± 981.8704897735427"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: ACL)",
-            "value": 5729.563375619741,
-            "unit": "ns",
-            "range": "± 17.19058418853437"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: ACL)",
-            "value": 299048.96414620534,
-            "unit": "ns",
-            "range": "± 1872.2352916440445"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: ACL)",
-            "value": 2895770.0721153845,
-            "unit": "ns",
-            "range": "± 17791.741348721018"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: AOF)",
-            "value": 38488.08339436849,
-            "unit": "ns",
-            "range": "± 207.94778994897712"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: AOF)",
-            "value": 51584.952016977164,
-            "unit": "ns",
-            "range": "± 489.95032766886095"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: AOF)",
-            "value": 51883.690970284595,
-            "unit": "ns",
-            "range": "± 303.93501745344304"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: AOF)",
-            "value": 140989.44373497597,
-            "unit": "ns",
-            "range": "± 1558.5913494967524"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: AOF)",
-            "value": 2612.5242379995493,
-            "unit": "ns",
-            "range": "± 11.076520894137687"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: AOF)",
-            "value": 151455.95703125,
-            "unit": "ns",
-            "range": "± 658.6461117829554"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: AOF)",
-            "value": 3148016.0714285714,
-            "unit": "ns",
-            "range": "± 18486.30779792171"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: AOF)",
-            "value": 42681.34906475361,
-            "unit": "ns",
-            "range": "± 201.4364773177418"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: AOF)",
-            "value": 61737.835286458336,
-            "unit": "ns",
-            "range": "± 1092.5321399294717"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: AOF)",
-            "value": 62362.18116396949,
-            "unit": "ns",
-            "range": "± 1458.575575094056"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: AOF)",
-            "value": 292920.1630859375,
-            "unit": "ns",
-            "range": "± 10289.292044764185"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: AOF)",
-            "value": 5960.254058837891,
-            "unit": "ns",
-            "range": "± 205.57512024100834"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: AOF)",
-            "value": 298726.279296875,
-            "unit": "ns",
-            "range": "± 4934.113125462544"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: AOF)",
-            "value": 2807051.7427884615,
-            "unit": "ns",
-            "range": "± 13478.444052316876"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: None)",
-            "value": 38714.97674239309,
-            "unit": "ns",
-            "range": "± 795.8938039180077"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: None)",
-            "value": 45158.502197265625,
-            "unit": "ns",
-            "range": "± 807.0300974327913"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: None)",
-            "value": 52854.92939196135,
-            "unit": "ns",
-            "range": "± 1158.8590792491286"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: None)",
-            "value": 140240.39916992188,
-            "unit": "ns",
-            "range": "± 793.9317005214393"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: None)",
-            "value": 2630.396792763158,
-            "unit": "ns",
-            "range": "± 57.07047733409333"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: None)",
-            "value": 152213.79557291666,
-            "unit": "ns",
-            "range": "± 1093.034841925138"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: None)",
-            "value": 3156156.0221354165,
-            "unit": "ns",
-            "range": "± 42998.53682577791"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: None)",
-            "value": 44404.757151884194,
-            "unit": "ns",
-            "range": "± 869.9647974433204"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: None)",
-            "value": 54664.906005859375,
-            "unit": "ns",
-            "range": "± 1006.6227832686783"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: None)",
-            "value": 60772.08251953125,
-            "unit": "ns",
-            "range": "± 359.7816538268797"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: None)",
-            "value": 289260.009765625,
-            "unit": "ns",
-            "range": "± 2724.844557629372"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: None)",
-            "value": 5890.72501141092,
-            "unit": "ns",
-            "range": "± 214.83214670946487"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: None)",
-            "value": 305206.81583180145,
-            "unit": "ns",
-            "range": "± 11770.20323144076"
-          },
-          {
-            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: None)",
-            "value": 2897685.3365384615,
-            "unit": "ns",
-            "range": "± 12844.674197037946"
-          }
-        ]
-      },
-      {
-        "commit": {
-          "author": {
             "email": "ezhang3333@gmail.com",
             "name": "ezhang3333",
             "username": "ezhang3333"
@@ -937897,6 +937537,198 @@ window.BENCHMARK_DATA = {
             "value": 3280618.0208333335,
             "unit": "ns",
             "range": "± 26650.21202306383"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c776a892aafb1646d0f7ec4b9d346182b52f8ab4",
+          "message": "Build(deps): Bump the github-actions group with 3 updates (#2241)\n\nBumps the github-actions group with 3 updates: [actions/upload-artifact](https://github.com/actions/upload-artifact), [actions/setup-node](https://github.com/actions/setup-node) and [actions/download-artifact](https://github.com/actions/download-artifact).\n\n\nUpdates `actions/upload-artifact` from 7.0.1 to 7.0.2\n- [Release notes](https://github.com/actions/upload-artifact/releases)\n- [Commits](https://github.com/actions/upload-artifact/compare/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a...cf430e030ddbb5b0abf93d22962f4752f3646cd9)\n\nUpdates `actions/setup-node` from 7.0.0 to 7.1.0\n- [Release notes](https://github.com/actions/setup-node/releases)\n- [Commits](https://github.com/actions/setup-node/compare/820762786026740c76f36085b0efc47a31fe5020...949feb2413d6458794dcd2491c4babbbce0c15c1)\n\nUpdates `actions/download-artifact` from 8.0.1 to 8.0.2\n- [Release notes](https://github.com/actions/download-artifact/releases)\n- [Commits](https://github.com/actions/download-artifact/compare/3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c...9000827ccba6bdab643e8b6fd33ac0654aef8333)\n\n---\nupdated-dependencies:\n- dependency-name: actions/upload-artifact\n  dependency-version: 7.0.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions\n- dependency-name: actions/setup-node\n  dependency-version: 7.1.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: github-actions\n- dependency-name: actions/download-artifact\n  dependency-version: 8.0.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-10-14T16:33:14-07:00",
+          "tree_id": "d4a13f86a285c643e3b917a51f6edeb707fbdbb8",
+          "url": "https://github.com/microsoft/garnet/commit/c776a892aafb1646d0f7ec4b9d346182b52f8ab4"
+        },
+        "date": 1792022529855,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: AAD)",
+            "value": 61069.49991861979,
+            "unit": "ns",
+            "range": "± 775.8117493822882"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: AAD)",
+            "value": 74306.474609375,
+            "unit": "ns",
+            "range": "± 1109.7967197640478"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: AAD)",
+            "value": 84575.4707845052,
+            "unit": "ns",
+            "range": "± 525.5018208449254"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: AAD)",
+            "value": 430464.9934895833,
+            "unit": "ns",
+            "range": "± 2170.9590902826867"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: AAD)",
+            "value": 8620.608285757211,
+            "unit": "ns",
+            "range": "± 130.05569536406236"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: AAD)",
+            "value": 438317.0703125,
+            "unit": "ns",
+            "range": "± 12931.12388880074"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: AAD)",
+            "value": 3876548.046875,
+            "unit": "ns",
+            "range": "± 28679.4302603784"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: ACL)",
+            "value": 67154.08561862246,
+            "unit": "ns",
+            "range": "± 2647.6666041937956"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: ACL)",
+            "value": 77336.66281628965,
+            "unit": "ns",
+            "range": "± 3674.4010046321523"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: ACL)",
+            "value": 91871.2109375,
+            "unit": "ns",
+            "range": "± 935.808302645694"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: ACL)",
+            "value": 404647.8092447917,
+            "unit": "ns",
+            "range": "± 3692.4536713542407"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: ACL)",
+            "value": 8649.008614676339,
+            "unit": "ns",
+            "range": "± 145.884417922521"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: ACL)",
+            "value": 423628.8260323661,
+            "unit": "ns",
+            "range": "± 4024.422595067814"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: ACL)",
+            "value": 3887759.1145833335,
+            "unit": "ns",
+            "range": "± 39604.314023218154"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: AOF)",
+            "value": 60841.695149739586,
+            "unit": "ns",
+            "range": "± 623.0743721023401"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: AOF)",
+            "value": 85483.28531901042,
+            "unit": "ns",
+            "range": "± 935.364280189168"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: AOF)",
+            "value": 82539.77835518973,
+            "unit": "ns",
+            "range": "± 652.9110142307404"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: AOF)",
+            "value": 410591.89453125,
+            "unit": "ns",
+            "range": "± 5225.396406386238"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: AOF)",
+            "value": 8292.171325683594,
+            "unit": "ns",
+            "range": "± 73.15701960406156"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: AOF)",
+            "value": 424851.5950520833,
+            "unit": "ns",
+            "range": "± 6887.0720792140655"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: AOF)",
+            "value": 3920744.8958333335,
+            "unit": "ns",
+            "range": "± 45882.17711199985"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetCommand(Params: None)",
+            "value": 62109.886881510414,
+            "unit": "ns",
+            "range": "± 821.9263717248078"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonSetCommand(Params: None)",
+            "value": 74726.66341145833,
+            "unit": "ns",
+            "range": "± 849.4095873578285"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetDeepPath(Params: None)",
+            "value": 83637.37095424107,
+            "unit": "ns",
+            "range": "± 782.9627375752183"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayPath(Params: None)",
+            "value": 423618.3170572917,
+            "unit": "ns",
+            "range": "± 7493.357613226552"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetArrayElementsPath(Params: None)",
+            "value": 8368.389485677084,
+            "unit": "ns",
+            "range": "± 98.31957231602904"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetFilterPath(Params: None)",
+            "value": 420176.8489583333,
+            "unit": "ns",
+            "range": "± 3928.5108927488436"
+          },
+          {
+            "name": "BDN.benchmark.Operations.JsonOperations.ModuleJsonGetRecursive(Params: None)",
+            "value": 3885627.5520833335,
+            "unit": "ns",
+            "range": "± 24995.165057136375"
           }
         ]
       }
