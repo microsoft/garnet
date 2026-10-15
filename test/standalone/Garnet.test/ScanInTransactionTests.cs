@@ -93,7 +93,10 @@ namespace Garnet.test
         /// </summary>
         private static async Task<RedisResult> RunInTransactionAsync(string mutateKey, Func<IDatabase, Task<RedisResult>> queueCommand)
         {
-            using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig(allowAdmin: true)).ConfigureAwait(false);
+            var config = TestUtils.GetConfig(allowAdmin: true);
+            config.HeartbeatInterval = TimeSpan.MaxValue; // Keep the PINGs out of the transactions
+            using var redis = await ConnectionMultiplexer.ConnectAsync(config).ConfigureAwait(false);
+
             try
             {
                 var db = redis.GetDatabase(0);
