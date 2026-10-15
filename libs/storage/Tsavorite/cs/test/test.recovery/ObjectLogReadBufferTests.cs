@@ -92,6 +92,58 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
+        [TestCase(0, 1UL << 31)]
+        [TestCase(0, (1UL << 31) + 1)]
+        [TestCase(0, 1UL << 32)]
+        [TestCase(int.MaxValue - 1, 2UL)]
+        [TestCase(int.MaxValue, 1UL)]
+        public void PositionAdvanceRejectsSegmentArithmeticOverflow(int startSegmentId, ulong segmentsToAdvance)
+        {
+            const int segmentSizeBits = 22;
+            var position = new ObjectLogFilePositionInfo(0, segmentSizeBits) { SegmentId = startSegmentId, Offset = 100 };
+            var originalWord = position.word;
+
+            Assert.Throws<InvalidDataException>(() => position.Advance(segmentsToAdvance * position.SegmentSize));
+            Assert.That(position.word, Is.EqualTo(originalWord));
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
+        public void PositionAdvanceRejectsMaximumByteCount()
+        {
+            var position = new ObjectLogFilePositionInfo(0, 22) { Offset = 100 };
+            var originalWord = position.word;
+
+            Assert.Throws<InvalidDataException>(() => position.Advance(ulong.MaxValue));
+            Assert.That(position.word, Is.EqualTo(originalWord));
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
+        [TestCase(22, int.MaxValue)]
+        [TestCase(30, (1 << 30) - 1)]
+        public void PositionAdvanceAtMaximumSegment(int segmentSizeBits, int maxSegmentId)
+        {
+            var position = new ObjectLogFilePositionInfo(0, segmentSizeBits) { SegmentId = maxSegmentId - 1, Offset = 100 };
+            position.Advance(position.SegmentSize);
+            Assert.That(position.SegmentId, Is.EqualTo(maxSegmentId));
+            Assert.That(position.Offset, Is.EqualTo(100UL));
+
+            position.Advance(position.RemainingSizeInSegment - 1);
+            Assert.That(position.Offset, Is.EqualTo(position.SegmentSize - 1));
+            var originalWord = position.word;
+
+            Assert.Throws<InvalidDataException>(() => position.Advance(1));
+            Assert.That(position.word, Is.EqualTo(originalWord));
+            Assert.Throws<InvalidDataException>(() => position.AdvanceToNextSegment());
+            Assert.That(position.word, Is.EqualTo(originalWord));
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("Smoke")]
         [TestCase(0, 500UL, 0, 100UL, 400UL)]
         [TestCase(1, 0UL, 0, SegmentSize - 100, 100UL)]
         [TestCase(2, 5UL, 0, SegmentSize - 10, SegmentSize + 15)]
