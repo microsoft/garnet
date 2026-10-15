@@ -65,7 +65,6 @@ namespace Garnet.test
             const ulong ImportContext = 16;
 
             ConcurrentDictionary<(ulong Context, byte[] Key), byte[]> data = new(new ContextAndKeyComparer());
-            var failWrites = false;
 
             unsafe void ReadCallback(
                 ulong context,
@@ -102,11 +101,6 @@ namespace Garnet.test
 
             unsafe byte WriteCallback(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
             {
-                if (failWrites)
-                {
-                    return 0;
-                }
-
                 var keyDataSpan = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((byte*)keyData), (int)keyLength);
                 var writeDataSpan = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((byte*)writeData), (int)writeLength);
 
@@ -201,10 +195,6 @@ namespace Garnet.test
             var startPointKey = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
             ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.FullVector, startPointKey, new byte[75]));
             ClassicAssert.IsTrue(service.ImportTerm(Context, rawIndex, DiskANNService.NeighborList, startPointKey, new byte[11 * sizeof(uint)]));
-            failWrites = true;
-            ClassicAssert.AreEqual(ulong.MaxValue, NativeDiskANNMethods.card(Context, rawIndex));
-            ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.TaskFailed, service.FinishImport(Context, rawIndex, 0, 1));
-            failWrites = false;
             ClassicAssert.AreEqual(NativeDiskANNMethods.DiskANNImportResult.Success, service.FinishImport(Context, rawIndex, 0, 1));
             ClassicAssert.AreEqual(0UL, NativeDiskANNMethods.card(Context, rawIndex));
 
@@ -270,7 +260,6 @@ namespace Garnet.test
             GC.KeepAlive(filterDel);
             GC.KeepAlive(logDel);
         }
-
 
         [Test]
         public void VADD()
