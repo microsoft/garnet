@@ -1496,6 +1496,22 @@ namespace Garnet.test
             ClassicAssert.IsTrue(exception);
         }
 
+        [TestCase(1L)]
+        [TestCase(100L)]
+        public void SingleIncrementFromLongMinValue(long increment)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "test";
+            db.StringSet(key, long.MinValue.ToString(CultureInfo.InvariantCulture));
+
+            var result = increment == 1 ? db.StringIncrement(key) : db.StringIncrement(key, increment);
+            var expected = long.MinValue + increment;
+
+            ClassicAssert.AreEqual(expected, result);
+            ClassicAssert.AreEqual(expected.ToString(CultureInfo.InvariantCulture), db.StringGet(key).ToString());
+        }
+
         [Test]
         public void SimpleIncrementByFloatWithNoKey()
         {

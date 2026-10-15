@@ -215,22 +215,20 @@ namespace Garnet.common
         /// <returns>True if the buffer which <paramref name="source"/> points to consisted only of a valid signed 64-bit integer, otherwise false</returns>
         public static bool TryReadInt64(int length, byte* source, out long result)
         {
+            result = 0;
+            if (length == 0)
+                return false;
+
             var isNegative = *source == '-';
             var beg = isNegative ? source + 1 : source;
             var len = isNegative ? length - 1 : length;
-            result = 0;
 
             // Do not allow leading zeros
-            if (len > 1 && *beg == '0')
+            if (len == 0 || (len > 1 && *beg == '0'))
                 return false;
 
-            // Parse number and check consumed bytes to avoid alphanumeric strings
-            if (!TryParse(new ReadOnlySpan<byte>(beg, len), out result))
-                return false;
-
-            // Negate if parsed value has a leading negative sign
-            result = isNegative ? -result : result;
-            return true;
+            // Parse the sign as well so long.MinValue does not overflow as a positive magnitude.
+            return TryParse(new ReadOnlySpan<byte>(source, length), out result);
         }
 
         /// <summary>
