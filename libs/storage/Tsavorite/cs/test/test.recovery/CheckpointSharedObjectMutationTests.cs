@@ -246,30 +246,34 @@ namespace Tsavorite.test.recovery
             => await RecoveredVersionCarriesItsOwnContentCore(checkpointType).ConfigureAwait(false);
 
         /// <summary>
-        /// The Snapshot case of <see cref="RecoveredVersionCarriesItsOwnContent"/>, which currently <b>fails</b> and is
-        /// disabled pending investigation rather than deleted.
+        /// The Snapshot case of <see cref="RecoveredVersionCarriesItsOwnContent"/>, which fails <b>intermittently</b> and is
+        /// marked <see cref="ExplicitAttribute"/> pending investigation rather than deleted.
         /// </summary>
         /// <remarks>
-        /// Observed: Snapshot recovers the <c>(v)</c> record — address 64, below the pre-RCU tail of 96 — carrying 9 items,
-        /// which is <c>(v+1)</c>'s content. FoldOver under the identical sequence recovers <c>(v)</c> with its correct 8.
-        /// So the superseded record survives with its successor's content, which is the exact shape of the hazard the
-        /// serialized-object cache exists to prevent.
+        /// Observed roughly one run in six: Snapshot recovers the <c>(v)</c> record — address 64, below the pre-RCU tail of
+        /// 96 — carrying 9 items, which is <c>(v+1)</c>'s content. FoldOver under the identical sequence passes every run.
         /// <para>
-        /// What is not yet established is whether this is a genuine defect or an artifact of this fixture. Two candidates
-        /// worth checking first: whether <c>(v)</c> is recovered from the main log rather than from the snapshot file,
-        /// because it lies below the snapshot's start address, in which case the image read is the later main-log flush of
-        /// the mutated object; and whether the snapshot flush coordination — installed during <c>WAIT_FLUSH</c>, while this
-        /// test's RMW runs on entry to that phase — is yet in place for <c>CheckpointNeedsSourceImage</c> to consult.
+        /// The <c>DoSerializeCount</c> assertion above passes even on the failing runs, so the <c>(v)</c> image <b>was</b>
+        /// preserved and the failure is not "the cache declined to fire". That makes this a race between preserving the
+        /// image and the snapshot flush choosing which bytes to write, not a missing-guard problem — and an intermittent
+        /// one, which is why a single passing run proves nothing here.
+        /// <para>
+        /// <c>(v)</c> is in the mutable region throughout, so it is not being recovered from a later main-log flush.
+        /// The remaining candidate is the snapshot flush coordination, which is installed during <c>WAIT_FLUSH</c>
+        /// (<c>SnapshotCheckpointSMTask</c>) while an RMW can need the image from <c>IN_PROGRESS</c> onward; a null
+        /// coordination makes <c>CheckpointNeedsSourceImage</c> answer conservatively true, so lateness alone would cache
+        /// more rather than less, and the ordering nearer the flush is what needs examining.
+        /// </para>
         /// </para>
         /// <para>
         /// Resolve before retiring the serialized-object cache: if it is a real defect it must be fixed independently, and
-        /// if it is a fixture artifact this test needs to be corrected so it guards the right thing.
+        /// if it is a fixture artifact this test needs correcting so it guards the right thing. Run it in a loop, not once.
         /// </para>
         /// </remarks>
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        [Ignore("Reveals an unexplained Snapshot result: (v) recovers carrying (v+1) content. See the remarks; must be resolved before cache-removal.")]
+        [Explicit("Intermittent (~1 in 6): Snapshot recovers (v) carrying (v+1) content, with the image provably preserved. See the remarks; must be resolved before cache-removal.")]
         public async Task RecoveredVersionCarriesItsOwnContent_Snapshot()
             => await RecoveredVersionCarriesItsOwnContentCore(CheckpointType.Snapshot).ConfigureAwait(false);
 
@@ -303,11 +307,13 @@ namespace Tsavorite.test.recovery
                 shared.Add(ii);
 
             long sourceTail, newRecordTail;
+            SharedListHeapObject sourceObject = null;
             var writeStore = CreateStore(ckptLog, ckptObjLog, dir);
             try
             {
+                sourceObject = new SharedListHeapObject(shared);
                 using (var session = writeStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
-                    _ = session.BasicContext.Upsert(key, new SharedListHeapObject(shared), Empty.Default);
+                    _ = session.BasicContext.Upsert(key, sourceObject, Empty.Default);
                 sourceTail = writeStore.Log.TailAddress;
 
                 // Pause on entry to WAIT_FLUSH: IN_PROGRESS has been published and the fuzzy region (which opened at the
@@ -332,6 +338,12 @@ namespace Tsavorite.test.recovery
                 // (v+1) content. Only the preserved image still holds the pre-mutation bytes.
                 Assert.That(shared, Has.Count.EqualTo(InitialCount + 1), "The RMW did not take the CopyUpdate path");
                 Assert.That(newRecordTail, Is.GreaterThan(sourceTail), "The RCU did not allocate a new record");
+
+                // Distinguishes "the (v) image was never preserved" from "it was preserved but not used": the cache
+                // serializes the source object, so a count of zero means CheckpointNeedsSourceImage said no.
+                Assert.That(sourceObject.DoSerializeCount, Is.GreaterThanOrEqualTo(1),
+                    $"{checkpointType}: the (v) object was never serialized during the RMW, so its pre-mutation image was "
+                    + "never preserved -- CheckpointNeedsSourceImage returned false for this record");
 
                 pause.Release.Set();
                 await writeStore.CompleteCheckpointAsync().ConfigureAwait(false);
