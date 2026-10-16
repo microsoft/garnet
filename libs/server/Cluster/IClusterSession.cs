@@ -28,7 +28,7 @@ namespace Garnet.server
         bool IsInternalWriteSession { get; }
 
         /// <summary>
-        /// Whether local primary application writes are paused for failover.
+        /// Whether local application writes are paused for failover, including during demotion.
         /// </summary>
         bool IsWritePaused { get; }
 
