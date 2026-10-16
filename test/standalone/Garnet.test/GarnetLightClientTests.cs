@@ -230,6 +230,52 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task OutOfLineAdmissionQueueIsCreatedOnFirstOutOfLineRequest()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 256,
+                requestPageSizeBytes: 256,
+                requestPageCount: 2,
+                maxOutstandingRequests: 8,
+                maxOutstandingCompletions: 8,
+                maxConcurrentNetworkSends: 8,
+                maxOutOfLineRentedBytes: 4096,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
+            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var writer = GetNetworkWriter(db);
+            ClassicAssert.AreEqual("PONG", await db.PingAsync().ConfigureAwait(false));
+            ClassicAssert.IsNull(GetMemoryThrottle(writer), "An inline-only client must not allocate the out-of-line admission queue.");
+
+            var value = new string('x', 300);
+            ClassicAssert.AreEqual(value, await db.ExecuteForStringResultAsync(ECHO, [value]).ConfigureAwait(false));
+            var queue = GetMemoryThrottle(writer);
+            ClassicAssert.IsNotNull(queue, "An out-of-line request must create the admission queue.");
+            ClassicAssert.AreSame(queue, GetMemoryThrottle(writer));
+        }
+
+        [Test]
+        public async Task OutOfLineAdmissionAfterRetireIsRejectedWhenQueueWasNeverCreated()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using var db = TestUtils.GetGarnetLightClient();
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            var writer = GetNetworkWriter(db);
+            ClassicAssert.IsNull(GetMemoryThrottle(writer));
+            ClassicAssert.IsTrue(writer.TryRetire());
+
+            Assert.Throws<ObjectDisposedException>(() => writer.AdmitOutOfLineRental(64, CancellationToken.None));
+            Assert.ThrowsAsync<ObjectDisposedException>(async () => await writer.RentMemoryThrottle(64, CancellationToken.None).ConfigureAwait(false));
+        }
+
+        [Test]
         public async Task ReconnectFaultsOperationWaitingOnMemoryAdmission([Values] bool useTLS)
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);

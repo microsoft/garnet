@@ -63,7 +63,8 @@ namespace Garnet.client
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
         readonly MemoryThrottle outOfLineRentedBytesThrottle;
-        readonly WaiterQueue<MemoryThrottle, int> memoryThrottle;
+        // Created on the first out-of-line admission, so writers that only send inline requests never allocate it.
+        WaiterQueue<MemoryThrottle, int> memoryThrottle;
         readonly GarnetLightClientTcpNetworkHandler networkHandler;
         readonly ILogger logger;
         readonly long minMemoryFootprintBytes;
@@ -118,7 +119,6 @@ namespace Garnet.client
             this.networkBufferSettings = new NetworkBufferSettings(options.NetworkBufferSizeBytes, options.NetworkBufferSizeBytes);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
             this.outOfLineRentedBytesThrottle = new MemoryThrottle(options.MaxOutOfLineRentedBytes);
-            this.memoryThrottle = new WaiterQueue<MemoryThrottle, int>(this.outOfLineRentedBytesThrottle);
             this.minMemoryFootprintBytes = options.MinMemoryFootprint();
             this.maxMemoryFootprintBytes = options.MaxMemoryFootprint();
 
@@ -178,7 +178,7 @@ namespace Garnet.client
 
             // Fault parked admissions and reject new ones. Admitted in-flight rentals release their bytes
             // normally; release after dispose is accounting-only and safe.
-            memoryThrottle.Dispose();
+            Volatile.Read(ref memoryThrottle)?.Dispose();
             return true;
         }
 
@@ -188,7 +188,32 @@ namespace Garnet.client
                 return;
 
             channel.Dispose();
-            memoryThrottle.Dispose();
+            Volatile.Read(ref memoryThrottle)?.Dispose();
+        }
+
+        WaiterQueue<MemoryThrottle, int> MemoryThrottleQueue
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Volatile.Read(ref memoryThrottle) ?? CreateMemoryThrottleQueue();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        WaiterQueue<MemoryThrottle, int> CreateMemoryThrottleQueue()
+        {
+            var created = new WaiterQueue<MemoryThrottle, int>(outOfLineRentedBytesThrottle);
+            var existing = Interlocked.CompareExchange(ref memoryThrottle, created, null);
+            if (existing != null)
+            {
+                created.Dispose();
+                return existing;
+            }
+
+            // TryRetire and Close set their flag with a full fence and then dispose any published queue; this
+            // publication is likewise fenced before reading the flags. Either they dispose this queue or this
+            // check does, so a queue published during teardown still rejects admissions. Dispose is idempotent.
+            if (Retiring || Closed)
+                created.Dispose();
+            return created;
         }
 
         static long SaturatingAdd(long left, long right)
@@ -209,16 +234,17 @@ namespace Garnet.client
             => LightRequestContext.GetRequestBufferAllocationSize(networkPool, length);
 
         internal ValueTask<bool> RentMemoryThrottle(int allocationSize, CancellationToken token)
-            => memoryThrottle.AdmitAsync(allocationSize, token);
+            => MemoryThrottleQueue.AdmitAsync(allocationSize, token);
 
         internal bool AdmitOutOfLineRental(int allocationSize, CancellationToken token)
-            => memoryThrottle.Admit(allocationSize, token);
+            => MemoryThrottleQueue.Admit(allocationSize, token);
 
+        // Release and rent follow a successful admission, so the queue is already published.
         internal void ReleaseOutOfLineRental(int allocationSize)
-            => memoryThrottle.Release(allocationSize);
+            => Volatile.Read(ref memoryThrottle).Release(allocationSize);
 
         internal LightRequestContext RentAdmittedOutOfLineBuffer(int length, int reservedBytes)
-            => LightRequestContext.RentRequestBuffer(networkPool, length, memoryThrottle, reservedBytes);
+            => LightRequestContext.RentRequestBuffer(networkPool, length, Volatile.Read(ref memoryThrottle), reservedBytes);
 
         /// <summary>
         /// Attempts to reserve the paired request address and optional completion ticket for one send operation.
