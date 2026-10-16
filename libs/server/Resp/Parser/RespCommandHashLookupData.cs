@@ -223,6 +223,8 @@ namespace Garnet.server
             Add("VREM", RespCommand.VREM);
             Add("VSETATTR", RespCommand.VSETATTR);
             Add("VSIM", RespCommand.VSIM);
+            Add("XVCREATE", RespCommand.XVCREATE);
+            Add("XVIMPORT", RespCommand.XVIMPORT);
 
             // Range Index commands (dot-prefixed wire names)
             Add("RI.CREATE", RespCommand.RICREATE);

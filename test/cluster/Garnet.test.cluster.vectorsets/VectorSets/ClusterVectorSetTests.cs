@@ -12,6 +12,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -2374,7 +2375,7 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public async Task VSETATTRReplicatesAsync()
+        public async Task VSETATTRReplicatesAsync([Values(32, 3 * 1024 * 1024)] int attributeSize)
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
@@ -2393,15 +2394,28 @@ namespace Garnet.test.cluster
             var primaryServer = connection.GetServer(primary);
             var secondaryServer = connection.GetServer(secondary);
 
-            var addRes = (int)await primaryServer.ExecuteAsync(0, "VADD", [Key, "VALUES", "3", "1", "2", "3", Element]).ConfigureAwait(false);
+            var attributes = new string('a', attributeSize);
+            var updatedAttributes = new string('b', attributeSize + 1);
+            var addRes = (int)await primaryServer.ExecuteAsync(0, "VADD", [Key, "VALUES", "3", "1", "2", "3", Element, "NOQUANT", "SETATTR", attributes]).ConfigureAwait(false);
             ClassicAssert.AreEqual(1, addRes);
-            var setRes = (int)await primaryServer.ExecuteAsync(0, "VSETATTR", [Key, Element, "{\"foo\":\"bar\"}"]).ConfigureAwait(false);
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+            ClassicAssert.AreEqual("OK", (string)await secondaryServer.ExecuteAsync(0, "READONLY", []).ConfigureAwait(false));
+            ClassicAssert.AreEqual(attributes, (string)await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
+
+            var setRes = (int)await primaryServer.ExecuteAsync(0, "VSETATTR", [Key, Element, updatedAttributes]).ConfigureAwait(false);
             ClassicAssert.AreEqual(1, setRes);
 
             context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
 
-            var getRes = (string)await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element]).ConfigureAwait(false);
-            ClassicAssert.AreEqual("{\"foo\":\"bar\"}", getRes);
+            var getRes = (string)await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false);
+            ClassicAssert.AreEqual(updatedAttributes, getRes);
+            ClassicAssert.AreEqual(1, (int)await secondaryServer.ExecuteAsync(0, "VCARD", [Key], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
+            CollectionAssert.AreEqual(new[] { Element }, (string[])await secondaryServer.ExecuteAsync(0, "VSIM", [Key, "VALUES", 3, 1, 2, 3, "COUNT", 1], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
+
+            ClassicAssert.AreEqual(1, (int)await primaryServer.ExecuteAsync(0, "VREM", [Key, Element]).ConfigureAwait(false));
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+            ClassicAssert.AreEqual(0, (int)await secondaryServer.ExecuteAsync(0, "VISMEMBER", [Key, Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false));
+            ClassicAssert.IsTrue((await secondaryServer.ExecuteAsync(0, "VGETATTR", [Key, Element], flags: CommandFlags.NoRedirect).ConfigureAwait(false)).IsNull);
         }
 
         [Test]
@@ -2826,9 +2840,9 @@ namespace Garnet.test.cluster
             }
         }
 
-        private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true)
+        private async Task<(List<ShardInfo> Shards, List<ushort> Slots)> SimpleSetupClusterAsync(int shardCount, int primaryCount, int replicaCount, bool onDemandCheckpoint = false, bool useTLS = true, int replayTasks = 1, int? physicalLogs = null)
         {
-            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: sublogCount, threadPoolMinIOCompletionThreads: 512);
+            context.CreateInstances(shardCount, useTLS: useTLS, enableAOF: true, AofMemorySize: DefaultAOFMemorySize, OnDemandCheckpoint: onDemandCheckpoint, sublogCount: physicalLogs ?? sublogCount, threadPoolMinIOCompletionThreads: 512, replayTaskCount: replayTasks);
             context.CreateConnection(useTLS: useTLS);
             var ret = await context.clusterTestUtils.SimpleSetupClusterAsync(primary_count: primaryCount, replica_count: replicaCount);
 
@@ -2841,6 +2855,9 @@ namespace Garnet.test.cluster
 
             return ret;
         }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "replicationReplayFailure")]
+        private static extern ref ExceptionDispatchInfo GetVectorReplayFailure(VectorManager manager);
 
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
         private static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);

@@ -929,6 +929,9 @@ namespace Garnet.test.cluster
             clusterTestUtils.MeetAndAssignSlots(primaryIndex, nodeCount, logger);
         }
 
+        /// <summary>Returns a node's AOF tail address as reported by INFO PERSISTENCE.</summary>
+        public string GetAofTailAddress(int nodeIndex) => nodes[nodeIndex].Metrics.GetInfoMetrics(InfoMetricsType.PERSISTENCE).Single(item => item.Name == "TailAddress").Value;
+
         /// <summary>Promotes replicaIndex, waits for the demoted node to sync, and asserts the roles swapped.</summary>
         public void FailoverTo(int replicaIndex, int oldPrimaryIndex)
         {
