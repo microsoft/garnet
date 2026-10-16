@@ -19,6 +19,11 @@ namespace Garnet.cluster
         public List<(PinnedSpanByte, bool)> Keys { private set; get; }
         public SketchStatus Status { private set; get; }
 
+        /// <summary>
+        /// Told each time <see cref="Status"/> changes, so requests waiting on the keys this sketch holds check again
+        /// </summary>
+        internal MigrationProgress Progress { get; set; }
+
         public Sketch(int keyCount = 1 << 20)
         {
             if (!(keyCount > 0 && (keyCount & (keyCount - 1)) == 0))
@@ -101,13 +106,18 @@ namespace Garnet.cluster
             for (var i = 0; i < (size >> 3); i++)
                 bitmap[i] = 0;
             Status = SketchStatus.INITIALIZING;
+            Progress?.Signal();
         }
 
         /// <summary>
         /// Set KeyMigrationStatus
         /// </summary>
         /// <param name="status"></param>
-        public void SetStatus(SketchStatus status) => Status = status;
+        public void SetStatus(SketchStatus status)
+        {
+            Status = status;
+            Progress?.Signal();
+        }
         #endregion
     }
 }

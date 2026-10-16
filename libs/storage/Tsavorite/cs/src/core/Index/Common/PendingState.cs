@@ -87,11 +87,11 @@ namespace Tsavorite.core
             /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal void CopyInputsForReadOrRMW<TKey, TSessionFunctionsWrapper>(TKey key, ref TInput input, ref TOutput output, TContext userContext,
-                    TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
+                    TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool, bool hoistKey = false)
                 where TKey : IKey, allows ref struct
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
-                CopyKey(key, bufferPool, sessionFunctions);
+                CopyKey(key, bufferPool, sessionFunctions, hoistKey);
 
                 if (this.input == default)
                 {
@@ -137,12 +137,13 @@ namespace Tsavorite.core
             }
 
             /// <summary>Copy the passed key into our <see cref="requestKey"/>.</summary>
-            internal void CopyKey<TKey, TSessionFunctionsWrapper>(TKey key, SectorAlignedBufferPool bufferPool, TSessionFunctionsWrapper sessionFunctions)
+            /// <param name="hoistKey">Copy the key even if it is pinned; see <see cref="ReadOptions.HoistKey"/>.</param>
+            internal void CopyKey<TKey, TSessionFunctionsWrapper>(TKey key, SectorAlignedBufferPool bufferPool, TSessionFunctionsWrapper sessionFunctions, bool hoistKey = false)
                 where TKey : IKey, allows ref struct
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
                 if (requestKey.IsEmpty)
-                    requestKey = ConditionallyHoistedKey.Create(key, bufferPool);
+                    requestKey = ConditionallyHoistedKey.Create(key, bufferPool, hoistKey);
                 else
                     Debug.Assert(sessionFunctions.Store.StoreFunctions.KeysEqual(requestKey, key), "pendingState.requestKey should not change keys");
             }

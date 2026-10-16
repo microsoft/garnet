@@ -63,6 +63,7 @@ namespace Garnet.cluster
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
                 this.sketch = sketch ?? new(keyCount: batchSize << 2);
+                this.sketch.Progress = session.clusterProvider.migrationManager.Progress;
                 storeScan = new StoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);

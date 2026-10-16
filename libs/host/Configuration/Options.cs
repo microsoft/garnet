@@ -467,7 +467,7 @@ namespace Garnet
         [Option("aof-replay-max-lag-bytes", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > AofReplayMaxLagBytes. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
         public int AofReplayMaxLagBytes { get; set; }
 
-        [Option("aof-sync-max-lag-bytes", Required = false, HelpText = "Stall primary AOF appends when the replication lag exceeds this budget, divided evenly per sublog (each sublog stalls at an even 1/m share). -1: disabled, >=1: max lag in bytes.")]
+        [Option("aof-sync-max-lag-bytes", Required = false, HelpText = "Stall primary AOF appends when the replication lag exceeds this budget, divided evenly per sublog (each sublog stalls at an even 1/m share). Writes that can wait are held back without occupying a thread once the lag of any sublog is within 1/8 of its share, so only appends already in flight stall at the share itself. -1: disabled, >=1: max lag in bytes.")]
         public long AofSyncMaxLagBytes { get; set; }
 
         [OptionValidation]

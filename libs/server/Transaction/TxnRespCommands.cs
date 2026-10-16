@@ -63,10 +63,20 @@ namespace Garnet.server
                 if (clusterSession != null)
                 {
                     txnManager.GetSlotVerificationInput(SessionAsking, out var clusterSlotVerificationInput);
+                    clusterSlotVerificationInput.canWait = CanSuspend;
 
                     if (txnManager.txnKeysParseState.Count > 0 &&
                         clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))
                     {
+                        // A key is being migrated. The transaction stays queued and the EXEC is verified again once
+                        // the migration moves on.
+                        if (clusterSlotVerificationInput.mustWait)
+                        {
+                            endReadHead = origReadHead;
+                            csvi.mustWait = true;
+                            return true;
+                        }
+
                         logger?.LogWarning("Failed CheckClusterTxnKeys");
                         txnManager.Reset(false);
                         txnManager.watchContainer.Reset();

@@ -41,30 +41,36 @@ namespace Garnet.client
         public override void SendResponse(byte[] buffer, int offset, int count, object context)
         {
             var cnt = Interlocked.Increment(ref throttleCount);
-            if (cnt < 0)
-            {
-                Interlocked.Decrement(ref throttleCount);
-                throw new Exception("Throttle count is negative");
-            }
             if (cnt > ThrottleMax)
                 throttle.Wait();
+
+            // The slot is released on this path too, so a sender queued behind this one is not stranded
+            if (!IsOpen)
+            {
+                CompleteBlockingSend();
+                throw new Exception("The network sender is closed");
+            }
 
             var s = reusableSaea.Checkout();
             s.SetBuffer(buffer, offset, count);
             s.UserToken = context;
+
+            bool pending;
             try
             {
-                if (!socket.SendAsync(s))
-                    SeaaBuffer_Completed(null, s);
+                pending = socket.SendAsync(s);
             }
             catch
             {
                 reusableSaea.Return(s);
-                if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
-                    throttle.Release();
+                CompleteBlockingSend();
                 // Rethrow exception as session is not usable
                 throw;
             }
+
+            // The socket finished the send synchronously, so there is no completion callback to wait for
+            if (!pending)
+                SeaaBuffer_Completed(null, s);
         }
 
         /// <inheritdoc />
@@ -76,20 +82,28 @@ namespace Garnet.client
         /// <inheritdoc />
         public override void DisposeNetworkSender(bool waitForSendCompletion)
         {
-            if (!waitForSendCompletion)
-                socket.Dispose();
-
             base.DisposeNetworkSender(waitForSendCompletion);
+
+            // Unlike the server's sender, this one is disposed from application threads, and its owner expects
+            // every send callback to have run before disposal returns
+            while (!IsClosed || Volatile.Read(ref throttleCount) > 0)
+                Thread.Yield();
+
             reusableSaea.Dispose();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SeaaBuffer_Completed(object sender, SocketAsyncEventArgs e)
         {
-            callback(e.UserToken);
-            reusableSaea.Return(e);
-            if (Interlocked.Decrement(ref throttleCount) >= ThrottleMax)
-                throttle.Release();
+            try
+            {
+                callback(e.UserToken);
+            }
+            finally
+            {
+                reusableSaea.Return(e);
+                CompleteBlockingSend();
+            }
         }
     }
 }

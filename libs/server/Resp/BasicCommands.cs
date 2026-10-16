@@ -239,7 +239,9 @@ namespace Garnet.server
             // network buffer, if the operation goes pending.
             var input = new StringInput(RespCommand.ASYNC);
 
-            var status = storageApi.GET_WithPending(key, ref input, ref output, asyncStarted, out var pending);
+            // The read may complete after this command returns and the network buffer holding the key has been reused,
+            // so a pending read copies the key rather than borrowing it.
+            var status = storageApi.GET_WithDetachedPending(key, ref input, ref output, asyncStarted, out var pending);
 
             if (pending)
             {
@@ -289,7 +291,9 @@ namespace Garnet.server
 
             for (; ; c++)
             {
-                if (c > 0 && !ParseGETAndKey(ref key))
+                // The socket has not taken the replies already handed to it, so end the run here and let the
+                // dispatch loop park the session before the next GET, which it re-reads from the same position
+                if (c > 0 && (sendSaturated || !ParseGETAndKey(ref key)))
                     break;
 
                 // Store index in context, since completions are not in order
@@ -1806,20 +1810,11 @@ namespace Garnet.server
             {
                 if (asyncCompleted < asyncStarted)
                 {
-                    asyncDone = new(0);
-                    if (dcurr > networkSender.GetResponseObjectHead())
-                        Send(networkSender.GetResponseObjectHead());
-                    try
-                    {
-                        networkSender.ExitAndReturnResponseObject();
-                        while (asyncCompleted < asyncStarted) asyncDone.Wait();
-                        asyncDone.Dispose();
-                        asyncDone = null;
-                    }
-                    finally
-                    {
-                        networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                    }
+                    ValueTask body;
+                    using (BeginAsyncCommand())
+                        body = AsyncBarrierBodyAsync();
+
+                    return CompleteAsyncCommand(body);
                 }
             }
             else

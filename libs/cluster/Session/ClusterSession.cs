@@ -34,18 +34,23 @@ namespace Garnet.cluster
         {
             /// <summary>No reply recorded; reaching <see cref="CompletePendingCommand"/> with it is a bug.</summary>
             Unset,
+            /// <summary>The command answers nothing, as with the replication stream.</summary>
+            None,
             /// <summary>Simple OK.</summary>
             Ok,
             /// <summary>The error in <see cref="pendingError"/>.</summary>
             Error,
             /// <summary>The replication offset as it stands when the wait completes.</summary>
             ReplicationOffset,
+            /// <summary>The address in <see cref="pendingAofAddress"/>, as a bulk string.</summary>
+            AofAddressValue,
         }
 
         ValueTask pendingCommand;
         bool hasPendingCommand;
         PendingReply pendingReply;
         ReadOnlyMemory<byte> pendingError;
+        AofAddress pendingAofAddress;
 
         readonly ILogger logger;
         ClusterSlotVerificationInput csvi;
@@ -122,6 +127,7 @@ namespace Garnet.cluster
             hasPendingCommand = false;
             pendingReply = default;
             pendingError = default;
+            pendingAofAddress = default;
 
             var invalidParameters = false;
 
@@ -208,6 +214,26 @@ namespace Garnet.cluster
             return true;
         }
 
+        /// <summary>
+        /// Hands a wait to <see cref="SuspendOn(ValueTask, PendingReply)"/> unless it has already completed. One that has
+        /// already failed raises here, as one that fails while the session is suspended raises when it resumes.
+        /// </summary>
+        /// <param name="wait">The work the command must wait for.</param>
+        /// <param name="reply">The reply to write when the wait completes.</param>
+        bool SuspendOnIfPending(ValueTask wait, PendingReply reply)
+        {
+            if (wait.IsCompletedSuccessfully)
+                return true;
+
+            if (wait.IsCompleted)
+            {
+                wait.GetAwaiter().GetResultGuarded();
+                return true;
+            }
+
+            return SuspendOn(wait, reply);
+        }
+
         public unsafe void CompletePendingCommand(ref byte* dcurr, ref byte* dend)
         {
             this.dcurr = dcurr;
@@ -216,6 +242,9 @@ namespace Garnet.cluster
             {
                 switch (pendingReply)
                 {
+                    case PendingReply.None:
+                        break;
+
                     case PendingReply.Ok:
                         while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref this.dcurr, this.dend))
                             SendAndReset();
@@ -228,6 +257,11 @@ namespace Garnet.cluster
 
                     case PendingReply.ReplicationOffset:
                         while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.replicationManager.ReplicationOffset.ToString(), ref this.dcurr, this.dend))
+                            SendAndReset();
+                        break;
+
+                    case PendingReply.AofAddressValue:
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(pendingAofAddress.ToString(), ref this.dcurr, this.dend))
                             SendAndReset();
                         break;
 
@@ -249,6 +283,25 @@ namespace Garnet.cluster
         {
             pendingReply = success ? PendingReply.Ok : PendingReply.Error;
             pendingError = success ? default : errorMessage;
+        }
+
+        /// <summary>
+        /// Records the outcome of a wait that answers with an address rather than a status, reporting the
+        /// error instead when the wait produced one.
+        /// </summary>
+        /// <param name="address">Address to answer with when <paramref name="errorMessage"/> is empty.</param>
+        /// <param name="errorMessage">The error the wait produced, or empty when it succeeded.</param>
+        void SetPendingAofAddress(AofAddress address, ReadOnlyMemory<byte> errorMessage = default)
+        {
+            if (!errorMessage.IsEmpty)
+            {
+                pendingReply = PendingReply.Error;
+                pendingError = errorMessage;
+                return;
+            }
+
+            pendingReply = PendingReply.AofAddressValue;
+            pendingAofAddress = address;
         }
 
         unsafe void SendAndReset() => responseFlusher(ref dcurr, ref dend);

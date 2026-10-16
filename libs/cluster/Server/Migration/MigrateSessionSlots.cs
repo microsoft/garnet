@@ -233,6 +233,12 @@ namespace Garnet.cluster
 
                     // Transition EPSM to MIGRATING
                     migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
+
+#if DEBUG
+                    // Only on Debug mode
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Migration_Slot_Keys_Transmitting).ConfigureAwait(false);
+#endif
+
                     await WaitForConfigPropagationAsync().ConfigureAwait(false);
 
                     // Transmit all keys gathered

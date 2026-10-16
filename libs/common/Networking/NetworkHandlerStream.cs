@@ -86,16 +86,20 @@ namespace Garnet.networking
 
             public override unsafe void Write(ReadOnlySpan<byte> buffer)
             {
+                var networkSender = garnetNetworkHandler.networkSender;
                 while (true)
                 {
-                    garnetNetworkHandler.networkSender.GetResponseObject();
-                    var head = garnetNetworkHandler.networkSender.GetResponseObjectHead();
-                    var tail = garnetNetworkHandler.networkSender.GetResponseObjectTail();
+                    networkSender.GetResponseObject();
+                    var head = networkSender.GetResponseObjectHead();
+                    var tail = networkSender.GetResponseObjectTail();
 
                     int copyBytes = Math.Min(buffer.Length, (int)(tail - head));
 
                     buffer.Slice(0, copyBytes).CopyTo(new Span<byte>(head, copyBytes));
-                    garnetNetworkHandler.networkSender.SendResponse(0, copyBytes);
+                    if (garnetNetworkHandler.sendNoWait)
+                        _ = networkSender.SendResponseNoWait(0, copyBytes);
+                    else
+                        _ = networkSender.SendResponse(0, copyBytes);
 
                     if (copyBytes == buffer.Length) break;
                     buffer = buffer.Slice(copyBytes);

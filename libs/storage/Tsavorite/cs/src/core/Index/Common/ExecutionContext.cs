@@ -170,9 +170,12 @@ namespace Tsavorite.core
             /// Waits until no driver owns the drain loop, so the caller can drain this context itself.
             /// </summary>
             /// <remarks>
-            /// Bounded by the device read the driver is waiting on: a driver holding the lease is either
-            /// running the drain or parked on a response that the device will deliver. Cold by construction -
-            /// reached only when a session is torn down while a read it issued is still in flight.
+            /// A driver holding the lease is either running the drain or parked until a device read completes, and
+            /// it gives the lease up from a thread pool work item once it does. The caller therefore holds its
+            /// thread for the device read and needs a free pool thread besides: callers that are themselves
+            /// pool threads can all be waiting here with none left to run the drivers they wait for. Cold by
+            /// construction - reached only when a session is torn down while a read it issued is still in flight -
+            /// and a caller on a thread that must not block has to make sure that is not the case.
             /// </remarks>
             [MethodImpl(MethodImplOptions.NoInlining)]
             internal void WaitForDriversToFinish()

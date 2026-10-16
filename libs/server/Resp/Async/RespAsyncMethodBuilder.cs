@@ -141,10 +141,12 @@ namespace Garnet.server
             }
             else
             {
-                // On any later suspension the state machine already lives in the box, and the reference
-                // handed to this method is a reference to the box's own field. Were it a copy instead, the
-                // resumed body would advance a state machine nothing else can see.
-                Debug.Assert(Unsafe.AreSame(ref ((RespAsyncBox<TStateMachine>)pending).StateMachine, ref stateMachine),
+                // On any later suspension the state machine already lives in the box. A struct body is handed a
+                // reference to the box's own field, and a class body is the object the box holds. Were it a
+                // copy instead, the resumed body would advance a state machine nothing else can see.
+                Debug.Assert(typeof(TStateMachine).IsValueType
+                        ? Unsafe.AreSame(ref ((RespAsyncBox<TStateMachine>)pending).StateMachine, ref stateMachine)
+                        : ReferenceEquals(((RespAsyncBox<TStateMachine>)pending).StateMachine, stateMachine),
                     "A suspending body was handed a copy of its state machine rather than the box's own.");
             }
 

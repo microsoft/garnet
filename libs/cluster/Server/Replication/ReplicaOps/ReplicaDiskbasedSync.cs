@@ -270,26 +270,29 @@ namespace Garnet.cluster
         /// <summary>
         /// Process request from primary to start recovery process from the retrieved checkpoint.
         /// </summary>
+        /// <remarks>
+        /// Recovering the checkpoint and replaying the AOF over it take as long as the store is large, so
+        /// they start off the thread that received the request.
+        /// </remarks>
         /// <param name="recoverStoreFromToken"></param>
         /// <param name="replayAOFMap"></param>
         /// <param name="primaryReplicationId"></param>
         /// <param name="remoteCheckpoint"></param>
         /// <param name="beginAddress"></param>
         /// <param name="recoveredReplicationOffset"></param>
-        /// <param name="errorMessage"></param>
-        /// <returns></returns>
-        public AofAddress TryReplicaDiskbasedRecovery(
+        /// <returns>The replication offset the replica recovered to, or the message of the error that failed the recovery.</returns>
+        public async Task<(AofAddress ReplicationOffset, ReadOnlyMemory<byte> ErrorMessage)> TryReplicaDiskbasedRecoveryAsync(
             bool recoverStoreFromToken,
             ulong replayAOFMap,
             string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
-            in AofAddress beginAddress,
-            ref AofAddress recoveredReplicationOffset,
-            out ReadOnlySpan<byte> errorMessage)
+            AofAddress beginAddress,
+            AofAddress recoveredReplicationOffset)
         {
+            await Task.Yield();
+
             try
             {
-                errorMessage = [];
                 UpdateLastPrimarySyncTime();
 
                 logger?.LogInformation("Replica Recover Store: {storeVersion}>[{sIndexToken} {sHlogToken}]",
@@ -297,12 +300,17 @@ namespace Garnet.cluster
                     remoteCheckpoint.metadata.storeIndexToken,
                     remoteCheckpoint.metadata.storeHlogToken);
 
-#pragma warning disable VSTHRD002 // The replica-recovery RESP path is synchronous and must complete before sending a response.
-                storeWrapper.RecoverCheckpointAsync(
+#if DEBUG
+                // Stands in for the synchronous stretches of a recovery, so it must hold the thread
+#pragma warning disable VSTHRD103
+                ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Pause_Replica_Recovery);
+#pragma warning restore VSTHRD103
+#endif
+
+                await storeWrapper.RecoverCheckpointAsync(
                     replicaRecover: true,
                     recoverStoreFromToken,
-                    remoteCheckpoint.metadata).AsTask().GetAwaiter().GetResult();
-#pragma warning restore VSTHRD002
+                    remoteCheckpoint.metadata).ConfigureAwait(false);
 
                 if (replayAOFMap > 0)
                 {
@@ -338,7 +346,7 @@ namespace Garnet.cluster
                 // Initialize in-memory checkpoint store and delete outdated checkpoint entries
                 logger?.LogInformation("Initializing CheckpointStore");
                 if (!InitializeCheckpointStore())
-                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TryReplicaDiskbasedRecovery));
+                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TryReplicaDiskbasedRecoveryAsync));
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
@@ -348,13 +356,12 @@ namespace Garnet.cluster
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetInternalWriteSession();
 
-                return this.replicationOffset;
+                return (this.replicationOffset, default);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(TryReplicaDiskbasedRecovery)}");
-                errorMessage = Encoding.ASCII.GetBytes(ex.Message);
-                return AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
+                logger?.LogError(ex, $"{nameof(TryReplicaDiskbasedRecoveryAsync)}");
+                return (AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1), Encoding.ASCII.GetBytes(ex.Message));
             }
             finally
             {

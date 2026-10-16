@@ -121,6 +121,11 @@ namespace Garnet.server
         /// <summary>
         /// Array slot verify (write result to network)
         /// </summary>
+        /// <remarks>
+        /// When <see cref="ClusterSlotVerificationInput.canWait"/> is set and a key of the request is being
+        /// migrated, nothing is written: the call returns true with <see cref="ClusterSlotVerificationInput.mustWait"/> set,
+        /// and the caller waits with <see cref="TryRegisterMigrationWaiter"/> before verifying again.
+        /// </remarks>
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
@@ -132,6 +137,10 @@ namespace Garnet.server
         /// <summary>
         /// Array slot verify with no response
         /// </summary>
+        /// <remarks>
+        /// A request that would have to wait for a migration counts as not servable, so a caller that only
+        /// looks ahead leaves it for its own verification to wait on.
+        /// </remarks>
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
@@ -139,6 +148,20 @@ namespace Garnet.server
         /// <param name="isTxn"></param>
         /// <returns></returns>
         unsafe bool NetworkMultiKeySlotVerifyNoResponse(ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ref byte* dcurr, ref byte* dend, bool isTxn = false);
+
+        /// <summary>
+        /// Registers a waiter to be notified when the migration a request is waiting on moves on.
+        /// </summary>
+        /// <remarks>
+        /// Valid after a verification that left <see cref="ClusterSlotVerificationInput.mustWait"/> set, and
+        /// relative to the migration state that verification observed.
+        /// </remarks>
+        /// <param name="waiter">Waiter to notify. Notified at most once per registration.</param>
+        /// <returns>
+        /// False if the migration has already moved on since the verification, in which case the waiter is not
+        /// registered and will not be notified: the caller verifies again instead of waiting.
+        /// </returns>
+        bool TryRegisterMigrationWaiter(IMigrationWaiter waiter);
 
         /// <summary>
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
@@ -165,6 +188,10 @@ namespace Garnet.server
         /// <param name="previousAddress"></param>
         /// <param name="currentAddress"></param>
         /// <param name="nextAddress"></param>
-        unsafe void ProcessPrimaryStream(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress);
+        /// <returns>
+        /// A completed task when the records were applied without waiting. Otherwise a task that completes once they are,
+        /// during which <paramref name="record"/> must stay valid.
+        /// </returns>
+        unsafe ValueTask ProcessPrimaryStreamAsync(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress);
     }
 }

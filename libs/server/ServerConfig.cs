@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -157,50 +158,67 @@ namespace Garnet.server
             var sbErrorMsg = new StringBuilder();
 
             if (unknownOption)
-                AppendError(sbErrorMsg, string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey));
-            else
             {
-                if (clusterUsername != null || clusterPassword != null)
-                {
-                    if (clusterUsername == null)
-                        logger?.LogWarning("Cluster username is not provided, will use new password with existing username");
-                    if (storeWrapper.clusterProvider != null)
-                        storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
-                    else
-                        AppendError(sbErrorMsg, "ERR Cluster is disabled.");
-                }
-
-                if (certFileName != null || certPassword != null)
-                {
-                    if (storeWrapper.serverOptions.TlsOptions != null)
-                    {
-                        if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
-                            AppendError(sbErrorMsg, certErrorMessage);
-                    }
-                    else
-                        _ = sbErrorMsg.AppendLine("ERR TLS is disabled.");
-                }
-
-                if (mainLogMemorySize != null)
-                    HandleMemorySizeChange(mainLogMemorySize, sbErrorMsg, isReadCache: false);
-                if (readCacheMemorySize != null)
-                    HandleMemorySizeChange(readCacheMemorySize, sbErrorMsg, isReadCache: true);
-                if (index != null)
-                {
-                    // Must block, we're on the network thread
-                    AsyncUtils.BlockingWait(HandleIndexSizeChangeAsync(index, sbErrorMsg));
-                }
-
-                if (dynamicSets != null)
-                {
-                    foreach (var (type, value) in dynamicSets)
-                    {
-                        if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
-                            AppendError(sbErrorMsg, error);
-                    }
-                }
+                AppendError(sbErrorMsg, string.Format(CmdStrings.GenericErrUnknownOptionConfigSet, unknownKey));
+                WriteConfigSetReply(sbErrorMsg);
+                return true;
             }
 
+            if (clusterUsername != null || clusterPassword != null)
+            {
+                if (clusterUsername == null)
+                    logger?.LogWarning("Cluster username is not provided, will use new password with existing username");
+                if (storeWrapper.clusterProvider != null)
+                    storeWrapper.clusterProvider?.UpdateClusterAuth(clusterUsername, clusterPassword);
+                else
+                    AppendError(sbErrorMsg, "ERR Cluster is disabled.");
+            }
+
+            if (certFileName != null || certPassword != null)
+            {
+                if (storeWrapper.serverOptions.TlsOptions != null)
+                {
+                    if (!storeWrapper.serverOptions.TlsOptions.UpdateCertFile(certFileName, certPassword, out var certErrorMessage))
+                        AppendError(sbErrorMsg, certErrorMessage);
+                }
+                else
+                    _ = sbErrorMsg.AppendLine("ERR TLS is disabled.");
+            }
+
+            if (mainLogMemorySize != null)
+                HandleMemorySizeChange(mainLogMemorySize, sbErrorMsg, isReadCache: false);
+            if (readCacheMemorySize != null)
+                HandleMemorySizeChange(readCacheMemorySize, sbErrorMsg, isReadCache: true);
+
+            if (index != null)
+            {
+                ValueTask body;
+                using (BeginAsyncCommand())
+                    body = ConfigSetIndexBodyAsync(index, sbErrorMsg, dynamicSets);
+
+                return CompleteAsyncCommand(body);
+            }
+
+            ApplyDynamicConfigSets(dynamicSets, sbErrorMsg);
+            WriteConfigSetReply(sbErrorMsg);
+
+            return true;
+        }
+
+        private void ApplyDynamicConfigSets(List<(ServerConfigType type, string value)> dynamicSets, StringBuilder sbErrorMsg)
+        {
+            if (dynamicSets == null)
+                return;
+
+            foreach (var (type, value) in dynamicSets)
+            {
+                if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
+                    AppendError(sbErrorMsg, error);
+            }
+        }
+
+        private unsafe void WriteConfigSetReply(StringBuilder sbErrorMsg)
+        {
             if (sbErrorMsg.Length == 0)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -211,8 +229,6 @@ namespace Garnet.server
                 while (!RespWriteUtils.TryWriteError(sbErrorMsg.ToString(), ref dcurr, dend))
                     SendAndReset();
             }
-
-            return true;
         }
 
         private void HandleMemorySizeChange(string memorySize, StringBuilder sbErrorMsg, bool isReadCache)
@@ -260,6 +276,28 @@ namespace Garnet.server
                 storeWrapper.sizeTracker.TargetSize = newMemorySize;
         }
 
+        /// <summary>
+        /// Applies an index resize, which grows the index a doubling at a time and parks the session for each
+        /// step, then finishes the CONFIG SET the resize was part of.
+        /// </summary>
+        /// <param name="index">Requested index size.</param>
+        /// <param name="sbErrorMsg">Errors accumulated by the settings applied before this one.</param>
+        /// <param name="dynamicSets">Runtime settings still to apply, or null if there are none.</param>
+        [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
+        private async ValueTask ConfigSetIndexBodyAsync(
+            string index, StringBuilder sbErrorMsg, List<(ServerConfigType type, string value)> dynamicSets)
+        {
+            await HandleIndexSizeChangeAsync(index, sbErrorMsg).ConfigureAwait(false);
+
+            ApplyDynamicConfigSets(dynamicSets, sbErrorMsg);
+            WriteConfigSetReply(sbErrorMsg);
+        }
+
+        /// <remarks>
+        /// Deliberately left on the default async builder: it is awaited by
+        /// <see cref="ConfigSetIndexBodyAsync"/>, which carries the session's builder, and a session may
+        /// register only one suspension at a time.
+        /// </remarks>
         private async Task HandleIndexSizeChangeAsync(string indexSize, StringBuilder sbErrorMsg)
         {
             if (!ServerOptions.TryParseSize(indexSize, out var newIndexSize))
@@ -301,7 +339,7 @@ namespace Garnet.server
             // Try to grow the index size by doubling it until it reaches the new size
             for (; currIndexSize < adjNewIndexSize; currIndexSize *= 2)
             {
-                if (!AsyncUtils.BlockingWait(storeWrapper.store.GrowIndexAsync()))
+                if (!await storeWrapper.store.GrowIndexAsync().ConfigureAwait(false))
                 {
                     AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeGrowFailed, CmdStrings.Index);
                     return;

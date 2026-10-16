@@ -139,6 +139,19 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public bool SendResponseNoWait(int offset, int size)
+        {
+            scratchBufferBuilder.MoveOffset(offset + size);
+            return false;
+        }
+
+        /// <inheritdoc />
+        public bool IsSendSaturated => false;
+
+        /// <inheritdoc />
+        public bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+
+        /// <inheritdoc />
         public void SendResponse(byte[] buffer, int offset, int count, object context)
         {
         }

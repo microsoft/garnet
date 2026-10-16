@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
@@ -27,9 +28,10 @@ namespace Garnet.cluster
         readonly ReplicaReplayDriver[] replicaReplayDrivers = new ReplicaReplayDriver[clusterProvider.serverOptions.AofPhysicalSublogCount];
 
         /// <summary>
-        /// Replay barrier used to coordinate connection of replay tasks
+        /// Rendezvous of the sublog connections, so that the primary starts streaming only once every sublog has
+        /// connected. Null when a single sublog is used.
         /// </summary>
-        readonly Barrier barrier = clusterProvider.serverOptions.AofPhysicalSublogCount > 1 ? new(clusterProvider.serverOptions.AofPhysicalSublogCount) : null;
+        readonly AsyncRendezvous rendezvous = clusterProvider.serverOptions.AofPhysicalSublogCount > 1 ? new(clusterProvider.serverOptions.AofPhysicalSublogCount) : null;
 
         /// <summary>
         /// Disposed lock
@@ -51,15 +53,25 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="physicalSublogIdx"></param>
         /// <param name="networkSender"></param>
-        public void AddReplicaReplayDriver(int physicalSublogIdx, INetworkSender networkSender)
+        /// <returns>
+        /// Completes with true once every sublog has been added and with false when the replica sync timeout elapsed
+        /// first, or this store was already disposed. Faults when the store is disposed while it is pending. The wait
+        /// is registered under the lock but must be awaited outside it, so that <see cref="Dispose"/> is never held
+        /// up by a sublog that has yet to connect.
+        /// </returns>
+        public ValueTask<bool> AddReplicaReplayDriverAsync(int physicalSublogIdx, INetworkSender networkSender)
         {
             try
             {
                 _lock.ReadLock();
                 if (disposed)
-                    return;
+                    return new ValueTask<bool>(false);
                 replicaReplayDrivers[physicalSublogIdx] = new ReplicaReplayDriver(physicalSublogIdx, clusterProvider, networkSender, cts, logger);
-                _ = barrier?.SignalAndWait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
+                if (rendezvous == null)
+                    return new ValueTask<bool>(true);
+
+                // The token is read under the lock because Dispose disposes the source once it has taken the write lock
+                return rendezvous.SignalAndWaitAsync(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
             }
             finally
             {

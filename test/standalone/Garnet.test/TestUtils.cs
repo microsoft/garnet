@@ -640,6 +640,9 @@ namespace Garnet.test
             if (!string.IsNullOrEmpty(memorySize))
                 opts.LogMemorySize = memorySize;
 
+            if (networkSendThrottleMax.HasValue)
+                opts.NetworkSendThrottleMax = networkSendThrottleMax.Value;
+
             if (!string.IsNullOrEmpty(pageSize))
                 opts.PageSize = pageSize;
 

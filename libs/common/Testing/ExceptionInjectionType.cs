@@ -38,6 +38,10 @@ namespace Garnet.common
         /// </summary>
         Migration_Slot_End_Scan_Range_Acquisition,
         /// <summary>
+        /// Wait at migration slot driver right after the keys of a scanned batch become inaccessible to writers
+        /// </summary>
+        Migration_Slot_Keys_Transmitting,
+        /// <summary>
         /// AOF on replica has diverged from stream coming from primary.
         /// </summary>
         Divergent_AOF_Stream,
@@ -165,5 +169,14 @@ namespace Garnet.common
         /// decremented the send count and before it releases the waiter.
         /// </summary>
         Sender_Pause_Before_Slot_Release,
+        /// Accept loop: report the next accepted connection as failed by resource pressure, to exercise the
+        /// backoff and the restart of the loop that follows it.
+        /// </summary>
+        Accept_Resource_Pressure,
+        /// <summary>
+        /// Replica full sync: hold the recovery of the checkpoint received from the primary, on the thread that runs it,
+        /// until the condition is cleared. Stands in for the long synchronous stretches of a real recovery.
+        /// </summary>
+        Replication_Pause_Replica_Recovery,
     }
 }

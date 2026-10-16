@@ -268,6 +268,12 @@ namespace Garnet.server
         bool writingOutOfBand;
 
         /// <summary>
+        /// Set, together with <see cref="writingOutOfBand"/>, while the out-of-band writer is one whose sends
+        /// must not wait for the socket: <see cref="SendNow"/> hands its bytes to the sender and moves on.
+        /// </summary>
+        bool outOfBandSendsNoWait;
+
+        /// <summary>
         /// A per-session cache for storing lua scripts
         /// </summary>
         internal readonly SessionScriptCache sessionScriptCache;
@@ -341,7 +347,7 @@ namespace Garnet.server
                 sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
 
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
-
+            aofBackpressure = storeWrapper.appendOnlyFile?.backpressure;
             // Create the default DB session (for DB 0) & add it to the session map
             activeDbId = 0;
             var dbSession = CreateDatabaseSession(0);
@@ -456,27 +462,44 @@ namespace Garnet.server
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
             }
 
-            // Dispose read session state
-            readSessionState?.Dispose();
-            // Dispose special consistent read database session
-            consistentReadDBSession?.Dispose();
-
-            // Dispose all database sessions
-            foreach (var dbSession in databaseSessions.Map)
-                dbSession?.Dispose();
-
-            clusterSession?.Dispose();
-
-            // Cancel the async processor before the latency histograms are released below: an in-flight
-            // completion records into those arrays, and they go back to a shared pool.
-            asyncWaiterCancel?.Cancel();
-            asyncWaiter?.Signal();
-
-            if (storeWrapper.monitor != null)
-                storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics, commandStats);
-
             subscribeBroker?.RemoveSubscription(this);
-            sessionScriptCache?.Dispose();
+
+            // What is left is released by whichever of this and the async GET processor finishes last, so that
+            // the processor is never waited for here.
+            StopAsyncGetProcessor();
+            ReleaseStorageHold();
+        }
+
+        /// <summary>
+        /// Disposes the storage sessions and what is released with them, once nothing else is using them.
+        /// </summary>
+        void DisposeStorage()
+        {
+            try
+            {
+                // Dispose read session state
+                readSessionState?.Dispose();
+                // Dispose special consistent read database session
+                consistentReadDBSession?.Dispose();
+
+                // Dispose all database sessions
+                foreach (var dbSession in databaseSessions.Map)
+                    dbSession?.Dispose();
+
+                clusterSession?.Dispose();
+
+                // After the async GET processor, whose completions record into the latency histograms that are
+                // released here.
+                if (storeWrapper.monitor != null)
+                    storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics, commandStats);
+
+                sessionScriptCache?.Dispose();
+            }
+            finally
+            {
+                if (storageTeardownCounted)
+                    storeWrapper.EndStorageTeardown();
+            }
         }
 
         /// <summary>
@@ -629,6 +652,12 @@ namespace Garnet.server
         /// <returns>Bytes consumed, or zero if a command suspended and the batch is unfinished.</returns>
         unsafe int ConsumeCore(byte* reqBuffer, int bytesReceived, RespAsyncBox resume)
         {
+            // The sender closes once the replies already handed to it have drained, so the connection can
+            // outlive the batch that ended the session. Input arriving in that interval is discarded
+            // rather than run, as its replies could no longer be delivered.
+            if (toDispose && resume is null)
+                return bytesReceived;
+
             bytesRead = bytesReceived;
             if (resume is null && !txnSkip)
                 readHead = 0;
@@ -699,9 +728,6 @@ namespace Garnet.server
 
                 // Send message and dispose the network sender to end the session
                 FlushFatal();
-
-                // The session is no longer usable, dispose it
-                networkSender.DisposeNetworkSender(true);
             }
             catch (GarnetException ex)
             {
@@ -726,10 +752,8 @@ namespace Garnet.server
 
                 if (ex.DisposeSession)
                 {
+                    // Sends the batch and disposes the network sender, which ends the session
                     FlushFatal();
-
-                    // The session is no longer usable, dispose it
-                    networkSender.DisposeNetworkSender(true);
                 }
                 else
                 {
@@ -824,6 +848,11 @@ namespace Garnet.server
             // frame has been accounted for below, so the rest of the batch runs when the session resumes.
             while (!asyncSuspended && bytesRead - readHead >= 4)
             {
+                // The socket has not taken the replies already handed to it, so stop here rather than queue more
+                // behind a client that is not reading. The command not yet parsed runs when the session resumes.
+                if (sendSaturated && ParkForSendCapacity())
+                    break;
+
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
@@ -856,19 +885,65 @@ namespace Garnet.server
                             {
                                 _ = ProcessBasicCommands(cmd, ref transactionalApi);
                             }
-                            else _ = cmd switch
+                            else
                             {
-                                RespCommand.EXEC => NetworkEXEC(),
-                                RespCommand.MULTI => NetworkMULTI(),
-                                RespCommand.DISCARD => NetworkDISCARD(),
-                                RespCommand.QUIT => NetworkQUIT(),
-                                _ => NetworkSKIP(cmd),
-                            };
+                                // EXEC appends what it has queued and cannot stop part way, so it waits here, with
+                                // nothing run yet, if the AOF is too far ahead of its replicas to take it
+                                if (cmd == RespCommand.EXEC && MustWaitForAofGateToExec())
+                                {
+                                    endReadHead = readHead = _origReadHead;
+                                    if (ParkForAofGate())
+                                        break;
+                                    continue;
+                                }
+
+                                _ = cmd switch
+                                {
+                                    RespCommand.EXEC => NetworkEXEC(),
+                                    RespCommand.MULTI => NetworkMULTI(),
+                                    RespCommand.DISCARD => NetworkDISCARD(),
+                                    RespCommand.QUIT => NetworkQUIT(),
+                                    _ => NetworkSKIP(cmd),
+                                };
+
+                                // Only EXEC verifies the keys it will lock, and it sets this when one is being migrated
+                                if (csvi.mustWait)
+                                {
+                                    csvi.mustWait = false;
+                                    endReadHead = readHead = _origReadHead;
+                                    if (ParkForMigration())
+                                        break;
+                                    continue;
+                                }
+                            }
                         }
                         else
                         {
+                            // A write the AOF is too far ahead of its replicas to take waits here, with nothing run
+                            // yet, rather than stalling on a thread inside the append. It is parsed and verified
+                            // again from the start once the AOF admits appends.
+                            if (MustWaitForAofGate(cmd))
+                            {
+                                endReadHead = readHead = _origReadHead;
+                                if (ParkForAofGate())
+                                    break;
+                                continue;
+                            }
+
                             if (clusterSession == null || CanServeSlot(cmd))
+                            {
                                 _ = ProcessBasicCommands(cmd, ref basicApi);
+                            }
+                            else if (csvi.mustWait)
+                            {
+                                // A key the command touches is being migrated: it has written nothing, and it is
+                                // parsed and verified again from the start once the migration moves on
+                                csvi.mustWait = false;
+                                endReadHead = readHead = _origReadHead;
+                                if (ParkForMigration())
+                                    break;
+                                continue;
+                            }
                         }
 
                         if (commandStats != null)
@@ -1008,6 +1083,7 @@ namespace Garnet.server
         /// <summary>
         /// Writes out the batch's replies on a path that ends the session, where the commit they would have
         /// waited for can no longer be waited for and the connection carrying the ack is destroyed with it.
+        /// The sender then closes once those replies have gone out.
         /// </summary>
         /// <remarks>
         /// Under <c>--wait-for-commit</c> those replies include acknowledgements for writes whose commit has
@@ -1024,6 +1100,7 @@ namespace Garnet.server
                 dcurr = networkSender.GetResponseObjectHead();
             }
 
+            toDispose = true;
             SendBatch();
         }
 
@@ -1773,6 +1850,14 @@ namespace Garnet.server
         /// the session's batch: an out-of-band push, or a completion running on another thread. Neither can
         /// take part in the hold-back <see cref="Send"/> does, and neither carries an AOF-dependent reply.
         /// </summary>
+        /// <remarks>
+        /// The session's own writes never wait for the socket. They record whether the sender reached its limit
+        /// of outstanding sends, which parks the session before its next command. An out-of-band writer cannot
+        /// park the session it writes to. The completion processor does not wait for the socket either: it holds
+        /// the response object while it writes, so a wait would leave the session's receive thread spinning on
+        /// it. What it sends is bounded by the reads the session has in flight. A publisher's push waits for
+        /// capacity instead.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SendNow(byte* d)
         {
@@ -1780,7 +1865,14 @@ namespace Garnet.server
             if (sendBytes <= 0)
                 return;
 
-            networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
+            var offset = (int)(d - networkSender.GetResponseObjectHead());
+            if (!writingOutOfBand)
+                sendSaturated = networkSender.SendResponseNoWait(offset, sendBytes);
+            else if (outOfBandSendsNoWait)
+                _ = networkSender.SendResponseNoWait(offset, sendBytes);
+            else
+                _ = networkSender.SendResponse(offset, sendBytes);
+
             sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
         }
 
@@ -1833,7 +1925,7 @@ namespace Garnet.server
                     reply.AsSpan(written, chunk).CopyTo(new Span<byte>(head, room));
                     written += chunk;
 
-                    networkSender.SendResponse(0, chunk);
+                    sendSaturated = networkSender.SendResponseNoWait(0, chunk);
                     sessionMetrics?.incr_total_net_output_bytes((ulong)chunk);
 
                     networkSender.GetResponseObject();

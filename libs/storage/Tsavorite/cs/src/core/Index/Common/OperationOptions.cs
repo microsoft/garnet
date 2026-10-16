@@ -100,11 +100,18 @@ namespace Tsavorite.core
         /// </summary>
         public int InitialIORecordSize { get; set; } = KVSettings.UseDefaultInitialIORecordSize;
 
+        /// <summary>
+        /// If the read goes pending, copy the key into the pending operation even when the key type is pinned
+        /// (<see cref="IKey.IsPinned"/>), which otherwise lets the pending operation borrow the caller's key bytes.
+        /// Set this when the memory behind the key may be reused before the pending operation completes.
+        /// </summary>
+        public bool HoistKey { get; set; }
+
         /// <summary>Default constructor.</summary>
         public ReadOptions() { }
 
         /// <inheritdoc/>
-        public override readonly string ToString() => $"copyOptions {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}, initialIORecordSize {InitialIORecordSize}";
+        public override readonly string ToString() => $"copyOptions {{{CopyOptions}}}, keyHash {Utility.GetHashString(KeyHash)}, initialIORecordSize {InitialIORecordSize}, hoistKey {HoistKey}";
     }
 
     /// <summary>

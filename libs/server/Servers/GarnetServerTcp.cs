@@ -45,7 +45,10 @@ namespace Garnet.server
         // Accept loop backoff state for resource pressure errors
         const int InitialAcceptBackoffMs = 100;
         const int MaxAcceptBackoffMs = 5000;
-        int acceptBackoffMs = InitialAcceptBackoffMs;
+        internal int acceptBackoffMs = InitialAcceptBackoffMs;
+
+        // Resumes the accept loop when the backoff after a resource pressure error has elapsed
+        readonly Timer acceptRetryTimer;
 
         /// <inheritdoc/>
         public override IEnumerable<IMessageConsumer> ActiveConsumers()
@@ -162,6 +165,7 @@ namespace Garnet.server
 
             acceptEventArg = new SocketAsyncEventArgs();
             acceptEventArg.Completed += AcceptEventArg_Completed;
+            acceptRetryTimer = new Timer(static server => ((GarnetServerTcp)server).RetryAccept(), this, Timeout.Infinite, Timeout.Infinite);
         }
 
         /// <summary>
@@ -178,6 +182,8 @@ namespace Garnet.server
         /// </summary>
         public override void Dispose()
         {
+            acceptRetryTimer.Dispose();
+
             // Close listening socket to free the port and stop accepting new connections.
             // This also prevents new connections from arriving while DisposeActiveHandlers drains existing ones.
             listenSocket.Dispose();
@@ -249,10 +255,10 @@ namespace Garnet.server
                     // When the while condition exits normally (AcceptAsync returned true), an
                     // accept is already pending on IOCP — the callback fires on next connection.
                     // When HandleNewConnection returns false, the break skips the while condition
-                    // entirely — no AcceptAsync is issued, and the accept loop exits.
-                    // This only happens during shutdown (Tier 1 fatal errors).
-                    // Tier 2 (resource pressure) uses Thread.Sleep for backoff and returns true
-                    // to continue the loop. Tier 3 (transient) returns true immediately.
+                    // entirely — no AcceptAsync is issued, and the accept loop exits. That happens
+                    // during shutdown (Tier 1 fatal errors) and under resource pressure (Tier 2),
+                    // where the retry timer restarts the loop once the backoff has elapsed.
+                    // Tier 3 (transient) returns true immediately.
                     if (!HandleNewConnection(e)) break;
                     e.AcceptSocket = null;
                 } while (!listenSocket.AcceptAsync(e));
@@ -261,7 +267,22 @@ namespace Garnet.server
             catch (ObjectDisposedException) { }
         }
 
-        private bool HandleAcceptError(SocketAsyncEventArgs e)
+        /// <summary>
+        /// Restarts the accept loop once the backoff after a resource pressure error has elapsed. The loop is
+        /// idle until then: the failed accept ended it, and the timer is the only thing that restarts it.
+        /// </summary>
+        private void RetryAccept()
+        {
+            try
+            {
+                if (!listenSocket.AcceptAsync(acceptEventArg))
+                    AcceptEventArg_Completed(null, acceptEventArg);
+            }
+            // socket disposed
+            catch (ObjectDisposedException) { }
+        }
+
+        internal bool HandleAcceptError(SocketAsyncEventArgs e)
         {
             // Dispose any socket the failed accept may have created
             e.AcceptSocket?.Dispose();
@@ -286,18 +307,22 @@ namespace Garnet.server
                     logger?.LogCritical("Fatal accept error, crashing: {error}", e.SocketError);
                     throw new SocketException((int)e.SocketError);
 
-                // Tier 2 — Resource pressure: backoff before retrying
+                // Tier 2 — Resource pressure: back off before retrying
                 case SocketError.TooManyOpenSockets:
                 case SocketError.NoBufferSpaceAvailable:
                 case SocketError.NetworkDown:
                 case SocketError.SystemNotReady:
                 case SocketError.ProcessLimit:
                     logger?.LogWarning("Accept backoff ({backoffMs}ms) due to resource pressure: {error}", acceptBackoffMs, e.SocketError);
-                    // This will hold the IOCP thread hostage, but anyway we hold it hostage in the do while accept loop. So this is not really deflecting from design.
-                    // If this is ever a concern in the future we can use a timer to schedule the next attempt instead of blocking the thread.
-                    Thread.Sleep(acceptBackoffMs);
-                    acceptBackoffMs = Math.Min(acceptBackoffMs * 2, MaxAcceptBackoffMs);
-                    return true;
+
+                    // Leave the accept loop and let a timer restart it. Sleeping here would hold the thread that
+                    // runs the accept callback, which is a socket engine thread when completions run inline, so
+                    // every connection that engine serves would stall for the length of the backoff. Nothing may
+                    // touch the accept arguments after the timer is armed, as the restart can run at once.
+                    var delay = acceptBackoffMs;
+                    acceptBackoffMs = Math.Min(delay * 2, MaxAcceptBackoffMs);
+                    _ = acceptRetryTimer.Change(delay, Timeout.Infinite);
+                    return false;
 
                 // Tier 3 — Client-caused transient or irrelevant: log and continue
                 default:
@@ -308,6 +333,9 @@ namespace Garnet.server
 
         private unsafe bool HandleNewConnection(SocketAsyncEventArgs e)
         {
+            if (e.SocketError == SocketError.Success && ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Accept_Resource_Pressure))
+                e.SocketError = SocketError.TooManyOpenSockets;
+
             if (e.SocketError != SocketError.Success)
             {
                 return HandleAcceptError(e);

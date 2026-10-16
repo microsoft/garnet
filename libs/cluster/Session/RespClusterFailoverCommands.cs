@@ -148,12 +148,7 @@ namespace Garnet.cluster
 
             var primaryReplicationOffset = AofAddress.FromByteArray(parseState.GetArgSliceByRef(0).ToArray());
 
-            // Cannot avoid blocking here we're on the network thread
-            var rOffset = AsyncUtils.BlockingWait(clusterProvider.replicationManager.WaitForReplicationOffsetAsync(primaryReplicationOffset));
-            while (!RespWriteUtils.TryWriteAsciiBulkString(rOffset.ToString(), ref dcurr, dend))
-                SendAndReset();
-
-            return true;
+            return SuspendOn(WaitForReplicationOffsetAsync(primaryReplicationOffset));
         }
     }
 }

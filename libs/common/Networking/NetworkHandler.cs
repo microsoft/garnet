@@ -1091,6 +1091,36 @@ namespace Garnet.networking
             return true;
         }
 
+        /// <summary>
+        /// Whether the send in progress was issued with <see cref="SendResponseNoWait"/>, so the stream hands the
+        /// encrypted bytes to the transport without waiting for send capacity. It is only set while the sender lock is held,
+        /// which is also what serializes use of the transport send buffer.
+        /// </summary>
+        bool sendNoWait;
+
+        /// <inheritdoc />
+        public override bool SendResponseNoWait(int offset, int size)
+        {
+            sendNoWait = true;
+            try
+            {
+                _ = SendResponse(offset, size);
+            }
+            finally
+            {
+                sendNoWait = false;
+            }
+
+            return networkSender.IsSendSaturated;
+        }
+
+        /// <inheritdoc />
+        public override bool IsSendSaturated => networkSender.IsSendSaturated;
+
+        /// <inheritdoc />
+        public override bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter)
+            => networkSender.TryRegisterSendCapacityWaiter(waiter);
+
         /// <inheritdoc />
         public override void SendResponse(byte[] buffer, int offset, int count, object context)
         {

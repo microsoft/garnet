@@ -333,7 +333,7 @@ namespace Tsavorite.core
             ref var pendingState = ref op.pendingState;
             pendingState.type = OperationType.READ;
             pendingState.keyHash = keyHash;
-            pendingState.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+            pendingState.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool, operationState.HoistKey);
 
             operationState.pendingOp = op;
             operationState.logicalAddress = logicalAddress;

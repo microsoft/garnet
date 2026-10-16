@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -32,11 +33,27 @@ namespace Garnet.server
     /// appender caches between publishes and coherence traffic scales with publish frequency, not
     /// append frequency. Publish frequency therefore trades throughput (a fresher watermark stalls
     /// less conservatively) for nothing on the safety side.
+    ///
+    /// A stalled appender waits by sleeping on its own thread, which is a poor place to wait: the
+    /// threads that serve other sessions run out, and where socket completions run inline the shipper's
+    /// sends, which are what advance the watermark, can no longer complete. So a session that can park does
+    /// not reach <see cref="Wait"/> in the first place. Before running a command that may append it asks
+    /// <see cref="AdmissionClosed"/> and, when that holds, registers with <see cref="TryRegisterWaiter"/> and
+    /// gives up its thread until admission reopens. Admission closes one publish interval before the budget
+    /// does, so appenders that are already past it settle in the band between the two and <see cref="Wait"/>
+    /// stays a fail-safe rather than becoming the throttle. It looks at every sublog and closes when any is
+    /// over, because the sublog a command appends to is not known before it runs.
+    ///
+    /// <see cref="Wait"/> still guards every append, since admission cannot cover everything: writes inside
+    /// transactions and scripts, which hold key locks once running; appends from a session that cannot park;
+    /// appends that pass admission together; a watermark that drops when a lagging replica attaches; and the
+    /// background commit markers.
     /// </summary>
     public sealed class AofBackpressure : IDisposable
     {
         /// <summary>
-        /// Sleep interval, in milliseconds, for a stalled appender re-checking its lag.
+        /// Interval, in milliseconds, at which a stalled appender, or the poller that wakes parked sessions,
+        /// re-checks the lag.
         /// </summary>
         public const int PollIntervalMs = 1;
 
@@ -74,6 +91,15 @@ namespace Garnet.server
         readonly PaddedLong[] shippedWatermark;
 
         volatile bool disposed;
+
+        // Sessions parked on the gate, all woken together when admission reopens. A shared one-shot timer polls
+        // for that, because the shipper publishes only when it advances, and the live tail can retreat without
+        // any publish. Created and armed on the first registration, so a gate nobody waits on costs nothing.
+        readonly Lock waiterLock = new();
+        List<IAofGateWaiter> waiters = [];
+        List<IAofGateWaiter> spareWaiters;
+        Timer pollTimer;
+        bool pollTimerArmed;
 
         readonly ILogger logger;
 
@@ -178,6 +204,133 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// True if the gate is enabled and at least one sublog's lag is within one publish interval of its
+        /// budget, which is the point at which a session that can park should wait instead of appending.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The threshold sits below the budget that <see cref="Wait"/> stalls at. Under steady throttling the lag
+        /// settles at whichever threshold stops writers first: if that were the budget, the writers admitted
+        /// together would all run into <see cref="Wait"/> and it, rather than admission, would be doing the
+        /// throttling. The watermark only moves in steps of <see cref="PublishDeltaBytes"/>, so there is nothing
+        /// to be gained by waking a session sooner than that.
+        /// </para>
+        /// <para>
+        /// Every sublog is checked, not only the one a command will append to, because that is not known until
+        /// the command has run.
+        /// </para>
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool AdmissionClosed()
+        {
+            if (!enabled)
+                return false;
+
+            var threshold = perSublogBudget - PublishDeltaBytes;
+            for (var i = 0; i < sublogCount; i++)
+            {
+                var tail = log?.GetTailAddress(i) ?? 0;
+                if (tail - Volatile.Read(ref shippedWatermark[i].Value) > threshold)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Registers <paramref name="waiter"/> to be told when admission reopens, so its owner can stop waiting
+        /// on a thread of its own.
+        /// </summary>
+        /// <param name="waiter">The waiter to notify, once.</param>
+        /// <returns>
+        /// False if admission is open already, or the gate has shut down, in which case nothing was registered
+        /// and the caller proceeds instead of waiting.
+        /// </returns>
+        /// <remarks>
+        /// The check and the registration happen under the lock the poller takes for its own check, so a
+        /// reopening cannot fall between them: either this call sees admission open, or the poller finds the
+        /// waiter registered.
+        /// </remarks>
+        internal bool TryRegisterWaiter(IAofGateWaiter waiter)
+        {
+            lock (waiterLock)
+            {
+                if (disposed || !AdmissionClosed())
+                    return false;
+
+                waiters.Add(waiter);
+                if (!pollTimerArmed)
+                {
+                    pollTimerArmed = true;
+                    if (pollTimer is null)
+                        pollTimer = new Timer(static state => ((AofBackpressure)state).Poll(), this, PollIntervalMs, Timeout.Infinite);
+                    else
+                        _ = pollTimer.Change(PollIntervalMs, Timeout.Infinite);
+                }
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// The number of waiters registered and not yet notified.
+        /// </summary>
+        internal int WaiterCount
+        {
+            get
+            {
+                lock (waiterLock)
+                    return waiters.Count;
+            }
+        }
+
+        void Poll()
+        {
+            List<IAofGateWaiter> woken;
+            lock (waiterLock)
+            {
+                if (waiters.Count > 0 && AdmissionClosed())
+                {
+                    _ = pollTimer.Change(PollIntervalMs, Timeout.Infinite);
+                    return;
+                }
+
+                pollTimerArmed = false;
+                woken = TakeWaiters();
+            }
+
+            Notify(woken);
+        }
+
+        // Called with waiterLock held. The list handed back is the caller's alone until it returns it through Notify.
+        List<IAofGateWaiter> TakeWaiters()
+        {
+            var taken = waiters;
+            waiters = spareWaiters ?? [];
+            spareWaiters = null;
+            return taken;
+        }
+
+        // Runs outside the lock, because waking a waiter runs code of its owner. One waiter failing must not leave
+        // the rest waiting, and an exception escaping a timer callback would end the process.
+        void Notify(List<IAofGateWaiter> woken)
+        {
+            for (var i = 0; i < woken.Count; i++)
+            {
+                try
+                {
+                    woken[i].OnGateOpen();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "A session waiting on the AOF gate failed to be woken");
+                }
+            }
+
+            woken.Clear();
+            lock (waiterLock)
+                spareWaiters ??= woken;
+        }
+
+        /// <summary>
         /// Set the owning log back-reference used by the stall diagnostic. Called once during log
         /// construction; not used on any gating path.
         /// </summary>
@@ -193,8 +346,20 @@ namespace Garnet.server
             => Volatile.Write(ref shippedWatermark[sublogIdx].Value, minShippedAddress);
 
         /// <summary>
-        /// Release all stalled appenders permanently (server shutdown).
+        /// Release all stalled appenders permanently (server shutdown), including sessions parked on the gate.
         /// </summary>
-        public void Dispose() => disposed = true;
+        public void Dispose()
+        {
+            List<IAofGateWaiter> woken;
+            lock (waiterLock)
+            {
+                // Nothing registers once disposed, so a poll that is still to run finds no waiter
+                disposed = true;
+                pollTimer?.Dispose();
+                woken = TakeWaiters();
+            }
+
+            Notify(woken);
+        }
     }
 }

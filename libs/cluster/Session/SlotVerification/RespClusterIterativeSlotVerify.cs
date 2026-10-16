@@ -25,6 +25,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Iterative verify slot for a single key
         /// </summary>
+        /// <remarks>
+        /// Holds the calling thread while a key is being migrated. It runs from a custom transaction procedure's
+        /// <c>Prepare</c>, which is user code in the middle of a call and cannot be replayed after a wait.
+        /// </remarks>
         /// <param name="keySlice"></param>
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
@@ -36,7 +40,7 @@ namespace Garnet.cluster
             // If it is the first verification initialize the result cache
             if (!initialized)
             {
-                verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking > 0, waitForStableSlot);
+                verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking > 0, waitForStableSlot, canWait: false);
                 cachedVerificationResult = verifyResult;
                 initialized = true;
                 return verifyResult.state == SlotVerifiedState.OK;
@@ -46,7 +50,7 @@ namespace Garnet.cluster
             if (cachedVerificationResult.state != SlotVerifiedState.OK)
                 return false;
 
-            verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking > 0, waitForStableSlot);
+            verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking > 0, waitForStableSlot, canWait: false);
 
             // Check if slot changes between keys
             if (verifyResult.slot != cachedVerificationResult.slot)

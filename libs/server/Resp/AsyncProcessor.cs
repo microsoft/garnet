@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -39,6 +41,72 @@ namespace Garnet.server
         /// </summary>
         SemaphoreSlim asyncDone = null;
 
+        /// <summary>
+        /// Holders of the session's storage sessions: the connection itself, and the async GET processor for as
+        /// long as it runs. Whichever releases last disposes them.
+        /// </summary>
+        int storageHolds = 1;
+
+        /// <summary>
+        /// Whether <see cref="StoreWrapper"/> has been told to wait for this session's storage sessions to be
+        /// released before it disposes the stores they belong to.
+        /// </summary>
+        bool storageTeardownCounted;
+
+        /// <summary>
+        /// Called when the connection goes away: asks the async GET processor, if the session ever started one, to
+        /// finish the reads it is waiting for and then let go of the storage sessions.
+        /// </summary>
+        /// <remarks>
+        /// The processor cannot be waited for here. This runs on the socket callback, the processor resumes on a
+        /// thread pool thread, and the pool can be made up entirely of callbacks like this one.
+        /// </remarks>
+        void StopAsyncGetProcessor()
+        {
+            if (asyncWaiterCancel == null)
+                return;
+
+            // Set before the connection's hold is released, so that whichever thread ends up disposing the storage
+            // sessions sees it.
+            storageTeardownCounted = true;
+            storeWrapper.BeginStorageTeardown();
+
+            asyncWaiterCancel.Cancel();
+            asyncWaiter.Signal();
+        }
+
+        /// <summary>
+        /// Releases one hold on the storage sessions, disposing them if it was the last.
+        /// </summary>
+        void ReleaseStorageHold()
+        {
+            if (Interlocked.Decrement(ref storageHolds) == 0)
+                DisposeStorage();
+        }
+
+        /// <summary>
+        /// Waits out the async operations <c>ASYNC BARRIER</c> is barriering on, parking the session rather
+        /// than holding the network thread for them.
+        /// </summary>
+        /// <remarks>
+        /// The wait is unbounded, so the batch scope is given back on the way out and retaken on resume --
+        /// which is what lets <see cref="AsyncGetProcessorAsync"/> take the response object and write the
+        /// completions the barrier is waiting for.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
+        async ValueTask AsyncBarrierBodyAsync()
+        {
+            asyncDone = new(0);
+
+            while (asyncCompleted < asyncStarted)
+                await asyncDone.WaitAsync().ConfigureAwait(false);
+
+            asyncDone.Dispose();
+            asyncDone = null;
+
+            WriteDirect(CmdStrings.RESP_OK);
+        }
+
 
         /// <summary>
         /// Handle a async network GET command that goes pending
@@ -61,6 +129,10 @@ namespace Garnet.server
                 {
                     RunContinuationsAsynchronously = true
                 };
+
+                // The processor keeps using the storage sessions after the connection has gone, until its reads are done.
+                _ = Interlocked.Increment(ref storageHolds);
+
                 var _storageApi = storageApi;
                 _ = AsyncGetProcessorAsync(_storageApi);
             }
@@ -79,74 +151,112 @@ namespace Garnet.server
         async Task AsyncGetProcessorAsync<TGarnetApi>(TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // Force async
-            await Task.Yield();
-
-            while (!asyncWaiterCancel.Token.IsCancellationRequested)
+            try
             {
-                while (asyncCompleted < asyncStarted)
+                // Force async
+                await Task.Yield();
+
+                while (!asyncWaiterCancel.Token.IsCancellationRequested)
                 {
-                    // First complete all pending ops. This runs on a background task of its own rather than
-                    // on the network thread, so waiting here costs nothing the session needs.
-#pragma warning disable VSTHRD103 // Call async methods when in an async method
-                    storageApi.GET_CompletePending(out var completedOutputs, true);
-#pragma warning restore VSTHRD103
-
-                    try
+                    while (asyncCompleted < asyncStarted)
                     {
-                        unsafe
-                        {
-                            // We are ready to send responses so we take over the network sender from the main ProcessMessage thread
-                            // Note that we cannot take over while ProcessMessage is in progress because partial responses may have been
-                            // sent at that point. For sync responses that span multiple ProcessMessage calls (e.g., MGET), we need the
-                            // main thread to hold the sender lock until the response is done.
-                            networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                            writingOutOfBand = true;
+                        var completedBefore = asyncCompleted;
 
-                            // Send async replies with completed outputs
+                        // First complete all pending ops. The task suspends for the device rather than holding a
+                        // pool thread for the whole read, which is what lets many sessions have reads in flight at
+                        // once without a thread each. Once the connection is gone this still runs until nothing is
+                        // in flight, so that the storage sessions are released with no read left to wait for.
+                        CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs;
+                        storageSession.StartPendingLatency();
+                        try
+                        {
+                            completedOutputs = await storageApi.GET_CompletePendingAsync().ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            storageSession.StopPendingLatency();
+                        }
+
+                        try
+                        {
+                            unsafe
+                            {
+                                // We are ready to send responses so we take over the network sender from the main ProcessMessage thread
+                                // Note that we cannot take over while ProcessMessage is in progress because partial responses may have been
+                                // sent at that point. For sync responses that span multiple ProcessMessage calls (e.g., MGET), we need the
+                                // main thread to hold the sender lock until the response is done.
+                                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                                writingOutOfBand = true;
+                                outOfBandSendsNoWait = true;
+
+                                // Send async replies with completed outputs
+                                while (completedOutputs.Next())
+                                {
+                                    // This is the only thread that updates asyncCompleted so we do not need atomics here
+                                    asyncCompleted++;
+                                    var o = completedOutputs.Current.Output;
+
+                                    // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
+                                    while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
+                                        SendAndReset();
+                                    while (!RespWriteUtils.TryWriteBulkString(CmdStrings.async, ref dcurr, dend))
+                                        SendAndReset();
+                                    while (!RespWriteUtils.TryWriteInt32AsBulkString((int)completedOutputs.Current.Context, ref dcurr, dend))
+                                        SendAndReset();
+                                    if (completedOutputs.Current.Status.Found)
+                                    {
+                                        Debug.Assert(!o.SpanByteAndMemory.IsSpanByte);
+                                        sessionMetrics?.incr_total_found();
+                                        SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
+                                    }
+                                    else
+                                    {
+                                        sessionMetrics?.incr_total_notfound();
+                                        WriteNull();
+                                    }
+                                }
+                                if (dcurr > networkSender.GetResponseObjectHead())
+                                    SendNow(networkSender.GetResponseObjectHead());
+                            }
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // The connection is gone, so there is nobody to send the replies to. The completions are
+                            // still consumed below, which is what retires the reads.
+                        }
+                        finally
+                        {
+                            // Whatever the writes did not reach
                             while (completedOutputs.Next())
                             {
-                                // This is the only thread that updates asyncCompleted so we do not need atomics here
                                 asyncCompleted++;
-                                var o = completedOutputs.Current.Output;
-
-                                // We write async push response as an array: [ "async", "<token_id>", "<result_string>" ]
-                                while (!RespWriteUtils.TryWritePushLength(3, ref dcurr, dend))
-                                    SendAndReset();
-                                while (!RespWriteUtils.TryWriteBulkString(CmdStrings.async, ref dcurr, dend))
-                                    SendAndReset();
-                                while (!RespWriteUtils.TryWriteInt32AsBulkString((int)completedOutputs.Current.Context, ref dcurr, dend))
-                                    SendAndReset();
-                                if (completedOutputs.Current.Status.Found)
-                                {
-                                    Debug.Assert(!o.SpanByteAndMemory.IsSpanByte);
-                                    sessionMetrics?.incr_total_found();
-                                    SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
-                                }
-                                else
-                                {
-                                    sessionMetrics?.incr_total_notfound();
-                                    WriteNull();
-                                }
+                                completedOutputs.Current.Output.SpanByteAndMemory.Dispose();
                             }
-                            if (dcurr > networkSender.GetResponseObjectHead())
-                                SendNow(networkSender.GetResponseObjectHead());
+
+                            completedOutputs.Dispose();
+                            writingOutOfBand = false;
+                            outOfBandSendsNoWait = false;
+                            networkSender.ExitAndReturnResponseObject();
                         }
+
+                        // A drain that completed nothing found no read of ours on the completion queue, which the
+                        // session's synchronous commands also drain. There is nothing to wait for, so go back to
+                        // waiting for the next start instead of draining an empty queue in a loop.
+                        if (asyncCompleted == completedBefore)
+                            break;
                     }
-                    finally
-                    {
-                        completedOutputs.Dispose();
-                        writingOutOfBand = false;
-                        networkSender.ExitAndReturnResponseObject();
-                    }
+
+                    // Let ongoing barrier command know that all async operations are done
+                    asyncDone?.Release();
+
+                    // Wait for next async operation
+                    // We do not need to cancel the wait - it should get garbage collected when the session ends
+                    await asyncWaiter.WaitAsync().ConfigureAwait(false);
                 }
-
-                // Let ongoing barrier command know that all async operations are done
-                asyncDone?.Release();
-
-                // Wait for next async operation
-                // We do not need to cancel the wait - it should get garbage collected when the session ends
-                await asyncWaiter.WaitAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                ReleaseStorageHold();
             }
         }
     }

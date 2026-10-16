@@ -55,6 +55,7 @@ namespace Garnet.server
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.XVCREATE or RespCommand.XVIMPORT;
+            csvi.canWait = CanSuspend;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
@@ -75,6 +76,7 @@ namespace Garnet.server
             csvi.readOnly = isReadOnly;
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = false;
+            csvi.canWait = CanSuspend;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
@@ -83,6 +85,10 @@ namespace Garnet.server
         /// are servable by this node. Returns true if servable. Used by the scatter-gather GET loop, where keys
         /// past the first bypass the per-command <see cref="CanServeSlot"/> in ProcessMessages.
         /// </summary>
+        /// <remarks>
+        /// A key being migrated counts as not servable, without this call waiting for the migration. The caller
+        /// stops its run there and leaves the command to <see cref="CanServeSlot"/>, which parks the session.
+        /// </remarks>
         /// <param name="cmd"></param>
         /// <returns></returns>
         bool CanServeSlotNoResponse(RespCommand cmd)
@@ -101,6 +107,7 @@ namespace Garnet.server
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = false;
+            csvi.canWait = CanSuspend;
             return !clusterSession.NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }

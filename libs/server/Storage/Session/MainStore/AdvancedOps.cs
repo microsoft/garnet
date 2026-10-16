@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Garnet.common;
 using Tsavorite.core;
@@ -13,9 +14,18 @@ namespace Garnet.server
     {
         public GarnetStatus GET_WithPending<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, long ctx, out bool pending, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            var status = context.Read((FixedSpanByteKey)key, ref input, ref output, ctx);
+            => ReadWithPendingStatus(context.Read((FixedSpanByteKey)key, ref input, ref output, ctx), out pending);
 
+        public GarnetStatus GET_WithDetachedPending<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, long ctx, out bool pending, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var readOptions = new ReadOptions { HoistKey = true };
+            return ReadWithPendingStatus(context.Read((FixedSpanByteKey)key, ref input, ref output, ref readOptions, ctx), out pending);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        GarnetStatus ReadWithPendingStatus(Status status, out bool pending)
+        {
             if (status.IsPending)
             {
                 incr_session_pending();

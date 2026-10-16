@@ -86,39 +86,19 @@ namespace Garnet.cluster
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_REPLICATION_AOF_TURNEDOFF, ref dcurr, dend))
                     SendAndReset();
-            }
-            else
-            {
-                ReplicateSyncOptions syncOpts = new(
-                    nodeId,
-                    Background: background,
-                    Force: false,
-                    TryAddReplica: true,
-                    AllowReplicaResetOnFailure: true,
-                    UpgradeLock: false
-                );
-
-                // Cannot avoid blocking here we're on the network thread
-                var (success, errorMessage) =
-                    AsyncUtils.BlockingWait(
-                        clusterProvider.serverOptions.ReplicaDisklessSync ?
-                            clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
-                            clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
-                    );
-
-                if (success)
-                {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
-                        SendAndReset();
-                }
+                return true;
             }
 
-            return true;
+            ReplicateSyncOptions syncOpts = new(
+                nodeId,
+                Background: background,
+                Force: false,
+                TryAddReplica: true,
+                AllowReplicaResetOnFailure: true,
+                UpgradeLock: false
+            );
+
+            return SuspendOn(ClusterReplicateAsync(syncOpts));
         }
 
         /// <summary>
@@ -219,10 +199,14 @@ namespace Garnet.cluster
                 // This is an initialization message
                 if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
                 {
-                    if (clusterProvider.replicationManager.InitializeReplicaReplayDriver(physicalSublogIdx, networkSender))
-                        replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
-                    else
+                    if (!clusterProvider.replicationManager.InitializeReplicaReplayDriver(physicalSublogIdx, networkSender, out var sublogsInitialized))
                         throw new GarnetException($"Failed to process {nameof(NetworkClusterAppendLog)}: [physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Error, clientResponse: false);
+
+                    // Recorded before waiting for the other sublogs, so that disposing this session cancels that wait
+                    replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
+
+                    if (!sublogsInitialized.IsCompletedSuccessfully)
+                        return SuspendOn(AwaitSublogsAsync(sublogsInitialized), PendingReply.Ok);
 
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                         SendAndReset();
@@ -230,11 +214,10 @@ namespace Garnet.cluster
                 }
 
                 var sbRecord = parseState.GetArgSliceByRef(5);
-                ProcessPrimaryStream(physicalSublogIdx, sbRecord.ToPointer(), sbRecord.Length,
-                    previousAddress, currentAddress, nextAddress);
+                return SuspendOnIfPending(
+                    ProcessPrimaryStreamAsync(physicalSublogIdx, sbRecord.ToPointer(), sbRecord.Length, previousAddress, currentAddress, nextAddress),
+                    PendingReply.None);
             }
-
-            return true;
 
             [Conditional("DEBUG")]
             static void LogPrimaryStream(int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress, ILogger logger)
@@ -275,23 +258,8 @@ namespace Garnet.cluster
 
             var replicaCheckpointEntry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
 
-            var beginPrimarySyncTask = clusterProvider.replicationManager.TryBeginDiskbasedSyncAsync(replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress);
-
-            // No choice but to block here, we're on the network thread
-            var (success, errorMessage) = AsyncUtils.BlockingWait(beginPrimarySyncTask);
-
-            if (!success)
-            {
-                while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return true;
+            return SuspendOn(BeginDiskbasedSyncAsync(
+                replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress));
         }
 
         /// <summary>
@@ -447,27 +415,7 @@ namespace Garnet.cluster
             var tailAddress = AofAddress.FromSpan(parseState.GetArgSliceByRef(5).Span);
 
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
-            var replicationOffset = clusterProvider.replicationManager.TryReplicaDiskbasedRecovery(
-                recoverStoreFromToken,
-                (ulong)replayAOFMap,
-                primaryReplicaId,
-                entry,
-                beginAddress,
-                ref tailAddress,
-                out var errorMessage);
-
-            if (errorMessage.IsEmpty)
-            {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(replicationOffset.ToString(), ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return true;
+            return SuspendOn(BeginReplicaRecoverAsync(recoverStoreFromToken, (ulong)replayAOFMap, primaryReplicaId, entry, beginAddress, tailAddress));
         }
 
         /// <summary>
@@ -493,15 +441,9 @@ namespace Garnet.cluster
             ReadOnlySpan<byte> errorMessage;
             var replicationOffset = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
-            {
-                var attachTask = clusterProvider.replicationManager.TryBeginDisklessSyncAsync(syncMetadata);
+                return SuspendOn(BeginDisklessSyncAsync(syncMetadata, replicationOffset));
 
-                // Must block here because we're on the network thread
-                var (_, err) = AsyncUtils.BlockingWait(attachTask);
-                errorMessage = err.Span;
-            }
-            else
-                replicationOffset = clusterProvider.replicationManager.TryReplicaDisklessRecovery(syncMetadata, out errorMessage);
+            replicationOffset = clusterProvider.replicationManager.TryReplicaDisklessRecovery(syncMetadata, out errorMessage);
 
             if (errorMessage.IsEmpty)
             {
@@ -689,8 +631,11 @@ namespace Garnet.cluster
 
             // The pulse is meaningful only on the APPENDLOG session that established this driver
             // store; routing it globally would lose its ordering relative to that sublog stream.
-            replicaReplayDriverStore?.GetReplayDriver(physicalSublogIdx)?.SignalTimeAdvance(sequenceNumber);
-            return true;
+            var driver = replicaReplayDriverStore?.GetReplayDriver(physicalSublogIdx);
+            if (driver == null)
+                return true;
+
+            return SuspendOnIfPending(driver.SignalTimeAdvanceAsync(sequenceNumber), PendingReply.None);
         }
 
         /// <summary>

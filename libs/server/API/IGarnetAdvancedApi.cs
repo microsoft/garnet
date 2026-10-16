@@ -23,7 +23,21 @@ namespace Garnet.server
         /// <summary>
         /// GET with support for pending multiple ongoing operations, scatter gather IO for outputs
         /// </summary>
+        /// <remarks>
+        /// The key is read in place, so the memory behind it must stay unchanged until every read this call
+        /// leaves pending has completed. Use <see cref="GET_WithDetachedPending"/> when it may not.
+        /// </remarks>
         GarnetStatus GET_WithPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long ctx, out bool pending);
+
+        /// <summary>
+        /// GET whose pending read may complete after the caller returns and the memory behind
+        /// <paramref name="key"/> has been reused, because the key is copied into the pending operation.
+        /// </summary>
+        /// <remarks>
+        /// A read that completes in memory costs the same as <see cref="GET_WithPending"/>; only a read that goes
+        /// to the device pays for the copy.
+        /// </remarks>
+        GarnetStatus GET_WithDetachedPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long ctx, out bool pending);
 
         /// <summary>
         /// Complete pending read operations on main store

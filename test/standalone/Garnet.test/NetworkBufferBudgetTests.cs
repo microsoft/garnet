@@ -1584,7 +1584,7 @@ namespace Garnet.test
 
         static long SocketStatBytes(string name, GarnetClient client) => SocketStatBytes(name, BpStats(client));
 
-        static long SocketStatBytes(string name, string stats)
+        internal static long SocketStatBytes(string name, string stats)
         {
             var section = stats.IndexOf("server_socket_0", StringComparison.Ordinal);
             ClassicAssert.GreaterOrEqual(section, 0, $"socket section not found in BPSTATS: {stats}");

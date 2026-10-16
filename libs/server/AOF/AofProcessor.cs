@@ -228,6 +228,57 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Whether replaying the record at <paramref name="entryPtr"/> can wait on something other than the local store:
+        /// a rendezvous with the other replay participants, or a checkpoint. A caller that replays on a network
+        /// receive thread must replay such a record on a thread that may block.
+        /// </summary>
+        /// <param name="entryPtr">The record, starting at its header.</param>
+        public bool ReplayCanBlock(byte* entryPtr)
+            => ReplayCanBlock(((AofHeader*)entryPtr)->opType, usingShardedLog);
+
+        /// <summary>
+        /// Whether replaying a record of type <paramref name="opType"/> can wait on something other than the local store.
+        /// This mirrors the dispatch in <see cref="ProcessAofRecordInternal(int, byte*, int, bool, out bool, long)"/>.
+        /// A type that is not listed here is reported as able to wait, so that a new type is replayed off the network
+        /// thread until it is classified.
+        /// </summary>
+        /// <param name="opType">The record type.</param>
+        /// <param name="shardedLog">Whether replay is split across sublogs or replay tasks, so that some operations rendezvous.</param>
+        internal static bool ReplayCanBlock(AofEntryType opType, bool shardedLog) => opType switch
+        {
+            // Data operations, and markers that only update local state
+            AofEntryType.StoreUpsert or
+            AofEntryType.StoreRMW or
+            AofEntryType.StoreDelete or
+            AofEntryType.ObjectStoreUpsert or
+            AofEntryType.ObjectStoreRMW or
+            AofEntryType.ObjectStoreDelete or
+            AofEntryType.UnifiedStoreStringUpsert or
+            AofEntryType.UnifiedStoreObjectUpsert or
+            AofEntryType.UnifiedStoreRMW or
+            AofEntryType.UnifiedStoreDelete or
+            AofEntryType.RangeIndexStreamChunk or
+            AofEntryType.TxnStart or
+            AofEntryType.TxnAbort or
+            AofEntryType.CheckpointStartCommit or
+            AofEntryType.MainStoreStreamingCheckpointEndCommit or
+            AofEntryType.ObjectStoreStreamingCheckpointEndCommit => false,
+
+            // Run locally on a single log, and rendezvous with the other replay participants on a sharded one
+            AofEntryType.TxnCommit or
+            AofEntryType.StoredProcedure or
+            AofEntryType.MainStoreStreamingCheckpointStartCommit or
+            AofEntryType.ObjectStoreStreamingCheckpointStartCommit => shardedLog,
+
+            // Take a checkpoint or reset the store, which wait on I/O and on the other participants
+            AofEntryType.CheckpointEndCommit or
+            AofEntryType.FlushAll or
+            AofEntryType.FlushDb => true,
+
+            _ => true,
+        };
+
+        /// <summary>
         /// Process AOF record internal
         /// NOTE: This method is shared between recover replay and replication replay
         /// </summary>

@@ -85,6 +85,33 @@ namespace Garnet.networking
         bool SendResponse(int offset, int size);
 
         /// <summary>
+        /// Send payload stored at response object, from offset to offset + size, without ever waiting for send
+        /// capacity. A caller that sends this way bounds what it has outstanding by checking the result and
+        /// parking on <see cref="TryRegisterSendCapacityWaiter"/> before producing more output, which keeps a
+        /// slow reader from holding the thread the send was issued from.
+        /// </summary>
+        /// <param name="offset">Offset of response from which to start sending</param>
+        /// <param name="size">Number of bytes to send, starting from offset</param>
+        /// <returns>Whether the sends outstanding have reached the throttle limit, so the caller should wait for capacity</returns>
+        bool SendResponseNoWait(int offset, int size);
+
+        /// <summary>
+        /// Whether the sends issued with <see cref="SendResponseNoWait"/> that are still outstanding have reached the throttle limit
+        /// </summary>
+        bool IsSendSaturated { get; }
+
+        /// <summary>
+        /// Arranges for <paramref name="waiter"/> to be notified when the sends outstanding next drop below the
+        /// throttle limit. A sender holds at most one waiter.
+        /// </summary>
+        /// <param name="waiter">The waiter to notify</param>
+        /// <returns>
+        /// True if the waiter is registered and will be notified, false if capacity is already available, in
+        /// which case the waiter will not be called
+        /// </returns>
+        bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter);
+
+        /// <summary>
         /// Send response (caller owns buffer space)
         /// </summary>
         void SendResponse(byte[] buffer, int offset, int count, object context);

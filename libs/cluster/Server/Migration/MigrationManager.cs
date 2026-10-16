@@ -17,6 +17,11 @@ namespace Garnet.cluster
         readonly MigrateSessionTaskStore migrationTaskStore;
 
         /// <summary>
+        /// Tells requests waiting on a key that is being migrated when the migration moves on
+        /// </summary>
+        internal MigrationProgress Progress { get; }
+
+        /// <summary>
         /// NetworkBufferSettings for MigrateSession instances
         /// </summary>
         readonly NetworkBufferSettings networkBufferSettings;
@@ -39,7 +44,8 @@ namespace Garnet.cluster
         public MigrationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.logger = logger;
-            this.migrationTaskStore = new MigrateSessionTaskStore(logger);
+            this.Progress = new MigrationProgress();
+            this.migrationTaskStore = new MigrateSessionTaskStore(Progress, logger);
             this.clusterProvider = clusterProvider;
             var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
             this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);

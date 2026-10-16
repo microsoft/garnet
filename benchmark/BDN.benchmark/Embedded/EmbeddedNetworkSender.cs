@@ -119,6 +119,18 @@ namespace Embedded.server
         }
 
         /// <inheritdoc />
+        public bool SendResponseNoWait(int offset, int size)
+        {
+            return false;
+        }
+
+        /// <inheritdoc />
+        public bool IsSendSaturated => false;
+
+        /// <inheritdoc />
+        public bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+
+        /// <inheritdoc />
         public void SendResponse(byte[] buffer, int offset, int count, object context)
         {
         }

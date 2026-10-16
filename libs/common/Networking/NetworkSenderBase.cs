@@ -80,6 +80,19 @@ namespace Garnet.networking
         public abstract bool SendResponse(int offset, int size);
 
         /// <inheritdoc />
+        public virtual bool SendResponseNoWait(int offset, int size)
+        {
+            _ = SendResponse(offset, size);
+            return false;
+        }
+
+        /// <inheritdoc />
+        public virtual bool IsSendSaturated => false;
+
+        /// <inheritdoc />
+        public virtual bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+
+        /// <inheritdoc />
         public abstract void SendResponse(byte[] buffer, int offset, int count, object context);
 
         /// <inheritdoc />

@@ -959,52 +959,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// SAVE [DBID]
-        /// </summary>
-        /// <returns></returns>
-        private bool NetworkSAVE()
-        {
-            if (parseState.Count > 1)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.SAVE));
-            }
-
-            // By default - save all active databases, unless database ID specified
-            var dbId = -1;
-
-            // Check if ID specified
-            if (parseState.Count == 1)
-            {
-                if (!TryParseDatabaseId(0, out dbId))
-                    return true;
-            }
-
-            var checkpointTask = storeWrapper.TakeCheckpointAsync(false, dbId: dbId, logger: logger);
-
-            // No choice but to block, we're on the network thread
-            var status = AsyncUtils.BlockingWait(checkpointTask);
-
-            switch (status)
-            {
-                case CheckpointStatus.AlreadyInProgress:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case CheckpointStatus.Failed:
-                    // Nothing durable was written, so replying OK here would report data as saved that was not.
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_FAILED, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                default:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// EXPDELSCAN [DBID]
         /// Scan the mutable region and delete all expired keys.
         /// This is meant to be able to let users do on-demand expiration, and even build their own schedulers
@@ -1074,56 +1028,6 @@ namespace Garnet.server
             var seconds = db.LastSaveTime.ToUnixTimeSeconds();
             while (!RespWriteUtils.TryWriteInt64(seconds, ref dcurr, dend))
                 SendAndReset();
-
-            return true;
-        }
-
-        /// <summary>
-        /// BGSAVE [SCHEDULE] [DBID]
-        /// </summary>
-        /// <returns></returns>
-        private bool NetworkBGSAVE()
-        {
-            if (parseState.Count > 2)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.BGSAVE));
-            }
-
-            // By default - save all active databases, unless database ID specified
-            var dbId = -1;
-
-            var tokenIdx = 0;
-            if (parseState.Count > 0)
-            {
-                if (parseState.GetArgSliceByRef(tokenIdx).ReadOnlySpan
-                    .EqualsUpperCaseSpanIgnoringCase(CmdStrings.SCHEDULE))
-                    tokenIdx++;
-
-                // Check if ID specified
-                if (parseState.Count - tokenIdx > 0)
-                {
-                    if (!TryParseDatabaseId(tokenIdx, out dbId))
-                        return true;
-                }
-            }
-
-            var checkpointTask = storeWrapper.TakeCheckpointAsync(true, dbId: dbId, logger: logger);
-
-            // No choice but to block, we're on the network thread
-            var status = AsyncUtils.BlockingWait(checkpointTask);
-
-            // A background checkpoint replies before it runs, so its failure cannot be reported here; it surfaces
-            // through LASTSAVE not advancing and through rdb_last_bgsave_status in INFO PERSISTENCE.
-            if (status == CheckpointStatus.AlreadyInProgress)
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteSimpleString("Background saving started"u8, ref dcurr, dend))
-                    SendAndReset();
-            }
 
             return true;
         }

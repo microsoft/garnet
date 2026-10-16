@@ -4,6 +4,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Text;
@@ -28,17 +29,28 @@ namespace Garnet.test
 
         /// <param name="useTls">Whether the server under test terminates TLS.</param>
         /// <param name="bufferSize">Capacity of the send and reply buffers; a command and its reply must fit.</param>
-        internal RawRespSession(bool useTls = false, int bufferSize = 64 * 1024)
+        /// <param name="receiveBufferSize">
+        /// When positive, the size of the socket's receive buffer. Setting it fixes the window the client
+        /// advertises, where the default lets the kernel grow it to megabytes, so a client that stops reading
+        /// backs the server's socket up after a predictable amount of data.
+        /// </param>
+        /// <param name="endpoint">The server to connect to; the standalone test server when omitted.</param>
+        internal RawRespSession(bool useTls = false, int bufferSize = 64 * 1024, int receiveBufferSize = 0, EndPoint endpoint = null)
         {
             readBuffer = new byte[bufferSize];
             writeBuffer = new byte[bufferSize];
             replyBuffer = new byte[bufferSize];
 
-            var endpoint = TestUtils.EndPoint;
+            endpoint ??= TestUtils.EndPoint;
             socket = new Socket(endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
             {
                 NoDelay = true,
             };
+
+            // Must be set before connecting, or the window advertised in the handshake is already fixed
+            if (receiveBufferSize > 0)
+                socket.ReceiveBufferSize = receiveBufferSize;
+
             socket.Connect(endpoint);
             socket.ReceiveTimeout = (int)TimeSpan.FromSeconds(90).TotalMilliseconds;
 
@@ -60,6 +72,12 @@ namespace Garnet.test
             {
                 stream = netStream;
             }
+        }
+
+        /// <summary>How long a read waits for the server to send before it fails.</summary>
+        internal TimeSpan ReceiveTimeout
+        {
+            set => socket.ReceiveTimeout = (int)value.TotalMilliseconds;
         }
 
         /// <summary>Sends one command and returns its reply as text.</summary>
@@ -236,6 +254,77 @@ namespace Garnet.test
                     throw new IOException("Connection closed by server");
             }
             return readBuffer[readStart++];
+        }
+
+        /// <summary>
+        /// Reads exactly <paramref name="expected"/>.Length bytes and asserts they are those bytes, comparing as
+        /// they arrive so that a reply far larger than the session's buffers can be checked.
+        /// </summary>
+        /// <param name="expected">The bytes the server must send next.</param>
+        /// <param name="what">What is being read, for the failure message.</param>
+        internal void ExpectBytes(ReadOnlySpan<byte> expected, string what)
+        {
+            var done = 0;
+            while (done < expected.Length)
+            {
+                if (readStart == readEnd)
+                {
+                    var open = false;
+                    try
+                    {
+                        open = Refill();
+                    }
+                    catch (IOException e)
+                    {
+                        Assert.Fail($"{what}: nothing more arrived after {done} of {expected.Length} bytes ({e.Message})");
+                    }
+
+                    if (!open)
+                        Assert.Fail($"{what}: the connection closed after {done} of {expected.Length} bytes");
+                }
+
+                var n = Math.Min(readEnd - readStart, expected.Length - done);
+                var same = readBuffer.AsSpan(readStart, n).CommonPrefixLength(expected.Slice(done, n));
+                if (same < n)
+                    Assert.Fail($"{what}: byte {done + same} of {expected.Length} is 0x{readBuffer[readStart + same]:x2}, " +
+                        $"expected 0x{expected[done + same]:x2}");
+
+                readStart += n;
+                done += n;
+            }
+        }
+
+        /// <summary>Asserts that the server sends nothing more and closes the connection.</summary>
+        /// <param name="what">What was being read, for the failure message.</param>
+        internal void ExpectEndOfStream(string what)
+        {
+            if (readStart == readEnd)
+            {
+                var open = false;
+                try
+                {
+                    open = Refill();
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"{what}: the connection did not close cleanly ({e.Message})");
+                }
+
+                if (!open)
+                    return;
+            }
+
+            var extra = readBuffer.AsSpan(readStart, Math.Min(readEnd - readStart, 32));
+            Assert.Fail($"{what}: {readEnd - readStart} byte(s) arrived where the connection should have closed, " +
+                $"starting '{Describe(extra)}'");
+        }
+
+        /// <summary>Refills the read buffer, returning false once the server has closed the connection.</summary>
+        bool Refill()
+        {
+            readStart = readEnd = 0;
+            readEnd = stream.Read(readBuffer, 0, readBuffer.Length);
+            return readEnd > 0;
         }
 
         static string Describe(ReadOnlySpan<byte> bytes) =>

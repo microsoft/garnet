@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -23,7 +24,12 @@ namespace Garnet.cluster
         /// <param name="previousAddress"></param>
         /// <param name="currentAddress"></param>
         /// <param name="nextAddress"></param>
-        public void ProcessPrimaryStream(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress)
+        /// <returns>
+        /// A completed task when the record has been applied, or handed to the replay task, without waiting. Otherwise a
+        /// task that completes once the session may go on to the next message, until which <paramref name="record"/> must
+        /// stay valid.
+        /// </returns>
+        public ValueTask ProcessPrimaryStreamAsync(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress)
         {
             // logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
@@ -34,6 +40,9 @@ namespace Garnet.cluster
             // NOTE: this should not be expensive because every replay task has its own lock copy
             // Cache invalidation happens only on dispose which is rare operation
             var failReplay = syncReplay && !replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).ResumeReplay();
+
+            // Whether the replay taken above is given up by the task returned instead of here
+            var handedOff = false;
             try
             {
                 if (failReplay)
@@ -103,20 +112,32 @@ namespace Garnet.cluster
                 // Enqueue to AOF
                 _ = physicalSublog.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: true);
 
+                var driver = replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx);
+                ValueTask pending;
+                var pulseFollows = false;
                 if (syncReplay)
                 {
                     // Synchronous replay
-                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
-                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).Throttle();
+                    pending = driver.ConsumeFromSessionAsync(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                    if (pending.IsCompletedSuccessfully)
+                        pending = driver.ThrottleAsync();
+                    else
+                        pulseFollows = true;
                 }
                 else
                 {
                     // Initialize iterator and run background task once
-                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).InitializeBackgroundReplayTask(previousAddress);
+                    driver.InitializeBackgroundReplayTask(previousAddress);
 
                     // Throttle to give the opportunity to the background replay task to catch up
-                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).ThrottlePrimary();
+                    pending = driver.ThrottlePrimaryAsync();
                 }
+
+                if (pending.IsCompletedSuccessfully)
+                    return default;
+
+                handedOff = true;
+                return FinishReplayAsync(driver, pending, pulseFollows, ownsReplay: syncReplay);
             }
             catch (Exception ex)
             {
@@ -125,7 +146,7 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (syncReplay && !failReplay)
+                if (syncReplay && !failReplay && !handedOff)
                     replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).SuspendReplay();
             }
         }

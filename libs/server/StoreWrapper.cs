@@ -1082,6 +1082,27 @@ namespace Garnet.server
             => enforceConsistentRead && clusterProvider.IsReplica();
 
         /// <summary>
+        /// Sessions that have been disposed but are still using their storage sessions, because an async GET
+        /// processor is finishing the reads the session started.
+        /// </summary>
+        int sessionStorageTeardowns;
+
+        /// <summary>
+        /// Counts a session whose storage sessions are released after it is disposed.
+        /// </summary>
+        internal void BeginStorageTeardown() => _ = Interlocked.Increment(ref sessionStorageTeardowns);
+
+        /// <summary>
+        /// Uncounts a session once its storage sessions have been released.
+        /// </summary>
+        internal void EndStorageTeardown() => _ = Interlocked.Decrement(ref sessionStorageTeardowns);
+
+        /// <summary>
+        /// Number of sessions that are disposed but have not yet released their storage sessions.
+        /// </summary>
+        internal int StorageTeardowns => Volatile.Read(ref sessionStorageTeardowns);
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
@@ -1089,6 +1110,11 @@ namespace Garnet.server
             if (disposed)
                 return;
             disposed = true;
+
+            // The stores are torn down below, under sessions that are still releasing theirs. The reads they are
+            // waiting for are on devices that stay open until then, so this ends once those complete.
+            for (var spinner = new SpinWait(); StorageTeardowns != 0;)
+                spinner.SpinOnce();
 
             clusterProvider?.Dispose();
             itemBroker?.Dispose();

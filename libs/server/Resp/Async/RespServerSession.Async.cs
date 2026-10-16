@@ -532,6 +532,9 @@ namespace Garnet.server
             {
                 sessionDelay?.Cancel();
                 sessionSignal?.Cancel();
+                sendCapacityWait?.Cancel();
+                migrationWait?.Cancel();
+                aofGateWait?.Cancel();
             }
             catch (Exception ex)
             {

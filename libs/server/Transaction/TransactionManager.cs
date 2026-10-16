@@ -103,6 +103,10 @@ namespace Garnet.server
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
         internal readonly ScratchBufferAllocator txnScratchBufferAllocator;
         internal SessionParseState txnKeysParseState;
+
+        // Whether txnKeysParseState holds the watched keys. An EXEC that waits for a migration is verified again, and the
+        // watched keys are listed once however many times that happens
+        bool watchedKeysListed;
         private readonly GarnetAppendOnlyFile appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
@@ -279,6 +283,7 @@ namespace Garnet.server
             {
                 txnKeysParseState.Count = 0;
                 txnScratchBufferAllocator.Reset();
+                watchedKeysListed = false;
             }
         }
 
@@ -470,7 +475,12 @@ namespace Garnet.server
 
         internal void GetSlotVerificationInput(byte sessionAsking, out ClusterSlotVerificationInput clusterSlotVerificationInput)
         {
-            watchContainer.SaveKeysToKeyList(this);
+            if (!watchedKeysListed)
+            {
+                watchContainer.SaveKeysToKeyList(this);
+                watchedKeysListed = true;
+            }
+
             clusterSlotVerificationInput = new ClusterSlotVerificationInput
             {
                 readOnly = keyEntries.IsReadOnly,

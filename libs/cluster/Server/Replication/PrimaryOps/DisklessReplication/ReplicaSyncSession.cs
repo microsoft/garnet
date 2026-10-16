@@ -176,6 +176,13 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Waits out the window the sync leader leaves open for other replicas to attach to its streaming sync.
+        /// The wait is cancelled when the sync manager shuts down.
+        /// </summary>
+        /// <param name="window">How long to leave the sync open.</param>
+        public Task WaitForAttachWindowAsync(TimeSpan window) => Task.Delay(window, token);
+
+        /// <summary>
         /// Wait until sync of checkpoint is completed
         /// </summary>
         /// <returns></returns>

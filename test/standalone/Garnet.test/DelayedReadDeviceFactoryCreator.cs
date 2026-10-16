@@ -133,6 +133,26 @@ namespace Garnet.test
         /// <summary>Clears <see cref="ReadCount"/>, discounting reads from populating the store.</summary>
         internal void ResetReadCount() => Volatile.Write(ref reads, 0);
 
+        /// <summary>
+        /// Completes every read currently withheld, however much of its delay is left. A test holds reads by arming
+        /// a delay longer than it will wait, and releases them by setting <see cref="ReadDelayMs"/> back to zero
+        /// and calling this.
+        /// </summary>
+        internal void CompleteHeldReads()
+        {
+            lock (gate)
+            {
+                var held = new List<PendingRead>(pending.Count);
+                while (pending.TryDequeue(out var read, out _))
+                    held.Add(read);
+
+                foreach (var read in held)
+                    pending.Enqueue(read, 0);
+
+                Monitor.Pulse(gate);
+            }
+        }
+
         /// <inheritdoc/>
         public INamedDeviceFactory Create(string baseName) => new DelayedReadNamedDeviceFactory(inner.Create(baseName), this);
 

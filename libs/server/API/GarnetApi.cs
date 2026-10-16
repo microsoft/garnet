@@ -48,6 +48,10 @@ namespace Garnet.server
             => storageSession.GET_WithPending(key.ReadOnlySpan, ref input, ref output, ctx, out pending, ref stringContext);
 
         /// <inheritdoc />
+        public GarnetStatus GET_WithDetachedPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long ctx, out bool pending)
+            => storageSession.GET_WithDetachedPending(key.ReadOnlySpan, ref input, ref output, ctx, out pending, ref stringContext);
+
+        /// <inheritdoc />
         public bool GET_CompletePending((GarnetStatus Status, StringOutput Output)[] outputArr, bool wait = false)
             => storageSession.GET_CompletePending(outputArr, wait, ref stringContext);
 
