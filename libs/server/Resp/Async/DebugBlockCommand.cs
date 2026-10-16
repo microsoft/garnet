@@ -164,19 +164,11 @@ namespace Garnet.server
         [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
         async ValueTask DebugBlockOnBodyAsync(string name)
         {
-            var registry = storeWrapper.sessionSignalRegistry;
             var signal = SessionSignal;
 
-            registry.Register(name, signal);
-            try
-            {
-                await signal.WaitAsync().ConfigureAwait(false);
-            }
-            finally
-            {
-                // A wait that ended by teardown rather than by a signal is still listed.
-                registry.Unregister(name, signal);
-            }
+            // A signal or a teardown takes the session off the name itself, so there is nothing to undo after the await
+            storeWrapper.sessionSignalRegistry.Register(name, signal);
+            await signal.WaitAsync().ConfigureAwait(false);
 
             WriteDirect(CmdStrings.RESP_OK);
         }

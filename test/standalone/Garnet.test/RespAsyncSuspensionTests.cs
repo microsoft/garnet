@@ -486,6 +486,44 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Shutting the server down while sessions are parked on a name takes them off it. A command that is
+        /// torn down is never resumed, so what it registered with the rest of the server has to be released by
+        /// the teardown rather than by anything the command would have run once its await returned.
+        /// </summary>
+        [Test]
+        public void SessionsParkedOnANameWhenTheServerShutsDownLeaveNothingListedOnIt()
+        {
+            const int WaiterCount = 8;
+            const string Name = "shutdown";
+
+            var registry = server.Provider.StoreWrapper.sessionSignalRegistry;
+            var waiters = new RawRespSession[WaiterCount];
+            try
+            {
+                for (var i = 0; i < WaiterCount; i++)
+                {
+                    waiters[i] = new RawRespSession(useTls);
+                    waiters[i].Send("DEBUG", "BLOCKON", Name);
+                }
+
+                var clock = Stopwatch.StartNew();
+                while (registry.WaiterCount(Name) < WaiterCount && clock.Elapsed < TimeSpan.FromSeconds(30))
+                    Thread.Sleep(1);
+                ClassicAssert.AreEqual(WaiterCount, registry.WaiterCount(Name), "The sessions did not all park");
+
+                server.Dispose();
+                server = null;
+
+                ClassicAssert.AreEqual(0, registry.WaiterCount(Name), "A session torn down while parked is still listed");
+            }
+            finally
+            {
+                foreach (var waiter in waiters)
+                    waiter?.Dispose();
+            }
+        }
+
+        /// <summary>
         /// The point of the whole design: a parked command holds no thread. Far more sessions block
         /// concurrently than the thread pool could ever supply threads for, and they all finish together.
         /// </summary>

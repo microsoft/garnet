@@ -91,8 +91,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual(0, registry.SignalAll(Name));
         }
 
+        /// <summary>
+        /// A session that is torn down while parked is never resumed, so nothing its command would have run
+        /// after the await takes its signal off the name. The teardown has to.
+        /// </summary>
         [Test]
-        public void AWaiterThatStoppedWaitingIsNotWoken()
+        public void ATeardownTakesTheSignalOffItsName()
         {
             var registry = new SessionSignalRegistry();
             var stays = new SessionSignal();
@@ -100,8 +104,11 @@ namespace Garnet.test
 
             registry.Register(Name, stays);
             registry.Register(Name, leaves);
-            registry.Unregister(Name, leaves);
+            ClassicAssert.AreEqual(2, registry.WaiterCount(Name));
 
+            leaves.Cancel();
+
+            ClassicAssert.AreEqual(1, registry.WaiterCount(Name), "the torn-down session is still listed");
             ClassicAssert.AreEqual(1, registry.SignalAll(Name));
         }
 
@@ -130,13 +137,52 @@ namespace Garnet.test
             var signal = new SessionSignal();
 
             // Teardown runs on the network thread and can overtake a command body that is on its way to its
-            // await. Nothing will complete the wait afterwards, so the wait itself has to notice.
+            // await. Nothing will complete the wait afterwards, so the wait itself has to notice, and the
+            // registration has to notice too, because the teardown found nothing listed to take off.
             signal.Cancel();
             registry.Register(Name, signal);
+
+            ClassicAssert.AreEqual(0, registry.WaiterCount(Name), "a signal registered after its teardown stays listed");
 
             var wait = signal.WaitAsync();
             ClassicAssert.IsTrue(wait.IsCompleted);
             _ = Assert.ThrowsAsync<OperationCanceledException>(async () => await wait);
+        }
+
+        /// <summary>
+        /// A teardown can land at any step of a registration, including after the signal has joined the list
+        /// and before it has been told which list that is. Wherever it lands the signal must not stay listed,
+        /// or a later signal would count a session that is gone as woken.
+        /// </summary>
+        [Test]
+        public async Task ATeardownRacingARegistrationNeverLeavesTheSignalListed()
+        {
+            var registry = new SessionSignalRegistry();
+
+            for (var round = 0; round < 20_000; round++)
+            {
+                var signal = new SessionSignal();
+
+                using var start = new SemaphoreSlim(0, 2);
+                var registering = Task.Run(() =>
+                {
+                    start.Wait();
+                    registry.Register(Name, signal);
+                });
+                var tearingDown = Task.Run(() =>
+                {
+                    start.Wait();
+
+                    // Sweeps the teardown across the steps of the registration
+                    Thread.SpinWait(round % 64);
+                    signal.Cancel();
+                });
+
+                start.Release(2);
+                await Task.WhenAll(registering, tearingDown).WaitAsync(WaitLimit);
+
+                ClassicAssert.AreEqual(0, registry.WaiterCount(Name), $"round {round}: a torn-down signal stayed listed");
+            }
         }
 
         [Test]
