@@ -16,23 +16,14 @@ namespace Garnet.common
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
             => StaticEquals(k1, k2);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly long GetHashCode64<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         => StaticGetHashCode64(key);
 
         /// <summary>
@@ -40,14 +31,8 @@ namespace Garnet.common
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool StaticEquals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
-            where TFirstKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
-            where TSecondKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
         {
             // Special cases for FixedSpanByteKey
             if (typeof(TFirstKey) == typeof(FixedSpanByteKey))
@@ -138,10 +123,7 @@ namespace Garnet.common
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long StaticGetHashCode64<TKey>(TKey key)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             // Guarantee, irrespective of inlining decisions, that FixedSpanByteKey is special cased
             if (typeof(TKey) == typeof(FixedSpanByteKey))

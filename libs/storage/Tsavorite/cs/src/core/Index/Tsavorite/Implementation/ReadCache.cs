@@ -16,10 +16,7 @@ namespace Tsavorite.core
     {
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal bool FindInReadCache<TKey>(TKey key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress = kInvalidAddress, bool alwaysFindLatestLA = true)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
 
