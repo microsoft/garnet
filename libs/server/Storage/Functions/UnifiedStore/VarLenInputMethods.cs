@@ -108,6 +108,11 @@ namespace Garnet.server
                 recordType = (byte)input.arg1;
                 Debug.Assert(recordType is 0 or VectorManager.RecordType or RangeIndexManager.RangeIndexRecordType, "Unexpected RecordType on rename operation");
             }
+            else if (input.header.cmd == RespCommand.COPY)
+            {
+                // COPY rejects specialized record types and uses arg1 only for the source expiration.
+                recordType = 0;
+            }
             else
             {
                 recordType = 0;
@@ -119,6 +124,7 @@ namespace Garnet.server
                 ValueSize = value.Length,
                 ValueIsObject = false,
                 HasETag = false,
+                HasExpiration = input.header.cmd == RespCommand.COPY && input.arg1 != 0,
                 RecordType = recordType,
             };
         }
@@ -132,6 +138,7 @@ namespace Garnet.server
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false,
+                HasExpiration = input.header.cmd == RespCommand.COPY && input.arg1 != 0,
             };
         }
 
@@ -147,7 +154,8 @@ namespace Garnet.server
                 ValueSize = inputLogRecord.DataHeader.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.DataHeader.ValueIsObject,
                 HasETag = false,
-                HasExpiration = inputLogRecord.DataHeader.HasExpiration,
+                HasExpiration = inputLogRecord.DataHeader.HasExpiration &&
+                    !(input.header.cmd == RespCommand.COPY && inputLogRecord.DataHeader.ValueIsObject),
                 RecordType = inputLogRecord.RecordType,
             };
         }

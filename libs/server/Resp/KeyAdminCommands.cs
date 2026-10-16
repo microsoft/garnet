@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Text;
 using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
@@ -276,6 +277,71 @@ namespace Garnet.server
                     SendAndReset();
             }
 
+            return true;
+        }
+
+        /// <summary>COPY a key without removing the source.</summary>
+        private bool NetworkCOPY<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            if (parseState.Count < 2)
+                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COPY));
+
+            var sourceKey = parseState.GetArgSliceByRef(0);
+            var destinationKey = parseState.GetArgSliceByRef(1);
+            var replace = false;
+            var dbSeen = false;
+            for (var i = 2; i < parseState.Count; i++)
+            {
+                var option = parseState.GetArgSliceByRef(i).ReadOnlySpan;
+                if (EqualsAsciiIgnoreCase(option, "REPLACE"u8))
+                {
+                    replace = true;
+                    continue;
+                }
+
+                if (EqualsAsciiIgnoreCase(option, "DB"u8))
+                {
+                    if (dbSeen || i + 1 >= parseState.Count)
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+                    dbSeen = true;
+                    var dbSlice = parseState.GetArgSliceByRef(++i).ReadOnlySpan;
+                    if (!Utf8Parser.TryParse(dbSlice, out int dbId, out var consumed) || consumed != dbSlice.Length)
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    if (dbId != activeDbId)
+                        return AbortWithErrorMessage("ERR COPY across databases is not supported"u8);
+                    continue;
+                }
+
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_SYNTAX_ERROR);
+            }
+
+            if (sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan))
+                return AbortWithErrorMessage("ERR source and destination objects are the same"u8);
+
+            var status = storageApi.COPY(sourceKey, destinationKey, replace, out var result);
+            if (status == GarnetStatus.WRONGTYPE)
+                return AbortWithErrorMessage("ERR COPY does not support Vector Sets or Range Indexes"u8);
+
+            if (status == GarnetStatus.NOTFOUND)
+                result = 0;
+            while (!RespWriteUtils.TryWriteInt32(result, ref dcurr, dend))
+                SendAndReset();
+            return true;
+        }
+
+        private static bool EqualsAsciiIgnoreCase(ReadOnlySpan<byte> value, ReadOnlySpan<byte> expected)
+        {
+            if (value.Length != expected.Length)
+                return false;
+            for (var i = 0; i < value.Length; i++)
+            {
+                var b = value[i];
+                if (b is >= (byte)'a' and <= (byte)'z')
+                    b -= 32;
+                if (b != expected[i])
+                    return false;
+            }
             return true;
         }
 

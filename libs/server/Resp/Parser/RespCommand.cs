@@ -150,7 +150,8 @@ namespace Garnet.server
         BITOP_OR = 117,
         BITOP_XOR = 118,
         BITOP_NOT = 119,
-        BITOP_DIFF = 120, // Note: LastWriteCommand — append new write commands after this with the next value
+        BITOP_DIFF = 120,
+        COPY = 121, // Note: LastWriteCommand — append new write commands after this with the next value
 
         // Read-only commands. NEVER persisted (reads never enter the AOF), so these are
         // auto-numbered and may be renumbered/reordered freely across versions. They follow the
@@ -589,7 +590,7 @@ namespace Garnet.server
         // appended.
         internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        internal const RespCommand LastWriteCommand = RespCommand.BITOP_DIFF;
+        internal const RespCommand LastWriteCommand = RespCommand.COPY;
 
         // Data commands span writes + reads + scripts contiguously: [FirstDataCommand, LastDataCommand].
         internal const RespCommand FirstDataCommand = FirstWriteCommand;

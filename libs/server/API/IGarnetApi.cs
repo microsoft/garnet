@@ -156,6 +156,16 @@ namespace Garnet.server
         /// <param name="result">The result of the operation.</param>
         /// <returns></returns>
         GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result);
+
+        /// <summary>
+        /// Copies the source key and its value to the destination key.
+        /// </summary>
+        /// <param name="source">The key to be copied.</param>
+        /// <param name="destination">The destination key.</param>
+        /// <param name="replace">Whether to replace an existing destination key.</param>
+        /// <param name="result">The result of the operation.</param>
+        /// <returns></returns>
+        GarnetStatus COPY(PinnedSpanByte source, PinnedSpanByte destination, bool replace, out int result);
         #endregion
 
         #region EXISTS
