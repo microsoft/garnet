@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.cluster;
@@ -66,6 +67,7 @@ namespace Garnet.test.cluster
             Assert.That(context.clusterTestUtils.GetServer(0).Execute(
                 "FAILOVER", "TO", endpoint.Address.ToString(), endpoint.Port, "TIMEOUT", 30_000).ToString(), Is.EqualTo("OK"));
             context.clusterTestUtils.WaitForNoFailover(0, context.logger);
+            context.clusterTestUtils.WaitForNoFailover(1, context.logger);
 
             Assert.That(primary.failoverManager.IsWritePaused, Is.False);
             Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA));
@@ -249,6 +251,7 @@ namespace Garnet.test.cluster
                 reader.ReleaseCurrentEpoch();
             }
             context.clusterTestUtils.WaitForNoFailover(0, context.logger);
+            context.clusterTestUtils.WaitForNoFailover(1, context.logger);
             Assert.That(primary.failoverManager.IsWritePaused, Is.False);
             Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
         }
@@ -334,12 +337,36 @@ namespace Garnet.test.cluster
             Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
         }
 
+        static unsafe string VerifyMultiKeyResponse(ClusterSession session, PinnedSpanByte key, bool readOnly, bool isTxn)
+        {
+            var parseState = new SessionParseState();
+            parseState.InitializeWithArguments(key, key);
+            Assert.That(RespCommandsInfo.TryGetSimpleRespCommandInfo(readOnly ? RespCommand.MGET : RespCommand.DEL, out var commandInfo), Is.True);
+            var input = new ClusterSlotVerificationInput { readOnly = readOnly, keySpecs = commandInfo.KeySpecs };
+            byte* buffer = stackalloc byte[256];
+            var current = buffer;
+            var end = buffer + 256;
+            Assert.That(session.NetworkMultiKeySlotVerify(ref parseState, ref input, ref current, ref end, isTxn), Is.True);
+            return Encoding.ASCII.GetString(new ReadOnlySpan<byte>(buffer, (int)(current - buffer)));
+        }
+
         [TestCase(false, false)]
         [TestCase(false, true)]
         [TestCase(true, false)]
         [TestCase(true, true)]
         [CancelAfter(120_000)]
-        public async Task MigrationWaitRevalidatesRecoveryBeforeStorageLookup(bool readOnly, bool demote)
+        public Task MigrationWaitRevalidatesRecoveryBeforeStorageLookup(bool readOnly, bool demote)
+            => VerifyMigrationWaitAsync(readOnly, demote, isTxn: false, verifyResponse: false);
+
+        [TestCase(false, false)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        [CancelAfter(120_000)]
+        public Task MigrationWaitRedirectsToNewPrimary(bool readOnly, bool isTxn)
+            => VerifyMigrationWaitAsync(readOnly, demote: true, isTxn, verifyResponse: true);
+
+        async Task VerifyMigrationWaitAsync(bool readOnly, bool demote, bool isTxn, bool verifyResponse)
         {
             SetupReplica(1);
             var provider = Provider(0);
@@ -373,7 +400,8 @@ namespace Garnet.test.cluster
                 Assert.That(provider.migrationManager.CanAccessKey(key, slot, readOnly), Is.False);
                 var migrating = original.UpdateSlotState(slot, ClusterConfig.LOCAL_WORKER_ID, SlotState.MIGRATING);
                 manager.UnsafeSetConfig(migrating);
-                session.SetReadOnlySession();
+                if (!verifyResponse)
+                    session.SetReadOnlySession();
                 // An unintended lookup fails without accessing storage that recovery could reset.
                 apiField.SetValue(session, Activator.CreateInstance(apiField.FieldType));
                 object[] args = [migrating, key, readOnly, false, false, (int)slot];
@@ -382,7 +410,7 @@ namespace Garnet.test.cluster
                     session.AcquireCurrentEpoch();
                     try
                     {
-                        return verify.Invoke(session, args);
+                        return verifyResponse ? VerifyMultiKeyResponse(session, key, readOnly, isTxn) : verify.Invoke(session, args);
                     }
                     finally
                     {
@@ -394,8 +422,11 @@ namespace Garnet.test.cluster
                 // Cross an epoch while migration blocks, proving the initial recovery check has completed.
                 Assert.That(await provider.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(token), Is.True);
                 Assert.That(pending.IsCompleted, Is.False);
-                ownsRecovery = provider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate, upgradeLock: false);
-                Assert.That(ownsRecovery, Is.True);
+                if (!verifyResponse)
+                {
+                    ownsRecovery = provider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate, upgradeLock: false);
+                    Assert.That(ownsRecovery, Is.True);
+                }
                 if (demote)
                 {
                     manager.UnsafeSetConfig(migrating.MakeReplicaOf(replicaId).AssignSlots(
@@ -403,10 +434,18 @@ namespace Garnet.test.cluster
                 }
                 Assert.That(await provider.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(token), Is.True);
                 sketch.SetStatus(SketchStatus.MIGRATED);
-                var result = (ClusterSlotVerificationResult)await pending.WaitAsync(TimeSpan.FromSeconds(5));
-                var verifiedConfig = (ClusterConfig)args[0];
-                Assert.That(result.state, Is.EqualTo(verifiedConfig.LocalNodeRole == ClusterNodeRole.REPLICA
-                    ? SlotVerifiedState.MOVED : SlotVerifiedState.CLUSTERDOWN));
+                var result = await pending.WaitAsync(TimeSpan.FromSeconds(5));
+                if (verifyResponse)
+                {
+                    Assert.That((string)result, Is.EqualTo($"-MOVED {slot} {target.Address}:{target.Port}\r\n"),
+                        "The response must use the configuration refreshed after the migration wait, not the old primary endpoint.");
+                }
+                else
+                {
+                    var verifiedConfig = (ClusterConfig)args[0];
+                    Assert.That(((ClusterSlotVerificationResult)result).state, Is.EqualTo(verifiedConfig.LocalNodeRole == ClusterNodeRole.REPLICA
+                        ? SlotVerifiedState.MOVED : SlotVerifiedState.CLUSTERDOWN));
+                }
             }
             finally
             {

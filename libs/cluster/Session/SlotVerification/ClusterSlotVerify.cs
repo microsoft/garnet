@@ -183,7 +183,7 @@ namespace Garnet.cluster
             }
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, bool isTxn, bool waitForStableSlot)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ref ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, bool isTxn, bool waitForStableSlot)
         {
             // Find the first valid key and initialize slot/result
             var specIndex = 0;
