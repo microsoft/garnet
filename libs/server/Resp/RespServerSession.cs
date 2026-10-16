@@ -1855,8 +1855,9 @@ namespace Garnet.server
         /// of outstanding sends, which parks the session before its next command. An out-of-band writer cannot
         /// park the session it writes to. The completion processor does not wait for the socket either: it holds
         /// the response object while it writes, so a wait would leave the session's receive thread spinning on
-        /// it. What it sends is bounded by the reads the session has in flight. A publisher's push waits for
-        /// capacity instead.
+        /// it. What it sends is bounded by the reads the session has in flight. A publisher that can park holds
+        /// its message back for a subscriber whose connection is full (<see cref="TryPublish"/>) and delivers it
+        /// when there is room; only one that cannot park waits for capacity inside the write.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SendNow(byte* d)

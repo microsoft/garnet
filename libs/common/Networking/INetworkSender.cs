@@ -102,7 +102,10 @@ namespace Garnet.networking
 
         /// <summary>
         /// Arranges for <paramref name="waiter"/> to be notified when the sends outstanding next drop below the
-        /// throttle limit. A sender holds at most one waiter.
+        /// throttle limit. A sender holds any number of waiters, because the session that owns the connection
+        /// is not the only one that waits for it: a publisher waits for the subscribers it delivers to. Each
+        /// waiter is notified once, and every waiter registered when capacity returns is notified, so a waiter
+        /// that does not use the capacity cannot strand another.
         /// </summary>
         /// <param name="waiter">The waiter to notify</param>
         /// <returns>
@@ -110,6 +113,18 @@ namespace Garnet.networking
         /// which case the waiter will not be called
         /// </returns>
         bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter);
+
+        /// <summary>
+        /// Takes back a registration made with <see cref="TryRegisterSendCapacityWaiter"/> whose wait ended some
+        /// other way, so a connection that never regains capacity does not keep the waiters of sessions that
+        /// have gone.
+        /// </summary>
+        /// <param name="waiter">The waiter to take back</param>
+        /// <returns>
+        /// True if the waiter was still registered and will not be called, false if it had already been taken
+        /// for notification or was not registered
+        /// </returns>
+        bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter);
 
         /// <summary>
         /// Send response (caller owns buffer space)

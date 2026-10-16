@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -50,9 +52,19 @@ namespace Garnet.common
         int nonBlockingSends;
 
         /// <summary>
-        /// The waiter to notify when <see cref="nonBlockingSends"/> drops below <see cref="ThrottleMax"/>
+        /// The waiters to notify when <see cref="nonBlockingSends"/> drops below <see cref="ThrottleMax"/>.
+        /// Guarded by <see cref="capacityLock"/>. A connection serves several: the session that owns it, and
+        /// each publisher waiting to deliver to it.
         /// </summary>
-        ISendCapacityWaiter capacityWaiter;
+        List<ISendCapacityWaiter> capacityWaiters;
+
+        /// <summary>
+        /// Number of entries in <see cref="capacityWaiters"/>, read without the lock so that a completion with
+        /// no one waiting, which is nearly every completion, does not take it
+        /// </summary>
+        int capacityWaiterCount;
+
+        readonly object capacityLock = new();
 
         /// <summary>
         /// Open, then closing while the sends already in flight drain, then closed. A send that starts after the
@@ -297,17 +309,35 @@ namespace Garnet.common
         /// <inheritdoc />
         public override bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter)
         {
-            // Publish the waiter before reading the count. The completion that frees capacity decrements the
-            // count before reading the waiter, so whichever of the two goes second sees the other.
-            var previous = Interlocked.Exchange(ref capacityWaiter, waiter);
-            Debug.Assert(previous == null || ReferenceEquals(previous, waiter), "A sender serves one capacity waiter");
+            lock (capacityLock)
+            {
+                (capacityWaiters ??= []).Add(waiter);
+
+                // Publish the waiter before reading the sends outstanding. The completion that frees capacity
+                // decrements the count before reading the waiters, so whichever of the two goes second sees the
+                // other.
+                _ = Interlocked.Exchange(ref capacityWaiterCount, capacityWaiters.Count);
+            }
 
             if (IsSendSaturated)
                 return true;
 
             // Capacity is already available. Withdraw the waiter, unless a completion took it first, in which
             // case it will be called and the caller must wait for that.
-            return Interlocked.CompareExchange(ref capacityWaiter, null, waiter) != waiter;
+            return !WithdrawSendCapacityWaiter(waiter);
+        }
+
+        /// <inheritdoc />
+        public override bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter)
+        {
+            lock (capacityLock)
+            {
+                if (capacityWaiters is null || !capacityWaiters.Remove(waiter))
+                    return false;
+
+                Volatile.Write(ref capacityWaiterCount, capacityWaiters.Count);
+                return true;
+            }
         }
 
         /// <inheritdoc />
@@ -511,16 +541,56 @@ namespace Garnet.common
 
         private void CompleteNonBlockingSend()
         {
-            if (Interlocked.Decrement(ref nonBlockingSends) < ThrottleMax)
-            {
-                // The take is a compare-exchange, so a waiter withdrawing concurrently is called at most once
-                var waiter = Volatile.Read(ref capacityWaiter);
-                if (waiter != null && Interlocked.CompareExchange(ref capacityWaiter, null, waiter) == waiter)
-                    waiter.OnSendCapacity();
-            }
+            if (Interlocked.Decrement(ref nonBlockingSends) < ThrottleMax && Volatile.Read(ref capacityWaiterCount) != 0)
+                NotifyCapacityWaiters();
 
             if (Volatile.Read(ref closeState) != Open)
                 TryFinishClose();
+        }
+
+        /// <summary>
+        /// Calls every registered waiter, once. All of them are woken rather than one, because a waiter that
+        /// finds the capacity gone again, or no longer needs it, would otherwise leave the next one parked with
+        /// nothing left to wake it.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void NotifyCapacityWaiters()
+        {
+            ISendCapacityWaiter only = null;
+            ISendCapacityWaiter[] many = null;
+            int count;
+
+            // Taken under the lock and called outside it, so a waiter withdrawing concurrently is called at
+            // most once, and one that registers again from its callback does not meet the lock held.
+            lock (capacityLock)
+            {
+                count = capacityWaiters?.Count ?? 0;
+                if (count == 0)
+                    return;
+
+                if (count == 1)
+                {
+                    only = capacityWaiters[0];
+                }
+                else
+                {
+                    many = ArrayPool<ISendCapacityWaiter>.Shared.Rent(count);
+                    capacityWaiters.CopyTo(many);
+                }
+
+                capacityWaiters.Clear();
+                Volatile.Write(ref capacityWaiterCount, 0);
+            }
+
+            if (only is not null)
+            {
+                only.OnSendCapacity();
+                return;
+            }
+
+            for (var i = 0; i < count; i++)
+                many[i].OnSendCapacity();
+            ArrayPool<ISendCapacityWaiter>.Shared.Return(many, clearArray: true);
         }
     }
 }

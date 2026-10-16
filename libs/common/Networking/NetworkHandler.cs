@@ -1122,6 +1122,10 @@ namespace Garnet.networking
             => networkSender.TryRegisterSendCapacityWaiter(waiter);
 
         /// <inheritdoc />
+        public override bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter)
+            => networkSender.WithdrawSendCapacityWaiter(waiter);
+
+        /// <inheritdoc />
         public override void SendResponse(byte[] buffer, int offset, int count, object context)
         {
 #if MESSAGETRAGE

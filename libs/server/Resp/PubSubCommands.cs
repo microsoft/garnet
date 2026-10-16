@@ -20,6 +20,44 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
+            => PublishCore(key, value, noWait: false);
+
+        /// <inheritdoc />
+        public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
+            => PatternPublishCore(pattern, key, value, noWait: false);
+
+        /// <inheritdoc />
+        internal override unsafe bool TryPublish(PinnedSpanByte key, PinnedSpanByte value)
+        {
+            if (MustWaitToPublish)
+                return false;
+
+            PublishCore(key, value, noWait: true);
+            return true;
+        }
+
+        /// <inheritdoc />
+        internal override unsafe bool TryPatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
+        {
+            if (MustWaitToPublish)
+                return false;
+
+            PatternPublishCore(pattern, key, value, noWait: true);
+            return true;
+        }
+
+        /// <summary>
+        /// Whether a publisher has to hold its message back until this session's connection has room. A session
+        /// publishing to itself writes into the batch it is already building, so it never waits.
+        /// </summary>
+        bool MustWaitToPublish => publishingThreadId != Environment.CurrentManagedThreadId && networkSender.IsSendSaturated;
+
+        /// <summary>
+        /// Writes a message to this subscriber. <paramref name="noWait"/> hands it to the sender without waiting
+        /// for the connection to have room, which is what a publisher on a network thread needs; otherwise the
+        /// write waits for room.
+        /// </summary>
+        void PublishCore(PinnedSpanByte key, PinnedSpanByte value, bool noWait)
         {
             // A session that publishes to a channel it is subscribed to re-enters this callback on the
             // thread already holding the network sender lock (from the outer command's response path). In
@@ -35,6 +73,7 @@ namespace Garnet.server
                 {
                     networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                     writingOutOfBand = true;
+                    outOfBandSendsNoWait = noWait;
                 }
 
                 WritePushLength(3);
@@ -65,15 +104,19 @@ namespace Garnet.server
                 if (!reentrant)
                 {
                     writingOutOfBand = false;
+                    outOfBandSendsNoWait = false;
                     networkSender.ExitAndReturnResponseObject();
                 }
             }
         }
 
-        /// <inheritdoc />
-        public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
+        /// <summary>
+        /// Writes a message to this pattern subscriber, as <see cref="PublishCore"/> does for a subscriber of the
+        /// channel itself.
+        /// </summary>
+        void PatternPublishCore(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value, bool noWait)
         {
-            // See Publish(): in the reentrant self-publish case, write into the existing buffer rather than
+            // See PublishCore(): in the reentrant self-publish case, write into the existing buffer rather than
             // re-acquiring the non-reentrant network sender lock.
             var reentrant = publishingThreadId == Environment.CurrentManagedThreadId;
             if (reentrant && reentrantPublishFailure != null)
@@ -85,6 +128,7 @@ namespace Garnet.server
                 {
                     networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                     writingOutOfBand = true;
+                    outOfBandSendsNoWait = noWait;
                 }
 
                 WritePushLength(4);
@@ -115,6 +159,7 @@ namespace Garnet.server
                 if (!reentrant)
                 {
                     writingOutOfBand = false;
+                    outOfBandSendsNoWait = false;
                     networkSender.ExitAndReturnResponseObject();
                 }
             }
@@ -158,11 +203,17 @@ namespace Garnet.server
             // Set the publishing thread id only for the duration of the synchronous broadcast, so a
             // reentrant self-delivery (publishing to a self-subscribed channel) can be detected in
             // Publish()/PatternPublish() without paying this cost on the general command path.
+            //
+            // A publisher that can park does not wait inside the broadcast for a subscriber whose connection is
+            // full: it delivers to everyone else first, and then parks for the ones it held back.
             int numClients;
+            var canPark = CanSuspend;
             publishingThreadId = Environment.CurrentManagedThreadId;
             try
             {
-                numClients = subscribeBroker.PublishNow(key, value);
+                numClients = canPark
+                    ? subscribeBroker.PublishNoWait(key, value, ref deferredDeliveries)
+                    : subscribeBroker.PublishNow(key, value);
             }
             finally
             {
@@ -172,13 +223,19 @@ namespace Garnet.server
             var selfDeliveryFailure = reentrantPublishFailure;
             reentrantPublishFailure = null;
 
+            var holdingDeliveries = canPark && deferredDeliveries is { Count: > 0 };
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 // Started here, where the spans are still addressable: the forward copies them itself if it
                 // has to go async. The session then suspends on it rather than blocking the network thread.
                 var forward = storeWrapper.clusterProvider.ClusterPublishAsync(cmd, key.Span, value.Span);
-                return CompleteClusterPublish(forward, numClients);
+                return holdingDeliveries
+                    ? CompleteDeferredPublish(forward, numClients)
+                    : CompleteClusterPublish(forward, numClients);
             }
+
+            if (holdingDeliveries)
+                return CompleteDeferredPublish(default, numClients);
 
             // A failed delivery to this session ends it, before the reply is written into the response buffer
             // the failed send released

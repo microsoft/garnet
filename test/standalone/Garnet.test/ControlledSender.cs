@@ -13,7 +13,7 @@ namespace Garnet.test
 {
     /// <summary>
     /// A sender that takes whatever it is given, reports itself full or not as the test says, and hands the
-    /// capacity waiter registered with it back to the test to signal.
+    /// capacity waiters registered with it back to the test to signal.
     /// </summary>
     /// <remarks>
     /// A real sender has two ways to send: <see cref="SendResponseNoWait"/> returns at once and says whether the
@@ -27,13 +27,15 @@ namespace Garnet.test
         readonly byte* head;
         readonly object gate = new();
         readonly object waitGate = new();
+        readonly object waiterGate = new();
         readonly List<byte> sent = [];
-        ISendCapacityWaiter waiter;
+        readonly List<ISendCapacityWaiter> waiters = [];
         int registrations;
         int waitingSends;
         volatile bool full;
         volatile bool closed;
         volatile bool waitingSendsBlock;
+        volatile Func<bool> saturation;
         bool waitingSendsReleased;
 
         public ControlledSender(int bufferSize)
@@ -45,12 +47,30 @@ namespace Garnet.test
         public bool Full { set => full = value; }
 
         /// <summary>
+        /// Decides what <see cref="IsSendSaturated"/> reports, in place of <see cref="Full"/>, each time it is
+        /// read. Lets room return between two reads, as it does when a send completes between a publisher's
+        /// looks at a subscriber's connection.
+        /// </summary>
+        public Func<bool> Saturation { set => saturation = value; }
+
+        /// <summary>
         /// Makes <see cref="SendResponse(int, int)"/> wait while the sender is full, until
         /// <see cref="ReleaseWaitingSends"/> or the sender is closed, as a real sender waits for room.
         /// </summary>
         public bool WaitingSendsBlock { set => waitingSendsBlock = value; }
 
+        /// <summary>How many registrations have been made, including those withdrawn since.</summary>
         public int Registrations => Volatile.Read(ref registrations);
+
+        /// <summary>How many waiters are registered now.</summary>
+        public int Waiting
+        {
+            get
+            {
+                lock (waiterGate)
+                    return waiters.Count;
+            }
+        }
 
         /// <summary>How many sends have called <see cref="SendResponse(int, int)"/>.</summary>
         public int WaitingSends => Volatile.Read(ref waitingSends);
@@ -67,13 +87,20 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Calls the registered waiter the way the completion of a send does, which takes the waiter first.
+        /// Calls every registered waiter the way the completion of a send does, which takes them first.
         /// </summary>
         public void SignalCapacity()
         {
-            var registered = Interlocked.Exchange(ref waiter, null);
-            ClassicAssert.IsNotNull(registered, "no session is waiting for the sender to have room");
-            registered.OnSendCapacity();
+            ISendCapacityWaiter[] registered;
+            lock (waiterGate)
+            {
+                registered = [.. waiters];
+                waiters.Clear();
+            }
+
+            ClassicAssert.IsTrue(registered.Length > 0, "no session is waiting for the sender to have room");
+            foreach (var waiter in registered)
+                waiter.OnSendCapacity();
         }
 
         /// <summary>Lets the sends waiting for room, and every later one, through.</summary>
@@ -139,17 +166,21 @@ namespace Garnet.test
             return full;
         }
 
-        public bool IsSendSaturated => full;
+        public bool IsSendSaturated => saturation?.Invoke() ?? full;
 
         public bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter capacityWaiter)
         {
-            Volatile.Write(ref waiter, capacityWaiter);
+            lock (waiterGate)
+                waiters.Add(capacityWaiter);
             _ = Interlocked.Increment(ref registrations);
-            if (full)
-                return true;
 
-            Volatile.Write(ref waiter, null);
-            return false;
+            return full || !WithdrawSendCapacityWaiter(capacityWaiter);
+        }
+
+        public bool WithdrawSendCapacityWaiter(ISendCapacityWaiter capacityWaiter)
+        {
+            lock (waiterGate)
+                return waiters.Remove(capacityWaiter);
         }
 
         public void SendResponse(byte[] buffer, int offset, int count, object context) { }

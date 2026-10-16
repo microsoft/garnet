@@ -5,8 +5,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -28,6 +30,11 @@ namespace Garnet.test
     /// are stopped: whether it is still served by a pool that has fewer threads than there are stopped
     /// sessions, which it cannot be if a session holds a thread, and how many bytes the server holds for them
     /// (<c>liveBytes</c> in <c>INFO BPSTATS</c>).
+    /// </para>
+    /// <para>
+    /// A subscriber that stops reading is the same case for the publishers that deliver to it: once its
+    /// connection is backed up a publisher waits for room, rather than holding a thread, and delivers
+    /// its message when there is room.
     /// </para>
     /// </remarks>
     [TestFixture(false)]
@@ -52,6 +59,29 @@ namespace Garnet.test
         /// <summary>A throttle this high is never reached, so a session never sees its sends saturate.</summary>
         const int UnboundedThrottle = 1 << 20;
 
+        const string Channel = "chan";
+
+        /// <summary>Size of each message published to a subscriber that does not read; a few of them fill what the kernel buffers for a connection.</summary>
+        const int PushLength = 1 << 20;
+
+        /// <summary>More than the pool is capped to, so publishers that each held a thread would exhaust it.</summary>
+        const int PublisherCount = 12;
+
+        /// <summary>Pipelined, so that a publisher continuing with its next message after waiting is observed too.</summary>
+        const int PublishesPerPublisher = 2;
+
+        /// <summary>The publisher that backs the subscriber up, numbered after the others.</summary>
+        const int FillerId = PublisherCount;
+
+        /// <summary>
+        /// Many times what the kernel buffers for a connection and the throttle allows to be outstanding, so that
+        /// a server that kept accepting messages for a subscriber that is not reading is seen to.
+        /// </summary>
+        const int MaxBackUpMessages = 64;
+
+        /// <summary>What a message starts with, "07:01:" for the second message of the eighth publisher.</summary>
+        const int PushPrefixLength = 6;
+
         /// <summary>
         /// What one backed-up session may hold: the sends the throttle allows to be outstanding, the reply being
         /// written when the last of them was issued, and the session's own buffers, with room to spare. A
@@ -62,9 +92,14 @@ namespace Garnet.test
         /// <summary>Bounds every wait on the server, so a regression fails the test instead of hanging the run.</summary>
         static readonly TimeSpan Bound = TimeSpan.FromSeconds(15);
 
+        /// <summary>How long a message goes unanswered before it is taken to be waiting for room on the subscriber's connection.</summary>
+        static readonly TimeSpan BackedUpAfter = TimeSpan.FromSeconds(2);
+
         static readonly byte[][] Values = CreateValues();
         static readonly byte[] BulkHeader = Encoding.ASCII.GetBytes($"${ValueLength}\r\n");
         static readonly byte[] CrLf = "\r\n"u8.ToArray();
+        static readonly string PushHeader = $"*3\r\n$7\r\nmessage\r\n${Channel.Length}\r\n{Channel}\r\n${PushLength}\r\n";
+        static readonly string PushBody = CreatePushBody();
 
         readonly bool useTls;
         GarnetServer server;
@@ -317,6 +352,73 @@ namespace Garnet.test
             ClassicAssert.AreEqual(NilBulk, Ask(pinger, "GET", "after-quit"), "A command sent after QUIT ran.");
         }
 
+        /// <summary>
+        /// Publishers that outnumber the pool's threads, publishing to a subscriber that has stopped reading, wait
+        /// without holding a thread, so a connection that has nothing to do with them is still served. When the
+        /// subscriber reads again every publisher completes, and it receives every message intact, in the order
+        /// its publisher made them.
+        /// </summary>
+        [Test]
+        public void MorePublishersWaitingOnAStoppedSubscriberThanThePoolHasThreadsStarveNoOneAndLoseNothing()
+        {
+            const int CappedWorkers = 4;
+
+            StartServer();
+
+            using var pinger = new RawRespSession(useTls);
+            ClassicAssert.AreEqual(Pong, pinger.Execute("PING"));
+            var baseline = LiveBytes(pinger);
+
+            using var cap = ThreadPoolCap.Apply(CappedWorkers);
+
+            using var subscriber = Subscribe();
+            using var filler = BackUp(out var fillerMessages);
+            using var publishers = new Publishers(useTls);
+            publishers.Start();
+
+            // The server reads each publisher up to the first message that has to wait, and then stops
+            _ = AwaitStable(() => LiveBytes(pinger), above: baseline);
+
+            ExpectServed(pinger, rounds: 50, $"{PublisherCount + 1} publishers are waiting on a subscriber that is not reading and the pool has {CappedWorkers} threads");
+
+            ExpectEveryPush(subscriber, fillerMessages);
+            filler.ExpectBytes(":1\r\n"u8, "the reply to the last message of the publisher that backed the subscriber up");
+            publishers.ReadReplies();
+            publishers.ExpectReplies(":1\r\n");
+            publishers.AwaitSent();
+        }
+
+        /// <summary>
+        /// Publishers waiting on a subscriber whose connection is lost are released and answered, rather than
+        /// left waiting for room on a connection that is gone.
+        /// </summary>
+        [Test]
+        public void PublishersWaitingOnASubscriberThatDisconnectsAreReleased()
+        {
+            StartServer();
+
+            using var pinger = new RawRespSession(useTls);
+            ClassicAssert.AreEqual(Pong, pinger.Execute("PING"));
+            var baseline = LiveBytes(pinger);
+
+            using var subscriber = Subscribe();
+            using var filler = BackUp(out _);
+            using var publishers = new Publishers(useTls);
+            publishers.Start();
+
+            _ = AwaitStable(() => LiveBytes(pinger), above: baseline);
+
+            subscriber.AbortAndDispose();
+
+            // The message the filler was waiting to deliver counted the subscriber when it was made. A message
+            // made by a publisher after that finds the subscriber still registered or not, depending on when the
+            // server noticed that it was gone.
+            filler.ExpectBytes(":1\r\n"u8, "the reply to the last message of the publisher that backed the subscriber up");
+            publishers.ReadReplies();
+            publishers.ExpectReplies(":0\r\n", ":1\r\n");
+            publishers.AwaitSent();
+        }
+
         /// <summary>Starts the server and loads the large values the tests read back.</summary>
         void StartServer(bool getSG = false, int? throttleMax = null)
         {
@@ -330,6 +432,176 @@ namespace Garnet.test
         }
 
         static string BigKey(int i) => $"big{i % ValueCount}";
+
+        /// <summary>
+        /// Subscribes to the channel and then does not read. The session's buffers hold a whole push, which is
+        /// read as one reply, and the receive window is fixed so that the connection backs up after a predictable
+        /// amount of data.
+        /// </summary>
+        RawRespSession Subscribe()
+        {
+            var subscriber = new RawRespSession(useTls, bufferSize: PushLength + 1024, receiveBufferSize: ClientReceiveBufferSize) { ReceiveTimeout = Bound };
+            subscriber.ExecuteExpect("*3\r\n$9\r\nsubscribe\r\n$4\r\nchan\r\n:1\r\n"u8, "SUBSCRIBE", Channel);
+            return subscriber;
+        }
+
+        /// <summary>
+        /// Publishes to the channel, one message at a time, until a message is not answered. That message is
+        /// waiting for room on the subscriber's connection, which is backed up with the sends the throttle allows
+        /// to be outstanding, so every message made after it has to wait too. Fails if the server never stops
+        /// accepting messages for a subscriber that is not reading.
+        /// </summary>
+        /// <param name="sent">How many messages the publisher has made, the last of which it is waiting on.</param>
+        RawRespSession BackUp(out int sent)
+        {
+            sent = 0;
+            var filler = new RawRespSession(useTls, bufferSize: PushLength + 1024) { ReceiveTimeout = Bound };
+            while (sent < MaxBackUpMessages)
+            {
+                filler.Send("PUBLISH", Channel, Payload(FillerId, sent++));
+                if (!filler.WaitForReply(BackedUpAfter))
+                    return filler;
+
+                ClassicAssert.AreEqual(":1\r\n", filler.ReadReply(), $"The reply to message {sent - 1}.");
+            }
+
+            filler.Dispose();
+            Assert.Fail($"The server accepted {MaxBackUpMessages} messages of {PushLength >> 10} KB for a subscriber that is not reading.");
+            return null;
+        }
+
+        /// <summary>
+        /// Has each publisher send its pipeline of messages from a thread of its own, and reads their replies. The
+        /// server stops reading a publisher that is waiting, and a pipeline this large is more than the kernel
+        /// takes, so the write can be made neither from the test's thread nor from one of the pool's, which a
+        /// test may cap. Replies are only read once the publishers are expected to have them, because a TLS
+        /// connection is readable before it has a reply, for the session tickets it has been sent.
+        /// </summary>
+        sealed class Publishers : IDisposable
+        {
+            readonly RawRespSession[] sessions = new RawRespSession[PublisherCount];
+            readonly List<string>[] replies = new List<string>[PublisherCount];
+            readonly Task[] sends = new Task[PublisherCount];
+
+            internal Publishers(bool useTls)
+            {
+                for (var i = 0; i < PublisherCount; i++)
+                {
+                    sessions[i] = new RawRespSession(useTls, bufferSize: PublishesPerPublisher * (PushLength + 1024)) { ReceiveTimeout = Bound };
+                    replies[i] = [];
+                }
+            }
+
+            internal void Start()
+            {
+                for (var i = 0; i < PublisherCount; i++)
+                {
+                    var session = sessions[i];
+                    var publisher = i;
+                    sends[i] = Task.Factory.StartNew(() =>
+                    {
+                        var commands = new string[PublishesPerPublisher][];
+                        for (var s = 0; s < PublishesPerPublisher; s++)
+                            commands[s] = ["PUBLISH", Channel, Payload(publisher, s)];
+                        session.SendPipeline(commands);
+                    }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                }
+            }
+
+            /// <summary>Reads every publisher's replies, failing if a publisher is not answered in time.</summary>
+            internal void ReadReplies()
+            {
+                for (var i = 0; i < PublisherCount; i++)
+                {
+                    while (replies[i].Count < PublishesPerPublisher)
+                    {
+                        try
+                        {
+                            replies[i].Add(sessions[i].ReadReply());
+                        }
+                        catch (IOException e)
+                        {
+                            Assert.Fail($"Publisher {i} was not answered for message {replies[i].Count} ({e.Message}).");
+                        }
+                    }
+                }
+            }
+
+            internal void ExpectReplies(params string[] allowed)
+            {
+                for (var i = 0; i < PublisherCount; i++)
+                {
+                    for (var s = 0; s < PublishesPerPublisher; s++)
+                        CollectionAssert.Contains(allowed, replies[i][s], $"publisher {i}'s reply to message {s}");
+                }
+            }
+
+            internal void AwaitSent()
+                => ClassicAssert.IsTrue(Task.WaitAll(sends, Bound), "A publisher did not finish sending.");
+
+            public void Dispose()
+            {
+                foreach (var session in sessions)
+                    session?.Dispose();
+
+                // A send that was still writing fails with the connection, which is observed here
+                foreach (var send in sends)
+                {
+                    try { _ = send?.Wait(Bound); } catch (AggregateException) { }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Reads every message made to the channel, checking that each is intact and that the messages of each
+        /// publisher arrive in the order it made them.
+        /// </summary>
+        /// <param name="subscriber">The subscriber.</param>
+        /// <param name="fillerMessages">How many messages the publisher that backed the subscriber up has made.</param>
+        static void ExpectEveryPush(RawRespSession subscriber, int fillerMessages)
+        {
+            var expected = new int[PublisherCount + 1];
+            Array.Fill(expected, PublishesPerPublisher);
+            expected[FillerId] = fillerMessages;
+
+            var next = new int[expected.Length];
+            for (var n = 0; n < PublisherCount * PublishesPerPublisher + fillerMessages; n++)
+            {
+                var push = subscriber.ReadReply();
+                if (!push.StartsWith(PushHeader, StringComparison.Ordinal))
+                    Assert.Fail($"Push #{n} does not start as a message does: '{push[..Math.Min(push.Length, 48)]}'");
+
+                var publisher = int.Parse(push.AsSpan(PushHeader.Length, 2), CultureInfo.InvariantCulture);
+                var seq = int.Parse(push.AsSpan(PushHeader.Length + 3, 2), CultureInfo.InvariantCulture);
+                if (publisher >= expected.Length || seq >= expected[publisher])
+                    Assert.Fail($"Push #{n} claims to be message {seq} of publisher {publisher}, which does not exist.");
+
+                ClassicAssert.AreEqual(next[publisher], seq, $"Publisher {publisher}'s messages did not arrive in the order it made them.");
+                next[publisher]++;
+
+                var frame = PushFrame(publisher, seq);
+                var same = push.AsSpan().CommonPrefixLength(frame.AsSpan());
+                if (same != frame.Length || push.Length != frame.Length)
+                    Assert.Fail($"Push #{n}, message {seq} of publisher {publisher}, differs from what was published at char {same} of {frame.Length}.");
+            }
+        }
+
+        /// <summary>
+        /// The prefix names the publisher and the message, so that a push that is truncated, duplicated or
+        /// delivered out of order differs from the expected one.
+        /// </summary>
+        static string Payload(int publisher, int seq) => $"{publisher:D2}:{seq:D2}:{PushBody}";
+
+        static string PushFrame(int publisher, int seq) => $"{PushHeader}{Payload(publisher, seq)}\r\n";
+
+        static string CreatePushBody()
+        {
+            var bytes = new byte[PushLength - PushPrefixLength];
+            new Random(2000).NextBytes(bytes);
+            for (var i = 0; i < bytes.Length; i++)
+                bytes[i] = (byte)('a' + (bytes[i] % 26));
+            return Encoding.ASCII.GetString(bytes);
+        }
 
         /// <summary>
         /// Distinct pseudo-random letters per value, so that a reply that is truncated, duplicated, reordered or

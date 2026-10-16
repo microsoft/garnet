@@ -152,6 +152,9 @@ namespace Garnet.server
         public bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
 
         /// <inheritdoc />
+        public bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+
+        /// <inheritdoc />
         public void SendResponse(byte[] buffer, int offset, int count, object context)
         {
         }

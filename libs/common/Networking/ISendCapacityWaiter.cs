@@ -10,7 +10,9 @@ namespace Garnet.networking
     {
         /// <summary>
         /// Called once when the sends outstanding drop below the throttle limit. Runs on whichever thread
-        /// completes the send, which can be a network IO thread, so it must not block.
+        /// completes the send, which can be a network IO thread, so it must not block, and it must not throw:
+        /// the waiters registered with the same sender are called one after another, and a throw would leave
+        /// the rest uncalled.
         /// </summary>
         void OnSendCapacity();
     }

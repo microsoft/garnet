@@ -660,6 +660,7 @@ namespace Garnet.test
             public bool SendResponseNoWait(int offset, int size) => throw new NotSupportedException();
             public bool IsSendSaturated => false;
             public bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+            public bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
             public void SendResponse(byte[] buffer, int offset, int count, object context)
                 => throw new Exception("Simulated send failure (connection disposed)");
             public void Throttle() { }

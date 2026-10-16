@@ -132,6 +132,113 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A connection serves more than one waiter: the session that owns it, and each publisher waiting to
+        /// deliver to it. The return of capacity calls every one of them, once.
+        /// </summary>
+        [Test]
+        public void EveryWaiterIsCalledOnceWhenCapacityReturns()
+        {
+            // More waiters than sends in flight, so that waking one waiter per completion leaves some parked
+            const int Waiters = 5;
+            rig = new SenderRig(throttleMax: 2);
+            var sent = rig.Saturate();
+            var waiters = new CountingWaiter[Waiters];
+            try
+            {
+                for (var i = 0; i < Waiters; i++)
+                {
+                    waiters[i] = new CountingWaiter();
+                    ClassicAssert.IsTrue(rig.Sender.TryRegisterSendCapacityWaiter(waiters[i]),
+                        $"a saturated sender did not take waiter {i}");
+                }
+
+                rig.ReadAndVerify(sent);
+                for (var i = 0; i < Waiters; i++)
+                    ClassicAssert.IsTrue(waiters[i].Wait(Bound), $"waiter {i} was not told that capacity returned");
+
+                rig.GracefulClose();
+                rig.ExpectEndOfStream();
+                for (var i = 0; i < Waiters; i++)
+                    ClassicAssert.AreEqual(1, waiters[i].Calls, $"waiter {i} was not called exactly once");
+            }
+            finally
+            {
+                foreach (var waiter in waiters)
+                    waiter?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A waiter that withdraws is not called, and withdrawing says whether the waiter was still registered:
+        /// a publisher that stops waiting learns from it that a call is already on its way.
+        /// </summary>
+        [Test]
+        public void AWithdrawnWaiterIsNotCalled()
+        {
+            rig = new SenderRig(throttleMax: 2);
+            var sent = rig.Saturate();
+            using var withdrawn = new CountingWaiter();
+            using var kept = new CountingWaiter();
+            ClassicAssert.IsTrue(rig.Sender.TryRegisterSendCapacityWaiter(withdrawn));
+            ClassicAssert.IsTrue(rig.Sender.TryRegisterSendCapacityWaiter(kept));
+
+            ClassicAssert.IsTrue(rig.Sender.WithdrawSendCapacityWaiter(withdrawn), "a registered waiter could not be withdrawn");
+            ClassicAssert.IsFalse(rig.Sender.WithdrawSendCapacityWaiter(withdrawn), "a waiter was withdrawn twice");
+
+            rig.ReadAndVerify(sent);
+            ClassicAssert.IsTrue(kept.Wait(Bound), "the waiter that stayed registered was not called");
+            ClassicAssert.IsFalse(rig.Sender.WithdrawSendCapacityWaiter(kept),
+                "a waiter that had been called was still registered, so withdrawing it would hide the call that is on its way");
+
+            rig.GracefulClose();
+            rig.ExpectEndOfStream();
+            ClassicAssert.AreEqual(0, withdrawn.Calls, "a withdrawn waiter was called");
+            ClassicAssert.AreEqual(1, kept.Calls);
+        }
+
+        /// <summary>
+        /// A registration made as the last send completes is told to wait and then called, or told that
+        /// capacity is available and then never called. Neither stays parked, and neither is both.
+        /// </summary>
+        [Test]
+        public void ARegistrationRacingTheReturnOfCapacityIsCalledOnceOrNotAtAll()
+        {
+            const int Rounds = 160;
+            var told = 0;
+            for (var round = 0; round < Rounds; round++)
+            {
+                using var connection = new SenderRig(throttleMax: 2);
+                var sent = connection.Saturate();
+                using var waiter = new CountingWaiter();
+
+                var reader = Task.Run(() => connection.ReadAndVerify(sent));
+
+                // Lands the registration at a different point of the read in each round
+                Thread.SpinWait(4 << (round % 16));
+                var mustWait = connection.Sender.TryRegisterSendCapacityWaiter(waiter);
+                reader.Wait();
+
+                // A graceful close finishes only once every send has completed, so by the end of the stream each
+                // completion has had its chance to call the waiter
+                connection.GracefulClose();
+                connection.ExpectEndOfStream();
+
+                if (mustWait)
+                {
+                    told++;
+                    ClassicAssert.IsTrue(waiter.Wait(Bound), $"round {round}: a waiter told to wait was never called");
+                }
+
+                ClassicAssert.AreEqual(mustWait ? 1 : 0, waiter.Calls,
+                    $"round {round}: a waiter that was {(mustWait ? "told to wait" : "told that capacity was available")} was called {waiter.Calls} times");
+            }
+
+            Assert.That(told, Is.GreaterThan(0).And.LessThan(Rounds),
+                "the registrations all landed on one side of the return of capacity, so the race was not exercised");
+        }
+
+
+        /// <summary>
         /// Sends fail when the connection does, and each failure still gives its slot back and calls the waiter,
         /// since a session parked on a connection that is gone has no other way to find out.
         /// </summary>
@@ -147,6 +254,35 @@ namespace Garnet.test
 
             ClassicAssert.IsTrue(waiter.Wait(Bound),
                 "the sends failed with the connection but the waiter was never told, so its session would stay parked");
+        }
+
+        /// <summary>
+        /// The sends that held the capacity end after this side has closed the sender, and the waiter is still
+        /// called, since a session parked on a sender that is closing has no other way to find out.
+        /// </summary>
+        [TestCase(true, Description = "graceful close")]
+        [TestCase(false, Description = "hard close")]
+        public void ACloseStillReturnsCapacity(bool graceful)
+        {
+            rig = new SenderRig(throttleMax: 2);
+            var sent = rig.Saturate();
+            using var waiter = new CountingWaiter();
+            ClassicAssert.IsTrue(rig.Sender.TryRegisterSendCapacityWaiter(waiter));
+
+            if (graceful)
+            {
+                // The sends in flight finish as the peer reads them
+                rig.GracefulClose();
+                rig.ReadAndVerify(sent);
+                rig.ExpectEndOfStream();
+            }
+            else
+            {
+                rig.Sender.Dispose();
+            }
+
+            ClassicAssert.IsTrue(waiter.Wait(Bound),
+                "the sends ended after the close but the waiter was never told, so its session would stay parked");
         }
 
         /// <summary>

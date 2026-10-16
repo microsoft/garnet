@@ -93,6 +93,9 @@ namespace Garnet.networking
         public virtual bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
 
         /// <inheritdoc />
+        public virtual bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+
+        /// <inheritdoc />
         public abstract void SendResponse(byte[] buffer, int offset, int count, object context);
 
         /// <inheritdoc />

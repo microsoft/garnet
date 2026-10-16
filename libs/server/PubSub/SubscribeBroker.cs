@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -74,7 +75,23 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Delivers to every subscriber, waiting for a subscriber's connection to have room when it has none.
+        /// </summary>
         unsafe int Broadcast(PinnedSpanByte key, PinnedSpanByte value)
+        {
+            DeferredDeliveries unused = null;
+            return Broadcast(key, value, ref unused, noWait: false);
+        }
+
+        /// <summary>
+        /// Delivers to every subscriber. With <paramref name="noWait"/> a subscriber whose connection has no room
+        /// is not waited for: its delivery is recorded in <paramref name="deferred"/> for the publisher to
+        /// complete, and every later delivery to that subscriber is recorded behind it, so the subscriber
+        /// still receives them in the order they were made.
+        /// </summary>
+        /// <returns>The number of subscribers reached, counting those whose delivery was deferred.</returns>
+        unsafe int Broadcast(PinnedSpanByte key, PinnedSpanByte value, ref DeferredDeliveries deferred, bool noWait)
         {
             var numSubscribers = 0;
 
@@ -85,7 +102,10 @@ namespace Garnet.server
                     var index = 0;
                     while (sessions.Iterate(ref index, out var session))
                     {
-                        session.Publish(key, value);
+                        if (!noWait)
+                            session.Publish(key, value);
+                        else if (!session.TryPublish(key, value))
+                            (deferred ??= new()).Add(new(session));
                         numSubscribers++;
                     }
                 }
@@ -106,7 +126,10 @@ namespace Garnet.server
                             var index2 = 0;
                             while (sessions.Iterate(ref index2, out var session))
                             {
-                                session.PatternPublish(patternSlice, key, value);
+                                if (!noWait)
+                                    session.PatternPublish(patternSlice, key, value);
+                                else if ((deferred is not null && deferred.Holds(session)) || !session.TryPatternPublish(patternSlice, key, value))
+                                    (deferred ??= new()).Add(new(session, pattern));
                                 numSubscribers++;
                             }
                         }
@@ -299,6 +322,26 @@ namespace Garnet.server
         {
             if (subscriptions == null && patternSubscriptions == null) return 0;
             return Broadcast(key, value);
+        }
+
+        /// <summary>
+        /// Publish the update made to key to all the subscribers, without waiting for any subscriber's
+        /// connection to have room. A subscriber whose connection has none is left in
+        /// <paramref name="deferred"/>, for the publisher to deliver to once the connection does.
+        /// </summary>
+        /// <param name="key">key that has been updated</param>
+        /// <param name="value">value that has been updated</param>
+        /// <param name="deferred">
+        /// The deliveries held back, which must be empty or not yet created. It is created when the first delivery
+        /// is held back, so a caller that publishes repeatedly can pass the same one each time, once it has
+        /// delivered what it held back and cleared it.
+        /// </param>
+        /// <returns>Number of subscribers the update reaches, counting those it is held back for</returns>
+        internal unsafe int PublishNoWait(PinnedSpanByte key, PinnedSpanByte value, ref DeferredDeliveries deferred)
+        {
+            Debug.Assert(deferred is null or { Count: 0 }, "A publish started before the deliveries held back by the last were made");
+            if (subscriptions == null && patternSubscriptions == null) return 0;
+            return Broadcast(key, value, ref deferred, noWait: true);
         }
 
         /// <summary>

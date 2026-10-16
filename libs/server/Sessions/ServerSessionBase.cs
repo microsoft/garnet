@@ -65,6 +65,44 @@ namespace Garnet.server
         public abstract unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value);
 
         /// <summary>
+        /// The sender this session writes to, for a publisher to wait on when this session's connection is full
+        /// </summary>
+        internal INetworkSender PublishSender => networkSender;
+
+        /// <summary>
+        /// Publish an update to a key to this subscriber, unless its connection is full, in which case nothing
+        /// is written and the publisher waits for room.
+        /// </summary>
+        /// <remarks>
+        /// The default publishes as <see cref="Publish"/> does, which is to wait for room inside the call.
+        /// </remarks>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <returns>False if the connection is full and nothing was written</returns>
+        internal virtual unsafe bool TryPublish(PinnedSpanByte key, PinnedSpanByte value)
+        {
+            Publish(key, value);
+            return true;
+        }
+
+        /// <summary>
+        /// Publish an update to a key to this (pattern) subscriber, unless its connection is full, in which case
+        /// nothing is written and the publisher waits for room.
+        /// </summary>
+        /// <remarks>
+        /// The default publishes as <see cref="PatternPublish"/> does, which is to wait for room inside the call.
+        /// </remarks>
+        /// <param name="pattern"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <returns>False if the connection is full and nothing was written</returns>
+        internal virtual unsafe bool TryPatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
+        {
+            PatternPublish(pattern, key, value);
+            return true;
+        }
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public virtual void Dispose() => networkSender?.Dispose();
