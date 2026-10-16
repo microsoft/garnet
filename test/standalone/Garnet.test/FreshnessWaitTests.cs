@@ -168,8 +168,9 @@ namespace Garnet.test
         [Test]
         public void ReplayWakesTheWaitsItHasPassedAndCancelledWaitsLeaveTheListIntact()
         {
-            // Listed out of order of their sequence numbers
-            var sequenceNumbers = new[] { 30, 50, 10, 40, 20 };
+            // Listed out of order of their sequence numbers, so that a wait is inserted at the head, in the middle and at the
+            // end, and so that the last one listed is not the lowest
+            var sequenceNumbers = new[] { 30, 10, 40, 20, 50 };
             var waits = new FreshnessWait[sequenceNumbers.Length];
             var parked = new Task[sequenceNumbers.Length];
             for (var i = 0; i < waits.Length; i++)
@@ -182,20 +183,24 @@ namespace Garnet.test
             // Two neighbours, neither of them at either end of the list, leave it
             waits[0].Cancel();
             ClassicAssert.AreEqual(4, manager.ParkedFreshnessWaiterCount());
-            waits[3].Cancel();
+            waits[2].Cancel();
             ClassicAssert.AreEqual(3, manager.ParkedFreshnessWaiterCount());
 
             // Replay passes the first two of what is left, and not the last
             manager.UpdateVirtualSublogMaxSequenceNumber(0, Target + 25);
             ClassicAssert.AreEqual(1, manager.ParkedFreshnessWaiterCount());
-            ClassicAssert.IsTrue(parked[2].Wait(Bound));
-            ClassicAssert.IsTrue(parked[4].Wait(Bound));
+            ClassicAssert.IsTrue(parked[1].Wait(Bound));
+            ClassicAssert.IsTrue(parked[3].Wait(Bound));
+
+            // A wait replay has woken is no longer listed, and cancelling it leaves the list alone
+            waits[1].Cancel();
+            ClassicAssert.AreEqual(1, manager.ParkedFreshnessWaiterCount());
 
             // The one left is now the whole list
-            waits[1].Cancel();
+            waits[4].Cancel();
             ClassicAssert.AreEqual(0, manager.ParkedFreshnessWaiterCount());
 
-            foreach (var i in new[] { 0, 1, 3 })
+            foreach (var i in new[] { 0, 2, 4 })
                 _ = Assert.CatchAsync<OperationCanceledException>(async () => await parked[i].WaitAsync(Bound));
         }
 
@@ -374,7 +379,6 @@ namespace Garnet.test
                             return;
                     }
 
-                    // Land the update anywhere from before the registration to after it
                     Thread.SpinWait(jitter.Next(0, 40));
                     manager.UpdateVirtualSublogMaxSequenceNumber(0, (round * 10L) + 1);
                     Volatile.Write(ref finished, round);
@@ -386,6 +390,7 @@ namespace Garnet.test
                 // On a machine with few cores the two threads take turns, and a round takes far longer than the race
                 // being looked for lasts, so the number of rounds is capped by time as well
                 var deadline = Environment.TickCount64 + 5_000;
+                var jitter = new Random(Rounds + 1);
                 var wait = new FreshnessWait(Timeout.InfiniteTimeSpan);
                 for (var round = 1; round <= Rounds && Environment.TickCount64 < deadline; round++)
                 {
@@ -393,6 +398,9 @@ namespace Garnet.test
                     wait.Arm();
                     Volatile.Write(ref started, round);
 
+                    // Both threads wait a random while after the start of the round, so the update lands anywhere from
+                    // before the registration to after it
+                    Thread.SpinWait(jitter.Next(0, 40));
                     if (wait.TryRegister())
                     {
                         var parked = wait.WaitAsync();
@@ -472,6 +480,25 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ProbesAgainstAManagerThatReplacedTheOneASessionReadThroughStartTheSessionAfresh()
+        {
+            var keyA = KeyOn(0);
+            var keyB = KeyOn(1);
+            using var session = SessionThatHasRead(keyA, virtualSublogIdx: 0);
+            ClassicAssert.IsTrue(MustWait(session, RespCommand.GET, out _, out _, keyB.Key));
+
+            // What the session has read through a manager says nothing about the one that replaced it
+            appendOnlyFile.CreateOrUpdateKeySequenceManager();
+            manager = appendOnlyFile.readConsistencyManager;
+
+            ClassicAssert.IsFalse(MustWait(session, RespCommand.GET, out _, out _, keyB.Key));
+
+            ClassicAssert.IsTrue(session.BeginScanProbe());
+            ClassicAssert.IsFalse(session.ProbeScanKey(keyB.Hash));
+            ClassicAssert.IsFalse(session.EndScanProbe(completed: false, out _, out _, out _));
+        }
+
+        [Test]
         public void AScanStopsAtTheFirstRecordItWouldWaitFor()
         {
             var keyA = KeyOn(0);
@@ -511,14 +538,17 @@ namespace Garnet.test
             {
                 ClassicAssert.IsTrue(session.BeginScanProbe());
                 ClassicAssert.IsFalse(session.ProbeScanKey(keyB.Hash));
+
+                // Replay writes B again between the scan probing it and reading it
+                manager.UpdateVirtualSublogKeySequenceNumber(1, keyB.Hash, Target + 9);
                 session.PostScanKey();
                 ClassicAssert.IsFalse(session.EndScanProbe(completed, out _, out _, out _));
             }
 
-            // Reading A is a switch back from B only for the session that read B
+            // Reading A is a switch back from B only for the session that read B, as of the second write
             ClassicAssert.IsTrue(MustWait(completes, RespCommand.GET, out var virtualSublogIdx, out var sequenceNumber, keyA.Key));
             ClassicAssert.AreEqual(0, virtualSublogIdx);
-            ClassicAssert.AreEqual(Target + 5, sequenceNumber);
+            ClassicAssert.AreEqual(Target + 9, sequenceNumber);
             ClassicAssert.IsFalse(MustWait(throws, RespCommand.GET, out _, out _, keyA.Key));
         }
 
