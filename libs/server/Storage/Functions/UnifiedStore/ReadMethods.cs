@@ -29,6 +29,7 @@ namespace Garnet.server
             return cmd switch
             {
                 RespCommand.EXISTS => true,
+                RespCommand.DUMP => HandleDump(in srcLogRecord, ref output),
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
@@ -43,6 +44,43 @@ namespace Garnet.server
                 RespCommand.RENAME => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
+        }
+
+        private bool HandleDump<TSourceLogRecord>(in TSourceLogRecord record, ref UnifiedOutput output)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            RdbWriter writer = null;
+            try
+            {
+                if (!record.DataHeader.ValueIsObject && record.RecordType == 0)
+                {
+                    RdbSerializer.SerializeString(record.ValueSpan, ref output.SpanByteAndMemory);
+                    return true;
+                }
+
+                writer = new RdbWriter();
+                if (!RdbSerializer.TrySerialize(in record, writer))
+                {
+                    using var response = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                    response.WriteNull();
+                    return true;
+                }
+
+                writer.FinishPayload();
+                var length = writer.FrameBulkString();
+                output.SpanByteAndMemory = new SpanByteAndMemory(writer, length);
+                writer = null;
+            }
+            catch (RdbException ex)
+            {
+                using var response = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                response.WriteError(ex.Message);
+            }
+            finally
+            {
+                writer?.Dispose();
+            }
+            return true;
         }
 
         private bool HandleObjectEncoding<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,

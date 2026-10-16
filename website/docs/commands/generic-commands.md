@@ -478,7 +478,9 @@ Integer reply: the number of keys that were unlinked.
 ### DUMP
 
 > [!IMPORTANT]  
-> DUMP currently only supports string types without lzf compression
+> DUMP supports strings, lists, sets, hashes, and sorted sets using Redis RDB version 11 encodings.
+> Key expiration is omitted. Already expired collection items are omitted; live hash-field or sorted-set-member
+> expiration causes an error because this format cannot preserve it.
 
 #### Syntax
 
@@ -501,7 +503,11 @@ String reply: The serialization format is opaque and non-standard, however it ha
 ### RESTORE
 
 > [!IMPORTANT]  
-> RESTORE currently only supports string types without lzf compression
+> RESTORE supports strings, lists, sets, hashes, and sorted sets. It reads canonical RDB encodings and Redis 7.2
+> quicklist2, intset, and listpack encodings, including integer-encoded and LZF-compressed strings. RDB versions above 11
+> and historical zipmap, ziplist, old quicklist, and text-score sorted-set encodings are unsupported.
+> Both commands limit payloads to 512 MiB and collections to 1,000,000 entries. RESTORE also limits cumulative decoded
+> string allocations, including temporary packed containers, to 512 MiB.
 
 #### Syntax
 
@@ -511,7 +517,9 @@ restore mykey 0 "\x00\x0evallllllllllll\x0b\x00|\xeb\xe2|\xd2.\xfa7"
 
 Create a key associated with a value that is obtained by deserializing the provided serialized value (obtained via [DUMP](#dump)).
 
-If ttl is 0 the key is created without any expire, otherwise the specified expire time (in milliseconds) is set.
+TTL is a nonnegative 64-bit integer in milliseconds. Zero creates a persistent key; a positive TTL sets its expiration.
+An occupied destination returns BUSYKEY without changing its value or expiration. Expired destinations can be reused.
+The value and expiration become visible together. Optional REPLACE, ABSTTL, IDLETIME, and FREQ arguments are unsupported.
 
 #### Resp Reply
 

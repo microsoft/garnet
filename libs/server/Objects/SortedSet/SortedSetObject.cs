@@ -228,6 +228,46 @@ namespace Garnet.server
             expirationQueue = sortedSetObject.expirationQueue;
         }
 
+        internal bool WriteRdb(RdbWriter writer, long now)
+        {
+            var count = sortedSetDict.Count;
+            if (expirationTimes is { Count: > 0 })
+            {
+                foreach (var item in sortedSetDict)
+                {
+                    if (expirationTimes.TryGetValue(item.Key, out var expiration))
+                    {
+                        if (expiration >= now)
+                            throw new RdbException(RdbSerializer.ItemExpirationError);
+                        count--;
+                    }
+                }
+            }
+            if (count == 0)
+                return false;
+
+            writer.WriteByte(5);
+            RdbSerializer.WriteCount(writer, count);
+            foreach (var item in sortedSetDict)
+            {
+                if (expirationTimes is not null && expirationTimes.TryGetValue(item.Key, out var expiration) &&
+                    expiration < now)
+                    continue;
+                writer.WriteString(item.Key);
+                writer.WriteDouble(item.Value);
+            }
+            return true;
+        }
+
+        internal bool TryAddRdb(byte[] member, double score)
+        {
+            if (!sortedSetDict.TryAdd(member, score))
+                return false;
+            sortedSet.Add((score, member));
+            UpdateSize(member);
+            return true;
+        }
+
         /// <inheritdoc />
         public override byte Type => (byte)GarnetObjectType.SortedSet;
 

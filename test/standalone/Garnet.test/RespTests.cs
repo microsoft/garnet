@@ -184,7 +184,7 @@ namespace Garnet.test
 
             var valueBuilder = new StringBuilder();
 
-            for (var i = 0; i < 16_383; i++)
+            for (var i = 0; i < 16_384; i++)
                 valueBuilder.Append('a');
 
             var val = valueBuilder.ToString();
@@ -416,7 +416,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Tests DUMP on non string type which is currently not supported
+        /// Tests DUMP and RESTORE on a set
         /// </summary>
         [Test]
         public void TryDumpKeyNonString()
@@ -429,7 +429,9 @@ namespace Garnet.test
 
             var value = db.KeyDump("mykey");
 
-            ClassicAssert.IsNull(value);
+            ClassicAssert.IsNotNull(value);
+            db.KeyRestore("restored", value);
+            CollectionAssert.AreEquivalent(db.SetMembers("mykey"), db.SetMembers("restored"));
         }
 
         /// <summary>

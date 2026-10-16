@@ -12,11 +12,6 @@ namespace Garnet.common;
 public static class RespLengthEncodingUtils
 {
     /// <summary>
-    /// Maximum length that can be encoded
-    /// </summary>
-    private const int MaxLength = 0xFFFFFF;
-
-    /// <summary>
     /// Try read RESP-encoded length
     /// </summary>
     /// <param name="input"></param>
@@ -43,9 +38,20 @@ public static class RespLengthEncodingUtils
                 bytesRead = 2;
                 length = ((firstByte & 0x3F) << 8) | input[1];
                 return true;
-            case 2:
+            case 2 when firstByte == 0x80 && input.Length >= 5:
+                var length32 = BinaryPrimitives.ReadUInt32BigEndian(input[1..]);
+                if (length32 > int.MaxValue)
+                    return false;
                 bytesRead = 5;
-                return BinaryPrimitives.TryReadInt32BigEndian(input, out length);
+                length = (int)length32;
+                return true;
+            case 2 when firstByte == 0x81 && input.Length >= 9:
+                var length64 = BinaryPrimitives.ReadUInt64BigEndian(input[1..]);
+                if (length64 > int.MaxValue)
+                    return false;
+                bytesRead = 9;
+                length = (int)length64;
+                return true;
             default:
                 return false;
         }
@@ -62,7 +68,7 @@ public static class RespLengthEncodingUtils
     {
         bytesWritten = 0;
 
-        if (length > MaxLength)
+        if (length < 0)
         {
             return false;
         }
