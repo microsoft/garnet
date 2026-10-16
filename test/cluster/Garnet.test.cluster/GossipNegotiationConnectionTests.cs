@@ -10,6 +10,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.cluster;
 using Garnet.common;
 using NUnit.Framework;
@@ -271,7 +272,7 @@ namespace Garnet.test.cluster
 
                 await using (TestPeer peer = new(provider.clusterManager.CurrentConfig, reconnectedVersion))
                 {
-                    Garnet.client.GarnetClient client = node.Client;
+                    GarnetLightClient client = node.Client;
                     TimeSpan retryDelay = node.RecordConnectionFailure();
                     Assert.That(node.IsInitialized, Is.False);
                     Assert.That(await node.TryInitializeAsync(), Is.False);

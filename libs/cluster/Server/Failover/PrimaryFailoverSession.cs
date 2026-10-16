@@ -12,7 +12,7 @@ namespace Garnet.cluster
 {
     internal sealed partial class FailoverSession : IDisposable
     {
-        private async Task<string> CheckReplicaSyncAsync(GarnetClient gclient)
+        private async Task<string> CheckReplicaSyncAsync(GarnetLightClient gclient)
         {
             try
             {
@@ -28,7 +28,7 @@ namespace Garnet.cluster
             }
         }
 
-        private async Task<GarnetClient> WaitForFirstReplicaSyncAsync()
+        private async Task<GarnetLightClient> WaitForFirstReplicaSyncAsync()
         {
             if (clients.Length > 1)
             {
@@ -85,7 +85,7 @@ namespace Garnet.cluster
             }
         }
 
-        private async Task<bool> InitiateReplicaTakeOverAsync(GarnetClient gclient)
+        private async Task<bool> InitiateReplicaTakeOverAsync(GarnetLightClient gclient)
         {
             try
             {

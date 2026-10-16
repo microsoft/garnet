@@ -2,6 +2,26 @@
 
 This directory contains projects for benchmarking Garnet.
 
+## Client.benchmark
+
+`Client.benchmark` compares `GarnetClient` and `GarnetLightClient` against an in-process
+Garnet server over loopback TCP. Add `--tls` to enable TLS on the server and the selected
+client; plaintext remains the default. Add `--shared-socket` to share one connection
+across workers instead of using one connection per worker.
+
+```powershell
+dotnet run --project benchmark\Client.benchmark -c Release -f net10.0 -- --client GarnetClient --tls --threads 4 --batch 32 --duration 10
+dotnet run --project benchmark\Client.benchmark -c Release -f net10.0 -- --client GarnetLightClient --tls --threads 4 --batch 32 --duration 10 --shared-socket
+```
+
+TLS runs generate a temporary self-signed `localhost` certificate and trust only that
+certificate, without requiring certificate files or changing the machine's trust store.
+Certificate generation, connection setup, and TLS handshakes occur before the timed
+workload. The transport mode is printed with the results.
+
+The light client's rings auto-size from `threads * batch`. Use `--max-requests` and
+`--max-completions` to override the request-slot floor and completion capacity.
+
 ## Resp.benchmark
 
 **Garnet** project contains a Benchmark tool for running RESP benchmarking using different clients, different workloads and different strategies for measuring throughput, performance and latency.

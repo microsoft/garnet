@@ -805,6 +805,105 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Verifies that the GarnetLightClient (gossip) network-writer options are exposed as individual
+        /// runtime-adjustable parameters: they default to LightNetworkWriterOptions.Default, appear in
+        /// CONFIG GET *, and round-trip through CONFIG SET (int, long and enum kinds).
+        /// </summary>
+        [Test]
+        public void ConfigGetSetGossipOptionsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            static string Get(IDatabase db, string name)
+            {
+                var res = (RedisResult[])db.Execute("CONFIG", "GET", name);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.AreEqual(name, res[0].ToString());
+                return res[1].ToString();
+            }
+
+            var defaults = Garnet.client.LightNetworkWriterOptions.Default;
+
+            // Each slot is seeded from LightNetworkWriterOptions.Default.
+            ClassicAssert.AreEqual(defaults.NetworkBufferSizeBytes.ToString(), Get(db, "gossip-network-buffer-size"));
+            ClassicAssert.AreEqual(defaults.RequestPageSizeBytes.ToString(), Get(db, "gossip-request-page-size"));
+            ClassicAssert.AreEqual(defaults.RequestPageCount.ToString(), Get(db, "gossip-request-page-count"));
+            ClassicAssert.AreEqual(defaults.MaxOutstandingRequests.ToString(), Get(db, "gossip-max-outstanding-requests"));
+            ClassicAssert.AreEqual(defaults.MaxOutstandingCompletions.ToString(), Get(db, "gossip-max-outstanding-completions"));
+            ClassicAssert.AreEqual(defaults.MaxConcurrentNetworkSends.ToString(), Get(db, "gossip-max-concurrent-network-sends"));
+            ClassicAssert.AreEqual(defaults.MaxOutOfLineRentedBytes.ToString(), Get(db, "gossip-max-out-of-line-rented-bytes"));
+            ClassicAssert.AreEqual(nameof(Garnet.client.FlushResultAllocationMode.Buffered), Get(db, "gossip-flush-result-allocation-mode"));
+
+            // Integer option round-trips.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-max-concurrent-network-sends", "32").ToString());
+            ClassicAssert.AreEqual("32", Get(db, "gossip-max-concurrent-network-sends"));
+
+            // 64-bit (long) option: value exceeds int.MaxValue and round-trips.
+            var largeBytes = ((long)int.MaxValue + 1).ToString();
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-max-out-of-line-rented-bytes", largeBytes).ToString());
+            ClassicAssert.AreEqual(largeBytes, Get(db, "gossip-max-out-of-line-rented-bytes"));
+            // Zero disables throttling and is accepted.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-max-out-of-line-rented-bytes", "0").ToString());
+            ClassicAssert.AreEqual("0", Get(db, "gossip-max-out-of-line-rented-bytes"));
+
+            // Enum option round-trips through its member name and its underlying numeric value.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-flush-result-allocation-mode", "PerOperation").ToString());
+            ClassicAssert.AreEqual(nameof(Garnet.client.FlushResultAllocationMode.PerOperation), Get(db, "gossip-flush-result-allocation-mode"));
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-flush-result-allocation-mode", "0").ToString());
+            ClassicAssert.AreEqual(nameof(Garnet.client.FlushResultAllocationMode.Buffered), Get(db, "gossip-flush-result-allocation-mode"));
+
+            // Multiple gossip options in a single CONFIG SET.
+            ClassicAssert.AreEqual("OK",
+                db.Execute("CONFIG", "SET", "gossip-network-buffer-size", "16384", "gossip-request-page-count", "4").ToString());
+            ClassicAssert.AreEqual("16384", Get(db, "gossip-network-buffer-size"));
+            ClassicAssert.AreEqual("4", Get(db, "gossip-request-page-count"));
+
+            // The gossip parameters are surfaced through CONFIG GET *.
+            var all = (RedisResult[])db.Execute("CONFIG", "GET", "*");
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < all.Length; i += 2)
+                map[all[i].ToString()] = all[i + 1].ToString();
+            ClassicAssert.IsTrue(map.ContainsKey("gossip-network-buffer-size"));
+            ClassicAssert.IsTrue(map.ContainsKey("gossip-max-out-of-line-rented-bytes"));
+            ClassicAssert.IsTrue(map.ContainsKey("gossip-flush-result-allocation-mode"));
+
+            // The client-swap grace defaults to 5 seconds and round-trips through CONFIG SET.
+            ClassicAssert.AreEqual("5", Get(db, "gossip-client-swap-grace"));
+            ClassicAssert.IsTrue(map.ContainsKey("gossip-client-swap-grace"));
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-client-swap-grace", "10").ToString());
+            ClassicAssert.AreEqual("10", Get(db, "gossip-client-swap-grace"));
+            // Zero disables the grace window and is accepted.
+            ClassicAssert.AreEqual("OK", db.Execute("CONFIG", "SET", "gossip-client-swap-grace", "0").ToString());
+            ClassicAssert.AreEqual("0", Get(db, "gossip-client-swap-grace"));
+        }
+
+        /// <summary>
+        /// Verifies that CONFIG SET rejects malformed / out-of-range values for the gossip network-writer
+        /// options and that a rejected value does not mutate the option.
+        /// </summary>
+        [Test]
+        public void ConfigSetGossipOptionsValidationTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Out-of-range integer (min is 1).
+            var outOfRange = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "gossip-request-page-count", "0"));
+            ClassicAssert.AreEqual("ERR Value for 'gossip-request-page-count' is out of range (1..2147483647).", outOfRange.Message);
+            // Non-integer value.
+            var notInteger = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "gossip-network-buffer-size", "abc"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'gossip-network-buffer-size': expected an integer.", notInteger.Message);
+            // Invalid enum value.
+            var badEnum = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", "gossip-flush-result-allocation-mode", "Bogus"));
+            ClassicAssert.AreEqual("ERR Invalid value for 'gossip-flush-result-allocation-mode': 'Bogus'.", badEnum.Message);
+
+            // A rejected value must not have mutated the option.
+            var res = (RedisResult[])db.Execute("CONFIG", "GET", "gossip-request-page-count");
+            ClassicAssert.AreEqual(Garnet.client.LightNetworkWriterOptions.Default.RequestPageCount.ToString(), res[1].ToString());
+        }
+
+        /// <summary>
         /// Verifies that an enum-valued option round-trips through its member name and through its
         /// underlying numeric value, and that a numeric value naming no declared member is rejected.
         /// </summary>

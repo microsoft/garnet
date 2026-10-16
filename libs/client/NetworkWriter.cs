@@ -380,25 +380,6 @@ namespace Garnet.client
                 AggressiveShiftReadOnlyRunner(false);
         }
 
-        void EpochProtectAggressiveShiftReadOnlyRunner()
-        {
-            try
-            {
-                epoch.Resume();
-                AggressiveShiftReadOnlyRunner(false);
-            }
-            finally
-            {
-                epoch.Suspend();
-            }
-        }
-
-        bool ToShift()
-        {
-            long tailAddress = GetTailAddress();
-            return tailAddress > ReadOnlyAddress || (ReadOnlyAddress - tailAddress > WrapDistance);
-        }
-
         void AggressiveShiftReadOnlyRunner(bool recurse)
         {
             do
@@ -415,19 +396,44 @@ namespace Garnet.client
                         if (AggressiveFlushShiftReadOnlyBump()) return;
                     }
                 }
-                _ongoingAggressiveShiftReadOnly = 0;
+                // Release the flusher role with a full StoreLoad fence in one atomic operation. Without the
+                // fence a concurrent producer that advanced the tail but observed the flag still held would
+                // bail, while this thread could re-read a stale tail, see no work, and exit, stranding that
+                // request unflushed. The fence guarantees the re-check below observes any request published
+                // before release. The matching producer-side fence is the interlocked tail publication in the
+                // allocate path, so both halves of the handshake are ordered.
+                Interlocked.Exchange(ref _ongoingAggressiveShiftReadOnly, 0);
             } while (ToShift() && _ongoingAggressiveShiftReadOnly == 0 && Interlocked.CompareExchange(ref _ongoingAggressiveShiftReadOnly, 1, 0) == 0);
-        }
 
-        bool AggressiveFlushShiftReadOnlyBump()
-        {
-            long newReadOnlyAddress = GetTailAddress();
-            if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, WrapDistance, out long oldReadOnlyAddress))
+            bool ToShift()
             {
-                epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(oldReadOnlyAddress, newReadOnlyAddress));
-                return true;
+                var tailAddress = GetTailAddress();
+                return tailAddress > ReadOnlyAddress || (ReadOnlyAddress - tailAddress > WrapDistance);
             }
-            return false;
+
+            void EpochProtectAggressiveShiftReadOnlyRunner()
+            {
+                try
+                {
+                    epoch.Resume();
+                    AggressiveShiftReadOnlyRunner(false);
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
+            }
+
+            bool AggressiveFlushShiftReadOnlyBump()
+            {
+                var newReadOnlyAddress = GetTailAddress();
+                if (Utility.MonotonicUpdate(ref ReadOnlyAddress, newReadOnlyAddress, WrapDistance, out var oldReadOnlyAddress))
+                {
+                    epoch.BumpCurrentEpoch(() => OnPagesMarkedReadOnly(oldReadOnlyAddress, newReadOnlyAddress));
+                    return true;
+                }
+                return false;
+            }
         }
     }
 }

@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -195,7 +196,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(4)]
         [Category("CLUSTER-AUTH"), CancelAfter(60000)]
-        public void ClusterSimpleACLReload()
+        public void ClusterSimpleACLReload(CancellationToken cancellationToken)
         {
             ClusterStartupWithoutAuthCreds(useDefaultUserForInterNodeComms: true);
 
@@ -239,7 +240,9 @@ namespace Garnet.test.cluster
             // Wait until convergence after updating passwords
             for (var i = 1; i < context.nodes.Length;)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var config = context.clusterTestUtils.ClusterNodes(i, logger: context.logger);
+                var converged = false;
 
                 foreach (var node in config.Nodes)
                 {
@@ -248,9 +251,13 @@ namespace Garnet.test.cluster
                     if (port == port0 && epoch == epoch0)
                     {
                         i++;
+                        converged = true;
                         break;
                     }
                 }
+
+                if (!converged)
+                    ClusterTestUtils.BackOff(cancellationToken);
             }
         }
     }

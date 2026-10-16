@@ -27,7 +27,7 @@ namespace Garnet.cluster
         {
             // logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
-            var aofReplayMaxLagBytes = clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES);
+            var aofReplayMaxLagBytes = clusterProvider.storeWrapper.runtimeServerConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES);
             var syncReplay = aofReplayMaxLagBytes == 0;
 
             // Need to ensure that this replay task is allowed to complete before the replicaReplayGroup is disposed

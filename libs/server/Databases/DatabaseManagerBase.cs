@@ -472,9 +472,9 @@ namespace Garnet.server
                 // If periodic compaction is enabled and this is called from checkpointing, skip compaction
                 if (isFromCheckpoint && StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
-                await DoCompactionAsync(db, StoreWrapper.runtimeConfig.GetInt(ServerConfigType.COMPACTION_MAX_SEGMENTS), 1,
-                    StoreWrapper.runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE),
-                    StoreWrapper.runtimeConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE));
+                await DoCompactionAsync(db, StoreWrapper.runtimeServerConfig.GetInt(ServerConfigType.COMPACTION_MAX_SEGMENTS), 1,
+                    StoreWrapper.runtimeServerConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE),
+                    StoreWrapper.runtimeServerConfig.GetBool(ServerConfigType.COMPACTION_FORCE_DELETE));
             }
             catch (Exception ex)
             {

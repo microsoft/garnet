@@ -4,10 +4,8 @@
 using System.IO;
 using System.Linq;
 using System.Net;
-using Garnet.client;
 using Garnet.cluster;
 using Garnet.common;
-using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
 
@@ -33,12 +31,12 @@ namespace Garnet.test.cluster
         public void LatestVersionMeetSucceedsWithoutCapabilityDiscovery(bool separateEndpoints)
         {
             CreateServer(separateEndpoints);
-            using GarnetClient client = TestUtils.GetGarnetClient(context.endpoints[0]);
+            using var client = TestUtils.GetGarnetLightClient(context.endpoints[0]);
             client.Connect();
-            ClusterProvider provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
             GossipVersionNegotiation negotiation = new(client, provider.clusterManager);
-            ClusterConfig config = CreatePeerConfig();
-            ClusterConfig response = negotiation.ExchangeAsync(config, withMeet: true, expectedNodeId: null, context.cts.Token).GetAwaiter().GetResult();
+            var config = CreatePeerConfig();
+            var response = negotiation.ExchangeAsync(config, withMeet: true, expectedNodeId: null, context.cts.Token).GetAwaiter().GetResult();
             Assert.That(response.LocalNodeId, Is.EqualTo(provider.clusterManager.CurrentConfig.LocalNodeId));
             Assert.That(context.clusterTestUtils.GetServer(0).ClusterNodes().Nodes.Count(), Is.EqualTo(2));
         }
@@ -47,8 +45,8 @@ namespace Garnet.test.cluster
         public void SharedEndpointsAcceptLegacyGossip()
         {
             CreateServer(separateEndpoints: false);
-            ClusterConfig config = CreatePeerConfig();
-            byte[] response = (byte[])context.clusterTestUtils.GetServer(0).Execute("CLUSTER", "GOSSIP", "WITHMEET", config.ToByteArray(1));
+            var config = CreatePeerConfig();
+            var response = (byte[])context.clusterTestUtils.GetServer(0).Execute("CLUSTER", "GOSSIP", "WITHMEET", config.ToByteArray(1));
             Assert.That(response[0], Is.EqualTo(1));
             Assert.That(context.clusterTestUtils.GetServer(0).ClusterNodes().Nodes.Count(), Is.EqualTo(2));
         }
@@ -60,21 +58,21 @@ namespace Garnet.test.cluster
         public void UnsupportedGossipAlwaysReturnsHighestSupportedVersion(bool separateEndpoints, bool withMeet)
         {
             CreateServer(separateEndpoints);
-            using GarnetClient client = TestUtils.GetGarnetClient(context.endpoints[0]);
+            using var client = TestUtils.GetLightGarnetClient(context.endpoints[0]);
             client.Connect();
-            ClusterProvider provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
-            ClusterConfig original = provider.clusterManager.CurrentConfig;
+            var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            var original = provider.clusterManager.CurrentConfig;
             if (!separateEndpoints)
             {
-                using MemoryResult<byte> initial = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
+                using var initial = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
                 Assert.That(initial.Span[0], Is.EqualTo(ClusterConfig.MinimumSupportedClusterConfigVersion));
             }
 
             // The unreadable version header must be handled without interpreting its payload.
             byte[] unsupported = [(byte)(ClusterConfig.MaximumSupportedClusterConfigVersion + 1)];
-            for (int attempt = 0; attempt < 2; attempt++)
+            for (var attempt = 0; attempt < 2; attempt++)
             {
-                using MemoryResult<byte> response = (withMeet ? client.GossipWithMeetAsync(unsupported) : client.GossipAsync(unsupported))
+                using var response = (withMeet ? client.GossipWithMeetAsync(unsupported) : client.GossipAsync(unsupported))
                     .GetAwaiter().GetResult();
                 Assert.That(response.Span[0], Is.EqualTo(ClusterConfig.MaximumSupportedClusterConfigVersion));
                 Assert.That(response.Span.ToArray(), Is.EqualTo(original.ToByteArray()));
@@ -87,22 +85,22 @@ namespace Garnet.test.cluster
         public void FutureVersionRequestCanRetryWithVersionTwo(bool separateEndpoints)
         {
             CreateServer(separateEndpoints);
-            using GarnetClient client = TestUtils.GetGarnetClient(context.endpoints[0]);
+            using var client = TestUtils.GetLightGarnetClient(context.endpoints[0]);
             client.Connect();
-            ClusterProvider provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
-            ClusterConfig config = CreatePeerConfig(separateEndpoints);
-            byte[] unsupported = config.ToByteArray();
+            var provider = (ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider;
+            var config = CreatePeerConfig(separateEndpoints);
+            var unsupported = config.ToByteArray();
             unsupported[0] = (byte)(ClusterConfig.MaximumSupportedClusterConfigVersion + 1);
-            using MemoryResult<byte> offered = client.GossipWithMeetAsync(unsupported).GetAwaiter().GetResult();
+            using var offered = client.GossipWithMeetAsync(unsupported).GetAwaiter().GetResult();
             Assert.That(offered.Span[0], Is.EqualTo(2));
             Assert.That(provider.clusterManager.CurrentConfig.IsKnown(config.LocalNodeId), Is.False);
 
             GossipVersionNegotiation negotiation = new(client, provider.clusterManager);
-            ClusterConfig response = negotiation.ExchangeAsync(config, withMeet: true, expectedNodeId: null, context.cts.Token).GetAwaiter().GetResult();
+            var response = negotiation.ExchangeAsync(config, withMeet: true, expectedNodeId: null, context.cts.Token).GetAwaiter().GetResult();
             Assert.That(response.LocalNodeId, Is.EqualTo(provider.clusterManager.CurrentConfig.LocalNodeId));
             Assert.That(negotiation.IsNegotiated, Is.True);
-            Worker accepted = provider.clusterManager.CurrentConfig.GetWorkerFromNodeId(config.LocalNodeId);
-            Worker expected = config.GetWorkerFromNodeId(config.LocalNodeId);
+            var accepted = provider.clusterManager.CurrentConfig.GetWorkerFromNodeId(config.LocalNodeId);
+            var expected = config.GetWorkerFromNodeId(config.LocalNodeId);
             Assert.That(accepted.PeerAddress, Is.EqualTo(expected.PeerAddress));
             Assert.That(accepted.PeerPort, Is.EqualTo(expected.PeerPort));
             _ = negotiation.ExchangeAsync(config, withMeet: false, response.LocalNodeId, context.cts.Token).GetAwaiter().GetResult();
@@ -113,19 +111,19 @@ namespace Garnet.test.cluster
         public void UnsupportedGossipDoesNotChangeTheSelectedReplyVersion()
         {
             CreateServer(separateEndpoints: false);
-            using GarnetClient client = TestUtils.GetGarnetClient(context.endpoints[0]);
+            using var client = TestUtils.GetLightGarnetClient(context.endpoints[0]);
             client.Connect();
-            using MemoryResult<byte> initialOffer = client.GossipAsync(new byte[] { 3 }).GetAwaiter().GetResult();
+            using var initialOffer = client.GossipAsync(new byte[] { 3 }).GetAwaiter().GetResult();
             Assert.That(initialOffer.Span[0], Is.EqualTo(2));
-            using MemoryResult<byte> initialHeartbeat = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
+            using var initialHeartbeat = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
             Assert.That(initialHeartbeat.Span[0], Is.EqualTo(1));
-            ClusterConfig config = CreatePeerConfig();
-            using MemoryResult<byte> accepted = client.GossipWithMeetAsync(config.ToByteArray(1)).GetAwaiter().GetResult();
-            using MemoryResult<byte> offer = client.GossipAsync(new byte[] { 3 }).GetAwaiter().GetResult();
+            var config = CreatePeerConfig();
+            using var accepted = client.GossipWithMeetAsync(config.ToByteArray(1)).GetAwaiter().GetResult();
+            using var offer = client.GossipAsync(new byte[] { 3 }).GetAwaiter().GetResult();
             Assert.That(offer.Span[0], Is.EqualTo(2));
-            using MemoryResult<byte> updated = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
+            using var updated = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
             Assert.That(updated.Span[0], Is.EqualTo(1));
-            using MemoryResult<byte> unchanged = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
+            using var unchanged = client.GossipAsync(System.Array.Empty<byte>()).GetAwaiter().GetResult();
             Assert.That(unchanged.Length, Is.Zero);
         }
 
@@ -133,8 +131,8 @@ namespace Garnet.test.cluster
         public void SplitEndpointsRejectLegacyMeetBeforeMerging()
         {
             CreateServer(separateEndpoints: true);
-            ClusterConfig config = CreatePeerConfig();
-            RedisServerException exception = Assert.Throws<RedisServerException>(() =>
+            var config = CreatePeerConfig();
+            var exception = Assert.Throws<RedisServerException>(() =>
                 context.clusterTestUtils.GetServer(0).Execute("CLUSTER", "GOSSIP", "WITHMEET", config.ToByteArray(1)));
             Assert.That(exception.Message, Is.EqualTo("ERR Separate client and peer endpoints require gossip version two"));
             Assert.That(context.clusterTestUtils.GetServer(0).ClusterNodes().Nodes.Count(), Is.EqualTo(1));
@@ -144,7 +142,7 @@ namespace Garnet.test.cluster
         public void SplitEndpointsRejectVersionOneHeartbeat()
         {
             CreateServer(separateEndpoints: true);
-            RedisServerException exception = Assert.Throws<RedisServerException>(() =>
+            var exception = Assert.Throws<RedisServerException>(() =>
                 context.clusterTestUtils.GetServer(0).Execute("CLUSTER", "GOSSIP", "WITHMEET", System.Array.Empty<byte>()));
             Assert.That(exception.Message, Is.EqualTo("ERR Separate client and peer endpoints require gossip version two"));
         }
@@ -153,7 +151,7 @@ namespace Garnet.test.cluster
         [TestCase(true)]
         public void VersionOneSerializationRequiresSharedEndpoints(bool separateEndpoints)
         {
-            ClusterConfig config = CreatePeerConfig(separateEndpoints);
+            var config = CreatePeerConfig(separateEndpoints);
             Assert.That(config.CanUseGossipVersion(1), Is.EqualTo(!separateEndpoints));
             Assert.That(config.CanUseGossipVersion(2), Is.True);
             Assert.That(config.ToGossipByteArray(2), Is.EqualTo(config.ToByteArray(2)));
@@ -166,7 +164,7 @@ namespace Garnet.test.cluster
         [Test]
         public void SplitEndpointMetadataInAnotherWorkerPreventsVersionOneSerialization()
         {
-            ClusterConfig config = CreatePeerConfig().Merge(CreatePeerConfig(separateEndpoints: true), []);
+            var config = CreatePeerConfig().Merge(CreatePeerConfig(separateEndpoints: true), []);
             Assert.That(config.CanUseGossipVersion(1), Is.False);
             Assert.Throws<InvalidDataException>(() => config.ToGossipByteArray(1));
         }
@@ -176,9 +174,9 @@ namespace Garnet.test.cluster
             context.CreateInstances(1);
             if (separateEndpoints)
             {
-                IPEndPoint clientEndpoint = context.endpoints[0].ToIPEndPoint();
+                var clientEndpoint = context.endpoints[0].ToIPEndPoint();
                 IPEndPoint peerEndpoint = new(IPAddress.Parse("127.0.0.2"), ClusterTestContext.Port + 1);
-                GarnetServerOptions options = context.nodeOptions[0];
+                var options = context.nodeOptions[0];
                 options.EndPoints = [clientEndpoint, peerEndpoint];
                 options.ClusterAddress = peerEndpoint.Address.ToString();
                 options.ClusterPort = peerEndpoint.Port;
