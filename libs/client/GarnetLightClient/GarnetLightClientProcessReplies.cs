@@ -3,7 +3,6 @@
 
 using System;
 using System.Text;
-using System.Threading;
 using Garnet.common;
 
 namespace Garnet.client
@@ -225,12 +224,29 @@ namespace Garnet.client
 
         /// <summary>
         /// Process a batch of received bytes, matching each RESP reply to its outstanding completion in
-        /// monotonic ticket order. Completions live in the ring's reply-gated completion lane; the flusher
-        /// publishes each completion before publishing its request, so replies arrive in exactly the ticket
+        /// monotonic ticket order. Completions live in the ring's reply-gated completion lane; each producer
+        /// publishes its completion before its request becomes flushable, so replies arrive in exactly the ticket
         /// order this reader consumes them. Returns the number of fully consumed bytes;
         /// a partial trailing reply leaves <c>readHead</c> short so the caller retains the remainder.
         /// </summary>
         unsafe int ProcessReplies(byte* recvBufferPtr, int bytesRead)
+        {
+            // Completion slots consumed by this batch are released once at the end, rather than per reply, so
+            // the shared reservation counter and its waiter signalling are touched once per receive.
+            var writer = networkWriter;
+            var consumed = 0;
+            try
+            {
+                return ProcessRepliesCore(recvBufferPtr, bytesRead, ref consumed);
+            }
+            finally
+            {
+                if (consumed > 0)
+                    writer.AdvanceReplied(consumed);
+            }
+        }
+
+        unsafe int ProcessRepliesCore(byte* recvBufferPtr, int bytesRead, ref int consumed)
         {
             var readHead = 0;
             var ptr = recvBufferPtr;
@@ -238,30 +254,19 @@ namespace Garnet.client
 
             while (readHead < bytesRead)
             {
-                // A reply arrived while the completion lane has already caught up to the tail, so no
-                // response-expecting request is outstanding. This means the server produced a reply for a
-                // fire-and-forget command, which violates the no-response invariant of out-of-line execution.
-                if (tcsOffset == networkWriter.CompletionTail)
-                    ThrowException(new InvalidOperationException("Received a reply while no response was outstanding; fire-and-forget out-of-line commands must not produce a response."));
-
-                // The completion for this reply may not be published yet if its producer is still between the
-                // paired ticket allocation and completion publication.
+                // A producer publishes its completion before the request becomes flushable, so the completion for
+                // every reply is already published. An unpublished completion means no response-expecting request
+                // is outstanding: the server replied to a fire-and-forget command, violating the no-response
+                // invariant of out-of-line execution.
                 if (!networkWriter.TryReadCompletion(tcsOffset, out var tcs))
-                {
-                    Thread.Yield();
-                    continue;
-                }
+                    ThrowException(new InvalidOperationException("Received a reply while no response was outstanding; fire-and-forget out-of-line commands must not produce a response."));
 
                 switch (tcs.taskType)
                 {
-                    case TaskType.None:
-                        Thread.Yield();
-                        continue;
-
                     case TaskType.StringCallback:
                         if (!ProcessReplyAsString(ref ptr, end, out var resultString, out var error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.stringCallback?.Invoke(tcs.context, error);
                         else tcs.stringCallback?.Invoke(tcs.context, resultString);
                         break;
@@ -269,7 +274,7 @@ namespace Garnet.client
                     case TaskType.MemoryByteCallback:
                         if (!ProcessReplyAsMemoryByte(ref ptr, end, out var resultMemory, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.memoryByteCallback?.Invoke(tcs.context, CopyErrorToSpan(error));
                         else tcs.memoryByteCallback?.Invoke(tcs.context, resultMemory);
                         break;
@@ -277,7 +282,7 @@ namespace Garnet.client
                     case TaskType.MemoryByteArrayCallback:
                         if (!ProcessReplyAsMemoryByteArray(ref ptr, end, out var resultMemoryByteArray, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.memoryByteArrayCallback?.Invoke(tcs.context, resultMemoryByteArray, CopyErrorToSpan(error));
                         else tcs.memoryByteArrayCallback?.Invoke(tcs.context, resultMemoryByteArray, default);
                         break;
@@ -285,7 +290,7 @@ namespace Garnet.client
                     case TaskType.StringArrayCallback:
                         if (!ProcessReplyAsStringArray(ref ptr, end, out var resultStringArray, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.stringArrayCallback?.Invoke(tcs.context, resultStringArray, error);
                         else tcs.stringArrayCallback?.Invoke(tcs.context, resultStringArray, default);
                         break;
@@ -293,7 +298,7 @@ namespace Garnet.client
                     case TaskType.StringAsync:
                         if (!ProcessReplyAsString(ref ptr, end, out resultString, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.stringTcs?.TrySetException(new Exception(error));
                         else tcs.stringTcs?.TrySetResult(resultString);
                         break;
@@ -301,7 +306,7 @@ namespace Garnet.client
                     case TaskType.MemoryByteAsync:
                         if (!ProcessReplyAsMemoryByte(ref ptr, end, out resultMemory, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.memoryByteTcs?.TrySetException(new Exception(error));
                         else tcs.memoryByteTcs?.TrySetResult(resultMemory);
                         break;
@@ -309,7 +314,7 @@ namespace Garnet.client
                     case TaskType.StringArrayAsync:
                         if (!ProcessReplyAsStringArray(ref ptr, end, out var resultArray, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.stringArrayTcs?.TrySetException(new Exception(error));
                         else tcs.stringArrayTcs?.TrySetResult(resultArray);
                         break;
@@ -317,7 +322,7 @@ namespace Garnet.client
                     case TaskType.MemoryByteArrayAsync:
                         if (!ProcessReplyAsMemoryByteArray(ref ptr, end, out var resultByteArray, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.memoryByteArrayTcs?.TrySetException(new Exception(error));
                         else tcs.memoryByteArrayTcs?.TrySetResult(resultByteArray);
                         break;
@@ -325,7 +330,7 @@ namespace Garnet.client
                     case TaskType.LongAsync:
                         if (!ProcessReplyAsNumber(ref ptr, end, out var resultLong, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.longTcs?.TrySetException(new Exception(error));
                         else tcs.longTcs?.TrySetResult(resultLong);
                         break;
@@ -333,9 +338,13 @@ namespace Garnet.client
                     case TaskType.LongCallback:
                         if (!ProcessReplyAsNumber(ref ptr, end, out var resultLongCallback, out error))
                             return readHead;
-                        ConsumeTcsOffset();
+                        ConsumeTcsOffset(ref consumed);
                         if (error != null) tcs.longCallback?.Invoke(tcs.context, resultLongCallback, error);
                         else tcs.longCallback?.Invoke(tcs.context, resultLongCallback, default);
+                        break;
+
+                    default:
+                        ThrowException(new InvalidOperationException($"Published completion has unexpected task type {tcs.taskType}."));
                         break;
                 }
 

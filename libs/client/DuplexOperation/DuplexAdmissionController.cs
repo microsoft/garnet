@@ -61,7 +61,6 @@ namespace Garnet.client
         long flushedInlineAddress;
         int readOnlyRequestId;
         long readOnlyInlineAddress;
-        long completionUntil;
         long activeFlushUntilAddress;
         int completionReservations;
         int scheduleReservations;
@@ -70,9 +69,17 @@ namespace Garnet.client
         int activePerOperationFlushResults;
         int disposed;
 
+        // Each CompletionEvent.Set() allocates a SemaphoreSlim and takes its monitor lock, so releasers signal
+        // only when a waiter has armed the matching flag. A waiter captures the event generation, arms the flag
+        // with a full fence, and then re-checks its condition before waiting; a releaser publishes freed capacity
+        // with a full fence and then consumes the flag. By Dekker ordering either the waiter observes the freed
+        // capacity or the releaser observes the armed flag and releases the captured (or a later) generation.
         CompletionEvent requestFreed;
         CompletionEvent completionFreed;
         CompletionEvent idleStateChanged;
+        int requestFreedWaiters;
+        int completionFreedWaiters;
+        int idleStateWaiters;
 
         internal int CompletionTail => tail.TaskId;
 
@@ -123,6 +130,7 @@ namespace Garnet.client
 
                 DrainRequests();
                 var stateChanged = idleStateChanged;
+                ArmWaiter(ref idleStateWaiters);
                 if (IsIdle)
                     return;
 
@@ -166,31 +174,41 @@ namespace Garnet.client
 
                 if (expectsCompletion && !completionReserved)
                 {
-                    waitEvent = completionFreed;
                     if (!TryReserveCompletion())
                     {
-                        reservation = default;
-                        return false;
+                        waitEvent = completionFreed;
+                        ArmWaiter(ref completionFreedWaiters);
+                        if (!TryReserveCompletion())
+                        {
+                            reservation = default;
+                            return false;
+                        }
                     }
                     completionReserved = true;
                 }
 
                 if (!scheduleReserved)
                 {
-                    waitEvent = requestFreed;
                     if (!TryReserveSchedule())
                     {
-                        if (completionReserved)
-                            ReleaseCompletions(1);
-                        reservation = default;
-                        return false;
+                        waitEvent = requestFreed;
+                        ArmWaiter(ref requestFreedWaiters);
+                        if (!TryReserveSchedule())
+                        {
+                            if (completionReserved)
+                                ReleaseCompletions(1);
+                            reservation = default;
+                            return false;
+                        }
                     }
                     scheduleReserved = true;
                 }
 
-                waitEvent = requestFreed;
                 if (TryReserveRequest(requestSize, expectsCompletion, out reservation))
+                {
+                    waitEvent = default;
                     return true;
+                }
 
                 if (!flushKicked)
                 {
@@ -210,6 +228,11 @@ namespace Garnet.client
 
                 if (spinner.TryWait())
                     continue;
+
+                waitEvent = requestFreed;
+                ArmWaiter(ref requestFreedWaiters);
+                if (TryReserveRequest(requestSize, expectsCompletion, out reservation))
+                    return true;
 
                 if (completionReserved)
                     ReleaseCompletionsQuiet(1);
@@ -278,7 +301,7 @@ namespace Garnet.client
         void ReleaseCompletions(int count)
         {
             _ = Interlocked.Add(ref completionReservations, -count);
-            completionFreed.Set();
+            SignalIfArmed(ref completionFreedWaiters, ref completionFreed);
         }
 
         bool TryReserveSchedule()
@@ -296,8 +319,8 @@ namespace Garnet.client
                 return;
 
             _ = Interlocked.Add(ref scheduleReservations, -count);
-            requestFreed.Set();
-            idleStateChanged.Set();
+            SignalIfArmed(ref requestFreedWaiters, ref requestFreed);
+            SignalIfArmed(ref idleStateWaiters, ref idleStateChanged);
         }
 
         // Give back reservations taken but not used by an attempt that bailed on byte-ring backpressure, without
@@ -316,9 +339,27 @@ namespace Garnet.client
             if (consumedCount <= 0)
                 return;
 
-            Volatile.Write(ref completionUntil, Volatile.Read(ref completionUntil) + consumedCount);
             ReleaseCompletions(consumedCount);
-            idleStateChanged.Set();
+            SignalIfArmed(ref idleStateWaiters, ref idleStateChanged);
+        }
+
+        /// <summary>
+        /// Arms <paramref name="waiters"/> with a full fence. Call after capturing the event generation and before
+        /// re-checking the wait condition.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void ArmWaiter(ref int waiters)
+            => _ = Interlocked.Exchange(ref waiters, 1);
+
+        /// <summary>
+        /// Signals <paramref name="ev"/> only if a waiter armed <paramref name="waiters"/>. Call after the freed
+        /// capacity has been published with a full fence.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static void SignalIfArmed(ref int waiters, ref CompletionEvent ev)
+        {
+            if (Volatile.Read(ref waiters) != 0 && Interlocked.Exchange(ref waiters, 0) != 0)
+                ev.Set();
         }
 
         /// <summary>
@@ -349,10 +390,11 @@ namespace Garnet.client
                 if (count == 0)
                 {
                     // Flushes are serialized (BeginFlushRange asserts no overlap), so the flushed inline address
-                    // only moves forward and a plain store suffices.
-                    Volatile.Write(ref flushedInlineAddress, activeFlushUntilAddress);
-                    requestFreed.Set();
-                    idleStateChanged.Set();
+                    // only moves forward. The interlocked store is the full fence that orders it before the
+                    // waiter-flag reads below.
+                    _ = Interlocked.Exchange(ref flushedInlineAddress, activeFlushUntilAddress);
+                    SignalIfArmed(ref requestFreedWaiters, ref requestFreed);
+                    SignalIfArmed(ref idleStateWaiters, ref idleStateChanged);
                     AggressiveShiftReadOnlyRunner(true);
                 }
             }
@@ -368,7 +410,7 @@ namespace Garnet.client
         {
             var active = Interlocked.Decrement(ref activePerOperationFlushResults);
             Debug.Assert(active >= 0);
-            idleStateChanged.Set();
+            SignalIfArmed(ref idleStateWaiters, ref idleStateChanged);
         }
 
         /// <summary>
@@ -403,7 +445,7 @@ namespace Garnet.client
                 // request unflushed. The fence guarantees the re-check below observes any request reserved
                 // before release. The matching producer-side fence is the interlocked tail compare-and-swap.
                 Interlocked.Exchange(ref ongoingAggressiveShiftReadOnly, 0);
-                idleStateChanged.Set();
+                SignalIfArmed(ref idleStateWaiters, ref idleStateChanged);
             } while (ToShift() && ongoingAggressiveShiftReadOnly == 0 &&
                      Interlocked.CompareExchange(ref ongoingAggressiveShiftReadOnly, 1, 0) == 0);
 

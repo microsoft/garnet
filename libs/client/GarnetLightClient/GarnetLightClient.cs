@@ -969,11 +969,15 @@ namespace Garnet.client
             CompleteOnFailure(tcs, disposeException);
         }
 
+        /// <summary>
+        /// Advances the reply cursor past one consumed completion. The slot is released to producers in bulk by
+        /// <see cref="ProcessReplies"/> once the receive batch is processed.
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ConsumeTcsOffset()
+        void ConsumeTcsOffset(ref int consumed)
         {
             tcsOffset = (tcsOffset + 1) & (int)LightPageAndOffset.kTaskMask;
-            networkWriter.AdvanceReplied(1);
+            consumed++;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
