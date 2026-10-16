@@ -188,6 +188,14 @@ namespace Garnet.server
             => activeVectorManager?.WaitForVectorOperationsToComplete();
 
         /// <summary>
+        /// Apply a streamed diskless-sync snapshot record without recording it in the AOF.
+        /// </summary>
+        public GarnetStatus ApplySnapshotRecord(in DiskLogRecord record)
+        {
+            return aofReplayCoordinator.GetReplayContext(0).respServerSession.basicGarnetApi.SET(in record);
+        }
+
+        /// <summary>
         /// Extracts sequence number and participant count from a transaction header entry.
         /// For single-physical-log + multi-replay, uses entry address; for multi-physical-log, uses embedded sequence number.
         /// </summary>
