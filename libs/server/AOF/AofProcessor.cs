@@ -188,6 +188,14 @@ namespace Garnet.server
             => activeVectorManager?.WaitForVectorOperationsToComplete();
 
         /// <summary>
+        /// Apply a streamed diskless-sync snapshot record without recording it in the AOF.
+        /// </summary>
+        public GarnetStatus ApplySnapshotRecord(in DiskLogRecord record)
+        {
+            return aofReplayCoordinator.GetReplayContext(0).respServerSession.basicGarnetApi.SET(in record);
+        }
+
+        /// <summary>
         /// Extracts sequence number and participant count from a transaction header entry.
         /// For single-physical-log + multi-replay, uses entry address; for multi-physical-log, uses embedded sequence number.
         /// </summary>
@@ -260,7 +268,7 @@ namespace Garnet.server
                 return;
             }
 
-            // StoreRMW can queue VADDs onto different threads
+            // StoreRMW can queue vector operations onto different threads
             // but everything else needs to WAIT for those to complete
             // otherwise we might loose consistency
             if (header.opType != AofEntryType.StoreRMW)
@@ -453,7 +461,7 @@ namespace Garnet.server
         /// </remarks>
         private bool BeginReplayOp(AofReplayContext replayContext, AofEntryType opType, bool skip, out byte* bufferPtr, out int bufferLength)
         {
-            // StoreRMW can queue VADDs onto different threads; everything else must wait for those to complete first for consistency.
+            // StoreRMW can queue vector operations onto different threads; everything else must wait for those to complete first for consistency.
             if (opType != AofEntryType.StoreRMW)
                 activeVectorManager.WaitForVectorOperationsToComplete();
 
@@ -486,7 +494,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            // StoreRMW can queue VADDs onto different threads
+            // StoreRMW can queue vector operations onto different threads
             // but everything else needs to WAIT for those to complete
             // otherwise we might loose consistency
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
@@ -579,31 +587,8 @@ namespace Garnet.server
             if (legacyCmdFormat)
                 stringInput.header.cmd = LegacyRespCommand.FromV3(stringInput.header.cmd);
 
-            // VADD requires special handling, shove it over to the VectorManager
-            if (stringInput.header.cmd == RespCommand.VADD)
-            {
-                vectorManager.HandleVectorSetAddReplication(activeServerSession.storageSession, obtainServerSession, preparedParameters.Key, ref stringInput);
+            if (TryReplayVectorRMW(vectorManager, activeServerSession.storageSession, obtainServerSession, preparedParameters.Key, ref stringInput))
                 return;
-            }
-            else
-            {
-                // Any other op (include other vector ops) need to wait for pending VADDs to complete
-                vectorManager.WaitForVectorOperationsToComplete();
-
-                // VREM is also read-like, so requires special handling - shove it over to the VectorManager
-                if (stringInput.header.cmd == RespCommand.VREM)
-                {
-                    vectorManager.HandleVectorSetRemoveReplication(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
-                    return;
-                }
-
-                // VSETATTR too
-                if (stringInput.header.cmd == RespCommand.VSETATTR)
-                {
-                    vectorManager.HandleVectorSetSetAttributeReplication(activeServerSession.storageSession, preparedParameters.Key, ref stringInput);
-                    return;
-                }
-            }
 
             // RangeIndex commands need actual execution on replay
             if (stringInput.header.cmd == RespCommand.RICREATE)
@@ -635,6 +620,48 @@ namespace Garnet.server
                 StorageSession.CompletePendingForSession(ref status, ref output, ref stringContext);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Dispose();
+            if (stringInput.header.cmd == RespCommand.VADD && stringInput.arg1 == VectorManager.VADDSetFlagsArg
+                && (!status.Found || status.IsWrongType || status.IsExpired))
+                throw new GarnetException("Failed to apply flags to Vector Set, data loss is likely");
+        }
+
+        static bool TryReplayVectorRMW(VectorManager vectorManager, StorageSession storageSession,
+            Func<RespServerSession> obtainServerSession, ReadOnlySpan<byte> key, ref StringInput input)
+        {
+            if (input.header.cmd == RespCommand.XVIMPORT && input.parseState.Count != 0)
+            {
+                vectorManager.HandleVectorSetImportReplication(storageSession, obtainServerSession, key, ref input);
+                return true;
+            }
+
+            if (input.header.cmd == RespCommand.VADD)
+            {
+                if (input.arg1 != VectorManager.VADDAppendLogArg)
+                    vectorManager.WaitForVectorOperationsToComplete();
+                if (input.arg1 == VectorManager.VADDSetFlagsArg)
+                    return false;
+                vectorManager.HandleVectorSetAddReplication(storageSession, obtainServerSession, key, ref input);
+                return true;
+            }
+
+            // Must sequence releative to other operations
+            vectorManager.WaitForVectorOperationsToComplete();
+
+            switch (input.header.cmd)
+            {
+                case RespCommand.XVCREATE:
+                case RespCommand.XVIMPORT:
+                    vectorManager.HandleVectorSetImportReplication(storageSession, obtainServerSession, key, ref input);
+                    return true;
+                case RespCommand.VREM:
+                    vectorManager.HandleVectorSetRemoveReplication(storageSession, key, ref input);
+                    return true;
+                case RespCommand.VSETATTR:
+                    vectorManager.HandleVectorSetSetAttributeReplication(storageSession, key, ref input);
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         static void StoreDelete<TStringContext>(PreparedParameters preparedParameters, TStringContext stringContext)

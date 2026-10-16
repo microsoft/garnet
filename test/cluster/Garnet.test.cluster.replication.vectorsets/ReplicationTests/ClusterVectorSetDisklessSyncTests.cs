@@ -18,12 +18,14 @@ namespace Garnet.test.cluster
         private const int ReplicaIndex = 1;
 
         /// <summary>Creates a diskless-sync cluster with a low threshold so re-attach takes full sync.</summary>
-        private void SetupDisklessCluster(int nodeCount)
+        private void SetupDisklessCluster(int nodeCount, int commitFrequencyMs = 0, bool asyncReplay = false)
         {
             // Once the replica's AOF gap exceeds this, the primary stops replaying and full syncs instead
             context.CreateInstances(
                 nodeCount,
                 enableAOF: true,
+                CommitFrequencyMs: commitFrequencyMs,
+                asyncReplay: asyncReplay,
                 enableDisklessSync: true,
                 replicaDisklessSyncFullSyncAofThreshold: "1k",
                 timeout: timeout);
