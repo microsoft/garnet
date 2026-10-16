@@ -50,7 +50,12 @@ namespace Garnet.client
             public void Send(byte[] buffer, int offset, int length, object context)
             {
                 if (useTls)
+                {
+#if DEBUG
+                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.LightClient_Tls_Pause_Before_Write);
+#endif
                     networkHandler.SendResponse(buffer, offset, length, context);
+                }
                 else
                     tcpSender.SendResponse(buffer, offset, length, context);
             }

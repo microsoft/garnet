@@ -162,5 +162,9 @@ namespace Garnet.common
         /// pending node was built against the stale snapshot and is rebuilt before being advertised.
         /// </summary>
         Cluster_Gossip_Pause_Before_AddConnection,
+        /// <summary>
+        /// Light client: pause before encrypting a flush chunk, while its source buffer is still in use.
+        /// </summary>
+        LightClient_Tls_Pause_Before_Write,
     }
 }
