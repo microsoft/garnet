@@ -233,7 +233,25 @@ namespace Garnet.server
             // Read pattern for keys filter
             var patternSlice = parseState.GetArgSliceByRef(0);
 
-            var keys = storageApi.GetDbKeys(patternSlice);
+            var parkable = BeginParkableScan<TGarnetApi>();
+            var completed = false;
+            var mustWait = false;
+            List<byte[]> keys;
+            try
+            {
+                keys = storageApi.GetDbKeys(patternSlice);
+                completed = true;
+            }
+            finally
+            {
+                mustWait = parkable && EndParkableScan(completed);
+            }
+
+            if (mustWait)
+            {
+                keys.Clear();
+                return true;
+            }
 
             if (keys.Count > 0)
             {
@@ -315,8 +333,27 @@ namespace Garnet.server
                 }
             }
 
-            storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out var cursor, out var keys,
-                !typeParameterValue.IsEmpty ? long.MaxValue : countValue, typeParameterValue);
+            var parkable = BeginParkableScan<TGarnetApi>();
+            var completed = false;
+            var mustWait = false;
+            long cursor;
+            List<byte[]> keys;
+            try
+            {
+                storageApi.DbScan(patternArgSlice, allKeys, cursorFromInput, out cursor, out keys,
+                    !typeParameterValue.IsEmpty ? long.MaxValue : countValue, typeParameterValue);
+                completed = true;
+            }
+            finally
+            {
+                mustWait = parkable && EndParkableScan(completed);
+            }
+
+            if (mustWait)
+            {
+                keys.Clear();
+                return true;
+            }
 
             // Prepare values for output
             if (keys.Count == 0)

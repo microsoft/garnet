@@ -535,6 +535,7 @@ namespace Garnet.server
                 sendCapacityWait?.Cancel();
                 migrationWait?.Cancel();
                 aofGateWait?.Cancel();
+                freshnessWait?.Cancel();
             }
             catch (Exception ex)
             {

@@ -932,7 +932,29 @@ namespace Garnet.server
 
                             if (clusterSession == null || CanServeSlot(cmd))
                             {
+                                // On a replica, a read that has to wait for replay to catch up with what the session
+                                // has already read waits here, with nothing run yet, rather than blocking a thread
+                                // inside the read. It is parsed and verified again from the start once replay is there.
+                                if (typeof(TBasicApi) == typeof(ConsistentReadGarnetApi) && MustWaitForFreshness(cmd))
+                                {
+                                    endReadHead = readHead = _origReadHead;
+                                    if (ParkForFreshness())
+                                        break;
+                                    continue;
+                                }
+
                                 _ = ProcessBasicCommands(cmd, ref basicApi);
+
+                                // A KEYS or SCAN that has to wait for replay to catch up has written no reply: it is run
+                                // again from the start once replay is there
+                                if (typeof(TBasicApi) == typeof(ConsistentReadGarnetApi) && freshnessScanPending)
+                                {
+                                    freshnessScanPending = false;
+                                    endReadHead = readHead = _origReadHead;
+                                    if (ParkForFreshness())
+                                        break;
+                                    continue;
+                                }
                             }
                             else if (csvi.mustWait)
                             {

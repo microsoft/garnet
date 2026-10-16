@@ -126,6 +126,8 @@ namespace Garnet.server
             // Release any replay thread parked in the old barrier; it would otherwise wait on a round
             // that the new manager's replayers no longer participate in.
             previous?.replayBarrier.Disable();
+            // Wake the sessions parked on the old manager, which replay no longer feeds
+            previous?.RetireFreshnessWaiters();
         }
 
         /// <summary>

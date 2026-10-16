@@ -162,10 +162,129 @@ namespace Garnet.server
                     waiterHead = node.Next;
                     _ = (waiterHead?.Prev = null);
                     node.Next = null;
-                    node.Signal.Set();
+                    node.Wake();
                 }
                 UpdateMinWaiterTarget();
             }
+        }
+
+        /// <summary>
+        /// Lists a parked session's waiter to be woken once the sublog's maximum sequence number exceeds the given
+        /// session maximum, without blocking the calling thread.
+        /// </summary>
+        /// <param name="maximumSessionSequenceNumber">Sequence number the caller must observe replay past.</param>
+        /// <param name="node">The session's waiter, which must have a wake target.</param>
+        /// <returns>False if replay is already past the target, in which case nothing is listed.</returns>
+        /// <remarks>
+        /// The waiter is listed before the maximum is checked again, as <see cref="WaitForSequenceNumber"/> does: an
+        /// update that published its maximum before the listing and skipped the list because it was empty is caught
+        /// by the second check, and one that publishes after finds the waiter listed.
+        /// </remarks>
+        public bool TryRegisterWaiter(long maximumSessionSequenceNumber, ReadSessionWaiter node)
+        {
+            node.Reset(maximumSessionSequenceNumber);
+
+            lock (@lock)
+            {
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Frontier))
+                    return false;
+
+                InsertWaiter(node);
+                UpdateMinWaiterTarget();
+                Interlocked.MemoryBarrier();
+                if (maximumSessionSequenceNumber < Volatile.Read(ref sublogReplayMetadata.Frontier))
+                {
+                    _ = UnlinkWaiter(node);
+                    UpdateMinWaiterTarget();
+                    return false;
+                }
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Takes a waiter off the list if it is still on it.
+        /// </summary>
+        /// <param name="node">The waiter to remove.</param>
+        /// <returns>
+        /// True if this call removed it. False if the waiter had already left the list, which means whoever took it off
+        /// has woken it, or is about to.
+        /// </returns>
+        public bool TryRemoveWaiter(ReadSessionWaiter node)
+        {
+            lock (@lock)
+            {
+                var removed = UnlinkWaiter(node);
+                UpdateMinWaiterTarget();
+                return removed;
+            }
+        }
+
+        /// <summary>
+        /// Wakes every parked session's waiter, whether or not replay has reached its target. Waiters of sessions that
+        /// block a thread are left listed.
+        /// </summary>
+        /// <remarks>
+        /// Used when the state is about to stop receiving replay: nothing would ever wake a parked session otherwise.
+        /// The woken session decides again, against whatever replaced this state, whether it has to wait.
+        /// </remarks>
+        public void WakeParkedWaiters()
+        {
+            lock (@lock)
+            {
+                for (var node = waiterHead; node != null;)
+                {
+                    var next = node.Next;
+                    if (node.IsParked)
+                    {
+                        _ = UnlinkWaiter(node);
+                        node.Wake();
+                    }
+                    node = next;
+                }
+                UpdateMinWaiterTarget();
+            }
+        }
+
+        /// <summary>
+        /// Counts the listed waiters of parked sessions, or of readers that block a thread. For diagnostics and tests: it
+        /// walks the list under the lock.
+        /// </summary>
+        /// <param name="parked">True to count the waiters of parked sessions, false to count those of blocked readers.</param>
+        public int WaiterCount(bool parked)
+        {
+            lock (@lock)
+            {
+                var count = 0;
+                for (var node = waiterHead; node != null; node = node.Next)
+                {
+                    if (node.IsParked == parked)
+                        count++;
+                }
+                return count;
+            }
+        }
+
+        /// <summary>
+        /// Unlinks a waiter in O(1), clearing its list pointers. Must be called under <see cref="@lock"/>.
+        /// </summary>
+        /// <returns>True if the waiter was on the list.</returns>
+        private bool UnlinkWaiter(ReadSessionWaiter node)
+        {
+            if (node.Prev == null && waiterHead != node)
+                return false;
+
+            if (node.Prev != null)
+                node.Prev.Next = node.Next;
+            else
+                waiterHead = node.Next;
+
+            _ = (node.Next?.Prev = node.Prev);
+
+            node.Prev = null;
+            node.Next = null;
+            return true;
         }
 
         /// <summary>
@@ -267,15 +386,7 @@ namespace Garnet.server
         {
             lock (@lock)
             {
-                if (node.Prev != null)
-                    node.Prev.Next = node.Next;
-                else if (waiterHead == node)
-                    waiterHead = node.Next;
-
-                _ = (node.Next?.Prev = node.Prev);
-
-                node.Prev = null;
-                node.Next = null;
+                _ = UnlinkWaiter(node);
                 UpdateMinWaiterTarget();
             }
         }
@@ -292,14 +403,33 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// What a parked session is woken through. Called under the sublog's lock by whichever thread takes the
+    /// waiter off the list, so it must neither block nor run the session.
+    /// </summary>
+    internal interface IParkedReplayWaiter
+    {
+        /// <summary>
+        /// Called once, when the waiter has been taken off the list because replay passed its target or because
+        /// the sublog state is being retired.
+        /// </summary>
+        void OnReplayReached();
+    }
+
+    /// <summary>
     /// Reusable intrusive waiter node owned by a single reader session. Bundles the sorted-list
     /// pointers, the current wait target, and a persistent wakeup event. A session waits on at most
     /// one sublog at a time and processes reads sequentially, so a single node is reused across every
     /// wait — removing the per-wait allocation of a node plus <see cref="ManualResetEventSlim"/> on
     /// the blocking path. The node is always fully unlinked from any list before a wait returns.
     /// </summary>
+    /// <remarks>
+    /// A node made for a parked session carries the target it is woken through in place of the event, since no
+    /// thread blocks on it.
+    /// </remarks>
     internal sealed class ReadSessionWaiter : IDisposable
     {
+        readonly IParkedReplayWaiter parked;
+
         /// <summary>
         /// Sequence number this waiter is currently blocked until. Set by <see cref="Reset"/> before
         /// each wait; read under the sublog lock while the node is linked.
@@ -308,11 +438,40 @@ namespace Garnet.server
 
         /// <summary>
         /// Persistent wakeup event, allocated once and reset before each wait rather than per wait.
+        /// Null for the waiter of a parked session.
         /// </summary>
-        public readonly ManualResetEventSlim Signal = new(false);
+        public readonly ManualResetEventSlim Signal;
 
         public ReadSessionWaiter Prev;
         public ReadSessionWaiter Next;
+
+        /// <summary>
+        /// Creates the waiter of a session that blocks a thread to wait.
+        /// </summary>
+        public ReadSessionWaiter() => Signal = new(false);
+
+        /// <summary>
+        /// Creates the waiter of a session that parks to wait.
+        /// </summary>
+        /// <param name="parked">Woken when the wait is over.</param>
+        public ReadSessionWaiter(IParkedReplayWaiter parked) => this.parked = parked;
+
+        /// <summary>
+        /// Whether the session waiting on this node is parked rather than blocking a thread.
+        /// </summary>
+        public bool IsParked => parked is not null;
+
+        /// <summary>
+        /// Wakes the session waiting on this node.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Wake()
+        {
+            if (parked is null)
+                Signal.Set();
+            else
+                parked.OnReplayReached();
+        }
 
         /// <summary>
         /// Prepares the node for a fresh wait: sets the target, clears stale list pointers left by a
@@ -326,9 +485,9 @@ namespace Garnet.server
             TargetSequenceNumber = targetSequenceNumber;
             Prev = null;
             Next = null;
-            Signal.Reset();
+            Signal?.Reset();
         }
 
-        public void Dispose() => Signal.Dispose();
+        public void Dispose() => Signal?.Dispose();
     }
 }

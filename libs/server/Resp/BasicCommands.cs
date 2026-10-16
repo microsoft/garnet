@@ -2084,6 +2084,15 @@ namespace Garnet.server
                 return false;
             }
 
+            // Likewise a read that has to wait for replay to catch up with what the session has already read: back off,
+            // and the dispatch loop parks the session before it. The reads of the run so far have been issued, so the
+            // session's read state is what this one is checked against.
+            if (consistentReadActive && MustWaitForFreshness(RespCommand.GET))
+            {
+                endReadHead = readHead = oldEndReadHead;
+                return false;
+            }
+
             key = parseState.GetArgSliceByRef(0);
             return true;
         }
