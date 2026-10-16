@@ -23,7 +23,7 @@ namespace Garnet.server
     /// <summary>
     /// Transaction manager
     /// </summary>
-    public sealed unsafe partial class TransactionManager
+    public sealed partial class TransactionManager
     {
         /// <summary>
         /// Disposable to allow <see cref="PromoteToTransaction"/> to be handled with a using block.
@@ -139,6 +139,8 @@ namespace Garnet.server
         /// </summary>
         private TxnKeyEntries keyEntries;
 
+        private bool lockEntireKeyspace;
+
         internal TransactionManager(
             StoreWrapper storeWrapper,
             RespServerSession respSession,
@@ -252,7 +254,14 @@ namespace Garnet.server
             {
                 try
                 {
-                    keyEntries.UnlockAllKeys();
+                    if (lockEntireKeyspace)
+                    {
+                        keyEntries.UnlockEntireKeyspace();
+                    }
+                    else
+                    {
+                        keyEntries.UnlockAllKeys();
+                    }
 
                     // Release contexts
                     if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
@@ -273,6 +282,7 @@ namespace Garnet.server
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
+            this.lockEntireKeyspace = false;
 
             // Reset cluster key parse state
             if (clusterEnabled)
@@ -512,11 +522,26 @@ namespace Garnet.server
             bool lockSuccess;
             if (fail_fast_on_lock)
             {
-                lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                if (lockEntireKeyspace)
+                {
+                    lockSuccess = keyEntries.TryLockEntireKeyspace(lock_timeout);
+                }
+                else
+                {
+                    lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                }
             }
             else
             {
-                keyEntries.LockAllKeys();
+                if (lockEntireKeyspace)
+                {
+                    keyEntries.LockEntireKeyspace();
+                }
+                else
+                {
+                    keyEntries.LockAllKeys();
+                }
+
                 lockSuccess = true;
             }
 
