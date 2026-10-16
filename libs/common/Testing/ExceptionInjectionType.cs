@@ -166,5 +166,9 @@ namespace Garnet.common
         /// Light client: pause before encrypting a flush chunk, while its source buffer is still in use.
         /// </summary>
         LightClient_Tls_Pause_Before_Write,
+        /// <summary>
+        /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
+        /// </summary>
+        Replication_Pause_Before_Diskless_Snapshot_Recovery,
     }
 }

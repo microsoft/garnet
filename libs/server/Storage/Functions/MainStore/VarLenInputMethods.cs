@@ -99,10 +99,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref StringInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             // We know namespaces aren't present in string functions, so don't populate
             var cmd = input.header.cmd;
@@ -361,10 +358,15 @@ namespace Garnet.server
                         fieldInfo.ValueSize = RangeIndexManager.IndexSizeBytes;
                         return fieldInfo;
 
+                    case RespCommand.XVCREATE:
+                    case RespCommand.XVIMPORT:
+                        fieldInfo.ValueSize = VectorManager.IndexSize;
+                        return fieldInfo;
+
                     case RespCommand.VADD:
                     case RespCommand.VREM:
                     case RespCommand.VSETATTR:
-                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg or VectorManager.RecreateIndexArg or VectorManager.VADDSetFlagsArg or VectorManager.VSETATTRAppendLogArg)
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.VREMAppendLogArg or VectorManager.RecreateIndexArg or VectorManager.VADDSetFlagsArg or VectorManager.VSETATTRAppendLogArg or VectorManager.SetImportStateArg)
                         {
                             // A copy-update of the index key copies the whole index value to the new record: this is
                             // triggered when a CU is forced on the index record - during replication (VADD/VREM append
@@ -393,10 +395,7 @@ namespace Garnet.server
         }
 
         public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref StringInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
         {
             // We know namespaces aren't present in string functions, so don't populate
             var fieldInfo = new RecordFieldInfo()
@@ -418,17 +417,11 @@ namespace Garnet.server
         }
 
         public RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, IHeapObject value, ref StringInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             => throw new GarnetException("String store should not be called with IHeapObject");
 
         public RecordFieldInfo GetUpsertFieldInfo<TKey, TSourceLogRecord>(TKey key, in TSourceLogRecord inputLogRecord, ref StringInput input)
-            where TKey : IKey
-#if NET9_0_OR_GREATER
-                , allows ref struct
-#endif
+            where TKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
         {
             if (inputLogRecord.DataHeader.ValueIsObject)

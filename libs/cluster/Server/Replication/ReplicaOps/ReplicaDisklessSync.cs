@@ -222,6 +222,8 @@ namespace Garnet.cluster
                     aofTailAddress = _replicationOffset = this.replicationOffset;
                 }
 
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery);
+
                 storeWrapper.appendOnlyFile.Log.Initialize(aofBeginAddress, aofTailAddress);
 
                 // Set DB version

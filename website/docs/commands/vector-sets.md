@@ -17,7 +17,7 @@ storage stack and DiskANN. Some commands are Garnet-specific extensions (prefixe
 
 :::note
 Vector Sets are a preview feature. Commands and on-disk layout are subject to change. Enable the feature with the
-`--enable-vector-set-preview` server flag (see [Configuration](#configuration)). All `V*` commands return
+`--enable-vector-set-preview` server flag (see [Configuration](#configuration)). All `V*` and `XV*` commands return
 `ERR Vector Set (preview) commands are not enabled` when the flag is off.
 :::
 
@@ -95,10 +95,10 @@ verbatim in search results.
   checkpoint. On recovery, only the in-memory DiskANN handle needs to be rebuilt; it is **lazily** reconstituted
   over the persisted records the first time a Vector Set command touches the key, inside an exclusive lock so other
   readers wait.
-- **AOF** — `VADD` and `VREM` are appended to the AOF as synthetic write entries. Replicas reapply them in parallel
-  using a pool of worker tasks (configurable via `--vector-set-replay-task-count`); this is intentionally
-  non-deterministic so the replica's graph topology may not bit-identically match the primary's, but the search
-  semantics are preserved.
+- **AOF** — `VADD`, `VREM`, `VSETATTR`, `XVCREATE`, and `XVIMPORT` use synthetic write entries. Consecutive
+  `VADD`s or `XVIMPORT` terms replay in parallel using `--vector-set-replay-task-count` workers. Other commands
+  wait for queued work. `XVIMPORT key FINISH` waits for prior imports and completes before later commands replay.
+  Replaying `VADD` can produce a different graph topology while preserving search semantics.
 - **`FLUSHDB`/`FLUSHALL`** block all Vector Set writes for the duration of the flush so that the in-memory vector
   indices can be safely dropped.
 
@@ -110,6 +110,135 @@ all internal per-element data.
 ---
 
 ## Lifecycle Commands
+
+### XVCREATE
+
+Create an empty Vector Set with explicit parameters, without inserting a vector. This is a Garnet extension
+and requires `--enable-vector-set-preview`.
+
+#### Syntax
+
+```text
+XVCREATE key DIM dimensions [M degree] [EF build-exploration-factor] [DISTANCE_METRIC metric]
+         [NOQUANT | Q8 | BIN | XNOQUANT_U8 | XNOQUANT_I8 | XBIN_U8 | XBIN_I8]
+         [REDUCE reduced-dimensions] [QUANT_STATE state] [START_POINT id]
+```
+
+Options may appear in any order after the key. Each option, including the quantizer selection, may appear only once.
+
+| Option                        | Default      | Description                                                                                               |
+|-------------------------------|--------------|-----------------------------------------------------------------------------------------------------------|
+| `DIM dimensions`              | Required     | Input dimensions, from 1 to 65536.                                                                        |
+| `M degree`                    | `16`         | Maximum graph degree, from 4 to 4096.                                                                     |
+| `EF build-exploration-factor` | `200`        | Build-time exploration factor, from 1 to 1000000. Fixed at creation; later `VADD` calls do not change it. |
+| `DISTANCE_METRIC metric`      | `L2`         | `L2`, `COSINE`, `IP`, or `XCOSINE_NORMALIZED`.                                                            |
+| Quantizer                     | `Q8`         | One of the seven quantizers in the syntax above.                                                          |
+| `REDUCE reduced-dimensions`   | Disabled     | Positive dimensions no greater than `DIM`. Not supported with the `_U8` or `_I8` quantizers.              |
+| `QUANT_STATE state`           | Not supplied | Opaque binary quantizer state passed unchanged to DiskANN. Not supported with any `NOQUANT` variant.      |
+| `START_POINT id`              | `4294967295` | Start-point internal ID, from 0 to 4294967295. Useful to specify start point for imports.                 |
+
+Without `QUANT_STATE`, quantized indices that require training will follow the normal lifecycle of operating in full precision mode
+until enough vectors are inserted, then quantizing while asynchronously doing backfill, and flipping to quantized mode once backfill is complete. With `QUANT_STATE`, indices will operate in quantized mode from the start.
+
+Subsequent `VADD` calls must match the stored creation parameters.
+
+This is designed to be used with `XVIMPORT` to load index terms directly.
+
+#### Reply
+
+Both RESP2 and RESP3 return the simple string `OK`. An existing Vector Set returns
+`ERR vector set already exists`; another data type returns `WRONGTYPE`. Invalid parameters or failed
+quantizer initialization return an error without leaving a new Vector Set behind.
+
+```text
+XVCREATE embeddings DIM 768 M 32 EF 400 NOQUANT DISTANCE_METRIC COSINE
+VADD embeddings FP32 <3072-byte float blob> item:1 NOQUANT M 32 XDISTANCE_METRIC COSINE
+```
+
+---
+
+### XVIMPORT
+
+Import one opaque index term into an existing Vector Set. This is a Garnet extension and requires
+`--enable-vector-set-preview`.
+
+#### Syntax
+
+```text
+XVIMPORT key (VECTOR | INTMAP | EXTMAP | QUANT | ATTRS | NEIGHBORS) id value
+XVIMPORT key FINISH
+```
+
+The term form accepts exactly one term; `FINISH` accepts no ID or value. The key remains the first argument
+in both forms. Term names and `FINISH` are case-insensitive; `id` and `value` are nonempty
+binary strings forwarded unchanged to DiskANN, without float conversion, JSON parsing, or re-quantization.
+
+| Term        | Native Tag | Contents                                                  |
+|-------------|------------|-----------------------------------------------------------|
+| `VECTOR`    | `0`        | Full-precision vector.                                    |
+| `NEIGHBORS` | `1`        | Native neighbor-list record.                              |
+| `QUANT`     | `2`        | Vector quantized with the set's supplied quantizer state. |
+| `ATTRS`     | `3`        | Opaque attributes.                                        |
+| `INTMAP`    | `5`        | External ID to internal ID mapping.                       |
+| `EXTMAP`    | `6`        | Internal ID to external ID mapping.                       |
+
+Payloads must match the native index format and configured dimensions
+and degree; the importer is responsible for graph and mapping consistency.
+
+`VECTOR` - Key is internal ID (u32). The value is an array of the element type. For F32 vectors, the size would be 4 * dimension.
+`QUANT` - Key is internal ID (u32). The value is the binary serialization of the quantized vector, specific to the quantizer. This term should be used only in quantized indices.
+`NEIGHBORS` - Key is internal ID (u32). The value is an array of internal IDs which are u32s. Its size is 4 * (max_degree + 1) and the final element is the length of valid entries.
+`INTMAP` - Key is the external ID. The value is the internal ID (u32). 
+`EXTMAP` - Key is internal ID (u32). The value is the external ID.
+`ATTRS` - The value is the same as would be passed to `VSETATTR`. This term is optional.
+
+The configured start-point ID must have `VECTOR` and `NEIGHBORS` terms, plus
+`QUANT` for a quantized vector set. It has no attributes, internal or external
+ID map: `ATTRS`, `EXTMAP`, and `INTMAP` mappings to that ID are rejected.
+Finalization validates the supplied start point and caches it.
+
+Since there is no export command, this importing of terms is useful in systems
+that integrate with DiskANN code in other contexts where the index is created
+outside of Garnet but where it might be beneficial to serve queries with Garnet.
+
+Start with `XVCREATE`. Quantized sets require `QUANT_STATE` before importing.
+Imports may run concurrently. Wait for all term-import replies, then call `XVIMPORT key FINISH`
+before using other vector set operations. `DEL` can discard an incomplete import.
+
+Once a term is accepted, ordinary vector commands other than `VINFO` return
+`ERR Vector Set import is not finished` until `FINISH` succeeds. A newly created empty set with no imported
+terms does not require `FINISH`.
+
+#### Reply
+
+Both RESP2 and RESP3 return the simple string `OK` when the term is accepted. Missing sets return
+`ERR vector set does not exist`, non-vector keys return `WRONGTYPE`, and native rejection returns
+`ERR vector set import failed`. Invalid tags, empty inputs, and wrong argument counts return errors.
+Repeated terms may be accepted. A failed import must be retried successfully or the set discarded;
+failure does not guarantee that no storage changes occurred.
+
+`XVIMPORT key FINISH` waits for vector set finalization before returning
+`OK`. Finalization requires a valid imported start point, even when there are no data vectors.
+Verification failure returns `ERR vector set import verification failed`; a failure during final setup
+returns `ERR vector set import finalization failed`. Imports are disabled once finalization starts.
+
+If ordinary operations have disabled imports and no import is pending, `FINISH` returns
+`ERR vector set import verification failed` without changing the set's state or availability.
+
+Concurrent `FINISH` calls join the same attempt. After a verification failure, another `FINISH` retries only
+failed partitions, leaving successful partitions complete. Missing terms cannot be supplied once finalization
+has started, so an incomplete import must be discarded. A finalization failure is terminal; discard the set.
+After success, repeated `FINISH` returns `OK` without re-finalizing, including after rename, eviction, or
+recovery. Terminal failure also survives eviction, recovery, replication, and migration; `FINISH` continues
+to return an error without native work. Deleting and recreating the key starts a new import lifecycle.
+Partition retry state remains cached only while the same native handle is live.
+
+:::caution
+`OK` for a term acknowledges acceptance, not graph finalization. AOF recovery or replication ending before
+FINISH leaves the set pending; replay does not finalize imports implicitly.
+:::
+
+---
 
 ### VADD
 
@@ -125,24 +254,24 @@ VADD key [REDUCE dim] (FP32 vector | XB8 vector | VALUES n v1 ... vN) element
 
 #### Vector Input Forms
 
-| Form | Description |
-|------|-------------|
-| `FP32 <bytes>` | Raw little-endian `float32` blob. Length must be a multiple of 4. |
-| `XU8 <bytes>` | Raw `uint8` byte blob. Each byte is one dimension. |
-| `XI8 <bytes>` | Raw `int8` byte blob. Each byte is one dimension. |
-| `VALUES n v1 v2 ... vN` | `n` textual floats. |
+| Form                    | Description                                                       |
+|-------------------------|-------------------------------------------------------------------|
+| `FP32 <bytes>`          | Raw little-endian `float32` blob. Length must be a multiple of 4. |
+| `XU8 <bytes>`           | Raw `uint8` byte blob. Each byte is one dimension.                |
+| `XI8 <bytes>`           | Raw `int8` byte blob. Each byte is one dimension.                 |
+| `VALUES n v1 v2 ... vN` | `n` textual floats.                                               |
 
 #### Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `REDUCE dim` | _disabled_ | Project the input vector down to `dim` dimensions. `dim` must be ≤ the input dimensions. Not allowed with `XPREQ8`. Only honored on the first `VADD` (when the index is created). |
-| `CAS` | _off_ | Accepted for parser compatibility with Redis; currently a no-op. |
-| `NOQUANT` \| `BIN` \| `Q8` \| `XNOQUANT_U8` \| `XNOQUANT_I8` \| `XBIN_I8` \| `XBIN_U8` | `Q8` | Quantization (see [Quantization](#quantization)). |
-| `EF n` | `200` | Build-time exploration factor (DiskANN `R` candidate-list size). Must be in `[1, 1000000]`. |
-| `SETATTR attr` | _none_ | Attach an arbitrary byte string to the element (typically a JSON object). Retrieve later with `VGETATTR` or via `WITHATTRIBS` on `VSIM`. |
-| `M n` | `16` | DiskANN max out-degree per node. Must be in `[4, 4096]`. |
-| `XDISTANCE_METRIC` | `L2` | Distance function (see [Distance Metrics](#distance-metrics)). |
+| Option                                                                                 | Default    | Description                                                                                                                                                                       |
+|----------------------------------------------------------------------------------------|------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `REDUCE dim`                                                                           | _disabled_ | Project the input vector down to `dim` dimensions. `dim` must be ≤ the input dimensions. Not allowed with `XPREQ8`. Only honored on the first `VADD` (when the index is created). |
+| `CAS`                                                                                  | _off_      | Accepted for parser compatibility with Redis; currently a no-op.                                                                                                                  |
+| `NOQUANT` \| `BIN` \| `Q8` \| `XNOQUANT_U8` \| `XNOQUANT_I8` \| `XBIN_I8` \| `XBIN_U8` | `Q8`       | Quantization (see [Quantization](#quantization)).                                                                                                                                 |
+| `EF n`                                                                                 | `200`      | Build-time exploration factor (DiskANN `R` candidate-list size). Must be in `[1, 1000000]`.                                                                                       |
+| `SETATTR attr`                                                                         | _none_     | Attach an arbitrary byte string to the element (typically a JSON object). Retrieve later with `VGETATTR` or via `WITHATTRIBS` on `VSIM`.                                          |
+| `M n`                                                                                  | `16`       | DiskANN max out-degree per node. Must be in `[4, 4096]`.                                                                                                                          |
+| `XDISTANCE_METRIC`                                                                     | `L2`       | Distance function (see [Distance Metrics](#distance-metrics)).                                                                                                                    |
 
 Once the index is created, subsequent `VADD` calls must agree on `REDUCE`, quantization, `M`, and distance metric;
 mismatches return errors like `ERR asked M value mismatch with existing vector set`.
@@ -184,17 +313,20 @@ VINFO key
 #### Resp Reply
 
 RESP2 returns an array of 14 elements (7 alternating field-name / value pairs); RESP3 returns a map with the same
-7 fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `quant-type` | simple string | One of `f32`, `bin`, `q8`, `xpreq8` |
-| `distance-metric` | simple string | One of `l2`, `cosine`, `inner-product`, `cosine-normalized` |
-| `input-vector-dimensions` | integer | Dimensions of the input vector |
-| `reduced-dimensions` | integer | Dimensions stored in the index (after `REDUCE`); same as `input-vector-dimensions` if no projection |
-| `build-exploration-factor` | integer | `EF` used at build time |
-| `num-links` | integer | `M` (max out-degree) |
-| `size` | integer | Number of elements currently in the index |
+| Field                      | Type                  | Description                                                                                         |
+|----------------------------|-----------------------|-----------------------------------------------------------------------------------------------------|
+| `quant-type`               | simple string         | One of `f32`, `bin`, `q8`, `xpreq8`                                                                 |
+| `distance-metric`          | simple string         | One of `l2`, `cosine`, `inner-product`, `cosine-normalized`                                         |
+| `input-vector-dimensions`  | integer               | Dimensions of the input vector                                                                      |
+| `reduced-dimensions`       | integer               | Dimensions stored in the index (after `REDUCE`); same as `input-vector-dimensions` if no projection |
+| `build-exploration-factor` | integer               | `EF` used at build time                                                                             |
+| `num-links`                | integer               | `M` (max out-degree)                                                                                |
+| `size`                     | integer               | Number of elements currently in the index                                                           |
+| `import-pending`           | integer (bulk string) | `1` while import awaits successful `FINISH`; otherwise `0`                                          |
+
+`VINFO` remains available during import and finalization, including after a failed `FINISH`. While pending,
+it reads stored metadata without calling DiskANN or disabling further term imports.
 
 Returns a null array in RESP2 or null in RESP3 if the key does not exist; `WRONGTYPE` if the key holds a different data type.
 
@@ -216,6 +348,8 @@ RESP2 example:
 12) (integer) 16
 13) "size"
 14) (integer) 1024
+15) "import-pending"
+16) "0"
 ```
 
 ---
@@ -367,39 +501,39 @@ VSIM key (ELE element | FP32 vector | XB8 vector | VALUES n v1 ... vN)
 
 #### Query Input Forms
 
-| Form | Description |
-|------|-------------|
-| `ELE element` | Use the vector already stored under `element` as the query. |
-| `FP32 <bytes>` | Raw little-endian `float32` query blob. |
-| `XB8 <bytes>` | Raw `uint8` query blob. |
-| `VALUES n v1 ... vN` | `n` textual floats. |
+| Form                 | Description                                                 |
+|----------------------|-------------------------------------------------------------|
+| `ELE element`        | Use the vector already stored under `element` as the query. |
+| `FP32 <bytes>`       | Raw little-endian `float32` query blob.                     |
+| `XB8 <bytes>`        | Raw `uint8` query blob.                                     |
+| `VALUES n v1 ... vN` | `n` textual floats.                                         |
 
 The query's effective dimension must match the index's `input-vector-dimensions`.
 
 #### Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `WITHSCORES` | _off_ | Also return the distance/similarity score for each result. |
-| `WITHATTRIBS` | _off_ | Also return the attribute (set with `VADD ... SETATTR`) for each result. |
-| `COUNT n` | `10` | Maximum number of results to return. Must be in `[0, 100000000]`. |
-| `EPSILON delta` | `2.0` | DiskANN `L_search` epsilon — controls how aggressively the graph is explored beyond the current best. |
-| `EF n` | `100` | Search-time exploration factor (`L_search` candidate-list size). Must be in `[1, 1000000]`. |
-| `FILTER expr` | _none_ | Filter results by an attribute expression (see [Filter Expressions](#filter-expressions)). |
-| `FILTER-EF n` | `16` | Scale factor for adaptive inline filter search. Must be in `[4, 256]`. This controls how high the EF will scale based on selectivity. |
-| `TRUTH` | _off_ | Accepted for compatibility; exact / brute-force search is not yet wired up. |
-| `NOTHREAD` | _off_ | Accepted for compatibility; currently ignored (search always runs on the calling thread). |
+| Option          | Default | Description                                                                                                                           |
+|-----------------|---------|---------------------------------------------------------------------------------------------------------------------------------------|
+| `WITHSCORES`    | _off_   | Also return the distance/similarity score for each result.                                                                            |
+| `WITHATTRIBS`   | _off_   | Also return the attribute (set with `VADD ... SETATTR`) for each result.                                                              |
+| `COUNT n`       | `10`    | Maximum number of results to return. Must be in `[0, 100000000]`.                                                                     |
+| `EPSILON delta` | `2.0`   | DiskANN `L_search` epsilon — controls how aggressively the graph is explored beyond the current best.                                 |
+| `EF n`          | `100`   | Search-time exploration factor (`L_search` candidate-list size). Must be in `[1, 1000000]`.                                           |
+| `FILTER expr`   | _none_  | Filter results by an attribute expression (see [Filter Expressions](#filter-expressions)).                                            |
+| `FILTER-EF n`   | `16`    | Scale factor for adaptive inline filter search. Must be in `[4, 256]`. This controls how high the EF will scale based on selectivity. |
+| `TRUTH`         | _off_   | Accepted for compatibility; exact / brute-force search is not yet wired up.                                                           |
+| `NOTHREAD`      | _off_   | Accepted for compatibility; currently ignored (search always runs on the calling thread).                                             |
 
 #### Resp Reply
 
 A flat RESP array. The number of elements per result depends on which `WITH*` flags are set:
 
-| Flags | Items per result | Order |
-|-------|------------------|-------|
-| _(none)_ | 1 | `id` |
-| `WITHSCORES` | 2 | `id`, `score` |
-| `WITHATTRIBS` | 2 | `id`, `attr` |
-| `WITHATTRIBS WITHSCORES` | 3 | `id`, `score`, `attr` |
+| Flags                    | Items per result | Order                 |
+|--------------------------|------------------|-----------------------|
+| _(none)_                 | 1                | `id`                  |
+| `WITHSCORES`             | 2                | `id`, `score`         |
+| `WITHATTRIBS`            | 2                | `id`, `attr`          |
+| `WITHATTRIBS WITHSCORES` | 3                | `id`, `score`, `attr` |
 
 Scores are returned as bulk strings (decimal text). When `WITHATTRIBS` is set and an element has no attribute, the
 slot is an empty bulk string. The result is in similarity order (closest first). Results may be fewer than `COUNT`
@@ -445,28 +579,28 @@ evaluated against each candidate's attribute.
 
 #### Operator Precedence (low → high)
 
-| Precedence | Operators |
-|-----------|-----------|
-| 0 | `or`, `\|\|` |
-| 1 | `and`, `&&` |
-| 2 | `>`, `>=`, `<`, `<=`, `==`, `!=`, `in` |
-| 3 | `+`, `-` |
-| 4 | `*`, `/`, `%` |
-| 5 | `**` (right-associative) |
-| 6 | `not`, `!` |
+| Precedence | Operators                              |
+|------------|----------------------------------------|
+| 0          | `or`, `\|\|`                           |
+| 1          | `and`, `&&`                            |
+| 2          | `>`, `>=`, `<`, `<=`, `==`, `!=`, `in` |
+| 3          | `+`, `-`                               |
+| 4          | `*`, `/`, `%`                          |
+| 5          | `**` (right-associative)               |
+| 6          | `not`, `!`                             |
 
 #### Limits
 
 Filters are compiled and evaluated with zero heap allocation on the hot path, so they have fixed upper bounds:
 
-| Limit | Value | What it bounds |
-|-------|-------|----------------|
-| Max tokens | 128 | Total operators + operands in the expression (~18 AND/OR clauses) |
-| Max tuple elements | 64 | Total elements across all `[...]` literals |
-| Max runtime array elements | 64 | Per candidate; total elements pulled from JSON array fields |
-| Max unique selectors | 32 | Distinct `.field` references in one expression |
-| Max eval stack depth | 16 | Postfix evaluation depth |
-| Max parenthesis nesting | 128 | Bounded by the token buffer |
+| Limit                      | Value | What it bounds                                                    |
+|----------------------------|-------|-------------------------------------------------------------------|
+| Max tokens                 | 128   | Total operators + operands in the expression (~18 AND/OR clauses) |
+| Max tuple elements         | 64    | Total elements across all `[...]` literals                        |
+| Max runtime array elements | 64    | Per candidate; total elements pulled from JSON array fields       |
+| Max unique selectors       | 32    | Distinct `.field` references in one expression                    |
+| Max eval stack depth       | 16    | Postfix evaluation depth                                          |
+| Max parenthesis nesting    | 128   | Bounded by the token buffer                                       |
 
 Missing attributes cause the filter to evaluate to false for that candidate. Compile errors yield an empty result
 set rather than a server-side error.
@@ -487,25 +621,25 @@ VSIM movies VALUES 3 0.12 0.34 0.56 FILTER ".year != null and .rating >= 4.0"
 
 The active quantizer determines how vectors are stored internally and which input forms are valid.
 
-| Token | Status | Notes |
-|-------|--------|-------|
-| `NOQUANT` | ✅ Supported | Store input as `float32`, use unquantized forms for graph search. |
-| `Q8` | ✅ Supported | Store input as `float32`, use 8-bit quantized forms for graph search.  |
-| `BIN` | ✅ Supported | Store input as `float32`, use 1-bit quantized forms for graph search. |
-| `XNOQUANT_U8` | ✅ Supported | Garnet extension: stores input as `uint8` bytes with no further quantization. Incompatible with `REDUCE`. |
-| `XNOQUANT_I8` | ✅ Supported | Garnet extension: stores input as `int8` bytes with no further quantization. Incompatible with `REDUCE`. |
-| `XBIN_U8` | ✅ Supported | Garnet extension: stores input `uint8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
-| `XBIN_I8` | ✅ Supported | Garnet extension: stores input `int8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
+| Token         | Status      | Notes                                                                                                                  |
+|---------------|-------------|------------------------------------------------------------------------------------------------------------------------|
+| `NOQUANT`     | ✅ Supported | Store input as `float32`, use unquantized forms for graph search.                                                      |
+| `Q8`          | ✅ Supported | Store input as `float32`, use 8-bit quantized forms for graph search.                                                  |
+| `BIN`         | ✅ Supported | Store input as `float32`, use 1-bit quantized forms for graph search.                                                  |
+| `XNOQUANT_U8` | ✅ Supported | Garnet extension: stores input as `uint8` bytes with no further quantization. Incompatible with `REDUCE`.              |
+| `XNOQUANT_I8` | ✅ Supported | Garnet extension: stores input as `int8` bytes with no further quantization. Incompatible with `REDUCE`.               |
+| `XBIN_U8`     | ✅ Supported | Garnet extension: stores input `uint8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`. |
+| `XBIN_I8`     | ✅ Supported | Garnet extension: stores input `int8` bytes, uses 1-bit quantized forms for graph search. Incompatible with `REDUCE`.  |
 
 If no quantizer is specified on the first `VADD`, the default is `Q8`.  Matching input format and storage format improves performance by removing a conversion step in `VADD`.
 
 ## Distance Metrics
 
-| Token | Description |
-|-------|-------------|
-| `L2` (default) | Squared Euclidean distance. |
-| `COSINE` | Cosine distance. Vectors are normalized internally. |
-| `IP` | Inner product (larger is closer). |
+| Token                | Description                                                                                                              |
+|----------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `L2` (default)       | Squared Euclidean distance.                                                                                              |
+| `COSINE`             | Cosine distance. Vectors are normalized internally.                                                                      |
+| `IP`                 | Inner product (larger is closer).                                                                                        |
 | `XCOSINE_NORMALIZED` | Garnet extension: cosine distance with **no** internal normalization — caller guarantees inputs are already unit-length. |
 
 `XDISTANCE_METRIC` is honored only on the first `VADD` that creates the index. Subsequent `VADD`s must agree, or
@@ -610,24 +744,24 @@ Or in `garnet.conf`:
 "EnableVectorSetPreview": true
 ```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--enable-vector-set-preview` / `EnableVectorSetPreview` | `false` | Master switch for all `V*` commands. When off, every Vector Set command returns `ERR Vector Set (preview) commands are not enabled`. |
-| `--vector-set-replay-task-count` / `VectorSetReplayTaskCount` | `0` (= CPU count) | Number of worker tasks used by replicas to replay `VADD`/`VREM` from the AOF in parallel. |
+| Option                                                        | Default           | Description                                                                                                                          |
+|---------------------------------------------------------------|-------------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| `--enable-vector-set-preview` / `EnableVectorSetPreview`      | `false`           | Master switch for all `V*` commands. When off, every Vector Set command returns `ERR Vector Set (preview) commands are not enabled`. |
+| `--vector-set-replay-task-count` / `VectorSetReplayTaskCount` | `0` (= CPU count) | Number of workers used to replay consecutive `VADD`s or `XVIMPORT` terms in parallel.                                                |
 
 ---
 
 ## Limits
 
-| Limit | Value | Source |
-|-------|-------|--------|
-| Maximum vector dimensions | 65,536 | `VectorManager.MaxVectorDimensions` |
-| Maximum build / search EF | 1,000,000 | `VectorManager.MaxExplorationFactor` |
-| Maximum `COUNT` | 100,000,000 | `VectorManager.MaxRetrieveCount` |
-| Maximum `FILTER-EF` | 256 | `VectorManager.MaxFilteringScaleFactor` |
-| Maximum elements per Vector Set | 2³² − 1 | DiskANN limit |
-| Concurrent Vector Sets per instance | (2³² − 8)/8 (approx. 500 million) | Internal context metadata limit |
-| Empty Vector Set keys | not allowed | Returns `ERR Vector Set key cannot be empty` (preview restriction) |
+| Limit                               | Value                             | Source                                                             |
+|-------------------------------------|-----------------------------------|--------------------------------------------------------------------|
+| Maximum vector dimensions           | 65,536                            | `VectorManager.MaxVectorDimensions`                                |
+| Maximum build / search EF           | 1,000,000                         | `VectorManager.MaxExplorationFactor`                               |
+| Maximum `COUNT`                     | 100,000,000                       | `VectorManager.MaxRetrieveCount`                                   |
+| Maximum `FILTER-EF`                 | 256                               | `VectorManager.MaxFilteringScaleFactor`                            |
+| Maximum elements per Vector Set     | 2³² − 1                           | DiskANN limit                                                      |
+| Concurrent Vector Sets per instance | (2³² − 8)/8 (approx. 500 million) | Internal context metadata limit                                    |
+| Empty Vector Set keys               | not allowed                       | Returns `ERR Vector Set key cannot be empty` (preview restriction) |
 
 ---
 
