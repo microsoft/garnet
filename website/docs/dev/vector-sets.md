@@ -87,6 +87,47 @@ Implemented commands:
 
 DiskANN index creation must be serialized, so this requires holding an exclusive lock ([more details on locking](#locking)) that covers just that key.  During the `create_index` call to DiskANN the read/write/delete callbacks provided may be invoked - accordingly creation is re-entrant and we cannot call `create_index` directly from any Tsavorite session functions.
 
+### Explicit Creation (via `XVCREATE`)
+
+`XVCREATE` requires `DIM` and stores the same configuration as implicit creation through `VADD`.
+Its optional `EF` (default `200`, range `1` to `1000000`) is passed to native creation and stored in the index stub for recreation.
+Its optional `START_POINT` (default `4294967295`, range `0` to `4294967295`) is stored in the index stub and creation replay payload, so recreation and recovery use the same internal ID.
+It holds the existing exclusive per-set lock while checking that the key is absent, allocating a context,
+calling `create_index`, and optionally calling `set_quant_state` with the supplied opaque bytes.
+Native calls occur outside Tsavorite session functions because they can re-enter Garnet through storage callbacks.
+
+### Term Import (via `XVIMPORT`)
+
+`XVIMPORT` reads an existing index stub with `ReadVectorIndex`, retaining its lifetime lock while
+calling `DiskANNService.ImportTerm`. Missing keys are not created. Native callbacks write the term records
+outside Tsavorite session functions, and the network ID and value bytes are passed unchanged.
+
+The first accepted term sets `ImportPending` in the index stub under an exclusive lock. Ordinary vector
+operations, except `VINFO`, reject this flag until `FINISH` succeeds. The flag survives rename,
+eviction, and checkpoint recovery; an empty set with no imported terms remains usable.
+
+The six public term names map to native tags `0`, `1`, `2`, `3`, `5`, and `6`; metadata tag `4` is excluded.
+The start point accepts only vector, neighbor-list, and quantized-vector terms. It has no attributes or ID mappings.
+DiskANN owns eligibility and its persisted `_imp` marker, including restoration when the native handle is
+recreated. Garnet does not maintain a competing eligibility flag in the index stub.
+
+A successful term import is logged for AOF/replication but does not finalize the graph.
+
+### Explicit Finalization (via `XVIMPORT key FINISH`)
+
+`FINISH` holds a shared lock until DiskANN finishes all partitions, including start-point and cache setup.
+Work runs on a dedicated background pool, using the configured quantization worker count for both workers
+and partitions per database.
+
+Concurrent calls for the same native index share a job. Later calls retry only failed partitions; successful
+partitions are never rerun on that handle. Partition progress is cached until the native index is dropped.
+Shutdown cancels queued work and waits for running partitions.
+
+Success sets `ImportCompleted` and clears `ImportPending` in one RMW. Repeated `FINISH` returns `OK` from
+the stub without native work. Terminal failure sets `ImportFailed` and retains `ImportPending`, so later
+FINISH and term imports fail without recreating the native handle. Both outcomes survive rename, eviction,
+recovery, and migration. Deleting and recreating the key clears the import flags.
+
 ### Insertion (via `VADD`)
 
 Once a Vector Set exists, insertions (which also use `VADD`) can proceed in parallel.
@@ -107,7 +148,7 @@ To prevent the index from being deleted mid-insertion, we hold a shared lock whi
 Removal works much the same as insertion, using shared locks so it can proceed in parallel.  The only meaningful difference is calling DiskANN's `remove` instead of `insert`.
 
 > [!NOTE]
-> Removing all elements from a Vector Set is not the same as deleting it.  While it is not possible to create an empty Vector Set with a single command, it is legal for one to exist after a `VREM`.
+> Removing all elements from a Vector Set is not the same as deleting it. An empty Vector Set can be created with `XVCREATE` or remain after a `VREM`.
 
 ### Search (via `VSIM`)
 
@@ -124,7 +165,9 @@ These operations are handled purely on the Garnet side by first reading out the 
 
 ### Metadata (via `VDIM` and `VINFO`)
 
-Metadata is handled purely on the Garnet side by reading out the [`Index`](#indexes) structure.
+Configuration and `import-pending` come from the [`Index`](#indexes) structure. `VINFO` also reads `size`
+from DiskANN, except during import: it then omits `size` and returns stored metadata without recreating or
+calling the native index.
 
 > [!NOTE]
 > `VINFO` directly exposes Redis implementation details in addition to "normal" data.
@@ -262,6 +305,12 @@ As noted above, inserts (via `VADD`) and deletes (via `VREM`) are reads from Tsa
 
 To fix that, synthetic writes against related keys are made after an insert or remove.  These writes are against the same Vector Set key, without any namespace information.  See `VectorManager.ReplicateVectorSetAdd` and `VectorManager.ReplicateVectorSetRemove` for details.
 
+`XVCREATE` and `XVIMPORT` also use synthetic RMW records. Creation records carry configuration and optional
+quantizer state, not native pointers. Term records carry the tag, ID, and value; `FINISH` carries no term payload.
+On the primary, FINISH waits for accepted terms to be logged and logs its success before clearing `ImportPending`.
+Terminal failure is logged as a payload-free `XVIMPORT` record with `arg1 = 1`; replay restores the failure
+flags without running native finalization. Successful FINISH uses `arg1 = 0`.
+
 > [!IMPORTANT]
 > There is a failure case here where we crash between the insert operation completing and the replication operation completing.
 >
@@ -280,11 +329,26 @@ The synthetic writes on primary are intercepted on replicas and redirected to `V
 
 For performance reasons, replicated `VADD`s are applied across many threads instead of serially.  This introduces a new source of non-determinism, since `VADD`s will occur in a different order than on the primary, but this is acceptable as Vector Sets are inherently non-deterministic.  While not _exactly_ the same Redis also permits a degree of non-determinism with its `CAS` option for `VADD`, so we're not diverging an incredible amount here.
 
-While a `VADD` can proceed in parallel with respect to other `VADD`s, that is not the case for any other commands.  Accordingly, `AofProcessor` now calls `VectorManager.WaitForVectorOperationsToComplete()` before applying any other updates to maintain coherency.
+Consecutive `XVIMPORT` terms also replay in parallel on the same worker pool. Switching between `VADD` and
+term-import batches, or replaying any other command, drains queued work first. `XVIMPORT key FINISH` runs
+synchronously after prior imports finish, and later commands wait for it to complete. These rules apply to
+both ordinary and chunked import records. Replay ending without FINISH leaves the import pending.
+
+Ordinary and chunked records share vector-command dispatch. Chunked `VADD`, `VREM`, and `VSETATTR` records
+execute their vector operations with the same ordering barriers, including synthetic migration records.
+
+Transactions containing a vector-set rename replay their participating tasks' operations in log order on
+one barrier participant, holding the combined transaction locks. This keeps the source available until
+the destination copy completes. Both ordinary and chunked rename records reconstruct the destination from
+the live source; logged native pointers and contexts are not reused. Rename flag updates use the replay
+transaction's storage context without recreating the native index.
 
 ### Migration
 
 Migrating a Vector Set between two primaries (either as part of a `MIGRATE ... KEYS` or migration of a whole hash slot) is complicated by storing element data in namespaces.
+
+Migration preserves import flags. Pending and terminally failed imports arrive without a native handle;
+an eligible FINISH recreates it on demand, while terminal failures remain blocked.
 
 Namespaces (intentionally) do not participate in hash slots or clustering, and are a node specific concept.  This means that migration must also update the namespaces of elements as they are migrated.
 
@@ -451,7 +515,7 @@ This log message is enriched on the Garnet side with:
 
 Garnet calls into the following DiskANN functions:
 
- - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, nint logCallback, out bool quantizationNeeded)`
+ - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, VectorDistanceMetricType distanceMetric, uint buildExplorationFactor, uint numLinks, uint startPointId, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback, nint filterCallback, nint logCallback, out bool quantizationNeeded)`
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `DiskANNInsertResult insert(ulong context, nint index, nint id_data, nuint id_len, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
    * `vector_data` must be aligned for the quantizers underlying type (i.e. 4-byte for NOQUANT, 1-byte for XBIN_U8, etc.)
@@ -508,15 +572,15 @@ Field access uses dot notation (for example, `.year`, `.rating`, `.genre`).
 
 Precedence matches the internal `OpTable` and determines evaluation order:
 
-| Precedence | Operators | Description |
-|-----------|-----------|-------------|
-| 0 | `or`, `\|\|` | Logical OR |
-| 1 | `and`, `&&` | Logical AND |
-| 2 | `>`, `>=`, `<`, `<=`, `==`, `!=`, `in` | Comparison and containment |
-| 3 | `+`, `-` | Addition and subtraction |
-| 4 | `*`, `/`, `%` | Multiplication, division, modulo |
-| 5 | `**` | Power (right-associative) |
-| 6 | `not`, `!` | Logical NOT (unary) |
+| Precedence | Operators                              | Description                      |
+|------------|----------------------------------------|----------------------------------|
+| 0          | `or`, `\|\|`                           | Logical OR                       |
+| 1          | `and`, `&&`                            | Logical AND                      |
+| 2          | `>`, `>=`, `<`, `<=`, `==`, `!=`, `in` | Comparison and containment       |
+| 3          | `+`, `-`                               | Addition and subtraction         |
+| 4          | `*`, `/`, `%`                          | Multiplication, division, modulo |
+| 5          | `**`                                   | Power (right-associative)        |
+| 6          | `not`, `!`                             | Logical NOT (unary)              |
 
 #### `in` operator
 
@@ -530,14 +594,14 @@ The `in` operator supports three use cases:
 
 Filter expressions are compiled and evaluated entirely on the thread stack (~9 KB) with zero heap allocation. This imposes fixed upper bounds:
 
-| Limit | Value | What it means | On overflow |
-|-------|-------|---------------|-------------|
-| Max tokens | 128 | Total number of operands + operators in the expression. A typical `.a > 1 and .b < 2` uses 7 tokens. 128 supports ~18 AND/OR clauses. | Compile error — filter returns no results |
-| Max tuple elements | 64 | Total elements across all `[...]` literals (e.g. `.x in [1,2,...,64]`) | Compile error |
-| Max runtime array elements | 64 | Total elements extracted from JSON array fields (for `in .tags`) across all candidates. Reset per candidate. | Array treated as null — `in` returns false |
-| Max unique selectors | 32 | Unique field names referenced (e.g. `.year`, `.rating`). 32 supports very complex filters. | Extra selectors silently ignored |
-| Max eval stack depth | 16 | Postfix evaluation stack depth. Typical expressions use 3–4. | Candidate excluded |
-| Max parenthesis nesting | 128 | Currently bounded by token buffer size | Compile error |
+| Limit                      | Value | What it means                                                                                                                         | On overflow                                |
+|----------------------------|-------|---------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
+| Max tokens                 | 128   | Total number of operands + operators in the expression. A typical `.a > 1 and .b < 2` uses 7 tokens. 128 supports ~18 AND/OR clauses. | Compile error — filter returns no results  |
+| Max tuple elements         | 64    | Total elements across all `[...]` literals (e.g. `.x in [1,2,...,64]`)                                                                | Compile error                              |
+| Max runtime array elements | 64    | Total elements extracted from JSON array fields (for `in .tags`) across all candidates. Reset per candidate.                          | Array treated as null — `in` returns false |
+| Max unique selectors       | 32    | Unique field names referenced (e.g. `.year`, `.rating`). 32 supports very complex filters.                                            | Extra selectors silently ignored           |
+| Max eval stack depth       | 16    | Postfix evaluation stack depth. Typical expressions use 3–4.                                                                          | Candidate excluded                         |
+| Max parenthesis nesting    | 128   | Currently bounded by token buffer size                                                                                                | Compile error                              |
 
 #### Notes
 

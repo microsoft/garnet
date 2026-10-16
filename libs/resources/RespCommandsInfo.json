@@ -5859,6 +5859,58 @@
     ]
   },
   {
+    "Command": "XVCREATE",
+    "Name": "XVCREATE",
+    "Arity": -4,
+    "Flags": "DenyOom, Write, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Write, Garnet, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Insert"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
+    "Command": "XVIMPORT",
+    "Name": "XVIMPORT",
+    "Arity": -3,
+    "Flags": "DenyOom, Write, Module",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Write, Garnet, Vector",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ],
+    "StoreType": "Main"
+  },
+  {
     "Command": "ZADD",
     "Name": "ZADD",
     "Arity": -4,
