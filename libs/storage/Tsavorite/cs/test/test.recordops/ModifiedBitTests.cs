@@ -23,7 +23,7 @@ namespace Tsavorite.test.ModifiedBit
 
         private TsavoriteKV<IntStoreFunctions, IntAllocator> store;
         private ClientSession<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private BasicContext<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator, BasicSessionLocker<IntStoreFunctions, IntAllocator>> bContext;
         private IDevice log;
 
         [SetUp]

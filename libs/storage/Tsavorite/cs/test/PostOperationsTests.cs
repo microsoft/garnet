@@ -74,7 +74,7 @@ namespace Tsavorite.test
 
         private TsavoriteKV<IntStoreFunctions, IntAllocator> store;
         private ClientSession<TestSpanByteKey, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<TestSpanByteKey, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private BasicContext<TestSpanByteKey, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator, BasicSessionLocker<IntStoreFunctions, IntAllocator>> bContext;
         private IDevice log;
 
         const int NumRecords = 100;

@@ -22,7 +22,7 @@ namespace Tsavorite.test
     {
         private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private ClientSession<KeyWithNamespaceStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> session;
-        private BasicContext<KeyWithNamespaceStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> bContext;
+        private BasicContext<KeyWithNamespaceStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator, BasicSessionLocker<StructStoreFunctions, StructAllocator>> bContext;
         private IDevice log;
 
         [SetUp]
