@@ -74,12 +74,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task SimpleSetGetTest()
+        public async Task SimpleSetGetTest([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
-            using var db = TestUtils.GetGarnetLightClient();
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var origValue = "abcdefg";
@@ -94,12 +94,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task SimpleIncrTest()
+        public async Task SimpleIncrTest([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
-            using var db = TestUtils.GetGarnetLightClient();
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var n = await db.ExecuteForLongResultAsync(INCR, ["counter"]).ConfigureAwait(false);
@@ -110,12 +110,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task SimpleMemoryResultTest()
+        public async Task SimpleMemoryResultTest([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
-            using var db = TestUtils.GetGarnetLightClient();
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var payload = new byte[] { 0x00, 0x01, 0x02, 0xFE, 0xFF };
@@ -126,12 +126,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ConcurrentProducersIncrTest()
+        public async Task ConcurrentProducersIncrTest([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
-            using var db = TestUtils.GetGarnetLightClient();
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS);
             await db.ConnectAsync().ConfigureAwait(false);
 
             const int producers = 8;
@@ -230,9 +230,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ReconnectFaultsOperationWaitingOnMemoryAdmission()
+        public async Task ReconnectFaultsOperationWaitingOnMemoryAdmission([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
             const int memoryCapacity = 512;
@@ -245,7 +245,7 @@ namespace Garnet.test
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: memoryCapacity,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var writer = GetNetworkWriter(db);
@@ -271,9 +271,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ReconnectFaultsNoResponseOperationWaitingOnMemoryAdmission()
+        public async Task ReconnectFaultsNoResponseOperationWaitingOnMemoryAdmission([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true, enableTLS: useTLS);
             server.Start();
 
             const int memoryCapacity = 512;
@@ -286,7 +286,7 @@ namespace Garnet.test
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: memoryCapacity,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var writer = GetNetworkWriter(db);
@@ -319,9 +319,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ReconnectFaultsOperationWaitingOnCompletionCapacity()
+        public async Task ReconnectFaultsOperationWaitingOnCompletionCapacity([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
             var options = new LightNetworkWriterOptions(
@@ -333,7 +333,7 @@ namespace Garnet.test
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 0,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var writer = GetNetworkWriter(db);
@@ -583,9 +583,9 @@ namespace Garnet.test
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
 
         [Test]
-        public async Task RequestMemoryThrottleRejectsOversizedOutOfLineRequestWithoutLeak()
+        public async Task RequestMemoryThrottleRejectsOversizedOutOfLineRequestWithoutLeak([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
             var options = new LightNetworkWriterOptions(
@@ -597,7 +597,7 @@ namespace Garnet.test
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 512,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
@@ -608,9 +608,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task RequestMemoryThrottleStabilizesConcurrentOutOfLineRequests()
+        public async Task RequestMemoryThrottleStabilizesConcurrentOutOfLineRequests([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
             const int capacityBytes = 2048;
@@ -623,7 +623,7 @@ namespace Garnet.test
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: capacityBytes,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             const int producers = 8;
@@ -653,9 +653,9 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task ChunkedLargePayloadTest()
+        public async Task ChunkedLargePayloadTest([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
             // Force small pages so the payload spans several chunks/pages.
@@ -668,7 +668,7 @@ namespace Garnet.test
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 0,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            using var db = new GarnetLightClient(TestUtils.EndPoint, networkWriterOptions: options);
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var value = new string('x', 1 << 16);
@@ -719,14 +719,15 @@ namespace Garnet.test
             ClassicAssert.AreEqual("breaking", delivered);
         }
 
-        [TestCase(16, TestName = "NoResponseInlinePreservesCompletionAlignment")]
-        [TestCase(512, TestName = "NoResponseOutOfLinePreservesCompletionAlignment")]
-        public async Task NoResponsePreservesCompletionAlignment(int messageLength)
+        [Test]
+        public async Task NoResponsePreservesCompletionAlignment(
+            [Values(16, 512)] int messageLength,
+            [Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true, enableTLS: useTLS);
             server.Start();
 
-            using var subscriber = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var subscriber = ConnectionMultiplexer.Connect(TestUtils.GetConfig(useTLS: useTLS));
             var messages = new BlockingCollection<string>();
             await subscriber.GetSubscriber().SubscribeAsync(RedisChannel.Literal("no-response-news"),
                 (_, message) => messages.Add(message)).ConfigureAwait(false);
@@ -740,7 +741,7 @@ namespace Garnet.test
                 maxConcurrentNetworkSends: 8,
                 maxOutOfLineRentedBytes: 1024,
                 flushResultAllocationMode: FlushResultAllocationMode.Buffered);
-            using var db = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
             await db.ConnectAsync().ConfigureAwait(false);
 
             var channel = Encoding.ASCII.GetBytes("no-response-news");
@@ -763,12 +764,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task DisabledClusterPublishProducesNoResponse()
+        public async Task DisabledClusterPublishProducesNoResponse([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true, disablePubSub: true);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true, disablePubSub: true, enableTLS: useTLS);
             server.Start();
 
-            using var db = TestUtils.GetGarnetLightClient();
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS);
             await db.ConnectAsync().ConfigureAwait(false);
 
             db.ClusterPublishNoResponse("channel"u8.ToArray(), "message"u8.ToArray());
@@ -776,12 +777,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task GossipWithMeetReturnsConfig()
+        public async Task GossipWithMeetReturnsConfig([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: true, enableTLS: useTLS);
             server.Start();
 
-            using var db = TestUtils.GetGarnetLightClient();
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS);
             await db.ConnectAsync().ConfigureAwait(false);
 
             // WITHMEET always elicits a response carrying the node's serialized configuration, exercising the
@@ -820,12 +821,12 @@ namespace Garnet.test
         /// <see cref="GarnetClientDisposedException"/> rather than aborted mid-flight or left to hang.
         /// </summary>
         [Test]
-        public async Task DisposeGracefullyAsync_DrainsInFlightRequests()
+        public async Task DisposeGracefullyAsync_DrainsInFlightRequests([Values] bool useTLS)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
             server.Start();
 
-            var db = TestUtils.GetGarnetLightClient();
+            var db = TestUtils.GetGarnetLightClient(useTLS: useTLS);
             await db.ConnectAsync().ConfigureAwait(false);
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -881,6 +882,104 @@ namespace Garnet.test
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             Assert.DoesNotThrowAsync(async () => await db.DisposeGracefullyAsync(cts.Token).ConfigureAwait(false));
             ClassicAssert.IsTrue(db.Disposed);
+        }
+
+        /// <summary>
+        /// End-to-end stress across plain TCP and TLS. Concurrent producers pipeline a mix of inline requests,
+        /// requests straddling the inline threshold, out-of-line requests, and payloads larger than a TLS record,
+        /// alongside a shared counter. A small ring forces inline-buffer wrap, coalesced inline runs interleaved
+        /// with out-of-line sends, and request/completion backpressure. Every reply must match its request and the
+        /// connection must remain usable after a reconnect.
+        /// </summary>
+        [Test, NonParallelizable]
+        public async Task MixedPayloadPipelineStressTest([Values] bool useTLS, [Values] bool smallRing)
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
+            server.Start();
+
+            LightNetworkWriterOptions? options = smallRing
+                ? new LightNetworkWriterOptions(
+                    networkBufferSizeBytes: 256,
+                    requestPageSizeBytes: 256,
+                    requestPageCount: 2,
+                    maxOutstandingRequests: 32,
+                    maxOutstandingCompletions: 64,
+                    maxConcurrentNetworkSends: 8,
+                    maxOutOfLineRentedBytes: 0,
+                    flushResultAllocationMode: FlushResultAllocationMode.Buffered)
+                : null;
+            using var db = TestUtils.GetGarnetLightClient(useTLS: useTLS, networkWriterOptions: options);
+            await db.ConnectAsync().ConfigureAwait(false);
+
+            const int producers = 8;
+            const int batchesPerProducer = 25;
+            const int batchSize = 24;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+            var incrCount = 0L;
+            var tasks = new Task[producers];
+
+            for (var p = 0; p < producers; p++)
+            {
+                var producer = p;
+                tasks[p] = Task.Run(async () =>
+                {
+                    var random = new Random(producer + 1);
+                    var pending = new Task<string>[batchSize];
+                    var expected = new string[batchSize];
+
+                    for (var batch = 0; batch < batchesPerProducer; batch++)
+                    {
+                        for (var i = 0; i < batchSize; i++)
+                        {
+                            var kind = random.Next(100);
+                            if (kind < 10)
+                            {
+                                _ = Interlocked.Increment(ref incrCount);
+                                expected[i] = null;
+                                pending[i] = IncrAsString(db, cts.Token);
+                                continue;
+                            }
+
+                            var length = kind switch
+                            {
+                                < 55 => random.Next(0, 64),
+                                < 75 => random.Next(200, 320),
+                                < 95 => random.Next(400, 4096),
+                                _ => random.Next(16 << 10, 40 << 10),
+                            };
+                            var value = $"{producer}:{batch}:{i}:{new string((char)('a' + ((producer + i) % 26)), length)}";
+                            expected[i] = value;
+                            pending[i] = db.ExecuteForStringResultWithCancellationAsync(ECHO, [value], cts.Token);
+                        }
+
+                        var results = await Task.WhenAll(pending).ConfigureAwait(false);
+                        for (var i = 0; i < batchSize; i++)
+                        {
+                            if (expected[i] != null)
+                                ClassicAssert.AreEqual(expected[i], results[i], $"Reply mismatch for producer {producer}, batch {batch}, request {i}.");
+                        }
+                    }
+                }, cts.Token);
+            }
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(
+                Interlocked.Read(ref incrCount),
+                await db.ExecuteForLongResultAsync(GET, ["stress-counter"]).ConfigureAwait(false));
+
+            await db.ReconnectAsync(cts.Token).ConfigureAwait(false);
+            var finalValue = new string('z', 20 << 10);
+            ClassicAssert.AreEqual(
+                finalValue,
+                await db.ExecuteForStringResultWithCancellationAsync(ECHO, [finalValue], cts.Token).ConfigureAwait(false));
+
+            static async Task<string> IncrAsString(GarnetLightClient client, CancellationToken token)
+            {
+                var value = await client.ExecuteForLongResultWithCancellationAsync(INCR, ["stress-counter"], token).ConfigureAwait(false);
+                ClassicAssert.Greater(value, 0);
+                return null;
+            }
         }
 
         static LightNetworkWriter GetNetworkWriter(GarnetLightClient client)
