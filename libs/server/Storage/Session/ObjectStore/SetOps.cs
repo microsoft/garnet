@@ -254,7 +254,7 @@ namespace Garnet.server
         /// <summary>
         /// Moves a member from a source set to a destination set.
         /// If the move was performed, this command returns 1.
-        /// If the member was not found in the source set, or if no operation was performed, this command returns 0.
+        /// If the member exists in the source set, including when both keys are the same, this command returns 1; otherwise, 0.
         /// </summary>
         /// <param name="sourceKey"></param>
         /// <param name="destinationKey"></param>
@@ -287,13 +287,20 @@ namespace Garnet.server
                 if (srcGetStatus == GarnetStatus.NOTFOUND)
                     return GarnetStatus.NOTFOUND;
 
-                if (srcGetStatus == GarnetStatus.WRONGTYPE || srcObject.GarnetObject is not SetObject)
+                if (srcGetStatus == GarnetStatus.WRONGTYPE || srcObject.GarnetObject is not SetObject setObject)
                     return GarnetStatus.WRONGTYPE;
 
-                // If the keys are the same, no operation is performed.
+                // Moving into the source leaves the set unchanged, but still reports whether the member exists.
                 var sameKey = sourceKey.ReadOnlySpan.SequenceEqual(destinationKey.ReadOnlySpan);
                 if (sameKey)
+                {
+#if NET9_0_OR_GREATER
+                    smoveResult = setObject.Set.GetAlternateLookup<ReadOnlySpan<byte>>().Contains(member.ReadOnlySpan) ? 1 : 0;
+#else
+                    smoveResult = setObject.Set.Contains(member.ReadOnlySpan.ToArray()) ? 1 : 0;
+#endif
                     return GarnetStatus.OK;
+                }
 
                 // Validate the destination type before removing from the source so that a WRONGTYPE destination
                 // does not lose the member.
