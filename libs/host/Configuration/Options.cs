@@ -420,7 +420,7 @@ namespace Garnet
         public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
-        [Option("network-inline-completions", Required = false, HelpText = "Process the input of client connections on the socket event thread that receives it (Linux and macOS), rather than handing each receive to the thread pool. Saves a thread hop per request; the event thread and the other connections it serves wait while a request runs, including for any device read a command completes in place. Pair with --network-event-threads. Ignored on Windows.")]
+        [Option("network-inline-completions", Required = false, HelpText = "Process the input of client connections on the socket event thread that receives it (Linux and macOS), rather than handing each receive to the thread pool. Saves a thread hop per request; the event thread and the other connections it serves wait while a request runs. A command that waits on another client, a timer, the AOF, a cluster peer or a device read releases the thread, and one that may wait on synchronous storage IO runs on an offload thread (see --offload-max-threads). Pair with --network-event-threads. Ignored on Windows.")]
         public bool? NetworkInlineCompletions { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
@@ -428,7 +428,7 @@ namespace Garnet
         public int NetworkEventThreads { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("offload-max-threads", Required = false, HelpText = "Most threads that commands which may wait on synchronous storage IO, such as a read-modify-write of a record on disk, a key scan, or a database flush, run on in place of a network or thread pool thread. Beyond this, such commands queue for a thread. 0 uses the larger of 64 and twice the processor count.")]
+        [Option("offload-max-threads", Required = false, HelpText = "Most threads that commands which may wait on synchronous storage IO, such as a multi-key command that reads records on disk, a key scan, or a database flush, run on in place of a network or thread pool thread. Beyond this, such commands queue for a thread. 0 uses the larger of 64 and twice the processor count.")]
         public int OffloadMaxThreads { get; set; }
 
         [OptionValidation]

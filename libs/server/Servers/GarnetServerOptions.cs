@@ -412,10 +412,10 @@ namespace Garnet.server
         /// Whether client connections process their input on the socket event thread that receives it (Linux and
         /// macOS), rather than on the thread pool. This removes a thread hop from every request, and holds the event
         /// thread, with every other connection it serves, for as long as the input takes to process. A command that
-        /// waits on another client, a timer, the AOF or a cluster peer parks its session and releases the thread; a
-        /// read-modify-write that finds its record on disk still waits for the device on it. Applies to accepted
-        /// connections, not to those the server opens to its peers. Pair with <see cref="NetworkEventThreads"/>.
-        /// Ignored on Windows.
+        /// waits on another client, a timer, the AOF, a cluster peer or a device read parks its session and releases
+        /// the thread, and one that may wait on synchronous storage IO runs on an offload thread (see
+        /// <see cref="OffloadMaxThreads"/>). Applies to accepted connections, not to those the server opens to its
+        /// peers. Pair with <see cref="NetworkEventThreads"/>. Ignored on Windows.
         /// </summary>
         public bool NetworkInlineCompletions = false;
 
@@ -430,7 +430,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Most threads that commands which may wait on synchronous storage IO run on, in place of a network or thread
-        /// pool thread: a read-modify-write of a record on disk, a key scan, a database flush, and the like. Beyond
+        /// pool thread: a multi-key command that reads records on disk, a key scan, a database flush, and the like. Beyond
         /// this, such commands queue for a thread, except those of a running transaction, which may hold key locks the
         /// queued commands wait on. 0 uses <see cref="OffloadExecutor.DefaultMaxThreads"/>.
         /// </summary>
