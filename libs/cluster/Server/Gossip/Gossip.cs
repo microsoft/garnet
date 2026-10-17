@@ -116,6 +116,29 @@ namespace Garnet.cluster
         /// </summary>
         public bool TryMerge(ClusterConfig senderConfig, bool acquireLock = true)
         {
+            if (!TryPublishMerge(senderConfig, acquireLock))
+                return false;
+            FlushConfig();
+            return true;
+        }
+
+        /// <summary>
+        /// Merge incoming config to evolve local version, completing when the merged configuration has been written.
+        /// </summary>
+        public async ValueTask<bool> TryMergeAsync(ClusterConfig senderConfig, bool acquireLock = true)
+        {
+            if (!TryPublishMerge(senderConfig, acquireLock))
+                return false;
+            await FlushConfigAsync().ConfigureAwait(false);
+            return true;
+        }
+
+        /// <summary>
+        /// Publishes the merge of <paramref name="senderConfig"/> into the local configuration.
+        /// </summary>
+        /// <returns>False if the merge changed nothing, or the sender is banned.</returns>
+        bool TryPublishMerge(ClusterConfig senderConfig, bool acquireLock)
+        {
             try
             {
                 if (acquireLock) activeMergeLock.ReadLock();
@@ -132,10 +155,8 @@ namespace Garnet.cluster
                     var next = currentCopy.Merge(senderConfig, workerBanList, logger).HandleConfigEpochCollision(senderConfig, logger);
                     if (currentCopy == next) return false;
                     if (TryPublishConfig(current, next))
-                        break;
+                        return true;
                 }
-                FlushConfig();
-                return true;
             }
             finally
             {
@@ -197,7 +218,7 @@ namespace Garnet.cluster
 
                 logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
                 // Merge without a check because node is trusted as meet was issued by admin
-                _ = TryMerge(other, acquireLock);
+                _ = await TryMergeAsync(other, acquireLock).ConfigureAwait(false);
 
                 gossipStats.UpdateMeetRequestsSucceed();
                 gsn.RecordConnectionSuccess();

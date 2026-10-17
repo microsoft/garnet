@@ -289,7 +289,7 @@ namespace Garnet.cluster
                     var current = clusterProvider.clusterManager.CurrentConfig;
                     // Check if gossip is from a node that is known and trusted before merging
                     if (current.IsKnown(other.LocalNodeId))
-                        clusterProvider.clusterManager.TryMerge(other);
+                        _ = await clusterProvider.clusterManager.TryMergeAsync(other).ConfigureAwait(false);
                     else
                         logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                 }

@@ -190,7 +190,7 @@ namespace Garnet.cluster
                     logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
 
                     if (options.AllowReplicaResetOnFailure)
-                        clusterProvider.clusterManager.TryResetReplica();
+                        await clusterProvider.clusterManager.TryResetReplicaAsync().ConfigureAwait(false);
 
                     return ex.Message;
                 }
@@ -348,7 +348,7 @@ namespace Garnet.cluster
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
-                TryUpdateMyPrimaryReplId(primaryReplicationId);
+                await TryUpdateMyPrimaryReplIdAsync(primaryReplicationId).ConfigureAwait(false);
 
                 // Mark this txn run as a read-write session if we are replaying as a replica
                 // This is necessary to ensure that the stored procedure can perform write operations if needed

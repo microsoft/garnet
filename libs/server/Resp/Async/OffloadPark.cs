@@ -116,7 +116,7 @@ namespace Garnet.server
                 RespCommand.CLUSTER_MEET, RespCommand.CLUSTER_FORGET, RespCommand.CLUSTER_RESET,
                 RespCommand.CLUSTER_SETCONFIGEPOCH, RespCommand.CLUSTER_BUMPEPOCH, RespCommand.CLUSTER_GOSSIP,
                 RespCommand.CLUSTER_REPLICATE, RespCommand.CLUSTER_FAILOVER, RespCommand.CLUSTER_FAILSTOPWRITES,
-                RespCommand.REPLICAOF, RespCommand.SECONDARYOF])
+                RespCommand.FAILOVER, RespCommand.REPLICAOF, RespCommand.SECONDARYOF])
                 classes[(int)cmd] = OffloadClass.Conditional;
 
             return classes;

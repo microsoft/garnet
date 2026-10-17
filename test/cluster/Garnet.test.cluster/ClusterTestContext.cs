@@ -365,7 +365,8 @@ namespace Garnet.test.cluster
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
             int clusterConfigFlushFrequencyMs = 0,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            Action<int, GarnetServerOptions> configureNode = null)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -429,7 +430,8 @@ namespace Garnet.test.cluster
                 enableRangeIndexPreview: enableRangeIndexPreview,
                 networkSendTimeout: networkSendTimeout,
                 clusterConfigFlushFrequencyMs: clusterConfigFlushFrequencyMs,
-                enableVectorSetPreview: enableVectorSetPreview);
+                enableVectorSetPreview: enableVectorSetPreview,
+                configureNode: configureNode);
 
             foreach (var node in nodes)
                 node.Start();

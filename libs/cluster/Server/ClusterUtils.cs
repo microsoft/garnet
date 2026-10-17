@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -34,25 +35,11 @@ namespace Garnet.cluster
         /// <param name="logger"></param>
         public static unsafe void WriteInto(IDevice device, SectorAlignedBufferPool pool, ulong address, byte[] buffer, int size = 0, ILogger logger = null)
         {
-            if (size == 0) size = buffer.Length;
-            var _buffer = new byte[size + sizeof(int)];
-            var len = BitConverter.GetBytes(size);
-            Array.Copy(len, _buffer, len.Length);
-            Array.Copy(buffer, 0, _buffer, len.Length, size);
-            size += len.Length;
-
-            long numBytesToWrite = size;
-            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
-
-            var pbuffer = pool.Get((int)numBytesToWrite);
-            fixed (byte* bufferRaw = _buffer)
-            {
-                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
-            }
+            var pbuffer = PrepareWrite(device, pool, buffer, size, out var numBytesToWrite);
             using var semaphore = new SemaphoreSlim(0);
             try
             {
-                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
+                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
                 semaphore.Wait();
             }
             finally
@@ -60,6 +47,58 @@ namespace Garnet.cluster
                 pbuffer.Return();
             }
         }
+
+        /// <summary>
+        /// Writes <paramref name="buffer"/> as <see cref="WriteInto"/> does, but completes when the device does rather
+        /// than holding the calling thread until then.
+        /// </summary>
+        /// <param name="device">The device to write to.</param>
+        /// <param name="pool">The pool to rent the sector-aligned write buffer from.</param>
+        /// <param name="address">The device address to write at.</param>
+        /// <param name="buffer">The bytes to write, after their length.</param>
+        /// <param name="logger">Logs a failed write.</param>
+        public static async ValueTask WriteIntoAsync(IDevice device, SectorAlignedBufferPool pool, ulong address, byte[] buffer, ILogger logger = null)
+        {
+            var pbuffer = PrepareWrite(device, pool, buffer, 0, out var numBytesToWrite);
+            try
+            {
+                var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                IssueWrite(device, pbuffer, address, numBytesToWrite, logger == null ? AsyncIOCallback : logger.AsyncIOCallback, completion);
+                await completion.Task.ConfigureAwait(false);
+            }
+            finally
+            {
+                pbuffer.Return();
+            }
+        }
+
+        /// <summary>
+        /// Copies the first <paramref name="size"/> bytes of <paramref name="buffer"/> (all of them if 0), after their
+        /// length, into a buffer rented from <paramref name="pool"/>, zero-padded to a whole number of sectors.
+        /// </summary>
+        static unsafe SectorAlignedMemory PrepareWrite(IDevice device, SectorAlignedBufferPool pool, byte[] buffer, int size, out uint numBytesToWrite)
+        {
+            if (size == 0) size = buffer.Length;
+            var _buffer = new byte[size + sizeof(int)];
+            var len = BitConverter.GetBytes(size);
+            Array.Copy(len, _buffer, len.Length);
+            Array.Copy(buffer, 0, _buffer, len.Length, size);
+            size += len.Length;
+
+            long alignedSize = size;
+            alignedSize = ((alignedSize + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+
+            var pbuffer = pool.Get((int)alignedSize);
+            fixed (byte* bufferRaw = _buffer)
+            {
+                Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
+            }
+            numBytesToWrite = (uint)alignedSize;
+            return pbuffer;
+        }
+
+        static unsafe void IssueWrite(IDevice device, SectorAlignedMemory pbuffer, ulong address, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
+            => device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, numBytesToWrite, callback, context);
 
         /// <summary>
         /// Note: will read potentially more data (based on sector alignment)
@@ -98,19 +137,32 @@ namespace Garnet.cluster
         {
             ((SemaphoreSlim)context).Release();
         }
+
+        private static void AsyncIOCallback(uint errorCode, uint numBytes, object context, Exception ioException)
+            => ((TaskCompletionSource)context).SetResult();
     }
 
     static class LoggerExtensions
     {
         public static void IOCallback(this ILogger logger, uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            logger.LogIOError(errorCode, numBytes, context);
+            ((SemaphoreSlim)context).Release();
+        }
+
+        public static void AsyncIOCallback(this ILogger logger, uint errorCode, uint numBytes, object context, Exception ioException)
+        {
+            logger.LogIOError(errorCode, numBytes, context);
+            ((TaskCompletionSource)context).SetResult();
+        }
+
+        static void LogIOError(this ILogger logger, uint errorCode, uint numBytes, object context)
+        {
             if (errorCode != 0)
             {
                 var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[ClusterUtils] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
-
-            ((SemaphoreSlim)context).Release();
         }
 
         [DllImport("libc")]

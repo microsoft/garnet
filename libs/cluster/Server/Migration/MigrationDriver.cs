@@ -80,7 +80,7 @@ namespace Garnet.cluster
 
             // Set slots at source node to their original state when migrate fails
             // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task
-            ResetLocalSlot();
+            await ResetLocalSlotAsync().ConfigureAwait(false);
 
             // TODO: Need to relinquish any migrating Vector Set contexts from target node
 
@@ -149,7 +149,7 @@ namespace Garnet.cluster
 
                 #region transitionLocalSlotToMigratingState
                 // Set source node to migrating state and wait for local threads to see changed state.
-                if (!TryPrepareLocalForMigration())
+                if (!await TryPrepareLocalForMigrationAsync().ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to set local slots {slots} to migrate state", string.Join(',', GetSlots));
                     await TryRecoverFromFailureAsync().ConfigureAwait(false);
@@ -200,7 +200,7 @@ namespace Garnet.cluster
                 }
 
                 // Clear local migration set.
-                if (!RelinquishOwnership())
+                if (!await RelinquishOwnershipAsync().ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to relinquish ownership from source node:({srcNode}) to target node: ({tgtNode})", GetSourceNodeId, GetTargetNodeId);
                     await TryRecoverFromFailureAsync().ConfigureAwait(false);

@@ -37,8 +37,8 @@ namespace Garnet.cluster
         {
             try
             {
-                clusterProvider.clusterManager.TryResetReplica();
-                clusterProvider.replicationManager.TryUpdateForFailover();
+                await clusterProvider.clusterManager.TryResetReplicaAsync().ConfigureAwait(false);
+                await clusterProvider.replicationManager.TryUpdateForFailoverAsync().ConfigureAwait(false);
 
                 await clusterProvider.replicationManager.ResetReplicaReplayDriverStoreAsync().ConfigureAwait(false);
                 _ = await UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);

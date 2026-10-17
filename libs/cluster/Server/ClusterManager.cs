@@ -71,6 +71,11 @@ namespace Garnet.cluster
         int flushCount = 0;
 
         /// <summary>
+        /// Admits one write of the configuration file at a time.
+        /// </summary>
+        readonly SemaphoreSlim configFlushGate = new(1, 1);
+
+        /// <summary>
         /// Shared epoch instance for connection store
         /// </summary>
         readonly client.LightEpoch epoch;
@@ -149,7 +154,7 @@ namespace Garnet.cluster
                             return;
 
                         if (Interlocked.CompareExchange(ref flushCount, 0, 0) > 0)
-                            ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
+                            await ClusterUtils.WriteIntoAsync(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger).ConfigureAwait(false);
 
                         await Task.Delay(flushConfigFrequency, ctsGossip.Token).ConfigureAwait(false);
                     }
@@ -193,6 +198,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Flush current config to disk
         /// </summary>
+        /// <remarks>
+        /// Holds the calling thread for the write unless flushes are batched, so is called only from an executor thread
+        /// or at startup; an async caller uses <see cref="FlushConfigAsync"/>.
+        /// </remarks>
         public void FlushConfig()
         {
             if (serverOptions.ClusterConfigFlushFrequencyMs == -1)
@@ -202,9 +211,41 @@ namespace Garnet.cluster
                 Interlocked.Increment(ref flushCount);
             else
             {
-                lock (this)
+                configFlushGate.Wait();
+                try
                 {
                     ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
+                }
+                finally
+                {
+                    _ = configFlushGate.Release();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Flush current config to disk, completing when the write does rather than holding the calling thread for it.
+        /// </summary>
+        public ValueTask FlushConfigAsync()
+        {
+            if (serverOptions.ClusterConfigFlushFrequencyMs != 0)
+            {
+                FlushConfig();
+                return default;
+            }
+
+            return WriteConfigAsync();
+
+            async ValueTask WriteConfigAsync()
+            {
+                await configFlushGate.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    await ClusterUtils.WriteIntoAsync(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _ = configFlushGate.Release();
                 }
             }
         }
@@ -362,6 +403,21 @@ namespace Garnet.cluster
         /// </summary>
         public void TryResetReplica()
         {
+            PublishResetReplica();
+            FlushConfig();
+        }
+
+        /// <summary>
+        /// Reset node to primary, completing when the configuration has been written.
+        /// </summary>
+        public ValueTask TryResetReplicaAsync()
+        {
+            PublishResetReplica();
+            return FlushConfigAsync();
+        }
+
+        void PublishResetReplica()
+        {
             while (true)
             {
                 var current = currentConfig;
@@ -369,7 +425,6 @@ namespace Garnet.cluster
                 if (TryPublishConfig(current, newConfig))
                     break;
             }
-            FlushConfig();
         }
 
         /// <summary>
@@ -377,6 +432,22 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="replicaId">Node-id to replicate</param>
         public void TryStopWrites(string replicaId)
+        {
+            PublishStopWrites(replicaId);
+            FlushConfig();
+        }
+
+        /// <summary>
+        /// Force this node to be a replica of given node-id, completing when the configuration has been written.
+        /// </summary>
+        /// <param name="replicaId">Node-id to replicate</param>
+        public ValueTask TryStopWritesAsync(string replicaId)
+        {
+            PublishStopWrites(replicaId);
+            return FlushConfigAsync();
+        }
+
+        void PublishStopWrites(string replicaId)
         {
             while (true)
             {
@@ -387,13 +458,13 @@ namespace Garnet.cluster
                 if (TryPublishConfig(current, newConfig))
                     break;
             }
-            FlushConfig();
         }
 
         /// <summary>
-        /// Takeover as new primary but forcefully claim ownership of old primary's slots.
+        /// Takeover as new primary but forcefully claim ownership of old primary's slots, completing when the configuration
+        /// has been written.
         /// </summary>
-        public bool TryTakeOverForPrimary()
+        public async ValueTask<bool> TryTakeOverForPrimaryAsync()
         {
             while (true)
             {
@@ -406,7 +477,7 @@ namespace Garnet.cluster
                 if (TryPublishConfig(current, newConfig))
                     break;
             }
-            FlushConfig();
+            await FlushConfigAsync().ConfigureAwait(false);
             return true;
         }
     }

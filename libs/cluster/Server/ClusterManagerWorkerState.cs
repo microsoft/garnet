@@ -231,7 +231,7 @@ namespace Garnet.cluster
             await clusterProvider.storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
             clusterProvider.storeWrapper.StartReplicaTasks();
 
-            FlushConfig();
+            await FlushConfigAsync().ConfigureAwait(false);
             return (true, default);
         }
 

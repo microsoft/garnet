@@ -831,7 +831,8 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
             int clusterConfigFlushFrequencyMs = 0,
-            bool enableVectorSetPreview = true)
+            bool enableVectorSetPreview = true,
+            Action<int, GarnetServerOptions> configureNode = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -918,6 +919,7 @@ namespace Garnet.test
                     }
                 }
 
+                configureNode?.Invoke(i, opts[i]);
                 nodes[i] = new GarnetServer(opts[i], loggerFactory);
             }
             return (nodes, opts);

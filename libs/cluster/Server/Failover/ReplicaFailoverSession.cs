@@ -137,14 +137,14 @@ namespace Garnet.cluster
                 _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 // Take over slots from old primary
-                if (!clusterProvider.clusterManager.TryTakeOverForPrimary())
+                if (!await clusterProvider.clusterManager.TryTakeOverForPrimaryAsync().ConfigureAwait(false))
                 {
                     logger?.LogWarning($"{nameof(TakeOverAsPrimaryAsync)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_TAKEOVER_FROM_PRIMARY));
                     return false;
                 }
 
                 // Update replicationIds and replicationOffset2
-                clusterProvider.replicationManager.TryUpdateForFailover();
+                await clusterProvider.replicationManager.TryUpdateForFailoverAsync().ConfigureAwait(false);
 
                 // Cancel active replication tasks
                 await clusterProvider.replicationManager.ResetReplicaReplayDriverStoreAsync().ConfigureAwait(false);
@@ -214,7 +214,7 @@ namespace Garnet.cluster
                     {
                         // Check if gossip is from a node that is known and trusted before merging
                         if (current.IsKnown(other.LocalNodeId))
-                            _ = clusterProvider.clusterManager.TryMerge(other);
+                            _ = await clusterProvider.clusterManager.TryMergeAsync(other).ConfigureAwait(false);
                         else
                             logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                     }

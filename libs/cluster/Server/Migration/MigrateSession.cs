@@ -251,18 +251,19 @@ namespace Garnet.cluster
         /// <summary>
         /// Reset local slot state
         /// </summary>
-        public void ResetLocalSlot() => clusterProvider.clusterManager.TryResetSlotState(_sslots);
+        public ValueTask ResetLocalSlotAsync() => clusterProvider.clusterManager.TryResetSlotStateAsync(_sslots);
 
         /// <summary>
         /// Prepare remote node for importing
         /// </summary>
         /// <returns></returns>
-        public bool TryPrepareLocalForMigration()
+        public async ValueTask<bool> TryPrepareLocalForMigrationAsync()
         {
-            if (!clusterProvider.clusterManager.TryPrepareSlotsForMigration(_sslots, _targetNodeId, out var resp))
+            var (success, errorMessage) = await clusterProvider.clusterManager.TryPrepareSlotsForMigrationAsync(_sslots, _targetNodeId).ConfigureAwait(false);
+            if (!success)
             {
                 Status = MigrateState.FAIL;
-                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(resp));
+                logger?.LogError("{errorMsg}", Encoding.ASCII.GetString(errorMessage.Span));
                 return false;
             }
             return true;
@@ -272,11 +273,7 @@ namespace Garnet.cluster
         /// Clean migration state
         /// </summary>
         /// <returns></returns>
-        public bool RelinquishOwnership()
-        {
-            if (!clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChange(_sslots, _targetNodeId, out var _))
-                return false;
-            return true;
-        }
+        public async ValueTask<bool> RelinquishOwnershipAsync()
+            => (await clusterProvider.clusterManager.TryPrepareSlotsForOwnershipChangeAsync(_sslots, _targetNodeId).ConfigureAwait(false)).Success;
     }
 }

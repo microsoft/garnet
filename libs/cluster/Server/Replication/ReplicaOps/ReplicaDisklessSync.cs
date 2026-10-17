@@ -178,7 +178,7 @@ namespace Garnet.cluster
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSyncAsync)}");
 
                     if (options.AllowReplicaResetOnFailure)
-                        clusterProvider.clusterManager.TryResetReplica();
+                        await clusterProvider.clusterManager.TryResetReplicaAsync().ConfigureAwait(false);
 
                     return ex.Message;
                 }
