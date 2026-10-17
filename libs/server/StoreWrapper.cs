@@ -150,6 +150,11 @@ namespace Garnet.server
         internal readonly LuaTimeoutManager luaTimeoutManager;
 
         /// <summary>
+        /// Executors that run Lua scripts for all sessions. Null if Lua is disabled.
+        /// </summary>
+        internal readonly ScriptExecutorPool scriptExecutorPool;
+
+        /// <summary>
         /// Background task manager instance
         /// </summary>
         internal readonly TaskManager taskManager;
@@ -251,6 +256,7 @@ namespace Garnet.server
             if (serverOptions.EnableLua)
             {
                 this.storeScriptCache = [];
+                this.scriptExecutorPool = new ScriptExecutorPool(this, loggerFactory?.CreateLogger<ScriptExecutor>());
 
                 if (!LuaRunner.TryProbeSupport(out var errorMessage))
                 {
@@ -1063,6 +1069,8 @@ namespace Garnet.server
                 return;
             disposed = true;
 
+            // Executors hold sessions on the databases, the cluster provider and the monitor
+            scriptExecutorPool?.Dispose();
             clusterProvider?.Dispose();
             itemBroker?.Dispose();
             monitor?.Dispose();

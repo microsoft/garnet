@@ -158,13 +158,23 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
             var input = new ObjectInput(header, ref parseState);
 
-            var output = new ObjectOutput();
+            // Give the reply a stack buffer that a typical field value fits into. Without one the
+            // object store rents and pins a pooled buffer on every call.
+            const int outputContainerSize = 256;
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             value = default;
             if (status == GarnetStatus.OK)
-                value = ProcessRespSingleTokenOutput(output);
+            {
+                // A hash that lacks the field replies nil, which converts to the same empty value an
+                // existing-but-empty field does. Report the absent field as NOTFOUND, matching the
+                // status an absent key already gets, so the two cases stay distinguishable.
+                if (!TryProcessRespSingleTokenOutput(output, out value))
+                    status = GarnetStatus.NOTFOUND;
+            }
 
             return status;
         }
@@ -193,7 +203,11 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
             var input = new ObjectInput(header, ref parseState);
 
-            var output = new ObjectOutput();
+            // Give the reply a stack buffer that a typical result fits into. Without one the object
+            // store rents and pins a pooled buffer on every call.
+            const int outputContainerSize = 512;
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
@@ -224,7 +238,11 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
             var input = new ObjectInput(header);
 
-            var output = new ObjectOutput();
+            // Give the reply a stack buffer that a typical result fits into. Without one the object
+            // store rents and pins a pooled buffer on every call.
+            const int outputContainerSize = 512;
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
@@ -318,7 +336,11 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
             var input = new ObjectInput(header, 1 << 2, seed);
 
-            var output = new ObjectOutput();
+            // Give the reply a stack buffer that a typical field name fits into. Without one the
+            // object store rents and pins a pooled buffer on every call.
+            const int outputContainerSize = 256;
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
@@ -357,7 +379,12 @@ namespace Garnet.server
             var inputArg = (((count << 1) | 1) << 1) | (withValues ? 1 : 0);
             var input = new ObjectInput(header, inputArg, seed);
 
-            var output = new ObjectOutput();
+            // Give the reply a stack buffer that a typical result fits into. Without one the object
+            // store rents and pins a pooled buffer on every call.
+            const int outputContainerSize = 512;
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
+
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             fields = default;

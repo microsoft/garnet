@@ -29,10 +29,10 @@ namespace Garnet.server.Lua
     ///  3. Scripts can complete after we've decided to "time them out", so there's a natural race
     ///  
     /// The rough design is:
-    ///  - <see cref="SessionScriptCache"/>s are registered with the <see cref="LuaTimeoutManager"/>
-    ///  - <see cref="SessionScriptCache"/>s now track the active <see cref="LuaRunner"/> (if any)
+    ///  - <see cref="ScriptExecutor"/>s are registered with the <see cref="LuaTimeoutManager"/>
+    ///  - <see cref="ScriptExecutor"/>s now track the active <see cref="LuaRunner"/> (if any)
     ///  - When a script starts, we get a unique token so we can distinguish the natural race
-    ///  - A dedicate thread is ticking periodically, walking the <see cref="SessionScriptCache"/>s and triggering timeouts
+    ///  - A dedicate thread is ticking periodically, walking the <see cref="ScriptExecutor"/>s and triggering timeouts
     /// </remarks>
     internal sealed class LuaTimeoutManager : IDisposable
     {
@@ -43,11 +43,11 @@ namespace Garnet.server.Lua
             // Bottom half is cookie, top half is count
             private ulong packedState;
 
-            internal SessionScriptCache ScriptCache { get; }
+            internal ScriptExecutor ScriptCache { get; }
             internal uint Cookie => (uint)(packedState >> 32);
             internal uint Count => (uint)packedState;
 
-            internal Registration(LuaTimeoutManager owner, SessionScriptCache cache)
+            internal Registration(LuaTimeoutManager owner, ScriptExecutor cache)
             {
                 this.owner = owner;
                 ScriptCache = cache;
@@ -199,7 +199,7 @@ namespace Garnet.server.Lua
         }
 
         /// <summary>
-        /// Register the given <see cref="SessionScriptCache"/> for a timeout notification.
+        /// Register the given <see cref="ScriptExecutor"/> for a timeout notification.
         /// 
         /// A runner can only be registered a single time, by a single thread.
         /// 
@@ -207,7 +207,7 @@ namespace Garnet.server.Lua
         /// 
         /// Dispose the <see cref="Registration"/> to remove the cache from timeout notifications.
         /// </summary>
-        internal Registration RegisterForTimeout(SessionScriptCache cache)
+        internal Registration RegisterForTimeout(ScriptExecutor cache)
         {
             var ret = new Registration(this, cache);
 

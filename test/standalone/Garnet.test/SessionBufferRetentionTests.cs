@@ -180,38 +180,47 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// The Lua interpreter writes into the scratch buffer of the script cache's <em>inner</em>
+        /// The Lua interpreter writes into the scratch buffer of the script executor's <em>inner</em>
         /// <c>RespServerSession</c>, not the network session's. That inner session never reads from a socket,
-        /// so it has no batch boundary of its own and its trim has to be driven from the outer session's.
-        /// Without that wiring, one <c>cjson.encode</c> of a large value permanently enlarges every session
-        /// that ran a script, which is the same ratchet the cap exists to stop -- just one object further in.
+        /// so it has no batch boundary of its own and its trim is driven by the executor's returns to the pool.
+        /// Without that wiring, one <c>cjson.encode</c> of a large value permanently enlarges the pooled
+        /// executor, which is the same ratchet the cap exists to stop -- just one object further in.
         /// </summary>
         [Test]
         public void LuaScratchBufferDoesNotRetainAfterOneLargeEncode()
         {
-            const int Conns = 32;
             const int EncodeSize = 512 * 1024;
+            const int Cap = 16 * 1024;
 
-            // One cjson.encode of a large string grows the inner builder well past the 16 KB cap.
             var big = new string('q', EncodeSize);
-            byte[] BigEncode(int _) => Resp("EVAL", "return #cjson.encode(ARGV[1])", "0", big);
-            byte[] SmallEncode(int _) => Resp("EVAL", "return #cjson.encode(ARGV[1])", "0", "x");
+            var bigEncode = Resp("EVAL", "return #cjson.encode(ARGV[1])", "0", big);
+            var smallEncode = Resp("EVAL", "return #cjson.encode(ARGV[1])", "0", "x");
 
-            StartServer(scratchCap: "16k", enableLua: true);
-            var bounded = MeasureRetentionPerSession(BigEncode, SmallEncode, Conns, $":{EncodeSize + 2}\r\n");
+            int CapacityAfterOneLargeEncodeThenSmallWork(string scratchCap)
+            {
+                StartServer(scratchCap: scratchCap, enableLua: true);
+                using var socket = Connect();
 
+                AssertReply(socket, bigEncode, $":{EncodeSize + 2}\r\n");
+                var pool = server.Provider.StoreWrapper.scriptExecutorPool;
+                ClassicAssert.GreaterOrEqual(pool.LargestIdleScratchBufferCapacityForTests, EncodeSize,
+                    "one large encode did not grow the executor's scratch buffer, so this run measures nothing");
+
+                for (var i = 0; i < SmallRounds; i++)
+                    SendAndDrain(socket, smallEncode, 1);
+
+                return pool.LargestIdleScratchBufferCapacityForTests;
+            }
+
+            var bounded = CapacityAfterOneLargeEncodeThenSmallWork("16k");
             server.Dispose();
             server = null;
-            StartServer(scratchCap: "0", enableLua: true);
-            var unbounded = MeasureRetentionPerSession(BigEncode, SmallEncode, Conns, $":{EncodeSize + 2}\r\n");
+            var unbounded = CapacityAfterOneLargeEncodeThenSmallWork("0");
 
-            TestContext.Out.WriteLine($"lua scratch retention per session: bounded={bounded / 1024} KB, unbounded={unbounded / 1024} KB");
-
-            // Assert a magnitude, not a direction: the grown buffer rounds up to a power of two at or above
-            // EncodeSize, so a working cap must give back the bulk of it. A bare Assert.Less here would be a
-            // coin flip on a noisy measurement.
-            ClassicAssert.Less(bounded, unbounded - (EncodeSize / 2),
-                $"the Lua script processor's scratch buffer was not released (bounded={bounded}, unbounded={unbounded})");
+            ClassicAssert.LessOrEqual(bounded, Cap,
+                $"the executor's scratch buffer was not released after sustained small work (capacity {bounded}, cap {Cap})");
+            ClassicAssert.GreaterOrEqual(unbounded, EncodeSize,
+                "with the cap disabled the buffer should stay grown, otherwise the release above is not the trim's doing");
         }
 
         /// <summary>

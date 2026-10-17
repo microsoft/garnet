@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
-using System.Reflection;
+using System;
+using System.Collections.Concurrent;
+using System.Linq;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -11,7 +13,7 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     /// <summary>
-    /// The per-session script cache holds a whole Lua VM per entry, so it is capped and evicts the
+    /// A script executor holds a whole Lua VM per cached script, so its cache is capped and evicts the
     /// least recently used script.
     ///
     /// The instrument here is the cache's own entry count and key membership, deliberately not a
@@ -19,7 +21,7 @@ namespace Garnet.test
     /// managed heap and a forced compacting collection cannot observe <c>lua_close</c> at all.
     /// </summary>
     [TestFixture]
-    public class SessionScriptCacheBoundTests : TestBase
+    public class ScriptExecutorCacheBoundTests : TestBase
     {
         const int CacheSize = 4;
 
@@ -47,44 +49,86 @@ namespace Garnet.test
         static string ScriptFor(int i) => $"return {i}";
 
         /// <summary>
-        /// Reaches the one session behind the given connection. The tests run a single client, so
-        /// there is exactly one RESP session to find.
+        /// Runs <paramref name="read"/> against the one executor behind the server. The tests drive scripts
+        /// one at a time, so the pool holds exactly one idle executor to rent.
         /// </summary>
-        SessionScriptCache SoleSessionCache()
+        T Inspect<T>(Func<ScriptExecutor, T> read)
         {
-            var serversField = typeof(GarnetServer).GetField("servers", BindingFlags.Instance | BindingFlags.NonPublic);
-            ClassicAssert.IsNotNull(serversField, "GarnetServer should still hold its listeners in a 'servers' field");
+            var storeWrapper = server.Provider.StoreWrapper;
+            var pool = storeWrapper.scriptExecutorPool;
+            ClassicAssert.AreEqual(1, pool.IdleCount, "expected exactly one pooled script executor");
 
-            var caches = new List<SessionScriptCache>();
-            foreach (var listener in (IGarnetServer[])serversField.GetValue(server))
+            var executor = pool.Rent(null);
+            try
             {
-                foreach (var consumer in ((GarnetServerBase)listener).ActiveConsumers())
-                {
-                    if (consumer is not RespServerSession resp)
-                        continue;
-
-                    var cacheField = typeof(RespServerSession).GetField("sessionScriptCache", BindingFlags.Instance | BindingFlags.NonPublic);
-                    ClassicAssert.IsNotNull(cacheField, "RespServerSession should still hold its per-session script cache in a 'sessionScriptCache' field");
-
-                    if (cacheField.GetValue(resp) is SessionScriptCache cache)
-                        caches.Add(cache);
-                }
+                return read(executor);
             }
-
-            ClassicAssert.AreEqual(1, caches.Count, "expected exactly one live RESP session with a script cache");
-            return caches[0];
+            finally
+            {
+                pool.Return(executor);
+            }
         }
 
-        byte[] DigestOf(SessionScriptCache cache, string script)
+        int CachedScriptCount() => Inspect(static executor => executor.CachedScriptCount);
+
+        bool ContainsDigest(byte[] digest) => Inspect(executor => executor.ContainsDigest(digest));
+
+        static byte[] DigestOf(string script)
         {
-            var digest = new byte[SessionScriptCache.SHA1Len];
-            cache.GetScriptDigest(System.Text.Encoding.UTF8.GetBytes(script), digest);
+            var digest = new byte[ScriptExecutor.SHA1Len];
+            ScriptExecutor.GetScriptDigest(System.Text.Encoding.UTF8.GetBytes(script), digest);
             return digest;
         }
 
         /// <summary>
+        /// Executors are pooled across sessions, so scripts run by many connections one after another
+        /// share a single executor (one Lua working set) rather than one per connection.
+        /// </summary>
+        [Test]
+        public void SessionsShareAPooledExecutor()
+        {
+            for (var i = 0; i < 32; i++)
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                ClassicAssert.AreEqual(i, (int)redis.GetDatabase(0).ScriptEvaluate(ScriptFor(i)));
+            }
+
+            ClassicAssert.AreEqual(1, server.Provider.StoreWrapper.scriptExecutorPool.IdleCount,
+                "32 sessions ran scripts one after another but did not share a single executor");
+        }
+
+        /// <summary>
+        /// Concurrent sessions each rent their own executor; none may observe another's script state.
+        /// </summary>
+        [Test]
+        public void ConcurrentSessionsGetTheirOwnResults()
+        {
+            const int Sessions = 16;
+            const int Iterations = 100;
+
+            var wrong = new ConcurrentQueue<string>();
+            Parallel.For(0, Sessions, new ParallelOptions { MaxDegreeOfParallelism = Sessions }, session =>
+            {
+                using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                var db = redis.GetDatabase(0);
+                for (var i = 0; i < Iterations; i++)
+                {
+                    var arg = session * 1000 + i;
+                    var result = (int)db.ScriptEvaluate("return tonumber(ARGV[1]) + 1", [], [arg]);
+                    if (result != arg + 1)
+                        wrong.Enqueue($"session {session} iteration {i}: expected {arg + 1}, got {result}");
+                }
+            });
+
+            ClassicAssert.IsEmpty(wrong, string.Join(Environment.NewLine, wrong.Take(5)));
+
+            var idle = server.Provider.StoreWrapper.scriptExecutorPool.IdleCount;
+            ClassicAssert.That(idle, Is.InRange(1, Sessions));
+        }
+
+        /// <summary>
         /// Running more distinct scripts than the cache holds must not grow the cache past its cap.
-        /// Without eviction every distinct script is retained for the life of the session, which is
+        /// Without eviction every distinct script is retained for the life of the executor, which is
         /// the ratchet this cap exists to remove.
         /// </summary>
         [Test]
@@ -97,9 +141,9 @@ namespace Garnet.test
             for (var i = 0; i < Distinct; i++)
                 ClassicAssert.AreEqual(i, (int)db.ScriptEvaluate(ScriptFor(i)));
 
-            var cache = SoleSessionCache();
-            ClassicAssert.LessOrEqual(cache.CachedScriptCount, CacheSize,
-                $"the session cached {cache.CachedScriptCount} scripts against a cap of {CacheSize}, so it is still unbounded");
+            var cached = CachedScriptCount();
+            ClassicAssert.LessOrEqual(cached, CacheSize,
+                $"the executor cached {cached} scripts against a cap of {CacheSize}, so it is still unbounded");
         }
 
         /// <summary>
@@ -119,8 +163,7 @@ namespace Garnet.test
             var hot = ScriptFor(1000);
             ClassicAssert.AreEqual(1000, (int)db.ScriptEvaluate(hot));
 
-            var cache = SoleSessionCache();
-            var hotDigest = DigestOf(cache, hot);
+            var hotDigest = DigestOf(hot);
 
             // Fill past the cap, touching the hot script before each newcomer so it is never the
             // coldest entry.
@@ -130,13 +173,13 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(i, (int)db.ScriptEvaluate(ScriptFor(i)));
             }
 
-            ClassicAssert.IsTrue(cache.ContainsDigest(hotDigest),
+            ClassicAssert.IsTrue(ContainsDigest(hotDigest),
                 "the repeatedly used script was evicted while colder scripts added after it were kept, so eviction is not least-recently-used");
         }
 
         /// <summary>
         /// The one behavioural regression a cap can introduce: an EVALSHA whose script has been
-        /// evicted from the session cache must still run, by recompiling from the global cache,
+        /// evicted from the executor's cache must still run, by recompiling from the global cache,
         /// rather than failing with NOSCRIPT.
         /// </summary>
         [Test]
@@ -149,14 +192,13 @@ namespace Garnet.test
             var loaded = db.ScriptEvaluate(first);
             ClassicAssert.AreEqual(4242, (int)loaded);
 
-            var cache = SoleSessionCache();
-            var firstDigest = DigestOf(cache, first);
+            var firstDigest = DigestOf(first);
 
             // Push it out with enough distinct scripts that it cannot still be resident.
             for (var i = 0; i < CacheSize * 3; i++)
                 ClassicAssert.AreEqual(i, (int)db.ScriptEvaluate(ScriptFor(i)));
 
-            ClassicAssert.IsFalse(cache.ContainsDigest(firstDigest),
+            ClassicAssert.IsFalse(ContainsDigest(firstDigest),
                 "the script under test was still cached, so this run never exercised the evicted path");
 
             // Re-running by digest must recompile transparently.
@@ -202,8 +244,7 @@ namespace Garnet.test
             for (var i = 0; i < Distinct; i++)
                 ClassicAssert.AreEqual(i, (int)db.ScriptEvaluate(ScriptFor(i)));
 
-            var cache = SoleSessionCache();
-            ClassicAssert.AreEqual(Distinct, cache.CachedScriptCount,
+            ClassicAssert.AreEqual(Distinct, CachedScriptCount(),
                 "a zero cap must disable eviction entirely");
         }
     }

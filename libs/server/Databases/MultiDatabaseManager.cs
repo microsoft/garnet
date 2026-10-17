@@ -721,6 +721,9 @@ namespace Garnet.server
                 databaseMapSnapshot[dbId1] = new GarnetDatabase(dbId1, db2, enableAof, copyLastSaveData: true);
                 databaseMapSnapshot[dbId2] = new GarnetDatabase(dbId2, db1, enableAof, copyLastSaveData: true);
 
+                // Script executors run on database sessions too, and are not network sessions
+                StoreWrapper.scriptExecutorPool?.TrySwapDatabaseSessions(dbId1, dbId2);
+
                 var activeSessions = 0;
                 foreach (var server in StoreWrapper.Servers)
                 {

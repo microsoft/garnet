@@ -239,9 +239,14 @@ namespace Garnet.server
         bool waitForAofBlocking = false;
 
         /// <summary>
-        /// A per-session cache for storing lua scripts
+        /// Whether this session may run Lua scripts, through <see cref="StoreWrapper.scriptExecutorPool"/>.
         /// </summary>
-        internal readonly SessionScriptCache sessionScriptCache;
+        readonly bool scriptsEnabled;
+
+        /// <summary>
+        /// The pooled executor running this session's current script, if any.
+        /// </summary>
+        ScriptExecutor rentedScriptExecutor;
 
         /// <summary>
         /// Identifier for session - used for CLIENT and related commands.
@@ -267,7 +272,7 @@ namespace Garnet.server
         /// <param name="storeWrapper"></param>
         /// <param name="subscribeBroker"></param>
         /// <param name="authenticator"></param>
-        /// <param name="enableScripts"></param>
+        /// <param name="enableScripts">Whether the session may run Lua scripts</param>
         /// <param name="clusterProvider"></param>
         /// <exception cref="GarnetException"></exception>
         public RespServerSession(
@@ -305,8 +310,7 @@ namespace Garnet.server
             this.subscribeBroker = subscribeBroker;
             this._authenticator = authenticator ?? storeWrapper.serverOptions.AuthSettings?.CreateAuthenticator(this.storeWrapper) ?? new GarnetNoAuthAuthenticator();
 
-            if (storeWrapper.serverOptions.EnableLua && enableScripts)
-                sessionScriptCache = new(storeWrapper, _authenticator, storeWrapper.luaTimeoutManager, logger);
+            this.scriptsEnabled = enableScripts;
 
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
 
@@ -332,7 +336,6 @@ namespace Garnet.server
             var cp = clusterProvider ?? storeWrapper.clusterProvider;
             clusterSession = cp?.CreateClusterSession(txnManager, this._authenticator, this._userHandle, sessionMetrics, basicGarnetApi, storageSession.stringBasicContext, storageSession.vectorBasicContext, networkSender, logger);
             clusterSession?.SetUserHandle(this._userHandle);
-            sessionScriptCache?.SetUserHandle(this._userHandle);
 
             parseState.Initialize();
             readHead = 0;
@@ -435,7 +438,6 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
             storeWrapper.itemBroker?.HandleSessionDisposed(this);
-            sessionScriptCache?.Dispose();
         }
 
         /// <summary>
@@ -447,8 +449,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Releases per-session buffers that have stayed above their cap without growing since the
-        /// previous trim: the parse state root buffer, the session scratch buffer, and the Lua script
-        /// processor's scratch buffer. One countdown drives all of them, so the batch boundary pays a single
+        /// previous trim: the parse state root buffer and the session scratch buffer. One countdown drives
+        /// all of them, so the batch boundary pays a single
         /// decrement regardless of how many buffers are capped. Cold by construction: reached once per
         /// <see cref="SessionTrimInterval"/> batches. Called at the batch boundary, where no
         /// argument pointers from the completed batch remain live.
@@ -460,12 +462,10 @@ namespace Garnet.server
 
             // Kept ahead of the parse-state early return so disabling one cap cannot disable the others.
             // The batch boundary has already reset this builder, so no slice from the completed batch is
-            // live. The script processor's builder is trimmed here rather than from its own resets,
-            // which run per string while decoding a JSON document.
+            // live.
             scratchBufferBuilder.Trim();
             scratchBufferAllocator.Trim();
             txnManager?.TrimScratchBuffer();
-            sessionScriptCache?.TrimScratchBuffer();
 
             if (parseStateShrinkThreshold == int.MaxValue)
                 return;
@@ -509,7 +509,6 @@ namespace Garnet.server
 
                 // Propagate authentication to cluster session
                 clusterSession?.SetUserHandle(this._userHandle);
-                sessionScriptCache?.SetUserHandle(this._userHandle);
             }
 
             return _authenticator.CanAuthenticate ? success : false;
@@ -1615,13 +1614,12 @@ namespace Garnet.server
             if (!success)
                 return false;
 
+            // A script that swaps databases keeps running on its executor's sessions
+            rentedScriptExecutor?.TrySwapDatabaseSessions(dbId1, dbId2);
+
             // Swap the sessions in the session map
             databaseSessions.Map[dbId1] = new GarnetDatabaseSession(dbId1, dbSession2);
             databaseSessions.Map[dbId2] = new GarnetDatabaseSession(dbId2, dbSession1);
-
-            // If Lua is enabled, switch the database sessions in the script cache
-            if (storeWrapper.serverOptions.EnableLua)
-                sessionScriptCache?.TrySwapDatabaseSessions(dbId1, dbId2);
 
             // If any of the IDs are the current active database ID -
             // Set the new active database session to the swapped session

@@ -276,10 +276,10 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// The Lua script cache's dummy network sender owns a second scratch buffer, which the RESP fallback
-        /// path for <c>redis.call</c> writes replies into. It was built uncapped, so one large reply on that
-        /// path pinned it for the life of the connection. The sender has no batch boundary of its own, so the
-        /// owning session drives its trim; this pins that the cap is plumbed and releases.
+        /// The script executor's dummy network sender owns a second scratch buffer, which the RESP fallback
+        /// path for <c>redis.call</c> writes replies into. Built uncapped, one large reply on that path would
+        /// pin it for the life of the executor. The sender has no batch boundary of its own, so the
+        /// executor drives its trim; this pins that the cap is plumbed and releases.
         /// </summary>
         [Test]
         public unsafe void LuaReplySenderReleasesABufferGrownPastItsCap()

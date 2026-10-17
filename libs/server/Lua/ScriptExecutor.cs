@@ -16,9 +16,16 @@ using Microsoft.Extensions.Logging;
 namespace Garnet.server
 {
     /// <summary>
-    /// Cache of Lua scripts, per session
+    /// Runs Lua scripts: a cache of compiled scripts (one Lua state each) plus the inner
+    /// <see cref="RespServerSession"/> those scripts issue <c>redis.call</c> commands through.
     /// </summary>
-    internal sealed class SessionScriptCache : IDisposable
+    /// <remarks>
+    /// Executors are shared by all sessions and rented from a <see cref="ScriptExecutorPool"/> for the
+    /// duration of one EVAL, EVALSHA or SCRIPT LOAD. The Lua and storage working set therefore scales with
+    /// the number of scripts running concurrently rather than with the number of connections. An executor
+    /// is used by one thread at a time.
+    /// </remarks>
+    internal sealed class ScriptExecutor : IDisposable
     {
         // Important to keep the hash length to this value 
         // for compatibility
@@ -28,17 +35,19 @@ namespace Garnet.server
         readonly ScratchBufferNetworkSender scratchBufferNetworkSender;
         readonly ILogger logger;
         readonly Dictionary<ScriptHashKey, CacheEntry> scriptCache = [];
-        readonly byte[] hash = new byte[SHA1Len / 2];
 
-        // Largest number of compiled scripts this session retains, or 0 for no limit.
+        // Largest number of compiled scripts this executor retains, or 0 for no limit.
         readonly int scriptCacheSize;
+
+        // Returns since the scratch buffers were last trimmed
+        int returnsSinceTrim;
 
         // Monotonic recency stamp. Incremented on every cache hit and insert, so the entry
         // holding the smallest value is the least recently used one.
         long scriptCacheClock;
 
         /// <summary>
-        /// One cached script: the session's compiled runner, the global handle it was compiled
+        /// One cached script: the executor's compiled runner, the global handle it was compiled
         /// from, and the recency stamp used to choose an eviction victim.
         /// </summary>
         struct CacheEntry
@@ -65,13 +74,13 @@ namespace Garnet.server
         // Provides a unique value for script invocations
         //
         // It doesn't need to be globally unique, it just needs to be able
-        // distiguish two different runs of some script on the same session.
+        // distiguish two different runs of some script on the same executor.
         //
         // It's OK if this wraps around, because ~4 billion invocations are unlikely
         // to race.
         uint timeoutRunningCookie;
 
-        public SessionScriptCache(StoreWrapper storeWrapper, IGarnetAuthenticator authenticator, LuaTimeoutManager timeoutManager, ILogger logger = null)
+        public ScriptExecutor(StoreWrapper storeWrapper, LuaTimeoutManager timeoutManager, ILogger logger = null)
         {
             this.storeWrapper = storeWrapper;
             this.timeoutManager = timeoutManager;
@@ -81,9 +90,13 @@ namespace Garnet.server
             // Pass storeWrapper.subscribeBroker so Lua scripts can use publish-side Pub/Sub
             // commands (e.g. redis.call('PUBLISH', ...)) consistently with network sessions.
             // SUBSCRIBE/PSUBSCRIBE remain blocked by the NoScript bitmap.
-            processor = new RespServerSession(0, scratchBufferNetworkSender, storeWrapper, storeWrapper.subscribeBroker, authenticator, false);
+            //
+            // The processor runs on behalf of whichever session rented the executor, which has already
+            // passed authentication and the ACL check for the script command itself, so it is always
+            // authenticated; the renting session's user handle supplies the per-command ACL checks.
+            processor = new RespServerSession(0, scratchBufferNetworkSender, storeWrapper, storeWrapper.subscribeBroker, new GarnetNoAuthAuthenticator(), false);
 
-            // There's some parsing involved in these, so save them off per-session
+            // There's some parsing involved in these, so save them off per-executor
             memoryManagementMode = storeWrapper.serverOptions.LuaOptions.MemoryManagementMode;
             memoryLimitBytes = storeWrapper.serverOptions.LuaOptions.GetMemoryLimitBytes();
             logMode = storeWrapper.serverOptions.LuaOptions.LogMode;
@@ -105,9 +118,9 @@ namespace Garnet.server
         /// The processor is a <see cref="RespServerSession"/> that never reads from a network, so it has no
         /// batch boundary of its own to drive the trim from, and Lua resets its buffer many times
         /// within a single script -- once per string while decoding JSON, for instance -- so those resets
-        /// cannot drive it either. The owning network session calls this from its own trim, outside any
-        /// script execution. Both the buffer <c>redis.call</c> requests are built in and the one their replies
-        /// are written into are covered.
+        /// cannot drive it either. <see cref="OnReturned"/> calls this once every
+        /// <see cref="RespServerSession.SessionTrimInterval"/> returns, outside any script execution. Both the
+        /// buffer <c>redis.call</c> requests are built in and the one their replies are written into are covered.
         /// </remarks>
         internal void TrimScratchBuffer()
         {
@@ -115,6 +128,25 @@ namespace Garnet.server
             scratchBufferNetworkSender.Trim();
         }
 
+        internal RespServerSession Processor => processor;
+
+        internal int ScratchBufferCapacityForTests => processor.scratchBufferBuilder.ScratchBufferCapacity;
+
+        /// <summary>
+        /// Called when the executor goes back to its pool, at which point no script is running.
+        /// </summary>
+        internal void OnReturned()
+        {
+            if (++returnsSinceTrim < RespServerSession.SessionTrimInterval)
+                return;
+
+            returnsSinceTrim = 0;
+            TrimScratchBuffer();
+        }
+
+        /// <summary>
+        /// Bind the executor to the user whose commands it is about to run.
+        /// </summary>
         public void SetUserHandle(UserHandle userHandle)
         {
             processor.SetUserHandle(userHandle);
@@ -125,7 +157,7 @@ namespace Garnet.server
         /// 
         /// Enables timeouts, if they are configured.
         /// 
-        /// Returns <c>false</c> if the session is being disposed, in which case the caller
+        /// Returns <c>false</c> if the executor is being disposed, in which case the caller
         /// must NOT execute the script (the Lua state may be freed concurrently).
         /// 
         /// Should always be paired with a call to <see cref="StopRunningScript"/> when it returns <c>true</c>.
@@ -188,7 +220,7 @@ namespace Garnet.server
             scriptRunner = entry.Runner;
             scriptHandle = entry.Handle;
 
-            // If the global cache has been invalidated, remove from the session cache
+            // If the global cache has been invalidated, remove from the executor's cache
             if (scriptHandle.IsDisposed)
             {
                 _ = scriptCache.Remove(digest);
@@ -206,7 +238,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Compile Lua source text and load it into the session cache.
+        /// Compile Lua source text and load it into the executor's cache.
         /// 
         /// If necessary, <paramref name="digestOnHeap"/> will be set so the allocation can be reused.
         /// </summary>
@@ -303,7 +335,7 @@ namespace Garnet.server
 
                     // On first script load, register for timeout notifications
                     //
-                    // We don't do this for every session because not every session will run scripts
+                    // We don't do this for every executor because not every executor will run scripts
                     if (timeoutManager != null && timeoutRegistration == null)
                     {
                         timeoutRegistration = timeoutManager.RegisterForTimeout(this);
@@ -350,7 +382,7 @@ namespace Garnet.server
         /// reached from inside an executing script. Disposing a runner closes its Lua state, which
         /// would corrupt the single-threaded allocator if it were still in use.
         ///
-        /// Safe for correctness: this is a session-local cache in front of the global script cache,
+        /// Safe for correctness: this is an executor-local cache in front of the global script cache,
         /// so an EVALSHA that misses here recompiles from the global cache rather than failing. The
         /// only cost of evicting too eagerly is that recompilation.
         /// </remarks>
@@ -380,7 +412,7 @@ namespace Garnet.server
             {
                 // Intentionally NOT disposing the script handle
                 //
-                // Removing from a session cache does not invalidate the global cache
+                // Removing from an executor's cache does not invalidate the global cache
                 evicted.Runner.Dispose();
             }
         }
@@ -394,13 +426,13 @@ namespace Garnet.server
             {
                 // Intentionally NOT disposing the script handle
                 //
-                // Removing from a session cache does not invalidate the global cache
+                // Removing from an executor's cache does not invalidate the global cache
                 entry.Runner.Dispose();
             }
         }
 
         /// <summary>
-        /// Clear the session script cache
+        /// Clear the executor's script cache
         /// </summary>
         public void Clear()
         {
@@ -416,7 +448,7 @@ namespace Garnet.server
             {
                 // Intentionally NOT disposing the script handles
                 //
-                // Removing from a session cache does not invalidate the global cache
+                // Removing from an executor's cache does not invalidate the global cache
                 entry.Runner.Dispose();
             }
 
@@ -434,8 +466,14 @@ namespace Garnet.server
 
         static ReadOnlySpan<byte> HEX_CHARS => "0123456789abcdef"u8;
 
-        public void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> into)
-        => GetScriptDigest(source, hash, into);
+        /// <summary>
+        /// Writes the lowercase hex SHA-1 digest of <paramref name="source"/> into <paramref name="into"/>.
+        /// </summary>
+        public static void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> into)
+        {
+            Span<byte> sha1Bytes = stackalloc byte[SHA1Len / 2];
+            GetScriptDigest(source, sha1Bytes, into);
+        }
 
         public static void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> sha1Bytes, Span<byte> into)
         {

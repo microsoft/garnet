@@ -406,10 +406,10 @@ namespace Garnet.server
                 bytes = [];
             }
 
-            Span<byte> hashBytes = stackalloc byte[SessionScriptCache.SHA1Len / 2];
-            Span<byte> hexRes = stackalloc byte[SessionScriptCache.SHA1Len];
+            Span<byte> hashBytes = stackalloc byte[ScriptExecutor.SHA1Len / 2];
+            Span<byte> hexRes = stackalloc byte[ScriptExecutor.SHA1Len];
 
-            SessionScriptCache.GetScriptDigest(bytes, hashBytes, hexRes);
+            ScriptExecutor.GetScriptDigest(bytes, hashBytes, hexRes);
 
             if (!state.TryPushBuffer(hexRes))
             {
@@ -3140,6 +3140,65 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Push the Lua value a null reply converts to, for the RESP version the script is currently using.
+        /// <para>
+        /// Under RESP2 a null reply reaches the script as <c>false</c>; under RESP3 it reaches it as <c>nil</c>.
+        /// </para>
+        /// </summary>
+        private void PushNullReply()
+        {
+            if (respServerSession.respProtocolVersion >= 3)
+            {
+                state.PushNil();
+            }
+            else
+            {
+                state.PushBoolean(false);
+            }
+        }
+
+        /// <summary>
+        /// Largest TTL in seconds the EXPIRE fast path will handle, about 3,170 years. Keeping well
+        /// inside the representable range means the fast path never has to reason about overflow;
+        /// anything larger falls through to the RESP path.
+        /// </summary>
+        private const long MaxFastPathExpireSeconds = 100_000_000_000L;
+
+        /// <summary>
+        /// Reads a <c>redis.call</c> argument off the Lua stack as a byte span, converting numbers
+        /// to their string form in place.
+        /// </summary>
+        /// <param name="stackIndex">Stack slot holding the argument.</param>
+        /// <param name="span">Receives the argument bytes, pinned for as long as the value stays on the stack.</param>
+        /// <param name="outOfMemory">Set when the failure was an allocation failure rather than a bad type.</param>
+        /// <returns>True if the slot held a string or a number.</returns>
+        private bool TryGetFastPathArg(int stackIndex, out ReadOnlySpan<byte> span, out bool outOfMemory)
+        {
+            outOfMemory = false;
+
+            var argType = state.Type(stackIndex);
+            if (argType == LuaType.String)
+            {
+                state.KnownStringToBuffer(stackIndex, out span);
+                return true;
+            }
+
+            if (argType == LuaType.Number)
+            {
+                if (!state.TryNumberToString(stackIndex, out span))
+                {
+                    outOfMemory = true;
+                    return false;
+                }
+
+                return true;
+            }
+
+            span = default;
+            return false;
+        }
+
+        /// <summary>
         /// Entry point method for executing commands from a Lua Script
         /// </summary>
         private unsafe int ProcessCommandFromScripting<TGarnetApi>(nint luaStatePtr, ref TGarnetApi api)
@@ -3259,16 +3318,144 @@ namespace Garnet.server
                         {
                             return LuaWrappedError(1, constStrs.OutOfMemory);
                         }
+
+                        return 1;
                     }
-                    else
+
+                    if (status == GarnetStatus.NOTFOUND)
                     {
-                        // Redis is weird, but false instead of Nil is correct here
-                        state.PushBoolean(false);
+                        PushNullReply();
+
+                        return 1;
                     }
 
-                    return 1;
+                    // Any other status (WRONGTYPE, MOVED) carries an error that this fast path cannot
+                    // report, so fall through to the RESP path below, which produces it correctly.
                 }
+                else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "HGET"u8) && argCount == 3)
+                {
+                    if (!respServerSession.CheckACLPermissions(RespCommand.HGET))
+                    {
+                        return LuaWrappedError(1, constStrs.ErrNoPerm);
+                    }
 
+                    ReadOnlySpan<byte> hashKeySpan;
+                    if (!TryGetFastPathArg(2, out hashKeySpan, out var hashKeyOom))
+                    {
+                        return LuaWrappedError(1, hashKeyOom ? constStrs.OutOfMemory : constStrs.ErrBadArg);
+                    }
+
+                    ReadOnlySpan<byte> fieldSpan;
+                    if (!TryGetFastPathArg(3, out fieldSpan, out var fieldOom))
+                    {
+                        return LuaWrappedError(1, fieldOom ? constStrs.OutOfMemory : constStrs.ErrBadArg);
+                    }
+
+                    // Spans are (implicitly) pinned since they're actually on the Lua stack
+                    var hashKey = PinnedSpanByte.FromPinnedSpan(hashKeySpan);
+                    var field = PinnedSpanByte.FromPinnedSpan(fieldSpan);
+                    var hashStatus = api.HashGet(hashKey, field, out PinnedSpanByte fieldValue);
+
+                    if (hashStatus == GarnetStatus.OK)
+                    {
+                        if (!state.TryPushBuffer(fieldValue.ReadOnlySpan))
+                        {
+                            return LuaWrappedError(1, constStrs.OutOfMemory);
+                        }
+
+                        return 1;
+                    }
+
+                    if (hashStatus == GarnetStatus.NOTFOUND)
+                    {
+                        PushNullReply();
+
+                        return 1;
+                    }
+
+                    // As with GET above, any other status carries an error this fast path cannot
+                    // report, so fall through to the RESP path.
+                }
+                else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "HSET"u8) && argCount == 4)
+                {
+                    if (!respServerSession.CheckACLPermissions(RespCommand.HSET))
+                    {
+                        return LuaWrappedError(1, constStrs.ErrNoPerm);
+                    }
+
+                    if (!TryGetFastPathArg(2, out var hsetKeySpan, out var hsetKeyOom))
+                    {
+                        return LuaWrappedError(1, hsetKeyOom ? constStrs.OutOfMemory : constStrs.ErrBadArg);
+                    }
+
+                    if (!TryGetFastPathArg(3, out var hsetFieldSpan, out var hsetFieldOom))
+                    {
+                        return LuaWrappedError(1, hsetFieldOom ? constStrs.OutOfMemory : constStrs.ErrBadArg);
+                    }
+
+                    if (!TryGetFastPathArg(4, out var hsetValueSpan, out var hsetValueOom))
+                    {
+                        return LuaWrappedError(1, hsetValueOom ? constStrs.OutOfMemory : constStrs.ErrBadArg);
+                    }
+
+                    // Spans are (implicitly) pinned since they're actually on the Lua stack
+                    var hsetKey = PinnedSpanByte.FromPinnedSpan(hsetKeySpan);
+                    var hsetField = PinnedSpanByte.FromPinnedSpan(hsetFieldSpan);
+                    var hsetValue = PinnedSpanByte.FromPinnedSpan(hsetValueSpan);
+
+                    if (api.HashSet(hsetKey, hsetField, hsetValue, out var hsetCount) == GarnetStatus.OK)
+                    {
+                        state.PushInteger(hsetCount);
+
+                        return 1;
+                    }
+
+                    // Any other status carries an error this fast path cannot report, so fall
+                    // through to the RESP path.
+                }
+                else if (AsciiUtils.EqualsUpperCaseSpanIgnoringCase(cmdSpan, "EXPIRE"u8) && argCount == 3)
+                {
+                    if (!respServerSession.CheckACLPermissions(RespCommand.EXPIRE))
+                    {
+                        return LuaWrappedError(1, constStrs.ErrNoPerm);
+                    }
+
+                    if (!TryGetFastPathArg(2, out var expireKeySpan, out var expireKeyOom))
+                    {
+                        return LuaWrappedError(1, expireKeyOom ? constStrs.OutOfMemory : constStrs.ErrBadArg);
+                    }
+
+                    if (!TryGetFastPathArg(3, out var expireTtlSpan, out var expireTtlOom))
+                    {
+                        return LuaWrappedError(1, expireTtlOom ? constStrs.OutOfMemory : constStrs.ErrBadArg);
+                    }
+
+                    // Only take the fast path for a plainly in-range TTL. A malformed, negative or
+                    // extreme value falls through to the RESP path, which reports it correctly.
+                    if (NumUtils.TryReadInt64(expireTtlSpan, out var expireSeconds) &&
+                        expireSeconds >= 0 && expireSeconds <= MaxFastPathExpireSeconds)
+                    {
+                        // Span is (implicitly) pinned since it's actually on the Lua stack
+                        var expireKey = PinnedSpanByte.FromPinnedSpan(expireKeySpan);
+                        var expireStatus = api.EXPIRE(expireKey, TimeSpan.FromSeconds(expireSeconds), out var timeoutSet);
+
+                        if (expireStatus == GarnetStatus.OK)
+                        {
+                            state.PushInteger(timeoutSet ? 1 : 0);
+
+                            return 1;
+                        }
+
+                        if (expireStatus == GarnetStatus.NOTFOUND)
+                        {
+                            state.PushInteger(0);
+
+                            return 1;
+                        }
+                    }
+
+                    // Anything else falls through to the RESP path.
+                }
                 // As fallback, we use RespServerSession with a RESP-formatted input. This could be optimized
                 // in future to provide parse state directly.
 

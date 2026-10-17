@@ -151,41 +151,52 @@ namespace Garnet.server
             // Accumulate metrics from all active sessions
             var sessions = ((GarnetServerBase)server).ActiveConsumers();
             foreach (var s in sessions)
+                AddCurrentSessionStats((RespServerSession)s);
+        }
+
+        private void AddCurrentScriptStats()
+        {
+            // Commands run by scripts execute on the script executors' sessions, which are not network sessions
+            foreach (var session in storeWrapper.scriptExecutorPool?.Processors() ?? [])
+                AddCurrentSessionStats(session);
+        }
+
+        private void AddCurrentSessionStats(RespServerSession session)
+        {
+            // Accumulate session metrics
+            accSessionMetrics.Add(session.GetSessionMetrics);
+
+            // Accumulate command stats if enabled
+            if (accCommandStats != null)
             {
-                var session = (RespServerSession)s;
-
-                // Accumulate session metrics
-                accSessionMetrics.Add(session.GetSessionMetrics);
-
-                // Accumulate command stats if enabled
-                if (accCommandStats != null)
-                {
-                    accCommandStats.Add(session.GetCommandStats);
-                }
-
-                // Accumulate latency metrics if latency monitor is enabled
-                if (opts.LatencyMonitor)
-                {
-                    var latencyMetrics = session.GetLatencyMetrics();
-                    rwLock.WriteLock();
-                    try
-                    {
-                        // Add accumulated latency metrics for this iteration
-                        globalMetrics.globalLatencyMetrics.Merge(latencyMetrics);
-                    }
-                    finally
-                    {
-                        rwLock.WriteUnlock();
-                    }
-
-                    // Released after the merge, so the window being released has already been accounted
-                    // for globally. A quiesced session gains nothing by holding them: the histograms are
-                    // cleared every window regardless, so retaining them buys no future work and costs a
-                    // full counts-array clear per window.
-                    latencyMetrics?.ReclaimQuiescedHistograms(QuiescedWindowsBeforeRelease);
-                }
+                accCommandStats.Add(session.GetCommandStats);
             }
 
+            // Accumulate latency metrics if latency monitor is enabled
+            if (opts.LatencyMonitor)
+            {
+                var latencyMetrics = session.GetLatencyMetrics();
+                rwLock.WriteLock();
+                try
+                {
+                    // Add accumulated latency metrics for this iteration
+                    globalMetrics.globalLatencyMetrics.Merge(latencyMetrics);
+                }
+                finally
+                {
+                    rwLock.WriteUnlock();
+                }
+
+                // Released after the merge, so the window being released has already been accounted
+                // for globally. A quiesced session gains nothing by holding them: the histograms are
+                // cleared every window regardless, so retaining them buys no future work and costs a
+                // full counts-array clear per window.
+                latencyMetrics?.ReclaimQuiescedHistograms(QuiescedWindowsBeforeRelease);
+            }
+        }
+
+        private void PublishCurrentStats()
+        {
             // Reset global session metrics
             globalMetrics.globalSessionMetrics.Reset();
             // Add accumulated session metrics for this iteration
@@ -227,6 +238,9 @@ namespace Garnet.server
                     garnetServer.ResetConnectionsRejected();
                 }
 
+                foreach (var session in storeWrapper.scriptExecutorPool?.Processors() ?? [])
+                    session.GetSessionMetrics.Reset();
+
                 storeWrapper.clusterProvider?.ResetGossipStats();
 
                 storeWrapper.ResetRevivificationStats();
@@ -249,6 +263,9 @@ namespace Garnet.server
                     }
                 }
 
+                foreach (var session in storeWrapper.scriptExecutorPool?.Processors() ?? [])
+                    session.GetCommandStats?.Reset();
+
                 resetEventFlags[InfoMetricsType.COMMANDSTATS] = false;
             }
         }
@@ -269,6 +286,9 @@ namespace Garnet.server
                             foreach (var entry in sessions)
                                 ((RespServerSession)entry).ResetLatencyMetrics(eventType);
                         }
+
+                        foreach (var session in storeWrapper.scriptExecutorPool?.Processors() ?? [])
+                            session.ResetLatencyMetrics(eventType);
 
                         rwLock.WriteLock();
                         try
@@ -321,6 +341,9 @@ namespace Garnet.server
                         // Accumulate stats for the specified for this iteration
                         AddCurrentServerStats(server);
                     }
+                    AddCurrentScriptStats();
+                    PublishCurrentStats();
+
                     // Update stats now that we have accumulated everything
                     UpdateInstantaneousMetrics();
                     globalMetrics.total_connections_received = total_connections_received;
@@ -371,6 +394,9 @@ namespace Garnet.server
                         foreach (var entry in sessions)
                             ((RespServerSession)entry).ResetAllLatencyMetrics();
                     }
+
+                    foreach (var session in storeWrapper.scriptExecutorPool?.Processors() ?? [])
+                        session.ResetAllLatencyMetrics();
                 }
             }
         }

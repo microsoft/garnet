@@ -33,52 +33,63 @@ namespace Garnet.server
 
             ref var digest = ref parseState.GetArgSliceByRef(0);
 
-            var convertedToLower = false;
+            var executor = RentScriptExecutor();
+            if (executor == null)
+                return true; // The server is shutting down
 
-            LuaRunner runner = null;
-            ScriptHashKey scriptKey = default;
-
-            // Length check is mandatory, as ScriptHashKey assumes correct length
-            if (digest.Length == SessionScriptCache.SHA1Len)
+            try
             {
-            tryAgain:
-                scriptKey = new ScriptHashKey(digest.Span);
+                var convertedToLower = false;
 
-                if (!sessionScriptCache.TryGetFromDigest(scriptKey, out runner, out _))
+                LuaRunner runner = null;
+                ScriptHashKey scriptKey = default;
+
+                // Length check is mandatory, as ScriptHashKey assumes correct length
+                if (digest.Length == ScriptExecutor.SHA1Len)
                 {
-                    if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
+                tryAgain:
+                    scriptKey = new ScriptHashKey(digest.Span);
+
+                    if (!executor.TryGetFromDigest(scriptKey, out runner, out _))
                     {
-                        if (!sessionScriptCache.TryGetOrCreateRunnerFromCachedScript(this, scriptKey, globalScriptHandle, out runner))
+                        if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
                         {
-                            // The loading error was already written, if any
+                            if (!executor.TryGetOrCreateRunnerFromCachedScript(this, scriptKey, globalScriptHandle, out runner))
+                            {
+                                // The loading error was already written, if any
+                                //
+                                // Note we DON'T dispose the script handle because this is just the executor's cache
+                                _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
+                                return true;
+                            }
+                        }
+                        else if (!convertedToLower)
+                        {
+                            // On a miss (which should be rare) make sure the hash is lower case and try again.
                             //
-                            // Note we DON'T dispose the script handle because this is just the session cache
-                            _ = storeWrapper.storeScriptCache.TryRemove(scriptKey, out _);
-                            return true;
+                            // We assume that hashes will be sent in the same format as we return them (lower)
+                            // most of the time, so optimize for that.
+
+                            AsciiUtils.ToLowerInPlace(digest.Span);
+                            convertedToLower = true;
+                            goto tryAgain;
                         }
                     }
-                    else if (!convertedToLower)
-                    {
-                        // On a miss (which should be rare) make sure the hash is lower case and try again.
-                        //
-                        // We assume that hashes will be sent in the same format as we return them (lower)
-                        // most of the time, so optimize for that.
+                }
 
-                        AsciiUtils.ToLowerInPlace(digest.Span);
-                        convertedToLower = true;
-                        goto tryAgain;
-                    }
+                if (runner == null)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    RunScriptForSession(executor, count, runner, scriptKey);
                 }
             }
-
-            if (runner == null)
+            finally
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                RunScriptForSession(count, runner, scriptKey);
+                ReturnScriptExecutor(executor);
             }
 
             return true;
@@ -110,21 +121,33 @@ namespace Garnet.server
             ref var script = ref parseState.GetArgSliceByRef(0);
 
             // that this is stack allocated is load bearing - if it moves, things will break
-            Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
-            sessionScriptCache.GetScriptDigest(script.ReadOnlySpan, digest);
+            Span<byte> digest = stackalloc byte[ScriptExecutor.SHA1Len];
+            ScriptExecutor.GetScriptDigest(script.ReadOnlySpan, digest);
 
             var onStackScriptKey = new ScriptHashKey(digest);
-            if (!TryGetOrCreateScriptRunner(script.ReadOnlySpan, digest, onStackScriptKey, out var runner))
-                return true; // The loading error was written to the response.
 
-            if (runner == null)
+            var executor = RentScriptExecutor();
+            if (executor == null)
+                return true; // The server is shutting down
+
+            try
             {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
-                    SendAndReset();
+                if (!TryGetOrCreateScriptRunner(executor, script.ReadOnlySpan, digest, onStackScriptKey, out var runner))
+                    return true; // The loading error was written to the response.
+
+                if (runner == null)
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_NO_SCRIPT, ref dcurr, dend))
+                        SendAndReset();
+                }
+                else
+                {
+                    RunScriptForSession(executor, count, runner, onStackScriptKey);
+                }
             }
-            else
+            finally
             {
-                RunScriptForSession(count, runner, onStackScriptKey);
+                ReturnScriptExecutor(executor);
             }
 
             return true;
@@ -156,7 +179,7 @@ namespace Garnet.server
                 var exists = 0;
 
                 // Length check is required, as ScriptHashKey makes a hard assumption
-                if (sha1.Length == SessionScriptCache.SHA1Len)
+                if (sha1.Length == ScriptExecutor.SHA1Len)
                 {
                     AsciiUtils.ToLowerInPlace(sha1.Span);
 
@@ -204,7 +227,7 @@ namespace Garnet.server
             // Flush store script cache
             //
             // Disposing each script handle (that we actually remove) along the way
-            // to signal to session level caches that the script needs to be discarded
+            // to signal to executor level caches that the script needs to be discarded
             foreach (var digest in storeWrapper.storeScriptCache.Keys)
             {
                 if (storeWrapper.storeScriptCache.TryRemove(digest, out var scriptHandle))
@@ -236,25 +259,53 @@ namespace Garnet.server
 
             ref var source = ref parseState.GetArgSliceByRef(0);
 
-            Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
-            sessionScriptCache.GetScriptDigest(source.Span, digest);
+            Span<byte> digest = stackalloc byte[ScriptExecutor.SHA1Len];
+            ScriptExecutor.GetScriptDigest(source.Span, digest);
 
             var onStackScriptHashKey = new ScriptHashKey(digest);
-            if (TryGetOrCreateScriptRunner(source.ReadOnlySpan, digest, onStackScriptHashKey, out _))
+
+            var executor = RentScriptExecutor();
+            if (executor == null)
+                return true; // The server is shutting down
+
+            try
             {
-                while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
-                    SendAndReset();
+                if (TryGetOrCreateScriptRunner(executor, source.ReadOnlySpan, digest, onStackScriptHashKey, out _))
+                {
+                    while (!RespWriteUtils.TryWriteBulkString(digest, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
+            finally
+            {
+                ReturnScriptExecutor(executor);
             }
 
             return true;
         }
 
-        private bool TryGetOrCreateScriptRunner(ReadOnlySpan<byte> source, ReadOnlySpan<byte> digest, ScriptHashKey scriptKey, out LuaRunner runner)
+        /// <summary>
+        /// Rents a script executor that runs as this session's user. Returns null if the server is shutting down.
+        /// </summary>
+        private ScriptExecutor RentScriptExecutor()
+        {
+            var executor = storeWrapper.scriptExecutorPool.Rent(_userHandle);
+            rentedScriptExecutor = executor;
+            return executor;
+        }
+
+        private void ReturnScriptExecutor(ScriptExecutor executor)
+        {
+            rentedScriptExecutor = null;
+            storeWrapper.scriptExecutorPool.Return(executor);
+        }
+
+        private bool TryGetOrCreateScriptRunner(ScriptExecutor executor, ReadOnlySpan<byte> source, ReadOnlySpan<byte> digest, ScriptHashKey scriptKey, out LuaRunner runner)
         {
             if (storeWrapper.storeScriptCache.TryGetValue(scriptKey, out var globalScriptHandle))
-                return sessionScriptCache.TryGetOrCreateRunnerFromCachedScript(this, scriptKey, globalScriptHandle, out runner);
+                return executor.TryGetOrCreateRunnerFromCachedScript(this, scriptKey, globalScriptHandle, out runner);
 
-            if (!sessionScriptCache.TryGetOrCreateRunnerFromSource(this, source, scriptKey, out var sessionScriptHandle, out runner, out var digestOnHeap))
+            if (!executor.TryGetOrCreateRunnerFromSource(this, source, scriptKey, out var sessionScriptHandle, out runner, out var digestOnHeap))
                 return false;
 
             ScriptHashKey globalScriptKey;
@@ -264,7 +315,7 @@ namespace Garnet.server
             }
             else
             {
-                var digestCopy = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
+                var digestCopy = GC.AllocateUninitializedArray<byte>(ScriptExecutor.SHA1Len, pinned: true);
                 digest.CopyTo(digestCopy);
                 globalScriptKey = new(digestCopy);
             }
@@ -282,7 +333,7 @@ namespace Garnet.server
         /// </summary>
         private bool CheckLuaEnabled()
         {
-            if (!storeWrapper.serverOptions.EnableLua)
+            if (!storeWrapper.serverOptions.EnableLua || !scriptsEnabled)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_LUA_DISABLED, ref dcurr, dend))
                     SendAndReset();
@@ -302,28 +353,28 @@ namespace Garnet.server
         /// <summary>
         /// Run a resolved script for the current session.
         /// 
-        /// Gated so it can't execute while the session's Lua state is being disposed. If disposing,
-        /// <see cref="SessionScriptCache.StartRunningScript"/> returns false and this is a no-op: no reply
-        /// is written since the connection is already closing. On failure the runner is removed inside the
+        /// Gated so it can't execute while the executor's Lua state is being disposed. If disposing,
+        /// <see cref="ScriptExecutor.StartRunningScript"/> returns false and this is a no-op: no reply
+        /// is written since the server is shutting down. On failure the runner is removed inside the
         /// guarded window so it can't race disposal.
         /// </summary>
-        private void RunScriptForSession(int count, LuaRunner runner, ScriptHashKey scriptKey)
+        private void RunScriptForSession(ScriptExecutor executor, int count, LuaRunner runner, ScriptHashKey scriptKey)
         {
             // We assume here that ExecuteScript does not raise exceptions
-            if (!sessionScriptCache.StartRunningScript(runner))
+            if (!executor.StartRunningScript(runner))
                 return;
 
             try
             {
                 if (!TryExecuteScript(count - 1, runner))
                 {
-                    // Note we DON'T dispose the script handle because this is just the session cache
-                    sessionScriptCache.Remove(scriptKey);
+                    // Note we DON'T dispose the script handle because this is just the executor's cache
+                    executor.Remove(scriptKey);
                 }
             }
             finally
             {
-                sessionScriptCache.StopRunningScript();
+                executor.StopRunningScript();
             }
         }
 

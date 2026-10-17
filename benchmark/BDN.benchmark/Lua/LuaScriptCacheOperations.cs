@@ -5,7 +5,6 @@ using BenchmarkDotNet.Attributes;
 using Embedded.server;
 using Garnet.common;
 using Garnet.server;
-using Garnet.server.Auth;
 
 namespace BDN.benchmark.Lua
 {
@@ -32,7 +31,7 @@ namespace BDN.benchmark.Lua
 
         private EmbeddedRespServer server;
         private StoreWrapper storeWrapper;
-        private SessionScriptCache sessionScriptCache;
+        private ScriptExecutor executor;
         private RespServerSession session;
 
         private byte[] outerHitDigest;
@@ -46,25 +45,25 @@ namespace BDN.benchmark.Lua
 
             server = new EmbeddedRespServer(new GarnetServerOptions() { EnableLua = true, QuietMode = true, LuaOptions = options });
             storeWrapper = server.StoreWrapper;
-            sessionScriptCache = new SessionScriptCache(storeWrapper, new GarnetNoAuthAuthenticator(), null);
+            executor = new ScriptExecutor(storeWrapper, null);
             session = server.GetRespSession();
 
-            outerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-            sessionScriptCache.GetScriptDigest("return 1"u8, outerHitDigest);
+            outerHitDigest = GC.AllocateUninitializedArray<byte>(ScriptExecutor.SHA1Len, pinned: true);
+            ScriptExecutor.GetScriptDigest("return 1"u8, outerHitDigest);
             if (!storeWrapper.storeScriptCache.TryAdd(new(outerHitDigest), CompileScript("return 1"u8)))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
 
-            innerHitDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-            sessionScriptCache.GetScriptDigest("return 1 + 1"u8, innerHitDigest);
+            innerHitDigest = GC.AllocateUninitializedArray<byte>(ScriptExecutor.SHA1Len, pinned: true);
+            ScriptExecutor.GetScriptDigest("return 1 + 1"u8, innerHitDigest);
             if (!storeWrapper.storeScriptCache.TryAdd(new(innerHitDigest), CompileScript("return 1 + 1"u8)))
             {
                 throw new InvalidOperationException("Should have been able to load into global cache");
             }
 
-            missDigest = GC.AllocateUninitializedArray<byte>(SessionScriptCache.SHA1Len, pinned: true);
-            sessionScriptCache.GetScriptDigest("foobar"u8, missDigest);
+            missDigest = GC.AllocateUninitializedArray<byte>(ScriptExecutor.SHA1Len, pinned: true);
+            ScriptExecutor.GetScriptDigest("foobar"u8, missDigest);
 
             static LuaScriptHandle CompileScript(ReadOnlySpan<byte> source)
             {
@@ -86,10 +85,10 @@ namespace BDN.benchmark.Lua
         public void IterationSetup()
         {
             // Force lookup to do work
-            sessionScriptCache.Clear();
+            executor.Clear();
 
             // Make outer hit available for every iteration
-            if (!sessionScriptCache.TryGetOrCreateRunnerFromSource(session, "return 1"u8, new(outerHitDigest), out _, out _, out _))
+            if (!executor.TryGetOrCreateRunnerFromSource(session, "return 1"u8, new(outerHitDigest), out _, out _, out _))
             {
                 throw new InvalidOperationException("Should have been able to load");
             }
@@ -98,13 +97,13 @@ namespace BDN.benchmark.Lua
         [Benchmark]
         public void LookupHit()
         {
-            _ = sessionScriptCache.TryGetFromDigest(new(outerHitDigest), out _, out _);
+            _ = executor.TryGetFromDigest(new(outerHitDigest), out _, out _);
         }
 
         [Benchmark]
         public void LookupMiss()
         {
-            _ = sessionScriptCache.TryGetFromDigest(new(missDigest), out _, out _);
+            _ = executor.TryGetFromDigest(new(missDigest), out _, out _);
         }
 
         [Benchmark]
@@ -137,8 +136,8 @@ namespace BDN.benchmark.Lua
         [Benchmark]
         public void Digest()
         {
-            Span<byte> digest = stackalloc byte[SessionScriptCache.SHA1Len];
-            sessionScriptCache.GetScriptDigest("return 1 + redis.call('GET', KEYS[1])"u8, digest);
+            Span<byte> digest = stackalloc byte[ScriptExecutor.SHA1Len];
+            ScriptExecutor.GetScriptDigest("return 1 + redis.call('GET', KEYS[1])"u8, digest);
         }
 
         /// <summary>
@@ -150,11 +149,11 @@ namespace BDN.benchmark.Lua
 
             var digestKey = new ScriptHashKey(digest);
 
-            if (!sessionScriptCache.TryGetFromDigest(digestKey, out var runner, out _))
+            if (!executor.TryGetFromDigest(digestKey, out var runner, out _))
             {
                 if (storeWrapper.storeScriptCache.TryGetValue(digestKey, out var scriptHandle))
                 {
-                    if (!sessionScriptCache.TryGetOrCreateRunnerFromCachedScript(session, digestKey, scriptHandle, out runner))
+                    if (!executor.TryGetOrCreateRunnerFromCachedScript(session, digestKey, scriptHandle, out runner))
                     {
                         // The loading error was already written, if any
 

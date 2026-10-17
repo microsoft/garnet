@@ -14,6 +14,7 @@
     <File Path=".azure/pipelines/policheck-exclusion.xml" />
   </Folder>
   <Folder Name="/benchmark/">
+    <Project Path="benchmark/RateLimitCacheSim/RateLimitCacheSim.csproj" />
     <Project Path="benchmark/BDN.benchmark/BDN.benchmark.csproj" />
     <Project Path="benchmark/Resp.benchmark/Resp.benchmark.csproj" />
   </Folder>

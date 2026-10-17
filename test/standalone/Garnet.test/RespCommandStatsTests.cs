@@ -88,6 +88,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CommandStatsCountCommandsRunByScriptsTest([Values(0, 1)] int metricsSamplingFreq)
+        {
+            // Script commands run on pooled executors' sessions, which outlive the connection that ran them
+            server = TestUtils.CreateGarnetServer(
+                TestUtils.MethodTestDir,
+                enableLua: true,
+                metricsSamplingFreq: metricsSamplingFreq,
+                commandStatsMonitor: true);
+            server.Start();
+
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            IDatabase db = redis.GetDatabase(0);
+
+            const int Calls = 10;
+            for (var i = 0; i < Calls; i++)
+                ClassicAssert.AreEqual(i + 1, (long)db.ScriptEvaluate("return redis.call('INCR', KEYS[1])", [(RedisKey)"counter"]));
+
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            ulong incrCalls;
+            do
+            {
+                var lines = db.Execute("INFO", "COMMANDSTATS").ToString().Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+                var incrLine = lines.FirstOrDefault(l => l.StartsWith("cmdstat_incr:"));
+                incrCalls = incrLine == null ? 0 : ParseCommandStatField(incrLine, "calls");
+            }
+            while (incrCalls < Calls && DateTime.UtcNow < deadline && SleepThenTrue());
+
+            ClassicAssert.AreEqual((ulong)Calls, incrCalls, "commands run inside scripts were not counted");
+
+            static bool SleepThenTrue()
+            {
+                Thread.Sleep(100);
+                return true;
+            }
+        }
+
+        [Test]
         public void CommandStatsFailedCallsTest()
         {
             StartServer();

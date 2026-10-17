@@ -255,6 +255,14 @@ namespace Garnet.server
                             aggregate.Add(sessionStats);
                     }
                 }
+
+                // Commands run by scripts execute on the script executors' sessions
+                foreach (var processor in storeWrapper.scriptExecutorPool?.Processors() ?? [])
+                {
+                    var processorStats = processor.GetCommandStats;
+                    if (processorStats != null)
+                        aggregate.Add(processorStats);
+                }
             }
 
             var items = new List<MetricsItem>();
