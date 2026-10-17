@@ -21,6 +21,11 @@ namespace Garnet.cluster
     /// one the version has not yet reflected.
     /// </para>
     /// <para>
+    /// Publishing a new cluster configuration also signals, after the configuration is published. Vector Set writes
+    /// wait for their slot to stop importing or migrating, and register the same way against the version read before
+    /// they check the slot's state in the current configuration.
+    /// </para>
+    /// <para>
     /// A waiter whose session is torn down while it waits takes itself off through <see cref="Remove"/>, since the
     /// migration may take arbitrarily long to move on.
     /// </para>
@@ -36,7 +41,8 @@ namespace Garnet.cluster
         List<IMigrationWaiter> spare;
 
         /// <summary>
-        /// Count of migration steps so far. A request reads it before it checks whether its key is accessible.
+        /// Count of migration steps and configuration changes so far. A request reads it before it checks whether its
+        /// key or slot is accessible.
         /// </summary>
         internal long Version => Volatile.Read(ref version);
 
@@ -81,7 +87,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Reports that a migration step has changed what keys can be accessed, and notifies every waiter.
+        /// Reports that a migration step or a new configuration has changed what keys can be accessed, and notifies every waiter.
         /// Called after the change itself, and never while holding a lock a waiter's resume could need.
         /// </summary>
         internal void Signal()

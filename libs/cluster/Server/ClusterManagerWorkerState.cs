@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -37,7 +36,7 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname,
                     peerEndpoint.Address.ToString(), peerEndpoint.Port);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -81,7 +80,7 @@ namespace Garnet.cluster
                     var newConfig = current.RemoveWorker(nodeid);
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
                     _ = workerBanList.AddOrUpdate(nodeid, expiry, (key, oldValue) => expiry);
-                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    if (TryPublishConfig(current, newConfig))
                         break;
                 }
                 FlushConfig();
@@ -139,7 +138,7 @@ namespace Garnet.cluster
                         hostname: string.IsNullOrEmpty(hostname) ? "" : hostname,
                         clusterAddress: peerEndpoint.Address.ToString(),
                         clusterPort: peerEndpoint.Port);
-                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    if (TryPublishConfig(current, newConfig))
                         break;
                 }
                 FlushConfig();
@@ -215,7 +214,7 @@ namespace Garnet.cluster
                 }
 
                 var newConfig = currentConfig.MakeReplicaOf(nodeid).BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
 
                 // If we reach here then we failed to update config so we need to suspend recovery and retry to update the config

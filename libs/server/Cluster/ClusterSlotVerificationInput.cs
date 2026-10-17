@@ -35,13 +35,15 @@ namespace Garnet.server
         public bool waitForStableSlot;
 
         /// <summary>
-        /// Whether the caller can park until a key being migrated becomes accessible and verify again, rather
-        /// than have the verification hold the calling thread for it.
+        /// Whether the caller can park until a key being migrated becomes accessible, or until a slot that
+        /// <see cref="waitForStableSlot"/> requires to be stable stops importing or migrating, and verify again,
+        /// rather than have the verification hold the calling thread for it.
         /// </summary>
         public bool canWait;
 
         /// <summary>
-        /// Set by a verification that found a key being migrated and was allowed to wait by <see cref="canWait"/>.
+        /// Set by a verification that found a key being migrated, or a slot that must be stable importing or migrating,
+        /// and was allowed to wait by <see cref="canWait"/>.
         /// The request is neither served nor answered: the caller waits for the migration to progress, then
         /// verifies it again. Cleared by the caller that acts on it.
         /// </summary>

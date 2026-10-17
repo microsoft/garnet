@@ -131,7 +131,7 @@ namespace Garnet.cluster
                     var currentCopy = current.Copy();
                     var next = currentCopy.Merge(senderConfig, workerBanList, logger).HandleConfigEpochCollision(senderConfig, logger);
                     if (currentCopy == next) return false;
-                    if (Interlocked.CompareExchange(ref currentConfig, next, current) == current)
+                    if (TryPublishConfig(current, next))
                         break;
                 }
                 FlushConfig();

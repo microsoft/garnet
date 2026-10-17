@@ -34,6 +34,23 @@ namespace Garnet.cluster
         public ClusterConfig CurrentConfig => currentConfig;
 
         /// <summary>
+        /// Publishes <paramref name="newConfig"/> if the configuration is still <paramref name="current"/>, and wakes the
+        /// requests parked until a slot's state changes.
+        /// </summary>
+        /// <param name="current">The configuration <paramref name="newConfig"/> was derived from.</param>
+        /// <param name="newConfig">The configuration to publish.</param>
+        /// <returns>False if the configuration changed since <paramref name="current"/> was read, and nothing was published.</returns>
+        bool TryPublishConfig(ClusterConfig current, ClusterConfig newConfig)
+        {
+            if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) != current)
+                return false;
+
+            // Null only while the provider is being constructed, when nothing can be parked
+            clusterProvider.migrationManager?.Progress.Signal();
+            return true;
+        }
+
+        /// <summary>
         /// Tls Client options
         /// </summary>
         readonly IGarnetTlsOptions tlsOptions;
@@ -300,7 +317,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -317,7 +334,7 @@ namespace Garnet.cluster
             {
                 var current = currentConfig;
                 var newConfig = current.BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -334,7 +351,7 @@ namespace Garnet.cluster
             {
                 var current = currentConfig;
                 var newConfig = current.SetLocalWorkerRole(role).BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -349,7 +366,7 @@ namespace Garnet.cluster
             {
                 var current = currentConfig;
                 var newConfig = current.MakeReplicaOf(null).SetLocalWorkerRole(NodeRole.PRIMARY).BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -367,7 +384,7 @@ namespace Garnet.cluster
                 var slotMap = current.GetSlotList(1);
                 var workerId = current.GetWorkerIdFromNodeId(replicaId);
                 var newConfig = current.MakeReplicaOf(replicaId).AssignSlots(slotMap, workerId, SlotState.STABLE);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -386,7 +403,7 @@ namespace Garnet.cluster
                     return false;
 
                 var newConfig = current.TakeOverFromPrimary().BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();

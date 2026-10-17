@@ -427,6 +427,74 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
+        /// Vector Set writes to a slot that is migrating, or importing, wait for the slot to become stable again, and
+        /// are parked on the cluster configuration while they do rather than each holding the thread it runs on. Once
+        /// the slot is stable they are verified again and served, in order with what follows them.
+        /// </summary>
+        [Test, CancelAfter(TestTimeout)]
+        [Category("CLUSTER")]
+        public void VectorSetWritesWaitingForAStableSlotAreParked([Values] bool importing, CancellationToken cancellationToken)
+        {
+            const int WriterCount = 8;
+            const string VectorKey = "{vwait}vectors";
+
+            var slot = CreateClusterHolding(VectorKey + "-unused");
+            var node = importing ? TargetNode : SourceNode;
+            var endpoint = context.endpoints[node];
+            var peerId = context.clusterTestUtils.ClusterMyId(importing ? SourceNode : TargetNode, context.logger);
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(node, slot, importing ? "IMPORTING" : "MIGRATING", peerId, context.logger));
+
+            var progress = ((ClusterProvider)context.nodes[node].Provider.StoreWrapper.clusterProvider).migrationManager.Progress;
+            var writers = new RawRespSession[WriterCount];
+            try
+            {
+                for (var i = 0; i < writers.Length; i++)
+                {
+                    writers[i] = new RawRespSession(endpoint: endpoint);
+                    string[] vadd = ["VADD", VectorKey, "VALUES", "3", "1", "0", $"{i}", $"element-{i}", "NOQUANT"];
+                    if (importing)
+                        writers[i].SendPipeline(["ASKING"], vadd, ["PING"]);
+                    else
+                        writers[i].SendPipeline(vadd, ["PING"]);
+                }
+
+                if (importing)
+                {
+                    foreach (var writer in writers)
+                        ClassicAssert.AreEqual(Ok, ReadReplyWithin(writer, TimeSpan.FromSeconds(10), "ASKING ahead of a waiting VADD"));
+                }
+
+                while (progress.WaiterCount < WriterCount)
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"{progress.WaiterCount} of {WriterCount} Vector Set writes are parked on the slot");
+
+                Thread.Sleep(300);
+                foreach (var writer in writers)
+                    ClassicAssert.IsFalse(writer.WaitForReply(TimeSpan.Zero), "A Vector Set write was answered while its slot was not stable");
+
+                ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(node, slot, "STABLE", "", context.logger));
+
+                // The source owns the slot throughout, so the target redirects to it once it no longer imports the slot
+                var sourcePort = ((IPEndPoint)context.endpoints[SourceNode]).Port;
+                foreach (var writer in writers)
+                {
+                    var reply = ReadReplyWithin(writer, TimeSpan.FromSeconds(30), "VADD to a slot that became stable");
+                    if (importing)
+                        Assert.That(reply, Does.Match($@"^-MOVED {slot} \S+:{sourcePort}\r\n$"));
+                    else
+                        ClassicAssert.AreEqual(":1\r\n", reply);
+                    ClassicAssert.AreEqual(Pong, ReadReplyWithin(writer, TimeSpan.FromSeconds(10), "PING behind a VADD that waited"));
+                }
+
+                ClassicAssert.AreEqual(0, progress.WaiterCount, "A Vector Set write stayed parked after its slot became stable");
+            }
+            finally
+            {
+                foreach (var writer in writers)
+                    writer?.Dispose();
+            }
+        }
+
+        /// <summary>
         /// A session that is torn down while a request of it waits on a migration stops waiting. The migration is held
         /// and takes no step, so nothing else would end the wait, and the request would stay parked on the receive
         /// buffer it was parsed from.
@@ -558,44 +626,6 @@ namespace Garnet.test.cluster
             /// Releasing leaves the injection point enabled, so it is cleared once the migration has finished with it.
             /// </summary>
             public void Dispose() => ExceptionInjectionHelper.DisableException(Point);
-        }
-
-        /// <summary>
-        /// Limits the thread pool to a few worker threads for the life of the scope, so that a thread a request holds
-        /// is a thread the others cannot use.
-        /// </summary>
-        sealed class ThreadPoolCap : IDisposable
-        {
-            readonly int minWorkers, minIo, maxWorkers, maxIo;
-            bool restored;
-
-            ThreadPoolCap(int minWorkers, int minIo, int maxWorkers, int maxIo)
-                => (this.minWorkers, this.minIo, this.maxWorkers, this.maxIo) = (minWorkers, minIo, maxWorkers, maxIo);
-
-            internal static ThreadPoolCap Apply(int workers)
-            {
-                ThreadPool.GetMinThreads(out var minWorkers, out var minIo);
-                ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
-                var cap = new ThreadPoolCap(minWorkers, minIo, maxWorkers, maxIo);
-
-                if (!ThreadPool.SetMinThreads(Math.Min(minWorkers, workers), minIo) || !ThreadPool.SetMaxThreads(workers, maxIo))
-                {
-                    cap.Dispose();
-                    Assert.Ignore("Could not cap the thread pool, so a held thread cannot be made to matter.");
-                }
-
-                return cap;
-            }
-
-            public void Dispose()
-            {
-                if (restored)
-                    return;
-                restored = true;
-
-                _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
-                _ = ThreadPool.SetMinThreads(minWorkers, minIo);
-            }
         }
     }
 }

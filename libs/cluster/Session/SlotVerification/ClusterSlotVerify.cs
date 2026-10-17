@@ -92,7 +92,22 @@ namespace Garnet.cluster
 
                 if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
                 {
-                    WaitForSlotToStabalize(_slot, keySlice, ref config);
+                    if (canWait)
+                    {
+                        // Read before the slot is checked again, so that a change the check misses is one the version
+                        // does not yet show. The configuration passed in may predate the version.
+                        var version = clusterProvider.migrationManager.Progress.Version;
+                        config = clusterProvider.clusterManager.CurrentConfig;
+                        if (config.GetState(_slot) is SlotState.IMPORTING or SlotState.MIGRATING)
+                        {
+                            migrationWaitVersion = version;
+                            return new(SlotVerifiedState.WAIT, _slot);
+                        }
+                    }
+                    else
+                    {
+                        WaitForSlotToStabalize(_slot, ref config);
+                    }
                     goto tryAgain;
                 }
 
@@ -165,11 +180,12 @@ namespace Garnet.cluster
                 return Exists(key) ? new(SlotVerifiedState.OK, slot) : new(SlotVerifiedState.ASK, slot);
             }
 
-            void WaitForSlotToStabalize(ushort slot, PinnedSpanByte keySlice, ref ClusterConfig config)
+            void WaitForSlotToStabalize(ushort slot, ref ClusterConfig config)
             {
                 // For Vector Set ops specifically, we need a slot to be stable (or faulted, but not migrating) before writes can proceed
                 //
-                // This isn't key specific because we can't know the Vector Sets being migrated in advance, only that the slot is moving
+                // This isn't key specific because we can't know the Vector Sets being migrated in advance, only that the slot is moving.
+                // The caller cannot park, so this holds its thread, releasing the epoch on each round as MigratingKeySlotVerify does.
 
                 do
                 {
