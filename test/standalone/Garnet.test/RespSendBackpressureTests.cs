@@ -677,35 +677,5 @@ namespace Garnet.test
                 Thread.Sleep(100);
             }
         }
-
-        /// <summary>
-        /// Caps the worker pool for the life of the scope. Uncapped, a session that held a thread would go
-        /// unnoticed on a large host: the pool injects a thread for each one that is held.
-        /// </summary>
-        sealed class ThreadPoolCap : IDisposable
-        {
-            readonly int minWorkers, minIo, maxWorkers, maxIo;
-
-            ThreadPoolCap(int workers)
-            {
-                ThreadPool.GetMinThreads(out minWorkers, out minIo);
-                ThreadPool.GetMaxThreads(out maxWorkers, out maxIo);
-
-                if (!ThreadPool.SetMinThreads(Math.Min(minWorkers, workers), minIo) ||
-                    !ThreadPool.SetMaxThreads(workers, maxIo))
-                {
-                    Dispose();
-                    Assert.Ignore("Could not cap the thread pool, so a held thread cannot be made to matter.");
-                }
-            }
-
-            internal static ThreadPoolCap Apply(int workers) => new(workers);
-
-            public void Dispose()
-            {
-                _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
-                _ = ThreadPool.SetMinThreads(minWorkers, minIo);
-            }
-        }
     }
 }

@@ -215,18 +215,13 @@ namespace Garnet.test
             using var writer = new RawRespSession();
             Populate(writer, 20_000);
 
-            // With more than one free worker the claim is unfalsifiable: the other sessions are served by the
-            // spare, so a blocking SAVE passes too.
-            ThreadPool.GetMinThreads(out var minWorkers, out var minIo);
-            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
-
             using var saver = new RawRespSession();
             using var pinger = new RawRespSession();
-            try
-            {
-                if (!TryCutPoolToOneFreeWorker(minIo, maxIo))
-                    Assert.Ignore("Could not cut the thread pool to one free worker, so a held thread cannot be made to matter.");
 
+            // With more than one free worker the claim is unfalsifiable: the other sessions are served by the
+            // spare, so a blocking SAVE passes too.
+            using (ThreadPoolCap.ApplyFree(1))
+            {
                 // Warm both sessions so neither measurement includes a first-command cost.
                 ClassicAssert.AreEqual(Pong, saver.Execute("PING"));
                 ClassicAssert.AreEqual(Pong, pinger.Execute("PING"));
@@ -244,35 +239,6 @@ namespace Garnet.test
 
                 ExpectSaveReply(saver.ReadReply());
             }
-            finally
-            {
-                _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
-                _ = ThreadPool.SetMinThreads(minWorkers, minIo);
-            }
-        }
-
-        /// <summary>
-        /// Cuts the pool to the smallest size that still runs work. The test host keeps workers of its own busy
-        /// for the whole run, so that size is not a fixed number, and what it leaves is one worker.
-        /// </summary>
-        static bool TryCutPoolToOneFreeWorker(int minIo, int maxIo)
-        {
-            const int MaxCap = 16;
-
-            if (!ThreadPool.SetMinThreads(1, minIo) || !ThreadPool.SetMaxThreads(1, maxIo))
-                return false;
-
-            for (var cap = 1; cap <= MaxCap; cap++)
-            {
-                if (cap > 1 && (!ThreadPool.SetMaxThreads(cap, maxIo) || !ThreadPool.SetMinThreads(cap, minIo)))
-                    return false;
-
-                var ran = new ManualResetEventSlim();
-                ThreadPool.UnsafeQueueUserWorkItem(static done => done.Set(), ran, preferLocal: false);
-                if (ran.Wait(TimeSpan.FromSeconds(1)))
-                    return true;
-            }
-            return false;
         }
     }
 
@@ -424,8 +390,7 @@ namespace Garnet.test
             internal const int ReadDelayMs = 1000;
 
             readonly DelayedReadDeviceFactoryCreator devices;
-            int minWorkers, minIo, maxWorkers, maxIo;
-            bool poolRead;
+            ThreadPoolCap cap;
 
             internal ReadsInFlight(DelayedReadDeviceFactoryCreator devices) => this.devices = devices;
 
@@ -449,12 +414,7 @@ namespace Garnet.test
                     EnableAsyncMode(Sessions[i]);
                 }
 
-                ThreadPool.GetMinThreads(out minWorkers, out minIo);
-                ThreadPool.GetMaxThreads(out maxWorkers, out maxIo);
-                poolRead = true;
-                if (!ThreadPool.SetMinThreads(Math.Min(minWorkers, CappedWorkers), minIo) ||
-                    !ThreadPool.SetMaxThreads(CappedWorkers, maxIo))
-                    Assert.Ignore("Could not cap the thread pool, so the session count cannot be made to exceed it.");
+                cap = ThreadPoolCap.Apply(CappedWorkers);
 
                 devices.ReadDelayMs = ReadDelayMs;
 
@@ -472,11 +432,7 @@ namespace Garnet.test
 
             public void Dispose()
             {
-                if (poolRead)
-                {
-                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
-                    _ = ThreadPool.SetMinThreads(minWorkers, minIo);
-                }
+                cap?.Dispose();
 
                 foreach (var s in Sessions)
                     s?.Dispose();

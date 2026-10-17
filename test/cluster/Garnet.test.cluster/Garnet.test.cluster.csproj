@@ -26,6 +26,7 @@
     <Compile Include="..\..\standalone\Garnet.test\CapturingLogger.cs" Link="CapturingLogger.cs" />
     <Compile Include="..\..\standalone\Garnet.test\RawRespSession.cs" Link="RawRespSession.cs" />
     <Compile Include="..\..\standalone\Garnet.test\ControlledSender.cs" Link="ControlledSender.cs" />
+    <Compile Include="..\..\standalone\Garnet.test\ThreadPoolCap.cs" Link="ThreadPoolCap.cs" />
     <Compile Include="..\..\standalone\Garnet.test\Extensions\RateLimiterTxn.cs" Link="RateLimiterTxn.cs" />
 		<Compile Include="..\..\standalone\Garnet.test\Extensions\BulkIncrementBy.cs" Link="BulkIncrementBy.cs" />
 		<Compile Include="..\..\standalone\Garnet.test\Extensions\BulkRead.cs" Link="BulkRead.cs" />
