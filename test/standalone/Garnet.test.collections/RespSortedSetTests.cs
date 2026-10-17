@@ -2357,6 +2357,40 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SortedSetExpireOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            var faulted = false;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            redis.ConnectionFailed += delegate { faulted = true; };
+
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("mysortedset", "member1", 1);
+
+            // milliseconds too far in the future
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZPEXPIRE", "mysortedset", "300000000000000", "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zpexpire' command", exc0.Message);
+
+            // seconds too far in the future
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZEXPIRE", "mysortedset", "300000000000", "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zexpire' command", exc1.Message);
+
+            // unix time (seconds) too far in the future
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZEXPIREAT", "mysortedset", long.MaxValue.ToString(), "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zexpireat' command", exc2.Message);
+
+            // unix time (ms) too far in the future
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("ZPEXPIREAT", "mysortedset", long.MaxValue.ToString(), "MEMBERS", "1", "member1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'zpexpireat' command", exc3.Message);
+
+            // Member TTL unchanged and member undeleted
+            ClassicAssert.IsTrue(db.SortedSetScore("mysortedset", "member1").HasValue);
+
+            // Connection never faulted during operation - previously these all closed the connection with no reply
+            ClassicAssert.IsFalse(faulted);
+        }
+
+        [Test]
         [TestCase("ZEXPIRE", "NX", Description = "Set expiry only when no expiration exists")]
         [TestCase("ZEXPIRE", "XX", Description = "Set expiry only when expiration exists")]
         [TestCase("ZEXPIRE", "GT", Description = "Set expiry only when new TTL is greater")]

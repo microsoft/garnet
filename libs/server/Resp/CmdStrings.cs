@@ -339,6 +339,7 @@ namespace Garnet.server
         public const string GenericErrShouldBeGreaterThanZero = "ERR {0} should be greater than 0";
         public const string GenericErrMandatoryMissing = "Mandatory argument {0} is missing or not at the right position";
         public const string GenericErrMustMatchNoOfArgs = "The `{0}` parameter must match the number of arguments";
+        public const string GenericErrInvalidExpireTime = "ERR invalid expire time in '{0}' command";
         public const string GenericUnknownClientType = "ERR Unknown client type '{0}'";
         public const string GenericErrDuplicateFilter = "ERR Filter '{0}' defined multiple times";
         public const string GenericPubSubCommandDisabled = "ERR {0} is disabled, enable it with --pubsub option.";
