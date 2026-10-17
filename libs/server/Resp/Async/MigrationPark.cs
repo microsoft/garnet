@@ -76,7 +76,7 @@ namespace Garnet.server
             // The registration is refused if the migration has moved on since the verification that sent the
             // session here, and the command is then verified again straight away. A wake that finds the key still
             // blocked, or that was not meant for this wait, costs the same re-verification.
-            if (!clusterSession.TryRegisterMigrationWaiter(wait))
+            if (!wait.TryRegister(clusterSession))
                 return;
 
             await wait.WaitAsync().ConfigureAwait(false);

@@ -21,9 +21,8 @@ namespace Garnet.cluster
     /// one the version has not yet reflected.
     /// </para>
     /// <para>
-    /// A waiter whose session is torn down while it waits stays registered until the next <see cref="Signal"/>.
-    /// Every step that unblocks a key, up to and including the removal of the migration, signals, so that is
-    /// bounded by the time the migration takes to move on.
+    /// A waiter whose session is torn down while it waits takes itself off through <see cref="Remove"/>, since the
+    /// migration may take arbitrarily long to move on.
     /// </para>
     /// </remarks>
     internal sealed class MigrationProgress
@@ -56,6 +55,28 @@ namespace Garnet.cluster
 
                 waiters.Add(waiter);
                 return true;
+            }
+        }
+
+        /// <summary>
+        /// Takes <paramref name="waiter"/> off the list. Does nothing if it is not registered.
+        /// </summary>
+        /// <param name="waiter">Waiter to take off.</param>
+        internal void Remove(IMigrationWaiter waiter)
+        {
+            lock (gate)
+                _ = waiters.Remove(waiter);
+        }
+
+        /// <summary>
+        /// Number of waiters registered and not yet notified.
+        /// </summary>
+        internal int WaiterCount
+        {
+            get
+            {
+                lock (gate)
+                    return waiters.Count;
             }
         }
 

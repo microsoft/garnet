@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -302,6 +303,7 @@ namespace Garnet.test.cluster
             var input = GC.AllocateArray<byte>(request.Length, pinned: true);
             request.CopyTo(input, 0);
 
+            var progress = ((ClusterProvider)context.nodes[SourceNode].Provider.StoreWrapper.clusterProvider).migrationManager.Progress;
             var sender = new ScratchBufferNetworkSender();
             var session = (RespServerSession)context.nodes[SourceNode].Provider.GetSession(WireFormat.ASCII, sender);
             ValueTask<int> consume;
@@ -311,11 +313,20 @@ namespace Garnet.test.cluster
 
                 ClassicAssert.IsFalse(consume.IsCompleted, "A write to a key being migrated was not held");
                 ClassicAssert.AreEqual(0, sender.GetResponse().Length, "A write to a key being migrated was answered while the migration was held");
+                ClassicAssert.AreEqual(1, progress.WaiterCount, "The held write is not registered with the migration");
             }
             finally
             {
                 session.Dispose();
             }
+
+            // The migration is held, and would otherwise keep the torn-down session until it moved on
+            ClassicAssert.AreEqual(0, progress.WaiterCount, "A session that was torn down stayed registered with the migration");
+
+            // Teardown can also run between the session arming its wait and registering it, and then finds nothing to
+            // take off. The verification the write made is still current, since the migration has not moved on.
+            ClassicAssert.IsTrue(session.MigrationWait.TryRegister(session.clusterSession), "The migration refused the registration, so nothing was tested");
+            ClassicAssert.AreEqual(0, progress.WaiterCount, "A wait registered after teardown stayed registered with the migration");
 
             // Whether the teardown or the wake it causes reaches the session first decides whether the receive
             // completes or faults, and either ends the wait

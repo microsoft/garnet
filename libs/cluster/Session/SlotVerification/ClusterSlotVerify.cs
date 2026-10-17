@@ -23,6 +23,10 @@ namespace Garnet.cluster
         public bool TryRegisterMigrationWaiter(IMigrationWaiter waiter)
             => clusterProvider.migrationManager.Progress.TryRegister(waiter, migrationWaitVersion);
 
+        /// <inheritdoc/>
+        public void RemoveMigrationWaiter(IMigrationWaiter waiter)
+            => clusterProvider.migrationManager.Progress.Remove(waiter);
+
         private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, bool canWait, int slot = -1)
         {
             Debug.Assert(!waitForStableSlot || (waitForStableSlot && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");

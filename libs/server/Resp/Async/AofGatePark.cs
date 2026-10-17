@@ -127,7 +127,7 @@ namespace Garnet.server
 
             // The registration is refused if admission has reopened since the check that sent the session here, and
             // the command is then run straight away. A wake that finds admission closed again costs one more park.
-            if (!aofBackpressure.TryRegisterWaiter(wait))
+            if (!wait.TryRegister(aofBackpressure))
                 return;
 
             await wait.WaitAsync().ConfigureAwait(false);

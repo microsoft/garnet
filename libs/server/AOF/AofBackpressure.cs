@@ -271,6 +271,16 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Takes <paramref name="waiter"/> off the gate. Does nothing if it is not registered.
+        /// </summary>
+        /// <param name="waiter">The waiter to take off.</param>
+        internal void RemoveWaiter(IAofGateWaiter waiter)
+        {
+            lock (waiterLock)
+                _ = waiters.Remove(waiter);
+        }
+
+        /// <summary>
         /// The number of waiters registered and not yet notified.
         /// </summary>
         internal int WaiterCount

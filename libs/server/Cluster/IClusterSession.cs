@@ -164,6 +164,13 @@ namespace Garnet.server
         bool TryRegisterMigrationWaiter(IMigrationWaiter waiter);
 
         /// <summary>
+        /// Takes a waiter registered by <see cref="TryRegisterMigrationWaiter"/> off before it is notified. Does nothing
+        /// if it is not registered. Safe to call from any thread, including after the session is disposed.
+        /// </summary>
+        /// <param name="waiter">Waiter to take off.</param>
+        void RemoveMigrationWaiter(IMigrationWaiter waiter);
+
+        /// <summary>
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
         /// </summary>
         void SetUserHandle(UserHandle userHandle);

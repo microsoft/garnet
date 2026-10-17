@@ -457,11 +457,35 @@ namespace Garnet.test
                 session.Dispose();
             }
 
+            // The gate is still closed, and would otherwise keep the torn-down session until it opened
+            ClassicAssert.AreEqual(0, Gate.WaiterCount, "A session that was torn down stayed on the gate");
+
             // Whether the teardown or the wake it causes reaches the session first decides whether the receive
             // completes or faults, and either ends the wait
             var consumed = consume.AsTask();
             var finished = await Task.WhenAny(consumed, Task.Delay(Bound));
             ClassicAssert.AreSame(consumed, finished, "A session that was torn down kept waiting for the gate");
+        }
+
+        /// <summary>
+        /// A wait that registers with the gate after its session was torn down takes itself off again. Teardown can
+        /// run between the session arming the wait and registering it, and then finds nothing to take off, while the
+        /// gate stays closed for as long as a replica lags and would keep the session reachable for that long.
+        /// </summary>
+        [Test]
+        public void AWaitRegisteredAfterTheSessionWasTornDownDoesNotStayOnTheGate()
+        {
+            StartServer();
+            Prime();
+            CloseGate();
+
+            var session = (RespServerSession)server.Provider.GetSession(WireFormat.ASCII, new ScratchBufferNetworkSender());
+            var wait = session.AofGateWait;
+            wait.Arm();
+            session.Dispose();
+
+            ClassicAssert.IsTrue(wait.TryRegister(Gate), "The gate refused the registration, so nothing was tested");
+            ClassicAssert.AreEqual(0, Gate.WaiterCount, "A wait registered after teardown stayed on the gate");
         }
 
         /// <summary>
