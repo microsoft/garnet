@@ -382,8 +382,7 @@ namespace Garnet.server
                 if (!TryEnterResume())
                 {
                     AbandonSuspension();
-                    consumeSource.SetException(new ObjectDisposedException(nameof(RespServerSession),
-                        "The session was torn down while a command was suspended"));
+                    consumeSource.SetException(new SessionTornDownException(nameof(RespServerSession)));
                     return;
                 }
 
@@ -542,6 +541,11 @@ namespace Garnet.server
                 // Releasing a wait threw. Swallow it: teardown must continue, or the session leaks.
                 logger?.LogDebug(ex, "Cancelling suspended commands threw");
             }
+
+            // A test pins the outcome in which the resume the cancellations queued is admitted: a resume that has
+            // started has cleared the suspension, and the gate stays open until it has
+            if (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume))
+                SpinWait.SpinUntil(() => !Volatile.Read(ref asyncSuspended), TimeSpan.FromSeconds(30));
 
             resumeGate.Close();
         }

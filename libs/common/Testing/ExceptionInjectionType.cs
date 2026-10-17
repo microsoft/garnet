@@ -178,5 +178,11 @@ namespace Garnet.common
         /// until the condition is cleared. Stands in for the long synchronous stretches of a real recovery.
         /// </summary>
         Replication_Pause_Replica_Recovery,
+        /// <summary>
+        /// Session teardown: after cancelling the waits of a suspended command, hold the resume gate open until the
+        /// resume those cancellations queued has entered it. Pins the outcome of the race in which the resume is
+        /// admitted rather than refused, which is otherwise decided by how quickly a pool thread picks it up.
+        /// </summary>
+        Session_Teardown_Admits_Queued_Resume,
     }
 }

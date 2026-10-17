@@ -174,7 +174,7 @@ namespace Garnet.test
 
                 // A body that is torn down is never resumed, so the teardown has to take back what it registered
                 ClassicAssert.AreEqual(0, subscriber.Waiting, "the publisher's registration outlived its session");
-                _ = Assert.ThrowsAsync<ObjectDisposedException>(async () => await consume.AsTask().WaitAsync(Bound));
+                _ = Assert.ThrowsAsync<Garnet.common.SessionTornDownException>(async () => await consume.AsTask().WaitAsync(Bound));
             }
             finally
             {

@@ -763,6 +763,12 @@ namespace Garnet.server
                     FlushBatch();
                 }
             }
+            catch (OperationCanceledException) when (sessionTornDown)
+            {
+                // The teardown closing this session cancelled the wait the suspended command was parked on, and
+                // the command unwound with that cancellation. The teardown goes on to close the sender itself.
+                logger?.LogTrace(SessionTornDownException.ResumeLogMessage);
+            }
             catch (Exception ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);

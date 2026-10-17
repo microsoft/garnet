@@ -127,6 +127,29 @@ namespace Garnet.test
             stream.Flush();
         }
 
+        /// <summary>
+        /// Sends <paramref name="first"/> followed by only the opening of <paramref name="second"/>, waits for
+        /// the reply to <paramref name="first"/> -- by which time the server holds an incomplete frame -- and
+        /// then sends the rest of <paramref name="second"/>.
+        /// </summary>
+        /// <param name="first">A command the server answers at once.</param>
+        /// <param name="second">The command that is delivered in two parts.</param>
+        /// <returns>The reply to <paramref name="first"/>.</returns>
+        internal string SendSplitAfterReply(string[] first, string[] second)
+        {
+            var firstEnd = Encode(first, 0);
+            var end = Encode(second, firstEnd);
+            var cut = firstEnd + (end - firstEnd) / 2;
+
+            stream.Write(writeBuffer, 0, cut);
+            stream.Flush();
+            var reply = ReadReply();
+
+            stream.Write(writeBuffer, cut, end - cut);
+            stream.Flush();
+            return reply;
+        }
+
         int Encode(string[] args, int at)
         {
             writeBuffer[at++] = (byte)'*';

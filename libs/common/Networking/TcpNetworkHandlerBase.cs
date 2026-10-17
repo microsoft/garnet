@@ -341,7 +341,9 @@ namespace Garnet.common
         {
             if (ex is ObjectDisposedException ex2 && ex2.ObjectName == "System.Net.Sockets.Socket")
                 logger?.LogTrace("Accept socket was disposed at RecvEventArg_Completed");
-            else
+            else if (ex is OperationCanceledException && cancellationTokenSource is { IsCancellationRequested: true })
+                logger?.LogTrace("The receive loop was woken by the connection closing");
+            else if (!TryLogSessionTornDown(ex))
                 logger?.LogError(ex, "An error occurred at RecvEventArg_Completed");
             Dispose(e);
         }

@@ -771,6 +771,21 @@ namespace Garnet.networking
             => networkBytesRead > networkReadHead || transportBytesRead > 0 || retry;
 
         /// <summary>
+        /// Traces the end of a receive loop whose session was torn down while a command was suspended. That is
+        /// an ordinary close of a connection that is already shutting down, so it is not reported as a failure.
+        /// </summary>
+        /// <param name="ex">Exception that ended the receive loop.</param>
+        /// <returns>True if <paramref name="ex"/> was that teardown and has been dealt with.</returns>
+        private protected bool TryLogSessionTornDown(Exception ex)
+        {
+            if (ex is not SessionTornDownException)
+                return false;
+
+            logger?.LogTrace(SessionTornDownException.LogMessage);
+            return true;
+        }
+
+        /// <summary>
         /// Finishes a synchronous TLS reader pass whose processing suspended, then hands back to the
         /// asynchronous reader loop.
         /// </summary>
@@ -792,7 +807,8 @@ namespace Garnet.networking
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "An exception has occurred during SslReaderResumeAsync");
+                if (!TryLogSessionTornDown(ex))
+                    logger?.LogWarning(ex, "An exception has occurred during SslReaderResumeAsync");
                 // Wake the receive-loop waiter BEFORE Dispose() tears down the semaphore.
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
@@ -840,7 +856,8 @@ namespace Garnet.networking
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "An exception has occurred during NetworkHandler.SslReaderAsync(Task)");
+                if (!TryLogSessionTornDown(ex))
+                    logger?.LogWarning(ex, "An exception has occurred during NetworkHandler.SslReaderAsync(Task)");
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
@@ -895,7 +912,8 @@ namespace Garnet.networking
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "An exception has occurred during SslReaderLoopAsync");
+                if (!TryLogSessionTornDown(ex))
+                    logger?.LogWarning(ex, "An exception has occurred during SslReaderLoopAsync");
                 // Wake the receive-loop waiter BEFORE Dispose() tears down the semaphore.
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();

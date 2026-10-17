@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -518,6 +519,153 @@ namespace Garnet.test
             }
             finally
             {
+                foreach (var waiter in waiters)
+                    waiter?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// How the command that parks reaches the server. The TLS reader has a separate path for each: a
+        /// connection's first read, a read that completes without waiting, and a read the loop issues for the
+        /// rest of a frame it has already begun. A session parked on any of them can be torn down.
+        /// </summary>
+        public enum Arrival
+        {
+            /// <summary>The first thing a new connection sends.</summary>
+            FirstOnTheConnection,
+
+            /// <summary>Sent after an earlier command has been answered, so the data is waiting when the read starts.</summary>
+            AfterAnAnsweredCommand,
+
+            /// <summary>
+            /// Sent as two writes, the first ending part-way through the frame and the server having answered the
+            /// command before it, so the reader's loop is the one that receives the rest of the frame.
+            /// </summary>
+            SplitAcrossTwoWrites,
+        }
+
+        /// <summary>
+        /// Shutting the server down while sessions are parked ends their receive loops. The connections were
+        /// closing anyway, so that is an ordinary end and not a failure: each loop says why it ended, and none
+        /// reports the teardown as an error.
+        /// </summary>
+        [Test]
+        public void SessionsParkedWhenTheServerShutsDownEndTheirLoopsWithoutReportingAFailure([Values] Arrival arrival)
+        {
+            var log = ShutDownWithParkedSessions(arrival, admitTheQueuedResume: false);
+
+            AssertTeardownWasNotReportedAsAFailure(log);
+        }
+
+        /// <summary>
+        /// A teardown cancels the wait a suspended command is parked on, which resumes the command with a
+        /// cancellation, and that resume can reach the session before the teardown closes it. The command then
+        /// unwinds with the cancellation, which is not a fault of the session. Which side of that race a session
+        /// lands on depends on how quickly the pool runs the resume, so the teardown here holds the session open
+        /// until the resume has started and every session lands on the same side.
+        /// </summary>
+        [Test]
+        public void ACommandResumedByTheTeardownOfItsSessionUnwindsWithoutReportingAFailure([Values] Arrival arrival)
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var log = ShutDownWithParkedSessions(arrival, admitTheQueuedResume: true);
+
+            var unwound = log.Count(entry => entry.Message.Contains(Garnet.common.SessionTornDownException.ResumeLogMessage, StringComparison.Ordinal));
+            if (unwound != ParkedSessionCount)
+                Assert.Fail($"{unwound} of {ParkedSessionCount} suspended commands unwound with the teardown of their session:{Describe(log)}");
+
+            AssertTeardownWasNotReportedAsAFailure(log);
+        }
+
+        const int ParkedSessionCount = 8;
+
+        static bool ReportsTeardown(CapturingLogger.Entry entry)
+            => entry.Message.Contains(Garnet.common.SessionTornDownException.LogMessage, StringComparison.Ordinal)
+                || entry.Message.Contains(Garnet.common.SessionTornDownException.ResumeLogMessage, StringComparison.Ordinal);
+
+        static string Describe(IEnumerable<CapturingLogger.Entry> log)
+            => Environment.NewLine + string.Join(Environment.NewLine, log.Take(300).Select(entry => $"{entry.Level}: {entry.Message} ({entry.Exception?.GetType().Name})"));
+
+        static void AssertTeardownWasNotReportedAsAFailure(IReadOnlyList<CapturingLogger.Entry> log)
+        {
+            var failures = log.Where(entry => entry.Level >= LogLevel.Warning).ToList();
+            if (failures.Count > 0)
+                Assert.Fail($"The teardown of a parked session was reported as a failure:{Describe(failures)}");
+
+            var reports = log.Count(ReportsTeardown);
+            if (reports < ParkedSessionCount)
+                Assert.Fail($"{reports} of {ParkedSessionCount} sessions reported that their teardown ended them:{Describe(log)}");
+        }
+
+        /// <summary>
+        /// Replaces the fixture's server with one whose log is captured, parks sessions on a name, and shuts
+        /// the server down. Returns the log once every session has said how its teardown ended and the log has
+        /// gone quiet.
+        /// </summary>
+        /// <param name="arrival">How the command that parks reaches the server.</param>
+        /// <param name="admitTheQueuedResume">Whether each session's teardown waits for the resume its cancellations queue.</param>
+        IReadOnlyList<CapturingLogger.Entry> ShutDownWithParkedSessions(Arrival arrival, bool admitTheQueuedResume)
+        {
+            const string Name = "quiet-shutdown";
+
+            // The fixture's server has no logger to inspect, so it is replaced with one that has
+            server.Dispose();
+            var capture = new CapturingLogger();
+            using var loggers = LoggerFactory.Create(builder =>
+                builder.SetMinimumLevel(LogLevel.Trace).AddProvider(new CapturingLoggerProvider(capture)));
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTls, loggerFactory: loggers);
+            server.Start();
+
+            var registry = server.Provider.StoreWrapper.sessionSignalRegistry;
+            var waiters = new RawRespSession[ParkedSessionCount];
+            try
+            {
+                for (var i = 0; i < ParkedSessionCount; i++)
+                {
+                    waiters[i] = new RawRespSession(useTls);
+                    if (arrival == Arrival.SplitAcrossTwoWrites)
+                    {
+                        ClassicAssert.AreEqual(Pong, waiters[i].SendSplitAfterReply(["PING"], ["DEBUG", "BLOCKON", Name]));
+                        continue;
+                    }
+
+                    if (arrival == Arrival.AfterAnAnsweredCommand)
+                        ClassicAssert.AreEqual(Pong, waiters[i].Execute("PING"));
+                    waiters[i].Send("DEBUG", "BLOCKON", Name);
+                }
+
+                var clock = Stopwatch.StartNew();
+                while (registry.WaiterCount(Name) < ParkedSessionCount && clock.Elapsed < TimeSpan.FromSeconds(30))
+                    Thread.Sleep(1);
+                ClassicAssert.AreEqual(ParkedSessionCount, registry.WaiterCount(Name), "The sessions did not all park");
+
+                if (admitTheQueuedResume)
+                    Garnet.common.ExceptionInjectionHelper.EnableException(Garnet.common.ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume);
+
+                server.Dispose();
+                server = null;
+
+                // The loops end on pool threads once the teardown has released them, whether or not they say so
+                // quietly, so wait for every one of them to have reported before judging what they reported
+                clock.Restart();
+                while (capture.Entries.Count(ReportsTeardown) < ParkedSessionCount && clock.Elapsed < TimeSpan.FromSeconds(30))
+                    Thread.Sleep(1);
+
+                // A loop may report its end before or after the entry that would show it was a failure
+                var logged = -1;
+                clock.Restart();
+                while (logged != capture.Entries.Count && clock.Elapsed < TimeSpan.FromSeconds(10))
+                {
+                    logged = capture.Entries.Count;
+                    Thread.Sleep(100);
+                }
+
+                return capture.Entries;
+            }
+            finally
+            {
+                Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume);
                 foreach (var waiter in waiters)
                     waiter?.Dispose();
             }

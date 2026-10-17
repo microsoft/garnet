@@ -528,7 +528,8 @@ namespace Garnet.test
             int? sessionParseStateMaxRetainedArgs = null,
             int? networkSendThrottleMax = null,
             TimeSpan? networkSendTimeout = null,
-            TimeSpan? tlsHandshakeTimeout = null
+            TimeSpan? tlsHandshakeTimeout = null,
+            ILoggerFactory loggerFactory = null
         )
         {
             if (useAzureStorage)
@@ -698,8 +699,7 @@ namespace Garnet.test
                     opts.ReadCacheMemorySize = string.Empty;
             }
 
-            ILoggerFactory loggerFactory = null;
-            if (useTestLogger || logTo != null)
+            if (loggerFactory == null && (useTestLogger || logTo != null))
             {
                 loggerFactory = LoggerFactory.Create(builder =>
                 {
