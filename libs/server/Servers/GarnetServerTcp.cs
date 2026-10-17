@@ -506,6 +506,14 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Executor for handshakes that validate a client certificate: that of the store this server serves.
+        /// </summary>
+        internal IOffloadExecutor HandshakeExecutor
+            => GetSessionProviders().TryGetValue(WireFormat.ASCII, out var provider) && provider is GarnetProvider garnetProvider
+                ? garnetProvider.StoreWrapper.offloadExecutor
+                : null;
+
+        /// <summary>
         /// Create session (message consumer) given incoming bytes
         /// </summary>
         /// <param name="bytes"></param>

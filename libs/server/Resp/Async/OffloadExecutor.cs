@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Threading;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -31,7 +32,7 @@ namespace Garnet.server
     /// session parked, with its receive loop waiting on it, so none may be dropped.
     /// </para>
     /// </remarks>
-    internal sealed class OffloadExecutor : IDisposable
+    internal sealed class OffloadExecutor : IOffloadExecutor, IDisposable
     {
         [ThreadStatic]
         static bool onExecutorThread;
@@ -88,6 +89,12 @@ namespace Garnet.server
         /// executor thread, or the executor is disposed and would only hand the command back to the thread pool.
         /// </summary>
         internal bool RunsInPlace => onExecutorThread || Volatile.Read(ref disposed) != 0;
+
+        /// <inheritdoc />
+        bool IOffloadExecutor.RunsInPlace => RunsInPlace;
+
+        /// <inheritdoc />
+        void IOffloadExecutor.Post(IThreadPoolWorkItem item) => Post(item, mustRun: false);
 
         /// <summary>
         /// Runs <paramref name="item"/> on an executor thread.

@@ -530,7 +530,8 @@ namespace Garnet.test
             TimeSpan? networkSendTimeout = null,
             TimeSpan? tlsHandshakeTimeout = null,
             bool networkInlineCompletions = false,
-            ILoggerFactory loggerFactory = null
+            ILoggerFactory loggerFactory = null,
+            SslServerAuthenticationOptions tlsServerOptionsOverride = null
         )
         {
             if (useAzureStorage)
@@ -598,7 +599,9 @@ namespace Garnet.test
                     clientCertificateRequired: true,
                     certificateRevocationCheckMode: X509RevocationMode.NoCheck,
                     issuerCertificatePath: null,
-                    null, 0, false, null, logger: logger)
+                    null, 0, false, null,
+                    tlsServerOptionsOverride: tlsServerOptionsOverride,
+                    logger: logger)
                 : null,
                 DisableObjects = disableObjects,
                 QuietMode = true,

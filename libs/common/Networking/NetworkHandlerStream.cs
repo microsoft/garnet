@@ -4,8 +4,10 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.networking
@@ -65,12 +67,27 @@ namespace Garnet.networking
 
             public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
             {
-                return ReadAsyncInternalAsync(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
+                return ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
             }
 
             public override ValueTask<int> ReadAsync(Memory<byte> destination, CancellationToken cancellationToken = default)
             {
-                return ReadAsyncInternalAsync(destination, cancellationToken);
+                var executor = garnetNetworkHandler.handshakeExecutor;
+                return executor == null
+                    ? ReadAsyncInternalAsync(destination, cancellationToken)
+                    : HandshakeReadAsync(executor, destination, cancellationToken);
+            }
+
+            /// <summary>
+            /// A read of a handshake that runs on <paramref name="executor"/>: completes on one of its threads, so
+            /// <see cref="SslStream"/> continues there.
+            /// </summary>
+            async ValueTask<int> HandshakeReadAsync(IOffloadExecutor executor, Memory<byte> destination, CancellationToken cancellationToken)
+            {
+                var read = await ReadAsyncInternalAsync(destination, cancellationToken).ConfigureAwait(false);
+                if (!executor.RunsInPlace)
+                    await new OffloadHop(executor);
+                return read;
             }
 
             public override int Read(byte[] buffer, int offset, int count)
@@ -109,6 +126,10 @@ namespace Garnet.networking
             public override void Flush()
             {
             }
+
+            // Completes in place, as Flush does nothing: the base implementation would run Flush as a thread-pool task,
+            // and SslStream, which flushes after each handshake flight, would continue the handshake on the thread pool.
+            public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
             public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
             {

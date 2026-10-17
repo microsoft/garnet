@@ -174,6 +174,24 @@ namespace Garnet.networking
         static readonly TimeSpan MaxTlsHandshakeTimeout = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
 
         /// <summary>
+        /// <see cref="HandshakeExecutor"/> for the length of a server handshake that validates a client certificate,
+        /// and null otherwise.
+        /// </summary>
+        IOffloadExecutor handshakeExecutor;
+
+        /// <summary>
+        /// Executor a server handshake that validates a client certificate runs on, or null to run it on the thread pool.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="SslStream"/> builds and validates the client's certificate chain synchronously, on the thread that
+        /// completed the read carrying the certificate. Building the chain may download issuer certificates named by
+        /// the certificate itself and, when revocation is checked online, revocation lists, each holding the thread
+        /// until it arrives or times out. While the executor is set, every read of the handshake completes on one of
+        /// its threads, so the chain is built there.
+        /// </remarks>
+        protected virtual IOffloadExecutor HandshakeExecutor => null;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="tlsHandshakeTimeout">Longest a server-side TLS handshake may take before the connection is closed. Zero or negative waits indefinitely; a timeout beyond the longest a timer supports, about 49.7 days, is limited to it.</param>
@@ -267,7 +285,10 @@ namespace Garnet.networking
             handshakeDeadline?.CancelAfter(tlsHandshakeTimeout);
             try
             {
+                if (tlsOptions.ClientCertificateRequired)
+                    handshakeExecutor = HandshakeExecutor;
                 await sslStream.AuthenticateAsServerAsync(tlsOptions, handshakeDeadline?.Token ?? token).ConfigureAwait(false);
+                handshakeExecutor = null;
 
                 if (token.IsCancellationRequested) throw new TaskCanceledException("AuthenticateAsServerAsync was cancelled");
 
