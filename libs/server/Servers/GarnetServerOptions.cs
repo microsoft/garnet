@@ -429,6 +429,14 @@ namespace Garnet.server
         public int NetworkEventThreads = 0;
 
         /// <summary>
+        /// Most threads that commands which may wait on synchronous storage IO run on, in place of a network or thread
+        /// pool thread: a read-modify-write of a record on disk, a key scan, a database flush, and the like. Beyond
+        /// this, such commands queue for a thread, except those of a running transaction, which may hold key locks the
+        /// queued commands wait on. 0 uses <see cref="OffloadExecutor.DefaultMaxThreads"/>.
+        /// </summary>
+        public int OffloadMaxThreads = 0;
+
+        /// <summary>
         /// Instance of interface to create named device factories
         /// </summary>
         public INamedDeviceFactoryCreator DeviceFactoryCreator = null;

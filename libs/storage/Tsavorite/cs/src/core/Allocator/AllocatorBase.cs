@@ -1377,6 +1377,33 @@ namespace Tsavorite.core
             => page >= BufferSize + GetPage(FlushedUntilAddress);   // wraps around the BufferSize
 
         /// <summary>
+        /// Whether an allocation that moves the tail onto a new page would wait for a flush to complete: the log holds as many
+        /// pages in memory as it may, or is over its memory budget with pages its size tracker could evict, and none of them
+        /// has been flushed past the head page, so none can be evicted to make room until a flush does.
+        /// </summary>
+        /// <remarks>
+        /// This is <see cref="HandlePageOverflow"/>'s wait, decided without allocating: <see cref="NeedToWaitForFlush"/>, or
+        /// <see cref="NeedToShiftAddress"/> and <see cref="NeedToWaitForClose"/> retrying until a head shift capped at
+        /// <see cref="FlushedUntilAddress"/> can close a page. It reads the addresses without stabilizing them, so it can be
+        /// stale by the time the caller acts on it, and it does not say whether an allocation will move the tail onto a new page.
+        /// </remarks>
+        public bool AllocationMayWaitForFlush
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                var headPage = GetPage(HeadAddress);
+                if (GetPage(FlushedUntilAddress) > headPage)
+                    return false;
+
+                // The tail page is read without waiting for an overflowing allocation to stabilize it; such an allocation
+                // leaves the page number unchanged until it has moved the tail onto the next page
+                return GetPage(UnstableGetTailAddress(out _)) + 1 - headPage >= MaxAllocatedPageCount
+                    || (logSizeTracker is { IsRunning: true } tracker && tracker.IsBeyondSizeLimitAndCanEvict());
+            }
+        }
+
+        /// <summary>
         /// If the page we are trying to allocate is past the last page with an unclosed address region, then we can retry immediately
         /// because this is called after NeedToWait, so we know we've completed the wait on flushEvent for the necessary pages to be flushed,
         /// and are waiting for OnPagesClosed to be completed. Similarly, if the log size tracker is over budget and its background resizer

@@ -160,6 +160,12 @@ namespace Garnet.server
         SingleWriterMultiReaderLock databaseManagerLock;
 
         internal readonly CollectionItemBroker itemBroker;
+
+        /// <summary>
+        /// Threads that commands which may wait on synchronous IO run on; see <see cref="OffloadExecutor"/>.
+        /// </summary>
+        internal readonly OffloadExecutor offloadExecutor;
+
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
         internal readonly IClusterProvider clusterProvider;
@@ -253,6 +259,10 @@ namespace Garnet.server
 
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker(this);
+
+            this.offloadExecutor = new OffloadExecutor(
+                serverOptions.OffloadMaxThreads > 0 ? serverOptions.OffloadMaxThreads : OffloadExecutor.DefaultMaxThreads,
+                TimeSpan.FromSeconds(30), loggerFactory?.CreateLogger("OffloadExecutor"));
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
@@ -1116,6 +1126,9 @@ namespace Garnet.server
             for (var spinner = new SpinWait(); StorageTeardowns != 0;)
                 spinner.SpinOnce();
 
+            // Commands still queued for the executor run on the thread pool from here. A torn-down session's
+            // refuses to resume there, as it would on the executor.
+            offloadExecutor.Dispose();
             clusterProvider?.Dispose();
             itemBroker?.Dispose();
             monitor?.Dispose();

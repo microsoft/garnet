@@ -6,20 +6,22 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using Garnet.server;
 using Tsavorite.core;
 
 namespace Garnet.test
 {
     /// <summary>
     /// Device factory creator that holds the store hybrid log's read completions for a settable delay, turning
-    /// a record that has fallen out of memory into a slow, deterministic device read.
+    /// a record that has fallen out of memory into a slow, deterministic device read, and can hold its write
+    /// completions to stall its flushes.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Injected by assigning it to <c>GarnetServerOptions.DeviceFactoryCreator</c>. Only the store hybrid log
-    /// is wrapped, and only its reads: writes, checkpoint devices and the AOF keep their normal timing, so the
-    /// server starts, flushes and shuts down at full speed and the delay applies to exactly the operation
-    /// under test.
+    /// is wrapped: checkpoint devices and the AOF keep their normal timing, as do its writes unless
+    /// <see cref="HoldWrites"/> is set, so the server starts, flushes and shuts down at full speed and the delay
+    /// applies to exactly the operation under test.
     /// </para>
     /// <para>
     /// The delayed callbacks are run by one dedicated thread rather than by a timer or a
@@ -36,6 +38,7 @@ namespace Garnet.test
 
         readonly object gate = new();
         readonly PriorityQueue<PendingRead, long> pending = new();
+        readonly List<HeldWrite> heldWrites = [];
         readonly ConcurrentQueue<PendingRead> pool = new();
         readonly Thread scheduler;
         bool stopped;
@@ -74,10 +77,62 @@ namespace Garnet.test
             read.owner.Delay(read);
         };
 
+        /// <summary>A write's completion, withheld while <see cref="HoldWrites"/> is set.</summary>
+        readonly record struct HeldWrite(DeviceIOCompletionCallback Callback, uint ErrorCode, uint NumBytes, object Context, Exception Exception);
+
+        /// <summary>
+        /// Set to withhold the completion of every store hybrid log write issued from then on until <see cref="ReleaseWrites"/>,
+        /// so the log's flushed address stops advancing. The data is written; only its completion is withheld.
+        /// </summary>
+        internal volatile bool HoldWrites;
+
+        /// <summary>Number of write completions withheld and not yet released.</summary>
+        internal int WritesHeld
+        {
+            get
+            {
+                lock (gate)
+                    return heldWrites.Count;
+            }
+        }
+
+        /// <summary>Clears <see cref="HoldWrites"/> and completes every write it withheld.</summary>
+        internal void ReleaseWrites()
+        {
+            HeldWrite[] released;
+            lock (gate)
+            {
+                HoldWrites = false;
+                released = [.. heldWrites];
+                heldWrites.Clear();
+            }
+
+            foreach (var write in released)
+                write.Callback(write.ErrorCode, write.NumBytes, write.Context, write.Exception);
+        }
+
+        /// <summary>Wraps <paramref name="callback"/> to be withheld if <see cref="HoldWrites"/> is set when it is issued.</summary>
+        DeviceIOCompletionCallback WrapWrite(DeviceIOCompletionCallback callback)
+            => !HoldWrites ? callback : (errorCode, numBytes, context, exception) =>
+            {
+                lock (gate)
+                {
+                    if (HoldWrites && !stopped)
+                    {
+                        heldWrites.Add(new(callback, errorCode, numBytes, context, exception));
+                        return;
+                    }
+                }
+
+                callback(errorCode, numBytes, context, exception);
+            };
+
         /// <summary>Takes a record for a read that is about to be issued, and counts the read.</summary>
         PendingRead Rent(DeviceIOCompletionCallback callback, object context)
         {
             _ = Interlocked.Increment(ref reads);
+            if (!inCompletion && !OffloadExecutor.OnExecutorThread)
+                _ = Interlocked.Increment(ref readsOffExecutor);
 
             if (!pool.TryDequeue(out var read))
                 read = new PendingRead { owner = this };
@@ -102,10 +157,26 @@ namespace Garnet.test
             read.exception = null;
             read.owner.pool.Enqueue(read);
 
-            callback(errorCode, numBytes, context, exception);
+            var wasInCompletion = inCompletion;
+            inCompletion = true;
+            try
+            {
+                callback(errorCode, numBytes, context, exception);
+            }
+            finally
+            {
+                inCompletion = wasInCompletion;
+            }
         }
 
+        /// <summary>
+        /// Set while a read's completion callback runs, which is where a scan issues the read for the next record.
+        /// </summary>
+        [ThreadStatic]
+        static bool inCompletion;
+
         int reads;
+        int readsOffExecutor;
 
         /// <summary>
         /// How long each store hybrid log read completion is withheld, in milliseconds. Read on every
@@ -120,6 +191,14 @@ namespace Garnet.test
         /// </summary>
         internal int ReadCount => Volatile.Read(ref reads);
 
+        /// <summary>
+        /// Number of store hybrid log reads issued since the last <see cref="ResetReadCount"/> by a command running on a
+        /// thread other than an <see cref="OffloadExecutor"/> thread. A command that completes its reads on the thread it
+        /// runs on has to run on an executor thread, so for such a command this stays at zero; a command that parks on
+        /// its reads issues them wherever it runs.
+        /// </summary>
+        internal int ReadsOffExecutor => Volatile.Read(ref readsOffExecutor);
+
         internal DelayedReadDeviceFactoryCreator()
         {
             scheduler = new Thread(SchedulerLoop)
@@ -130,8 +209,14 @@ namespace Garnet.test
             scheduler.Start();
         }
 
-        /// <summary>Clears <see cref="ReadCount"/>, discounting reads from populating the store.</summary>
-        internal void ResetReadCount() => Volatile.Write(ref reads, 0);
+        /// <summary>
+        /// Clears <see cref="ReadCount"/> and <see cref="ReadsOffExecutor"/>, discounting reads from populating the store.
+        /// </summary>
+        internal void ResetReadCount()
+        {
+            Volatile.Write(ref reads, 0);
+            Volatile.Write(ref readsOffExecutor, 0);
+        }
 
         /// <summary>
         /// Completes every read currently withheld, however much of its delay is left. A test holds reads by arming
@@ -158,6 +243,8 @@ namespace Garnet.test
 
         public void Dispose()
         {
+            ReleaseWrites();
+
             lock (gate)
             {
                 stopped = true;
@@ -265,7 +352,8 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Delegating device that withholds read completion callbacks for its owner's current delay.
+        /// Delegating device that withholds read completion callbacks for its owner's current delay, and write completion
+        /// callbacks while its owner holds writes.
         /// </summary>
         private sealed class DelayedReadDevice(IDevice underlying, DelayedReadDeviceFactoryCreator owner) : IDevice
         {
@@ -303,12 +391,12 @@ namespace Garnet.test
             /// <inheritdoc/>
             public void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite,
                 DeviceIOCompletionCallback callback, object context)
-                => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+                => underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, owner.WrapWrite(callback), context);
 
             /// <inheritdoc/>
             public void WriteAsync(IntPtr alignedSourceAddress, ulong alignedDestinationAddress, uint numBytesToWrite,
                 DeviceIOCompletionCallback callback, object context)
-                => underlying.WriteAsync(alignedSourceAddress, alignedDestinationAddress, numBytesToWrite, callback, context);
+                => underlying.WriteAsync(alignedSourceAddress, alignedDestinationAddress, numBytesToWrite, owner.WrapWrite(callback), context);
 
             /// <inheritdoc/>
             public void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,

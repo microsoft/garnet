@@ -427,6 +427,10 @@ namespace Garnet
         [Option("network-event-threads", Required = false, HelpText = "Number of socket event threads in the process (Linux and macOS), overriding DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT. 0 uses that variable if set, otherwise the processor count with --network-inline-completions and the .NET default without. Fixed by the first socket operation in the process. Ignored on Windows.")]
         public int NetworkEventThreads { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("offload-max-threads", Required = false, HelpText = "Most threads that commands which may wait on synchronous storage IO, such as a read-modify-write of a record on disk, a key scan, or a database flush, run on in place of a network or thread pool thread. Beyond this, such commands queue for a thread. 0 uses the larger of 64 and twice the processor count.")]
+        public int OffloadMaxThreads { get; set; }
+
         [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
@@ -1020,6 +1024,7 @@ namespace Garnet
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 NetworkInlineCompletions = NetworkInlineCompletions.GetValueOrDefault(),
                 NetworkEventThreads = NetworkEventThreads,
+                OffloadMaxThreads = OffloadMaxThreads,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
                     : new LocalStorageNamedDeviceFactoryCreator(
                         deviceType: deviceType,

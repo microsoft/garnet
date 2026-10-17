@@ -93,6 +93,12 @@ namespace Tsavorite.core
         public long FlushedUntilAddress => allocator.FlushedUntilAddress;
 
         /// <summary>
+        /// Whether an enqueue that moves the tail onto a new page would wait for a flush to complete; see
+        /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AllocationMayWaitForFlush"/>.
+        /// </summary>
+        public bool AllocationMayWaitForFlush => allocator.AllocationMayWaitForFlush;
+
+        /// <summary>
         /// Log safe read-only address.
         /// This is the largest address below which every byte has been fully written and is safe to
         /// read by uncommitted iterators / replication streams. Computed lazily via a <c>min</c> fold

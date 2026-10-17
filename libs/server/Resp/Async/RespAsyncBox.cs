@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks.Sources;
 
 namespace Garnet.server
@@ -14,9 +15,10 @@ namespace Garnet.server
     /// <remarks>
     /// A box is rented when a command body first suspends and returned once that body completes, so a session
     /// that repeatedly runs the same command allocates one box for its lifetime. The resume delegate is built
-    /// once per box, which is what keeps a suspension allocation-free.
+    /// once per box, which is what keeps a suspension allocation-free. The box is also the work item a suspension
+    /// that hands the session to the <see cref="OffloadExecutor"/> is posted as, for the same reason.
     /// </remarks>
-    internal abstract class RespAsyncBox : IValueTaskSource
+    internal abstract class RespAsyncBox : IValueTaskSource, IThreadPoolWorkItem
     {
         ManualResetValueTaskSourceCore<bool> core;
 
@@ -35,6 +37,9 @@ namespace Garnet.server
         internal short Version => core.Version;
 
         void Resume() => Session.ResumeAsyncCommand(this);
+
+        /// <inheritdoc />
+        void IThreadPoolWorkItem.Execute() => Resume();
 
         /// <summary>
         /// Drives the boxed state machine. Called only from the session resume pump, which has entered the

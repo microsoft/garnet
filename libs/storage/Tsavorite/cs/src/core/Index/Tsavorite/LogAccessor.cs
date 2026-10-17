@@ -55,6 +55,12 @@ namespace Tsavorite.core
         public long HeadAddress => allocatorBase.HeadAddress;
 
         /// <summary>
+        /// Whether an allocation that moves the tail onto a new page would wait for a flush to complete; see
+        /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AllocationMayWaitForFlush"/>.
+        /// </summary>
+        public bool AllocationMayWaitForFlush => allocatorBase.AllocationMayWaitForFlush;
+
+        /// <summary>
         /// Beginning address of log
         /// </summary>
         public long BeginAddress => allocatorBase.BeginAddress;

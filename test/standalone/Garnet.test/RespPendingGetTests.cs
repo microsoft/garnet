@@ -41,6 +41,12 @@ namespace Garnet.test
         /// <summary>Value length, kept short so one record is one device read.</summary>
         const int ValueLength = 48;
 
+        /// <summary>
+        /// Log memory of 64 pages, rather than the low-memory default of 4. The pages in memory are then flushed well past
+        /// the head, so an allocation need not wait for a flush, while the populated keys still spill to the device.
+        /// </summary>
+        const string SpilledLogMemorySize = "256k";
+
         GarnetServer server;
         DelayedReadDeviceFactoryCreator deviceFactoryCreator;
 
@@ -48,7 +54,15 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            StartServer();
+        }
 
+        /// <summary>
+        /// Starts the server, with at most <paramref name="offloadMaxThreads"/> executor threads if not 0, and
+        /// <paramref name="memorySize"/> of log memory if set.
+        /// </summary>
+        void StartServer(int offloadMaxThreads = 0, string memorySize = null)
+        {
             // Built through GetGarnetServerOptions rather than CreateGarnetServer because only the options
             // object exposes DeviceFactoryCreator, which is how the read delay is injected.
             var options = TestUtils.GetGarnetServerOptions(
@@ -57,20 +71,37 @@ namespace Garnet.test
                 endpoint: TestUtils.EndPoint,
                 enableCluster: false,
                 enableLua: true,
-                lowMemory: true);
+                lowMemory: true,
+                memorySize: memorySize);
 
             deviceFactoryCreator = new DelayedReadDeviceFactoryCreator();
             options.DeviceFactoryCreator = deviceFactoryCreator;
+            options.OffloadMaxThreads = offloadMaxThreads;
 
             server = new GarnetServer(options);
             server.Start();
         }
 
+        /// <summary>Replaces the server started by <see cref="Setup"/> with one started as <see cref="StartServer"/> does.</summary>
+        void RestartServer(int offloadMaxThreads = 0, string memorySize = null)
+        {
+            server.Dispose();
+            deviceFactoryCreator.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            StartServer(offloadMaxThreads, memorySize);
+        }
+
+        /// <summary>Executor threads started and not yet retired, which they do after 30 seconds idle.</summary>
+        int OffloadThreads => server.Provider.StoreWrapper.offloadExecutor.ThreadCount;
+
         [TearDown]
         public void TearDown()
         {
             if (deviceFactoryCreator is not null)
+            {
                 deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.ReleaseWrites();
+            }
 
             server?.Dispose();
             server = null;
@@ -1154,6 +1185,435 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A command that completes its device reads on the thread it runs on, rather than parking for them, runs on
+        /// an executor thread once the store has spilled to the device, and answers as it would from memory.
+        /// </summary>
+        /// <remarks>
+        /// The device counts the reads issued by a command running on a thread other than an executor thread. Every
+        /// command here completes its reads in place, so that count has to stay at zero: run where they are received,
+        /// these commands would hold a network thread for each device round trip. The <c>GET</c> at the end is the
+        /// control. It parks on its read, which it issues on the thread that received it, so the count has to move.
+        /// </remarks>
+        [Test]
+        public void CommandsThatWaitForTheDeviceInPlaceRunOnAnExecutorThread()
+        {
+            Populate();
+            PopulateObjects();
+
+            using var client = new RawClient();
+
+            void AssertFromTheDevice(string expected, params string[] argv)
+            {
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                ClassicAssert.AreEqual(expected, client.Execute(argv), $"Wrong reply to {argv[0]}.");
+                ClassicAssert.Greater(deviceFactoryCreator.ReadCount, readsBefore,
+                    $"{argv[0]} never went to the device, so it proves nothing.");
+            }
+
+            AssertFromTheDevice(":48\r\n", "STRLEN", Key(10));
+            AssertFromTheDevice($"$4\r\n{Value(11)[..4]}\r\n", "GETRANGE", Key(11), "0", "3");
+            AssertFromTheDevice(":49\r\n", "APPEND", Key(12), "x");
+            AssertFromTheDevice(":48\r\n", "SETRANGE", Key(13), "0", "z");
+            AssertFromTheDevice($"${ValueLength}\r\n{Value(14)}\r\n", "GETDEL", Key(14));
+            AssertFromTheDevice(":1\r\n", "HSET", HashKey(10), "f9", "v");
+            AssertFromTheDevice(":1\r\n", "HINCRBY", HashKey(11), "n", "1");
+            AssertFromTheDevice(":4\r\n", "LPUSH", ListKey(12), "x");
+            AssertFromTheDevice(":1\r\n", "SADD", SetKey(13), "x");
+            AssertFromTheDevice(":1\r\n", "ZADD", ZsetKey(14), "100", "x");
+            AssertFromTheDevice(":3\r\n", "ZLEXCOUNT", ZsetKey(15), "-", "+");
+            AssertFromTheDevice($"*1\r\n${Key(20).Length}\r\n{Key(20)}\r\n", "KEYS", Key(20));
+
+            ClassicAssert.AreEqual(0, deviceFactoryCreator.ReadsOffExecutor,
+                "A command that completes its device reads in place issued them on a thread other than an executor thread.");
+
+            AssertFromTheDevice($"${ValueLength}\r\n{Value(21)}\r\n", "GET", Key(21));
+            ClassicAssert.Greater(deviceFactoryCreator.ReadsOffExecutor, 0,
+                "A GET parks on its read where it is received, yet no read was counted off the executor, so the count proves nothing.");
+        }
+
+        /// <summary>
+        /// A write that does not read the record it replaces runs where it is received, even with records spilled to
+        /// the device.
+        /// </summary>
+        [Test]
+        public void BlindWritesRunWhereTheyAreReceived()
+        {
+            RestartServer(memorySize: SpilledLogMemorySize);
+
+            using var client = new RawClient();
+            ClassicAssert.AreEqual(":1\r\n", client.Execute("HSET", HashKey(10), "f", "v"));
+            ClassicAssert.AreEqual(":1\r\n", client.Execute("RPUSH", ListKey(11), "x"));
+            Populate();
+
+            var executor = server.Provider.StoreWrapper.offloadExecutor;
+            ClassicAssert.IsFalse(server.Provider.StoreWrapper.store.Log.AllocationMayWaitForFlush,
+                "The log has to wait for a flush to add a record, so every write runs on an executor thread.");
+
+            void AssertInPlace(string expected, params string[] argv)
+            {
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                var postsBefore = executor.Posts;
+                ClassicAssert.AreEqual(expected, client.Execute(argv), $"Wrong reply to {argv[0]}.");
+                ClassicAssert.AreEqual(readsBefore, deviceFactoryCreator.ReadCount, $"{argv[0]} read from the device.");
+                ClassicAssert.AreEqual(postsBefore, executor.Posts, $"{argv[0]} was moved to an executor thread.");
+            }
+
+            AssertInPlace("+OK\r\n", "SET", Key(10), "v");
+            AssertInPlace("+OK\r\n", "MSET", Key(11), "v", Key(12), "v");
+            AssertInPlace("+OK\r\n", "SETEX", Key(13), "100", "v");
+            AssertInPlace("+OK\r\n", "PSETEX", Key(14), "100000", "v");
+            AssertInPlace(":0\r\n", "DEL", Key(15), HashKey(10));
+            AssertInPlace(":0\r\n", "UNLINK", Key(16), ListKey(11));
+
+            var posts = executor.Posts;
+            ClassicAssert.AreEqual(":48\r\n", client.Execute("STRLEN", Key(17)));
+            ClassicAssert.Greater(executor.Posts, posts, "STRLEN reads the device in place, yet was not counted as moved.");
+        }
+
+        /// <summary>
+        /// While the log cannot turn a page until a flush completes, a write runs on an executor thread, and a transaction
+        /// moves there at <c>EXEC</c>, before it locks anything. Another connection is served meanwhile.
+        /// </summary>
+        /// <remarks>
+        /// The log's flushes are held from its first, so no page can be freed for the writes, and none has been evicted, so
+        /// nothing is read from the device: the wait for the flush alone moves the commands. A write run where it is
+        /// received would wait for the flush on that thread. Were a transaction to run where <c>EXEC</c> is received, its write would have to
+        /// move once the transaction holds its locks, and a command that holds locks is given a thread past the limit. The
+        /// executor's one thread is waiting for the flush with the first connection's writes, so each such transaction would
+        /// start another.
+        /// </remarks>
+        [Test]
+        public void WritesThatMayWaitForAFlushRunOnAnExecutorThread()
+        {
+            const int Transactions = 4;
+
+            // More records than fit on a page, so one of them has to turn the tail onto a new page
+            const int WritesPastAPage = 64;
+
+            RestartServer(offloadMaxThreads: 1, memorySize: SpilledLogMemorySize);
+
+            var log = server.Provider.StoreWrapper.store.Log;
+            var executor = server.Provider.StoreWrapper.offloadExecutor;
+            ClassicAssert.IsFalse(log.AllocationMayWaitForFlush,
+                "The log has to wait for a flush before any is held, so every write runs on an executor thread.");
+
+            using var writer = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(30) };
+            using var probe = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(10) };
+            var transactions = new RawClient[Transactions];
+            try
+            {
+                for (var i = 0; i < Transactions; i++)
+                    transactions[i] = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(30) };
+
+                deviceFactoryCreator.HoldWrites = true;
+
+                // Each page the tail turns onto makes another read-only, and its flush is held, until no page in memory
+                // is flushed past the head
+                var next = 0;
+                while (!log.AllocationMayWaitForFlush)
+                {
+                    ClassicAssert.Less(next, PopulatedKeys, "The log never came to wait for a flush.");
+                    ClassicAssert.AreEqual("+OK\r\n", writer.Execute("SET", Key(next), Value(next)), $"Wrong reply for {Key(next)}");
+                    next++;
+                }
+
+                ClassicAssert.Greater(deviceFactoryCreator.WritesHeld, 0, "No flush was held, yet the log has to wait for one.");
+                ClassicAssert.AreEqual(log.BeginAddress, log.HeadAddress, "The log evicted records, so a device read could move the commands.");
+
+                var writes = new string[WritesPastAPage][];
+                for (var i = 0; i < WritesPastAPage; i++)
+                    writes[i] = ["SET", Key(next + i), Value(next + i)];
+
+                var posts = executor.Posts;
+                writer.SendPipeline(writes);
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => executor.Posts > posts, TimeSpan.FromSeconds(10)),
+                    "A write that may wait for a flush ran where it was received.");
+
+                posts = executor.Posts;
+                for (var i = 0; i < Transactions; i++)
+                    transactions[i].SendPipeline(["MULTI"], ["SET", Key(i), "x"], ["EXEC"]);
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => executor.Posts >= posts + Transactions, TimeSpan.FromSeconds(10)),
+                    "The transactions' writes never reached the executor.");
+
+                ClassicAssert.AreEqual(1, OffloadThreads,
+                    "Transactions started executor threads past the limit, so they moved there only after locking.");
+                ClassicAssert.IsFalse(writer.HasReply,
+                    "The writes finished without waiting for the held flush, so the executor's thread was free for the transactions.");
+
+                ClassicAssert.AreEqual("+PONG\r\n", probe.Execute("PING"));
+
+                deviceFactoryCreator.ReleaseWrites();
+
+                for (var i = 0; i < WritesPastAPage; i++)
+                    ClassicAssert.AreEqual("+OK\r\n", writer.ReadReply(), $"Wrong reply for {Key(next + i)}");
+                for (var i = 0; i < Transactions; i++)
+                {
+                    ClassicAssert.AreEqual("+OK\r\n", transactions[i].ReadReply());
+                    ClassicAssert.AreEqual("+QUEUED\r\n", transactions[i].ReadReply());
+                    ClassicAssert.AreEqual("*1\r\n+OK\r\n", transactions[i].ReadReply(), $"Wrong reply for {Key(i)}");
+                }
+            }
+            finally
+            {
+                deviceFactoryCreator.ReleaseWrites();
+                foreach (var c in transactions)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A transaction that queued a command which completes its device reads in place moves to an executor thread
+        /// at <c>EXEC</c>, and so stays within the executor's limit.
+        /// </summary>
+        /// <remarks>
+        /// Were it to run where <c>EXEC</c> is received, each queued command would have to move once the transaction
+        /// holds its locks, and a command that holds locks is given a thread past the limit. With the limit at one,
+        /// concurrent transactions would then start a thread each.
+        /// </remarks>
+        [Test]
+        public void TransactionsThatMayReadFromTheDeviceStartOnTheExecutorWithinItsLimit()
+        {
+            const int Sessions = 8;
+
+            RestartServer(offloadMaxThreads: 1);
+            Populate();
+
+            var clients = new RawClient[Sessions];
+            try
+            {
+                for (var i = 0; i < Sessions; i++)
+                    clients[i] = new RawClient();
+
+                deviceFactoryCreator.ReadDelayMs = 200;
+
+                for (var i = 0; i < Sessions; i++)
+                    clients[i].SendPipeline(["MULTI"], ["APPEND", Key(i), "x"], ["EXEC"]);
+
+                for (var i = 0; i < Sessions; i++)
+                {
+                    ClassicAssert.AreEqual("+OK\r\n", clients[i].ReadReply());
+                    ClassicAssert.AreEqual("+QUEUED\r\n", clients[i].ReadReply());
+                    ClassicAssert.AreEqual("*1\r\n:49\r\n", clients[i].ReadReply(), $"Wrong reply for {Key(i)}");
+                }
+
+                ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount, Sessions,
+                    "Fewer device reads than transactions, so some of them never left memory.");
+                ClassicAssert.AreEqual(0, deviceFactoryCreator.ReadsOffExecutor,
+                    "A transaction completed a device read in place on a thread other than an executor thread.");
+                ClassicAssert.AreEqual(1, OffloadThreads,
+                    "Transactions started executor threads past the limit, so they moved there only after locking.");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A transaction that has to move to the executor while it holds its locks gets a thread even when the only one
+        /// is taken by a command waiting for one of those locks.
+        /// </summary>
+        /// <remarks>
+        /// The transaction moves to the executor at <c>EXEC</c>, parks on the device for its <c>GET</c>, and resumes
+        /// on whichever thread completes the read, so its <c>APPEND</c> has to move to the executor again, with its
+        /// locks held. Meanwhile another session's <c>APPEND</c> of the same key has taken the one executor thread and
+        /// waits there for the lock. Queued behind it, the transaction would wait for the thread and the thread for
+        /// the transaction.
+        /// </remarks>
+        [Test]
+        public void ATransactionHoldingLocksGetsAnExecutorThreadPastTheLimit()
+        {
+            RestartServer(offloadMaxThreads: 1);
+            Populate();
+
+            using var transaction = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(30) };
+            using var contender = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(30) };
+            try
+            {
+                deviceFactoryCreator.ReadDelayMs = 600_000;
+
+                transaction.SendPipeline(["MULTI"], ["GET", Key(0)], ["APPEND", Key(1), "x"], ["EXEC"]);
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > 0, TimeSpan.FromSeconds(30)),
+                    "The transaction's GET never reached the device.");
+
+                // Takes the one executor thread and holds it, waiting for the transaction's lock on the key
+                contender.Send("APPEND", Key(1), "y");
+                Thread.Sleep(500);
+
+                deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.CompleteHeldReads();
+
+                ClassicAssert.AreEqual("+OK\r\n", transaction.ReadReply());
+                ClassicAssert.AreEqual("+QUEUED\r\n", transaction.ReadReply());
+                ClassicAssert.AreEqual("+QUEUED\r\n", transaction.ReadReply());
+                ClassicAssert.AreEqual($"*2\r\n${ValueLength}\r\n{Value(0)}\r\n:49\r\n", transaction.ReadReply());
+                ClassicAssert.AreEqual(":50\r\n", contender.ReadReply());
+                ClassicAssert.AreEqual(0, deviceFactoryCreator.ReadsOffExecutor,
+                    "The transaction resumed from its GET and completed its APPEND's device read in place, off the executor.");
+            }
+            catch (IOException e)
+            {
+                Assert.Fail($"The transaction and the command waiting for its lock deadlocked over the one executor thread. {e.Message}");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.CompleteHeldReads();
+
+                // Runs anything still queued on the thread pool, so a deadlock here fails the test instead of the teardown
+                server.Provider.StoreWrapper.offloadExecutor.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// With every command that completes its device read in place waiting on the device at once, and more of them
+        /// than the thread pool has threads, another connection is still served.
+        /// </summary>
+        /// <remarks>
+        /// Run where they are received, these commands would each hold a thread-pool thread until the device answers,
+        /// so with the pool clamped no more than the pool's size could reach the device at once, and nothing would be
+        /// left to serve the <c>PING</c>. See the Linux note on
+        /// <see cref="ManyConcurrentDeviceReadsOutnumberTheThreadPoolAndStillFinishTogether"/>.
+        /// </remarks>
+        [Test]
+        public void ANetworkThreadIsFreeWhileMoreCommandsThanThreadsWaitOnTheDeviceInPlace()
+        {
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
+
+            var cappedWorkers = Math.Max(Environment.ProcessorCount, minWorkers);
+            var sessionCount = cappedWorkers * 2;
+
+            // Enough executor threads for every session, so all of them wait on the device at once
+            RestartServer(offloadMaxThreads: sessionCount);
+            Populate();
+
+            var clients = new RawClient[sessionCount];
+            RawClient probe = null;
+            var clamped = false;
+            try
+            {
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i] = new RawClient();
+                probe = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(10) };
+
+                clamped = ThreadPool.SetMaxThreads(cappedWorkers, maxIo);
+                ClassicAssert.IsTrue(clamped, "Could not clamp the worker pool, so this test proves nothing.");
+
+                deviceFactoryCreator.ReadDelayMs = 600_000;
+
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i].Send("STRLEN", Key(i));
+
+                _ = SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount >= sessionCount, TimeSpan.FromSeconds(30));
+                ClassicAssert.AreEqual(sessionCount, deviceFactoryCreator.ReadCount,
+                    $"Only {deviceFactoryCreator.ReadCount} of {sessionCount} commands reached the device at once with " +
+                    $"{cappedWorkers} worker threads, so they wait for it on thread-pool threads.");
+
+                try
+                {
+                    ClassicAssert.AreEqual("+PONG\r\n", probe.Execute("PING"));
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"No thread served a PING while {sessionCount} commands waited on the device against " +
+                        $"{cappedWorkers} worker threads. {e.Message}");
+                }
+
+                deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.CompleteHeldReads();
+
+                for (var i = 0; i < sessionCount; i++)
+                    ClassicAssert.AreEqual($":{ValueLength}\r\n", clients[i].ReadReply(), $"Wrong reply for {Key(i)}");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.CompleteHeldReads();
+                if (clamped)
+                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                foreach (var c in clients)
+                    c?.Dispose();
+                probe?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A flush, which waits on the store's log as it resets it, runs on an executor thread whether or not the store
+        /// has spilled to the device, while a command that waits on nothing does not.
+        /// </summary>
+        [Test]
+        public void AFlushRunsOnAnExecutorThread()
+        {
+            using var client = new RawClient();
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("SET", "k", "v"));
+            ClassicAssert.AreEqual("$1\r\nv\r\n", client.Execute("GET", "k"));
+            ClassicAssert.AreEqual(0, OffloadThreads, "A command that waits on nothing started an executor thread.");
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("FLUSHDB"));
+            ClassicAssert.AreEqual(1, OffloadThreads, "FLUSHDB did not run on an executor thread.");
+            ClassicAssert.AreEqual("$-1\r\n", client.Execute("GET", "k"));
+        }
+
+        /// <summary>
+        /// Once the executor is disposed, a command that would be moved to it runs on the thread it resumes on.
+        /// </summary>
+        [Test]
+        public void ACommandRunsInPlaceOnceTheExecutorIsDisposed()
+        {
+            using var client = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(10) };
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("SET", "k", "v"));
+            server.Provider.StoreWrapper.offloadExecutor.Dispose();
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("FLUSHDB"));
+            ClassicAssert.AreEqual("$-1\r\n", client.Execute("GET", "k"));
+        }
+
+        /// <summary>
+        /// Selecting a database for the first time, which creates it with its log and device, runs on an executor
+        /// thread; selecting one that exists does not.
+        /// </summary>
+        [Test]
+        public void SelectingANewDatabaseRunsOnAnExecutorThread()
+        {
+            using var client = new RawClient();
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("SELECT", "0"));
+            ClassicAssert.AreEqual(0, OffloadThreads, "Selecting the current database started an executor thread.");
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("SELECT", "1"));
+            ClassicAssert.AreEqual(1, OffloadThreads, "Creating a database did not run on an executor thread.");
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("SET", "k", "v"));
+            ClassicAssert.AreEqual("$1\r\nv\r\n", client.Execute("GET", "k"));
+        }
+
+        /// <summary>
+        /// Of the <c>DEBUG</c> subcommands, only the one that waits for the log to flush runs on an executor thread;
+        /// the blocking ones park the session themselves.
+        /// </summary>
+        [Test]
+        public void OnlyADebugSubcommandThatWaitsForTheDeviceRunsOnAnExecutorThread()
+        {
+            using var client = new RawClient();
+            var executor = server.Provider.StoreWrapper.offloadExecutor;
+
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("DEBUG", "LOG", "x"));
+            ClassicAssert.AreEqual("+OK\r\n", client.Execute("DEBUG", "BLOCK", "0"));
+            ClassicAssert.AreEqual(0, executor.Posts, "A DEBUG subcommand that waits on nothing in place was moved to an executor thread.");
+
+            StringAssert.StartsWith("+OK head=", client.Execute("DEBUG", "FLUSHANDEVICT"));
+            ClassicAssert.AreEqual(1, executor.Posts, "DEBUG FLUSHANDEVICT did not run on an executor thread.");
+        }
+
+        /// <summary>
         /// Parking on a device read must not allocate an async state machine per read, or a
         /// larger-than-memory workload pays for a garbage collection on every miss.
         /// </summary>
@@ -1620,7 +2080,7 @@ namespace Garnet.test
         sealed class RawClient : IDisposable
         {
             readonly Socket socket; readonly NetworkStream stream;
-            readonly byte[] writeBuffer = new byte[4096];
+            readonly byte[] writeBuffer = new byte[1 << 16];
             byte[] received = new byte[4096];
             int receivedLength;
 
@@ -1639,6 +2099,12 @@ namespace Garnet.test
 
                 stream = new NetworkStream(socket, ownsSocket: false);
             }
+
+            /// <summary>How long a read waits for the server before it fails.</summary>
+            internal TimeSpan ReceiveTimeout { set => socket.ReceiveTimeout = (int)value.TotalMilliseconds; }
+
+            /// <summary>Whether a reply has arrived and not been read.</summary>
+            internal bool HasReply => receivedLength > 0 || socket.Available > 0;
 
             internal string Execute(params string[] args)
             {

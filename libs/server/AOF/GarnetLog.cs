@@ -243,6 +243,26 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Whether an enqueue may wait for a flush to complete before it can allocate: one of the physical sublogs has no page
+        /// in memory it can evict without one. See <see cref="TsavoriteLog.AllocationMayWaitForFlush"/>.
+        /// </summary>
+        public bool AllocationMayWaitForFlush
+        {
+            get
+            {
+                if (singleLog != null)
+                    return singleLog.log.AllocationMayWaitForFlush;
+
+                for (var i = 0; i < shardedLog.Length; i++)
+                {
+                    if (shardedLog.sublog[i].AllocationMayWaitForFlush)
+                        return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Get sublog instance indicated by the provided index
         /// </summary>
         /// <param name="sublogIdx"></param>

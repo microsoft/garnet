@@ -889,6 +889,15 @@ namespace Garnet.server
                         {
                             if (txnManager.state == TxnState.Running)
                             {
+                                // The transaction holds its locks, so a command that would wait on this thread moves
+                                // to an executor thread that is started for it if every one is busy
+                                if (MustOffload(cmd))
+                                {
+                                    endReadHead = readHead = _origReadHead;
+                                    ParkForOffload(mustRun: true);
+                                    break;
+                                }
+
                                 _ = ProcessBasicCommands(cmd, ref transactionalApi);
                             }
                             else
@@ -901,6 +910,15 @@ namespace Garnet.server
                                     if (ParkForAofGate())
                                         break;
                                     continue;
+                                }
+
+                                // A transaction whose commands may read from the device runs on an executor thread,
+                                // moved there before it locks anything
+                                if (cmd == RespCommand.EXEC && MustOffloadExec())
+                                {
+                                    endReadHead = readHead = _origReadHead;
+                                    ParkForOffload(mustRun: false);
+                                    break;
                                 }
 
                                 _ = cmd switch
@@ -934,6 +952,15 @@ namespace Garnet.server
                                 if (ParkForAofGate())
                                     break;
                                 continue;
+                            }
+
+                            // A command that would wait on this thread, for the device or for a file, runs on an
+                            // executor thread instead, parsed and verified again from the start there
+                            if (MustOffload(cmd))
+                            {
+                                endReadHead = readHead = _origReadHead;
+                                ParkForOffload(mustRun: false);
+                                break;
                             }
 
                             if (clusterSession == null || CanServeSlot(cmd))
