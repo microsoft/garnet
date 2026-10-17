@@ -325,10 +325,8 @@ namespace Garnet.cluster
                 storeWrapper.appendOnlyFile.Log.Initialize(beginAddress, recoveredReplicationOffset);
 
                 // Before we can use the replication offset, we must wait for queued Vector Set ops to complete
-                storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
-
-                // Before we can use the replication offset, we must wait for queued Vector Set ops to complete
-                storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
+                if (storeWrapper.DefaultDatabase.VectorManager is { } vectorManager)
+                    await vectorManager.WaitForVectorOperationsToCompleteAsync().ConfigureAwait(false);
 
                 // Finally, advertise that we are caught up to the replication offset
                 replicationOffset = recoveredReplicationOffset;

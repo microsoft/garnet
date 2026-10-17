@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -186,6 +187,13 @@ namespace Garnet.server
         /// </summary>
         public void WaitForVectorOperationsToComplete()
             => activeVectorManager?.WaitForVectorOperationsToComplete();
+
+        /// <summary>
+        /// Completes once the Vector Set operations queued so far have completed, without blocking a thread meanwhile.
+        /// </summary>
+        /// <param name="cancellationToken">Token observed while waiting.</param>
+        public ValueTask WaitForVectorOperationsToCompleteAsync(CancellationToken cancellationToken)
+            => activeVectorManager?.WaitForVectorOperationsToCompleteAsync(cancellationToken) ?? default;
 
         /// <summary>
         /// Apply a streamed diskless-sync snapshot record without recording it in the AOF.

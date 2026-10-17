@@ -196,7 +196,7 @@ namespace Garnet.cluster
             await barrier.SignalWorkReadyWaitAsync(serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
             await barrier.SignalWorkCompletedWaitAsync(serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
-            replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
+            await replicationManager.AofProcessor.WaitForVectorOperationsToCompleteAsync(cts.Token).ConfigureAwait(false);
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
         }
 

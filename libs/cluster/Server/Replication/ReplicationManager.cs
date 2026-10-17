@@ -559,7 +559,8 @@ namespace Garnet.cluster
                 var replayedUntil = storeWrapper.ReplayAOF(AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1));
 
                 // Before advertising new replication offset, wait for any queued Vector Set ops to complete
-                storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
+                if (storeWrapper.DefaultDatabase.VectorManager is { } vectorManager)
+                    await vectorManager.WaitForVectorOperationsToCompleteAsync().ConfigureAwait(false);
 
                 replicationOffset.SetValue(ref replayedUntil);
             }

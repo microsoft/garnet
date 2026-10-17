@@ -830,7 +830,8 @@ namespace Garnet.test
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
-            int clusterConfigFlushFrequencyMs = 0)
+            int clusterConfigFlushFrequencyMs = 0,
+            bool enableVectorSetPreview = true)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -901,7 +902,8 @@ namespace Garnet.test
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                     enableRangeIndexPreview: enableRangeIndexPreview,
                     networkSendTimeout: networkSendTimeout,
-                    clusterConfigFlushFrequencyMs: clusterConfigFlushFrequencyMs);
+                    clusterConfigFlushFrequencyMs: clusterConfigFlushFrequencyMs,
+                    enableVectorSetPreview: enableVectorSetPreview);
 
                 ClassicAssert.IsNotNull(opts);
 

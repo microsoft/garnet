@@ -364,7 +364,8 @@ namespace Garnet.test.cluster
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
             TimeSpan? networkSendTimeout = null,
-            int clusterConfigFlushFrequencyMs = 0)
+            int clusterConfigFlushFrequencyMs = 0,
+            bool enableVectorSetPreview = true)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -427,7 +428,8 @@ namespace Garnet.test.cluster
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,
                 networkSendTimeout: networkSendTimeout,
-                clusterConfigFlushFrequencyMs: clusterConfigFlushFrequencyMs);
+                clusterConfigFlushFrequencyMs: clusterConfigFlushFrequencyMs,
+                enableVectorSetPreview: enableVectorSetPreview);
 
             foreach (var node in nodes)
                 node.Start();

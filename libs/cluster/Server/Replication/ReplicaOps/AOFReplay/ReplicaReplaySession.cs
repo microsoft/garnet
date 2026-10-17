@@ -64,21 +64,16 @@ namespace Garnet.cluster
                 {
                     // If the incoming AOF chunk fits in the space between previousAddress and currentAddress (ReplicationOffset),
                     // an enqueue will result in an offset mismatch. So, we have to first reset the AOF to point to currentAddress.
-                    if (currentAddress > previousAddress)
+                    // Dispatch runs a chunk that skips ahead on an executor thread, as the reset waits on the device.
+                    if (GarnetAppendOnlyFile.ReplicaStreamSkipsAhead(previousAddress, currentAddress, recordLength, clusterProvider.replicationManager.PageSizeBits))
                     {
-                        if (
-                            (currentAddress % (1 << clusterProvider.replicationManager.PageSizeBits) != 0) || // the skip was to a non-page-boundary
-                            (currentAddress >= previousAddress + recordLength) // the skip will not be auto-handled by the AOF enqueue
-                            )
-                        {
-                            logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), currentAddress);
-                            clusterProvider.storeWrapper.appendOnlyFile.Log.SafeInitialize(physicalSublogIdx, currentAddress, currentAddress);
+                        logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), currentAddress);
+                        clusterProvider.storeWrapper.appendOnlyFile.Log.SafeInitialize(physicalSublogIdx, currentAddress, currentAddress);
 
-                            // If any Vector Set ops in progress, we must wait for them before we advertise a new eplication offset
-                            clusterProvider.storeWrapper.DefaultDatabase?.VectorManager.WaitForVectorOperationsToComplete();
+                        // If any Vector Set ops in progress, we must wait for them before we advertise a new eplication offset
+                        clusterProvider.storeWrapper.DefaultDatabase?.VectorManager.WaitForVectorOperationsToComplete();
 
-                            clusterProvider.replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
-                        }
+                        clusterProvider.replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
                     }
                 }
 

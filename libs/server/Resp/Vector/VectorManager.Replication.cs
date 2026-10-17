@@ -835,6 +835,14 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Completes once queued vector replays have completed, as <see cref="WaitForVectorOperationsToComplete"/>
+        /// returns, without blocking a thread meanwhile.
+        /// </summary>
+        /// <param name="cancellationToken">Token observed while waiting.</param>
+        public ValueTask WaitForVectorOperationsToCompleteAsync(CancellationToken cancellationToken = default)
+            => replicationBlockEvent.WaitAsync(cancellationToken);
+
+        /// <summary>
         /// During AOF replay we need to copy one Vector Set index into another, but we can't use the bytes stored in the log since
         /// VADD replay will have produced different contexts and pointers.
         /// 

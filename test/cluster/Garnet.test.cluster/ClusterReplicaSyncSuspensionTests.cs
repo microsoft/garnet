@@ -152,6 +152,91 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// A replica that replays its primary's stream synchronously applies each chunk on the thread that delivered it,
+        /// where a record waits for the Vector Set replays queued before it, which the streams of other sublogs can queue
+        /// at any time. With Vector Sets enabled the chunks run on an executor thread; without them, and with nothing to
+        /// read from the device, they run in place.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void ASynchronouslyReplayedStreamRunsOnAnExecutorThreadOnlyWhenVectorSetsMayHoldItUp([Values] bool vectorSets)
+        {
+            context.CreateInstances(2, enableAOF: true, disableObjects: true, clusterConfigFlushFrequencyMs: -1, enableVectorSetPreview: vectorSets);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+
+            var executor = context.nodes[1].Provider.StoreWrapper.offloadExecutor;
+            var posts = executor.Posts;
+
+            context.kvPairs = [];
+            context.SimplePopulateDB(disableObjects: true, keyLength: 16, kvpairCount: 64, primaryIndex: 0);
+
+            // Waits for the replica by reading from it, which runs in place, unlike the INFO that offsets are read with
+            foreach (var (key, value) in context.kvPairs)
+            {
+                var keyBytes = Encoding.ASCII.GetBytes(key);
+                string read;
+                while ((read = context.clusterTestUtils.GetKey(1, keyBytes, out _, out _, out var state, logger: context.logger)) is null
+                    || state != ResponseState.OK || int.Parse(read) != value)
+                {
+                    ClusterTestUtils.BackOff(cancellationToken: context.cts.Token, msg: $"waiting for {key} on the replica");
+                }
+            }
+
+            if (vectorSets)
+                ClassicAssert.Greater(executor.Posts, posts, "The replica applied its stream in place, where a record waits for queued Vector Set replays.");
+            else
+                ClassicAssert.AreEqual(posts, executor.Posts, "The replica moved a stream that waits on nothing to an executor thread.");
+        }
+
+        /// <summary>
+        /// A replica that truncates its AOF fast resets a sublog, on the device, before it enqueues a chunk the primary
+        /// shipped from an address it skipped ahead to. Such a chunk runs on an executor thread; a chunk that follows on
+        /// from the previous one runs in place.
+        /// </summary>
+        /// <remarks>
+        /// Where a chunk runs is decided before the command is run, so the node need not be a replica to show it. Being
+        /// none, it fails the command and closes the session either way.
+        /// </remarks>
+        [Test]
+        [Category("CLUSTER")]
+        public async Task AChunkThatSkipsAheadRunsOnAnExecutorThreadWhenTheAofIsTruncatedFast()
+        {
+            context.CreateInstances(1, enableAOF: true, FastAofTruncate: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, asyncReplay: true,
+                disableObjects: true, clusterConfigFlushFrequencyMs: -1, enableVectorSetPreview: false);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 0, logger: context.logger);
+
+            var executor = context.nodes[0].Provider.StoreWrapper.offloadExecutor;
+            var record = new byte[64];
+
+            var posts = executor.Posts;
+            await AppendAsync(previousAddress: 64, currentAddress: 64);
+            ClassicAssert.AreEqual(posts, executor.Posts, "A chunk that follows on from the previous one was moved to an executor thread.");
+
+            await AppendAsync(previousAddress: 64, currentAddress: 64 + record.Length + 8);
+            ClassicAssert.AreEqual(posts + 1, executor.Posts, "A chunk that skips ahead did not run on an executor thread.");
+
+            async Task AppendAsync(long previousAddress, long currentAddress)
+            {
+                var input = Frame(Ascii("CLUSTER"), Ascii("appendlog"), Ascii(new string('a', 40)), Ascii("0"),
+                    Ascii(previousAddress.ToString()), Ascii(currentAddress.ToString()), Ascii((currentAddress + record.Length).ToString()), record);
+                var session = NewSession(new ControlledSender(1024));
+                try
+                {
+                    var consume = Task.Run(() => Consume(session, input).AsTask());
+                    await WithinBoundAsync(consume, "the chunk to be run");
+                }
+                finally
+                {
+                    session.Dispose();
+                    GC.KeepAlive(input);
+                }
+            }
+        }
+
 #if DEBUG
         /// <summary>
         /// Recovering a replica from the checkpoint its primary sent takes as long as the store is large. The session
@@ -202,6 +287,65 @@ namespace Garnet.test.cluster
             finally
             {
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Replication_Pause_Replica_Recovery);
+                session.Dispose();
+                GC.KeepAlive(input);
+                if (replication.IsRecovering)
+                    replication.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+            }
+        }
+
+        /// <summary>
+        /// A primary ends a diskless sync by attaching to the replica it synced, which then resets its AOF, records the
+        /// primary's history and waits for its queued Vector Set replays before it answers. The session that received
+        /// the attach parks while that runs elsewhere, and answers with the offset the replica resumes from.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public async Task TheRecoveryThatEndsADisklessSyncParksTheSessionThatAskedForIt()
+        {
+            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery;
+
+            context.CreateInstances(1, enableAOF: true, disableObjects: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 0, logger: context.logger);
+
+            var replication = ((ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider).replicationManager;
+
+            // What a replica holds while its primary syncs it, and what the recovery ends
+            ClassicAssert.IsTrue(replication.BeginRecovery(RecoveryStatus.ClusterReplicate, upgradeLock: false));
+
+            var address = AofAddress.Create(1, 64);
+            var attach = new SyncMetadata(fullSync: true, Garnet.cluster.NodeRole.PRIMARY, new string('a', 40), new string('b', 40),
+                currentStoreVersion: 0, address, address, address, checkpointEntry: null);
+            var input = Frame(Ascii("CLUSTER"), Ascii("attach_sync"), attach.ToByteArray());
+
+            var sender = new ControlledSender(1024);
+            var session = NewSession(sender);
+
+            // Holds the recovery where it starts, which stands in for the stretches of it that do not yield
+            ExceptionInjectionHelper.EnableException(pause);
+            try
+            {
+                var call = Task.Run(() => Consume(session, input));
+                await WithinBoundAsync(call, "the attach to return to the receive loop, which a recovery run on the thread that delivered it never does");
+                var consume = await call;
+
+                await WithinBoundAsync(ExceptionInjectionHelper.WaitOnClearAsync(pause), "the recovery to start");
+                ClassicAssert.IsFalse(consume.IsCompleted, "The attach waits for the recovery");
+                ClassicAssert.IsEmpty(sender.Sent, "Nothing is answered until the recovery is done");
+
+                // The recovery cleared the injection on arrival; setting it again lets the recovery go
+                ExceptionInjectionHelper.EnableException(pause);
+                var finished = consume.AsTask();
+                await WithinBoundAsync(finished, "the recovery to finish once it is let go");
+
+                ClassicAssert.AreEqual(input.Length, await finished);
+                var offset = address.ToString();
+                ClassicAssert.AreEqual($"${offset.Length}\r\n{offset}\r\n", sender.Sent, "The recovery answers with the offset the replica resumes from");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(pause);
                 session.Dispose();
                 GC.KeepAlive(input);
                 if (replication.IsRecovering)

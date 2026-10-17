@@ -105,7 +105,7 @@ namespace Garnet.server
                 RespCommand.CONFIG_REWRITE, RespCommand.ACL_LOAD, RespCommand.ACL_SAVE,
                 RespCommand.MODULE_LOADCS, RespCommand.REGISTERCS,
                 RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT, RespCommand.CLUSTER_SEND_CKPT_METADATA,
-                RespCommand.CLUSTER_SNAPSHOT_DATA, RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER,
+                RespCommand.CLUSTER_SNAPSHOT_DATA, RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER, RespCommand.CLUSTER_ATTACH_SYNC,
                 RespCommand.CLUSTER_FLUSHALL, RespCommand.CLUSTER_RESERVE])
                 classes[(int)cmd] = OffloadClass.Always;
 
@@ -191,9 +191,12 @@ namespace Garnet.server
                     return parseState.Count > 0 && parseState.GetArgSliceByRef(0).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FLUSHANDEVICT);
 
                 case RespCommand.CLUSTER_APPENDLOG:
-                    // Synchronous replay applies the stream to the store on this thread
-                    return storageSession.MayReadFromDisk
-                        && storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES) == 0;
+                    // Synchronous replay applies the stream to the store on this thread, where a record waits for the
+                    // Vector Set replays queued before it, which other sublogs' streams may queue at any time. A replica
+                    // that truncates its AOF fast resets it, on the device, when the stream skips ahead.
+                    return (storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES) == 0
+                            && (storageSession.MayReadFromDisk || storeWrapper.serverOptions.EnableVectorSetPreview))
+                        || (storeWrapper.serverOptions.FastAofTruncate && AppendLogSkipsAhead());
 
                 default:
                     // The rest change the cluster configuration, which is written to its file as it changes unless
@@ -201,6 +204,18 @@ namespace Garnet.server
                     return storeWrapper.serverOptions.ClusterConfigFlushFrequencyMs == 0;
             }
         }
+
+        /// <summary>
+        /// Whether the CLUSTER APPENDLOG just parsed ships a chunk from an address the primary skipped ahead to, so that a
+        /// replica that truncates its AOF fast resets the sublog before it enqueues the chunk.
+        /// </summary>
+        bool AppendLogSkipsAhead()
+            => parseState.Count == 6
+                && parseState.TryGetLong(2, allowLeadingZeros: true, out var previousAddress)
+                && parseState.TryGetLong(3, allowLeadingZeros: true, out var currentAddress)
+                && storeWrapper.appendOnlyFile is { } appendOnlyFile
+                && GarnetAppendOnlyFile.ReplicaStreamSkipsAhead(previousAddress, currentAddress,
+                    parseState.GetArgSliceByRef(5).Length, appendOnlyFile.Log.UnsafeGetLogPageSizeBits());
 
         /// <summary>
         /// Parks the session and has an executor thread resume it, so the command the read cursor has been rewound to is

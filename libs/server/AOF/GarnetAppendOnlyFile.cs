@@ -19,6 +19,19 @@ namespace Garnet.server
         public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
 
         /// <summary>
+        /// Whether a replica that truncates its AOF fast has to reset a sublog to <paramref name="currentAddress"/> before
+        /// it enqueues a chunk the primary shipped from there: the primary skipped ahead of <paramref name="previousAddress"/>,
+        /// to an address that the enqueue does not reach on its own.
+        /// </summary>
+        /// <param name="previousAddress">The address the primary shipped the previous chunk up to.</param>
+        /// <param name="currentAddress">The address the chunk starts at.</param>
+        /// <param name="recordLength">The chunk's length in bytes.</param>
+        /// <param name="pageSizeBits">The AOF page size, in bits.</param>
+        public static bool ReplicaStreamSkipsAhead(long previousAddress, long currentAddress, int recordLength, int pageSizeBits)
+            => currentAddress > previousAddress
+                && (currentAddress % (1 << pageSizeBits) != 0 || currentAddress >= previousAddress + recordLength);
+
+        /// <summary>
         /// Ensures prefix-consistent reads when the Garnet instance
         /// operates with multiple physical sublogs.
         /// </summary>
