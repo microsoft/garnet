@@ -141,10 +141,10 @@ namespace Garnet.test
             switch (type)
             {
                 case "string": db.StringSet(key, "value"); break;
-                case "list": db.ListRightPush(key, new RedisValue[] { "one", "two", "one" }); break;
-                case "set": db.SetAdd(key, new RedisValue[] { "one", "two" }); break;
-                case "hash": db.HashSet(key, new[] { new HashEntry("field", "value") }); break;
-                case "zset": db.SortedSetAdd(key, new[] { new SortedSetEntry("one", -0.5), new SortedSetEntry("two", 3) }); break;
+                case "list": db.ListRightPush(key, ["one", "two", "one"]); break;
+                case "set": db.SetAdd(key, ["one", "two"]); break;
+                case "hash": db.HashSet(key, [new HashEntry("field", "value")]); break;
+                case "zset": db.SortedSetAdd(key, [new SortedSetEntry("one", -0.5), new SortedSetEntry("two", 3)]); break;
             }
         }
 
@@ -227,7 +227,7 @@ namespace Garnet.test
             var payload = Envelope(2, 1, 1, 97);
             var result = (byte[])db.ScriptEvaluate(
                 "redis.call('RESTORE', KEYS[1], 0, ARGV[1]); return redis.call('DUMP', KEYS[1])",
-                new RedisKey[] { "destination" }, new RedisValue[] { payload });
+                ["destination"], [payload]);
             CollectionAssert.AreEqual(payload, result);
         }
 
@@ -279,9 +279,9 @@ namespace Garnet.test
             var command = type == "hash" ? "HPEXPIRE" : "ZPEXPIRE";
             var itemArgument = type == "hash" ? "FIELDS" : "MEMBERS";
             if (type == "hash")
-                db.HashSet("source", new[] { new HashEntry("expiring", "value"), new HashEntry("persistent", "other") });
+                db.HashSet("source", [new HashEntry("expiring", "value"), new HashEntry("persistent", "other")]);
             else
-                db.SortedSetAdd("source", new[] { new SortedSetEntry("expiring", 1), new SortedSetEntry("persistent", 2) });
+                db.SortedSetAdd("source", [new SortedSetEntry("expiring", 1), new SortedSetEntry("persistent", 2)]);
 
             db.Execute(command, "source", 60_000, itemArgument, 1, "expiring");
             var error = Assert.Throws<RedisServerException>(() => db.KeyDump("source"));
@@ -327,7 +327,7 @@ namespace Garnet.test
             using var reader = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             using var writer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = reader.GetDatabase();
-            db.ListRightPush("source", new RedisValue[] { "a", "b", "c" });
+            db.ListRightPush("source", ["a", "b", "c"]);
             using var stop = new CancellationTokenSource();
             var writes = Task.Run(async () =>
             {
