@@ -164,35 +164,33 @@ namespace Tsavorite.core
 
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
-        internal readonly ManualResetEventSlim pauseRevivEvent = new(false);
-        private readonly object pauseRevivLock = new();
-
         /// <summary>
-        /// Pause Revivification
+        /// Pause Revivification, completing once every thread that was protected when it paused has refreshed its epoch,
+        /// or once <paramref name="timeout"/> has elapsed.
         /// </summary>
-        /// <param name="timeout"></param>
-        /// /// <param name="token"></param>
-        public void PauseRevivification(TimeSpan timeout, CancellationToken token)
+        /// <param name="timeout">How long to wait for protected threads to observe the pause before proceeding anyway.</param>
+        /// <param name="token">Cancels the wait.</param>
+        public async Task PauseRevivificationAsync(TimeSpan timeout, CancellationToken token)
         {
-            lock (pauseRevivLock)
+            // The drain action may run on a thread holding the epoch, so the waiter must not continue on it.
+            var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            try
             {
-                try
-                {
-                    epoch.Resume();
-                    // Pause Reviv
-                    RevivificationManager.PauseRevivification();
-                    // Reset event to be used for signaling that everyone has observed the pause signal
-                    pauseRevivEvent.Reset();
-                    // BumpEpoch with Set signal
-                    epoch.BumpCurrentEpoch(() => pauseRevivEvent.Set());
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
+                epoch.Resume();
+                RevivificationManager.PauseRevivification();
+                epoch.BumpCurrentEpoch(() => observed.TrySetResult());
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
 
-                // Wait for everyone to observe the reviv suspend signal
-                pauseRevivEvent.Wait(timeout, token);
+            try
+            {
+                await observed.Task.WaitAsync(timeout, token).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
             }
         }
 
@@ -880,7 +878,6 @@ namespace Tsavorite.core
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();
-            pauseRevivEvent?.Dispose();
 
             // Currently this doesn't do much, but for future safety make sure it's called after its contained objects are disposed.
             Free();

@@ -136,7 +136,7 @@ namespace Garnet.cluster
             var configResumed = true;
             try
             {
-                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, _cts.Token);
+                await clusterProvider.storeWrapper.store.PauseRevivificationAsync(_timeout, _cts.Token).ConfigureAwait(false);
 
                 // Set target node to import state
                 if (!await TrySetSlotRangesAsync(GetSourceNodeId, MigrateState.IMPORT).ConfigureAwait(false))
