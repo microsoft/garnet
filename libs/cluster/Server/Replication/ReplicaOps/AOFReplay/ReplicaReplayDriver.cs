@@ -94,7 +94,11 @@ namespace Garnet.cluster
                 barrier = new DoubleTurnstileBarrier(replayTaskCount + 1);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
-                    _ = Task.Run(() => replayTask.FullPageBasedBackgroundReplayAsync());
+                {
+                    // The monitor was just created, so it cannot be closed yet
+                    _ = ResumeReplay();
+                    replayTask.Start();
+                }
             }
         }
 
@@ -214,6 +218,11 @@ namespace Garnet.cluster
         {
             ValidateSublogIndex(physicalSublogIdx);
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
+
+#if DEBUG
+            // Holds the page on this thread, as replaying a record that waits would
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Hold_Replay_Thread);
+#endif
 
             var ptr = record;
             var replicationOffset = currentAddress;
@@ -512,7 +521,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Method to create a background replay task that iterates and consume this replicas physical log
+        /// Starts the background replay that iterates and consumes this replica's physical log, on a thread of its own:
+        /// it replays each page before it returns to the log, and replaying a page can wait, on the replay tasks or on a
+        /// record that waits.
         /// </summary>
         /// <param name="startAddress"></param>
         public void InitializeBackgroundReplayTask(long startAddress)
@@ -520,25 +531,22 @@ namespace Garnet.cluster
             if (replayIterator == null)
             {
                 replayIterator = appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
-                _ = BackgroundReplayTaskAsync();
+                new Thread(BackgroundReplay) { IsBackground = true, Name = $"AofReplay-{physicalSublogIdx}" }.Start();
             }
 
-            async Task BackgroundReplayTaskAsync()
+            void BackgroundReplay()
             {
-                // Force async
-                await Task.Yield();
-
                 var readLock = ResumeReplay();
                 try
                 {
                     if (!readLock)
                         throw new GarnetException("Failed to acquire replayLock");
 
-                    await replayIterator.BulkConsumeAllAsync(
+                    replayIterator.BulkConsumeAll(
                         this,
                         runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
                         maxChunkSize: 1 << 20,
-                        cts.Token).ConfigureAwait(false);
+                        cts.Token);
                 }
                 catch (Exception ex)
                 {

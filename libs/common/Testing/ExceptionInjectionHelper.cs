@@ -30,6 +30,11 @@ namespace Garnet.common
             Enum.GetValues<ExceptionInjectionType>().Select(_ => false).ToArray();
 
         /// <summary>
+        /// Threads waiting in <see cref="WaitOnClear"/>, per exception injection type
+        /// </summary>
+        static readonly int[] WaitingOnClearCounts = new int[ExceptionInjectionTypes.Length];
+
+        /// <summary>
         /// Check if exception is enabled
         /// </summary>
         /// <param name="exceptionType"></param>
@@ -230,9 +235,28 @@ namespace Garnet.common
         /// <returns></returns>
         public static void WaitOnClear(ExceptionInjectionType exceptionType)
         {
-            while (ExceptionInjectionTypes[(int)exceptionType])
-                Thread.Yield();
+            if (!ExceptionInjectionTypes[(int)exceptionType])
+                return;
+
+            _ = Interlocked.Increment(ref WaitingOnClearCounts[(int)exceptionType]);
+            try
+            {
+                while (ExceptionInjectionTypes[(int)exceptionType])
+                    Thread.Yield();
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref WaitingOnClearCounts[(int)exceptionType]);
+            }
         }
+
+        /// <summary>
+        /// Number of threads waiting in <see cref="WaitOnClear"/> for the given condition to be cleared
+        /// </summary>
+        /// <param name="exceptionType"></param>
+        /// <returns></returns>
+        public static int WaitingOnClear(ExceptionInjectionType exceptionType)
+            => Volatile.Read(ref WaitingOnClearCounts[(int)exceptionType]);
 
         /// <summary>
         /// Wait on clear condition

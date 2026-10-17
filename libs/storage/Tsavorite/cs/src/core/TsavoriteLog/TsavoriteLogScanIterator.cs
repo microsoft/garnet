@@ -136,6 +136,36 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Consume the log with given consumer on the calling thread until end of iteration or cancelled, polling for
+        /// new entries as <see cref="BulkConsumeAllAsync"/> does. The calling thread is held throughout, so this is for a
+        /// thread dedicated to the iteration.
+        /// </summary>
+        /// <remarks>
+        /// With no new entries, this sleeps <paramref name="throttleMs"/> between polls, or yields the thread between
+        /// polls when it is 0: a throttle of 0 asks for the lowest replay latency, at the cost of a core.
+        /// </remarks>
+        /// <param name="consumer"> consumer </param>
+        /// <param name="throttleMs">throttle the iteration speed</param>
+        /// <param name="maxChunkSize">max size of returned chunk</param>
+        /// <param name="token"> cancellation token </param>
+        /// <typeparam name="T"> consumer type </typeparam>
+        public void BulkConsumeAll<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, CancellationToken token = default) where T : IBulkLogEntryConsumer
+        {
+            while (!disposed)
+            {
+                // TryConsumeNext returns false if we have to wait for the next record.
+                while (!TryBulkConsumeNext(consumer, maxChunkSize))
+                {
+                    if (throttleMs == 0)
+                        _ = Thread.Yield();
+                    else
+                        _ = token.WaitHandle.WaitOne(throttleMs);
+                    token.ThrowIfCancellationRequested();
+                }
+            }
+        }
+
+        /// <summary>
         /// Wait for iteration to be ready to continue
         /// </summary>
         /// <returns>true if there's more data available to be read; false if there will never be more data (log has been shutdown / iterator has reached endAddress)</returns>
