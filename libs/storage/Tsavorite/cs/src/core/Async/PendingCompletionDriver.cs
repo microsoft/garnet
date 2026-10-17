@@ -59,7 +59,7 @@ namespace Tsavorite.core
             => Rent().RunWithoutResult(sessionFunctions, completedOutputs, token);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        PendingCompletionDriver<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> Rent()
+        internal PendingCompletionDriver<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> Rent()
         {
             lock (gate)
             {

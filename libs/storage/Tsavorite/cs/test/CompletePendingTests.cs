@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -433,6 +434,52 @@ namespace Tsavorite.test
 
             ClassicAssert.IsTrue(driven.Wait(TimeSpan.FromSeconds(30)), "The driver never finished");
             ClassicAssert.AreEqual(0, watcher.Overlaps, "Dispose drained the session while a driver was draining it");
+        }
+
+        /// <summary>
+        /// A driver returns itself to its pool on the thread that completed it, after that thread has resumed the session, so the
+        /// session's next read can rent from the same pool on another thread at the same moment.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ConcurrentRentsAndReturnsNeverHandOutADriverInUse()
+        {
+            const int NumThreads = 4;
+            const int RoundsPerThread = 100_000;
+
+            var pool = new PendingCompletionDriverPool<InputStruct, OutputStruct, ContextStruct, StructStoreFunctions, StructAllocator,
+                SessionFunctionsWrapper<KeyStruct, InputStruct, OutputStruct, ContextStruct, DrainWatcher,
+                    BasicSessionLocker<StructStoreFunctions, StructAllocator>, StructStoreFunctions, StructAllocator>>(store);
+            var rented = new ConcurrentDictionary<object, byte>();
+            var violations = 0;
+
+            using var start = new Barrier(NumThreads);
+            var threads = new Thread[NumThreads];
+            for (var i = 0; i < NumThreads; i++)
+            {
+                threads[i] = new Thread(() =>
+                {
+                    start.SignalAndWait();
+                    for (var round = 0; round < RoundsPerThread; round++)
+                    {
+                        var driver = pool.Rent();
+
+                        // Another thread still holds this driver
+                        if (!rented.TryAdd(driver, 0))
+                            _ = Interlocked.Increment(ref violations);
+                        else
+                            _ = rented.TryRemove(driver, out _);
+
+                        pool.Return(driver);
+                    }
+                });
+                threads[i].Start();
+            }
+
+            foreach (var thread in threads)
+                thread.Join();
+
+            ClassicAssert.AreEqual(0, violations, "A driver was rented while another thread held it");
         }
     }
 }
