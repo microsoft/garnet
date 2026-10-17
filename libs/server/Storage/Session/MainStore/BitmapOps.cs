@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -89,7 +88,7 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
-                Debug.Assert(txnManager.state == TxnState.None);
+                Assert(txnManager.state == TxnState.None);
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
                 txnManager.SaveKeyEntryToLock(keys[0], LockType.Exclusive);
                 for (var i = 1; i < keys.Length; i++)
@@ -458,7 +457,7 @@ namespace Garnet.server
                 status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
             else
             {
-                Debug.Assert(input.header.cmd != RespCommand.BITFIELD_RO);
+                Assert(input.header.cmd != RespCommand.BITFIELD_RO);
                 status = RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
             }
             return status;

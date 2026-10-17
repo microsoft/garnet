@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -64,7 +63,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
                 txnManager.SaveKeyEntryToLock(key, LockType.Shared);
@@ -122,7 +121,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
                 txnManager.SaveKeyEntryToLock(destination, LockType.Exclusive);
@@ -160,7 +159,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                Debug.Assert(!searchOutMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
+                Assert(!searchOutMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
 
                 var searchOutHandler = searchOutMem.Memory.Memory.Pin();
                 try
@@ -185,7 +184,7 @@ namespace Garnet.server
                     for (var j = 0; j < foundItems; j++)
                     {
                         _ = RespReadUtils.TryReadUnsignedArrayLength(out var innerLength, ref currOutPtr, endOutPtr);
-                        Debug.Assert(innerLength == 2, "Should always has location and hash or distance");
+                        Assert(innerLength == 2, "Should always has location and hash or distance");
 
                         // Read location into parse state
                         _ = parseState.Read((2 * j) + 1, ref currOutPtr, endOutPtr);

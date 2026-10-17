@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -66,7 +65,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(asyncWaiter != null);
+                Assert(asyncWaiter != null);
                 asyncWaiter.Signal();
             }
         }
@@ -115,7 +114,7 @@ namespace Garnet.server
                                     SendAndReset();
                                 if (completedOutputs.Current.Status.Found)
                                 {
-                                    Debug.Assert(!o.SpanByteAndMemory.IsSpanByte);
+                                    Assert(!o.SpanByteAndMemory.IsSpanByte);
                                     sessionMetrics?.incr_total_found();
                                     SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
                                 }

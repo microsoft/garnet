@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -40,7 +39,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(!logRecord.DataHeader.HasETag && !logRecord.DataHeader.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
+            Assert(!logRecord.DataHeader.HasETag && !logRecord.DataHeader.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             var type = input.header.type;
             IGarnetObject value;

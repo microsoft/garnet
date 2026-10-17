@@ -5,7 +5,6 @@ using System;
 using System.Buffers.Binary;
 using System.Collections;
 using System.Collections.Generic;
-using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -31,7 +30,7 @@ namespace Garnet.server
         /// <returns>True if it succeeds to add ArgSlice, false if maxCount has been reached.</returns>
         public bool TryAddItem(ReadOnlySpan<byte> item)
         {
-            Debug.Assert(!enumerating, "Cannot modify while enumerating");
+            Assert(!enumerating, "Cannot modify while enumerating");
 
             if (Count + 1 >= maxCount)
                 return false;
@@ -50,7 +49,7 @@ namespace Garnet.server
         /// <returns>True if it succeeds to add ArgSlice, false if maxCount has been reached.</returns>
         public bool TryAddItem(ReadOnlySpan<byte> namespaceBytes, ReadOnlySpan<byte> item)
         {
-            Debug.Assert(!enumerating, "Cannot modify while enumerating");
+            Assert(!enumerating, "Cannot modify while enumerating");
             if (Count + 1 >= maxCount)
                 return false;
 
@@ -72,7 +71,7 @@ namespace Garnet.server
         /// </summary>
         public void Clear()
         {
-            Debug.Assert(!enumerating, "Cannot modify while enumerating");
+            Assert(!enumerating, "Cannot modify while enumerating");
 
             items.Clear();
             bufferManager.Reset();
@@ -81,7 +80,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public IEnumerator<(PinnedSpanByte NamespaceBytes, PinnedSpanByte KeyBytes, bool HasNamespace)> GetEnumerator()
         {
-            Debug.Assert(!enumerating, "Concurrent enumeration is not allwed");
+            Assert(!enumerating, "Concurrent enumeration is not allwed");
 
             var full = bufferManager.ViewFullArgSlice();
 

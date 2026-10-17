@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -120,9 +119,9 @@ namespace Tsavorite.core
 
         internal readonly void SetOffsets(int offsetFromStart, int offsetFromEnd)
         {
-            Debug.Assert(offsetFromStart > 0 && offsetFromStart < Array.Length - 1, "offsetFromStart is out of range");
-            Debug.Assert(offsetFromEnd > 0 && offsetFromEnd < Array.Length - 1, "offsetFromEnd is out of range");
-            Debug.Assert(offsetFromStart < offsetFromEnd, "offsetFromStart must be less than offsetFromEnd");
+            Assert(offsetFromStart > 0 && offsetFromStart < Array.Length - 1, "offsetFromStart is out of range");
+            Assert(offsetFromEnd > 0 && offsetFromEnd < Array.Length - 1, "offsetFromEnd is out of range");
+            Assert(offsetFromStart < offsetFromEnd, "offsetFromStart must be less than offsetFromEnd");
             ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
             header.startOffset = offsetFromStart;
             header.endOffset = offsetFromEnd;

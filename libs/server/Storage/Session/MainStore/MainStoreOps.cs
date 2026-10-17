@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -289,7 +288,7 @@ namespace Garnet.server
         public unsafe GarnetStatus DEL_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER);
+            Assert(input.header.cmd is RespCommand.DELIFGREATER);
 
             Span<byte> outputSpan = stackalloc byte[8];
             var output = StringOutput.FromPinnedSpan(outputSpan);
@@ -471,7 +470,7 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
+            Assert(output.SpanByteAndMemory.IsSpanByte);
 
             return GarnetStatus.OK;
         }
@@ -486,7 +485,7 @@ namespace Garnet.server
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = context.Delete((FixedSpanByteKey)key);
-            Debug.Assert(!status.IsPending);
+            Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
@@ -514,7 +513,7 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
-            Debug.Assert(sbmOut.SpanByteAndMemory.IsSpanByte);
+            Assert(sbmOut.SpanByteAndMemory.IsSpanByte);
             output.Length = sbmOut.SpanByteAndMemory.Length;
 
             return GarnetStatus.OK;
@@ -561,7 +560,7 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
-            Debug.Assert(stringOutput.SpanByteAndMemory.IsSpanByte);
+            Assert(stringOutput.SpanByteAndMemory.IsSpanByte);
 
             output = NumUtils.ReadInt64(stringOutput.SpanByteAndMemory.Span);
             return GarnetStatus.OK;

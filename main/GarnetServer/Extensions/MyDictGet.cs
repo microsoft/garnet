@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -12,7 +11,7 @@ namespace Garnet
     {
         public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
-            Debug.Assert(value is MyDict);
+            Assert(value is MyDict);
 
             var entryKey = GetFirstArg(ref input);
 

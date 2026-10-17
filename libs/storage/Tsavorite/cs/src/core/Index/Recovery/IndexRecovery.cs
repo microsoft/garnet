@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -142,7 +141,7 @@ namespace Tsavorite.core
             var numChunks = Utility.GetNumIoChunks(totalSize, maxIoBytesPerRequest);
 
             uint chunkSize = (uint)(totalSize / numChunks);
-            Debug.Assert(chunkSize <= maxIoBytesPerRequest, "Index recovery chunk exceeds the maximum device request size");
+            Assert(chunkSize <= maxIoBytesPerRequest, "Index recovery chunk exceeds the maximum device request size");
             mainIndexRecoveryError = null;
             recoveryCountdown = new CountdownWrapper(numChunks, isAsync);
             HashBucket* start = state[version].tableAligned;
@@ -174,7 +173,7 @@ namespace Tsavorite.core
                     }
                     numBytesRead += chunkSize;
                 }
-                Debug.Assert(numBytesRead == num_bytes);
+                Assert(numBytesRead == num_bytes);
             }
             catch
             {

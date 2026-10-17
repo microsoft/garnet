@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
@@ -71,8 +70,8 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool SnapCursorToLogicalAddress(ref long cursor)
         {
-            Debug.Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
-            Debug.Assert(nextAddress == cursor, "SnapCursorToLogicalAddress should have nextAddress == cursor");
+            Assert(currentAddress == -1, "SnapCursorToLogicalAddress must be called before GetNext()");
+            Assert(nextAddress == cursor, "SnapCursorToLogicalAddress should have nextAddress == cursor");
 
             if (!InitializeGetNextAndAcquireEpoch(out var stopAddress))
                 return false;
@@ -278,7 +277,7 @@ namespace Tsavorite.core
                     {
                         // The frame is loaded to the end of the page's valid data, so a record read from it must lie entirely below
                         // FlushedUntilAddress; otherwise its tail is the cleared frame rather than log data.
-                        Debug.Assert(currentAddress + allocatedSize <= hlogBase.FlushedUntilAddress,
+                        Assert(currentAddress + allocatedSize <= hlogBase.FlushedUntilAddress,
                             $"Record at {currentAddress} of size {allocatedSize} extends past FlushedUntilAddress {hlogBase.FlushedUntilAddress}");
 
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.

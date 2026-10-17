@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using System.Net;
 using System.Text;
 using Garnet.common;
@@ -377,7 +376,7 @@ namespace Garnet.cluster
             {
                 var withMeetSpan = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
-                Debug.Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
+                Assert(withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET));
                 if (withMeetSpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHMEET))
                     gossipWithMeet = true;
             }
@@ -428,7 +427,7 @@ namespace Garnet.cluster
                         }
 
                         // Remember that this connection is being used for another cluster node to talk to us
-                        Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
+                        Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
                         RemoteNodeId = other.LocalNodeId;
                     }
                     else

@@ -903,7 +903,7 @@ namespace Garnet.server
 
         Task CompactionTaskAsync(int compactionFrequencySecs, CancellationToken token = default)
         {
-            Debug.Assert(compactionFrequencySecs > 0);
+            Assert(compactionFrequencySecs > 0);
 
             return RunMaintenanceLoopAsync(async (cancellationToken) =>
             {
@@ -918,7 +918,7 @@ namespace Garnet.server
 
         Task ObjectCollectTaskAsync(int objectCollectFrequencySecs, CancellationToken token = default)
         {
-            Debug.Assert(objectCollectFrequencySecs > 0);
+            Assert(objectCollectFrequencySecs > 0);
 
             if (serverOptions.DisableObjects)
             {
@@ -935,7 +935,7 @@ namespace Garnet.server
 
         Task ExpiredKeyDeletionScanTaskAsync(int expiredKeyDeletionScanFrequencySecs, CancellationToken token = default)
         {
-            Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
+            Assert(expiredKeyDeletionScanFrequencySecs > 0);
 
             return RunMaintenanceLoopAsync((_) =>
             {

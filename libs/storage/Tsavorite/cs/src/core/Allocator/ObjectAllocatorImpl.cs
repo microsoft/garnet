@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -147,7 +146,7 @@ namespace Tsavorite.core
 
         void ReturnPage(int index)
         {
-            Debug.Assert(index < BufferSize);
+            Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
                 if (useNativeLogPages)
@@ -300,7 +299,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be resused");
+            Assert(sizeInfo.word == 0, "RecordSizeInfo should not be resused");
 
             // Object allocator may have Inline or Overflow Keys or Values; additionally, Values may be Object. Both non-inline cases are an objectId in the record.
             // Key
@@ -540,7 +539,7 @@ namespace Tsavorite.core
 
         private int GetLowestObjectLogSegmentInUse(long addressOfStartOfMainLogPage)
         {
-            Debug.Assert(objectLogDevice is not null, "GetHighestObjectLogSegmentToRemove should not be called if there is no objectLogDevice");
+            Assert(objectLogDevice is not null, "GetHighestObjectLogSegmentToRemove should not be called if there is no objectLogDevice");
             var objectLogSegment = -1;
 
             // If we're on the first main-log page, we won't be able to remove any object log segments.
@@ -597,7 +596,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail)
         {
-            Debug.Assert(!objectLogTail.HasData, $"SetObjectLogTail should be called only when we have not already set objectLogTail, such as in Recovery");
+            Assert(!objectLogTail.HasData, $"SetObjectLogTail should be called only when we have not already set objectLogTail, such as in Recovery");
             objectLogTail = tail;
         }
 
@@ -640,7 +639,7 @@ namespace Tsavorite.core
 
                         // TsavoriteKV using ObjectAllocator always moves ReadOnlyAddress in page alignment, so if we have a partial first page, it can be written
                         // in the same loop as full pages, because there are no adjacent fragments. Write the entire page up to asyncResult.untilAddress.
-                        Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
+                        Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
                             $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
 
                         WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
@@ -713,7 +712,7 @@ namespace Tsavorite.core
             var logPagePointer = (byte*)pagePointers[flushPage % BufferSize];
 
             // asyncResult.fromAddress is either start of page or start of a record past the page header
-            Debug.Assert(asyncResult.fromAddress - pageStart is >= PageHeader.Size or 0, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
+            Assert(asyncResult.fromAddress - pageStart is >= PageHeader.Size or 0, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
             int startOffset = (int)(asyncResult.fromAddress - pageStart), endOffset = startOffset + (int)numBytesToWrite;
             var isFirstRecordOnPage = startOffset <= PageHeader.Size;
 
@@ -741,17 +740,17 @@ namespace Tsavorite.core
                 }
                 // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
                 // extends to the end of the page, so the whole page is written with the PageHeader re-included.
-                Debug.Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
+                Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
                     $"Recovery flush should extend to the end of page {flushPage}");
             }
 
-            Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
+            Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
 
             // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries),
             // in the allocator page (including the objectId space for Overflow and Heap Objects). Note: "Aligned" in this discussion refers to sector (as opposed to record) alignment.
 
             // Initialize offsets into the allocator page based on full-page (including the page header), then override them if partial.
-            Debug.Assert(asyncResult.untilAddress - pageStart >= PageHeader.Size, $"untilAddress ({asyncResult.untilAddress}, offset {asyncResult.untilAddress - pageStart}) must be past PageHeader {flushPage}");
+            Assert(asyncResult.untilAddress - pageStart >= PageHeader.Size, $"untilAddress ({asyncResult.untilAddress}, offset {asyncResult.untilAddress - pageStart}) must be past PageHeader {flushPage}");
             if (asyncResult.partial)
             {
                 // We're writing only a subset of the page.
@@ -777,7 +776,7 @@ namespace Tsavorite.core
                 }
             }
             else
-                Debug.Assert(asyncResult.flushRequestState != FlushRequestState.Recovery, "FlushRequestState.IsForRecovery should always be done an entire page at a time");
+                Assert(asyncResult.flushRequestState != FlushRequestState.Recovery, "FlushRequestState.IsForRecovery should always be done an entire page at a time");
 
             var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
             var startPadding = startOffset - alignedStartOffset;
@@ -896,7 +895,7 @@ namespace Tsavorite.core
                                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                                 {
                                     var recordStartPosition = logWriter.GetNextRecordStartPosition();
-                                    Debug.Assert(asyncResult.flushRequestState != FlushRequestState.ReadOnly || !isFirstRecordOnPage || recordStartPosition.CurrentAddress == objectLogTail.CurrentAddress,
+                                    Assert(asyncResult.flushRequestState != FlushRequestState.ReadOnly || !isFirstRecordOnPage || recordStartPosition.CurrentAddress == objectLogTail.CurrentAddress,
                                         $"ObjectLogPosition mismatch on first record for ReadOnly flush: rec {recordStartPosition.CurrentAddress}, tail {objectLogTail.CurrentAddress}");
 
                                     OverflowByteArray keyOverflow = default, valueOverflow = default;
@@ -1073,8 +1072,8 @@ namespace Tsavorite.core
         /// </summary>
         internal override void OnPagesMarkedReadOnly(long newSafeReadOnlyAddress, bool noFlush = false)
         {
-            Debug.Assert(newSafeReadOnlyAddress > HeadAddress);
-            Debug.Assert(newSafeReadOnlyAddress <= GetTailAddress());
+            Assert(newSafeReadOnlyAddress > HeadAddress);
+            Assert(newSafeReadOnlyAddress <= GetTailAddress());
             if (noFlush)
                 _ = MonotonicUpdate(ref NoFlushUntilAddress, newSafeReadOnlyAddress, out _);
             if (MonotonicUpdate(ref SafeReadOnlyAddress, newSafeReadOnlyAddress, out var oldSafeReadOnlyAddress))
@@ -1139,8 +1138,8 @@ namespace Tsavorite.core
                 }
 
                 var updatedLIFUA = MonotonicUpdate(ref LastIssuedFlushedUntilAddress, flushEndAddress, out var oldLastIssuedFlushedUntilAddress);
-                Debug.Assert(updatedLIFUA, $"Failed to update LIFUA");
-                Debug.Assert(oldLastIssuedFlushedUntilAddress == flushStartAddress, $"Expected LastIssuedFlushedUntilAddress to be {flushStartAddress} but was {oldLastIssuedFlushedUntilAddress}");
+                Assert(updatedLIFUA, $"Failed to update LIFUA");
+                Assert(oldLastIssuedFlushedUntilAddress == flushStartAddress, $"Expected LastIssuedFlushedUntilAddress to be {flushStartAddress} but was {oldLastIssuedFlushedUntilAddress}");
 
                 // End if we have exhausted co-operative work. This includes the case where OngoingFUA and flushEndAddress are already 0.
                 if (Interlocked.CompareExchange(ref OngoingFlushedUntilAddress, 0, flushEndAddress) == flushEndAddress)

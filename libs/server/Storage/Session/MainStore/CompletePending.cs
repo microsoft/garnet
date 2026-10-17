@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -24,12 +23,12 @@ namespace Garnet.server
         {
             stringContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();
-            Debug.Assert(more);
+            Assert(more);
             status = completedOutputs.Current.Status;
             output = completedOutputs.Current.Output;
             recordMetadata = completedOutputs.Current.RecordMetadata;
             more = completedOutputs.Next();
-            Debug.Assert(!more);
+            Assert(!more);
             completedOutputs.Dispose();
         }
 

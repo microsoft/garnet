@@ -7,7 +7,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 #pragma warning restore IDE0005
 using System.Runtime.CompilerServices;
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text;
@@ -1314,14 +1313,14 @@ namespace Garnet.cluster
                 // Node being removed is owner of slot
                 if (newSlotMap[i]._state == SlotState.STABLE && newSlotMap[i].workerId == workerId)
                 {
-                    Debug.Assert(newSlotMap[i]._workerId != LOCAL_WORKER_ID);
+                    Assert(newSlotMap[i]._workerId != LOCAL_WORKER_ID);
                     newSlotMap[i]._workerId = RESERVED_WORKER_ID;
                     newSlotMap[i]._state = SlotState.OFFLINE;
                 }
                 // Node being removed is target node for migration and this is the source node
                 else if (newSlotMap[i]._state == SlotState.MIGRATING && newSlotMap[i]._workerId == workerId)
                 {
-                    Debug.Assert(newSlotMap[i].workerId == LOCAL_WORKER_ID);
+                    Assert(newSlotMap[i].workerId == LOCAL_WORKER_ID);
                     newSlotMap[i]._workerId = LOCAL_WORKER_ID;
                     newSlotMap[i]._state = SlotState.STABLE;
                 }

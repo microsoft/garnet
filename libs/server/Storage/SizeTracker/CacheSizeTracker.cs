@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -40,7 +39,7 @@ namespace Garnet.server
             get => mainLogTracker?.TargetSize ?? 0;
             set
             {
-                Debug.Assert(value >= 0);
+                Assert(value >= 0);
                 mainLogTracker?.UpdateTargetSize(value, value / HighTargetSizeDeltaFraction, value / LowTargetSizeDeltaFraction);
             }
         }
@@ -57,7 +56,7 @@ namespace Garnet.server
             get => readCacheTracker?.TargetSize ?? 0;
             set
             {
-                Debug.Assert(value >= 0);
+                Assert(value >= 0);
                 readCacheTracker?.UpdateTargetSize(value, value / HighTargetSizeDeltaFraction, value / LowTargetSizeDeltaFraction);
             }
         }
@@ -113,8 +112,8 @@ namespace Garnet.server
         /// </param>
         public void Initialize(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory, long indexMemoryBudget)
         {
-            Debug.Assert(store != null);
-            Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);
+            Assert(store != null);
+            Assert(targetSize > 0 || readCacheTargetSize > 0);
 
             if (targetSize > 0)
             {

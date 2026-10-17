@@ -103,7 +103,7 @@ namespace Garnet.server
             {
                 get
                 {
-                    Debug.Assert(IsFree || IsInUse, "Illegal state, neither free nor in use");
+                    Assert(IsFree || IsInUse, "Illegal state, neither free nor in use");
 
                     if (IsFree)
                     {
@@ -123,7 +123,7 @@ namespace Garnet.server
             {
                 get
                 {
-                    Debug.Assert(IsFree, "Can't be in free list if allocated");
+                    Assert(IsFree, "Can't be in free list if allocated");
 
                     return NextFreeBlockRefRaw;
                 }
@@ -136,7 +136,7 @@ namespace Garnet.server
             {
                 get
                 {
-                    Debug.Assert(IsFree, "Can't be in free list if allocated");
+                    Assert(IsFree, "Can't be in free list if allocated");
 
                     return PrevFreeBlockRefRaw;
                 }
@@ -162,7 +162,7 @@ namespace Garnet.server
             /// </summary>
             public void MarkFree()
             {
-                Debug.Assert(IsInUse, "Double free");
+                Assert(IsInUse, "Double free");
 
                 SizeBytesRaw = -SizeBytesRaw;
             }
@@ -174,7 +174,7 @@ namespace Garnet.server
             /// </summary>
             public void MarkInUse()
             {
-                Debug.Assert(IsFree, "Already allocated");
+                Assert(IsFree, "Already allocated");
 
                 SizeBytesRaw = -SizeBytesRaw;
             }
@@ -292,7 +292,7 @@ namespace Garnet.server
 
         internal LuaLimitedManagedAllocator(int backingArraySize)
         {
-            Debug.Assert(backingArraySize >= BlockHeader.StructSizeBytes, "Too small to ever allocate");
+            Assert(backingArraySize >= BlockHeader.StructSizeBytes, "Too small to ever allocate");
 
             // Pinned because Lua is oblivious to .NET's GC
             data = GC.AllocateUninitializedArray<byte>(backingArraySize, pinned: true);
@@ -317,7 +317,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void EnterInfallibleAllocationRegion()
         {
-            Debug.Assert(!isInfallible, "Cannot recursively enter an infallible region");
+            Assert(!isInfallible, "Cannot recursively enter an infallible region");
 
             isInfallible = true;
         }
@@ -325,7 +325,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public bool TryExitInfallibleAllocationRegion()
         {
-            Debug.Assert(isInfallible, "Cannot exit an infallible region that hasn't been entered");
+            Assert(isInfallible, "Cannot exit an infallible region that hasn't been entered");
 
             isInfallible = false;
 
@@ -352,7 +352,7 @@ namespace Garnet.server
             ref var cur = ref freeList;
             while (IsValidBlockRef(ref cur))
             {
-                Debug.Assert(cur.IsFree, "Free list corrupted");
+                Assert(cur.IsFree, "Free list corrupted");
 
                 // We know this block is free, so touch size directly
                 var freeBlockSize = cur.SizeBytesRaw;
@@ -367,7 +367,7 @@ namespace Garnet.server
                 if (ShouldSplit(ref cur, actualSizeBytes))
                 {
                     ref var newBlock = ref SplitFreeBlock(ref dataStartRef, ref cur, actualSizeBytes);
-                    Debug.Assert(cur.IsFree && cur.SizeBytes == actualSizeBytes, "Split produced unexpected block");
+                    Assert(cur.IsFree && cur.SizeBytes == actualSizeBytes, "Split produced unexpected block");
 
                     freeBlockSize = actualSizeBytes;
 
@@ -434,11 +434,11 @@ namespace Garnet.server
 
             ref var blockRef = ref GetBlockRef(ref dataStartRef, ref start);
 
-            Debug.Assert(blockRef.IsInUse, "Should be in use");
+            Assert(blockRef.IsInUse, "Should be in use");
 
             blockRef.MarkFree();
             AddToFreeList(ref dataStartRef, ref blockRef);
-            Debug.Assert(blockRef.IsFree, "Should be free by this point");
+            Assert(blockRef.IsFree, "Should be free by this point");
 
             // We know the block is free, so touch size directly
             UpdateDebugAllocatedBytes(-blockRef.SizeBytesRaw);
@@ -463,7 +463,7 @@ namespace Garnet.server
             ref var dataStartRef = ref GetDataStartRef();
 
             ref var curBlock = ref GetBlockRef(ref dataStartRef, ref start);
-            Debug.Assert(curBlock.IsInUse, "Shouldn't be resizing an allocation that isn't in use");
+            Assert(curBlock.IsInUse, "Shouldn't be resizing an allocation that isn't in use");
 
             // For everything else, move things up to a reasonable multiple
             var actualSizeBytes = RoundToMinAlloc(newSizeBytes);
@@ -512,7 +512,7 @@ namespace Garnet.server
                 {
                     // We coalesced such that there's a lot of empty space at the end of this block, peel it off for later reuse
                     ref var newBlock = ref SplitInUseBlock(ref dataStartRef, ref curBlock, actualSizeBytes);
-                    Debug.Assert(curBlock.IsInUse && curBlock.SizeBytes == actualSizeBytes, "Split produced unexpected block");
+                    Assert(curBlock.IsInUse && curBlock.SizeBytes == actualSizeBytes, "Split produced unexpected block");
 
                     ref var freeList = ref GetFreeList();
 
@@ -722,7 +722,7 @@ namespace Garnet.server
         /// </summary>
         private void AddToFreeList(ref byte dataStartRef, ref BlockHeader block)
         {
-            Debug.Assert(block.IsFree, "Can only add free blocks to list");
+            Assert(block.IsFree, "Can only add free blocks to list");
 
             ref var freeListStartRef = ref GetFreeList();
             if (!IsValidBlockRef(ref freeListStartRef))
@@ -739,7 +739,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(freeListStartRef.IsFree, "Free list is corrupted");
+                Assert(freeListStartRef.IsFree, "Free list is corrupted");
 
                 // Free list isn't empty - block can go in either the head position
                 // or the one-past-the-head position depending on if block is bigger
@@ -791,8 +791,8 @@ namespace Garnet.server
         /// </summary>
         private void RemoveFromFreeList(ref byte dataStartRef, ref BlockHeader block)
         {
-            Debug.Assert(IsValidBlockRef(ref GetFreeList()), "Shouldn't be removing from free list if free list is empty");
-            Debug.Assert(block.IsFree, "Only valid for free blocks");
+            Assert(IsValidBlockRef(ref GetFreeList()), "Shouldn't be removing from free list if free list is empty");
+            Assert(block.IsFree, "Only valid for free blocks");
 
             var blockRefVal = block.GetRefVal();
 
@@ -813,7 +813,7 @@ namespace Garnet.server
 
             if (Unsafe.AreSame(ref freeList, ref block))
             {
-                Debug.Assert(!IsValidBlockRef(ref prevFreeBlock), "Should be no prev pointer if block is head of free list");
+                Assert(!IsValidBlockRef(ref prevFreeBlock), "Should be no prev pointer if block is head of free list");
 
                 if (!IsValidBlockRef(ref nextFreeBlock))
                 {
@@ -830,7 +830,7 @@ namespace Garnet.server
                 else
                 {
                     // We're in state #2 - block is first thing in the free list, but not the last
-                    Debug.Assert(nextFreeBlock.PrevFreeBlockRef == blockRefVal, "Broken chain in free list");
+                    Assert(nextFreeBlock.PrevFreeBlockRef == blockRefVal, "Broken chain in free list");
 
                     // NextFreeBlock is new head, it needs to prev point now
                     nextFreeBlock.PrevFreeBlockRefRaw = 0;
@@ -843,12 +843,12 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(IsValidBlockRef(ref prevFreeBlock), "Should always have a prev pointer if not head of free list");
+                Assert(IsValidBlockRef(ref prevFreeBlock), "Should always have a prev pointer if not head of free list");
 
                 if (!IsValidBlockRef(ref nextFreeBlock))
                 {
                     // We're in state #3 - block is last thing in the free list, but not the first
-                    Debug.Assert(prevFreeBlock.NextFreeBlockRef == blockRefVal, "Broken chain in free list");
+                    Assert(prevFreeBlock.NextFreeBlockRef == blockRefVal, "Broken chain in free list");
 
                     // Remove pointer to this block from it's preceeding block
                     prevFreeBlock.NextFreeBlockRefRaw = 0;
@@ -857,8 +857,8 @@ namespace Garnet.server
                 else
                 {
                     // We're in state #4 - block is just in the middle of the free list somewhere, but not last or first
-                    Debug.Assert(prevFreeBlock.NextFreeBlockRef == blockRefVal, "Broken chain in free list");
-                    Debug.Assert(nextFreeBlock.PrevFreeBlockRef == blockRefVal, "Broken chain in free list");
+                    Assert(prevFreeBlock.NextFreeBlockRef == blockRefVal, "Broken chain in free list");
+                    Assert(nextFreeBlock.PrevFreeBlockRef == blockRefVal, "Broken chain in free list");
 
                     // Prev needs to skip this block when going forward
                     prevFreeBlock.NextFreeBlockRefRaw = block.NextFreeBlockRef;
@@ -878,17 +878,17 @@ namespace Garnet.server
         /// </summary>
         private void MoveToHeadOfFreeList(ref byte dataStartRef, ref BlockHeader freeList, ref BlockHeader block)
         {
-            Debug.Assert(block.IsFree, "Should be free");
-            Debug.Assert(freeList.IsFree, "Free list corrupted");
-            Debug.Assert(!IsValidBlockRef(ref freeList.GetPrevFreeBlockRef()), "Free list corrupted");
-            Debug.Assert(IsValidBlockRef(ref freeList.GetNextFreeBlockRef()), "Free list corrupted");
+            Assert(block.IsFree, "Should be free");
+            Assert(freeList.IsFree, "Free list corrupted");
+            Assert(!IsValidBlockRef(ref freeList.GetPrevFreeBlockRef()), "Free list corrupted");
+            Assert(IsValidBlockRef(ref freeList.GetNextFreeBlockRef()), "Free list corrupted");
 
             // Because block is not head of the free list, we have two cases here
             //   1. Block is in the middle of the list somewhere
             //   2. Block is the tail of the list
 
             ref var prevBlock = ref block.GetPrevFreeBlockRef();
-            Debug.Assert(IsValidBlockRef(ref prevBlock), "Block shouldn't be head of free list");
+            Assert(IsValidBlockRef(ref prevBlock), "Block shouldn't be head of free list");
 
             ref var nextBlock = ref block.GetNextFreeBlockRef();
             if (IsValidBlockRef(ref nextBlock))
@@ -970,7 +970,7 @@ namespace Garnet.server
         /// </summary>
         private ref BlockHeader SplitInUseBlock(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
-            Debug.Assert(curBlock.IsInUse, "Only valid for in use blocks");
+            Assert(curBlock.IsInUse, "Only valid for in use blocks");
 
             // We know the block is in use, so touch size bytes directly
             var oldSizeBytes = -curBlock.SizeBytesRaw;
@@ -996,7 +996,7 @@ namespace Garnet.server
         /// </summary>
         private ref BlockHeader SplitFreeBlock(ref byte dataStartRef, ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
-            Debug.Assert(curBlock.IsFree, "Only valid for free blocks");
+            Assert(curBlock.IsFree, "Only valid for free blocks");
 
             ref var oldNextBlock = ref curBlock.GetNextFreeBlockRef();
 
@@ -1007,20 +1007,20 @@ namespace Garnet.server
             // Update newBlock
             newBlock.PrevFreeBlockRefRaw = curBlockRefVal;
             newBlock.NextFreeBlockRefRaw = curBlock.NextFreeBlockRef;
-            Debug.Assert(newBlock.IsFree, "New block shoud be free");
-            Debug.Assert(ContainsRef(ref Unsafe.As<BlockHeader, byte>(ref newBlock)), "New block out of managed memory");
+            Assert(newBlock.IsFree, "New block shoud be free");
+            Assert(ContainsRef(ref Unsafe.As<BlockHeader, byte>(ref newBlock)), "New block out of managed memory");
 
             var newBlockRefVal = newBlock.GetRefVal();
 
             // Update curBlock
             curBlock.NextFreeBlockRefRaw = newBlockRefVal;
-            Debug.Assert(curBlock.IsFree, "New block shoud be free");
-            Debug.Assert(ContainsRef(ref Unsafe.As<BlockHeader, byte>(ref curBlock)), "Split block out of managed memory");
+            Assert(curBlock.IsFree, "New block shoud be free");
+            Assert(ContainsRef(ref Unsafe.As<BlockHeader, byte>(ref curBlock)), "Split block out of managed memory");
 
             // Update the old next block if it exists
             if (IsValidBlockRef(ref oldNextBlock))
             {
-                Debug.Assert(oldNextBlock.IsFree, "Should have been in free list");
+                Assert(oldNextBlock.IsFree, "Should have been in free list");
                 oldNextBlock.PrevFreeBlockRefRaw = newBlockRefVal;
             }
 
@@ -1048,12 +1048,12 @@ namespace Garnet.server
         /// </summary>
         private ref BlockHeader GetBlockRef(ref byte dataStartRef, ref byte userDataRef)
         {
-            Debug.Assert(!Unsafe.AreSame(ref dataStartRef, ref userDataRef), "User data is actually 0 size alloc, that doesn't make sense");
+            Assert(!Unsafe.AreSame(ref dataStartRef, ref userDataRef), "User data is actually 0 size alloc, that doesn't make sense");
 
             ref var blockStartByteRef = ref Unsafe.Add(ref userDataRef, -BlockHeader.DataOffset);
 
-            Debug.Assert(!Unsafe.IsAddressLessThan(ref blockStartByteRef, ref dataStartRef), "User data is before managed memory");
-            Debug.Assert(!Unsafe.IsAddressGreaterThan(ref blockStartByteRef, ref Unsafe.Add(ref dataStartRef, data.Length - 1)), "User data is after managed memory");
+            Assert(!Unsafe.IsAddressLessThan(ref blockStartByteRef, ref dataStartRef), "User data is before managed memory");
+            Assert(!Unsafe.IsAddressGreaterThan(ref blockStartByteRef, ref Unsafe.Add(ref dataStartRef, data.Length - 1)), "User data is after managed memory");
 
             return ref Unsafe.As<byte, BlockHeader>(ref blockStartByteRef);
         }
@@ -1072,7 +1072,7 @@ namespace Garnet.server
         /// </summary>
         private static ref BlockHeader SplitCommon(ref BlockHeader curBlock, int curBlockUpdateSizeBytes)
         {
-            Debug.Assert(curBlockUpdateSizeBytes >= LuaAllocMinSizeBytes, "Shouldn't split an existing block to be this small");
+            Assert(curBlockUpdateSizeBytes >= LuaAllocMinSizeBytes, "Shouldn't split an existing block to be this small");
 
             ref var curBlockData = ref curBlock.DataReference;
             ref var newBlockStartByteRef = ref Unsafe.AddByteOffset(ref curBlockData, curBlockUpdateSizeBytes);
@@ -1088,7 +1088,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(curBlock.IsInUse, "Invalid block state");
+                Assert(curBlock.IsInUse, "Invalid block state");
 
                 // We know curBlock is is inuse, so touch SizeBytesRaw directly
                 newBlockSizeBytes = -curBlock.SizeBytesRaw - BlockHeader.DataOffset - curBlockUpdateSizeBytes;
@@ -1096,7 +1096,7 @@ namespace Garnet.server
                 curBlock.SizeBytesRaw = -curBlockUpdateSizeBytes;
             }
 
-            Debug.Assert(newBlockSizeBytes >= LuaAllocMinSizeBytes, "Shouldn't create a new block this small");
+            Assert(newBlockSizeBytes >= LuaAllocMinSizeBytes, "Shouldn't create a new block this small");
 
             // The new block is always free, so positive size
             newBlock.SizeBytesRaw = newBlockSizeBytes;
@@ -1120,14 +1120,14 @@ namespace Garnet.server
         /// </summary>
         private static int RoundToMinAlloc(int sizeBytes)
         {
-            Debug.Assert(BitOperations.IsPow2(LuaAllocMinSizeBytes), "Assumes min allocation is a power of 2");
+            Assert(BitOperations.IsPow2(LuaAllocMinSizeBytes), "Assumes min allocation is a power of 2");
 
             // To avoid special casing 0, we can reserve up to an extra LuaAllocMinSizeBytes
             var ret = (sizeBytes + LuaAllocMinSizeBytes) & ~(LuaAllocMinSizeBytes - 1);
 
-            Debug.Assert(ret > 0, "Rounding logic invalid - not positive");
-            Debug.Assert(ret >= sizeBytes, "Rounding logic invalid - did not round up");
-            Debug.Assert(ret % LuaAllocMinSizeBytes == 0, "Rounding logic invalid - not a whole multiple of step size");
+            Assert(ret > 0, "Rounding logic invalid - not positive");
+            Assert(ret >= sizeBytes, "Rounding logic invalid - did not round up");
+            Assert(ret % LuaAllocMinSizeBytes == 0, "Rounding logic invalid - not a whole multiple of step size");
 
             return ret;
         }

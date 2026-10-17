@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -153,7 +152,7 @@ namespace Garnet.cluster
             if (inlineSize < 0)
             {
                 var headerSize = DiskLogRecord.ChunkedRecordHeaderSize;
-                Debug.Assert(inlineFilled == 0, "the fixed header always arrives whole in a record's first chunk");
+                Assert(inlineFilled == 0, "the fixed header always arrives whole in a record's first chunk");
                 var headerTake = Math.Min(headerSize, data.Length);
                 EnsureInlineCapacity(headerTake);
                 data.Slice(0, headerTake).CopyTo(inlineBuffer.AsSpan(inlineFilled));

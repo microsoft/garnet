@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -47,7 +46,7 @@ namespace Tsavorite.core
                 // in the non-OOM path, so a freshly-returned freelist id is always < Count, but a concurrent Allocate on another thread can
                 // advance Count between the two reads we would otherwise do, producing a misleading message.)
                 var countSnapshot = objectArray.Count;
-                Debug.Assert(objectId < countSnapshot, $"objectId {objectId} retrieved from freelist must be less than Count {countSnapshot}");
+                Assert(objectId < countSnapshot, $"objectId {objectId} retrieved from freelist must be less than Count {countSnapshot}");
                 return objectId;
             }
             return objectArray.Allocate();

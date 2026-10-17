@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -68,8 +67,8 @@ namespace Tsavorite.core
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
             // X and S latches means an X latch is still trying to drain readers, like this one.
-            Debug.Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched bucket");
-            Debug.Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched bucket");
+            Assert((entry_word & kLatchBitMask) != kExclusiveLatchBitMask, "Trying to S unlatch an X-only latched bucket");
+            Assert((entry_word & kSharedLatchBitMask) != 0, "Trying to S unlatch an unlatched bucket");
             Interlocked.Add(ref entry_word, -kSharedLatchIncrement);
         }
 
@@ -125,7 +124,7 @@ namespace Tsavorite.core
             while (true)
             {
                 long expected_word = entry_word;
-                Debug.Assert((expected_word & kSharedLatchBitMask) != 0, "Trying to promote a bucket that is not S latched to X latch");
+                Assert((expected_word & kSharedLatchBitMask) != 0, "Trying to promote a bucket that is not S latched to X latch");
                 if ((expected_word & kExclusiveLatchBitMask) == 0)  // not exclusively locked
                 {
                     long new_word = (expected_word | kExclusiveLatchBitMask) - kSharedLatchIncrement;
@@ -166,7 +165,7 @@ namespace Tsavorite.core
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
 
             // We allow shared locking to drain the write lock, so it is OK if we have shared latches.
-            Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched bucket");
+            Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched bucket");
 
             // CAS is necessary to preserve the reader count, and also the address in the overflow bucket may change from unassigned to assigned.
             while (true)

@@ -84,7 +84,7 @@ namespace Garnet.cluster
             {
                 for (var i = 0; i < numDrivers; i++)
                 {
-                    Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
+                    Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
                     var prevAddress = syncDrivers[i].GetPreviousAddress(physicalSublogIdx);
                     if (prevAddress < TruncatedUntil)
                         TruncatedUntil = prevAddress;
@@ -124,7 +124,7 @@ namespace Garnet.cluster
         /// <param name="truncateUntil">TruncateUntil address</param>
         public void SafeTruncateAof(NodeRole role, in AofAddress truncateUntil)
         {
-            Debug.Assert(role == NodeRole.PRIMARY, $"{nameof(SafeTruncateAof)} should be called only by a PRIMARY node!");
+            Assert(role == NodeRole.PRIMARY, $"{nameof(SafeTruncateAof)} should be called only by a PRIMARY node!");
             _lock.WriteLock();
 
             if (_disposed)
@@ -139,7 +139,7 @@ namespace Garnet.cluster
             {
                 for (var i = 0; i < numDrivers; i++)
                 {
-                    Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null {nameof(SafeTruncateAof)}");
+                    Assert(syncDrivers[i] != null, $"syncDriver cannot be null {nameof(SafeTruncateAof)}");
                     var previousAddress = syncDrivers[i].PreviousAddress;
                     for (var physicalSublogIdx = 0; physicalSublogIdx < previousAddress.Length; physicalSublogIdx++)
                     {
@@ -353,7 +353,7 @@ namespace Garnet.cluster
                 return false;
             }
 
-            Debug.Assert(aofSyncDriver != null, $"aofSyncTaskInfo should not be null {nameof(TryAddReplicationDriver)}");
+            Assert(aofSyncDriver != null, $"aofSyncTaskInfo should not be null {nameof(TryAddReplicationDriver)}");
 
             // Lock to prevent add/remove tasks and truncate operations
             _lock.WriteLock();
@@ -372,7 +372,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numDrivers; i++)
                 {
                     var syncDriver = syncDrivers[i];
-                    Debug.Assert(syncDriver != null, "syncDriver should not be null");
+                    Assert(syncDriver != null, "syncDriver should not be null");
                     if (syncDriver.RemoteNodeId == remoteNodeId)
                     {
                         syncDrivers[i] = aofSyncDriver;
@@ -481,7 +481,7 @@ namespace Garnet.cluster
                     for (var i = 0; i < numDrivers; i++)
                     {
                         var syncDriver = syncDrivers[i];
-                        Debug.Assert(syncDriver != null, $"syncDrive should not be null {nameof(TryAddReplicationDrivers)}");
+                        Assert(syncDriver != null, $"syncDrive should not be null {nameof(TryAddReplicationDrivers)}");
                         if (syncDriver.RemoteNodeId == rss.replicaSyncMetadata.originNodeId)
                         {
                             syncDrivers[i] = rss.AofSyncDriver;
@@ -547,7 +547,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numDrivers; i++)
                 {
                     var syncDriver = syncDrivers[i];
-                    Debug.Assert(syncDriver != null, $"syncDriver should not be null at {nameof(TryRemove)}");
+                    Assert(syncDriver != null, $"syncDriver should not be null at {nameof(TryRemove)}");
                     if (syncDriver == aofSyncDriver)
                     {
                         syncDrivers[i] = null;

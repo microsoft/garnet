@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -175,7 +174,7 @@ namespace Tsavorite.core
                     var numChunks = Utility.GetNumIoChunks(totalSize, maxChunkSize);
 
                     uint chunkSize = (uint)(totalSize / numChunks);
-                    Debug.Assert(chunkSize <= maxChunkSize, "Index checkpoint chunk exceeds the maximum device request size");
+                    Assert(chunkSize <= maxChunkSize, "Index checkpoint chunk exceeds the maximum device request size");
                     // Count an issuance sentinel alongside the chunks, retired in the finally below once issuance has
                     // ended and the catch has recorded any exception. A device may invoke a completion callback
                     // synchronously and then throw out of the same submit; without the sentinel that completion can
@@ -280,7 +279,7 @@ namespace Tsavorite.core
                         numBytesWritten += chunkSize;
                     }
 
-                    Debug.Assert(numBytesWritten == (ulong)totalSize);
+                    Assert(numBytesWritten == (ulong)totalSize);
                     throttleIndexCheckpointFlushSemaphore = null;
                 }
                 catch (Exception ex)

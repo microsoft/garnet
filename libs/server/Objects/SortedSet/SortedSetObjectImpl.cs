@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 
@@ -190,10 +189,10 @@ namespace Garnet.server
 
                         sortedSetDict[member] = score;
                         var success = sortedSet.Remove((scoreStored, member));
-                        Debug.Assert(success);
+                        Assert(success);
                         success = sortedSet.Add((score, member));
                         _ = TryRemoveExpiration(member);
-                        Debug.Assert(success);
+                        Assert(success);
 
                         // If CH flag is set, add changed member to final count
                         if ((options & SortedSetAddOption.CH) == SortedSetAddOption.CH)
@@ -243,7 +242,7 @@ namespace Garnet.server
         private void SortedSetLength(ref ObjectOutput output)
         {
             // Check both objects
-            Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
+            Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
             output.result1 = Count();
         }
 
@@ -1069,7 +1068,7 @@ namespace Garnet.server
             {
                 // this exception is thrown when the SortedSet is empty or
                 // when the supplied minimum is larger than the sortedset maximum.
-                Debug.Assert(sortedSet.Count == 0 ||
+                Assert(sortedSet.Count == 0 ||
                              new ReadOnlySpan<byte>(sortedSet.Max.Element).SequenceCompareTo(minValueChars) < 0);
             }
 

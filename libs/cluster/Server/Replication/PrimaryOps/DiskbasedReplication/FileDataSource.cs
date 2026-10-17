@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -140,7 +139,7 @@ namespace Garnet.cluster
             SectorAlignedMemory buffer, ulong address, long numBytesToRead)
         {
             var errorCode = lastIOErrorCode;
-            Debug.Assert(errorCode == 0, $"I/O error {errorCode} reading {Type} checkpoint file at address {address}");
+            Assert(errorCode == 0, $"I/O error {errorCode} reading {Type} checkpoint file at address {address}");
             if (errorCode != 0)
             {
                 ExceptionUtils.ThrowException(new GarnetException(

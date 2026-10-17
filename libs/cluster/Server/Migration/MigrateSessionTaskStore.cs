@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -159,7 +158,7 @@ namespace Garnet.cluster
 
                 foreach (var slot in mSession.GetSlots)
                 {
-                    Debug.Assert(sessions[slot] == mSession, "MigrateSession not found in slot");
+                    Assert(sessions[slot] == mSession, "MigrateSession not found in slot");
                     sessions[slot] = null;
                 }
 
@@ -230,7 +229,7 @@ namespace Garnet.cluster
                 if (s == null) // Slot is not managed by any session so can safely operate on it
                     return true;
 
-                Debug.Assert(s != null);
+                Assert(s != null);
                 // Check owner of slot if can operate on key
                 if (!s.CanAccessKey(key, slot, readOnly))
                     return false;

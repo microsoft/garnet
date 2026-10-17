@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -107,7 +106,7 @@ namespace Garnet.server
         {
             var status = unifiedContext.Delete((FixedSpanByteKey)key);
 
-            Debug.Assert(!status.IsPending);
+            Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 

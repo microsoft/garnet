@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -202,7 +201,7 @@ namespace Garnet.server
                 count--;
             }
 
-            Debug.Assert(count == 0);
+            Assert(count == 0);
         }
 
         /// <inheritdoc />
@@ -304,7 +303,7 @@ namespace Garnet.server
             else
             {
                 HeapMemorySize -= memorySize;
-                Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+                Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
             }
         }
 
@@ -333,7 +332,7 @@ namespace Garnet.server
             else
             {
                 HeapMemorySize -= memorySize;
-                Debug.Assert(this.HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+                Assert(this.HeapMemorySize >= MemoryUtils.DictionaryOverhead);
             }
         }
 
@@ -513,7 +512,7 @@ namespace Garnet.server
             // Called only when we have verified the key exists
             DeleteExpiredItems();
             var success = hashSpanLookup.TryAdd(key, value);
-            Debug.Assert(success);
+            Assert(success);
 
             UpdateSize(key, value, add: true);
         }

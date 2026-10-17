@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -460,7 +459,7 @@ namespace Garnet.server
                         // deliver it to the blocked client rather than discard it.
                         if (status != GarnetStatus.OK)
                         {
-                            Debug.Assert(false, "List push to the BLMOVE destination failed after the source pop");
+                            Assert(false, "List push to the BLMOVE destination failed after the source pop");
                             result = new CollectionItemResult(key, movedItem);
                             return true;
                         }
@@ -559,7 +558,7 @@ namespace Garnet.server
             if (ParseUtils.TryReadDouble(score, out var parsed, canBeInfinite: true))
                 return parsed;
 
-            Debug.Assert(false, "Sorted set score emitted by the object store failed to round-trip");
+            Assert(false, "Sorted set score emitted by the object store failed to round-trip");
             return default;
         }
 
@@ -586,7 +585,7 @@ namespace Garnet.server
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
             {
-                Debug.Assert(storageSession.txnManager.state == TxnState.None);
+                Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
                 storageSession.txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
                 storageSession.txnManager.SaveKeyEntryToLock(asKey, LockType.Exclusive);

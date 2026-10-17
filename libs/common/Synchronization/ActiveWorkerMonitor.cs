@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -61,7 +60,7 @@ namespace Garnet.common
         /// <returns>true if the resource was successfully opened; otherwise, false.</returns>
         public bool TryOpen()
         {
-            Debug.Assert(workerCount == int.MinValue);
+            Assert(workerCount == int.MinValue);
             drainEvent.Reset();
             return Interlocked.CompareExchange(ref workerCount, 0, int.MinValue) == int.MinValue;
         }

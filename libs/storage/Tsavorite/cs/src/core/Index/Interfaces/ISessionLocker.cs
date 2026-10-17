@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -79,7 +78,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockEphemeralExclusive(TsavoriteKV<TStoreFunctions, TAllocator> store, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
+            Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
                         $"Attempting to use a non-XLocked key in a Transactional context (requesting XLock):"
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
@@ -89,7 +88,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryLockEphemeralShared(TsavoriteKV<TStoreFunctions, TAllocator> store, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            Debug.Assert(store.LockTable.IsLocked(ref stackCtx.hei),
+            Assert(store.LockTable.IsLocked(ref stackCtx.hei),
                         $"Attempting to use a non-Locked (S or X) key in a Transactional context (requesting SLock):"
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
@@ -99,7 +98,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockEphemeralExclusive(TsavoriteKV<TStoreFunctions, TAllocator> store, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            Debug.Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
+            Assert(store.LockTable.IsLockedExclusive(ref stackCtx.hei),
                         $"Attempting to unlock a non-XLocked key in a Transactional context (requesting XLock):"
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");
@@ -108,7 +107,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnlockEphemeralShared(TsavoriteKV<TStoreFunctions, TAllocator> store, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            Debug.Assert(store.LockTable.IsLockedShared(ref stackCtx.hei),
+            Assert(store.LockTable.IsLockedShared(ref stackCtx.hei),
                         $"Attempting to use a non-XLocked key in a Transactional context (requesting XLock):"
                         + $" XLocked {store.LockTable.IsLockedExclusive(ref stackCtx.hei)},"
                         + $" Slocked {store.LockTable.IsLockedShared(ref stackCtx.hei)}");

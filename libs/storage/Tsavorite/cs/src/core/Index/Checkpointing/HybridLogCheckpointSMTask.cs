@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -48,7 +47,7 @@ namespace Tsavorite.core
                     store.CheckpointVersionShiftEnd(lastVersion, next.Version, isStreaming);
                     store.storeFunctions.OnCheckpoint(CheckpointTrigger.FlushBegin, guid);
 
-                    Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
+                    Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
                     stateMachineDriver.ResetLastVersion();
                     // Grab final logical address (end of fuzzy region)
                     store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -51,7 +50,7 @@ namespace Garnet.server
             };
             preparedParameters.KeyHash = GarnetLog.HASH(preparedParameters.Key);
             preparedParameters.PayloadPtr = keyPtr + preparedParameters.Key.TotalSize();
-            Debug.Assert(logAddressSequenceNumber > 0, "Entry address must be positive for single-physical-log consistency updates");
+            Assert(logAddressSequenceNumber > 0, "Entry address must be positive for single-physical-log consistency updates");
             appendOnlyFile.readConsistencyManager.UpdateVirtualSublogKeySequenceNumber(
                 virtualSublogIdx,
                 preparedParameters.KeyHash,
@@ -168,7 +167,7 @@ namespace Garnet.server
                 if (respServerSession.activeDbId != db.Id)
                 {
                     var switchDbSuccessful = respServerSession.TrySwitchActiveDatabaseSession(db.Id);
-                    Debug.Assert(switchDbSuccessful);
+                    Assert(switchDbSuccessful);
                 }
 
                 // Switch the storage context to match the session, if necessary
@@ -292,7 +291,7 @@ namespace Garnet.server
                             logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayCoordinator.FuzzyRegionBufferCount(virtualSublogIdx));
                             aofReplayCoordinator.ClearFuzzyRegionBuffer(virtualSublogIdx);
                         }
-                        Debug.Assert(!replayContext.inFuzzyRegion);
+                        Assert(!replayContext.inFuzzyRegion);
                         replayContext.inFuzzyRegion = true;
                     }
 
@@ -312,7 +311,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            Debug.Assert(replayContext.inFuzzyRegion);
+                            Assert(replayContext.inFuzzyRegion);
                             replayContext.inFuzzyRegion = false;
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
@@ -342,7 +341,7 @@ namespace Garnet.server
                     break;
                 case AofEntryType.MainStoreStreamingCheckpointStartCommit:
                 case AofEntryType.ObjectStoreStreamingCheckpointStartCommit:
-                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                     {
                         if (!usingShardedLog)
@@ -364,7 +363,7 @@ namespace Garnet.server
                     break;
                 case AofEntryType.MainStoreStreamingCheckpointEndCommit:
                 case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
-                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (usingShardedLog)
                     {
                         // For single-physical-log + multi-replay, use entry address; otherwise use embedded sequence number

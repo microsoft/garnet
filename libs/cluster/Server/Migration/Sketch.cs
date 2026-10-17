@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -47,7 +46,7 @@ namespace Garnet.cluster
 
         public bool TryHashAndStore(ReadOnlySpan<byte> ns, ReadOnlySpan<byte> key)
         {
-            Debug.Assert(ns.Length is (sizeof(byte) or sizeof(uint)), "Longer namespaces not yet supported");
+            Assert(ns.Length is (sizeof(byte) or sizeof(uint)), "Longer namespaces not yet supported");
 
             if (!argSliceVector.TryAddItem(ns, key))
                 return false;

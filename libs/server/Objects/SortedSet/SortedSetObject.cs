@@ -4,7 +4,6 @@
 using System;
 using System.Buffers.Text;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -304,7 +303,7 @@ namespace Garnet.server
                 writer.Write(kvp.Value);
                 count--;
             }
-            Debug.Assert(count == 0);
+            Assert(count == 0);
         }
 
         /// <summary>
@@ -571,7 +570,7 @@ namespace Garnet.server
         /// </summary>
         public static void InPlaceDiff(Dictionary<byte[], double> dict1, SortedSetObject sortedSetObject2)
         {
-            Debug.Assert(dict1 != null);
+            Assert(dict1 != null);
 
             if (sortedSetObject2 != null)
             {
@@ -657,7 +656,7 @@ namespace Garnet.server
             else
             {
                 HeapMemorySize -= memorySize;
-                Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+                Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
             }
         }
 
@@ -820,7 +819,7 @@ namespace Garnet.server
             else
             {
                 HeapMemorySize -= memorySize;
-                Debug.Assert(HeapMemorySize >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
+                Assert(HeapMemorySize >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
             }
         }
 

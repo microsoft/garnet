@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -104,7 +103,7 @@ namespace Garnet.server
                     {
                         var entryPtr = ptr + entryLength;
                         var logAddressSequenceNumber = currentAddress + (ptr - record);
-                        Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
+                        Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
                         if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, logAddressSequenceNumber, out var sequenceNumber))
                         {
                             aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _, logAddressSequenceNumber);

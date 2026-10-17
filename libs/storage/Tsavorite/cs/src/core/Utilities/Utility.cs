@@ -105,8 +105,8 @@ namespace Tsavorite.core
         /// <param name="maxBytesPerChunk">Maximum number of bytes a single chunk may contain; must be positive</param>
         internal static int GetNumIoChunks(long totalBytes, long maxBytesPerChunk)
         {
-            Debug.Assert(totalBytes > 0, "totalBytes must be positive");
-            Debug.Assert(maxBytesPerChunk > 0, "maxBytesPerChunk must be positive");
+            Assert(totalBytes > 0, "totalBytes must be positive");
+            Assert(maxBytesPerChunk > 0, "maxBytesPerChunk must be positive");
 
             // The chunk count is a power of two so that a power-of-two total (as the hash table always is) divides
             // evenly into chunks whose size keeps the sector alignment the device requires.
@@ -154,7 +154,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int RoundUp(int value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(int) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "RoundUp(int) alignment must be a power of two");
             return (value + (alignment - 1)) & ~(alignment - 1);
         }
 
@@ -162,7 +162,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static uint RoundUp(uint value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(uint) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "RoundUp(uint) alignment must be a power of two");
             return (value + ((uint)alignment - 1)) & ~((uint)alignment - 1);
         }
 
@@ -170,7 +170,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long RoundUp(long value, long alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(long) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "RoundUp(long) alignment must be a power of two");
             return (value + (alignment - 1)) & ~(alignment - 1);
         }
 
@@ -178,7 +178,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ulong RoundUp(ulong value, ulong alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(ulong) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "RoundUp(ulong) alignment must be a power of two");
             return (value + ((uint)alignment - 1)) & ~((uint)alignment - 1);
         }
 
@@ -186,7 +186,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int RoundDown(int value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(int) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "RoundDown(int) alignment must be a power of two");
             return value & ~(alignment - 1);
         }
 
@@ -194,7 +194,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static uint RoundDown(uint value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(uint) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "RoundDown(uint) alignment must be a power of two");
             return value & ~((uint)alignment - 1);
         }
 
@@ -202,7 +202,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long RoundDown(long value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(long) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "RoundDown(long) alignment must be a power of two");
             return value & ~(alignment - 1);
         }
 
@@ -210,7 +210,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static ulong RoundDown(ulong value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(ulong) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "RoundDown(ulong) alignment must be a power of two");
             return value & ~((uint)alignment - 1);
         }
 
@@ -218,7 +218,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool IsAligned(long value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "IsAligned(long) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "IsAligned(long) alignment must be a power of two");
             return (value & (alignment - 1)) == 0;
         }
 
@@ -226,7 +226,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool IsAligned(ulong value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "IsAligned(ulong) alignment must be a power of two");
+            Assert(IsPowerOfTwo(alignment), "IsAligned(ulong) alignment must be a power of two");
             return (value & ((uint)alignment - 1)) == 0;
         }
 
@@ -497,7 +497,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public static ulong GetCurrentMilliseconds()
         {
-            Debug.Assert(Stopwatch.IsHighResolution, "Expected Stopwatch.IsHighResolution to be true");
+            Assert(Stopwatch.IsHighResolution, "Expected Stopwatch.IsHighResolution to be true");
             return (ulong)(((double)Stopwatch.GetTimestamp() / Stopwatch.Frequency) * 1000);
         }
 
@@ -552,7 +552,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Should only be called in Debug.Assert or other DEBUG-conditional code
+        /// Should only be called in assertions or other conditional diagnostics.
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal static string GetCurrentMethodName([CallerMemberName] string memberName = "") => memberName;

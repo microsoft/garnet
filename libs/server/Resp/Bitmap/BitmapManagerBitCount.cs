@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
@@ -19,8 +18,8 @@ namespace Garnet.server
         /// <returns>Long count of bits set in payload.</returns>
         private static long BitIndexCount(byte payload, int startBitOffset = 0, int endBitOffset = 8)
         {
-            Debug.Assert(startBitOffset >= 0 && startBitOffset <= 8);
-            Debug.Assert(endBitOffset >= 0 && endBitOffset <= 8);
+            Assert(startBitOffset >= 0 && startBitOffset <= 8);
+            Assert(endBitOffset >= 0 && endBitOffset <= 8);
             // Reverse payload to count starting from most significant bit.
             payload = reverse(payload);
             int leftBitIndex = (1 << startBitOffset);

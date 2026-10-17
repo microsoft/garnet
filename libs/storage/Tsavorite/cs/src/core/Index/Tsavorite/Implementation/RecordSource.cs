@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -119,7 +118,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetHasMainLogSrc()
         {
-            Debug.Assert(!IsReadCache(LogicalAddress), "LogicalAddress must be a main log address to set HasMainLogSrc");
+            Assert(!IsReadCache(LogicalAddress), "LogicalAddress must be a main log address to set HasMainLogSrc");
             internalState |= InternalStates.MainLogSrc;
         }
 
@@ -130,7 +129,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetHasReadCacheSrc()
         {
-            Debug.Assert(IsReadCache(LogicalAddress), "LogicalAddress must be a readcache address to set HasReadCacheSrc");
+            Assert(IsReadCache(LogicalAddress), "LogicalAddress must be a readcache address to set HasReadCacheSrc");
             internalState |= InternalStates.ReadCacheSrc;
         }
 
@@ -145,7 +144,7 @@ namespace Tsavorite.core
         internal readonly LogRecord CreateLogRecord()
         {
             // If we have a physical address we must be in the in-memory log.
-            Debug.Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
+            Assert(PhysicalAddress != 0, "Cannot CreateLogRecord until PhysicalAddress is set");
             return Allocator.CreateLogRecord(LogicalAddress, PhysicalAddress);
         }
 

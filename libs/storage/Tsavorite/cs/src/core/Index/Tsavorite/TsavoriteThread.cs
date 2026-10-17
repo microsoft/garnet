@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -102,7 +101,7 @@ namespace Tsavorite.core
             // are always PendingIoContext; completion-event / sync-scan ops are signaled in place and never
             // reach this per-session ready queue.
             var op = (PendingIoContext<TInput, TOutput, TContext>)request;
-            Debug.Assert(op.completionEvent is null, "completion-event ops are signaled synchronously and never drained here");
+            Assert(op.completionEvent is null, "completion-event ops are signaled synchronously and never drained here");
 
             var stillPending = false;   // a disk-chain reissue reused this same op; it is back in flight
             var repended = false;       // a re-pend issued a distinct fresh op; this (old) op is done
@@ -140,7 +139,7 @@ namespace Tsavorite.core
                     // the pendingState transfer (CONDITIONAL_*) or already disposed via TransferFrom in
                     // InternalCompletePendingRequestFromContext (non-conditional).
                     repended = true;
-                    Debug.Assert(newRequest is null || !ReferenceEquals(newRequest, request), "re-pend must issue a distinct op");
+                    Assert(newRequest is null || !ReferenceEquals(newRequest, request), "re-pend must issue a distinct op");
                     op.baseOperationState = default;
                 }
             }
@@ -176,7 +175,7 @@ namespace Tsavorite.core
                                                                     out AsyncIOContext newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquisition");
+            Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquisition");
             newRequest = null;
 
             // If this was an operation that was trying to retrieve a target record, copy it into the pendingState.

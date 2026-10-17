@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using BenchmarkDotNet.Attributes;
@@ -161,7 +160,7 @@ namespace BDN.benchmark.Operations.LTM
             var template = makeCommand(0);
             var keyPlaceholder = keyPrefix + new string('0', keyDigits);
             var keyIndex = template.IndexOf(keyPlaceholder, StringComparison.Ordinal);
-            Debug.Assert(keyIndex >= 0, "Key placeholder not found in command template");
+            Assert(keyIndex >= 0, "Key placeholder not found in command template");
 
             var bytes = Encoding.ASCII.GetBytes(template);
             batch.commandLength = bytes.Length;

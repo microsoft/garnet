@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -182,7 +181,7 @@ namespace Garnet.server
             this.scratchBufferAllocator = scratchBufferAllocator;
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
-            Debug.Assert(dbFound);
+            Assert(dbFound);
             this.stateMachineDriver = db.StateMachineDriver;
 
             garnetTxMainApi = transactionalGarnetApi;
@@ -407,7 +406,7 @@ namespace Garnet.server
 
         void Log(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc)
         {
-            Debug.Assert(functionsState.StoredProcMode);
+            Assert(functionsState.StoredProcMode);
 
             if (PerformWrites && appendOnlyFile != null)
                 appendOnlyFile.Log.EnqueueStoredProc(AofEntryType.StoredProcedure, id, txnVersion, stringBasicContext.Session.ID, ref procInput, proc);

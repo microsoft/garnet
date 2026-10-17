@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -107,7 +106,7 @@ namespace Garnet.server
                 {
                     var entryPtr = ptr + entryLength;
                     var logAddressSequenceNumber = currentAddress + (ptr - record);
-                    Debug.Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
+                    Assert(logAddressSequenceNumber > 0, "Entry log address must be positive");
                     // Check if entry is assigned for processing to this replay task and
                     // the sequence number is below the threshold to ensure prefix consistency
                     if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, logAddressSequenceNumber, out var sequenceNumber))

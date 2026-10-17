@@ -7,7 +7,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -116,7 +115,7 @@ namespace Tsavorite.core
             page.Free = true;
 #endif // CHECK_FREE
 
-            Debug.Assert(queue[page.Level] != null);
+            Assert(queue[page.Level] != null);
             page.available_bytes = 0;
             page.required_bytes = 0;
             page.valid_offset = 0;

@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Text;
 using System.Threading;
 
@@ -34,7 +33,7 @@ namespace Tsavorite.core
         /// </param>
         public TieredStorageDevice(int commitPoint, IList<IDevice> devices) : base(ComputeFileString(devices, commitPoint), 512, ComputeCapacity(devices))
         {
-            Debug.Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
+            Assert(commitPoint >= 0 && commitPoint < devices.Count, "commit point is out of range");
 
             this.devices = devices;
             this.commitPoint = commitPoint;
@@ -86,7 +85,7 @@ namespace Tsavorite.core
         public override unsafe void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
             int startTier = FindClosestDeviceContaining(segmentId);
-            Debug.Assert(startTier <= commitPoint, "Write should not elide the commit point");
+            Assert(startTier <= commitPoint, "Write should not elide the commit point");
 
             var countdown = new CountdownEvent(commitPoint + 1);  // number of devices to wait on
             // Issue writes to all tiers in parallel
@@ -141,7 +140,7 @@ namespace Tsavorite.core
                 // Unless the last tier device has unspecified storage capacity, in which case the tiered storage also has unspecified capacity
                 if (device.Capacity == Devices.CAPACITY_UNSPECIFIED)
                 {
-                    Debug.Assert(device == devices[devices.Count - 1], "Only the last tier storage of a tiered storage device can have unspecified capacity");
+                    Assert(device == devices[devices.Count - 1], "Only the last tier storage of a tiered storage device can have unspecified capacity");
                     return Devices.CAPACITY_UNSPECIFIED;
                 }
                 result = Math.Max(result, device.Capacity);

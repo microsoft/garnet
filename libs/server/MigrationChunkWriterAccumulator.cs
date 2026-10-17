@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 using Tsavorite.core.Allocator.ObjectSerialization;
@@ -129,7 +128,7 @@ namespace Garnet.server
             // This consumer always consumes the whole buffer (returns first.Length + second.Length), so the serializer's ring
             // never wraps: each drain starts clean at offset 0 with all data contiguous in 'first'. Thus 'second' is always empty
             // here. The second append below is a release-mode safety net only.
-            Debug.Assert(second.IsEmpty, "MigrationChunkWriterAccumulator consumes the whole buffer each drain, so the wrapped 'second' span must be empty.");
+            Assert(second.IsEmpty, "MigrationChunkWriterAccumulator consumes the whole buffer each drain, so the wrapped 'second' span must be empty.");
             if (!first.IsEmpty)
                 objectValueChunks.Append(first);
             if (!second.IsEmpty)

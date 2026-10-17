@@ -327,9 +327,9 @@ namespace Tsavorite.core
 
         private void InitOriginReturn()
         {
-            Debug.Assert(LinearTopSectors == (1 << Log2LinearTop), "LinearTopSectors must equal 1 << Log2LinearTop");
-            Debug.Assert(LinearTopSectors == LinearStrideSectors * StrideClasses, "LinearTopSectors must equal LinearStrideSectors * StrideClasses");
-            Debug.Assert(LinearClasses == TinyExactClasses + StrideClasses, "LinearClasses must equal TinyExactClasses + StrideClasses");
+            Assert(LinearTopSectors == (1 << Log2LinearTop), "LinearTopSectors must equal 1 << Log2LinearTop");
+            Assert(LinearTopSectors == LinearStrideSectors * StrideClasses, "LinearTopSectors must equal LinearStrideSectors * StrideClasses");
+            Assert(LinearClasses == TinyExactClasses + StrideClasses, "LinearClasses must equal TinyExactClasses + StrideClasses");
             slotIndex = AcquireSlot();
             var smallBudgetBytes = ManagedBudgetBytes / SmallBudgetDivisor;
             smallBudget = new BudgetState(smallBudgetBytes);
@@ -508,7 +508,7 @@ namespace Tsavorite.core
                 page.cacheable = false;
                 page.permitBytes = 0;
             }
-            Debug.Assert(bucket.classCapacityBytes >= RoundUp(required_bytes, sectorSize), "selected class capacity is smaller than the rounded request");
+            Assert(bucket.classCapacityBytes >= RoundUp(required_bytes, sectorSize), "selected class capacity is smaller than the rounded request");
             return page;
         }
 

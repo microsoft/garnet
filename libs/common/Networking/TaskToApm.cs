@@ -12,7 +12,6 @@
 //         TaskToApm.End<int>(asyncResult);
 
 #nullable enable
-using System.Diagnostics;
 using Garnet.common;
 
 namespace System.Threading.Tasks
@@ -77,7 +76,7 @@ namespace System.Threading.Tasks
             /// <param name="callback">Callback to invoke when the wrapped task completes.</param>
             internal TaskAsyncResult(Task task, object? state, AsyncCallback? callback)
             {
-                Debug.Assert(task != null);
+                Assert(task != null);
                 _task = task;
                 AsyncState = state;
 
@@ -102,8 +101,8 @@ namespace System.Threading.Tasks
             /// <summary>Invokes the callback.</summary>
             private void InvokeCallback()
             {
-                Debug.Assert(!CompletedSynchronously);
-                Debug.Assert(_callback != null);
+                Assert(!CompletedSynchronously);
+                Assert(_callback != null);
                 _callback.Invoke(this);
             }
 

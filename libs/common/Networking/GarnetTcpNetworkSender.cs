@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
@@ -113,7 +112,7 @@ namespace Garnet.common
         {
             var lockTaken = false;
             spinLock.Enter(ref lockTaken);
-            Debug.Assert(lockTaken);
+            Assert(lockTaken);
         }
 
         /// <inheritdoc />
@@ -121,8 +120,8 @@ namespace Garnet.common
         {
             var lockTaken = false;
             spinLock.Enter(ref lockTaken);
-            Debug.Assert(lockTaken);
-            Debug.Assert(responseObject == null);
+            Assert(lockTaken);
+            Assert(responseObject == null);
             if (!saeaStack.TryPop(out responseObject, out bool disposed))
             {
                 if (disposed)
@@ -182,7 +181,7 @@ namespace Garnet.common
 
         void ReturnBuffer(GarnetSaeaBuffer buffer)
         {
-            Debug.Assert(buffer != null);
+            Assert(buffer != null);
 
             // While the budget is binding, a buffer larger than the adapted send size must not go back on the
             // per-connection stack: it would be handed straight back out and the connection would never

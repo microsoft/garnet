@@ -28,7 +28,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using KeraLua;
@@ -392,7 +391,7 @@ namespace Garnet.server
 
             static bool TryEncodeInteger(LuaRunner self, char opt, int size, int stackIndex, Header h, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+                Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
 
                 var numRaw = self.state.CheckNumber(stackIndex);
                 var value = (long)numRaw;
@@ -528,7 +527,7 @@ namespace Garnet.server
 
             static bool TryEncodeSingle(LuaRunner self, int size, int stackIndex, Header h, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+                Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
 
                 var value = self.state.CheckNumber(stackIndex);
 
@@ -560,7 +559,7 @@ namespace Garnet.server
 
             static bool TryEncodeDouble(LuaRunner self, int stackIndex, Header h, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+                Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
 
                 var value = self.state.CheckNumber(stackIndex);
 
@@ -592,7 +591,7 @@ namespace Garnet.server
 
             static bool TryEncodeBytes(LuaRunner self, int stackIndex, char opt, ref int size, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
+                Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
 
                 self.state.KnownStringToBuffer(stackIndex, out var data);
 

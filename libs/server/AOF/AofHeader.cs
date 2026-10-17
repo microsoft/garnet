@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Garnet.common;
 
@@ -269,7 +268,7 @@ namespace Garnet.server
             get => (AofHeaderType)(flags & AofHeaderTypeMask);
             set
             {
-                Debug.Assert((int)value <= AofHeaderTypeMask, $"value {value} does not fit in AofHeaderTypeMask");
+                Assert((int)value <= AofHeaderTypeMask, $"value {value} does not fit in AofHeaderTypeMask");
                 flags = (byte)((flags & ~AofHeaderTypeMask) | (byte)value);
             }
         }

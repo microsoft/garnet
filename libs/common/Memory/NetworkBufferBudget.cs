@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -155,9 +154,9 @@ namespace Garnet.common
         /// <param name="sendFloor">Smallest base size for a send buffer.</param>
         public NetworkBufferBudget(long budgetBytes, int ceiling, int receiveFloor, int sendFloor)
         {
-            Debug.Assert(BitOperations.IsPow2(ceiling));
-            Debug.Assert(BitOperations.IsPow2(receiveFloor));
-            Debug.Assert(BitOperations.IsPow2(sendFloor));
+            Assert(BitOperations.IsPow2(ceiling));
+            Assert(BitOperations.IsPow2(receiveFloor));
+            Assert(BitOperations.IsPow2(sendFloor));
 
             this.budgetBytes = budgetBytes > 0 ? budgetBytes : 0;
             this.ceiling = ceiling;

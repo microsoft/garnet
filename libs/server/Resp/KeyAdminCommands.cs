@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -307,7 +306,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
+                Assert(output.SpanByteAndMemory.IsSpanByte);
                 WriteNull();
             }
 

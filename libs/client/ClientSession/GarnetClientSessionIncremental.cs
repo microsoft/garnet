@@ -112,7 +112,7 @@ namespace Garnet.client
                 goto done;
             }
 
-            Debug.Assert(end - curr >= 2);
+            Assert(end - curr >= 2);
             *curr++ = (byte)'\r';
             *curr++ = (byte)'\n';
 
@@ -120,7 +120,7 @@ namespace Garnet.client
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
             TrackIterationProgress(recordCount, size);
             var success = RespWriteUtils.TryWritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
-            Debug.Assert(success);
+            Assert(success);
 
             // Number of key value pairs in payload
             *(int*)head = recordCount;

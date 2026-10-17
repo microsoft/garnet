@@ -490,7 +490,7 @@ namespace Garnet.server
             // For some metrics we have a multi-string in the value and no name, so don't print a stray leading ':'.
             if (string.IsNullOrEmpty(info[0].Name))
             {
-                Debug.Assert(info.Length == 1, "Unexpected empty name in first entry of multi-entry metrics info");
+                Assert(info.Length == 1, "Unexpected empty name in first entry of multi-entry metrics info");
                 sbResponse.Append($"{info[0].Value}\r\n");
             }
             else

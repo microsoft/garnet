@@ -111,7 +111,7 @@ namespace HdrHistogram
             {
                 _wrp.ReaderLock();
 
-                Debug.Assert(base.CountsArrayLength == _counts.Length);
+                Assert(base.CountsArrayLength == _counts.Length);
 
                 return _counts[index];
             }
@@ -195,7 +195,7 @@ namespace HdrHistogram
             try
             {
                 _wrp.ReaderLock();
-                Debug.Assert(CountsArrayLength == _counts.Length);
+                Assert(CountsArrayLength == _counts.Length);
                 for (int i = 0; i<_counts.Length; i++)
                 {
                     _counts[i] = 0;

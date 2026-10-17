@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Tsavorite.core;
+using static Garnet.Diagnostics.GarnetAsserts;
 
 namespace Tsavorite.test
 {
@@ -216,14 +217,14 @@ namespace Tsavorite.test
 
         public override bool GetNextStep(VersionSchemeState currentState, out VersionSchemeState nextState)
         {
-            Debug.Assert(currentState.Phase == VersionSchemeState.REST);
+            Assert(currentState.Phase == VersionSchemeState.REST);
             nextState = VersionSchemeState.Make(VersionSchemeState.REST, ToVersion() == -1 ? currentState.Version + 1 : ToVersion());
             return true;
         }
 
         public override void OnEnteringState(VersionSchemeState fromState, VersionSchemeState toState)
         {
-            Debug.Assert(fromState.Phase == VersionSchemeState.REST && toState.Phase == VersionSchemeState.REST);
+            Assert(fromState.Phase == VersionSchemeState.REST && toState.Phase == VersionSchemeState.REST);
             criticalSection(fromState.Version, toState.Version);
         }
 
@@ -391,7 +392,7 @@ namespace Tsavorite.test
                     machineLocal.OnEnteringState(old, next);
                     var success = MakeTransition(VersionSchemeState.MakeIntermediate(old), next);
                     machineLocal.AfterEnteringState(next);
-                    Debug.Assert(success);
+                    Assert(success);
                     TryStepStateMachine(machineLocal);
                 });
             }

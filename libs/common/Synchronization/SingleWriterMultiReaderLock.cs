@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -51,7 +50,7 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteUnlock()
         {
-            Debug.Assert(_lock < 0);
+            Assert(_lock < 0);
             while (Interlocked.CompareExchange(ref _lock, 0, int.MinValue) != int.MinValue)
                 Thread.Yield();
         }
@@ -88,7 +87,7 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ReadUnlock()
         {
-            Debug.Assert(_lock > 0);
+            Assert(_lock > 0);
             Interlocked.Decrement(ref _lock);
         }
 
@@ -98,7 +97,7 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryUpgradeReadLock()
         {
-            Debug.Assert(_lock > 0, "Illegal to call when not holding a read lock");
+            Assert(_lock > 0, "Illegal to call when not holding a read lock");
 
             // If caller is the only reader (_lock == 1), this will succeed in becoming a write lock (_lock == int.MinValue)
             return Interlocked.CompareExchange(ref _lock, int.MinValue, 1) == 1;
@@ -110,7 +109,7 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void DowngradeWriteLock()
         {
-            Debug.Assert(_lock < 0, "Illegal to call when not holding write lock");
+            Assert(_lock < 0, "Illegal to call when not holding write lock");
 
             while (Interlocked.CompareExchange(ref _lock, 1, int.MinValue) != int.MinValue)
             {

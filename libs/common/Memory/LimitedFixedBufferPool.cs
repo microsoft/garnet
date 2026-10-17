@@ -4,8 +4,8 @@
 using System;
 #if DEBUG
 using System.Collections.Concurrent;
-#endif
 using System.Diagnostics;
+#endif
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -209,7 +209,7 @@ namespace Garnet.common
                     }
                 }
             }
-            Debug.Assert(totalReferences > 0, $"Return with {totalReferences}");
+            Assert(totalReferences > 0, $"Return with {totalReferences}");
             Interlocked.Decrement(ref totalReferences);
         }
 
@@ -409,8 +409,8 @@ namespace Garnet.common
         /// <returns></returns>
         public static int GetLevel(int minAllocationSize, int requestedSize)
         {
-            Debug.Assert(BitOperations.IsPow2(minAllocationSize));
-            Debug.Assert(BitOperations.IsPow2(requestedSize));
+            Assert(BitOperations.IsPow2(minAllocationSize));
+            Assert(BitOperations.IsPow2(requestedSize));
             var level = requestedSize / minAllocationSize;
 
             return level == 1 ? 0 : BitOperations.Log2((uint)level - 1) + 1;

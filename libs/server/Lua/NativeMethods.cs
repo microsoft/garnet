@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using KeraLua;
@@ -602,7 +601,7 @@ namespace Garnet.server
         /// </summary>
         internal static unsafe LuaType GetGlobal(lua_State luaState, ReadOnlySpan<byte> nullTerminatedName)
         {
-            Debug.Assert(nullTerminatedName[^1] == 0, "Global name must be null terminated");
+            Assert(nullTerminatedName[^1] == 0, "Global name must be null terminated");
 
             fixed (byte* ptr = nullTerminatedName)
             {
@@ -615,7 +614,7 @@ namespace Garnet.server
         /// </summary>
         internal static unsafe void SetGlobal(lua_State luaState, ReadOnlySpan<byte> nullTerminatedName)
         {
-            Debug.Assert(nullTerminatedName[^1] == 0, "Global name must be null terminated");
+            Assert(nullTerminatedName[^1] == 0, "Global name must be null terminated");
 
             fixed (byte* ptr = nullTerminatedName)
             {
@@ -674,7 +673,7 @@ namespace Garnet.server
         internal static void GC(lua_State luaState, LuaGC gc)
         {
             var res = lua_gc(luaState, (int)gc, __arglist());
-            Debug.Assert(res != -1, "Response indicates failure in lua_gc");
+            Assert(res != -1, "Response indicates failure in lua_gc");
         }
     }
 }

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
@@ -183,7 +182,7 @@ namespace Garnet.client
 
                 if (offset < PageSize)
                 {
-                    Debug.Assert(values[page % BufferSize].lastOffset == 0);
+                    Assert(values[page % BufferSize].lastOffset == 0);
                     values[page % BufferSize].lastOffset = offset;
                 }
 
@@ -224,7 +223,7 @@ namespace Garnet.client
             var spins = 0;
             while (true)
             {
-                Debug.Assert(epoch.ThisInstanceProtected());
+                Assert(epoch.ThisInstanceProtected());
                 flushEvent = this.FlushEvent;
                 var logicalAddress = this.TryAllocate(size, out int taskId, skipTaskIdIncrement: skipTaskIdIncrement);
                 // Console.WriteLine($"Allocated {logicalAddress}-{logicalAddress + size}");

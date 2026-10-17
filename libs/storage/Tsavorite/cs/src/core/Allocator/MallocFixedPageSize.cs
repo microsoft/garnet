@@ -5,7 +5,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -159,8 +158,8 @@ namespace Tsavorite.core
         private unsafe MallocFixedPageSize(int levelCount, ILogger logger)
         {
             // Level 0 is allocated below and every level-0 allocation pre-allocates level 1, so two levels are the minimum.
-            Debug.Assert(levelCount >= MinLevelCount, "levelCount must be at least MinLevelCount");
-            Debug.Assert(levelCount <= MaxLevelCount, "levelCount must be at most MaxLevelCount");
+            Assert(levelCount >= MinLevelCount, "levelCount must be at least MinLevelCount");
+            Assert(levelCount <= MaxLevelCount, "levelCount must be at most MaxLevelCount");
 
             this.levelCount = levelCount;
             ordinaryAllocationLimit = MaxAllocationCount;
@@ -198,7 +197,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPhysicalAddress(long logicalAddress)
         {
-            Debug.Assert(IsBlittable, "GetPhysicalAddress requires the values to be blittable");
+            Assert(IsBlittable, "GetPhysicalAddress requires the values to be blittable");
             return (long)pointers[logicalAddress >> PageSizeBits] + (logicalAddress & PageSizeMask) * RecordSize;
         }
 
@@ -210,7 +209,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe ref T Get(long index)
         {
-            Debug.Assert(index != InvalidAllocationIndex, "Invalid allocation index");
+            Assert(index != InvalidAllocationIndex, "Invalid allocation index");
             if (IsBlittable)
                 return ref Unsafe.AsRef<T>((byte*)(pointers[index >> PageSizeBits]) + (index & PageSizeMask) * RecordSize);
             else
@@ -225,7 +224,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void Set(long index, ref T value)
         {
-            Debug.Assert(index != InvalidAllocationIndex, "Invalid allocation index");
+            Assert(index != InvalidAllocationIndex, "Invalid allocation index");
             if (IsBlittable)
                 Unsafe.AsRef<T>((byte*)(pointers[index >> PageSizeBits]) + (index & PageSizeMask) * RecordSize) = value;
             else
@@ -278,7 +277,7 @@ namespace Tsavorite.core
         public unsafe long BulkAllocate()
         {
 #if DEBUG
-            Debug.Assert(allocationMode != AllocationMode.Single, "Cannot mix Single and Bulk allocation modes");
+            DebugOnlyAssert(allocationMode != AllocationMode.Single, "Cannot mix Single and Bulk allocation modes");
             allocationMode = AllocationMode.Bulk;
 #endif
             return InternalAllocate(AllocateChunkSize, useReservation: false);
@@ -300,7 +299,7 @@ namespace Tsavorite.core
         internal unsafe long Allocate(bool useReservation)
         {
 #if DEBUG
-            Debug.Assert(allocationMode != AllocationMode.Bulk, "Cannot mix Single and Bulk allocation modes");
+            DebugOnlyAssert(allocationMode != AllocationMode.Bulk, "Cannot mix Single and Bulk allocation modes");
             allocationMode = AllocationMode.Single;
 #endif
             return InternalAllocate(1, useReservation);
@@ -746,7 +745,7 @@ namespace Tsavorite.core
                     }
                     numBytesRead += length;
                 }
-                Debug.Assert(numBytesRead == numBytesToRead);
+                Assert(numBytesRead == numBytesToRead);
             }
             catch
             {

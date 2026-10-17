@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -70,7 +69,7 @@ namespace Tsavorite.core
                 // Note that in this assert we are checking the volatile _status field.
                 // This is a sanity check to ensure that the signalling conditions are true:
                 // that "Signaled" and "Waiting" flags are both set.
-                Debug.Assert((_status & (SignaledFlag | WaitingFlag)) == (SignaledFlag | WaitingFlag));
+                Assert((_status & (SignaledFlag | WaitingFlag)) == (SignaledFlag | WaitingFlag));
                 _waitSource.SetResult(true);
             }
         }
@@ -114,7 +113,7 @@ namespace Tsavorite.core
             var status = Interlocked.And(ref _status, ResetMask);
 
             // If both the "Waiting" and "Signaled" flags were not already set, something has gone catastrophically wrong.
-            Debug.Assert((status & (WaitingFlag | SignaledFlag)) == (WaitingFlag | SignaledFlag));
+            Assert((status & (WaitingFlag | SignaledFlag)) == (WaitingFlag | SignaledFlag));
         }
 
         private static void ThrowConcurrentWaitersNotSupported() => throw new InvalidOperationException("Concurrent waiters are not supported");

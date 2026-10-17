@@ -593,8 +593,8 @@ namespace HdrHistogram
 
         private int CountsArrayIndex(int bucketIndex, int subBucketIndex)
         {
-            Debug.Assert(subBucketIndex < SubBucketCount);
-            Debug.Assert(bucketIndex == 0 || (subBucketIndex >= SubBucketHalfCount));
+            Assert(subBucketIndex < SubBucketCount);
+            Assert(bucketIndex == 0 || (subBucketIndex >= SubBucketHalfCount));
             // Calculate the index for the first entry in the bucket:
             // (The following is the equivalent of ((bucketIndex + 1) * subBucketHalfCount) ):
             var bucketBaseIndex = (bucketIndex + 1) << _subBucketHalfCountMagnitude;

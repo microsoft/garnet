@@ -235,7 +235,7 @@ namespace Tsavorite.core
             where TTransactionalKey : ITransactionalKey
         {
             clientSession.CheckIsAcquiredTransactional(sessionFunctions);
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
+            Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Lock()");
             var lockAcquired = false;
             while (!lockAcquired)
             {
@@ -271,7 +271,7 @@ namespace Tsavorite.core
             where TTransactionalKey : ITransactionalKey
         {
             clientSession.CheckIsAcquiredTransactional(sessionFunctions);
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.TryLock()");
+            Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.TryLock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -304,7 +304,7 @@ namespace Tsavorite.core
             where TTransactionalKey : ITransactionalKey
         {
             clientSession.CheckIsAcquiredTransactional(sessionFunctions);
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.TryPromoteLock()");
+            Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.TryPromoteLock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -322,7 +322,7 @@ namespace Tsavorite.core
             where TTransactionalKey : ITransactionalKey
         {
             clientSession.CheckIsAcquiredTransactional(sessionFunctions);
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Unlock()");
+            Assert(!clientSession.store.epoch.ThisInstanceProtected(), "Trying to protect an already-protected epoch for TransactionalUnsafeContext.Unlock()");
 
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -355,7 +355,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -370,7 +370,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -394,7 +394,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(TKey key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -449,7 +449,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -481,7 +481,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -497,7 +497,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -541,7 +541,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(TKey key, long keyHash, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -557,7 +557,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(TKey key, ref TInput input, ReadOnlySpan<byte> desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -602,7 +602,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Upsert(TKey key, long keyHash, ref TInput input, IHeapObject desiredValue, ref TOutput output, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -618,7 +618,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert(TKey key, ref TInput input, IHeapObject desiredValue, ref TOutput output, ref UpsertOptions upsertOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
@@ -672,7 +672,7 @@ namespace Tsavorite.core
             where TOpKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             var keyHash = upsertOptions.KeyHash ?? clientSession.store.storeFunctions.GetKeyHashCode64(key);
 
             clientSession.UnsafeResumeThread(sessionFunctions);
@@ -710,7 +710,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status RMW(TKey key, long keyHash, ref TInput input, ref TOutput output, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -729,7 +729,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status RMW(TKey key, long keyHash, ref TInput input, ref TOutput output, int initialIORecordSize, out RecordMetadata recordMetadata, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -771,7 +771,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Status Delete(TKey key, long keyHash, TContext userContext = default)
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {
@@ -797,7 +797,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Refresh()
         {
-            Debug.Assert(!clientSession.store.epoch.ThisInstanceProtected());
+            Assert(!clientSession.store.epoch.ThisInstanceProtected());
             clientSession.UnsafeResumeThread(sessionFunctions);
             try
             {

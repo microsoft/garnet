@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -53,7 +52,7 @@ namespace Tsavorite.core
 
         void ReturnPage(int index)
         {
-            Debug.Assert(index < BufferSize);
+            Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
                 if (useNativeLogPages)
@@ -172,7 +171,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
-            Debug.Assert(sizeInfo.word == 0, "RecordSizeInfo should not be reused");
+            Assert(sizeInfo.word == 0, "RecordSizeInfo should not be reused");
 
             // For SpanByteAllocator, we are always inline.
             // Key

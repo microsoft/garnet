@@ -35,13 +35,13 @@ namespace Garnet.server
         public readonly bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref VectorInput input, ref VectorOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            Debug.Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+            Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
             var value = srcLogRecord.ValueSpan;
 
             if (input.IsMigrationRead)
             {
-                Debug.Assert(input.Callback == 0, "No callback expected");
+                Assert(input.Callback == 0, "No callback expected");
 
                 // We can't ship the log record over because of alignment shenanigans
                 // TODO: When alignment is handled at the Tsavorite level, we CAN start shipping the log over like everything else
@@ -59,7 +59,7 @@ namespace Garnet.server
             {
                 if (input.Callback != 0)
                 {
-                    Debug.Assert(BitConverter.IsLittleEndian, "Code assumes little-endian for everything for now");
+                    Assert(BitConverter.IsLittleEndian, "Code assumes little-endian for everything for now");
                     var isAttribute = (srcLogRecord.NamespaceBytes[0] & (VectorManager.ContextStep - 1)) == DiskANNService.Attributes;
 
                     nint dataPtr;
@@ -106,7 +106,7 @@ namespace Garnet.server
 
             if (input.ReadDesiredSize > 0)
             {
-                Debug.Assert(output.SpanByteAndMemory.Length >= value.Length, "Should always have space for vector point reads");
+                Assert(output.SpanByteAndMemory.Length >= value.Length, "Should always have space for vector point reads");
 
                 output.SpanByteAndMemory.Length = value.Length;
                 value.CopyTo(output.SpanByteAndMemory.Span);
@@ -134,7 +134,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ReadOnlySpan<byte> srcValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {
-            Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+            Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
             var value = logRecord.ValueSpan;
             srcValue.CopyTo(value);
@@ -154,7 +154,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool InPlaceWriter(ref LogRecord logRecord, ref VectorInput input, ReadOnlySpan<byte> newValue, ref VectorOutput output, ref UpsertInfo upsertInfo)
         {
-            Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+            Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
             var sizeInfo = new RecordSizeInfo() { FieldInfo = GetUpsertFieldInfo(logRecord, newValue, ref input) };
             functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
@@ -234,7 +234,7 @@ namespace Garnet.server
         public readonly bool NeedInitialUpdate<TKey>(TKey key, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
             where TKey : IKey, allows ref struct
         {
-            Debug.Assert(key.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+            Assert(key.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
             // Only needed when updating ContextMetadata via RMW or the DiskANN RMW callback, all of which set WriteDesiredSize
             return input.WriteDesiredSize != 0;
@@ -243,15 +243,15 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+            Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
             var key = logRecord.Key;
             var alignedValue = logRecord.ValueSpan;
 
             if (input.Callback == 0)
             {
-                Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
-                Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
+                Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+                Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
 
                 // Operating on ContextMetadata
 
@@ -267,7 +267,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for initial update, this should never happen");
+                Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for initial update, this should never happen");
 
                 // Must explicitly 0 before passing if we're doing an initial update
                 alignedValue.Clear();
@@ -299,7 +299,7 @@ namespace Garnet.server
         public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            Debug.Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+            Assert(srcLogRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
             var key = srcLogRecord.Key;
 
@@ -310,13 +310,13 @@ namespace Garnet.server
             {
                 // We're doing a Metadata update
 
-                Debug.Assert(srcLogRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
-                Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
+                Assert(srcLogRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
+                Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
 
                 // Doing a Metadata update
-                Debug.Assert(srcLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                Debug.Assert(dstLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+                Assert(srcLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                Assert(dstLogRecord.ValueSpan.Length == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                Assert(input.CallbackContext != 0, "Should have data on VectorInput");
 
                 ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(oldValueAligned)[0];
 
@@ -368,7 +368,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref VectorInput input, ref VectorOutput output, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
+            Assert(logRecord.HasNamespace, "Should never write a non-namespaced value with VectorSessionFunctions");
 
             var key = logRecord.Key;
 
@@ -378,12 +378,12 @@ namespace Garnet.server
             {
                 // We're doing a Metadata update
 
-                Debug.Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
+                Assert(logRecord.NamespaceBytes.Length == 1 && logRecord.NamespaceBytes[0] == VectorManager.MetadataNamespace, "Should be operating on special namespace");
 
                 // Doing a Metadata update
-                Debug.Assert(alignedValue.Length >= VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-                Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-                Debug.Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
+                Assert(alignedValue.Length >= VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+                Assert(key.Length == sizeof(int), "Should have int sized key for ContextMetadata");
 
                 ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(alignedValue)[0];
 
@@ -406,7 +406,7 @@ namespace Garnet.server
             }
             else
             {
-                Debug.Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for inplace update, this should never happen");
+                Assert(input.WriteDesiredSize <= alignedValue.Length, "Insufficient space for inplace update, this should never happen");
 
                 unsafe
                 {
@@ -535,13 +535,13 @@ namespace Garnet.server
         public bool PostBatchKeyConsistentReadCallback(int keyCount)
             => readSessionState != null && readSessionState.PostBatchKeyConsistentReadCallback(keyCount);
 
-        [Conditional("DEBUG")]
+        [Conditional("DEBUG"), Conditional("GARNET_ASSERT")]
         private static void AssertAlignment<TSourceLogRecord>(in TSourceLogRecord record, nint dataPtr)
             where TSourceLogRecord : ISourceLogRecord
         {
             var nsBytes = record.NamespaceBytes;
             var ns = nsBytes.Length == 1 ? nsBytes[0] : BinaryPrimitives.ReadInt32LittleEndian(nsBytes);
-            Debug.Assert((((ulong)ns & (VectorManager.ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
+            Assert((((ulong)ns & (VectorManager.ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (dataPtr % 4) == 0, "About to pass unaligned value to DiskANN");
         }
     }
 }

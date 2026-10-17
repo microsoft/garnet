@@ -23,6 +23,8 @@
 
   <ItemGroup>
     <Compile Include="..\..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkSender.cs" Link="EmbeddedNetworkSender.cs" />
+    <None Include="..\..\..\BannedSymbols.txt" Link="BannedSymbols.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(PkgMicrosoft_CodeAnalysis_BannedApiAnalyzers)\analyzers\dotnet\cs\*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

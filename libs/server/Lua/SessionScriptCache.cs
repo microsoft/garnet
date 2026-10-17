@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -439,8 +438,8 @@ namespace Garnet.server
 
         public static void GetScriptDigest(ReadOnlySpan<byte> source, Span<byte> sha1Bytes, Span<byte> into)
         {
-            Debug.Assert(sha1Bytes.Length >= SHA1Len / 2, "sha1Bytes must be large enough for the hash");
-            Debug.Assert(into.Length >= SHA1Len, "into must be large enough for the hash hex bytes");
+            Assert(sha1Bytes.Length >= SHA1Len / 2, "sha1Bytes must be large enough for the hash");
+            Assert(into.Length >= SHA1Len, "into must be large enough for the hash hex bytes");
 
             _ = SHA1.HashData(source, sha1Bytes);
 

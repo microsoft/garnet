@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -53,7 +52,7 @@ namespace Garnet.common
         {
             var numDigits = NumUtils.CountDigits(len);
             var totalLen = 1 + numDigits + 2;
-            Debug.Assert(totalLen <= paddedLen);
+            Assert(totalLen <= paddedLen);
             if (paddedLen > (int)(end - curr))
                 return false;
             *curr++ = (byte)'$';
@@ -762,7 +761,7 @@ namespace Garnet.common
         /// </summary>
         public static bool TryWriteVerbatimString(ReadOnlySpan<byte> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
         {
-            Debug.Assert(ext.Length == 3);
+            Assert(ext.Length == 3);
 
             // Verbatim string length includes the type metadata.
             // So ext (3 bytes) + ':' (1 byte separator) + str
@@ -797,7 +796,7 @@ namespace Garnet.common
         /// </summary>
         public static bool TryWriteVerbatimStringHeader(ReadOnlySpan<byte> str, ReadOnlySpan<byte> ext, ref byte* curr, byte* end)
         {
-            Debug.Assert(ext.Length == 3);
+            Assert(ext.Length == 3);
 
             // Verbatim string length includes the type metadata.
             // So ext (3 bytes) + ':' (1 byte separator) + str
@@ -900,7 +899,7 @@ namespace Garnet.common
         private static void WriteBytes<T>(ref byte* curr, ReadOnlySpan<byte> bytes)
             where T : unmanaged
         {
-            Debug.Assert(bytes.Length == sizeof(T));
+            Assert(bytes.Length == sizeof(T));
             Unsafe.WriteUnaligned(curr, MemoryMarshal.Read<T>(bytes));
             curr += sizeof(T);
         }

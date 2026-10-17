@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using KeraLua;
@@ -491,7 +490,7 @@ end
 
             state.GetGlobal(LuaType.Table, "string\0"u8);
             var pushRes = state.TryPushBuffer("dump"u8);
-            Debug.Assert(pushRes, "Pushing 'dump' should never fail");
+            Assert(pushRes, "Pushing 'dump' should never fail");
             _ = state.RawGet(LuaType.Function, 1);
 
             state.Remove(1);

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
 using Garnet.server.Custom;
@@ -43,7 +42,7 @@ namespace GarnetJSON
         /// <returns>True if the update is successful, otherwise false.</returns>
         public override bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(jsonObject is GarnetJsonObject);
+            Assert(jsonObject is GarnetJsonObject);
 
             var parseState = input.parseState;
             if (parseState.Count is not (2 or 3))
@@ -62,7 +61,7 @@ namespace GarnetJSON
             }
 
             var garnetJsonObject = jsonObject as GarnetJsonObject;
-            Debug.Assert(garnetJsonObject is not null);
+            Assert(garnetJsonObject is not null);
 
             var result = garnetJsonObject.Set(path, value, existOptions, out var errorMessage);
 
@@ -106,9 +105,9 @@ namespace GarnetJSON
         /// <returns>True if the read is successful, otherwise false.</returns>
         public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject jsonObject, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
-            Debug.Assert(jsonObject is GarnetJsonObject);
+            Assert(jsonObject is GarnetJsonObject);
             var garnetJsonObject = jsonObject as GarnetJsonObject;
-            Debug.Assert(garnetJsonObject is not null);
+            Assert(garnetJsonObject is not null);
 
             var parseState = input.parseState;
 

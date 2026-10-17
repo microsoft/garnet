@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -45,9 +44,9 @@ namespace Garnet.server
             /// </summary>
             internal VectorSetLock WithElementLock(ref int elementLock)
             {
-                Debug.Assert(!Unsafe.IsNullRef(ref elementLock), "Element lock must be non-null");
-                Debug.Assert(elementLock == int.MinValue, "Element lock must already be acquired");
-                Debug.Assert(Unsafe.IsNullRef(ref this.elementLock), "Cannot associate with second element lock");
+                Assert(!Unsafe.IsNullRef(ref elementLock), "Element lock must be non-null");
+                Assert(elementLock == int.MinValue, "Element lock must already be acquired");
+                Assert(Unsafe.IsNullRef(ref this.elementLock), "Cannot associate with second element lock");
 
                 return new(in lockableCtx, lockToken, ref elementLock);
             }
@@ -55,7 +54,7 @@ namespace Garnet.server
             /// <inheritdoc/>
             public void Dispose()
             {
-                Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
+                Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
                 ActiveThreadSession = null;
 
                 if (Unsafe.IsNullRef(in lockableCtx))
@@ -68,7 +67,7 @@ namespace Garnet.server
                 if (!Unsafe.IsNullRef(ref elementLock))
                 {
                     var oldVal = Interlocked.Exchange(ref elementLock, 0);
-                    Debug.Assert(oldVal == int.MinValue, "Unlock failed");
+                    Assert(oldVal == int.MinValue, "Unlock failed");
                 }
             }
         }
@@ -151,9 +150,9 @@ namespace Garnet.server
         /// </summary>
         private VectorSetLock ReadVectorIndexCore(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, bool nonBlocking, out GarnetStatus status, out bool wouldBlock, out bool importPending)
         {
-            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+            Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+            Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
             wouldBlock = false;
             try
@@ -214,7 +213,7 @@ namespace Garnet.server
                     try
                     {
                         readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
-                        Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
+                        Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
                     }
                     catch
                     {
@@ -447,9 +446,9 @@ namespace Garnet.server
             bool demandCreate = false
         )
         {
-            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+            Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+            Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
             try
             {
@@ -480,7 +479,7 @@ namespace Garnet.server
                     try
                     {
                         readRes = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
-                        Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
+                        Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
                     }
                     catch
                     {
@@ -709,9 +708,9 @@ namespace Garnet.server
         /// </summary>
         internal VectorSetLock ReadForDeleteVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
-            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+            Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+            Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
 
             var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
@@ -721,7 +720,7 @@ namespace Garnet.server
             try
             {
                 status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
-                Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
+                Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
             }
             catch
             {

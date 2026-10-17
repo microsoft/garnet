@@ -257,7 +257,7 @@ namespace Garnet.client
                         if (!ProcessReplyAsMemoryByteArray(ref ptr, end, out var resultMemoryByteArray, out error))
                             return readHead;
                         ConsumeTcsOffset(shortTaskId);
-                        Debug.Assert(tcs.memoryByteArrayCallback != null);
+                        Assert(tcs.memoryByteArrayCallback != null);
                         if (error != null) tcs.memoryByteArrayCallback?.Invoke(tcs.context, resultMemoryByteArray, CopyErrorToSpan(error));
                         else tcs.memoryByteArrayCallback?.Invoke(tcs.context, resultMemoryByteArray, default);
                         break;
@@ -266,7 +266,7 @@ namespace Garnet.client
                         if (!ProcessReplyAsStringArray(ref ptr, end, out var resultStringArray, out error))
                             return readHead;
                         ConsumeTcsOffset(shortTaskId);
-                        Debug.Assert(tcs.stringArrayCallback != null);
+                        Assert(tcs.stringArrayCallback != null);
                         if (error != null) tcs.stringArrayCallback?.Invoke(tcs.context, resultStringArray, error);
                         else tcs.stringArrayCallback?.Invoke(tcs.context, resultStringArray, default);
                         break;
@@ -275,7 +275,7 @@ namespace Garnet.client
                         if (!ProcessReplyAsString(ref ptr, end, out resultString, out error))
                             return readHead;
                         ConsumeTcsOffset(shortTaskId);
-                        Debug.Assert(tcs.stringTcs != null);
+                        Assert(tcs.stringTcs != null);
                         if (error != null) tcs.stringTcs?.TrySetException(new Exception(error));
                         else tcs.stringTcs?.TrySetResult(resultString);
                         break;
@@ -284,7 +284,7 @@ namespace Garnet.client
                         if (!ProcessReplyAsMemoryByte(ref ptr, end, out resultMemory, out error))
                             return readHead;
                         ConsumeTcsOffset(shortTaskId);
-                        Debug.Assert(tcs.memoryByteTcs != null);
+                        Assert(tcs.memoryByteTcs != null);
                         if (error != null) tcs.memoryByteTcs?.TrySetException(new Exception(error));
                         else tcs.memoryByteTcs?.TrySetResult(resultMemory);
                         break;
@@ -293,7 +293,7 @@ namespace Garnet.client
                         if (!ProcessReplyAsStringArray(ref ptr, end, out var resultArray, out error))
                             return readHead;
                         ConsumeTcsOffset(shortTaskId);
-                        Debug.Assert(tcs.stringArrayTcs != null);
+                        Assert(tcs.stringArrayTcs != null);
                         if (error != null) tcs.stringArrayTcs?.TrySetException(new Exception(error));
                         else tcs.stringArrayTcs?.TrySetResult(resultArray);
                         break;
@@ -302,7 +302,7 @@ namespace Garnet.client
                         if (!ProcessReplyAsMemoryByteArray(ref ptr, end, out var resultByteArray, out error))
                             return readHead;
                         ConsumeTcsOffset(shortTaskId);
-                        Debug.Assert(tcs.memoryByteArrayTcs != null);
+                        Assert(tcs.memoryByteArrayTcs != null);
                         if (error != null) tcs.memoryByteArrayTcs?.TrySetException(new Exception(error));
                         else tcs.memoryByteArrayTcs?.TrySetResult(resultByteArray);
                         break;
@@ -311,7 +311,7 @@ namespace Garnet.client
                         if (!ProcessReplyAsNumber(ref ptr, end, out var resultLong, out error))
                             return readHead;
                         ConsumeTcsOffset(shortTaskId);
-                        Debug.Assert(tcs.longTcs != null);
+                        Assert(tcs.longTcs != null);
                         if (error != null) tcs.longTcs?.TrySetException(new Exception(error));
                         else tcs.longTcs?.TrySetResult(resultLong);
                         break;
@@ -320,7 +320,7 @@ namespace Garnet.client
                         if (!ProcessReplyAsNumber(ref ptr, end, out var resultLongCallback, out error))
                             return readHead;
                         ConsumeTcsOffset(shortTaskId);
-                        Debug.Assert(tcs.longCallback != null);
+                        Assert(tcs.longCallback != null);
 
                         if (error != null) tcs.longCallback?.Invoke(tcs.context, resultLongCallback, error);
                         else tcs.longCallback?.Invoke(tcs.context, resultLongCallback, default);

@@ -561,7 +561,7 @@ namespace Garnet.server
                 if (storeWrapper.EnforceConsistentRead())
                 {
                     txnSkip = false;
-                    Debug.Assert(consistentReadDBSession != null);
+                    Assert(consistentReadDBSession != null);
                     if (!consistentReadActive)
                     {
                         // We actively switch session because we aim to avoid performing any additional checks or switches on the normal processing path
@@ -1696,7 +1696,7 @@ namespace Garnet.server
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
             var dbRes = storeWrapper.TryGetOrAddDatabase(dbId, out var database, out _);
-            Debug.Assert(dbRes, "Should always find database if we're switching to it");
+            Assert(dbRes, "Should always find database if we're switching to it");
 
             var dbStorageSession = new StorageSession(
                 storeWrapper,
@@ -1733,7 +1733,7 @@ namespace Garnet.server
             // Session id is set at the caller.
             var dbId = 0;
             var dbRes = storeWrapper.TryGetOrAddDatabase(dbId, out var database, out _);
-            Debug.Assert(dbRes, "Should always find database if we're switching to it");
+            Assert(dbRes, "Should always find database if we're switching to it");
 
             readSessionState = new ReadSessionState(storeWrapper.appendOnlyFile, storeWrapper.serverOptions);
 

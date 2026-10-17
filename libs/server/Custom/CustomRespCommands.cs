@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
@@ -21,7 +20,7 @@ namespace Garnet.server
             var output = new MemoryResult<byte>(null, 0);
 
             // Run procedure
-            Debug.Assert(txnManager.state == TxnState.None);
+            Assert(txnManager.state == TxnState.None);
 
             LatencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
@@ -63,7 +62,7 @@ namespace Garnet.server
 
         private void TryCustomProcedure(CustomProcedure proc, int startIdx = 0)
         {
-            Debug.Assert(proc != null);
+            Assert(proc != null);
 
             var output = new MemoryResult<byte>(null, 0);
 
@@ -102,7 +101,7 @@ namespace Garnet.server
             if (customRawStringCommand.type == CommandType.ReadModifyWrite)
             {
                 _ = storageApi.RMW_MainStore(key, ref input, ref output);
-                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
+                Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 if (output.SpanByteAndMemory.Memory != null)
                     SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
@@ -113,7 +112,7 @@ namespace Garnet.server
             else
             {
                 var status = storageApi.Read_MainStore(key, ref input, ref output);
-                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
+                Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -125,7 +124,7 @@ namespace Garnet.server
                 }
                 else if (status == GarnetStatus.NOTFOUND)
                 {
-                    Debug.Assert(output.SpanByteAndMemory.Memory == null);
+                    Assert(output.SpanByteAndMemory.Memory == null);
 
                     var notFoundOutput = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr)));
                     var writer = new RespMemoryWriter(respProtocolVersion, ref notFoundOutput);
@@ -172,7 +171,7 @@ namespace Garnet.server
             if (customObjectCommand.type == CommandType.ReadModifyWrite)
             {
                 status = storageApi.RMW_ObjectStore(key, ref input, ref output);
-                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
+                Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
@@ -192,7 +191,7 @@ namespace Garnet.server
             else
             {
                 status = storageApi.Read_ObjectStore(key, ref input, ref output);
-                Debug.Assert(!output.SpanByteAndMemory.IsSpanByte);
+                Assert(!output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
@@ -266,7 +265,7 @@ namespace Garnet.server
             if (customCommand.type == CommandType.ReadModifyWrite)
             {
                 _ = storageApi.RMW_MainStore(key, ref stringInput, ref _output);
-                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
+                Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 if (_output.SpanByteAndMemory.Memory != null)
                 {
@@ -281,7 +280,7 @@ namespace Garnet.server
             else
             {
                 var status = storageApi.Read_MainStore(key, ref stringInput, ref _output);
-                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
+                Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
                 {
@@ -297,7 +296,7 @@ namespace Garnet.server
                 }
                 else if (status == GarnetStatus.NOTFOUND)
                 {
-                    Debug.Assert(_output.SpanByteAndMemory.Memory == null);
+                    Assert(_output.SpanByteAndMemory.Memory == null);
 
                     var writer = new RespMemoryWriter(respProtocolVersion, ref _output.SpanByteAndMemory);
                     customCommand.functions.NotFound(key, ref stringInput, ref writer);
@@ -308,7 +307,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    Debug.Assert(status == GarnetStatus.WRONGTYPE, "Unexpected status");
+                    Assert(status == GarnetStatus.WRONGTYPE, "Unexpected status");
 
                     output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_ERR_WRONG_TYPE.Length + 1); // +1 because RESP_ERR_WRONG_TYPE doesn't contain the - prefix, but does starts with WRONGTYPE
                     output.Span[0] = (byte)'-';
@@ -345,7 +344,7 @@ namespace Garnet.server
             if (customObjCommand.type == CommandType.ReadModifyWrite)
             {
                 status = storageApi.RMW_ObjectStore(key, ref input, ref _output);
-                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
+                Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
@@ -366,7 +365,7 @@ namespace Garnet.server
             else
             {
                 status = storageApi.Read_ObjectStore(key, ref input, ref _output);
-                Debug.Assert(!_output.SpanByteAndMemory.IsSpanByte);
+                Assert(!_output.SpanByteAndMemory.IsSpanByte);
 
                 switch (status)
                 {
@@ -380,7 +379,7 @@ namespace Garnet.server
                             output = scratchBufferAllocator.CreateArgSlice(CmdStrings.RESP_OK);
                         break;
                     case GarnetStatus.NOTFOUND:
-                        Debug.Assert(_output.SpanByteAndMemory.Memory == null);
+                        Assert(_output.SpanByteAndMemory.Memory == null);
 
                         var writer = new RespMemoryWriter(respProtocolVersion, ref _output.SpanByteAndMemory);
 

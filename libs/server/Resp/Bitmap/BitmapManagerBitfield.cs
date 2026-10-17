@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 #if DEBUG
-using System.Diagnostics;
 #endif
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -59,8 +58,8 @@ namespace Garnet.server
         {
             var offset = args.offset;
             var bitCount = (byte)(args.typeInfo & 0x7F);
-#if DEBUG
-            Debug.Assert(TryValidateBitfieldOffset(offset, bitCount, multiplyOffset: false, out _, out var endOffset));
+#if DEBUG || GARNET_ASSERT
+            Assert(TryValidateBitfieldOffset(offset, bitCount, multiplyOffset: false, out _, out var endOffset));
 #else
             var endOffset = offset + bitCount - 1;
 #endif

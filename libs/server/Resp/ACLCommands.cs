@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth;
@@ -305,7 +304,7 @@ namespace Garnet.server
             var aclAuthenticator = (GarnetACLAuthenticator)_authenticator;
 
             // Return the name of the currently authenticated user.
-            Debug.Assert(aclAuthenticator.GetUserHandle()?.User != null);
+            Assert(aclAuthenticator.GetUserHandle()?.User != null);
 
             WriteAsciiBulkString(aclAuthenticator.GetUserHandle().User.Name);
 
@@ -331,8 +330,8 @@ namespace Garnet.server
                 return true;
 
             // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
-            Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
-            Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
+            Assert(storeWrapper.serverOptions.AuthSettings != null);
+            Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
             var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
 
             // Try to reload the configured ACL configuration file
@@ -371,8 +370,8 @@ namespace Garnet.server
                 return true;
 
             // NOTE: This is temporary as long as ACL operations are only supported when using the ACL authenticator
-            Debug.Assert(storeWrapper.serverOptions.AuthSettings != null);
-            Debug.Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
+            Assert(storeWrapper.serverOptions.AuthSettings != null);
+            Assert(storeWrapper.serverOptions.AuthSettings.GetType().BaseType == typeof(AclAuthenticationSettings));
             var aclAuthenticationSettings = (AclAuthenticationSettings)storeWrapper.serverOptions.AuthSettings;
 
             try

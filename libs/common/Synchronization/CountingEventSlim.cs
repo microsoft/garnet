@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 
 namespace Garnet.common
@@ -59,14 +58,14 @@ namespace Garnet.common
         public void Decrement()
         {
             var decrRes = Interlocked.Decrement(ref count);
-            Debug.Assert(decrRes >= 0, "Decrement fell below 0, implies unbalanced calls to Increment and Decrement");
+            Assert(decrRes >= 0, "Decrement fell below 0, implies unbalanced calls to Increment and Decrement");
 
             if (decrRes == 0 && Interlocked.CompareExchange(ref count, HoldForSetValue, 0) == 0)
             {
                 resetEvent.Set();
 
                 var unlockRes = Interlocked.Add(ref count, -HoldForSetValue);
-                Debug.Assert(unlockRes >= 0, "Unlock resulted in incoherent count");
+                Assert(unlockRes >= 0, "Unlock resulted in incoherent count");
             }
         }
 

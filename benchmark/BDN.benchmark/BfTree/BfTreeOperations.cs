@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using BenchmarkDotNet.Attributes;
@@ -81,11 +80,11 @@ namespace BDN.benchmark.BfTree
 
             // Validate the read actually returns the correct data
             var result = tree.Read(key, readBuffer, out var bytesRead);
-            Debug.Assert(result == BfTreeReadResult.Found,
+            Assert(result == BfTreeReadResult.Found,
                 $"GlobalSetup validation: expected Found, got {result}");
-            Debug.Assert(bytesRead == value.Length,
+            Assert(bytesRead == value.Length,
                 $"GlobalSetup validation: expected {value.Length} bytes, got {bytesRead}");
-            Debug.Assert(readBuffer.AsSpan(0, bytesRead).SequenceEqual(value),
+            Assert(readBuffer.AsSpan(0, bytesRead).SequenceEqual(value),
                 "GlobalSetup validation: read value does not match inserted value");
         }
 

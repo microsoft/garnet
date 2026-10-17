@@ -108,7 +108,7 @@ namespace Garnet.server
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void AdvanceTo(int i)
             {
-                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+                Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
                 if (i == currentIndex)
                 {
@@ -120,7 +120,7 @@ namespace Garnet.server
                 {
                     currentPtr += currentLen + sizeof(int); // Skip length prefix too
 
-                    Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointer() + lengthPrefixedKeys.Length, "About to access out of bounds data");
+                    Assert(currentPtr < lengthPrefixedKeys.ToPointer() + lengthPrefixedKeys.Length, "About to access out of bounds data");
 
                     currentLen = *(int*)currentPtr;
 
@@ -157,7 +157,7 @@ namespace Garnet.server
             /// <inheritdoc/>
             public void GetKey(int i, out VectorElementKey key)
             {
-                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+                Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
                 AdvanceTo(i);
 
@@ -166,7 +166,7 @@ namespace Garnet.server
 
                 AssertKeyAlignment(in key);
 
-                [Conditional("DEBUG")]
+                [Conditional("DEBUG"), Conditional("GARNET_ASSERT")]
                 static void AssertKeyAlignment(in VectorElementKey key)
                 {
                     ulong context;
@@ -180,19 +180,19 @@ namespace Garnet.server
                     }
                     else
                     {
-                        Debug.Fail("Unexpected namespace length");
+                        Assert(false, "Unexpected namespace length");
                         context = 0;
                     }
 
                     var keyLength = key.KeyBytes.Length;
-                    Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+                    Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
                 }
             }
 
             /// <inheritdoc/>
             public readonly void GetInput(int i, out VectorInput input)
             {
-                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+                Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
                 input = default;
                 input.CallbackContext = callbackContext;
@@ -203,7 +203,7 @@ namespace Garnet.server
             /// <inheritdoc/>
             public readonly void GetOutput(int i, out VectorOutput output)
             {
-                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+                Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
                 // Don't care, won't be used
                 Unsafe.SkipInit(out output);
@@ -212,13 +212,13 @@ namespace Garnet.server
             /// <inheritdoc/>
             public readonly void SetOutput(int i, VectorOutput output)
             {
-                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+                Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
             }
 
             /// <inheritdoc/>
             public void SetStatus(int i, Status status)
             {
-                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+                Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
                 hasPending |= status.IsPending;
             }
@@ -360,7 +360,7 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
-            Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+            Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
@@ -390,14 +390,14 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
         {
-            Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+            Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorBasicContext;
 
             var status = ctx.Delete(keyWithNamespace);
-            Debug.Assert(!status.IsPending, "Deletes should never go async");
+            Assert(!status.IsPending, "Deletes should never go async");
 
             RestoreKeyLengthPrefix(keyData, keyLength);
 
@@ -414,7 +414,7 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
-            Debug.Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
+            Assert(((context & (ContextStep - 1)) is DiskANNService.InternalIdMap or DiskANNService.Attributes) || (keyLength % 4) == 0, "Unaligned key provided by DiskANN");
 
             var keyWithNamespace = MakeVectorElementKey(context, keyData, keyLength);
 
@@ -453,7 +453,7 @@ namespace Garnet.server
 
         private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
-            Debug.Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
+            Assert(context <= uint.MaxValue, "Contexts > 2^32-1 are not supported");
 
             Span<byte> nsBytes = stackalloc byte[sizeof(uint)];
             StoreContextInNamespace(context, ref nsBytes);

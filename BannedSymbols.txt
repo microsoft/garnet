@@ -1,0 +1,6 @@
+M:System.Diagnostics.Debug.Assert(System.Boolean);Use GarnetAsserts.Assert, or DebugOnlyAssert inside #if DEBUG for DEBUG-only state.
+M:System.Diagnostics.Debug.Assert(System.Boolean,System.String);Use GarnetAsserts.Assert, or DebugOnlyAssert inside #if DEBUG for DEBUG-only state.
+M:System.Diagnostics.Debug.Assert(System.Boolean,System.String,System.String);Use GarnetAsserts.Assert, or DebugOnlyAssert inside #if DEBUG for DEBUG-only state.
+M:System.Diagnostics.Debug.Assert(System.Boolean,System.String,System.String,System.Object[]);Use GarnetAsserts.Assert, or DebugOnlyAssert inside #if DEBUG for DEBUG-only state.
+M:System.Diagnostics.Debug.Assert(System.Boolean,System.Diagnostics.Debug.AssertInterpolatedStringHandler@);Use GarnetAsserts.Assert, or DebugOnlyAssert inside #if DEBUG for DEBUG-only state.
+M:System.Diagnostics.Debug.Assert(System.Boolean,System.Diagnostics.Debug.AssertInterpolatedStringHandler@,System.Diagnostics.Debug.AssertInterpolatedStringHandler@);Use GarnetAsserts.Assert, or DebugOnlyAssert inside #if DEBUG for DEBUG-only state.

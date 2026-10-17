@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -100,7 +99,7 @@ namespace Tsavorite.core
         private bool TraceBackForKeyMatch<TKey>(TKey key, ref RecordSource<TStoreFunctions, TAllocator> recSrc, long minAddress)
             where TKey : IKey, allows ref struct
         {
-            Debug.Assert(!recSrc.HasInMemorySrc, "Should not have found record before this call");
+            Assert(!recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (recSrc.LogicalAddress >= minAddress)
             {
                 _ = recSrc.SetPhysicalAddress();
@@ -125,7 +124,7 @@ namespace Tsavorite.core
         private bool TraceBackForKeyMatch<TKey>(TKey key, ref RecordSource<TStoreFunctions, TAllocator> recSrc, long minAddress, long maxAddress)
             where TKey : IKey, allows ref struct
         {
-            Debug.Assert(!recSrc.HasInMemorySrc, "Should not have found record before this call");
+            Assert(!recSrc.HasInMemorySrc, "Should not have found record before this call");
             if (recSrc.LogicalAddress >= minAddress)
             {
                 _ = recSrc.SetPhysicalAddress();

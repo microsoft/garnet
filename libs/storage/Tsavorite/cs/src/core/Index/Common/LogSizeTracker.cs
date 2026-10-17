@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -212,7 +211,7 @@ namespace Tsavorite.core
         /// <param name="logger"></param>
         public LogSizeTracker(LogAccessor<TStoreFunctions, TAllocator> logAccessor, long targetSize, long highDelta, long lowDelta, ILogger logger)
         {
-            Debug.Assert(logAccessor != null);
+            Assert(logAccessor != null);
 
             this.logAccessor = logAccessor;
             heapSize = new ConcurrentCounter();
@@ -227,7 +226,7 @@ namespace Tsavorite.core
         /// <param name="cancellationToken"></param>
         public void Start(CancellationToken cancellationToken)
         {
-            Debug.Assert(runState == (int)RunState.NotStarted, "Cannot restart LogSizeTracker");
+            Assert(runState == (int)RunState.NotStarted, "Cannot restart LogSizeTracker");
             resizeTaskEvent.Initialize();
             runState = (int)RunState.Running;
             // Do NOT pass cancellationToken as Task.Run's second argument. If the token is already canceled when the queued
@@ -273,10 +272,10 @@ namespace Tsavorite.core
         /// <param name="lowDelta">Delta below the target size at which to stop trimming once started</param>
         public void UpdateTargetSize(long newTargetSize, long highDelta, long lowDelta)
         {
-            Debug.Assert(highDelta >= 0);
-            Debug.Assert(lowDelta >= 0);
-            Debug.Assert(newTargetSize > highDelta);
-            Debug.Assert(newTargetSize > lowDelta);
+            Assert(highDelta >= 0);
+            Assert(lowDelta >= 0);
+            Assert(newTargetSize > highDelta);
+            Assert(newTargetSize > lowDelta);
 
             if (newTargetSize < logAccessor.allocatorBase.PageSize * MinTargetPageCount)
                 throw new TsavoriteException($"Target size must be at least {MinTargetPageCount} pages");
@@ -334,7 +333,7 @@ namespace Tsavorite.core
                 heapSize.Increment(size);
                 if (size > 0 && IsBeyondSizeLimitAndCanEvict())
                     SignalResizer();
-                Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
+                Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
             }
         }
 
@@ -355,7 +354,7 @@ namespace Tsavorite.core
                 {
                     // Nothing needed if we are decreasing.
                     heapSize.Increment(-size);
-                    Debug.Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in UpdateSize");
+                    Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in UpdateSize");
                 }
             }
         }
@@ -504,7 +503,7 @@ namespace Tsavorite.core
                 // resident span must itself exceed the budget => evictableSize > 0. This holds when ExternalMemorySize has reduced the budget, because the
                 // reduced budget is floored at BudgetFloor (MinTargetPageCount pages). A negative value would mean AllocatedPageCount exceeds the resident
                 // set, i.e. stale pages left allocated below headAddress.
-                Debug.Assert(evictableSize >= 0, $"evictableSize ({evictableSize}) must be non-negative; AllocatedPageCount exceeds the resident set below headAddress.");
+                Assert(evictableSize >= 0, $"evictableSize ({evictableSize}) must be non-negative; AllocatedPageCount exceeds the resident set below headAddress.");
 
                 var margin = evictableSize - overBudgetAmount;
                 var isComplete = margin > 0;
@@ -589,7 +588,7 @@ namespace Tsavorite.core
                     break;
             }
 
-            Debug.Assert(headAddress <= Math.Max(startingHeadAddress, tailAddress),
+            Assert(headAddress <= Math.Max(startingHeadAddress, tailAddress),
                 $"headAddress ({headAddress}) must not pass TailAddress ({tailAddress}); it would be waited on forever.");
 
             // headAddress is now properly set. Return whether we could satisfy the resize request; for Recovery, we may need to wait on flush.
@@ -639,7 +638,7 @@ namespace Tsavorite.core
 
             // Heap size subtraction is handled by the OnNext eviction callback (called during ShiftAddresses),
             // which subtracts each record's CURRENT HeapMemorySize at eviction time.
-            Debug.Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
+            Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
 
             // Calculate the number of trimmed pages and report the new expected AllocatedPageCount here, since our last iteration (which may have been the only one)
             // would have returned isComplete and thus we didn't wait for the actual eviction.

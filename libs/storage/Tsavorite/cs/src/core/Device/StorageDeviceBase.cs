@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -221,7 +220,7 @@ namespace Tsavorite.core
         {
             ManualResetEventSlim completionEvent = new(false);
             RemoveSegmentAsync(segment, r => completionEvent.Set(), null);
-            Debug.Assert(!epoch.ThisInstanceProtected());
+            Assert(!epoch.ThisInstanceProtected());
             bool isProtected = epoch.ThisInstanceProtected();
             if (isProtected)
                 epoch.Suspend();

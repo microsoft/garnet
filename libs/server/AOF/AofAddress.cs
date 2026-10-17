@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -65,7 +64,7 @@ namespace Garnet.server
         /// otherwise, <see langword="false"/>.</returns>
         public bool Equals(in AofAddress other)
         {
-            Debug.Assert(other.Length == Length);
+            Assert(other.Length == Length);
             for (var i = 0; i < Length; i++)
                 if (addresses[i] != other[i]) return false;
             return true;
@@ -77,7 +76,7 @@ namespace Garnet.server
         /// <param name="length"></param>
         internal AofAddress(int length)
         {
-            Debug.Assert(length <= MaxSublogCount);
+            Assert(length <= MaxSublogCount);
             this.length = (byte)length;
         }
 
@@ -332,7 +331,7 @@ namespace Garnet.server
 
         public AofAddress Diff(in AofAddress other)
         {
-            Debug.Assert(other.Length == Length);
+            Assert(other.Length == Length);
             var aofAddress = new AofAddress(other.Length);
             for (var i = 0; i < other.Length; i++)
                 aofAddress[i] = this.addresses[i] - other[i];

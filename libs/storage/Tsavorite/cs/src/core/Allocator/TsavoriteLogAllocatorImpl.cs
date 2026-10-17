@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -56,7 +55,7 @@ namespace Tsavorite.core
 
         void ReturnPage(int index)
         {
-            Debug.Assert(index < BufferSize);
+            Assert(index < BufferSize);
             if (pagePointers[index] != default)
             {
                 if (useNativeLogPages)

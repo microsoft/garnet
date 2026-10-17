@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using Tsavorite.core.Allocator.ObjectSerialization;
@@ -555,7 +554,7 @@ namespace Tsavorite.core
         /// <param name="header">A prefix of the reassembled record covering at least its fixed header (<see cref="ChunkedRecordHeaderSize"/> bytes).</param>
         public static int GetChunkedRecordInlineSize(ReadOnlySpan<byte> header)
         {
-            Debug.Assert(header.Length >= Constants.FixedHeaderSize, "header must cover at least the fixed record header");
+            Assert(header.Length >= Constants.FixedHeaderSize, "header must cover at least the fixed record header");
             fixed (byte* ptr = header)
                 return RoundUp(new LogRecord((long)ptr).ActualSize, Constants.kRecordAlignment);
         }
@@ -582,7 +581,7 @@ namespace Tsavorite.core
         {
             var ptr = headerSpan.ToPointer();
             var serializedLogRecord = new LogRecord((long)ptr, transientObjectIdMap);
-            Debug.Assert(!serializedLogRecord.DataHeader.RecordIsInline, "CompleteDeserializeChunkedRecord is only for a non-inline record");
+            Assert(!serializedLogRecord.DataHeader.RecordIsInline, "CompleteDeserializeChunkedRecord is only for a non-inline record");
 
             var keyWasSet = false;
             try

@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -76,7 +75,7 @@ namespace Garnet.server
 
         public void UnlockSublogs(ulong logAccessBitmap)
         {
-            Debug.Assert((lockMap & logAccessBitmap) > 0);
+            Assert((lockMap & logAccessBitmap) > 0);
             logAccessBitmap = ~logAccessBitmap;
             while (true)
             {

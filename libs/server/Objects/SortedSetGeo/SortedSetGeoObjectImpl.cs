@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
 using Tsavorite.core;
@@ -46,7 +45,7 @@ namespace Garnet.server
             while (currTokenIdx < count)
             {
                 var res = input.parseState.TryGetGeoLonLat(currTokenIdx, out var longitude, out var latitude, out _);
-                Debug.Assert(res);
+                Assert(res);
                 currTokenIdx += 2;
                 var member = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
 
@@ -70,9 +69,9 @@ namespace Garnet.server
                     {
                         sortedSetDict[memberByteArray] = score;
                         var success = sortedSet.Remove((scoreStored, memberByteArray));
-                        Debug.Assert(success);
+                        Assert(success);
                         success = sortedSet.Add((score, memberByteArray));
-                        Debug.Assert(success);
+                        Assert(success);
                         elementsChanged++;
                     }
                 }
@@ -118,7 +117,7 @@ namespace Garnet.server
             if (input.parseState.Count > 2)
             {
                 var validUnit = input.parseState.TryGetGeoDistanceUnit(2, out units);
-                Debug.Assert(validUnit);
+                Assert(validUnit);
             }
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
@@ -173,7 +172,7 @@ namespace Garnet.server
                                 ref GeoSearchOptions opts,
                                 bool readOnly)
         {
-            Debug.Assert(opts.searchType != default);
+            Assert(opts.searchType != default);
 
             using var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
 

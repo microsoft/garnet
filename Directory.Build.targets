@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup Condition="'$(EnableGarnetAsserts)' == 'true'">
+    <DefineConstants>$(DefineConstants);GARNET_ASSERT</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Using Include="Garnet.Diagnostics.GarnetAsserts" Static="true" Condition="'$(IsTestProject)' != 'true'" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" GeneratePathProperty="true" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)BannedSymbols.txt" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' != 'Garnet.Diagnostics'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)libs/diagnostics/Garnet.Diagnostics.csproj" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

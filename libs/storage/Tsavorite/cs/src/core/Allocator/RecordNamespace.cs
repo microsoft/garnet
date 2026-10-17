@@ -22,20 +22,20 @@ namespace Tsavorite.core
         public const byte MaximumExtendedNamespaceSize = (1 << RecordDataHeader.ExtendedNamespaceIndicatorBit) - 1;
 
         /// <summary>Asserts <paramref name="namespaceBytes"/> satisfies the <see cref="IKey.NamespaceBytes"/> contract.</summary>
-        [Conditional("DEBUG")]
+        [Conditional("DEBUG"), Conditional("GARNET_ASSERT")]
         public static void AssertValid(ReadOnlySpan<byte> namespaceBytes)
         {
-            Debug.Assert(!namespaceBytes.IsEmpty, "Namespace cannot be empty");
-            Debug.Assert(namespaceBytes.Length != 1 || namespaceBytes[0] != 0, "The single-byte namespace value 0 is reserved");
-            Debug.Assert(namespaceBytes.Length <= MaximumExtendedNamespaceSize, $"Namespace size {namespaceBytes.Length} exceeds the maximum of {MaximumExtendedNamespaceSize}");
+            Assert(!namespaceBytes.IsEmpty, "Namespace cannot be empty");
+            Assert(namespaceBytes.Length != 1 || namespaceBytes[0] != 0, "The single-byte namespace value 0 is reserved");
+            Assert(namespaceBytes.Length <= MaximumExtendedNamespaceSize, $"Namespace size {namespaceBytes.Length} exceeds the maximum of {MaximumExtendedNamespaceSize}");
         }
 
         /// <summary>Asserts the caller sized the record for the namespace of <paramref name="key"/>; a mismatch frames the record incorrectly.</summary>
-        [Conditional("DEBUG")]
+        [Conditional("DEBUG"), Conditional("GARNET_ASSERT")]
         public static void AssertKeyCorrectlySized<TKey>(TKey key, in RecordSizeInfo sizeInfo) where TKey : IKey, allows ref struct
         {
             var expectedExtendedSize = GetExtendedNamespaceSize(in key);
-            Debug.Assert(sizeInfo.FieldInfo.ExtendedNamespaceSize == expectedExtendedSize, $"Extended namespace size {sizeInfo.FieldInfo.ExtendedNamespaceSize} does not match the key's required size {expectedExtendedSize}");
+            Assert(sizeInfo.FieldInfo.ExtendedNamespaceSize == expectedExtendedSize, $"Extended namespace size {sizeInfo.FieldInfo.ExtendedNamespaceSize} does not match the key's required size {expectedExtendedSize}");
         }
 
         /// <summary>The record space the namespace of <paramref name="key"/> requires ahead of the Key data; 0 if it needs none.</summary>

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -118,7 +117,7 @@ namespace Garnet.server
             scoped Span<byte> indexSpan,
             out GarnetStatus status)
         {
-            Debug.Assert(indexSpan.Length >= IndexSizeBytes, "Insufficient space for index");
+            Assert(indexSpan.Length >= IndexSizeBytes, "Insufficient space for index");
 
             var keyHash = session.stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
 
@@ -333,7 +332,7 @@ namespace Garnet.server
                         // exists for any stub above FUA whose TreeHandle is 0. Assert in Debug;
                         // LogWarning + return false in Release so the affected key surfaces
                         // NOTFOUND rather than crashing the process.
-                        Debug.Assert(false, $"RestoreTree: data.bftree missing for {hashPrefix} — pre-stage invariant violated");
+                        Assert(false, $"RestoreTree: data.bftree missing for {hashPrefix} — pre-stage invariant violated");
                         logger?.LogWarning("RestoreTree: data.bftree missing for {Hash} — pre-stage invariant violated", hashPrefix);
                         return false;
                     }
