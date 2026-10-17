@@ -110,12 +110,36 @@
             "description": "Pod annotations",
             "type": "object"
         },
+        "podDisruptionBudget": {
+            "description": "Pod Disruption Budget; disabled by default",
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Create a PodDisruptionBudget",
+                    "type": "boolean"
+                },
+                "minAvailable": {
+                    "description": "Minimum number/percentage of pods that must be available (used when maxUnavailable is empty)",
+                    "oneOf": [
+                        { "type": "integer", "minimum": 0 },
+                        { "type": "string", "pattern": "^(|[0-9]+|(100|[1-9]?[0-9])%)$" }
+                    ]
+                },
+                "maxUnavailable": {
+                    "description": "Maximum number/percentage of pods that may be unavailable; when set, it is rendered instead of minAvailable",
+                    "oneOf": [
+                        { "type": "integer", "minimum": 0 },
+                        { "type": "string", "pattern": "^(|[0-9]+|(100|[1-9]?[0-9])%)$" }
+                    ]
+                }
+            }
+        },
         "podSecurityContext": {
             "description": "Pod Security Context",
             "type": "object"
         },
         "readinessProbe": {
-            "description": "Containers livenessProbe",
+            "description": "Containers readinessProbe",
             "type": "object"
         },
         "resources": {
@@ -200,6 +224,10 @@
                     }
                 }
             }
+        },
+        "startupProbe": {
+            "description": "Startup probe",
+            "type": "object"
         },
         "tolerations": {
             "description": "Tolerations",
