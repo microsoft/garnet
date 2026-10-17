@@ -190,5 +190,10 @@ namespace Garnet.common
         /// transaction being dispatched and its keys being verified.
         /// </summary>
         Cluster_Txn_Pause_Before_Slot_Verify,
+        /// <summary>
+        /// Vector Sets: pause the first partition step of an import finalization to reach a worker, before it runs,
+        /// without holding the worker's thread. The finalization stays registered until the step is released.
+        /// </summary>
+        VectorSet_Pause_Before_Import_Finalize_Step,
     }
 }

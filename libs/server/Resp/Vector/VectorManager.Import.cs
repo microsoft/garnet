@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -12,10 +11,8 @@ namespace Garnet.server
 {
     public partial class VectorManager
     {
-        private readonly ConcurrentDictionary<byte[], int> activeImportFinalizations;
-#if NET9_0_OR_GREATER
-        private readonly ConcurrentDictionary<byte[], int>.AlternateLookup<ReadOnlySpan<byte>> activeImportFinalizationsLookup;
-#endif
+        private readonly ConcurrentDictionary<byte[], ImportFinalization> activeImportFinalizations;
+        private readonly ConcurrentDictionary<byte[], ImportFinalization>.AlternateLookup<ReadOnlySpan<byte>> activeImportFinalizationsLookup;
 
         /// <summary>
         /// Creates an empty Vector Set.
@@ -116,27 +113,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// During replication replay, we need to be able to wait for in progress finalization (if any) to complete.
-        /// 
-        /// This does that.
+        /// During replication replay, waits until no finalization of <paramref name="key"/> is in progress. Every attempt
+        /// ends, at the latest when <see cref="Dispose"/> ends those still registered. Blocks the calling thread, so it must
+        /// only be called from a thread that replays or recovers the log, never from a network or thread-pool thread.
         /// </summary>
         internal void WaitForImportFinalization(ReadOnlySpan<byte> key)
         {
-#if !NET9_0_OR_GREATER
-            byte[] keyCopy = null;
-#endif
-
-            while (
-                !quantizationOrImportChannel.Reader.Completion.IsCompleted &&
-#if NET9_0_OR_GREATER
-                activeImportFinalizationsLookup.ContainsKey(key)
-#else
-                activeImportFinalizations.ContainsKey(keyCopy ??= key.ToArray())
-#endif
-            )
-            {
-                _ = Thread.Yield();
-            }
+            while (activeImportFinalizationsLookup.TryGetValue(key, out var finalization))
+                finalization.Wait();
         }
 
         /// <summary>
@@ -156,8 +140,8 @@ namespace Garnet.server
             }
 
             // If there's already an active finalization, don't do anything else
-            var keyCopy = key.ToArray();
-            if (!activeImportFinalizations.TryAdd(keyCopy, 0))
+            var finalization = new ImportFinalization(key.ToArray(), quantizationAndImportTasks.Length);
+            if (!activeImportFinalizations.TryAdd(finalization.Key, finalization))
             {
                 return NativeDiskANNMethods.DiskANNImportResult.Success;
             }
@@ -168,21 +152,19 @@ namespace Garnet.server
             {
                 if (!Service.CanImport(context, indexPtr))
                 {
+                    finalization.End(this);
                     return NativeDiskANNMethods.DiskANNImportResult.TaskFailed;
                 }
 
                 SetFlags(key, VectorSetFlags.ImportPending, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
             }
 
-            var countdown = new CountdownHolder(quantizationAndImportTasks.Length);
-
             // Queue up finalization tasks
             for (var taskIx = 0; taskIx < quantizationAndImportTasks.Length; taskIx++)
             {
-                if (!quantizationOrImportChannel.Writer.TryWrite(new(keyCopy, QuantizationOrImportStep.FinalizeImport, taskIx, countdown)))
+                if (!quantizationOrImportChannel.Writer.TryWrite(new(finalization.Key, QuantizationOrImportStep.FinalizeImport, taskIx, finalization)))
                 {
-                    _ = activeImportFinalizations.TryRemove(keyCopy, out _);
-
+                    finalization.End(this);
                     return NativeDiskANNMethods.DiskANNImportResult.TaskFailed;
                 }
             }
