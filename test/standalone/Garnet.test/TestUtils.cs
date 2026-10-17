@@ -829,7 +829,8 @@ namespace Garnet.test
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            int clusterConfigFlushFrequencyMs = 0)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -899,7 +900,8 @@ namespace Garnet.test
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                     enableRangeIndexPreview: enableRangeIndexPreview,
-                    networkSendTimeout: networkSendTimeout);
+                    networkSendTimeout: networkSendTimeout,
+                    clusterConfigFlushFrequencyMs: clusterConfigFlushFrequencyMs);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -986,7 +988,8 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            int clusterConfigFlushFrequencyMs = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -1115,6 +1118,7 @@ namespace Garnet.test
                 VectorSetQuantizationTaskCount = vectorSetQuantizationTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
+                ClusterConfigFlushFrequencyMs = clusterConfigFlushFrequencyMs,
             };
 
             if (networkSendTimeout.HasValue)

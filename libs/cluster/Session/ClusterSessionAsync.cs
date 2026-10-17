@@ -40,7 +40,7 @@ namespace Garnet.cluster
                 clusterProvider.clusterManager.TryResetReplica();
                 clusterProvider.replicationManager.TryUpdateForFailover();
 
-                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+                await clusterProvider.replicationManager.ResetReplicaReplayDriverStoreAsync().ConfigureAwait(false);
                 _ = await UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 await clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync().ConfigureAwait(false);

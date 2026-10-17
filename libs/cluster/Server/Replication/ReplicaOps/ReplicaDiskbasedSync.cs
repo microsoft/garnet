@@ -116,7 +116,7 @@ namespace Garnet.cluster
                     await gcs.ConnectAsync((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token).ConfigureAwait(false);
 
                     // Reset background replay iterator if this node was a replica
-                    clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+                    await clusterProvider.replicationManager.ResetReplicaReplayDriverStoreAsync().ConfigureAwait(false);
 
                     // Remove aofSync tasks if this node was a primary
                     aofSyncDriverStore.Reset();

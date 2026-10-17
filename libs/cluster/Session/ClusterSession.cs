@@ -357,7 +357,7 @@ namespace Garnet.cluster
             clusterProvider.clusterManager.UnsafeSetConfig(config);
 
             if (replicaOf != null)
-                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+                AsyncUtils.BlockingWait(clusterProvider.replicationManager.ResetReplicaReplayDriverStoreAsync().AsTask());
         }
 
         public void Dispose()

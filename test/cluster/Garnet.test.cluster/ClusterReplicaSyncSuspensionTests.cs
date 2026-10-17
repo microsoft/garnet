@@ -102,6 +102,56 @@ namespace Garnet.test.cluster
             }
         }
 
+        /// <summary>
+        /// Making a node a primary first stops its replica-only background tasks, which takes as long as the slowest of
+        /// them takes to observe its cancellation. The session that received <c>REPLICAOF NO ONE</c> waits for them
+        /// parked.
+        /// </summary>
+        /// <remarks>
+        /// The configuration is never written to its file, so the command is not moved to an executor thread and runs
+        /// on the thread that delivered it.
+        /// </remarks>
+        [Test]
+        [Category("CLUSTER")]
+        public async Task ReplicaOfNoOneWaitsParkedForTheReplicaTasksToStop()
+        {
+            context.CreateInstances(1, enableAOF: true, disableObjects: true, clusterConfigFlushFrequencyMs: -1);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 0, logger: context.logger);
+
+            // A replica-only task that does not stop until it is let go
+            var taskManager = context.nodes[0].Provider.StoreWrapper.TaskManager;
+            await taskManager.CancelAsync(TaskType.VectorReplicationReplayTask);
+            var stop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            ClassicAssert.IsTrue(taskManager.RegisterAndRun(TaskType.VectorReplicationReplayTask, _ => stop.Task));
+
+            var input = Frame(Ascii("REPLICAOF"), Ascii("NO"), Ascii("ONE"));
+            var sender = new ControlledSender(1024);
+            var session = NewSession(sender);
+            try
+            {
+                var call = Task.Run(() => Consume(session, input));
+                await WithinBoundAsync(call, "the command to return to the receive loop, which a wait for the replica tasks on the thread that delivered it never does");
+                var consume = await call;
+
+                ClassicAssert.IsFalse(consume.IsCompleted, "The command waits for the replica tasks to stop");
+                ClassicAssert.IsEmpty(sender.Sent, "Nothing is answered until they have");
+
+                stop.SetResult();
+                var finished = consume.AsTask();
+                await WithinBoundAsync(finished, "the command to finish once the task stops");
+
+                ClassicAssert.AreEqual(input.Length, await finished);
+                ClassicAssert.AreEqual("+OK\r\n", sender.Sent);
+            }
+            finally
+            {
+                _ = stop.TrySetResult();
+                session.Dispose();
+                GC.KeepAlive(input);
+            }
+        }
+
 #if DEBUG
         /// <summary>
         /// Recovering a replica from the checkpoint its primary sent takes as long as the store is large. The session

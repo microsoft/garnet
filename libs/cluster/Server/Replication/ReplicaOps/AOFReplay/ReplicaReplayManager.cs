@@ -3,7 +3,6 @@
 
 using System;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.networking;
 
 namespace Garnet.cluster
@@ -35,12 +34,13 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Resets the state of the replica replay driver store
+        /// Resets the state of the replica replay driver store. Completes once the replica-only background tasks have
+        /// stopped, which takes as long as the slowest of them takes to observe its cancellation.
         /// </summary>
-        public void ResetReplicaReplayDriverStore()
+        public async ValueTask ResetReplicaReplayDriverStoreAsync()
         {
             ReplicaReplayDriverStore?.Dispose();
-            AsyncUtils.BlockingWait(clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync());
+            await clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync().ConfigureAwait(false);
             if (clusterProvider.IsReplica())
                 clusterProvider.storeWrapper.StartReplicaTasks();
             ReplicaReplayDriverStore = new ReplicaReplayDriverStore(clusterProvider, logger);
