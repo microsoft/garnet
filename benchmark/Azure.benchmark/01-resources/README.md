@@ -16,6 +16,7 @@ One-time deployment of the shared Azure resources the benchmarking environment d
 | Path | Purpose |
 |------|---------|
 | `deploy-common-resources.ps1` | Deploys network (NSG, VNet, proximity group), storage (storage account), and security (Key Vault + SSH keys) resources, and generates the root `vmss-parameters.json` |
+| `validate-storage-rbac.ps1` | Summarizes Storage RBAC readiness for the active Azure CLI identity and VMSS managed identities; read-only unless `-TestWriteAccess` is supplied |
 | `network/network.bicep` | Network infrastructure template |
 | `network/network-parameters.json` | Network deployment parameters |
 | `storage/storage.bicep` | Storage account + blob container template (deterministic name, `app=azurebench` tag for discovery) |
@@ -43,6 +44,24 @@ One-time deployment of the shared Azure resources the benchmarking environment d
 Creates NSG, VNet, a proximity placement group, a storage account, and a Key Vault (copying the manifest public keys into `security/` and uploading the VMSS private key as secret `vmss-ssh-private`). It also generates a private benchmark CA plus role-specific server/client certificates and uploads the complete set to Key Vault. Existing enabled certificate secrets with matching, unexpired metadata are reused; missing, disabled, mismatched, or near-expiry sets are regenerated as one consistent bundle. Local certificate files are written under the git-ignored `security/tls/` directory. Use `-RotateTlsCertificates` to force rotation.
 
 The deployment also publishes a read-only, policy-bound **SAS URL** for the tools tarball blob into the Key Vault (secret `tools-sas-url`) so the VMSS can pull `tools.tar.gz` at boot **without a Storage Blob Data Reader role assignment** (no RBAC required — see [Tools tarball delivery](#tools-tarball-delivery-sas)). Auto-generates `vmss-parameters.json` (written to `02-platform/`) with resource IDs. The storage account and Key Vault names are discovered later by their `app=azurebench` tag / resource-group lookup, so they are **not** written to `vmss-parameters.json`.
+
+## Validate Storage RBAC Readiness
+
+```powershell
+# Read-only validation: active identity, management permissions, blob read access,
+# Shared Key state, and every VMSS managed identity's blob-read role.
+.\01-resources\validate-storage-rbac.ps1 -rg <resource-group>
+
+# Also validate publisher write/delete access with a temporary blob.
+.\01-resources\validate-storage-rbac.ps1 -rg <resource-group> -TestWriteAccess
+```
+
+The validator discovers the `app=azurebench` storage account by default. Pass
+`-StorageAccount <name>` when the resource group contains no tagged account or when
+you want to validate a different account. It exits nonzero when a required RBAC or
+data-plane check fails; warnings include SFI Shared Key state that has not yet been
+remediated. The optional write test uses a unique blob under `rbac-validation/` and
+deletes it before returning.
 
 ### Actions
 
