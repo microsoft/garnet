@@ -25,6 +25,9 @@ namespace Garnet.server
     /// checkpoint snapshot, lazy restore) via <see cref="AcquireExclusiveForDelete"/>.
     /// These prevent concurrent data operations from accessing a BfTree that is being
     /// freed, snapshotted, or restored.</item>
+    /// <item>DEL key and eviction run in record triggers, under the record's bucket latch or in an epoch drain,
+    /// which a shared lock holder may be waiting on. They never wait for the lock; when it is held, the retirement
+    /// is deferred until it is free (see <see cref="DisposeTreeUnderLock"/>).</item>
     /// </list>
     ///
     /// <para>Locks are striped by key hash via <see cref="ReadOptimizedLock"/> for scalability.</para>
@@ -133,6 +136,8 @@ namespace Garnet.server
                 GarnetStatus readRes;
                 try
                 {
+                    OnSharedLockAcquired();
+
                     readRes = session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
                 }
                 catch
@@ -170,6 +175,9 @@ namespace Garnet.server
                 if (stub.IsFlushed)
                 {
                     rangeIndexLocks.ReleaseLock(sharedLockToken);
+
+                    // An evicted predecessor's tree may still be retiring; promotion stages the working file it uses.
+                    WaitForRetirement(key.ReadOnlySpan);
                     PromoteToTail(session, key);
                     goto Retry;
                 }
@@ -177,6 +185,9 @@ namespace Garnet.server
                 if (stub.TreeHandle == nint.Zero)
                 {
                     rangeIndexLocks.ReleaseLock(sharedLockToken);
+
+                    // A retiring tree for this key must be gone before restore, which would otherwise reuse it.
+                    WaitForRetirement(key.ReadOnlySpan);
 
                     // Restore under exclusive lock to prevent concurrent restores.
                     // Pre-staging of data.bftree always happened earlier (PostCopyToTail-cold,
@@ -211,6 +222,17 @@ namespace Garnet.server
         {
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
             return new(in rangeIndexLocks, exclusiveLockToken);
+        }
+
+        /// <summary>
+        /// Test hook: pauses, or fails, a data operation that holds the shared lock, before it reads the stub.
+        /// The caller releases the lock if this fails the operation.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnSharedLockAcquired()
+        {
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.RangeIndex_Pause_After_Shared_Lock);
+            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.RangeIndex_Fail_After_Shared_Lock);
         }
 
         /// <summary>
@@ -316,6 +338,11 @@ namespace Garnet.server
                 var keySpan = key.ReadOnlySpan;
                 var keyId = KeyId(keySpan);
 
+                // A retirement of this key's tree deferred while its lock was held may remove or dispose any tree this
+                // would reuse or register. The caller waits for it, without the lock, and retries.
+                if (IsRetirementPending(keyId))
+                    return true;
+
                 // Race-resolved path: another stub for this key may already have a live tree
                 // (RestoreTree ran via a different addr). Reuse it instead of opening another.
                 if (liveIndexes.TryGetValue(keyId, out var existing) && existing?.Tree != null)
@@ -344,6 +371,10 @@ namespace Garnet.server
                         (StorageBackendType)stub.StorageBackend);
 
                     RegisterIndex(bfTree, keyHash, keySpan);
+
+                    // A retirement deferred meanwhile owns whatever is registered now; retry once it completes.
+                    if (IsRetirementPending(keyId))
+                        return true;
 
                     // Re-look-up to use the WINNER's pointer (handles concurrent restorer race).
                     if (!liveIndexes.TryGetValue(keyId, out var winner) || winner?.Tree == null)

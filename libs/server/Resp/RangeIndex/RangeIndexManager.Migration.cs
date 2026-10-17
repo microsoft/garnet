@@ -151,6 +151,9 @@ namespace Garnet.server
             {
                 var bftreeDataPath = LogDataPathFor(keyBytes);
 
+                // A deleted predecessor's tree may still be retiring; it may use the working file replaced below.
+                WaitForRetirement(keyBytes);
+
                 // TODO(RI): Acquire Checkpoint lock to prevent a concurrent checkpoint from deleting the
                 // RangeIndexStream chunks added to the AOF before the BFTree is created
 
@@ -210,6 +213,7 @@ namespace Garnet.server
                     if (status.Record.Created)
                     {
                         var keyHash = ctx.GetKeyHash((FixedSpanByteKey)pinnedKey);
+                        WaitForRetirement(keyBytes);
                         RegisterIndex(bfTree, keyHash, keyBytes);
                     }
                     else if (status.Record.InPlaceUpdated || status.Record.CopyUpdated)

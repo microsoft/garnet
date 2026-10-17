@@ -5506,7 +5506,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VCARD",
@@ -5531,7 +5532,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VDIM",
@@ -5556,7 +5558,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VEMB",
@@ -5581,7 +5584,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VGETATTR",
@@ -5606,7 +5610,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VINFO",
@@ -5631,7 +5636,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VISMEMBER",
@@ -5656,7 +5662,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VLINKS",
@@ -5681,7 +5688,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VRANDMEMBER",
@@ -5706,7 +5714,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VREM",
@@ -5731,7 +5740,8 @@
         },
         "Flags": "RW, Delete"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VSETATTR",
@@ -5756,7 +5766,8 @@
         },
         "Flags": "RW, Insert"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "VSIM",
@@ -5781,7 +5792,8 @@
         },
         "Flags": "RO"
       }
-    ]
+    ],
+    "StoreType": "Main"
   },
   {
     "Command": "WATCH",

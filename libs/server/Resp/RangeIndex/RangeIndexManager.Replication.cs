@@ -139,6 +139,9 @@ namespace Garnet.server
 
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(stubSpan));
 
+            // A deleted predecessor's tree may still be retiring; the new tree may share its working file.
+            WaitForRetirement(key);
+
             // Create a fresh BfTree from the config in the stub
             BfTreeService bfTree;
             try
@@ -168,6 +171,7 @@ namespace Garnet.server
             if (status.Record.Created)
             {
                 var keyHash = session.stringBasicContext.GetKeyHash((FixedSpanByteKey)pinnedKey);
+                WaitForRetirement(key);
                 RegisterIndex(bfTree, keyHash, key);
             }
             else

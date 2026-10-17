@@ -1,0 +1,384 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Garnet.common;
+using Garnet.server;
+using NUnit.Framework;
+using NUnit.Framework.Legacy;
+using StackExchange.Redis;
+using Tsavorite.core;
+
+namespace Garnet.test
+{
+    /// <summary>
+    /// Tests for how Vector Set operations take the Vector Set lock and the store sessions they use, against
+    /// concurrent deletes, other readers, and index growth.
+    /// </summary>
+    [TestFixture]
+    public class VectorSetLockingTests : TestBase
+    {
+        /// <summary>
+        /// How long an operation that should not wait on another one is given before it is judged blocked.
+        /// </summary>
+        private static readonly TimeSpan NotBlockedTimeout = TimeSpan.FromSeconds(10);
+
+        private static readonly TimeSpan WaitTimeout = TimeSpan.FromSeconds(30);
+
+        private GarnetServer server;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableVectorSetPreview: true);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.OnTearDown();
+        }
+
+        /// <summary>
+        /// A read-only Vector Set command holds the Vector Set lock shared while it uses the index, so another reader of
+        /// the same set proceeds while the first one is still holding it.
+        /// </summary>
+        [Test]
+        public async Task ReadOnlyCommandsShareTheVectorSetLockAsync([Values("VCARD", "VEMB", "VSIM")] string command)
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_After_Index_Read;
+            const string Key = nameof(ReadOnlyCommandsShareTheVectorSetLockAsync);
+
+            using var redisHolder = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisOther = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbHolder = redisHolder.GetDatabase(0);
+            var dbOther = redisOther.GetDatabase(0);
+
+            AddMembers(dbHolder, Key, count: 4);
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // The first reader parks holding the Vector Set lock it took to read the index.
+                var holder = dbHolder.ExecuteAsync(command, ReadOnlyCommandArguments(command, Key));
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(WaitTimeout);
+
+                var other = dbOther.ExecuteAsync("VCARD", Key);
+                var otherRanAlongside = await CompletesWithinAsync(other, NotBlockedTimeout);
+
+                var holderResult = await ReleaseParkedAndAwaitAsync(holder);
+                var otherResult = await other.WaitAsync(WaitTimeout);
+
+                ClassicAssert.IsTrue(otherRanAlongside,
+                    $"VCARD waited for a {command} that holds the Vector Set lock: read-only commands must take it shared");
+                AssertReadOnlyCommandResult(command, holderResult, expectedCard: 4);
+                ClassicAssert.AreEqual(4, (int)otherResult);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+            }
+        }
+
+        /// <summary>
+        /// DEL of a Vector Set must not free its DiskANN index while another operation holds the Vector Set lock and is
+        /// about to use that index. The index is dropped once the operation releases the lock.
+        /// </summary>
+        [Test]
+        public async Task DeleteDoesNotDropIndexInUseAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+#if DEBUG
+            const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_After_Index_Read;
+            const ExceptionInjectionType Fail = ExceptionInjectionType.VectorSet_Fail_After_Index_Read;
+            const string Key = nameof(DeleteDoesNotDropIndexInUseAsync);
+
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+
+            using var redisReader = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisDel = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var dbReader = redisReader.GetDatabase(0);
+            var dbDel = redisDel.GetDatabase(0);
+
+            AddMembers(dbDel, Key, count: 4);
+            vectorManager.WaitForQuiescence();
+            var dropsBefore = vectorManager.Service.DropIndexCalls;
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // The reader parks holding the Vector Set lock, with the index pointer read and not yet used.
+                var reader = dbReader.ExecuteAsync("VCARD", Key);
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(WaitTimeout);
+
+                ClassicAssert.IsTrue(await dbDel.KeyDeleteAsync(Key).WaitAsync(WaitTimeout), "DEL did not remove the Vector Set");
+                var droppedUnderReader = vectorManager.Service.DropIndexCalls != dropsBefore;
+
+                if (droppedUnderReader)
+                {
+                    // The index the parked reader is about to use has been freed; fail the reader rather than let it
+                    // call into freed native memory.
+                    ExceptionInjectionHelper.EnableException(Fail);
+                }
+
+                RedisResult readerResult = null;
+                try
+                {
+                    readerResult = await ReleaseParkedAndAwaitAsync(reader);
+                }
+                catch (RedisException) when (droppedUnderReader)
+                {
+                }
+
+                ClassicAssert.IsFalse(droppedUnderReader,
+                    "DEL dropped the DiskANN index while a reader held the Vector Set lock and was about to use it");
+                ClassicAssert.AreEqual(4, (int)readerResult, "the reader that read the index before DEL must see the whole set");
+
+                vectorManager.WaitForQuiescence();
+                ClassicAssert.AreEqual(dropsBefore + 1, vectorManager.Service.DropIndexCalls,
+                    "the index must be dropped exactly once, after the reader releases the Vector Set lock");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+                ExceptionInjectionHelper.DisableException(Fail);
+            }
+#else
+            await Task.CompletedTask;
+#endif
+        }
+
+        /// <summary>
+        /// DEL of a Vector Set whose index record is superseded rather than elided leaves that record sealed in the log,
+        /// where page eviction visits it again. The deleted record must no longer carry the index pointer, or eviction
+        /// requests a second drop of an index DEL already dropped.
+        /// </summary>
+        [Test]
+        public void DeletedIndexRecordIsNotDroppedAgainOnEviction()
+        {
+#if DEBUG
+            const string Key = nameof(DeletedIndexRecordIsNotDroppedAgainOnEviction);
+            var keyBytes = Encoding.ASCII.GetBytes(Key);
+
+            // A small hash index, so that a key sharing the index record's hash chain is quick to find
+            const string IndexSize = "1k";
+            const long IndexBuckets = 1024 / 64;
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableVectorSetPreview: true, indexSize: IndexSize);
+            server.Start();
+
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            var store = server.Provider.StoreWrapper.store;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            AddMembers(db, Key, count: 2);
+            vectorManager.WaitForQuiescence();
+            var dropsBefore = vectorManager.Service.DropIndexCalls;
+
+            // A later record in the index record's hash chain keeps DEL from eliding it, so DEL supersedes it instead.
+            ClassicAssert.IsTrue(db.StringSet(TestUtils.FindKeyInSameHashChain(Key, IndexBuckets), "value"));
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            _ = db.KeyDelete(Key);
+            ClassicAssert.IsFalse(db.KeyExists(Key), "DEL did not remove the Vector Set");
+
+            var deletedRecords = 0;
+            var deletedRecordsWithIndex = new List<long>();
+            using (var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress, DiskScanBufferingMode.NoBuffering, includeClosedRecords: true))
+            {
+                while (iter.GetNext())
+                {
+                    // Only records that eviction visits
+                    if (iter.Info.Invalid || iter.Info.Tombstone || iter.RecordType != VectorManager.RecordType || !iter.Key.SequenceEqual(keyBytes))
+                        continue;
+
+                    deletedRecords++;
+
+                    VectorManager.ReadIndex(iter.ValueSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
+                    if (indexPtr != 0)
+                        deletedRecordsWithIndex.Add(iter.CurrentAddress);
+                }
+            }
+
+            ClassicAssert.AreEqual(1, deletedRecords, "DEL elided the index record rather than superseding it");
+            ClassicAssert.IsEmpty(deletedRecordsWithIndex,
+                $"the deleted index record at {string.Join(", ", deletedRecordsWithIndex)} still carries the index pointer that DEL dropped");
+
+            // Evicting the sealed record must not request another drop.
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+            vectorManager.WaitForQuiescence();
+            ClassicAssert.AreEqual(dropsBefore + 1, vectorManager.Service.DropIndexCalls, "the deleted index must be dropped exactly once");
+#else
+            Assert.Ignore("Relies on DiskANNService call counters, only enabled in DEBUG builds");
+#endif
+        }
+
+        /// <summary>
+        /// A transaction of read-only Vector Set commands runs them on the sessions Vector Sets use for index and element
+        /// data. Those sessions must be enrolled in the transaction: an unenrolled session waits out PREPARE_GROW like
+        /// any session outside a transaction, while an index grow waits in PREPARE_GROW for the transaction to finish.
+        /// </summary>
+        [Test]
+        public async Task ReadOnlyCommandsInTransactionProceedDuringPrepareGrowAsync([Values("VCARD", "VEMB", "VSIM")] string command)
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const ExceptionInjectionType Pause = ExceptionInjectionType.Transaction_Pause_After_Lock_Acquisition;
+            const string Key = nameof(ReadOnlyCommandsInTransactionProceedDuringPrepareGrowAsync);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            AddMembers(db, Key, count: 4);
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.WaitForQuiescence();
+
+            var driver = server.Provider.StoreWrapper.DefaultDatabase.StateMachineDriver;
+            var prepareGrow = new HoldPrepareGrowStateMachine();
+            var registered = false;
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // The transaction parks in EXEC with its keys locked, before running the queued command.
+                var transaction = db.CreateTransaction();
+                var queued = transaction.ExecuteAsync(command, ReadOnlyCommandArguments(command, Key));
+                var exec = transaction.ExecuteAsync();
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(WaitTimeout);
+
+                // Hold the store in PREPARE_GROW, as an index grow does while it waits for transactions to finish.
+                registered = driver.Register(prepareGrow);
+                ClassicAssert.IsTrue(registered, "Could not start the PREPARE_GROW state machine");
+                ClassicAssert.IsTrue(prepareGrow.Entered.Wait(WaitTimeout), "The state machine never reached PREPARE_GROW");
+
+                bool ranDuringPrepareGrow;
+                ExceptionInjectionHelper.SuspendParking();
+                try
+                {
+                    ranDuringPrepareGrow = await CompletesWithinAsync(exec, NotBlockedTimeout);
+
+                    prepareGrow.Release();
+                    ClassicAssert.IsTrue(await exec.WaitAsync(WaitTimeout), "EXEC failed");
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+
+                ClassicAssert.IsTrue(ranDuringPrepareGrow,
+                    $"{command} in a transaction waited out PREPARE_GROW: a session it uses is not enrolled in the transaction");
+                AssertReadOnlyCommandResult(command, await queued.WaitAsync(WaitTimeout), expectedCard: 4);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+                prepareGrow.Release();
+
+                if (registered)
+                    ClassicAssert.IsTrue(SpinWait.SpinUntil(() => driver.SystemState.Phase == Phase.REST, WaitTimeout), "The state machine never returned to REST");
+            }
+        }
+
+        private static void AddMembers(IDatabase db, string key, int count)
+        {
+            for (var i = 0; i < count; i++)
+                ClassicAssert.AreEqual(1, (int)db.Execute("VADD", key, "VALUES", "3", $"{i + 1}", "2", "3", $"member{i}", "NOQUANT"));
+        }
+
+        private static object[] ReadOnlyCommandArguments(string command, string key)
+            => command switch
+            {
+                "VCARD" => [key],
+                "VEMB" => [key, "member0"],
+                "VSIM" => [key, "VALUES", "3", "1", "2", "3", "COUNT", "4"],
+                _ => throw new ArgumentOutOfRangeException(nameof(command), command, null),
+            };
+
+        private static void AssertReadOnlyCommandResult(string command, RedisResult result, int expectedCard)
+        {
+            switch (command)
+            {
+                case "VCARD":
+                    ClassicAssert.AreEqual(expectedCard, (int)result);
+                    break;
+                case "VEMB":
+                    CollectionAssert.AreEqual(new[] { 1.0, 2.0, 3.0 }, ((RedisResult[])result).Select(static r => Math.Round((double)r, 3)).ToArray());
+                    break;
+                case "VSIM":
+                    ClassicAssert.AreEqual(expectedCard, ((RedisResult[])result).Length);
+                    break;
+            }
+        }
+
+        private static async Task<bool> CompletesWithinAsync(Task task, TimeSpan timeout)
+            => await Task.WhenAny(task, Task.Delay(timeout)) == task;
+
+        /// <summary>
+        /// Releases the operation parked at an injection point without re-arming the point, and waits for that
+        /// operation to finish, so it runs straight through the point if it passes it again.
+        /// </summary>
+        private static async Task<RedisResult> ReleaseParkedAndAwaitAsync(Task<RedisResult> parked)
+        {
+            ExceptionInjectionHelper.SuspendParking();
+            try
+            {
+                return await parked.WaitAsync(WaitTimeout);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.ResumeParking();
+            }
+        }
+
+        /// <summary>
+        /// Moves the store into PREPARE_GROW and holds it there until released, then returns it to REST. PREPARE_GROW is
+        /// the phase an index grow waits in for running transactions to finish; sessions that are not enrolled in a
+        /// transaction wait for the phase to end before running an operation.
+        /// </summary>
+        private sealed class HoldPrepareGrowStateMachine : IStateMachine
+        {
+            private readonly ManualResetEventSlim release = new(false);
+
+            /// <summary>Set once PREPARE_GROW is in effect for every session.</summary>
+            internal readonly ManualResetEventSlim Entered = new(false);
+
+            internal void Release() => release.Set();
+
+            /// <inheritdoc/>
+            public SystemState NextState(SystemState start)
+            {
+                var next = start;
+                next.Phase = start.Phase == Phase.REST ? Phase.PREPARE_GROW : Phase.REST;
+                return next;
+            }
+
+            /// <inheritdoc/>
+            public void GlobalBeforeEnteringState(SystemState nextState, StateMachineDriver stateMachineDriver)
+            {
+                // The driver leaves PREPARE_GROW for REST only after PREPARE_GROW has fully taken effect, and it holds no
+                // epoch here, so parking keeps PREPARE_GROW published without stalling the epoch.
+                if (nextState.Phase == Phase.REST)
+                {
+                    Entered.Set();
+                    _ = release.Wait(WaitTimeout);
+                }
+            }
+
+            /// <inheritdoc/>
+            public void GlobalAfterEnteringState(SystemState nextState, StateMachineDriver stateMachineDriver) { }
+        }
+    }
+}

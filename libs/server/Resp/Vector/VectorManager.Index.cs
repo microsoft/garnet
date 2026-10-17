@@ -114,22 +114,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Drop an index previously constructed with <see cref="CreateIndex"/>.
-        /// </summary>
-        internal void DropIndex(ReadOnlySpan<byte> indexValue)
-        {
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
-
-            if (indexPtr == 0)
-            {
-                // We never actually spun this index up, so nothing to drop
-                return;
-            }
-
-            Service.DropIndex(context, indexPtr);
-        }
-
-        /// <summary>
         /// Deconstruct index stored in the value under a Vector Set index key.
         /// </summary>
         public static void ReadIndex(

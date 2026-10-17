@@ -223,11 +223,17 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Dispose the BfTree under an exclusive lock, preventing concurrent RI data
-        /// operations and checkpoint snapshots from accessing the tree during disposal.
+        /// Retire the BfTree of a stub that is being deleted or evicted: remove its <see cref="liveIndexes"/> entry and
+        /// dispose it under the key's exclusive lock, which waits for data operations still using the tree.
         /// Used by <see cref="GarnetRecordTriggers.OnDispose"/> (delete) and
         /// <see cref="GarnetRecordTriggers.OnEvict"/> (page eviction).
         /// </summary>
+        /// <remarks>
+        /// These triggers run under the record's bucket latch (delete) or in an epoch drain (eviction), and a data
+        /// operation holding the lock shared may be waiting for that latch or be the thread running the drain, so this
+        /// never waits for the lock. If the lock is held, the retirement is handed to a task that takes it once it is
+        /// free; see <see cref="DeferRetirement"/>.
+        /// </remarks>
         /// <param name="key">The raw key bytes (used to compute the key hash for lock acquisition).</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
         /// <param name="deleteFiles">When <c>true</c> (DEL/UNLINK), delete the working
@@ -237,7 +243,7 @@ namespace Garnet.server
         /// still be needed to recover an OLDER checkpoint that pre-dates the DEL. They are
         /// reclaimed by <see cref="OnTruncateImpl"/> only once Tsavorite's BeginAddress passes
         /// their address. When <c>false</c> (eviction), files are preserved for lazy restore.</param>
-        internal void DisposeTreeUnderLock(ReadOnlySpan<byte> key, ReadOnlySpan<byte> valueSpan, bool deleteFiles)
+        internal void DisposeTreeUnderLock(ReadOnlySpan<byte> key, Span<byte> valueSpan, bool deleteFiles)
         {
             ref readonly var stub = ref ReadIndex(valueSpan);
 
@@ -251,6 +257,13 @@ namespace Garnet.server
             if (stub.IsTransferred && !deleteFiles)
                 return;
 
+            var treeHandle = stub.TreeHandle;
+
+            // The delete now owns the tree. A superseded record stays in the log sealed rather than tombstoned, so mark
+            // it like a transferred source: its later eviction must not retire whatever tree the key has by then.
+            if (deleteFiles)
+                SetTransferredFlag(valueSpan);
+
             // All liveIndexes mutations (cold-pending eviction below, plus the activated path
             // further down) MUST hold the per-key exclusive lock to serialize against
             // SetCheckpointBarrier / SnapshotAllTreesForCheckpoint / RegisterIndex /
@@ -258,48 +271,94 @@ namespace Garnet.server
             // Without it, a cold eviction concurrent with checkpoint can silently drop a
             // pending entry mid-snapshot iteration, narrowing checkpoint coverage for the key.
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
-            BfTreeService disposedTree = null;
-            string hashPrefix = null;
-            rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
+            if (!rangeIndexLocks.TryAcquireExclusiveLock(keyHash, out var lockToken))
+            {
+                DeferRetirement(key, keyHash, treeHandle, deleteFiles);
+                return;
+            }
+
+            BfTreeService disposedTree;
+            string hashPrefix;
             try
             {
-                if (stub.TreeHandle == nint.Zero && !deleteFiles)
-                {
-                    // Pending entry cleanup on eviction: remove from liveIndexes (no native tree to dispose).
-                    _ = liveIndexes.TryRemove(KeyId(key), out _);
-                    return;
-                }
-
-                // Remove entry from liveIndexes synchronously so concurrent restorers see no
-                // tree for this key. Stash the BfTree wrapper (if any) for deferred disposal.
-                if (liveIndexes.TryRemove(KeyId(key), out var entry))
-                    disposedTree = entry?.Tree;
-
-                if (deleteFiles)
-                    hashPrefix = HashKeyToPrefix(key);
+                RetireLocked(key, KeyId(key), treeHandle, deleteFiles, out disposedTree, out hashPrefix);
             }
             finally
             {
                 rangeIndexLocks.ReleaseLock(lockToken);
             }
 
-            // Defer the heavyweight cleanup (native dispose + file delete) via the store epoch.
-            // The deferred action runs only after all current epoch holders have moved past, so
-            // any reader that observed a non-zero TreeHandle from this entry's stub completes
-            // its native call before the bfTree is freed.
-            if (disposedTree == null && hashPrefix == null)
+            DisposeAndDeleteFilesAfterReaders(disposedTree, hashPrefix, onCompleted: null);
+        }
+
+        /// <summary>
+        /// Removes the key's tree from <see cref="liveIndexes"/> for a stub that is being deleted or evicted. The caller
+        /// holds the key's exclusive lock and disposes <paramref name="disposedTree"/> and deletes the working file for
+        /// <paramref name="hashPrefix"/> (each when non-null) via <see cref="DisposeAndDeleteFilesAfterReaders"/>.
+        /// </summary>
+        private void RetireLocked(ReadOnlySpan<byte> key, Guid keyId, nint treeHandle, bool deleteFiles,
+            out BfTreeService disposedTree, out string hashPrefix)
+        {
+            disposedTree = null;
+            hashPrefix = null;
+
+            if (treeHandle == nint.Zero && !deleteFiles)
+            {
+                // Pending entry cleanup on eviction: remove from liveIndexes (no native tree to dispose).
+                _ = liveIndexes.TryRemove(keyId, out _);
                 return;
+            }
+
+            // Remove entry from liveIndexes so concurrent restorers see no tree for this key.
+            // Stash the BfTree wrapper (if any) for deferred disposal.
+            if (liveIndexes.TryRemove(keyId, out var entry))
+                disposedTree = entry?.Tree;
+
+            if (deleteFiles)
+                hashPrefix = HashKeyToPrefix(key);
+        }
+
+        /// <summary>
+        /// Disposes <paramref name="tree"/> and deletes the working file for <paramref name="hashPrefix"/> (each when
+        /// non-null) once no thread can still be using them, then runs <paramref name="onCompleted"/> (when non-null).
+        /// </summary>
+        /// <remarks>
+        /// Deferred via the store epoch: the action runs only after all current epoch holders have moved past, so any
+        /// reader that observed a non-zero TreeHandle from this entry's stub completes its native call before the
+        /// bfTree is freed.
+        /// </remarks>
+        private void DisposeAndDeleteFilesAfterReaders(BfTreeService tree, string hashPrefix, Action onCompleted)
+        {
+            if (tree == null && hashPrefix == null)
+            {
+                onCompleted?.Invoke();
+                return;
+            }
+
             if (storeEpoch != null)
             {
-                var capturedTree = disposedTree;
-                var capturedPrefix = hashPrefix;
-                storeEpoch.BumpCurrentEpoch(() => DisposeAndDeleteFilesDeferred(capturedTree, capturedPrefix));
+                // Record triggers call this holding the epoch; the retirement task does not.
+                var resumed = storeEpoch.ResumeIfNotProtected();
+                try
+                {
+                    storeEpoch.BumpCurrentEpoch(() =>
+                    {
+                        DisposeAndDeleteFilesDeferred(tree, hashPrefix);
+                        onCompleted?.Invoke();
+                    });
+                }
+                finally
+                {
+                    if (resumed)
+                        storeEpoch.Suspend();
+                }
             }
             else
             {
                 // No epoch available (unit-test scenario without a Tsavorite store). Synchronous
                 // dispose is OK here because no concurrent readers exist in such tests.
-                DisposeAndDeleteFilesDeferred(disposedTree, hashPrefix);
+                DisposeAndDeleteFilesDeferred(tree, hashPrefix);
+                onCompleted?.Invoke();
             }
         }
 

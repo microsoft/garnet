@@ -90,6 +90,18 @@ namespace Garnet.server
         private readonly VectorSetCleanupWorkChannel<ulong> requestCleanupTaskChannel;
         private readonly VectorSetCleanupWorkChannel<object> requestDropTaskChannel;
         private readonly VectorSetCleanupWorkSet<(ulong Context, nint IndexPtr)> requestedDrops;
+
+        /// <summary>
+        /// Indexes of deleted Vector Sets whose lock was held when they were deleted, which the drop task drops once it
+        /// can take the lock. See <see cref="DropDeletedIndex"/>.
+        /// </summary>
+        private readonly ConcurrentQueue<(long KeyHash, ulong Context, nint IndexPtr)> deletedIndexDrops = new();
+
+        /// <summary>
+        /// Number of <see cref="deletedIndexDrops"/> entries not yet dropped, including one being dropped.
+        /// </summary>
+        private int pendingDeletedIndexDrops;
+
         private readonly ConcurrentDictionary<ulong, byte[]> potentiallyDeleted;
         private readonly Task cleanupTask;
         private readonly Task requestCleanupTask;
@@ -131,6 +143,8 @@ namespace Garnet.server
         /// 
         /// An additional subtlety is that indexes which are requested to be dropped cannot be recreated
         /// until that drop is processed.
+        /// 
+        /// It also drops the indexes of deleted Vector Sets that were in use when they were deleted.
         /// </summary>
         private async Task RunRequestDropTaskAsync()
         {
@@ -149,6 +163,22 @@ namespace Garnet.server
                 ActiveThreadSession = dropSession.storageSession;
                 try
                 {
+                    // Indexes of deleted Vector Sets, once the operations that were using them release the lock
+                    while (deletedIndexDrops.TryDequeue(out var deletedDrop))
+                    {
+                        vectorSetLocks.AcquireExclusiveLock(deletedDrop.KeyHash, out var lockToken);
+
+                        try
+                        {
+                            Service.DropIndex(deletedDrop.Context, deletedDrop.IndexPtr);
+                        }
+                        finally
+                        {
+                            vectorSetLocks.ReleaseLock(lockToken);
+                            _ = Interlocked.Decrement(ref pendingDeletedIndexDrops);
+                        }
+                    }
+
                     // Process all pending drops
                     foreach (var (k, (context, indexPtr)) in requestedDrops)
                     {
@@ -400,7 +430,7 @@ namespace Garnet.server
                 // We care that all these actions are quiet in a row (indicating that work queued before this call has finished)
                 // NOT that they are all quiet at the same time
 
-                var hasPendingDrops = !requestedDrops.IsEmpty;
+                var hasPendingDrops = !requestedDrops.IsEmpty || Volatile.Read(ref pendingDeletedIndexDrops) != 0;
                 var hasPendingReconciliation = !potentiallyDeleted.IsEmpty;
                 var hasPendingVaddsAwaitingReplay = !replicationBlockEvent.Wait(0);
                 var hasPendingPostCheckpointTask = Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0;

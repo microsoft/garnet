@@ -78,6 +78,12 @@ namespace Garnet.server
         /// </summary>
         readonly UnifiedTransactionalContext unifiedTransactionalContext;
 
+        /// <summary>
+        /// Transactional context for the session Vector Set operations use for element data. Vector Set commands run under
+        /// <see cref="TransactionStoreTypes.Main"/>, so this session is enrolled with the main store's.
+        /// </summary>
+        readonly VectorTransactionalContext vectorTransactionalContext;
+
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
 
@@ -169,6 +175,8 @@ namespace Garnet.server
             unifiedBasicContext = unifiedStoreSession.BasicContext;
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
 
+            vectorTransactionalContext = storageSession.vectorTransactionalContext;
+
             this.functionsState = storageSession.functionsState;
             this.appendOnlyFile = functionsState.appendOnlyFile;
             this.logger = logger;
@@ -256,7 +264,10 @@ namespace Garnet.server
 
                     // Release contexts
                     if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
+                    {
                         stringTransactionalContext.EndTransaction();
+                        vectorTransactionalContext.EndTransaction();
+                    }
                     if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                         objectTransactionalContext.EndTransaction();
                     unifiedTransactionalContext.EndTransaction();
@@ -482,7 +493,10 @@ namespace Garnet.server
         void BeginTransaction()
         {
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
+            {
                 stringTransactionalContext.BeginTransaction();
+                vectorTransactionalContext.BeginTransaction();
+            }
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.BeginTransaction();
             unifiedTransactionalContext.BeginTransaction();
@@ -491,7 +505,10 @@ namespace Garnet.server
         void LocksAcquired(long txnVersion)
         {
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
+            {
                 stringTransactionalContext.LocksAcquired(txnVersion);
+                vectorTransactionalContext.LocksAcquired(txnVersion);
+            }
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.LocksAcquired(txnVersion);
             unifiedTransactionalContext.LocksAcquired(txnVersion);

@@ -1338,6 +1338,7 @@ namespace Garnet.server
             try
             {
                 respServerSession.storageSession.stringTransactionalContext.BeginTransaction();
+                respServerSession.storageSession.vectorTransactionalContext.BeginTransaction();
                 if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
                     respServerSession.storageSession.objectTransactionalContext.BeginTransaction();
                 if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
@@ -1347,6 +1348,7 @@ namespace Garnet.server
 
                 txnVersion = respServerSession.storageSession.stateMachineDriver.VerifyTransactionVersion(txnVersion);
                 respServerSession.storageSession.stringTransactionalContext.LocksAcquired(txnVersion);
+                respServerSession.storageSession.vectorTransactionalContext.LocksAcquired(txnVersion);
                 if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
                     respServerSession.storageSession.objectTransactionalContext.LocksAcquired(txnVersion);
                 if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
@@ -1358,6 +1360,7 @@ namespace Garnet.server
                 txnKeyEntries.UnlockAllKeys();
                 respServerSession.SetTransactionMode(false);
                 respServerSession.storageSession.stringTransactionalContext.EndTransaction();
+                respServerSession.storageSession.vectorTransactionalContext.EndTransaction();
                 if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
                     respServerSession.storageSession.objectTransactionalContext.EndTransaction();
                 if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)

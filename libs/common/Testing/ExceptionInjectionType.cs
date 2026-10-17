@@ -160,5 +160,25 @@ namespace Garnet.common
         /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
+        /// <summary>
+        /// RangeIndex: pause a data operation after it takes the shared RangeIndex lock, before it reads the stub.
+        /// </summary>
+        RangeIndex_Pause_After_Shared_Lock,
+        /// <summary>
+        /// RangeIndex: fail a data operation after it takes the shared RangeIndex lock, before it reads the stub.
+        /// </summary>
+        RangeIndex_Fail_After_Shared_Lock,
+        /// <summary>
+        /// Vector Set: pause an operation after it reads the index under the Vector Set lock, before it uses the index.
+        /// </summary>
+        VectorSet_Pause_After_Index_Read,
+        /// <summary>
+        /// Vector Set: fail an operation after it reads the index under the Vector Set lock, before it uses the index.
+        /// </summary>
+        VectorSet_Fail_After_Index_Read,
+        /// <summary>
+        /// Transaction: pause EXEC after the transaction locks its keys, before it runs the queued commands.
+        /// </summary>
+        Transaction_Pause_After_Lock_Acquisition,
     }
 }

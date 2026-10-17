@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -831,9 +832,9 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Request deletion of a Vector Set given the VALUE of the index key.
+        /// Request deletion of a Vector Set given the KEY and VALUE of the index record being deleted.
         /// </summary>
-        internal void RequestDeletion(ReadOnlySpan<byte> value)
+        internal void RequestDeletion(ReadOnlySpan<byte> key, Span<byte> value)
         {
             if (value.Length != IndexSize)
             {
@@ -843,7 +844,7 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
 
             // Ignore any deletion requested for an index that has the SuppressCleanup flag
             //
@@ -860,8 +861,61 @@ namespace Garnet.server
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
 
+            if (indexPtr == 0)
+            {
+                // We never actually spun this index up, so nothing to drop
+                return;
+            }
+
+            // The deletion now owns the index. A superseded record stays in the log sealed rather than tombstoned, and
+            // eviction would otherwise request a second drop of the same index.
+            ClearIndexPointer(value);
+
             // Tell DiskANN to clean itself up
-            DropIndex(value);
+            DropDeletedIndex(key, context, indexPtr);
+        }
+
+        /// <summary>
+        /// Drop the DiskANN index of a Vector Set that is being deleted.
+        /// 
+        /// Operations use the index while holding the Vector Set lock, so it is dropped under an exclusive lock. This runs
+        /// in <see cref="GarnetRecordTriggers.OnDispose"/> under the record's bucket latch, so it must not wait for that
+        /// lock: an operation holding it may be waiting on the latch. If the lock is held, the drop is handed to the drop
+        /// task, which takes the lock once those operations release it.
+        /// </summary>
+        private void DropDeletedIndex(ReadOnlySpan<byte> key, ulong context, nint indexPtr)
+        {
+            long keyHash;
+            unsafe
+            {
+                fixed (byte* keyPtr = key)
+                {
+                    keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length));
+                }
+            }
+
+            if (vectorSetLocks.TryAcquireExclusiveLock(keyHash, out var lockToken))
+            {
+                try
+                {
+                    Service.DropIndex(context, indexPtr);
+                }
+                finally
+                {
+                    vectorSetLocks.ReleaseLock(lockToken);
+                }
+
+                return;
+            }
+
+            _ = Interlocked.Increment(ref pendingDeletedIndexDrops);
+            deletedIndexDrops.Enqueue((keyHash, context, indexPtr));
+
+            if (!requestDropTaskChannel.TryPublish())
+            {
+                logger?.LogCritical("VectorManager request drop channel rejected an index drop");
+                Debug.Assert(false, "VectorManager request drop channel should never drop a request");
+            }
         }
 
         /// <summary>

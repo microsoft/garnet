@@ -64,6 +64,9 @@ namespace Garnet.server
 
             var rangeIndexManager = functionsState.rangeIndexManager;
 
+            // A deleted predecessor's tree may still be retiring; the new tree may share its working file.
+            rangeIndexManager.WaitForRetirement(key.ReadOnlySpan);
+
             // Auto-compute leaf page size if not specified
             if (leafPageSize == 0)
                 leafPageSize = RangeIndexManager.ComputeLeafPageSize(maxRecordSize);
@@ -111,8 +114,10 @@ namespace Garnet.server
 
             if (status.Record.Created)
             {
-                // Register for lifecycle management (cold path)
+                // Register for lifecycle management (cold path), once any predecessor deleted since the wait above is
+                // retired; its retirement would otherwise remove this registration.
                 var keyHash = stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
+                rangeIndexManager.WaitForRetirement(key.ReadOnlySpan);
                 rangeIndexManager.RegisterIndex(bfTree, keyHash, key.ReadOnlySpan);
                 result = RangeIndexResult.OK;
                 return GarnetStatus.OK;

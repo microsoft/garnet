@@ -272,6 +272,8 @@ namespace Garnet.server
                 logger?.LogError(ex, "RangeIndexManager: failed to create migration temp directory {Path}", migrationTempDir);
                 throw new Exception($"RangeIndexManager: failed to create migration temp directory '{migrationTempDir}'.", ex);
             }
+
+            retirementTask = RunRetirementTaskAsync();
         }
 
         /// <summary>
@@ -485,6 +487,9 @@ namespace Garnet.server
         {
             // Drop any in-progress AOF-stream reassembly
             DisposeIncompleteStreamReassembly();
+
+            // Finish deferred retirements first; they remove their trees from liveIndexes before disposing them.
+            StopRetirementTask();
 
             foreach (var kvp in liveIndexes)
             {

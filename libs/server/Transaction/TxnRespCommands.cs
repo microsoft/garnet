@@ -79,6 +79,8 @@ namespace Garnet.server
 
                 if (startTxn)
                 {
+                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Transaction_Pause_After_Lock_Acquisition);
+
                     while (!RespWriteUtils.TryWriteArrayLength(txnManager.operationCntTxn, ref dcurr, dend))
                         SendAndReset();
                 }

@@ -426,6 +426,39 @@ namespace Garnet.test
 #endif
         }
 
+        /// <summary>
+        /// Finds a key other than <paramref name="key"/> that falls in the same hash index bucket and has the same tag,
+        /// so the records of the two keys share a chain in the hash index. A record that is not alone in its chain is not
+        /// elided when an update or delete supersedes it; it stays in the log, sealed, until its page is evicted.
+        /// </summary>
+        /// <param name="key">The key to share a chain with.</param>
+        /// <param name="indexBuckets">The number of hash index buckets, a power of two (the index size divided by 64).</param>
+        public static string FindKeyInSameHashChain(string key, long indexBuckets)
+        {
+            Debug.Assert(indexBuckets > 0 && (indexBuckets & (indexBuckets - 1)) == 0, "The hash index has a power-of-two number of buckets");
+
+            var hash = SpanByteComparer.StaticGetHashCode64(Encoding.ASCII.GetBytes(key));
+            var bucket = hash & (indexBuckets - 1);
+            var tag = HashBucketEntry.GetTag(hash);
+
+            // Random suffixes from a fixed seed: the key hash is a multiply-accumulate, so sequential suffixes barely
+            // change the high bits that form the tag.
+            var random = new Random(0);
+            var candidate = new byte[key.Length + 9];
+            _ = Encoding.ASCII.GetBytes(key.AsSpan(), candidate);
+            candidate[key.Length] = (byte)'-';
+
+            while (true)
+            {
+                for (var i = key.Length + 1; i < candidate.Length; i++)
+                    candidate[i] = (byte)('a' + random.Next(26));
+
+                var candidateHash = SpanByteComparer.StaticGetHashCode64(candidate);
+                if ((candidateHash & (indexBuckets - 1)) == bucket && HashBucketEntry.GetTag(candidateHash) == tag)
+                    return Encoding.ASCII.GetString(candidate);
+            }
+        }
+
         public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
         {
             // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has

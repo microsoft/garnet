@@ -388,12 +388,7 @@ namespace Garnet.server
                         return default;
                     }
 
-                    if (!lockToken.IsExclusive && !vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
-                    {
-                        vectorSetLocks.ReleaseLock(lockToken);
-                        takeExclusiveLock = true;
-                        continue;
-                    }
+                    OnIndexReadUnderLock(lockToken);
 
                     status = GarnetStatus.OK;
                     importPending = false;
@@ -407,6 +402,26 @@ namespace Garnet.server
                 // In the normal exit case, disposing ReadVectorLock will clear ActiveThreadSession
                 ActiveThreadSession = null;
 
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Test hook: pauses, or fails, an operation that holds <paramref name="lockToken"/> after reading the index and
+        /// before using it. Releases the lock if it fails the operation.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private void OnIndexReadUnderLock(ReadOptimizedLock.LockToken lockToken)
+        {
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.VectorSet_Pause_After_Index_Read);
+
+            try
+            {
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Fail_After_Index_Read);
+            }
+            catch
+            {
+                vectorSetLocks.ReleaseLock(lockToken);
                 throw;
             }
         }
