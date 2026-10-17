@@ -154,13 +154,11 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.SETBIT, ref parseState, startIdx: 1, arg1: offset);
 
             var output = GetStringOutput();
-            var status = storageApi.StringSetBit(key, ref input, ref output);
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.SetBit, ref storageApi);
 
-            if (status == GarnetStatus.OK)
-                dcurr += output.SpanByteAndMemory.Length;
-            else if (status == GarnetStatus.WRONGTYPE)
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-
+            WriteSetBitReply(StorageSession.StringUpdateStatus(status), ref output);
             return true;
         }
 
@@ -186,16 +184,11 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.GETBIT, ref parseState, startIdx: 1, arg1: offset);
 
             var output = GetStringOutput();
-            var status = storageApi.StringGetBit(key, ref input, ref output);
+            var status = storageApi.Read_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.GetBit, ref storageApi);
 
-            if (status == GarnetStatus.NOTFOUND)
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
-            else if (status == GarnetStatus.WRONGTYPE)
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            else
-                dcurr += output.SpanByteAndMemory.Length;
-
+            WriteGetBitReply(StorageSession.StringReadStatus(status), ref output);
             return true;
         }
 
@@ -242,22 +235,11 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.BITCOUNT, ref parseState, startIdx: 1, arg1: useBitIndex ? 1 : 0);
 
             var output = GetStringOutput();
+            var status = storageApi.Read_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.BitCount, ref storageApi);
 
-            var status = storageApi.StringBitCount(key, ref input, ref output);
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else if (status == GarnetStatus.NOTFOUND)
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else if (status == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-
+            WriteBitCountReply(StorageSession.StringReadStatus(status), ref output);
             return true;
         }
 
@@ -335,24 +317,11 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.BITPOS, ref parseState, startIdx: 1);
 
             var output = GetStringOutput();
+            var status = storageApi.Read_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.BitPos, ref storageApi);
 
-            var status = storageApi.StringBitPosition(key, ref input, ref output);
-
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else if (status == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-            else if (status == GarnetStatus.NOTFOUND)
-            {
-                var resp = bSetValSlice[0] == '0' ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_N1;
-                while (!RespWriteUtils.TryWriteDirect(resp, ref dcurr, dend))
-                    SendAndReset();
-            }
-
+            WriteBitPosReply(StorageSession.StringReadStatus(status), ref output);
             return true;
         }
 

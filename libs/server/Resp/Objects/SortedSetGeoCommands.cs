@@ -87,20 +87,9 @@ namespace Garnet.server
 
             var output = GetObjectOutput();
 
-            var status = storageApi.GeoAdd(key, ref input, ref output);
+            var status = storageApi.RMW_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                default:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-            }
-
-            return true;
+            return CompleteObjectOp(status, ref output, pending, ObjectMissReply.AsHit, ref storageApi);
         }
 
         /// <summary>

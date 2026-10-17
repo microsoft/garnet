@@ -8,10 +8,14 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
+using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -965,6 +969,61 @@ namespace Garnet.test
                 foreach (var c in clients)
                     c.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Runs a write and a read once the test lets it go, having first told the test it is running.
+        /// </summary>
+        sealed class HeldProcedure : CustomProcedure
+        {
+            internal readonly ManualResetEventSlim Entered = new();
+            internal readonly ManualResetEventSlim Release = new();
+
+            public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+            {
+                Entered.Set();
+                _ = Release.Wait(TimeSpan.FromSeconds(30));
+
+                var offset = 0;
+                var key = GetNextArg(ref procInput, ref offset);
+                var value = GetNextArg(ref procInput, ref offset);
+                _ = garnetApi.SET(key, value);
+                var found = garnetApi.GET(key, out PinnedSpanByte read) == GarnetStatus.OK && read.ReadOnlySpan.SequenceEqual(value.ReadOnlySpan);
+                WriteSimpleString(ref output, found ? "OK" : "LOST");
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Shutdown disposes every session from its own thread, so it can reach a session whose batch is still
+        /// running on a network thread. The storage sessions are then left for the batch to release.
+        /// </summary>
+        [Test]
+        public void ShutdownLeavesTheStorageSessionsToABatchStillRunning()
+        {
+            var procedure = new HeldProcedure();
+            server.Register.NewProcedure("HELD", () => procedure);
+            var storeWrapper = server.Provider.StoreWrapper;
+
+            using var client = new RawRespSession(useTls);
+            client.Send("HELD", "key", "value");
+            ClassicAssert.IsTrue(procedure.Entered.Wait(TimeSpan.FromSeconds(30)), "The procedure never ran.");
+
+            var toDispose = server;
+            server = null;
+            var shutdown = Task.Run(toDispose.Dispose);
+            try
+            {
+                if (!SpinWait.SpinUntil(() => storeWrapper.StorageTeardowns == 1, TimeSpan.FromSeconds(10)))
+                    Assert.Fail("Shutdown released the storage sessions of a session whose batch was still running.");
+            }
+            finally
+            {
+                procedure.Release.Set();
+            }
+
+            ClassicAssert.IsTrue(shutdown.Wait(TimeSpan.FromSeconds(30)), "Shutdown did not finish once the batch was let go.");
+            ClassicAssert.AreEqual(0, storeWrapper.StorageTeardowns);
         }
 
         /// <summary>

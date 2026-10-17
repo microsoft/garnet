@@ -10,14 +10,18 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// The suspending half of the object-store read commands.
+    /// The suspending half of the object-store commands that are one read or one update of one key.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A hash, set, list or sorted-set read whose record is not in memory goes to the device exactly as
+    /// A hash, set, list or sorted-set operation whose record is not in memory goes to the device exactly as
     /// often as a <c>GET</c> does, and completing it in place held the network thread for the whole I/O.
     /// These commands share one suspension because they share one shape: on a hit they write what the
     /// operation produced, and on a miss they write a reply fixed by the command and its arguments.
+    /// </para>
+    /// <para>
+    /// An update that goes to the device is applied when its record arrives, in the completion that is awaited
+    /// here, so it is completed rather than issued again.
     /// </para>
     /// <para>
     /// This is the operation-in-flight kind of suspension, so it keeps the per-batch scope. The wait is
@@ -34,14 +38,14 @@ namespace Garnet.server
         ObjectReplyShape pendingObjectReply;
 
         /// <summary>
-        /// Writes the reply for an object-store read, waiting for the device first if the read did not find
-        /// its record in memory.
+        /// Writes the reply for an object-store read or update, waiting for the device first if the operation did
+        /// not find its record in memory.
         /// </summary>
-        /// <param name="status">Status of a read served from memory; meaningless if it went pending.</param>
-        /// <param name="output">Output of a read served from memory.</param>
-        /// <param name="pending">Whether the read went to the device.</param>
+        /// <param name="status">Status of an operation served from memory; meaningless if it went pending.</param>
+        /// <param name="output">Output of an operation served from memory.</param>
+        /// <param name="pending">Whether the operation went to the device.</param>
         /// <param name="miss">What to write if no record is found.</param>
-        /// <param name="storageApi">The storage API the read was issued through.</param>
+        /// <param name="storageApi">The storage API the operation was issued through.</param>
         /// <returns>Always true: when the session parks, the reply is written on resume.</returns>
         bool CompleteObjectOp<TGarnetApi>(GarnetStatus status, ref ObjectOutput output, bool pending, ObjectMissReply miss, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
@@ -54,11 +58,11 @@ namespace Garnet.server
         {
             if (!pending)
             {
-                WriteObjectReply(status, ref output, shape);
+                FinishObjectOp(status, ref output, shape);
                 return true;
             }
 
-            // A consume that cannot park waits the read out on this thread instead; see CanSuspend.
+            // A consume that cannot park waits the operation out on this thread instead; see CanSuspend.
             if (!CanSuspend)
             {
                 storageSession.StartPendingLatency();
@@ -108,10 +112,21 @@ namespace Garnet.server
                 var status = completed.Current.Status;
                 var output = completed.Current.Output;
 
-                WriteObjectReply(StorageSession.InterpretObjectStoreStatus(status, ref output), ref output, shape);
+                FinishObjectOp(StorageSession.InterpretObjectStoreStatus(status, ref output), ref output, shape);
 
                 Debug.Assert(!completed.Next(), "A pending object-store operation produced more than one output");
             }
+        }
+
+        /// <summary>
+        /// Does what follows an applied operation, then writes its reply.
+        /// </summary>
+        void FinishObjectOp(GarnetStatus status, ref ObjectOutput output, ObjectReplyShape shape)
+        {
+            if (shape.NotifiesCollectionUpdate)
+                storeWrapper.itemBroker?.HandleCollectionUpdate(parseState.GetArgSliceByRef(0).ToArray());
+
+            WriteObjectReply(status, ref output, shape);
         }
 
         /// <summary>
@@ -126,7 +141,7 @@ namespace Garnet.server
                 return;
             }
 
-            if (status != GarnetStatus.NOTFOUND)
+            if (status != GarnetStatus.NOTFOUND || shape.Miss == ObjectMissReply.AsHit)
             {
                 WriteObjectHit(ref output, shape.Hit);
                 return;
@@ -189,6 +204,10 @@ namespace Garnet.server
                             WriteNullArray();
                     }
                     break;
+                case ObjectMissReply.NoSuchKey:
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
+                        SendAndReset();
+                    break;
                 default:
                     WriteNull();
                     break;
@@ -203,6 +222,24 @@ namespace Garnet.server
                 case ObjectHitReply.Int32Result1:
                     while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
                         SendAndReset();
+                    break;
+
+                case ObjectHitReply.Ok:
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                        SendAndReset();
+                    break;
+
+                case ObjectHitReply.Int32Result1OrLexRangeError:
+                    if (output.result1 == int.MaxValue)
+                    {
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING, ref dcurr, dend))
+                            SendAndReset();
+                    }
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
+                            SendAndReset();
+                    }
                     break;
 
                 case ObjectHitReply.SerializedThenNullIfNegativeOne:

@@ -48,6 +48,10 @@ namespace Garnet.networking
         /// </summary>
         /// <param name="head"></param>
         /// <param name="tail"></param>
+        /// <remarks>
+        /// A full fence: a read the caller makes after entering is not reordered before a write it made before.
+        /// A session relies on this to see a teardown that ran while it was not yet in its batch.
+        /// </remarks>
         unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail);
 
         /// <summary>

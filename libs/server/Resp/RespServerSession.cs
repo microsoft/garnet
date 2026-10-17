@@ -458,9 +458,10 @@ namespace Garnet.server
 
             subscribeBroker?.RemoveSubscription(this);
 
-            // What is left is released by whichever of this and the async GET processor finishes last, so that
-            // the processor is never waited for here.
+            // What is left is released by whichever of this, a batch still running, and the async GET processor
+            // finishes last, so that neither is waited for here.
             StopAsyncGetProcessor();
+            LeaveStorageToRunningBatch();
             ReleaseStorageHold();
         }
 
@@ -675,7 +676,14 @@ namespace Garnet.server
                 // configuration change the command is still racing with proceed. Pushes left while it was
                 // suspended go out once the batch lets go of the response object.
                 if (!asyncCommandRetainsBatchScope)
+                {
                     EnterBatchScope();
+
+                    // A fresh batch arriving after teardown, which may already have disposed the storage
+                    // sessions. A resume is let through: one admitted before teardown is waited for by it.
+                    if (sessionTornDown && resume is null)
+                        return bytesReceived;
+                }
                 else
                     ReleaseHeldBackPushes();
                 recvBufferPtr = reqBuffer;
@@ -780,16 +788,7 @@ namespace Garnet.server
                 // scratch slots intact, and -- in cluster mode -- still holding the epoch, which keeps the
                 // key it is operating on from being migrated away while it waits.
                 if (!SuspendedHoldingBatchScope)
-                {
                     ExitBatchScope();
-
-                    // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers
-                    // grown for one unusually wide command can be released here. Counting down an integer
-                    // keeps this off the parse state itself, which measurably degrades code generation for
-                    // this method when read on every batch.
-                    if (--sessionTrimCountdown <= 0)
-                        TrimSessionBuffers();
-                }
                 else
                 {
                     HoldBackPushes();

@@ -48,28 +48,10 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
             var output = new ObjectOutput();
 
-            var status = storageApi.HashSet(key, ref input, ref output);
+            var status = storageApi.RMW_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                default:
-                    if (command == RespCommand.HMSET)
-                    {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else
-                    {
-                        while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    break;
-            }
-            return true;
+            return CompleteObjectOp(status, ref output, pending,
+                new ObjectReplyShape(ObjectMissReply.AsHit, command == RespCommand.HMSET ? ObjectHitReply.Ok : ObjectHitReply.Int32Result1), ref storageApi);
         }
 
 
@@ -306,24 +288,10 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
             var output = new ObjectOutput();
 
-            var status = storageApi.HashDelete(key, ref input, ref output);
+            var status = storageApi.RMW_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-            }
-            return true;
+            return CompleteObjectOp(status, ref output, pending,
+                new ObjectReplyShape(ObjectMissReply.Zero, ObjectHitReply.Int32Result1), ref storageApi);
         }
 
         /// <summary>
@@ -428,19 +396,9 @@ namespace Garnet.server
             // Prepare output
             var output = GetObjectOutput();
 
-            var status = storageApi.HashIncrement(key, ref input, ref output);
+            var status = storageApi.RMW_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                default:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-            }
-            return true;
+            return CompleteObjectOp(status, ref output, pending, ObjectMissReply.AsHit, ref storageApi);
         }
 
         /// <summary>
@@ -516,29 +474,10 @@ namespace Garnet.server
 
             var output = GetObjectOutput();
 
-            var status = storageApi.HashExpire(key, ref input, ref output);
+            var status = storageApi.RMW_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteArrayLength(numFields, ref dcurr, dend))
-                        SendAndReset();
-                    for (var i = 0; i < numFields; i++)
-                    {
-                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    break;
-                default:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-            }
-
-            return true;
+            return CompleteObjectOp(status, ref output, pending,
+                new ObjectReplyShape(ObjectMissReply.MinusTwoPerCount, count: numFields), ref storageApi);
         }
 
         /// <summary>
@@ -643,29 +582,10 @@ namespace Garnet.server
 
             var output = GetObjectOutput();
 
-            var status = storageApi.HashPersist(key, ref input, ref output);
+            var status = storageApi.RMW_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteArrayLength(numFields, ref dcurr, dend))
-                        SendAndReset();
-                    for (var i = 0; i < numFields; i++)
-                    {
-                        while (!RespWriteUtils.TryWriteInt32(-2, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    break;
-                default:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-            }
-
-            return true;
+            return CompleteObjectOp(status, ref output, pending,
+                new ObjectReplyShape(ObjectMissReply.MinusTwoPerCount, count: numFields), ref storageApi);
         }
     }
 }

@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -12,6 +13,63 @@ namespace Garnet.server
     // on a partial type declaration applies only to the part that carries it.
     internal sealed partial class RespServerSession : ServerSessionBase
     {
+        /// <summary>
+        /// Answers a blocking command that may not wait (<see cref="DenyBlocking"/>) with what <paramref name="keys"/>
+        /// hold now, as though its timeout had already expired.
+        /// </summary>
+        /// <param name="command">The command, with BRPOPLPUSH given as BLMOVE</param>
+        /// <param name="keys">Keys to try, in order; the source key alone for BLMOVE</param>
+        /// <param name="cmdArgs">Additional arguments for command</param>
+        bool BlockingCommandNow(RespCommand command, byte[][] keys, CollectionItemArgs cmdArgs)
+        {
+            // A consume that cannot park waits a device read out on this thread instead; see CanSuspend.
+            var attempt = storeWrapper.itemBroker.TryGetCollectionItemNowAsync(command, keys, storageSession, cmdArgs, waitInPlace: !CanSuspend);
+            if (attempt.IsCompletedSuccessfully)
+            {
+                WriteBlockingCommandResult(command, attempt.GetAwaiter().GetResultGuarded());
+                return true;
+            }
+
+            // Keeps the batch scope: a BLMOVE pushes the element it popped, which is in the scratch buffers, and the
+            // push may wait on the device.
+            ValueTask body;
+            using (BeginAsyncCommand(retainBatchScope: true))
+                body = BlockingCommandNowBodyAsync(command, attempt);
+
+            return CompleteAsyncCommand(body);
+        }
+
+        [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
+        async ValueTask BlockingCommandNowBodyAsync(RespCommand command, ValueTask<CollectionItemResult> attempt)
+            => WriteBlockingCommandResult(command, await attempt.ConfigureAwait(false));
+
+        void WriteBlockingCommandResult(RespCommand command, CollectionItemResult result)
+        {
+            switch (command)
+            {
+                case RespCommand.BLPOP:
+                case RespCommand.BRPOP:
+                    WriteListBlockingPopResult(result);
+                    break;
+                case RespCommand.BLMOVE:
+                    WriteListBlockingMoveResult(result);
+                    break;
+                case RespCommand.BLMPOP:
+                    WriteListBlockingPopMultipleResult(result);
+                    break;
+                case RespCommand.BZPOPMIN:
+                case RespCommand.BZPOPMAX:
+                    WriteSortedSetBlockingPopResult(result);
+                    break;
+                case RespCommand.BZMPOP:
+                    WriteSortedSetBlockingMPopResult(result);
+                    break;
+                default:
+                    Debug.Fail($"{command} is not a blocking collection command");
+                    break;
+            }
+        }
+
         /// <summary>
         /// <c>BLPOP key [key ...] timeout</c> and <c>BRPOP key [key ...] timeout</c>.
         /// </summary>
@@ -28,10 +86,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(error);
 
             if (DenyBlocking)
-            {
-                WriteListBlockingPopResult(storeWrapper.itemBroker.TryGetCollectionItemNow(command, keysBytes, storageSession));
-                return true;
-            }
+                return BlockingCommandNow(command, keysBytes, default);
 
             ValueTask body;
             using (BeginAsyncCommand())
@@ -112,10 +167,7 @@ namespace Garnet.server
             var cmdArgs = CollectionItemArgs.ForMove(dstKey, sourceDirection, destinationDirection);
 
             if (DenyBlocking)
-            {
-                WriteListBlockingMoveResult(storeWrapper.itemBroker.TryGetCollectionItemNow(RespCommand.BLMOVE, [srcKey], storageSession, cmdArgs));
-                return true;
-            }
+                return BlockingCommandNow(RespCommand.BLMOVE, [srcKey], cmdArgs);
 
             ValueTask body;
             using (BeginAsyncCommand())
@@ -164,10 +216,7 @@ namespace Garnet.server
             var cmdArgs = CollectionItemArgs.ForListPop(popDirection, popCount);
 
             if (DenyBlocking)
-            {
-                WriteListBlockingPopMultipleResult(storeWrapper.itemBroker.TryGetCollectionItemNow(RespCommand.BLMPOP, keys, storageSession, cmdArgs));
-                return true;
-            }
+                return BlockingCommandNow(RespCommand.BLMPOP, keys, cmdArgs);
 
             ValueTask body;
             using (BeginAsyncCommand())
@@ -221,10 +270,7 @@ namespace Garnet.server
                 keysBytes[i] = BlockingKeys.Copy(parseState.GetArgSliceByRef(i).ReadOnlySpan);
 
             if (DenyBlocking)
-            {
-                WriteSortedSetBlockingPopResult(storeWrapper.itemBroker.TryGetCollectionItemNow(command, keysBytes, storageSession));
-                return true;
-            }
+                return BlockingCommandNow(command, keysBytes, default);
 
             ValueTask body;
             using (BeginAsyncCommand())
@@ -286,10 +332,7 @@ namespace Garnet.server
             var cmdArgs = CollectionItemArgs.ForSortedSetPop(lowScoresFirst, popCount);
 
             if (DenyBlocking)
-            {
-                WriteSortedSetBlockingMPopResult(storeWrapper.itemBroker.TryGetCollectionItemNow(RespCommand.BZMPOP, keys, storageSession, cmdArgs));
-                return true;
-            }
+                return BlockingCommandNow(RespCommand.BZMPOP, keys, cmdArgs);
 
             ValueTask body;
             using (BeginAsyncCommand())

@@ -68,11 +68,24 @@ namespace Garnet.server
 
             // Set before the connection's hold is released, so that whichever thread ends up disposing the storage
             // sessions sees it.
-            storageTeardownCounted = true;
-            storeWrapper.BeginStorageTeardown();
+            CountStorageTeardown();
 
             asyncWaiterCancel.Cancel();
             asyncWaiter.Signal();
+        }
+
+        /// <summary>
+        /// Has <see cref="StoreWrapper"/> wait for this session's storage sessions to be released before it
+        /// disposes the stores they belong to. Called on the teardown path when something other than the
+        /// teardown itself may be the last to release them.
+        /// </summary>
+        void CountStorageTeardown()
+        {
+            if (storageTeardownCounted)
+                return;
+
+            storageTeardownCounted = true;
+            storeWrapper.BeginStorageTeardown();
         }
 
         /// <summary>

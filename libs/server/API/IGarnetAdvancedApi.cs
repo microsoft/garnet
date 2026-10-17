@@ -72,6 +72,26 @@ namespace Garnet.server
         GarnetStatus Read_MainStore(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
+        /// RMW operation on the main store that reports rather than waits when the record is not in memory.
+        /// A pending update is applied when the record arrives, in the completion drained through
+        /// <see cref="GET_CompletePendingAsync"/>, and must not be issued again.
+        /// </summary>
+        /// <param name="key">Key to update.</param>
+        /// <param name="input">Input describing the update.</param>
+        /// <param name="output">Output of the update, whose memory must outlive a pending update.</param>
+        /// <returns>The store's status, which the caller maps to the outcome of its command.</returns>
+        Status RMW_MainStore_WithPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
+        /// Read operation on the main store that reports rather than waits when the record is not in memory.
+        /// </summary>
+        /// <param name="key">Key to read.</param>
+        /// <param name="input">Input describing what to read.</param>
+        /// <param name="output">Output of the read, whose memory must outlive a pending read.</param>
+        /// <returns>The store's status, which the caller maps to the outcome of its command.</returns>
+        Status Read_MainStore_WithPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
+
+        /// <summary>
         /// RMW operation on object store
         /// </summary>
         GarnetStatus RMW_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
@@ -103,8 +123,8 @@ namespace Garnet.server
 
         /// <summary>
         /// RMW operation on the unified store that reports rather than waits when the record is not in
-        /// memory. The update is already applied when this reports pending; only its outcome is still on
-        /// the device.
+        /// memory. The update has not been applied when this reports pending: it is applied when the record
+        /// arrives, in the completion of the pending operation.
         /// </summary>
         /// <param name="key">Key to update.</param>
         /// <param name="input">Input describing the update.</param>
@@ -135,6 +155,17 @@ namespace Garnet.server
         /// <param name="output">Output for a read served from memory.</param>
         /// <param name="pending">True if the read went to the device, leaving the status meaningless.</param>
         GarnetStatus Read_ObjectStore_WithPending(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, out bool pending);
+
+        /// <summary>
+        /// Updates the object store, reporting rather than waiting when the record is not in memory. The update
+        /// has not been applied when this reports pending: it is applied when the record arrives, in the
+        /// completion of the pending operation.
+        /// </summary>
+        /// <param name="key">Key to update.</param>
+        /// <param name="input">Input describing the update.</param>
+        /// <param name="output">Output for an update served from memory.</param>
+        /// <param name="pending">True if the update went to the device, leaving the status meaningless.</param>
+        GarnetStatus RMW_ObjectStore_WithPending(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, out bool pending);
 
         /// <summary>
         /// Completes pending object-store operations on this session.

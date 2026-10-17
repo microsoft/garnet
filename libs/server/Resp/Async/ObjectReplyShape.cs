@@ -16,6 +16,15 @@ namespace Garnet.server
 
         /// <summary>The count the operation reported.</summary>
         Int32Result1,
+
+        /// <summary><c>+OK</c>.</summary>
+        Ok,
+
+        /// <summary>
+        /// The count the operation reported, or the invalid-range error if it reported <see cref="int.MaxValue"/>,
+        /// as the lexicographic range commands do for a malformed bound.
+        /// </summary>
+        Int32Result1OrLexRangeError,
     }
 
     /// <summary>
@@ -51,10 +60,20 @@ namespace Garnet.server
 
         /// <summary>A null when <see cref="ObjectReplyShape.Flag"/> is set, otherwise one null array per argument.</summary>
         NullIfFlagElseNullArrayPerArg,
+
+        /// <summary>The no-such-key error, for updates of an existing element.</summary>
+        NoSuchKey,
+
+        /// <summary>
+        /// What a hit writes. For an update whose miss is an update that declined to create its record, such as
+        /// <c>ZADD XX</c> on a missing key, which writes its reply as a hit would.
+        /// </summary>
+        AsHit,
     }
 
     /// <summary>
-    /// How one object-store command writes its reply, in a form that survives a suspension.
+    /// How one object-store command writes its reply, and what it does once its operation is applied, in a form
+    /// that survives a suspension.
     /// </summary>
     /// <remarks>
     /// The handler's own reply switch is replaced by this, so the suspended and in-memory paths write
@@ -73,14 +92,22 @@ namespace Garnet.server
         /// <summary>The condition of the miss replies that have two forms.</summary>
         internal readonly bool Flag;
 
+        /// <summary>
+        /// Whether the command can add elements that a blocking pop waits for, so the waiters on its key are told once
+        /// the update is applied.
+        /// </summary>
+        internal readonly bool NotifiesCollectionUpdate;
+
         /// <summary>How many elements the repeating miss replies write.</summary>
         internal readonly int Count;
 
-        internal ObjectReplyShape(ObjectMissReply miss, ObjectHitReply hit = ObjectHitReply.Serialized, bool flag = false, int count = 0)
+        internal ObjectReplyShape(ObjectMissReply miss, ObjectHitReply hit = ObjectHitReply.Serialized, bool flag = false, int count = 0,
+            bool notifiesCollectionUpdate = false)
         {
             Hit = hit;
             Miss = miss;
             Flag = flag;
+            NotifiesCollectionUpdate = notifiesCollectionUpdate;
             Count = count;
         }
     }

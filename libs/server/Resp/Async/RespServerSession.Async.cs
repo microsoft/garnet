@@ -194,6 +194,23 @@ namespace Garnet.server
         volatile bool sessionTornDown;
 
         /// <summary>
+        /// Set from <see cref="EnterBatchScope"/> to <see cref="ExitBatchScope"/>, including across a
+        /// suspension that keeps the scope. Teardown reads it to decide whether the storage sessions are left
+        /// to the batch to release; see <see cref="LeaveStorageToRunningBatch"/>.
+        /// </summary>
+        /// <remarks>
+        /// Ordered against <see cref="sessionTornDown"/> by the response object's lock: it is written before
+        /// the lock is taken and cleared before it is released, and both are full fences.
+        /// </remarks>
+        bool batchInScope;
+
+        /// <summary>
+        /// One while teardown holds a storage hold on behalf of a batch that may still be in scope. Taken
+        /// back to zero by whichever of teardown and the batch's scope exit releases that hold.
+        /// </summary>
+        int batchStorageHoldPending;
+
+        /// <summary>
         /// Publishes this session for the duration of an async command body's synchronous start, so the
         /// body's builder can find it. Restores the previous value, which makes nesting safe.
         /// </summary>
@@ -254,6 +271,9 @@ namespace Garnet.server
         /// </summary>
         void EnterBatchScope()
         {
+            // Before the lock below, whose acquire is a full fence: teardown either sees the batch in scope or
+            // the batch sees the teardown (see LeaveStorageToRunningBatch)
+            batchInScope = true;
             if (clusterSession is not null)
                 clusterSession.AcquireCurrentEpoch();
             networkSender.EnterAndGetResponseObject(out dcurr, out dend);
@@ -266,15 +286,69 @@ namespace Garnet.server
         void ExitBatchScope()
         {
             asyncCommandRetainsBatchScope = false;
-            networkSender.ExitAndReturnResponseObject();
 
             if (clusterSession is not null)
                 clusterSession.ReleaseCurrentEpoch();
 
             scratchBufferBuilder.Reset();
             scratchBufferAllocator.Reset();
+
+            // Batch boundary: no argument pointers outlive it, so over-sized per-session buffers grown for one
+            // unusually wide command can be released here. Counting down an integer keeps this off the parse
+            // state itself, which measurably degrades code generation for the batch loop when read on every
+            // batch. Inside the scope, because some of the buffers go with the storage sessions after teardown.
+            if (--sessionTrimCountdown <= 0 && !sessionTornDown)
+                TrimSessionBuffers();
+
+            // Cleared before the lock is released, which is a full fence. From here teardown may dispose the
+            // storage sessions, so nothing below touches them.
+            batchInScope = false;
+            networkSender.ExitAndReturnResponseObject();
             ServeSenderWaiters();
+
+            if (sessionTornDown)
+                ReleaseBatchStorageHold();
         }
+
+        /// <summary>
+        /// Called from <see cref="Dispose"/>: keeps the storage sessions alive for a batch that is still in
+        /// scope, which then releases them on its way out.
+        /// </summary>
+        /// <remarks>
+        /// Teardown runs on the session's own thread after its batch, except on server shutdown, which disposes
+        /// every session from the shutting-down thread while their batches may still be running. A batch's scope
+        /// exit clears <see cref="batchInScope"/> and then reads <see cref="sessionTornDown"/>, while teardown
+        /// sets <see cref="sessionTornDown"/>, publishes the hold, and then reads <see cref="batchInScope"/>, each
+        /// with a full fence in between. So either teardown sees the batch gone and releases the hold itself, or
+        /// the exit sees the teardown and releases it; the exchange on <see cref="batchStorageHoldPending"/>
+        /// makes sure only one does. A batch that enters after teardown sees <see cref="sessionTornDown"/> and
+        /// returns before running anything.
+        /// </remarks>
+        void LeaveStorageToRunningBatch()
+        {
+            _ = Interlocked.Increment(ref storageHolds);
+            _ = Interlocked.Exchange(ref batchStorageHoldPending, 1);
+
+            if (!Volatile.Read(ref batchInScope))
+            {
+                ReleaseBatchStorageHold();
+                return;
+            }
+
+            // Before the connection's hold is released, so that whichever thread disposes the storage sessions
+            // sees it
+            CountStorageTeardown();
+        }
+
+        /// <summary>
+        /// Releases the hold <see cref="LeaveStorageToRunningBatch"/> took, unless the other side already has.
+        /// </summary>
+        void ReleaseBatchStorageHold()
+        {
+            if (Interlocked.Exchange(ref batchStorageHoldPending, 0) == 1)
+                ReleaseStorageHold();
+        }
+
 
         /// <summary>
         /// Drops a per-batch scope that was being held across a suspension. Called when the suspension ends

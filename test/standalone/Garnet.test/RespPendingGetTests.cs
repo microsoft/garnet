@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -1198,7 +1199,6 @@ namespace Garnet.test
         public void CommandsThatWaitForTheDeviceInPlaceRunOnAnExecutorThread()
         {
             Populate();
-            PopulateObjects();
 
             using var client = new RawClient();
 
@@ -1210,17 +1210,9 @@ namespace Garnet.test
                     $"{argv[0]} never went to the device, so it proves nothing.");
             }
 
-            AssertFromTheDevice(":48\r\n", "STRLEN", Key(10));
-            AssertFromTheDevice($"$4\r\n{Value(11)[..4]}\r\n", "GETRANGE", Key(11), "0", "3");
-            AssertFromTheDevice(":49\r\n", "APPEND", Key(12), "x");
-            AssertFromTheDevice(":48\r\n", "SETRANGE", Key(13), "0", "z");
-            AssertFromTheDevice($"${ValueLength}\r\n{Value(14)}\r\n", "GETDEL", Key(14));
-            AssertFromTheDevice(":1\r\n", "HSET", HashKey(10), "f9", "v");
-            AssertFromTheDevice(":1\r\n", "HINCRBY", HashKey(11), "n", "1");
-            AssertFromTheDevice(":4\r\n", "LPUSH", ListKey(12), "x");
-            AssertFromTheDevice(":1\r\n", "SADD", SetKey(13), "x");
-            AssertFromTheDevice(":1\r\n", "ZADD", ZsetKey(14), "100", "x");
-            AssertFromTheDevice(":3\r\n", "ZLEXCOUNT", ZsetKey(15), "-", "+");
+            AssertFromTheDevice($"*1\r\n:{(int)Value(10)[0]}\r\n", "BITFIELD_RO", Key(10), "GET", "u8", "0");
+            AssertFromTheDevice($"*1\r\n:{Value(11)[0] + 1}\r\n", "BITFIELD", Key(11), "INCRBY", "u8", "0", "1");
+            AssertFromTheDevice($"${ValueLength}\r\n{Value(13)}\r\n", "LCS", Key(13), Key(13 + 26));
             AssertFromTheDevice($"*1\r\n${Key(20).Length}\r\n{Key(20)}\r\n", "KEYS", Key(20));
 
             ClassicAssert.AreEqual(0, deviceFactoryCreator.ReadsOffExecutor,
@@ -1266,8 +1258,8 @@ namespace Garnet.test
             AssertInPlace(":0\r\n", "UNLINK", Key(16), ListKey(11));
 
             var posts = executor.Posts;
-            ClassicAssert.AreEqual(":48\r\n", client.Execute("STRLEN", Key(17)));
-            ClassicAssert.Greater(executor.Posts, posts, "STRLEN reads the device in place, yet was not counted as moved.");
+            ClassicAssert.AreEqual($"*1\r\n:{(int)Value(17)[0]}\r\n", client.Execute("BITFIELD_RO", Key(17), "GET", "u8", "0"));
+            ClassicAssert.Greater(executor.Posts, posts, "BITFIELD_RO reads the device in place, yet was not counted as moved.");
         }
 
         /// <summary>
@@ -1387,13 +1379,13 @@ namespace Garnet.test
                 deviceFactoryCreator.ReadDelayMs = 200;
 
                 for (var i = 0; i < Sessions; i++)
-                    clients[i].SendPipeline(["MULTI"], ["APPEND", Key(i), "x"], ["EXEC"]);
+                    clients[i].SendPipeline(["MULTI"], ["BITFIELD", Key(i), "INCRBY", "u8", "0", "1"], ["EXEC"]);
 
                 for (var i = 0; i < Sessions; i++)
                 {
                     ClassicAssert.AreEqual("+OK\r\n", clients[i].ReadReply());
                     ClassicAssert.AreEqual("+QUEUED\r\n", clients[i].ReadReply());
-                    ClassicAssert.AreEqual("*1\r\n:49\r\n", clients[i].ReadReply(), $"Wrong reply for {Key(i)}");
+                    ClassicAssert.AreEqual($"*1\r\n*1\r\n:{Value(i)[0] + 1}\r\n", clients[i].ReadReply(), $"Wrong reply for {Key(i)}");
                 }
 
                 ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount, Sessions,
@@ -1417,9 +1409,9 @@ namespace Garnet.test
         /// </summary>
         /// <remarks>
         /// The transaction moves to the executor at <c>EXEC</c>, parks on the device for its <c>GET</c>, and resumes
-        /// on whichever thread completes the read, so its <c>APPEND</c> has to move to the executor again, with its
-        /// locks held. Meanwhile another session's <c>APPEND</c> of the same key has taken the one executor thread and
-        /// waits there for the lock. Queued behind it, the transaction would wait for the thread and the thread for
+        /// on whichever thread completes the read, so its <c>BITFIELD</c>, which reads the device in place, has to move
+        /// to the executor again, with its locks held. Meanwhile another session's <c>BITFIELD</c> of the same key has
+        /// taken the one executor thread and waits there for the lock. Queued behind it, the transaction would wait for the thread and the thread for
         /// the transaction.
         /// </remarks>
         [Test]
@@ -1434,12 +1426,12 @@ namespace Garnet.test
             {
                 deviceFactoryCreator.ReadDelayMs = 600_000;
 
-                transaction.SendPipeline(["MULTI"], ["GET", Key(0)], ["APPEND", Key(1), "x"], ["EXEC"]);
+                transaction.SendPipeline(["MULTI"], ["GET", Key(0)], ["BITFIELD", Key(1), "INCRBY", "u8", "0", "1"], ["EXEC"]);
                 ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > 0, TimeSpan.FromSeconds(30)),
                     "The transaction's GET never reached the device.");
 
                 // Takes the one executor thread and holds it, waiting for the transaction's lock on the key
-                contender.Send("APPEND", Key(1), "y");
+                contender.Send("BITFIELD", Key(1), "INCRBY", "u8", "0", "1");
                 Thread.Sleep(500);
 
                 deviceFactoryCreator.ReadDelayMs = 0;
@@ -1448,10 +1440,10 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("+OK\r\n", transaction.ReadReply());
                 ClassicAssert.AreEqual("+QUEUED\r\n", transaction.ReadReply());
                 ClassicAssert.AreEqual("+QUEUED\r\n", transaction.ReadReply());
-                ClassicAssert.AreEqual($"*2\r\n${ValueLength}\r\n{Value(0)}\r\n:49\r\n", transaction.ReadReply());
-                ClassicAssert.AreEqual(":50\r\n", contender.ReadReply());
+                ClassicAssert.AreEqual($"*2\r\n${ValueLength}\r\n{Value(0)}\r\n*1\r\n:{Value(1)[0] + 1}\r\n", transaction.ReadReply());
+                ClassicAssert.AreEqual($"*1\r\n:{Value(1)[0] + 2}\r\n", contender.ReadReply());
                 ClassicAssert.AreEqual(0, deviceFactoryCreator.ReadsOffExecutor,
-                    "The transaction resumed from its GET and completed its APPEND's device read in place, off the executor.");
+                    "The transaction resumed from its GET and completed its BITFIELD's device read in place, off the executor.");
             }
             catch (IOException e)
             {
@@ -1508,7 +1500,7 @@ namespace Garnet.test
                 deviceFactoryCreator.ReadDelayMs = 600_000;
 
                 for (var i = 0; i < sessionCount; i++)
-                    clients[i].Send("STRLEN", Key(i));
+                    clients[i].Send("BITFIELD_RO", Key(i), "GET", "u8", "0");
 
                 _ = SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount >= sessionCount, TimeSpan.FromSeconds(30));
                 ClassicAssert.AreEqual(sessionCount, deviceFactoryCreator.ReadCount,
@@ -1529,7 +1521,7 @@ namespace Garnet.test
                 deviceFactoryCreator.CompleteHeldReads();
 
                 for (var i = 0; i < sessionCount; i++)
-                    ClassicAssert.AreEqual($":{ValueLength}\r\n", clients[i].ReadReply(), $"Wrong reply for {Key(i)}");
+                    ClassicAssert.AreEqual($"*1\r\n:{(int)Value(i)[0]}\r\n", clients[i].ReadReply(), $"Wrong reply for {Key(i)}");
             }
             finally
             {
@@ -2141,6 +2133,790 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>Objects of each type written to expire before <see cref="PopulateObjects"/> pushes them to the device.</summary>
+        const int ExpiredObjects = 32;
+
+        /// <summary>Object <paramref name="i"/> of <paramref name="type"/>, which has expired and left memory.</summary>
+        static string ExpiredKey(string type, int i) => $"pendinggone{type}:{i:D6}";
+
+        /// <summary>
+        /// Writes <see cref="ExpiredObjects"/> objects of every type and expires them at once. Written before
+        /// <see cref="PopulateObjects"/>, they leave memory, so an update of one finds an expired record on the device.
+        /// </summary>
+        static void WriteExpiredObjects(RawClient client)
+        {
+            for (var i = 0; i < ExpiredObjects; i++)
+            {
+                ClassicAssert.AreEqual(":1\r\n", client.Execute("HSET", ExpiredKey("hash", i), "f0", "v"));
+                ClassicAssert.AreEqual(":1\r\n", client.Execute("RPUSH", ExpiredKey("list", i), "m0"));
+                ClassicAssert.AreEqual(":1\r\n", client.Execute("SADD", ExpiredKey("set", i), "m0"));
+                ClassicAssert.AreEqual(":1\r\n", client.Execute("ZADD", ExpiredKey("zset", i), "0", "m0"));
+                foreach (var type in new[] { "hash", "list", "set", "zset" })
+                    ClassicAssert.AreEqual(":1\r\n", client.Execute("PEXPIRE", ExpiredKey(type, i), "1"));
+            }
+        }
+
+        /// <summary>
+        /// The object-store updates park where they are received when their record is on the device, and answer, and
+        /// leave the object, exactly as they do when it is in memory.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Each update is applied to a record that has left memory and to an identical one that has not, and the
+        /// replies, and then the objects, have to match byte for byte. A miss is an update of an object that expired
+        /// on the device, matched against one never written.
+        /// </para>
+        /// <para>
+        /// The device read is held while another session's PING runs against a pool of one free thread, which an
+        /// update waiting for the device in place would hold. The read is issued on a thread other than an executor
+        /// thread, so the update was not moved off the thread that received it to wait there.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ObjectUpdatesFromTheDeviceParkWhereReceivedAndAnswerAsFromMemory()
+        {
+            // Longer than the test waits, so a read is held until it is released.
+            const int HeldMs = 600_000;
+            var stallLimit = TimeSpan.FromSeconds(5);
+
+            // Log memory that is flushed past the head, so no update has to wait to allocate, which would move it to
+            // an executor thread
+            RestartServer(memorySize: SpilledLogMemorySize);
+
+            using var client = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(30) };
+            using var pinger = new RawClient { ReceiveTimeout = stallLimit };
+
+            WriteExpiredObjects(client);
+            PopulateObjects();
+            ClassicAssert.IsFalse(server.Provider.StoreWrapper.store.Log.AllocationMayWaitForFlush,
+                "The log has to wait for a flush to add a record, so every update runs on an executor thread.");
+
+            ClassicAssert.AreEqual("+PONG\r\n", pinger.Execute("PING"));
+
+            // Starving the worker pool only constrains session dispatch on Linux, for the reason given on the single-read test.
+            using var cap = OperatingSystem.IsLinux() ? ThreadPoolCap.ApplyFree(1) : null;
+
+            var inSeconds = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+            var inMilliseconds = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+
+            // Every update takes an object that has not been touched yet: the first update of a record brings it into memory
+            var hits = new Dictionary<string, int>();
+            var misses = new Dictionary<string, int>();
+
+            static int Next(Dictionary<string, int> taken, string type)
+            {
+                _ = taken.TryGetValue(type, out var i);
+                taken[type] = i + 1;
+                return i;
+            }
+
+            string[] StateOf(string type, string key) => type switch
+            {
+                "hash" => ["HGETALL", key],
+                "list" => ["LRANGE", key, "0", "-1"],
+                "zset" => ["ZRANGE", key, "0", "-1", "WITHSCORES"],
+                _ => ["SMEMBERS", key],
+            };
+
+            void AssertSameAcrossASuspension(string type, bool miss, string[] rest, Func<string, string> canonical = null, string[] state = null)
+            {
+                string onDevice, inMemory;
+                if (miss)
+                {
+                    var i = Next(misses, type);
+                    ClassicAssert.Less(i, ExpiredObjects, $"More misses of {type} than objects written to expire.");
+                    onDevice = ExpiredKey(type, i);
+                    inMemory = $"pendingnever{type}:{i:D6}";
+                }
+                else
+                {
+                    var i = Next(hits, type) + 1;
+                    onDevice = $"pending{type}:{i:D6}";
+                    inMemory = $"pending{type}:9{i:D5}";
+
+                    for (var f = 0; f < ObjectFields; f++)
+                    {
+                        var score = ((i * ObjectFields) + f).ToString(CultureInfo.InvariantCulture);
+                        _ = type switch
+                        {
+                            "hash" => client.Execute("HSET", inMemory, $"f{f}", $"{i}-{f}"),
+                            "zset" => client.Execute("ZADD", inMemory, score, $"m{f}"),
+                            "list" => client.Execute("RPUSH", inMemory, $"m{f}"),
+                            _ => client.Execute("SADD", inMemory, $"m{f}"),
+                        };
+                    }
+                }
+
+                var verb = rest[0];
+                string[] ArgsFor(string key) => [verb, key, .. rest[1..]];
+                string[] StateFor(string key) => state is null ? StateOf(type, key) : [state[0], key, .. state[1..]];
+                canonical ??= static reply => reply;
+
+                var fromMemory = client.Execute(ArgsFor(inMemory));
+                var memoryState = client.Execute(StateFor(inMemory));
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                var offExecutorBefore = deviceFactoryCreator.ReadsOffExecutor;
+                deviceFactoryCreator.ReadDelayMs = HeldMs;
+                try
+                {
+                    client.Send(ArgsFor(onDevice));
+                    ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > readsBefore, stallLimit),
+                        $"{verb} {onDevice} never went to the device, so it proves nothing.");
+
+                    if (cap is not null)
+                    {
+                        pinger.Send("PING");
+                        try
+                        {
+                            ClassicAssert.AreEqual("+PONG\r\n", pinger.ReadReply());
+                        }
+                        catch (IOException e)
+                        {
+                            Assert.Fail($"PING was not answered within {stallLimit.TotalSeconds:F0}s while {verb} waited for the " +
+                                $"device against a pool of one thread, so {verb} was holding it. {e.Message}");
+                        }
+                    }
+
+                    ClassicAssert.IsFalse(client.HasReply, $"{verb} answered before its device read completed.");
+                }
+                finally
+                {
+                    deviceFactoryCreator.ReadDelayMs = 0;
+                    deviceFactoryCreator.CompleteHeldReads();
+                }
+
+                var fromDevice = client.ReadReply();
+
+                ClassicAssert.Greater(deviceFactoryCreator.ReadsOffExecutor, offExecutorBefore,
+                    $"{verb} was moved to an executor thread to wait for the device, rather than parking where it was received.");
+                ClassicAssert.AreEqual(canonical(fromMemory), canonical(fromDevice),
+                    $"{verb} {(miss ? "of an expired object " : "")}answered differently across a suspension.");
+                ClassicAssert.AreEqual(memoryState, client.Execute(StateFor(onDevice)),
+                    $"{verb} {(miss ? "of an expired object " : "")}left the object different across a suspension.");
+            }
+
+            void Hash(params string[] rest) => AssertSameAcrossASuspension("hash", miss: false, rest);
+            void List(params string[] rest) => AssertSameAcrossASuspension("list", miss: false, rest);
+            void Set(params string[] rest) => AssertSameAcrossASuspension("set", miss: false, rest);
+            void Zset(params string[] rest) => AssertSameAcrossASuspension("zset", miss: false, rest);
+
+            void HashMiss(params string[] rest) => AssertSameAcrossASuspension("hash", miss: true, rest);
+            void ListMiss(params string[] rest) => AssertSameAcrossASuspension("list", miss: true, rest);
+            void SetMiss(params string[] rest) => AssertSameAcrossASuspension("set", miss: true, rest);
+            void ZsetMiss(params string[] rest) => AssertSameAcrossASuspension("zset", miss: true, rest);
+
+            // SPOP picks its members at random, so only how many it popped can match
+            static string AnyMember(string reply) => reply.Replace("m0", "m?").Replace("m1", "m?").Replace("m2", "m?");
+            string[] count = ["SCARD"];
+
+            Hash("HSET", "f0", "x");
+            Hash("HSET", "f9", "x");
+            Hash("HSETNX", "f0", "x");
+            Hash("HSETNX", "f9", "x");
+            Hash("HMSET", "f0", "x", "f9", "y");
+            Hash("HDEL", "f0", "absent");
+            Hash("HINCRBY", "n", "5");
+            Hash("HINCRBY", "f0", "1");
+            Hash("HINCRBYFLOAT", "n", "1.5");
+            Hash("HEXPIRE", "100", "FIELDS", "2", "f0", "absent");
+            Hash("HPEXPIRE", "100000", "FIELDS", "1", "f1");
+            Hash("HEXPIREAT", inSeconds, "FIELDS", "1", "f0");
+            Hash("HPEXPIREAT", inMilliseconds, "FIELDS", "1", "f0");
+            Hash("HPERSIST", "FIELDS", "2", "f0", "absent");
+
+            List("LPUSH", "x");
+            List("LPUSHX", "x");
+            List("RPUSH", "x", "y");
+            List("RPUSHX", "x");
+            List("LPOP");
+            List("LPOP", "2");
+            List("RPOP");
+            List("RPOP", "5");
+            List("LTRIM", "1", "-1");
+            List("LTRIM", "5", "9");
+            List("LINSERT", "BEFORE", "m1", "x");
+            List("LINSERT", "AFTER", "absent", "x");
+            List("LREM", "0", "m1");
+            List("LREM", "1", "absent");
+            List("LSET", "1", "x");
+            List("LSET", "9", "x");
+
+            Set("SADD", "m0", "x");
+            Set("SREM", "m0", "absent");
+            AssertSameAcrossASuspension("set", miss: false, ["SPOP"], AnyMember, count);
+            AssertSameAcrossASuspension("set", miss: false, ["SPOP", "2"], AnyMember, count);
+            AssertSameAcrossASuspension("set", miss: false, ["SPOP", "5"], AnyMember, count);
+
+            Zset("ZADD", "100", "x");
+            Zset("ZADD", "XX", "CH", "100", "m0");
+            Zset("ZADD", "INCR", "5", "m0");
+            Zset("ZADD", "NX", "1", "m0");
+            Zset("ZREM", "m0", "absent");
+            Zset("ZPOPMIN");
+            Zset("ZPOPMAX", "2");
+            Zset("ZINCRBY", "5", "m1");
+            Zset("ZINCRBY", "5", "x");
+            Zset("ZREMRANGEBYLEX", "[m0", "[m1");
+            Zset("ZREMRANGEBYLEX", "x", "y");
+            Zset("ZLEXCOUNT", "-", "+");
+            Zset("ZLEXCOUNT", "x", "y");
+            Zset("ZREMRANGEBYRANK", "0", "0");
+            Zset("ZREMRANGEBYSCORE", "-inf", "+inf");
+            Zset("ZEXPIRE", "100", "MEMBERS", "2", "m0", "absent");
+            Zset("ZPEXPIRE", "100000", "MEMBERS", "1", "m1");
+            Zset("ZEXPIREAT", inSeconds, "MEMBERS", "1", "m0");
+            Zset("ZPEXPIREAT", inMilliseconds, "MEMBERS", "1", "m0");
+            Zset("ZPERSIST", "MEMBERS", "2", "m0", "absent");
+            Zset("GEOADD", "13.361389", "38.115556", "palermo");
+
+            HashMiss("HSET", "f0", "x");
+            HashMiss("HSETNX", "f0", "x");
+            HashMiss("HMSET", "f0", "x");
+            HashMiss("HDEL", "f0");
+            HashMiss("HINCRBY", "n", "5");
+            HashMiss("HINCRBYFLOAT", "n", "1.5");
+            HashMiss("HEXPIRE", "100", "FIELDS", "2", "f0", "absent");
+            HashMiss("HPEXPIRE", "100000", "FIELDS", "1", "f0");
+            HashMiss("HEXPIREAT", inSeconds, "FIELDS", "1", "f0");
+            HashMiss("HPEXPIREAT", inMilliseconds, "FIELDS", "1", "f0");
+            HashMiss("HPERSIST", "FIELDS", "2", "f0", "absent");
+
+            ListMiss("LPUSH", "x");
+            ListMiss("LPUSHX", "x");
+            ListMiss("RPUSH", "x");
+            ListMiss("RPUSHX", "x");
+            ListMiss("LPOP");
+            ListMiss("LPOP", "2");
+            ListMiss("RPOP");
+            ListMiss("LTRIM", "0", "1");
+            ListMiss("LINSERT", "BEFORE", "m0", "x");
+            ListMiss("LREM", "0", "m0");
+            ListMiss("LSET", "0", "x");
+
+            SetMiss("SADD", "x");
+            SetMiss("SREM", "m0");
+            SetMiss("SPOP");
+            SetMiss("SPOP", "2");
+
+            ZsetMiss("ZADD", "1", "x");
+            ZsetMiss("ZADD", "INCR", "5", "x");
+            ZsetMiss("ZREM", "m0");
+            ZsetMiss("ZPOPMIN");
+            ZsetMiss("ZPOPMAX", "2");
+            ZsetMiss("ZINCRBY", "5", "x");
+            ZsetMiss("ZREMRANGEBYLEX", "-", "+");
+            ZsetMiss("ZLEXCOUNT", "-", "+");
+            ZsetMiss("ZREMRANGEBYRANK", "0", "-1");
+            ZsetMiss("ZREMRANGEBYSCORE", "-inf", "+inf");
+            ZsetMiss("ZEXPIRE", "100", "MEMBERS", "2", "m0", "absent");
+            ZsetMiss("ZPEXPIRE", "100000", "MEMBERS", "1", "m0");
+            ZsetMiss("ZEXPIREAT", inSeconds, "MEMBERS", "1", "m0");
+            ZsetMiss("ZPEXPIREAT", inMilliseconds, "MEMBERS", "1", "m0");
+            ZsetMiss("ZPERSIST", "MEMBERS", "1", "m0");
+            ZsetMiss("GEOADD", "13.361389", "38.115556", "palermo");
+        }
+
+        /// <summary>String records of each kind written to the device, and as many to memory.</summary>
+        const int StringRecords = 40;
+
+        /// <summary>The value of every string record that holds text.</summary>
+        const string StringText = "garnet-string-value";
+
+        /// <summary>String record <paramref name="i"/> of <paramref name="kind"/>, on the device or in memory.</summary>
+        static string StringKey(string kind, bool onDevice, int i) => $"pendingstr{kind}:{(onDevice ? "device" : "memory")}:{i:D4}";
+
+        /// <summary>
+        /// Writes a record of <paramref name="kind"/> at <paramref name="key"/>: text, a number, a number with a leading
+        /// zero, text that expires in an hour, text with an ETag, a hash, or text that expires at once.
+        /// </summary>
+        static void WriteStringRecord(RawClient client, string kind, string key)
+        {
+            var reply = kind switch
+            {
+                "text" => client.Execute("SET", key, StringText),
+                "number" => client.Execute("SET", key, "10"),
+                "leadingzero" => client.Execute("SET", key, "01.5"),
+                "ttl" => client.Execute("SET", key, StringText, "EX", "3600"),
+                "etag" => client.Execute("SETWITHETAG", key, StringText),
+                "hash" => client.Execute("HSET", key, "f", "v"),
+                "gone" => client.Execute("SET", key, StringText, "PX", "1"),
+                _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+            };
+            ClassicAssert.AreNotEqual('-', reply[0], $"Writing a {kind} record failed: {reply}");
+        }
+
+        /// <summary>
+        /// Writes <see cref="StringRecords"/> records of every kind and then enough others that they leave memory.
+        /// </summary>
+        void PopulateStringRecords(RawClient client)
+        {
+            foreach (var kind in (string[])["text", "number", "leadingzero", "ttl", "etag", "hash", "gone"])
+            {
+                for (var i = 0; i < StringRecords; i++)
+                    WriteStringRecord(client, kind, StringKey(kind, onDevice: true, i));
+            }
+
+            Populate();
+        }
+
+        /// <summary>
+        /// The string commands other than <c>GET</c> park where they are received when their record is on the device,
+        /// and answer, and leave the record, exactly as they do when it is in memory.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Each command is applied to a record that has left memory and to an identical one that has not, and the
+        /// replies, and then the records, have to match byte for byte. A miss is a command on a record that expired on
+        /// the device, matched against one never written, and a wrong type is a command on a hash.
+        /// </para>
+        /// <para>
+        /// The device read is held while another session's PING runs against a pool of one free thread, which a
+        /// command waiting for the device in place would hold. The read is issued on a thread other than an executor
+        /// thread, so the command was not moved off the thread that received it to wait there.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void StringCommandsFromTheDeviceParkWhereReceivedAndAnswerAsFromMemory()
+        {
+            // Longer than the test waits, so a read is held until it is released.
+            const int HeldMs = 600_000;
+            var stallLimit = TimeSpan.FromSeconds(5);
+
+            // Log memory that is flushed past the head, so no command has to wait to allocate, which would move it to
+            // an executor thread
+            RestartServer(memorySize: SpilledLogMemorySize);
+
+            using var client = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(30) };
+            using var pinger = new RawClient { ReceiveTimeout = stallLimit };
+
+            WriteStringRecord(client, "text", "pendingstrdump");
+            byte[] payload;
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+                payload = redis.GetDatabase(0).KeyDump("pendingstrdump");
+
+            PopulateStringRecords(client);
+            ClassicAssert.IsFalse(server.Provider.StoreWrapper.store.Log.AllocationMayWaitForFlush,
+                "The log has to wait for a flush to add a record, so every update runs on an executor thread.");
+
+            ClassicAssert.AreEqual("+PONG\r\n", pinger.Execute("PING"));
+
+            // Starving the worker pool only constrains session dispatch on Linux, for the reason given on the single-read test.
+            using var cap = OperatingSystem.IsLinux() ? ThreadPoolCap.ApplyFree(1) : null;
+
+            // Every command takes a record that has not been touched yet: the first update of a record brings it into memory
+            var taken = new Dictionary<string, int>();
+
+            static byte[] Bytes(object arg) => arg as byte[] ?? Encoding.UTF8.GetBytes((string)arg);
+
+            // The value with its ETag, the type, and whether it expires: all that a string command can change
+            string StateOf(string key)
+            {
+                var ttl = client.Execute("TTL", key);
+                return client.Execute("GETWITHETAG", key) + client.Execute("TYPE", key) + (ttl is ":-1\r\n" or ":-2\r\n" ? ttl : "expires");
+            }
+
+            void AssertSameAcrossASuspension(string kind, object[] command)
+            {
+                _ = taken.TryGetValue(kind, out var i);
+                taken[kind] = i + 1;
+                ClassicAssert.Less(i, StringRecords, $"More commands on {kind} records than records written.");
+
+                var onDevice = StringKey(kind, onDevice: true, i);
+                var inMemory = StringKey(kind, onDevice: false, i);
+                if (kind != "gone")
+                    WriteStringRecord(client, kind, inMemory);
+
+                var verb = (string)command[0];
+                byte[][] ArgsFor(string key) => [Bytes(verb), Bytes(key), .. Array.ConvertAll(command[1..], Bytes)];
+
+                var fromMemory = client.Execute(ArgsFor(inMemory));
+                var memoryState = StateOf(inMemory);
+
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                var offExecutorBefore = deviceFactoryCreator.ReadsOffExecutor;
+                deviceFactoryCreator.ReadDelayMs = HeldMs;
+                try
+                {
+                    client.Send(ArgsFor(onDevice));
+                    ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > readsBefore, stallLimit),
+                        $"{verb} of a {kind} record never went to the device, so it proves nothing.");
+
+                    if (cap is not null)
+                    {
+                        pinger.Send("PING");
+                        try
+                        {
+                            ClassicAssert.AreEqual("+PONG\r\n", pinger.ReadReply());
+                        }
+                        catch (IOException e)
+                        {
+                            Assert.Fail($"PING was not answered within {stallLimit.TotalSeconds:F0}s while {verb} waited for the " +
+                                $"device against a pool of one thread, so {verb} was holding it. {e.Message}");
+                        }
+                    }
+
+                    ClassicAssert.IsFalse(client.HasReply, $"{verb} answered before its device read completed.");
+                }
+                finally
+                {
+                    deviceFactoryCreator.ReadDelayMs = 0;
+                    deviceFactoryCreator.CompleteHeldReads();
+                }
+
+                var fromDevice = client.ReadReply();
+
+                ClassicAssert.Greater(deviceFactoryCreator.ReadsOffExecutor, offExecutorBefore,
+                    $"{verb} was moved to an executor thread to wait for the device, rather than parking where it was received.");
+                ClassicAssert.AreEqual(fromMemory, fromDevice, $"{verb} of a {kind} record answered differently across a suspension.");
+                ClassicAssert.AreEqual(memoryState, StateOf(onDevice), $"{verb} of a {kind} record left it different across a suspension.");
+            }
+
+            void Text(params object[] command) => AssertSameAcrossASuspension("text", command);
+            void Number(params object[] command) => AssertSameAcrossASuspension("number", command);
+            void LeadingZero(params object[] command) => AssertSameAcrossASuspension("leadingzero", command);
+            void Expiring(params object[] command) => AssertSameAcrossASuspension("ttl", command);
+            void Tagged(params object[] command) => AssertSameAcrossASuspension("etag", command);
+            void Hash(params object[] command) => AssertSameAcrossASuspension("hash", command);
+            void Gone(params object[] command) => AssertSameAcrossASuspension("gone", command);
+
+            Text("GETEX");
+            Text("GETEX", "EX", "100");
+            Expiring("GETEX", "PERSIST");
+            Text("GETRANGE", "0", "3");
+            Text("GETRANGE", "-5", "-1");
+            Text("SUBSTR", "2", "4");
+            Text("STRLEN");
+            Text("GETDEL");
+            Text("SETNX", "x");
+            Text("SET", "x", "NX");
+            Text("SET", "x", "XX");
+            Text("SET", "x", "GET");
+            Text("SET", "x", "XX", "GET");
+            Text("SET", "x", "EX", "100", "XX");
+            Expiring("SET", "x", "KEEPTTL");
+            Expiring("SET", "x", "XX", "KEEPTTL");
+            Text("GETSET", "x");
+            Text("APPEND", "-more");
+            Text("SETRANGE", "2", "xyz");
+            Text("SETRANGE", "30", "x");
+            Text("SETBIT", "7", "1");
+            Text("SETBIT", "1", "0");
+            Text("GETBIT", "1");
+            Text("GETBIT", "1000");
+            Text("BITCOUNT");
+            Text("BITCOUNT", "0", "1");
+            Text("BITPOS", "1");
+            Text("BITPOS", "0");
+            Text("BITPOS", "1", "100");
+            Text("INCR");
+            Text("INCRBYFLOAT", "1.5");
+            Text("RESTORE", "0", payload);
+            Text("GETWITHETAG");
+            Text("GETIFNOTMATCH", "1");
+            Text("SETWITHETAG", "x");
+            Text("DELIFGREATER", "5");
+
+            Number("INCR");
+            Number("DECR");
+            Number("INCRBY", "5");
+            Number("DECRBY", "5");
+            Number("INCRBYFLOAT", "1.5");
+            Number("INCRBYFLOAT", "-0.25");
+            LeadingZero("INCRBYFLOAT", "1.5");
+
+            Tagged("GETWITHETAG");
+            Tagged("GETIFNOTMATCH", "1");
+            Tagged("GETIFNOTMATCH", "7");
+            Tagged("SETIFMATCH", "x", "1");
+            Tagged("SETIFMATCH", "x", "7");
+            Tagged("SETIFGREATER", "x", "5");
+            Tagged("SETIFGREATER", "x", "0");
+            Tagged("SETWITHETAG", "x");
+            Tagged("DELIFGREATER", "5");
+            Tagged("DELIFGREATER", "0");
+
+            Hash("GETEX");
+            Hash("GETRANGE", "0", "3");
+            Hash("STRLEN");
+            Hash("GETDEL");
+            Hash("SETNX", "x");
+            Hash("SET", "x", "NX");
+            Hash("SET", "x", "XX");
+            Hash("SET", "x", "GET");
+            Hash("GETSET", "x");
+            Hash("INCR");
+            Hash("INCRBYFLOAT", "1.5");
+            Hash("APPEND", "x");
+            Hash("SETRANGE", "0", "x");
+            Hash("SETBIT", "7", "1");
+            Hash("GETBIT", "1");
+            Hash("BITCOUNT");
+            Hash("BITPOS", "1");
+            Hash("RESTORE", "0", payload);
+            Hash("GETWITHETAG");
+            Hash("SETWITHETAG", "x");
+            Hash("SETIFMATCH", "x", "1");
+            Hash("DELIFGREATER", "5");
+
+            Gone("GETEX");
+            Gone("GETRANGE", "0", "3");
+            Gone("STRLEN");
+            Gone("GETDEL");
+            Gone("SETNX", "x");
+            Gone("SET", "x", "NX");
+            Gone("SET", "x", "XX");
+            Gone("SET", "x", "EX", "100", "NX");
+            Gone("SET", "x", "GET");
+            Gone("GETSET", "x");
+            Gone("INCR");
+            Gone("INCRBY", "5");
+            Gone("INCRBYFLOAT", "1.5");
+            Gone("APPEND", "x");
+            Gone("SETRANGE", "3", "x");
+            Gone("SETBIT", "100", "1");
+            Gone("GETBIT", "1");
+            Gone("BITCOUNT");
+            Gone("BITPOS", "1");
+            Gone("BITPOS", "0");
+            Gone("RESTORE", "0", payload);
+            Gone("GETWITHETAG");
+            Gone("GETIFNOTMATCH", "1");
+            Gone("SETWITHETAG", "x");
+            Gone("SETIFMATCH", "x", "1");
+            Gone("SETIFGREATER", "x", "1");
+            Gone("DELIFGREATER", "5");
+        }
+
+        /// <summary>
+        /// The string commands that read their record from the device answer as from memory inside a transaction, which
+        /// parks on each read, and inside a script, which waits each read out in place.
+        /// </summary>
+        /// <remarks>
+        /// Each command takes a record of its own, so each one goes to the device. The same commands run against
+        /// identical records in memory, and the replies, and then the records, have to match byte for byte.
+        /// </remarks>
+        [Test]
+        public void StringCommandsFromTheDeviceAnswerAsFromMemoryInsideATransactionOrAScript()
+        {
+            RestartServer(memorySize: SpilledLogMemorySize);
+
+            using var client = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(30) };
+            PopulateStringRecords(client);
+
+            (string Kind, string[] Command)[] commands =
+            [
+                ("number", ["INCR"]), ("number", ["INCRBYFLOAT", "1.5"]), ("text", ["APPEND", "x"]),
+                ("text", ["SETRANGE", "0", "y"]), ("text", ["GETRANGE", "0", "3"]), ("text", ["STRLEN"]),
+                ("text", ["SETBIT", "7", "1"]), ("text", ["BITCOUNT"]), ("text", ["BITPOS", "1"]),
+                ("text", ["SET", "z", "XX", "GET"]), ("text", ["GETDEL"]), ("gone", ["SETNX", "x"]),
+                ("gone", ["SET", "x", "NX"]), ("hash", ["INCR"]), ("hash", ["SET", "x", "XX"]),
+                ("etag", ["SETIFMATCH", "x", "1"]), ("ttl", ["GETEX", "PERSIST"]),
+            ];
+
+            var taken = new Dictionary<string, int>();
+            string[] KeysFor(bool onDevice)
+            {
+                var keys = new string[commands.Length];
+                for (var c = 0; c < commands.Length; c++)
+                {
+                    var kind = commands[c].Kind;
+                    _ = taken.TryGetValue((onDevice ? "device" : "memory") + kind, out var i);
+                    taken[(onDevice ? "device" : "memory") + kind] = i + 1;
+                    keys[c] = StringKey(kind, onDevice, i);
+                    if (!onDevice && kind != "gone")
+                        WriteStringRecord(client, kind, keys[c]);
+                }
+                return keys;
+            }
+
+            string StateOf(string[] keys)
+            {
+                var state = new StringBuilder();
+                foreach (var key in keys)
+                    _ = state.Append(client.Execute("GETWITHETAG", key)).Append(client.Execute("TYPE", key)).Append(client.Execute("PERSIST", key));
+                return state.ToString();
+            }
+
+            string InATransaction(string[] keys)
+            {
+                var pipeline = new string[commands.Length + 2][];
+                pipeline[0] = ["MULTI"];
+                for (var c = 0; c < commands.Length; c++)
+                    pipeline[c + 1] = [commands[c].Command[0], keys[c], .. commands[c].Command[1..]];
+                pipeline[^1] = ["EXEC"];
+                client.SendPipeline(pipeline);
+
+                for (var c = 0; c <= commands.Length; c++)
+                    _ = client.ReadReply();
+                return client.ReadReply();
+            }
+
+            string InAScript(string[] keys)
+            {
+                var script = new StringBuilder("return {");
+                for (var c = 0; c < commands.Length; c++)
+                {
+                    _ = script.Append("redis.pcall('").Append(commands[c].Command[0]).Append("', KEYS[").Append(c + 1).Append(']');
+                    foreach (var arg in commands[c].Command[1..])
+                        _ = script.Append(", '").Append(arg).Append('\'');
+                    _ = script.Append("), ");
+                }
+                _ = script.Append('}');
+                return client.Execute(["EVAL", script.ToString(), keys.Length.ToString(CultureInfo.InvariantCulture), .. keys]);
+            }
+
+            foreach (var (name, run) in ((string, Func<string[], string>)[])[("a transaction", InATransaction), ("a script", InAScript)])
+            {
+                var inMemory = KeysFor(onDevice: false);
+                var fromMemory = run(inMemory);
+                var memoryState = StateOf(inMemory);
+
+                var onDevice = KeysFor(onDevice: true);
+                var readsBefore = deviceFactoryCreator.ReadCount;
+                var fromDevice = run(onDevice);
+                ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount - readsBefore, commands.Length,
+                    $"Fewer device reads than commands in {name}, so some of them never left memory.");
+
+                ClassicAssert.AreEqual(fromMemory, fromDevice, $"The commands in {name} answered differently from the device.");
+                ClassicAssert.AreEqual(memoryState, StateOf(onDevice), $"The commands in {name} left their records different from the device.");
+            }
+        }
+
+        /// <summary>
+        /// A pop that waits for the device in place passes over a list or sorted set that expired on the device, as it
+        /// passes over a missing one, and pops the next key.
+        /// </summary>
+        [Test]
+        public void PopsWaitingForTheDeviceInPlacePassOverAnObjectThatExpiredThere()
+        {
+            RestartServer(memorySize: SpilledLogMemorySize);
+
+            using var client = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(30) };
+
+            WriteExpiredObjects(client);
+            PopulateObjects();
+
+            ClassicAssert.AreEqual(":1\r\n", client.Execute("RPUSH", "pendinglive:list", "a"));
+            ClassicAssert.AreEqual(":1\r\n", client.Execute("ZADD", "pendinglive:zset", "1", "a"));
+
+            ClassicAssert.AreEqual("*2\r\n$16\r\npendinglive:list\r\n*1\r\n$1\r\na\r\n",
+                client.Execute("LMPOP", "2", ExpiredKey("list", 0), "pendinglive:list", "LEFT"));
+            ClassicAssert.AreEqual("*2\r\n$16\r\npendinglive:zset\r\n*1\r\n*2\r\n$1\r\na\r\n$1\r\n1\r\n",
+                client.Execute("ZMPOP", "2", ExpiredKey("zset", 0), "pendinglive:zset", "MIN"));
+            ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount, 2,
+                "The expired objects were read from memory, not the device.");
+        }
+
+        /// <summary>
+        /// A push that goes to the device for its list wakes a client blocked on that list once the push is applied.
+        /// </summary>
+        /// <remarks>
+        /// The list expired on the device, so both the blocked client's first look at it and the push have to read it
+        /// from there. Both reads are held until the push has been sent, so the client is waiting on the list whichever
+        /// read completes first, and only the push's notice that it added an item can wake it. A notice given before the
+        /// push is applied finds the list still empty, and none follows.
+        /// </remarks>
+        [Test]
+        public void APushFromTheDeviceWakesAClientBlockedOnItsList()
+        {
+            const int HeldMs = 600_000;
+            var stallLimit = TimeSpan.FromSeconds(10);
+
+            RestartServer(memorySize: SpilledLogMemorySize);
+
+            using var blocked = new RawClient { ReceiveTimeout = stallLimit };
+            using var pusher = new RawClient { ReceiveTimeout = stallLimit };
+
+            WriteExpiredObjects(pusher);
+            PopulateObjects();
+
+            var key = ExpiredKey("list", 0);
+            try
+            {
+                deviceFactoryCreator.ReadDelayMs = HeldMs;
+
+                var reads = deviceFactoryCreator.ReadCount;
+                blocked.Send("BLPOP", key, "0");
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > reads, stallLimit),
+                    "The BLPOP never looked for its list on the device.");
+
+                reads = deviceFactoryCreator.ReadCount;
+                pusher.Send("LPUSH", key, "b");
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > reads, stallLimit),
+                    "The LPUSH never went to the device, so it proves nothing.");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.CompleteHeldReads();
+            }
+
+            ClassicAssert.AreEqual(":1\r\n", pusher.ReadReply(), "The LPUSH of an expired list did not create it.");
+            try
+            {
+                ClassicAssert.AreEqual($"*2\r\n${key.Length}\r\n{key}\r\n$1\r\nb\r\n", blocked.ReadReply());
+            }
+            catch (IOException e)
+            {
+                Assert.Fail($"The BLPOP was not woken within {stallLimit.TotalSeconds:F0}s by the LPUSH that went to the device. {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// A CLIENT UNBLOCK that arrives while a blocked pop is reading its collection from the device ends the
+        /// pop with nothing taken: the unblock reports success, the client is answered as on a timeout, and every
+        /// item is still in the collection.
+        /// </summary>
+        /// <remarks>
+        /// The collection is on the device with items in it, so the blocked client's first look at it takes them
+        /// through a copy of the record once the read completes. The read is held until the unblock has answered,
+        /// so the take runs after the unblock has already reported success, and has to leave the items behind.
+        /// </remarks>
+        [TestCase("list")]
+        [TestCase("zset")]
+        public void AnUnblockDuringABlockedPopsDeviceReadLeavesTheItems(string type)
+        {
+            const int HeldMs = 600_000;
+            var stallLimit = TimeSpan.FromSeconds(10);
+
+            RestartServer(memorySize: SpilledLogMemorySize);
+
+            using var blocked = new RawClient { ReceiveTimeout = stallLimit };
+            using var unblocker = new RawClient { ReceiveTimeout = stallLimit };
+
+            PopulateObjects();
+
+            var id = blocked.Execute("CLIENT", "ID");
+            StringAssert.StartsWith(":", id);
+            id = id[1..^2];
+
+            var isList = type == "list";
+            var key = isList ? ListKey(0) : ZsetKey(0);
+            try
+            {
+                deviceFactoryCreator.ReadDelayMs = HeldMs;
+
+                var reads = deviceFactoryCreator.ReadCount;
+                blocked.Send(isList ? "BLPOP" : "BZPOPMIN", key, "0");
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > reads, stallLimit),
+                    "The blocked pop never looked for its collection on the device.");
+
+                ClassicAssert.AreEqual(":1\r\n", unblocker.Execute("CLIENT", "UNBLOCK", id),
+                    "The unblock did not find the client blocked.");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.CompleteHeldReads();
+            }
+
+            ClassicAssert.AreEqual(isList ? "*-1\r\n" : "$-1\r\n", blocked.ReadReply(), "The unblocked client was answered with items.");
+            ClassicAssert.AreEqual("*3\r\n$2\r\nm0\r\n$2\r\nm1\r\n$2\r\nm2\r\n",
+                unblocker.Execute(isList ? "LRANGE" : "ZRANGE", key, "0", "-1"),
+                "The pop took items from a client it had already reported unblocked.");
+        }
+
         /// <summary>
         /// Minimal synchronous RESP client. Unlike a multiplexer it never reorders or coalesces, and it needs
         /// no thread-pool thread of its own, so it can be used while the pool is deliberately exhausted.
@@ -2181,6 +2957,17 @@ namespace Garnet.test
             }
 
             internal void Send(params string[] args)
+                => Send(Array.ConvertAll(args, Encoding.UTF8.GetBytes));
+
+            /// <summary>Executes a command whose arguments need not be text.</summary>
+            internal string Execute(params byte[][] args)
+            {
+                Send(args);
+                return ReadReply();
+            }
+
+            /// <summary>Sends a command whose arguments need not be text.</summary>
+            internal void Send(params byte[][] args)
             {
                 var n = Encode(args, 0);
                 stream.Write(writeBuffer, 0, n);
@@ -2197,6 +2984,9 @@ namespace Garnet.test
             }
 
             int Encode(string[] args, int at)
+                => Encode(Array.ConvertAll(args, Encoding.UTF8.GetBytes), at);
+
+            int Encode(byte[][] args, int at)
             {
                 writeBuffer[at++] = (byte)'*';
                 at += WriteInt(args.Length, at);
@@ -2204,9 +2994,10 @@ namespace Garnet.test
                 foreach (var a in args)
                 {
                     writeBuffer[at++] = (byte)'$';
-                    at += WriteInt(Encoding.UTF8.GetByteCount(a), at);
+                    at += WriteInt(a.Length, at);
                     at = WriteCrLf(at);
-                    at += Encoding.UTF8.GetBytes(a, writeBuffer.AsSpan(at));
+                    a.CopyTo(writeBuffer.AsSpan(at));
+                    at += a.Length;
                     at = WriteCrLf(at);
                 }
                 return at;

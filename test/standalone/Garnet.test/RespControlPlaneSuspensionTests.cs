@@ -676,6 +676,24 @@ namespace Garnet.test
         static unsafe ValueTask<int> Consume(RespServerSession session, byte[] pinnedInput)
             => session.TryConsumeMessagesAsync((byte*)Unsafe.AsPointer(ref pinnedInput[0]), pinnedInput.Length);
 
+        /// <summary>
+        /// Shutdown tears sessions down from its own thread, so a receive that completes at the same time can hand
+        /// its bytes to a session that is already gone, with its storage sessions disposed. They are dropped.
+        /// </summary>
+        [Test]
+        public void InputReachingATornDownSessionIsDropped()
+        {
+            var sender = new ControlledSender(bufferSize: 4096);
+            var session = (RespServerSession)server.Provider.GetSession(WireFormat.ASCII, sender);
+            session.Dispose();
+
+            var input = Pinned(Frame("PING"));
+            var consumed = Consume(session, input);
+            ClassicAssert.IsTrue(consumed.IsCompletedSuccessfully);
+            ClassicAssert.AreEqual(input.Length, consumed.Result);
+            ClassicAssert.AreEqual("", sender.Sent, "A torn-down session ran the input it was handed.");
+        }
+
         static string Frame(params string[] tokens)
         {
             var frame = new StringBuilder().Append('*').Append(tokens.Length).Append("\r\n");

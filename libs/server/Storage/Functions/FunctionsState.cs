@@ -37,6 +37,13 @@ namespace Garnet.server
         public bool StoredProcMode;
         public readonly VectorManager vectorManager;
 
+        /// <summary>
+        /// The observer the item broker's main loop is popping for, set only around that pop, else null. A pop
+        /// for it commits the observer to what it takes, inside the store's update of the key
+        /// (<see cref="CollectionItemObserver.TryBeginTake"/>).
+        /// </summary>
+        internal CollectionItemObserver itemRecipient;
+
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 
         public FunctionsState(GarnetAppendOnlyFile appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,

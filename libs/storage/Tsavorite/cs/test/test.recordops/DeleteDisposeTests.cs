@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -58,17 +58,24 @@ namespace Tsavorite.test
         {
             internal RMWAction expireAction = RMWAction.Default;
             internal bool requestLargerReinit;
+            internal bool expireOnlyInCU; // If true, only CopyUpdater returns the expire action (not IPU/NCU)
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
-                if (expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
+                if (!expireOnlyInCU && expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
                 return base.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo);
             }
 
             public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
-                if (expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
+                if (!expireOnlyInCU && expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
                 return true;
+            }
+
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                if (expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
+                return base.CopyUpdater(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
             }
 
             public override unsafe RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref int input)
@@ -364,6 +371,26 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(ExpiredReinitWithExpirationFunctions.ExpirationTicks, fn.readExpiration);
         }
 
+        [Test]
+        [Category("TsavoriteKV")]
+        public void DisposeOnImmutableCUExpireAndResumeTest()
+        {
+            UpsertKey(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            tracker.Reset();
+            var fn = new ExpirableFunctions { expireAction = RMWAction.ExpireAndResume, expireOnlyInCU = true };
+            using var s = store.NewSession<TestSpanByteKey, int, int, Empty, ExpirableFunctions>(fn);
+            var k = 1; var input = 50;
+            var status = s.BasicContext.RMW(Key(ref k), ref input);
+            ClassicAssert.IsTrue(status.Record.Created, status.ToString());
+            ClassicAssert.AreEqual(1, tracker.DeletedCount, "CopyUpdater ExpireAndResume: only the expired source is disposed");
+
+            var output = 0;
+            status = s.BasicContext.Read(Key(ref k), ref output);
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.AreEqual(50, output);
+        }
+
         #endregion
     }
 
@@ -631,6 +658,65 @@ namespace Tsavorite.test
             var input = new TestObjectInput { value = 0 };
             _ = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 0);
             ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called exactly once");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDisposeOnIPUFailThenCUExpireAndResumeTest()
+        {
+            // IPU fails → NCU passes → CopyUpdater returns ExpireAndResume → the new record is reinitialized by InitialUpdater
+            UpsertObj(1, 100);
+            tracker.Reset();
+            var fn = new ObjExpirableFunctions { failIPU = true, expireOnlyInCU = true, expireAction = RMWAction.ExpireAndResume };
+            AssertCUExpireAndResume(fn);
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDisposeOnImmutableCUExpireAndResumeTest()
+        {
+            UpsertObj(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            tracker.Reset();
+            var fn = new ObjExpirableFunctions { expireOnlyInCU = true, expireAction = RMWAction.ExpireAndResume };
+            AssertCUExpireAndResume(fn);
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ObjDisposeOnDiskCUExpireAndResumeTest()
+        {
+            UpsertObj(1, 100);
+            store.Log.FlushAndEvict(wait: true);
+            tracker.Reset();
+            var fn = new ObjExpirableFunctions { expireOnlyInCU = true, expireAction = RMWAction.ExpireAndResume };
+            AssertCUExpireAndResume(fn, expectedDisposes: 0);
+        }
+
+        /// <summary>RMWs key 1 with <paramref name="fn"/>, whose CopyUpdater expires the source, and verifies the source alone was disposed and the record now holds
+        /// the initial value. A source on disk has no in-memory record to dispose.</summary>
+        private void AssertCUExpireAndResume(ObjExpirableFunctions fn, int expectedDisposes = 1)
+        {
+            using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn);
+            var input = new TestObjectInput { value = 50 };
+            // Context 1 makes RMWCompletionCallback assert !Found: the expired source counts as not found.
+            var status = s.BasicContext.RMW(new TestObjectKey { key = 1 }, ref input, 1);
+            if (status.IsPending)
+            {
+                _ = s.BasicContext.CompletePendingWithOutputs(out var outputs, wait: true);
+                using (outputs)
+                {
+                    ClassicAssert.IsTrue(outputs.Next());
+                    status = outputs.Current.Status;
+                }
+            }
+            ClassicAssert.IsTrue(status.Record.Created, status.ToString());
+            ClassicAssert.AreEqual(expectedDisposes, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) should be called only for the expired source");
+
+            TestObjectOutput output = default;
+            status = s.BasicContext.Read(new TestObjectKey { key = 1 }, ref output, 0);
+            ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.AreEqual(50, output.value.value);
         }
 
         #endregion

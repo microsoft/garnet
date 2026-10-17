@@ -204,22 +204,11 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.GETEX, ref parseState, startIdx: 1, arg1: expiry);
 
             var output = GetStringOutput();
-            var status = storageApi.GETEX(key, ref input, ref output);
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.Value, ref storageApi);
 
-            switch (status)
-            {
-                case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
-                    WriteNull();
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-                    break;
-            }
-
+            WriteStringValueReply(storageSession.CountedStringReadStatus(status), ref output);
             return true;
         }
 
@@ -548,21 +537,12 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1);
 
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
-            var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
+            var output = GetSmallStringOutput(NumUtils.MaximumFormatInt64Length);
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.NewLength, ref storageApi);
 
-            var res = storageApi.SETRANGE(key, ref input, ref output);
-
-            if (res == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                    SendAndReset();
-            }
-
+            WriteNewLengthReply(StorageSession.StringTypedStatus(status), ref output);
             return true;
         }
 
@@ -585,26 +565,11 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1);
 
             var output = GetStringOutput();
+            var status = storageApi.Read_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.Range, ref storageApi);
 
-            var status = storageApi.GETRANGE(key, ref input, ref output);
-
-            if (status == GarnetStatus.OK)
-            {
-                sessionMetrics?.incr_total_found();
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else if (status == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-            else
-            {
-                sessionMetrics?.incr_total_notfound();
-                Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_EMPTY, ref dcurr, dend))
-                    SendAndReset();
-            }
-
+            WriteGetRangeReply(storageSession.CountedStringReadStatus(status), ref output);
             return true;
         }
 
@@ -670,13 +635,12 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var input = new StringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1);
-            var status = storageApi.SET_Conditional(key, ref input);
+            var output = GetSmallStringOutput(sizeof(long));
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.SetNx, ref storageApi);
 
-            // The status returned for SETNX as NOTFOUND is the expected status in the happy path
-            var retVal = status == GarnetStatus.NOTFOUND ? 1 : 0;
-            while (!RespWriteUtils.TryWriteInt32(retVal, ref dcurr, dend))
-                SendAndReset();
-
+            WriteSetNxReply(storageSession.ConditionalSetStatus(status));
             return true;
         }
 
@@ -863,43 +827,12 @@ namespace Garnet.server
 
             if (!getValue)
             {
-                var status = storageApi.SET_Conditional(key, ref input);
+                var output = GetSmallStringOutput(sizeof(long));
+                var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+                if (status.IsPending)
+                    return CompleteStringOp(StringReply.SetConditional, ref storageApi);
 
-                // Type already stored in key which requires an explicit delete
-                if (status == GarnetStatus.WRONGTYPE)
-                {
-                    using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
-                    {
-                        _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
-                        status = storageSession.SET_Conditional(key, ref input, ref storageSession.stringTransactionalContext);
-                    }
-                }
-
-                // KEEPTTL without flags doesn't care whether it was found or not.
-                if (cmd == RespCommand.SETKEEPTTL)
-                {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    var ok = status != GarnetStatus.NOTFOUND;
-
-                    // the status returned for SETEXNX as NOTFOUND is the expected status in the happy path, so flip the ok flag
-                    if (cmd == RespCommand.SETEXNX)
-                        ok = !ok;
-
-                    if (ok)
-                    {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else
-                    {
-                        WriteNull();
-                    }
-                }
-
+                WriteSetConditionalReply(storageSession.ConditionalSetStatus(status), key, ref input);
                 return true;
             }
             else
@@ -907,21 +840,11 @@ namespace Garnet.server
                 input.header.SetSetGetFlag();
 
                 var output = GetStringOutput();
-                var status = storageApi.SET_Conditional(key, ref input, ref output);
+                var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+                if (status.IsPending)
+                    return CompleteStringOp(StringReply.SetConditionalGet, ref storageApi);
 
-                if (status == GarnetStatus.WRONGTYPE)
-                {
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-                }
-                else if (status != GarnetStatus.NOTFOUND)
-                {
-                    ProcessOutput(output.SpanByteAndMemory);
-                }
-                else
-                {
-                    WriteNull();
-                }
-
+                WriteSetConditionalGetReply(storageSession.ConditionalSetStatus(status), ref output);
                 return true;
             }
         }
@@ -961,32 +884,13 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
-            var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
-            StringOutput stringOutput = new(new SpanByteAndMemory(output));
-
+            var output = GetSmallStringOutput(NumUtils.MaximumFormatInt64Length + 1);
             var input = new StringInput(cmd, 0, incrByValue);
-            var res = storageApi.Increment(key, ref input, ref stringOutput);
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.Increment, ref storageApi);
 
-            if (res == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-            else
-            {
-                output.Length = stringOutput.SpanByteAndMemory.Length;
-
-                if (!stringOutput.HasError)
-                {
-                    while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                }
-            }
-
+            WriteIncrementReply(StorageSession.StringTypedStatus(status), ref output);
             return true;
         }
 
@@ -1008,41 +912,13 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
             }
 
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
-            StringOutput stringOutput = new(new SpanByteAndMemory(output));
+            var output = GetSmallStringOutput(SmallStringOutputSize);
+            var input = new StringInput(RespCommand.INCRBYFLOAT, arg1: BitConverter.DoubleToInt64Bits(dbl));
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.IncrementByFloat, ref storageApi);
 
-            var res = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
-
-            if (res == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-            else
-            {
-                output.Length = stringOutput.SpanByteAndMemory.Length;
-
-                if (!stringOutput.HasError)
-                {
-                    WriteBulkString(output.ReadOnlySpan);
-                }
-                else
-                {
-                    if ((stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0)
-                    {
-                        WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
-                    }
-                    else if ((stringOutput.OutputFlags & StringOutputFlags.InvalidTypeError) != 0)
-                    {
-                        WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                    }
-                    else
-                    {
-                        throw new GarnetException($"Unrecognized return output flags value: {stringOutput.OutputFlags}");
-                    }
-                }
-            }
-
+            WriteIncrementByFloatReply(StorageSession.StringTypedStatus(status), ref output);
             return true;
         }
 
@@ -1059,20 +935,12 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.APPEND, ref parseState, startIdx: 1);
 
-            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
-            var output = StringOutput.FromPinnedSpan(outputBuffer);
+            var output = GetSmallStringOutput(NumUtils.MaximumFormatInt64Length);
+            var status = storageApi.RMW_MainStore_WithPending(sbKey, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.NewLength, ref storageApi);
 
-            var res = storageApi.APPEND(sbKey, ref input, ref output);
-            if (res == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.SpanByteAndMemory.Length), ref dcurr, dend))
-                    SendAndReset();
-            }
-
+            WriteNewLengthReply(StorageSession.StringTypedStatus(status), ref output);
             return true;
         }
 
@@ -1204,23 +1072,15 @@ namespace Garnet.server
 
             //STRLEN key
             var key = parseState.GetArgSliceByRef(0);
-            var status = storageApi.GET(key, out PinnedSpanByte value);
 
-            switch (status)
-            {
-                case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(value.Length, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    while (!RespWriteUtils.TryWriteInt32(0, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-                    break;
-            }
+            // The read writes the bare value, which is only measured
+            var input = new StringInput(RespCommand.GET);
+            var output = GetStringOutput();
+            var status = storageApi.Read_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.Length, ref storageApi);
 
+            WriteStrlenReply(storageSession.CountedStringReadStatus(status), ref output);
             return true;
         }
 

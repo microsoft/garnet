@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -109,20 +108,13 @@ namespace Garnet.server
                 input = new StringInput(RespCommand.SETEXNX, ref parseState);
             }
 
-            var status = storageApi.SET_Conditional(key, ref input);
+            // The payload stays in the scratch buffer until the update completes, which the reply then rewinds
+            var output = GetSmallStringOutput(sizeof(long));
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.Restore, ref storageApi);
 
-            scratchBufferBuilder.RewindScratchBuffer(valArgSlice);
-
-            if (status is GarnetStatus.NOTFOUND)
-            {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
-                return true;
-            }
-
-            while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_BUSSYKEY, ref dcurr, dend))
-                SendAndReset();
-
+            WriteRestoreReply(storageSession.ConditionalSetStatus(status));
             return true;
         }
 
@@ -294,23 +286,13 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0);
+            var input = new StringInput(RespCommand.GETDEL);
             var output = GetStringOutput();
-            var status = garnetApi.GETDEL(sbKey, ref output);
+            var status = garnetApi.RMW_MainStore_WithPending(sbKey, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.ValueUncounted, ref garnetApi);
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else if (status == GarnetStatus.WRONGTYPE)
-            {
-                WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-            }
-            else
-            {
-                Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
-                WriteNull();
-            }
-
+            WriteStringValueReply(StorageSession.StringReadStatus(status), ref output);
             return true;
         }
 

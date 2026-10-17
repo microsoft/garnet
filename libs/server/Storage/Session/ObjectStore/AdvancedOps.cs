@@ -81,6 +81,36 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Updates the object store, reporting rather than waiting when the record is not in memory. The update
+        /// has not been applied when this reports pending: it is applied when the record arrives, in the completion
+        /// of the pending operation.
+        /// </summary>
+        /// <param name="key">Key to update.</param>
+        /// <param name="input">Input describing the update.</param>
+        /// <param name="output">Output for an update served from memory.</param>
+        /// <param name="pending">True if the update went to the device, leaving the status meaningless.</param>
+        /// <param name="objectContext">Context to update through.</param>
+        /// <returns>The status, meaningless when <paramref name="pending"/> is set.</returns>
+        public GarnetStatus RMW_ObjectStore_WithPending<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, out bool pending, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            if (objectContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
+            var status = objectContext.RMW((FixedSpanByteKey)key, ref input, ref output);
+
+            if (status.IsPending)
+            {
+                incr_session_pending();
+                pending = true;
+                return GarnetStatus.NOTFOUND;
+            }
+
+            pending = false;
+            return InterpretObjectStoreStatus(status, ref output);
+        }
+
+        /// <summary>
         /// Maps the status of an object-store operation, whether it was served from memory or from the
         /// device, onto the status its caller replies from. Matches the mapping the waiting path applies in
         /// <c>CompletePendingAndGetGarnetStatus</c>.
@@ -90,7 +120,9 @@ namespace Garnet.server
             if (status.IsWrongType)
                 return GarnetStatus.WRONGTYPE;
 
-            if (status.NotFound && !status.Record.Created)
+            // An expired record answers as a missing one whichever way it was updated. Updated in place it reports no new
+            // record, while copied it reports the record appended in its place, which may be only a tombstone.
+            if (status.NotFound && (!status.Record.Created || status.IsExpired))
                 return GarnetStatus.NOTFOUND;
 
             if (status.Found && output.HasWrongType)

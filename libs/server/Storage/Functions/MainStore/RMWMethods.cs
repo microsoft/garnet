@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -397,6 +397,24 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Whether <paramref name="cmd"/> must answer WRONGTYPE instead of updating <paramref name="srcLogRecord"/>: an object value,
+        /// a RangeIndex record updated by a command not legal on one, a RangeIndex command on any other record, or a Vector Set
+        /// updated by a command not legal on one.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool IsWrongTypeForUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RespCommand cmd)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.DataHeader.ValueIsObject)
+                return true;
+
+            var recordType = srcLogRecord.RecordType;
+            if (recordType == RangeIndexManager.RangeIndexRecordType)
+                return !cmd.IsLegalOnRangeIndex();
+            return cmd.IsRangeIndexCommand() || (recordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet());
+        }
+
         /// <inheritdoc />
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
@@ -410,31 +428,7 @@ namespace Garnet.server
                 return false;
             }
 
-            if (logRecord.DataHeader.ValueIsObject)
-            {
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
-            }
-
-            // RangeIndex type safety – normal string records have RecordType 0; skip all checks in that common case.
-            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
-            {
-                // Reject non-RI commands on RI keys
-                if (!input.header.cmd.IsLegalOnRangeIndex())
-                {
-                    rmwInfo.Action = RMWAction.WrongType;
-                    return false;
-                }
-            }
-            else if (input.header.cmd.IsRangeIndexCommand())
-            {
-                // Reject RI-specific commands on non-RI keys
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
-            }
-
-            // WRONGTYPE all updates on Vector Sets from non-Vector Set commands
-            if (logRecord.RecordType == VectorManager.RecordType && !input.header.cmd.IsLegalOnVectorSet())
+            if (IsWrongTypeForUpdate(in logRecord, input.header.cmd))
             {
                 rmwInfo.Action = RMWAction.WrongType;
                 return false;
@@ -990,6 +984,17 @@ namespace Garnet.server
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            // Checked here rather than in CopyUpdater, because sizing the new record reads the source value first.
+            if (IsWrongTypeForUpdate(in srcLogRecord, input.header.cmd))
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
+            // An expired source does not exist: CopyUpdater reinitializes it as a new key, as InPlaceUpdaterWorker does in place.
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+                return true;
+
             switch (input.header.cmd)
             {
                 case RespCommand.DELIFGREATER:
@@ -998,14 +1003,6 @@ namespace Garnet.server
                 case RespCommand.SETWITHETAG:
                     return HandleEtagNeedCopyUpdate(input.header.cmd, in srcLogRecord, ref input, ref output, ref rmwInfo);
                 case RespCommand.SETEXNX:
-                    // Expired data, return false immediately
-                    // ExpireAndResume ensures that we set as new value, since it does not exist
-                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndResume;
-                        return false;
-                    }
-
                     // since this case is only hit when this an update, the NX is violated and so we can return early from it without setting the value
 
                     if (input.header.CheckSetGetFlag())
@@ -1015,15 +1012,6 @@ namespace Garnet.server
                     }
 
                     return false;
-                case RespCommand.SETEXXX:
-                    // Expired data, return false immediately so we do not set, since it does not exist
-                    // ExpireAndStop ensures that caller sees a NOTFOUND status
-                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
-                    }
-                    return true;
                 case RespCommand.RICREATE:
                     // Index already exists — never copy-update, reject in caller
                     return false;
@@ -1081,13 +1069,6 @@ namespace Garnet.server
 
             RespCommand cmd = input.header.cmd;
 
-            // WRONGTYPE all updates on Vector Sets from non-Vector Set commands
-            if (srcLogRecord.RecordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet())
-            {
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
-            }
-
             switch (cmd)
             {
                 case RespCommand.SETIFMATCH:
@@ -1125,12 +1106,9 @@ namespace Garnet.server
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
 
+                    // Copy input to value, along with the source record's Expiration.
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
-                        return false;
-
-                    // Carry the existing expiration into the new record.
-                    if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                    if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo) || !dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
                         return false;
 
                     break;

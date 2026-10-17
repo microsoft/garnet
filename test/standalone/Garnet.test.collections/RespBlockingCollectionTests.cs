@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -38,8 +39,8 @@ namespace Garnet.test
         /// <summary>
         /// Drives many concurrent blocking pops whose items are already present, so every one of them is
         /// served by the broker's main loop rather than by a later push. This covers the loop's own storage
-        /// sessions: the loop runs a transaction per attempt, so a loop session that is missing a piece of
-        /// its setup answers nothing and every blocking command hangs.
+        /// sessions: a loop session that is missing a piece of its setup answers nothing and every blocking
+        /// command hangs.
         /// </summary>
         [Test]
         public void ConcurrentBlockingPopsServedByTheBrokerLoopReturnTheRightItem()
@@ -92,6 +93,37 @@ namespace Garnet.test
         }
 
         static string Printable(string resp) => resp.Replace("\r", "\\r").Replace("\n", "\\n");
+
+        /// <summary>
+        /// The broker's main loop releases what each attempt reads into its scratch space once the attempt is
+        /// over, so the memory its storage session holds does not grow with the items it hands over.
+        /// </summary>
+        [Test]
+        public void TheBrokerLoopDoesNotAccumulateScratchSpaceAcrossItems()
+        {
+            const int Rounds = 200;
+            const string key = "blockkey";
+            var value = new string('v', 1024);
+            var expected = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
+
+            using var client = TestUtils.CreateRequest();
+            for (var round = 0; round < Rounds; ++round)
+            {
+                var pushed = Encoding.ASCII.GetString(client.SendCommand($"LPUSH {key} {value}"));
+                ClassicAssert.IsTrue(pushed.StartsWith(":1\r\n", StringComparison.Ordinal), $"round {round}: LPUSH answered {Printable(pushed)}");
+
+                // The item is already in the list, so the broker's main loop hands it over
+                var popped = Encoding.ASCII.GetString(client.SendCommand($"BLPOP {key} 10", 3));
+                ClassicAssert.IsTrue(popped.StartsWith(expected, StringComparison.Ordinal), $"round {round}: BLPOP answered {Printable(popped)}");
+            }
+
+            var loopSessions = (Dictionary<int, StorageSession>)typeof(CollectionItemBroker)
+                .GetField("loopStorageSessions", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(server.Provider.StoreWrapper.itemBroker);
+            var held = loopSessions[0].scratchBufferAllocator.TotalLength;
+            ClassicAssert.Less(held, 16 * value.Length,
+                $"The broker loop's scratch space holds {held} bytes after handing over {Rounds} items of {value.Length} bytes.");
+        }
 
         [Test]
         [TestCase("BRPOP")]

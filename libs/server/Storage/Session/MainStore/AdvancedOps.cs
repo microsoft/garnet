@@ -130,12 +130,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
 
-            if (status.Found || status.Record.Created || status.Record.InPlaceUpdated)
-                return GarnetStatus.OK;
-            else if (status.IsWrongType)
-                return GarnetStatus.WRONGTYPE;
-            else
-                return GarnetStatus.NOTFOUND;
+            return StringUpdateStatus(status);
         }
 
         public GarnetStatus Read_MainStore<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
@@ -146,13 +141,123 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
 
-            if (status.Found)
-                return GarnetStatus.OK;
-            else if (status.IsWrongType)
-                return GarnetStatus.WRONGTYPE;
-            else
-                return GarnetStatus.NOTFOUND;
+            return StringReadStatus(status);
         }
+
+        /// <summary>
+        /// Updates the string store, reporting rather than waiting when the record is not in memory. A pending
+        /// update is applied when the record arrives, in the completion of the pending operation, so it must
+        /// not be issued again.
+        /// </summary>
+        /// <param name="key">Key to update.</param>
+        /// <param name="input">Input describing the update.</param>
+        /// <param name="output">Output of the update. It is written when the update completes, so its memory
+        /// must outlive a pending update.</param>
+        /// <param name="context">Context to update through.</param>
+        /// <returns>The store's status, which each command maps to a <see cref="GarnetStatus"/> its own way.</returns>
+        public Status RMW_MainStore_WithPending<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
+            if (status.IsPending)
+                incr_session_pending();
+            return status;
+        }
+
+        /// <summary>
+        /// Reads the string store, reporting rather than waiting when the record is not in memory.
+        /// </summary>
+        /// <param name="key">Key to read.</param>
+        /// <param name="input">Input describing what to read.</param>
+        /// <param name="output">Output of the read. It is written when the read completes, so its memory must
+        /// outlive a pending read.</param>
+        /// <param name="context">Context to read through.</param>
+        /// <returns>The store's status, which each command maps to a <see cref="GarnetStatus"/> its own way.</returns>
+        public Status Read_MainStore_WithPending<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var status = context.Read((FixedSpanByteKey)key, ref input, ref output);
+            if (status.IsPending)
+                incr_session_pending();
+            return status;
+        }
+
+        /// <summary>
+        /// Maps the status of a string read whose outcome the session metrics count: <c>GET</c>, <c>GETEX</c>
+        /// and <c>GETRANGE</c>.
+        /// </summary>
+        internal GarnetStatus CountedStringReadStatus(Status status)
+        {
+            if (status.Found)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+
+            if (status.IsWrongType)
+                return GarnetStatus.WRONGTYPE;
+
+            incr_session_notfound();
+            return GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
+        /// Maps the status of a string read whose outcome is not counted.
+        /// </summary>
+        internal static GarnetStatus StringReadStatus(Status status)
+            => status.Found ? GarnetStatus.OK
+                : status.IsWrongType ? GarnetStatus.WRONGTYPE
+                : GarnetStatus.NOTFOUND;
+
+        /// <summary>
+        /// Maps the status of a string update, which counts as having found its record if it created one.
+        /// </summary>
+        internal static GarnetStatus StringUpdateStatus(Status status)
+            => status.Found || status.Record.Created || status.Record.InPlaceUpdated ? GarnetStatus.OK
+                : status.IsWrongType ? GarnetStatus.WRONGTYPE
+                : GarnetStatus.NOTFOUND;
+
+        /// <summary>
+        /// Maps the status of a conditional set, which reports whether the key existed before it.
+        /// </summary>
+        internal GarnetStatus ConditionalSetStatus(Status status)
+        {
+            if (status.IsWrongType)
+                return GarnetStatus.WRONGTYPE;
+
+            if (status.NotFound)
+            {
+                incr_session_notfound();
+                return GarnetStatus.NOTFOUND;
+            }
+
+            incr_session_found();
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// Maps the status of a conditional delete. Deletions in RMW are done by expiring the record, so
+        /// expiration of a record that was found is what indicates success; a record that had already expired was not found.
+        /// </summary>
+        internal GarnetStatus ConditionalDeleteStatus(Status status)
+        {
+            if (status.Found && status.IsExpired)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+
+            if (status.NotFound)
+                incr_session_notfound();
+
+            return GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
+        /// Maps the status of a string update that succeeds unless the key holds another type.
+        /// </summary>
+        internal static GarnetStatus StringTypedStatus(Status status)
+            => status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
 
         /// <summary>
         /// Specialized Read for RangeIndex stubs. Suppresses Tsavorite's automatic

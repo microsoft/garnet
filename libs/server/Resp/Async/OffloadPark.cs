@@ -94,6 +94,31 @@ namespace Garnet.server
                 RespCommand.SET, RespCommand.MSET, RespCommand.SETEX, RespCommand.PSETEX, RespCommand.DEL, RespCommand.UNLINK])
                 classes[(int)cmd] = OffloadClass.Never;
 
+            // Single-key object updates, which park on the device read of their record as the reads do
+            foreach (var cmd in (ReadOnlySpan<RespCommand>)[
+                RespCommand.HSET, RespCommand.HMSET, RespCommand.HSETNX, RespCommand.HDEL, RespCommand.HINCRBY,
+                RespCommand.HINCRBYFLOAT, RespCommand.HEXPIRE, RespCommand.HPEXPIRE, RespCommand.HEXPIREAT,
+                RespCommand.HPEXPIREAT, RespCommand.HPERSIST,
+                RespCommand.LPUSH, RespCommand.LPUSHX, RespCommand.RPUSH, RespCommand.RPUSHX, RespCommand.LPOP,
+                RespCommand.RPOP, RespCommand.LTRIM, RespCommand.LINSERT, RespCommand.LREM, RespCommand.LSET,
+                RespCommand.SADD, RespCommand.SREM, RespCommand.SPOP,
+                RespCommand.ZADD, RespCommand.ZREM, RespCommand.ZPOPMIN, RespCommand.ZPOPMAX, RespCommand.ZINCRBY,
+                RespCommand.ZREMRANGEBYLEX, RespCommand.ZREMRANGEBYRANK, RespCommand.ZREMRANGEBYSCORE, RespCommand.ZLEXCOUNT,
+                RespCommand.ZEXPIRE, RespCommand.ZPEXPIRE, RespCommand.ZEXPIREAT, RespCommand.ZPEXPIREAT, RespCommand.ZPERSIST,
+                RespCommand.GEOADD])
+                classes[(int)cmd] = OffloadClass.Never;
+
+            // Single-key string commands other than GET, which park on the device read of their record as GET does
+            foreach (var cmd in (ReadOnlySpan<RespCommand>)[
+                RespCommand.GETEX, RespCommand.GETDEL, RespCommand.GETRANGE, RespCommand.SUBSTR, RespCommand.STRLEN,
+                RespCommand.GETWITHETAG, RespCommand.GETIFNOTMATCH,
+                RespCommand.SETNX, RespCommand.SETEXNX, RespCommand.GETSET, RespCommand.RESTORE,
+                RespCommand.SETWITHETAG, RespCommand.SETIFMATCH, RespCommand.SETIFGREATER, RespCommand.DELIFGREATER,
+                RespCommand.INCR, RespCommand.DECR, RespCommand.INCRBY, RespCommand.DECRBY, RespCommand.INCRBYFLOAT,
+                RespCommand.APPEND, RespCommand.SETRANGE,
+                RespCommand.SETBIT, RespCommand.GETBIT, RespCommand.BITCOUNT, RespCommand.BITPOS])
+                classes[(int)cmd] = OffloadClass.Never;
+
             foreach (var cmd in (ReadOnlySpan<RespCommand>)[
                 RespCommand.FLUSHDB, RespCommand.FLUSHALL, RespCommand.SWAPDB, RespCommand.EXPDELSCAN,
                 RespCommand.RICREATE, RespCommand.RIDEL, RespCommand.RIPROMOTE, RespCommand.RIRESTORE, RespCommand.RISET,

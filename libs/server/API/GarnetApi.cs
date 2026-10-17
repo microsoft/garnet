@@ -250,6 +250,14 @@ namespace Garnet.server
             => storageSession.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
+        public Status RMW_MainStore_WithPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.RMW_MainStore_WithPending(key.ReadOnlySpan, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
+        public Status Read_MainStore_WithPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
+            => storageSession.Read_MainStore_WithPending(key.ReadOnlySpan, ref input, ref output, ref stringContext);
+
+        /// <inheritdoc />
         public GarnetStatus RMW_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
             => storageSession.RMW_ObjectStore(key.ReadOnlySpan, ref input, ref output, ref objectContext);
 
@@ -284,6 +292,10 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Read_ObjectStore_WithPending(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, out bool pending)
             => storageSession.Read_ObjectStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus RMW_ObjectStore_WithPending(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, out bool pending)
+            => storageSession.RMW_ObjectStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref objectContext);
 
         /// <inheritdoc />
         public bool Object_CompletePending(out CompletedOutputIterator<ObjectInput, ObjectOutput, long> completedOutputs, bool wait = false)
