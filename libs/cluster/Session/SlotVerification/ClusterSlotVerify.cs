@@ -26,6 +26,8 @@ namespace Garnet.cluster
             ClusterSlotVerificationResult SingleKeyReadSlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice)
             {
                 var _slot = slot == -1 ? HashSlotUtils.HashSlot(keySlice) : (ushort)slot;
+
+            tryAgain:
                 var IsLocal = config.IsLocal(_slot, enableReplicaReads: readOnlySession);
                 var state = config.GetState(_slot);
 
@@ -45,10 +47,20 @@ namespace Garnet.cluster
                         };
                     }
 
+                    if (state == SlotState.MIGRATING)
+                    {
+                        var canOperate = CanOperateOnKey(ref keySlice, _slot, readOnly: true, out var retry);
+                        if (retry)
+                        {
+                            config = clusterProvider.clusterManager.CurrentConfig;
+                            goto tryAgain;
+                        }
+                        return canOperate ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot);
+                    }
+
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: true) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -71,6 +83,10 @@ namespace Garnet.cluster
             tryAgain:
                 var IsLocal = config.IsLocal(_slot, enableReplicaReads: internalWriteSession);
                 var state = config.GetState(_slot);
+
+                if (config.LocalNodeRole == NodeRole.PRIMARY && !internalWriteSession &&
+                    clusterProvider.failoverManager.IsWritePaused)
+                    return new(SlotVerifiedState.CLUSTERDOWN, _slot);
 
                 if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
                 {
@@ -95,10 +111,22 @@ namespace Garnet.cluster
                         };
                     }
 
+                    if (state == SlotState.MIGRATING)
+                    {
+                        var canOperate = CanOperateOnKey(ref keySlice, _slot, readOnly: false, out var retry);
+                        // Ensure that epoch did not change because otherwise it could mean
+                        // there is a state transitions at the node level that needs to be observe.
+                        if (retry)
+                        {
+                            config = clusterProvider.clusterManager.CurrentConfig;
+                            goto tryAgain;
+                        }
+                        return canOperate ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot);
+                    }
+
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -113,8 +141,10 @@ namespace Garnet.cluster
                 }
             }
 
-            bool CanOperateOnKey(ref PinnedSpanByte key, int slot, bool readOnly)
+            bool CanOperateOnKey(ref PinnedSpanByte key, int slot, bool readOnly, out bool retry)
             {
+                retry = false;
+                var epoch = LocalCurrentEpoch;
                 // For both read and read/write ops we need to ensure that key will not be removed
                 // while we try to operate on it so we will delay the corresponding operation
                 // as long as the key is being actively migrated
@@ -123,6 +153,11 @@ namespace Garnet.cluster
                     ReleaseCurrentEpoch();
                     Thread.Yield();
                     AcquireCurrentEpoch();
+                    if (epoch != LocalCurrentEpoch)
+                    {
+                        retry = true;
+                        return false;
+                    }
                 }
                 return Exists(key);
             }
@@ -142,11 +177,13 @@ namespace Garnet.cluster
 
                     config = clusterProvider.clusterManager.CurrentConfig;
                 }
-                while (config.GetState(slot) is SlotState.IMPORTING or SlotState.MIGRATING);
+                while ((config.GetState(slot) is SlotState.IMPORTING or SlotState.MIGRATING) &&
+                    (!clusterProvider.failoverManager.IsWritePaused || internalWriteSession ||
+                        config.LocalNodeRole != NodeRole.PRIMARY));
             }
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, bool isTxn, bool waitForStableSlot)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ref ClusterConfig config, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, bool isTxn, bool waitForStableSlot)
         {
             // Find the first valid key and initialize slot/result
             var specIndex = 0;

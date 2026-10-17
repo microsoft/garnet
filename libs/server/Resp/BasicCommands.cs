@@ -1054,6 +1054,9 @@ namespace Garnet.server
                 return true;
             }
 
+            if (clusterSession != null && clusterSession.IsWritePaused && !clusterSession.IsInternalWriteSession)
+                return AbortWithErrorMessage("CLUSTERDOWN Writes paused for failover"u8);
+
             FlushDb(RespCommand.FLUSHDB);
 
             return true;
@@ -1073,6 +1076,9 @@ namespace Garnet.server
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA);
             }
+
+            if (clusterSession != null && clusterSession.IsWritePaused && !clusterSession.IsInternalWriteSession)
+                return AbortWithErrorMessage("CLUSTERDOWN Writes paused for failover"u8);
 
             // Since Garnet currently only supports a single database,
             // FLUSHALL and FLUSHDB share the same logic

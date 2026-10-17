@@ -127,7 +127,7 @@ namespace Garnet.cluster
 
             // Cannot avoid blocking here we're on the network thread
             AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
-            while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.replicationManager.ReplicationOffset.ToString(), ref dcurr, dend))
+            while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress.ToString(), ref dcurr, dend))
                 SendAndReset();
             return true;
         }
