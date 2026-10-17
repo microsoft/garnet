@@ -1,0 +1,28 @@
+{
+  "id": "extensions/module",
+  "title": "Modules",
+  "description": "Modules help bundle related custom commands, procedures and transactions into a single binary. Once loaded, a module makes all of its contained custom operations available to users.",
+  "source": "@site/docs/extensions/module.md",
+  "sourceDirName": "extensions",
+  "slug": "/extensions/module",
+  "permalink": "/garnet/docs/extensions/module",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/extensions/module.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "module",
+    "sidebar_label": "Modules",
+    "title": "Modules"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Procedures",
+    "permalink": "/garnet/docs/extensions/procedure"
+  },
+  "next": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/cluster/overview"
+  }
+}
