@@ -20,11 +20,11 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
-            => PublishCore(key, value, noWait: false);
+            => PublishCore(key, value);
 
         /// <inheritdoc />
         public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
-            => PatternPublishCore(pattern, key, value, noWait: false);
+            => PatternPublishCore(pattern, key, value);
 
         /// <inheritdoc />
         internal override unsafe bool TryPublish(PinnedSpanByte key, PinnedSpanByte value)
@@ -32,7 +32,7 @@ namespace Garnet.server
             if (MustWaitToPublish)
                 return false;
 
-            PublishCore(key, value, noWait: true);
+            PublishCore(key, value);
             return true;
         }
 
@@ -42,17 +42,9 @@ namespace Garnet.server
             if (MustWaitToPublish)
                 return false;
 
-            PatternPublishCore(pattern, key, value, noWait: true);
+            PatternPublishCore(pattern, key, value);
             return true;
         }
-
-        /// <inheritdoc />
-        internal override unsafe void PublishWithoutWaiting(PinnedSpanByte key, PinnedSpanByte value)
-            => PublishCore(key, value, noWait: true);
-
-        /// <inheritdoc />
-        internal override unsafe void PatternPublishWithoutWaiting(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
-            => PatternPublishCore(pattern, key, value, noWait: true);
 
         /// <summary>
         /// Whether a publisher has to hold its message back until this session's connection has room. A session
@@ -61,11 +53,11 @@ namespace Garnet.server
         bool MustWaitToPublish => publishingThreadId != Environment.CurrentManagedThreadId && networkSender.IsSendSaturated;
 
         /// <summary>
-        /// Writes a message to this subscriber. <paramref name="noWait"/> hands it to the sender without waiting
-        /// for the connection to have room, which is what a publisher on a network thread needs; otherwise the
-        /// write waits for room.
+        /// Writes a message to this subscriber, handing it to the sender without waiting for the connection to
+        /// have room. A publisher that should not add to a full connection checks <see cref="MustWaitToPublish"/>
+        /// first.
         /// </summary>
-        void PublishCore(PinnedSpanByte key, PinnedSpanByte value, bool noWait)
+        void PublishCore(PinnedSpanByte key, PinnedSpanByte value)
         {
             // A session that publishes to a channel it is subscribed to re-enters this callback on the
             // thread already holding the network sender lock (from the outer command's response path). In
@@ -81,7 +73,6 @@ namespace Garnet.server
                 {
                     networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                     writingOutOfBand = true;
-                    outOfBandSendsNoWait = noWait;
                 }
 
                 WritePushLength(3);
@@ -112,7 +103,6 @@ namespace Garnet.server
                 if (!reentrant)
                 {
                     writingOutOfBand = false;
-                    outOfBandSendsNoWait = false;
                     networkSender.ExitAndReturnResponseObject();
                 }
             }
@@ -122,7 +112,7 @@ namespace Garnet.server
         /// Writes a message to this pattern subscriber, as <see cref="PublishCore"/> does for a subscriber of the
         /// channel itself.
         /// </summary>
-        void PatternPublishCore(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value, bool noWait)
+        void PatternPublishCore(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
         {
             // See PublishCore(): in the reentrant self-publish case, write into the existing buffer rather than
             // re-acquiring the non-reentrant network sender lock.
@@ -136,7 +126,6 @@ namespace Garnet.server
                 {
                     networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                     writingOutOfBand = true;
-                    outOfBandSendsNoWait = noWait;
                 }
 
                 WritePushLength(4);
@@ -167,7 +156,6 @@ namespace Garnet.server
                 if (!reentrant)
                 {
                     writingOutOfBand = false;
-                    outOfBandSendsNoWait = false;
                     networkSender.ExitAndReturnResponseObject();
                 }
             }
@@ -212,18 +200,14 @@ namespace Garnet.server
             // reentrant self-delivery (publishing to a self-subscribed channel) can be detected in
             // Publish()/PatternPublish() without paying this cost on the general command path.
             //
-            // A publisher that can park does not wait inside the broadcast for a subscriber whose connection is
-            // full: it delivers to everyone else first, and then parks for the ones it held back. One that may not
-            // wait at all, inside a transaction or a script, then sends those past the connection's limit.
+            // The publisher does not wait inside the broadcast for a subscriber whose connection is full: it
+            // delivers to everyone else first, and then parks for the ones it held back. One that may not wait at
+            // all, inside a transaction or a script, sends those past the connection's limit instead.
             int numClients;
-            var denyBlocking = DenyBlocking;
-            var holdBack = denyBlocking || CanSuspend;
             publishingThreadId = Environment.CurrentManagedThreadId;
             try
             {
-                numClients = holdBack
-                    ? subscribeBroker.PublishNoWait(key, value, ref deferredDeliveries)
-                    : subscribeBroker.PublishNow(key, value);
+                numClients = subscribeBroker.PublishNoWait(key, value, ref deferredDeliveries);
             }
             finally
             {
@@ -233,10 +217,10 @@ namespace Garnet.server
             var selfDeliveryFailure = reentrantPublishFailure;
             reentrantPublishFailure = null;
 
-            if (denyBlocking && deferredDeliveries is { Count: > 0 })
+            if (DenyBlocking && deferredDeliveries is { Count: > 0 })
                 DeliverDeferredWithoutWaiting();
 
-            var holdingDeliveries = holdBack && deferredDeliveries is { Count: > 0 };
+            var holdingDeliveries = deferredDeliveries is { Count: > 0 };
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 // Started here, where the spans are still addressable: the forward copies them itself if it

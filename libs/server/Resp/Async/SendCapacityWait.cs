@@ -12,9 +12,15 @@ namespace Garnet.server
     /// handed it, so producing more would only grow what a slow reader leaves queued in memory.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The sender calls <see cref="OnSendCapacity"/> from whichever thread completes the send that frees
     /// capacity, which can be a network IO thread. Completing the wait only queues the session's continuation to
     /// the thread pool, so that thread is not held up.
+    /// </para>
+    /// <para>
+    /// The pub/sub broker's consumer waits on one too, for a subscriber's connection, and is its only waiter. Its
+    /// "teardown" is the broker's disposal, which calls <see cref="SessionWaitSource.Cancel"/>.
+    /// </para>
     /// </remarks>
     internal sealed class SendCapacityWait : SessionWaitSource, ISendCapacityWaiter
     {

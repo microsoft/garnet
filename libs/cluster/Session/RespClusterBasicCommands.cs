@@ -546,8 +546,11 @@ namespace Garnet.cluster
                 return true;
             }
 
-            clusterProvider.storeWrapper.subscribeBroker.Publish(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1));
-            return true;
+            // The broker copies the message before it waits for room in its log, so the session parks on the wait
+            // with nothing of the command's to keep
+            return SuspendOnIfPending(
+                clusterProvider.storeWrapper.subscribeBroker.PublishAsync(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1)),
+                PendingReply.None);
         }
 
 

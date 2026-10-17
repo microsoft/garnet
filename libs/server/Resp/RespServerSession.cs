@@ -119,7 +119,7 @@ namespace Garnet.server
 
         int opCount;
 
-        // Thread ID performing a synchronous self-broadcast (set only around SubscribeBroker.PublishNow).
+        // Thread ID performing a synchronous broadcast (set only around SubscribeBroker.PublishNoWait).
         // Used by Publish/PatternPublish to detect the reentrant self-delivery that occurs when a session
         // publishes to a channel it is itself subscribed to.
         int publishingThreadId;
@@ -266,12 +266,6 @@ namespace Garnet.server
         /// itself puts on the wire with <see cref="SendNow"/> -- went straight out ahead of them.
         /// </remarks>
         bool writingOutOfBand;
-
-        /// <summary>
-        /// Set, together with <see cref="writingOutOfBand"/>, while the out-of-band writer is one whose sends
-        /// must not wait for the socket: <see cref="SendNow"/> hands its bytes to the sender and moves on.
-        /// </summary>
-        bool outOfBandSendsNoWait;
 
         /// <summary>
         /// A per-session cache for storing lua scripts
@@ -1915,14 +1909,13 @@ namespace Garnet.server
         /// take part in the hold-back <see cref="Send"/> does, and neither carries an AOF-dependent reply.
         /// </summary>
         /// <remarks>
-        /// The session's own writes never wait for the socket. They record whether the sender reached its limit
+        /// No write waits for the socket. The session's own writes record whether the sender reached its limit
         /// of outstanding sends, which parks the session before its next command. An out-of-band writer cannot
-        /// park the session it writes to. The completion processor does not wait for the socket either: it holds
-        /// the response object while it writes, so a wait would leave the session's receive thread spinning on
-        /// it. What it sends is bounded by the reads the session has in flight. A publisher that can park holds
-        /// its message back for a subscriber whose connection is full (<see cref="TryPublish"/>) and delivers it
-        /// when there is room, and one inside a transaction or a script sends it past the connection's limit
-        /// (<see cref="PublishWithoutWaiting"/>); only one that can do neither waits for capacity inside the write.
+        /// park the session it writes to, and is bounded another way. The completion processor holds the response
+        /// object while it writes, so a wait would leave the session's receive thread spinning on it; what it sends
+        /// is bounded by the reads the session has in flight. A publisher holds its message back for a subscriber
+        /// whose connection is full (<see cref="TryPublish"/>) and waits for room outside the write; one inside a
+        /// transaction or a script, which may not wait, sends it past the connection's limit.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SendNow(byte* d)
@@ -1934,10 +1927,8 @@ namespace Garnet.server
             var offset = (int)(d - networkSender.GetResponseObjectHead());
             if (!writingOutOfBand)
                 sendSaturated = networkSender.SendResponseNoWait(offset, sendBytes);
-            else if (outOfBandSendsNoWait)
-                _ = networkSender.SendResponseNoWait(offset, sendBytes);
             else
-                _ = networkSender.SendResponse(offset, sendBytes);
+                _ = networkSender.SendResponseNoWait(offset, sendBytes);
 
             sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
         }

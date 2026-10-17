@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -18,8 +19,37 @@ namespace Garnet.server
     /// <summary>
     /// Broker used for pub/sub
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A message published on this node is delivered by the publisher itself (<see cref="PublishNoWait"/>). One
+    /// forwarded from another cluster node is appended to a log (<see cref="PublishAsync"/>), which a background
+    /// consumer delivers from in order.
+    /// </para>
+    /// <para>
+    /// Neither waits on a thread for a subscriber whose connection is full. The consumer delivers to everyone else,
+    /// then waits on that connection without a thread, and moves to the next message only once it has delivered
+    /// this one. The log keeps only its last <see cref="MemoryPages"/> pages in memory and drops older ones from
+    /// under a consumer that lags further, so a producer that would take the log that far ahead of the consumer
+    /// waits instead, without a thread, until the consumer catches up.
+    /// </para>
+    /// </remarks>
     public sealed class SubscribeBroker : IDisposable, ILogEntryConsumer
     {
+        /// <summary>The number of pages the log keeps in memory.</summary>
+        const int MemoryPages = 4;
+
+        /// <summary>
+        /// The most pages the tail may be ahead of the consumer when a producer appends. An append moves the tail
+        /// onto at most one new page, and turning onto a page drops the page <see cref="MemoryPages"/> behind it, so
+        /// the page the consumer reads next stays in memory.
+        /// </summary>
+        const int MaxPagesAhead = MemoryPages - 2;
+
+        /// <summary>
+        /// Stands in the log for <see cref="oversizedEntry"/>, where an entry starts with the length of its channel.
+        /// </summary>
+        const int OversizedMarker = -1;
+
         int sid = 0;
         bool initialized = false;
         ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>> subscriptions;
@@ -29,9 +59,36 @@ namespace Garnet.server
         readonly CancellationTokenSource cts = new();
         readonly ManualResetEvent done = new(true);
         long previousAddress = 0;
-        bool disposed = false;
+        volatile bool disposed = false;
         readonly int pageSizeBits;
         readonly ILogger logger;
+
+        /// <summary>Serializes producers, so that each sees the tail the one before it left.</summary>
+        readonly object enqueueLock = new();
+
+        /// <summary>The address the consumer reads next.</summary>
+        long consumedUntil;
+
+        /// <summary>Completed when the consumer makes room for a producer that found none.</summary>
+        TaskCompletionSource roomFreed;
+
+        /// <summary>
+        /// A message too large for a page of the log, laid out as a log entry is, which the consumer takes when it
+        /// reaches the <see cref="OversizedMarker"/> that holds its place in the log. One at a time.
+        /// </summary>
+        byte[] oversizedEntry;
+
+        /// <summary>The deliveries of the message being consumed that a full connection held back.</summary>
+        DeferredDeliveries held;
+
+        /// <summary>The message whose deliveries are held back, laid out as a log entry is.</summary>
+        byte[] heldEntry;
+
+        /// <summary>Where a message read from the log is copied when its deliveries are held back.</summary>
+        byte[] heldCopy;
+
+        /// <summary>What the consumer waits on for room on a subscriber's connection.</summary>
+        readonly SendCapacityWait capacityWait = new();
 
         /// <summary>
         /// Constructor
@@ -43,10 +100,11 @@ namespace Garnet.server
         {
             device = logDir == null ? new NullDevice() : Devices.CreateLogDevice(Path.Combine(logDir, "pubsubkv"), preallocateFile: false);
             device.Initialize((long)(1 << 30) * 64);
-            aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * 4, Epoch = epoch });
+            aof = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSize = pageSize, MemorySize = pageSize * MemoryPages, Epoch = epoch });
             pageSizeBits = aof.UnsafeGetLogPageSizeBits();
             if (startFresh)
                 aof.TruncateUntil(aof.CommittedUntilAddress);
+            consumedUntil = aof.BeginAddress;
             this.logger = logger;
         }
 
@@ -76,22 +134,13 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Delivers to every subscriber, waiting for a subscriber's connection to have room when it has none.
-        /// </summary>
-        unsafe int Broadcast(PinnedSpanByte key, PinnedSpanByte value)
-        {
-            DeferredDeliveries unused = null;
-            return Broadcast(key, value, ref unused, noWait: false);
-        }
-
-        /// <summary>
-        /// Delivers to every subscriber. With <paramref name="noWait"/> a subscriber whose connection has no room
-        /// is not waited for: its delivery is recorded in <paramref name="deferred"/> for the publisher to
-        /// complete, and every later delivery to that subscriber is recorded behind it, so the subscriber
-        /// still receives them in the order they were made.
+        /// Delivers to every subscriber, without waiting for a subscriber's connection to have room. A subscriber
+        /// whose connection has none has its delivery recorded in <paramref name="deferred"/>, for the caller to
+        /// complete, and every later delivery to that subscriber is recorded behind it, so the subscriber still
+        /// receives them in the order they were made.
         /// </summary>
         /// <returns>The number of subscribers reached, counting those whose delivery was deferred.</returns>
-        unsafe int Broadcast(PinnedSpanByte key, PinnedSpanByte value, ref DeferredDeliveries deferred, bool noWait)
+        unsafe int Broadcast(PinnedSpanByte key, PinnedSpanByte value, ref DeferredDeliveries deferred)
         {
             var numSubscribers = 0;
 
@@ -102,9 +151,7 @@ namespace Garnet.server
                     var index = 0;
                     while (sessions.Iterate(ref index, out var session))
                     {
-                        if (!noWait)
-                            session.Publish(key, value);
-                        else if (!session.TryPublish(key, value))
+                        if (!session.TryPublish(key, value))
                             (deferred ??= new()).Add(new(session));
                         numSubscribers++;
                     }
@@ -126,9 +173,7 @@ namespace Garnet.server
                             var index2 = 0;
                             while (sessions.Iterate(ref index2, out var session))
                             {
-                                if (!noWait)
-                                    session.PatternPublish(patternSlice, key, value);
-                                else if ((deferred is not null && deferred.Holds(session)) || !session.TryPatternPublish(patternSlice, key, value))
+                                if ((deferred is not null && deferred.Holds(session)) || !session.TryPatternPublish(patternSlice, key, value))
                                     (deferred ??= new()).Add(new(session, pattern));
                                 numSubscribers++;
                             }
@@ -139,7 +184,18 @@ namespace Garnet.server
             return numSubscribers;
         }
 
-        async Task StartAsync(CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Delivers a message laid out as a log entry is: the channel and then the message, each after its length.
+        /// </summary>
+        unsafe void Broadcast(byte* entry)
+        {
+            var key = PinnedSpanByte.FromPinnedPointer(entry + sizeof(int), *(int*)entry);
+            entry += sizeof(int) + key.Length;
+            var value = PinnedSpanByte.FromPinnedPointer(entry + sizeof(int), *(int*)entry);
+            _ = Broadcast(key, value, ref held);
+        }
+
+        async Task StartAsync()
         {
             try
             {
@@ -147,11 +203,38 @@ namespace Garnet.server
                 var signal = iterator.Signal;
                 using var registration = cts.Token.Register(signal);
 
-                while (!disposed)
+                while (!disposed && !cts.IsCancellationRequested)
                 {
-                    if (cts.Token.IsCancellationRequested) break;
-                    await iterator.ConsumeAllAsync(this, token: cts.Token).ConfigureAwait(false);
+                    if (!iterator.TryConsumeNext(this))
+                    {
+                        if (!await iterator.WaitAsync(cts.Token).ConfigureAwait(false))
+                            break;
+                        continue;
+                    }
+
+                    if (held is not { Count: > 0 })
+                        continue;
+
+                    // Out here, where the log's epoch is not held, the consumer waits for each connection that had
+                    // no room, in the order the deliveries were held back. A completion that frees room can precede
+                    // the registration, so the connection is tried again after each wait rather than trusting the
+                    // signal alone.
+                    for (var i = 0; i < held.Count; i++)
+                    {
+                        while (!TryDeliverHeld(i))
+                        {
+                            if (capacityWait.TryRegisterWithPeer(held[i].Session.PublishSender))
+                                await capacityWait.WaitAsync().ConfigureAwait(false);
+                        }
+                    }
+
+                    // Lets go of the subscribers' sessions and the message
+                    held.Clear();
+                    heldEntry = null;
                 }
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
             }
             finally
             {
@@ -159,12 +242,39 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Makes one of the deliveries held back, if the subscriber's connection has room for it now.
+        /// </summary>
+        /// <param name="index">Which delivery, in the order they were held back.</param>
+        /// <returns>False if the connection is full and nothing was written.</returns>
+        unsafe bool TryDeliverHeld(int index)
+        {
+            var delivery = held[index];
+            fixed (byte* entry = heldEntry)
+            {
+                var key = PinnedSpanByte.FromPinnedPointer(entry + sizeof(int), *(int*)entry);
+                var valuePtr = entry + sizeof(int) + key.Length;
+                var value = PinnedSpanByte.FromPinnedPointer(valuePtr + sizeof(int), *(int*)valuePtr);
+
+                if (!delivery.IsPattern)
+                    return delivery.Session.TryPublish(key, value);
+
+                // Patterns are stored unpinned
+                var pattern = delivery.Pattern.ReadOnlySpan;
+                fixed (byte* patternPtr = pattern)
+                    return delivery.Session.TryPatternPublish(PinnedSpanByte.FromPinnedPointer(patternPtr, pattern.Length), key, value);
+            }
+        }
+
+        /// <summary>
+        /// Delivers one entry of the log. This runs under the log's epoch, which holds back the log's progress for
+        /// every producer, so it does not wait: a delivery a full connection holds back is made by
+        /// <see cref="StartAsync"/>, from a copy of the message.
+        /// </summary>
         public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
         {
             try
             {
-                cts.Token.ThrowIfCancellationRequested();
-
                 if (previousAddress > 0 && currentAddress > previousAddress)
                 {
                     if (
@@ -176,14 +286,43 @@ namespace Garnet.server
                     }
                 }
 
-                var ptr = payloadPtr;
-                var key = PinnedSpanByte.FromPinnedPointer(ptr + sizeof(int), *(int*)ptr);
-                ptr += sizeof(int) + key.Length;
-                var value = PinnedSpanByte.FromPinnedPointer(ptr + sizeof(int), *(int*)ptr);
-                _ = Broadcast(key, value);
+                Debug.Assert(held is null or { Count: 0 }, "An entry was consumed before the deliveries held back by the last were made");
+                var freesRoom = (nextAddress >> pageSizeBits) > (consumedUntil >> pageSizeBits);
+                if (*(int*)payloadPtr == OversizedMarker)
+                {
+                    var entry = Interlocked.Exchange(ref oversizedEntry, null);
+                    Debug.Assert(entry is not null, "The log holds the place of a message that is not there");
+                    fixed (byte* entryPtr = entry)
+                        Broadcast(entryPtr);
+                    if (held is { Count: > 0 })
+                        heldEntry = entry;
+                    freesRoom = true;
+                }
+                else
+                {
+                    Broadcast(payloadPtr);
+                    if (held is { Count: > 0 })
+                    {
+                        // The entry fits on a page of the log, which is reused once the consumer moves on
+                        heldCopy ??= new byte[1 << pageSizeBits];
+                        new ReadOnlySpan<byte>(payloadPtr, payloadLength).CopyTo(heldCopy);
+                        heldEntry = heldCopy;
+                    }
+                }
+
                 if (nextAddress > aof.BeginAddress)
                     aof.TruncateUntil(nextAddress);
                 previousAddress = nextAddress;
+                Volatile.Write(ref consumedUntil, nextAddress);
+
+                if (freesRoom)
+                {
+                    // Pairs with the barrier in WatchForRoom: a producer publishes its wait and then looks for room, and
+                    // this makes room and then looks for a wait, so one of the two sees the other.
+                    Interlocked.MemoryBarrier();
+                    if (Volatile.Read(ref roomFreed) is not null)
+                        Interlocked.Exchange(ref roomFreed, null)?.TrySetResult();
+                }
             }
             catch (Exception ex)
             {
@@ -197,7 +336,7 @@ namespace Garnet.server
             done.Reset();
             subscriptions = new ConcurrentDictionary<ByteArrayWrapper, ReadOptimizedConcurrentSet<ServerSessionBase>>(ByteArrayWrapperComparer.Instance);
             patternSubscriptions = new ReadOptimizedConcurrentSet<PatternSubscriptionEntry>();
-            _ = Task.Run(() => StartAsync(cts.Token));
+            _ = Task.Run(StartAsync);
             initialized = true;
         }
 
@@ -313,18 +452,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Publish the update made to key to all the subscribers, synchronously
-        /// </summary>
-        /// <param name="key">key that has been updated</param>
-        /// <param name="value">value that has been updated</param>
-        /// <returns>Number of subscribers notified</returns>
-        public unsafe int PublishNow(PinnedSpanByte key, PinnedSpanByte value)
-        {
-            if (subscriptions == null && patternSubscriptions == null) return 0;
-            return Broadcast(key, value);
-        }
-
-        /// <summary>
         /// Publish the update made to key to all the subscribers, without waiting for any subscriber's
         /// connection to have room. A subscriber whose connection has none is left in
         /// <paramref name="deferred"/>, for the publisher to deliver to once the connection does.
@@ -341,37 +468,133 @@ namespace Garnet.server
         {
             Debug.Assert(deferred is null or { Count: 0 }, "A publish started before the deliveries held back by the last were made");
             if (subscriptions == null && patternSubscriptions == null) return 0;
-            return Broadcast(key, value, ref deferred, noWait: true);
+            return Broadcast(key, value, ref deferred);
         }
 
         /// <summary>
-        /// Publish the update made to key to all the subscribers, asynchronously
+        /// Publish the update made to key to all the subscribers, through the log the broker delivers from in order.
         /// </summary>
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>
-        public unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
+        /// <returns>
+        /// A task that completes once the update is in the log. It is already complete unless the log is as far
+        /// ahead of the delivery as it may be, in which case it completes when the delivery catches up.
+        /// </returns>
+        /// <remarks>
+        /// The key and value are copied before the call returns an incomplete task, so they need not outlive the
+        /// call.
+        /// </remarks>
+        public ValueTask PublishAsync(PinnedSpanByte key, PinnedSpanByte value)
         {
             if (subscriptions == null && patternSubscriptions == null)
-                return;
+                return default;
 
-            // The pub/sub log cannot store an entry larger than one page. A forwarded cluster publish
-            // that exceeds the page size is delivered synchronously (exactly as a local PUBLISH is via
-            // PublishNow) rather than enqueued, so large messages reach subscribers instead of faulting
-            // the receiving session.
-            //
-            // This synchronous path can let an oversized forwarded message overtake a smaller one still
-            // queued in the log, i.e. deliver out of order. That is acceptable: Redis pub/sub is
-            // best-effort with no cross-node ordering guarantee for cluster-forwarded messages, so
-            // subscribers cannot rely on forwarding order anyway. Local publishes still flow entirely
-            // through the ordered queue, preserving single-node fan-out order.
-            var totalLength = key.Length + value.Length + (2 * sizeof(int));
-            if (!aof.EntryFitsOnPage(totalLength))
+            if (aof.EntryFitsOnPage(key.Length + value.Length + (2 * sizeof(int))))
             {
-                _ = Broadcast(key, value);
-                return;
+                return TryEnqueue(key.ReadOnlySpan, value.ReadOnlySpan)
+                    ? default
+                    : new(EnqueueWhenRoomAsync(ToEntry(key.ReadOnlySpan, value.ReadOnlySpan), oversized: false));
             }
 
-            aof.Enqueue(key.ReadOnlySpan, value.ReadOnlySpan, out _);
+            // A message too large for a page of the log waits beside it, and a marker holds its place in the log, so
+            // it is delivered in order with the rest
+            var entry = ToEntry(key.ReadOnlySpan, value.ReadOnlySpan);
+            return TryEnqueueOversized(entry) ? default : new(EnqueueWhenRoomAsync(entry, oversized: true));
+        }
+
+        /// <summary>
+        /// Whether a producer may append to the log without dropping the page the consumer reads next. Called
+        /// under <see cref="enqueueLock"/>.
+        /// </summary>
+        bool HasRoom()
+            => (aof.TailAddress >> pageSizeBits) - (Volatile.Read(ref consumedUntil) >> pageSizeBits) <= MaxPagesAhead;
+
+        /// <summary>Appends a message to the log, if there is room for it.</summary>
+        bool TryEnqueue(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
+        {
+            lock (enqueueLock)
+            {
+                if (!HasRoom())
+                    return false;
+
+                // The append can wait for the log to close a page, which takes only until the threads in the log's
+                // epoch move on, and none of them waits while it is there
+                aof.Enqueue(key, value, out _);
+                return true;
+            }
+        }
+
+        /// <summary>Appends a message laid out as a log entry is, if there is room for it.</summary>
+        bool TryEnqueue(byte[] entry)
+        {
+            var keyLength = MemoryMarshal.Read<int>(entry);
+            var key = new ReadOnlySpan<byte>(entry, sizeof(int), keyLength);
+            var value = new ReadOnlySpan<byte>(entry, (2 * sizeof(int)) + keyLength, entry.Length - (2 * sizeof(int)) - keyLength);
+            return TryEnqueue(key, value);
+        }
+
+        /// <summary>
+        /// Places a message too large for a page of the log beside it, and appends a marker that holds its place,
+        /// if there is room for both.
+        /// </summary>
+        bool TryEnqueueOversized(byte[] entry)
+        {
+            lock (enqueueLock)
+            {
+                if (Volatile.Read(ref oversizedEntry) is not null || !HasRoom())
+                    return false;
+
+                // Placed before the marker, which the consumer may read as soon as it is appended
+                Volatile.Write(ref oversizedEntry, entry);
+                aof.Enqueue(OversizedMarker, out _);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Appends a message once the consumer makes room for it, without holding a thread meanwhile.
+        /// </summary>
+        async Task EnqueueWhenRoomAsync(byte[] entry, bool oversized)
+        {
+            while (true)
+            {
+                // Published before looking for room, so the consumer that makes room next cannot miss this producer
+                var room = WatchForRoom();
+                if (disposed || (oversized ? TryEnqueueOversized(entry) : TryEnqueue(entry)))
+                    return;
+
+                await room.Task.ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// The promise the consumer completes when it next makes room, or <see cref="Dispose"/> does.
+        /// </summary>
+        TaskCompletionSource WatchForRoom()
+        {
+            var room = Volatile.Read(ref roomFreed);
+            if (room is null)
+            {
+                var created = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                room = Interlocked.CompareExchange(ref roomFreed, created, null) ?? created;
+            }
+
+            // Pairs with the barrier in Consume and the exchange in Dispose
+            Interlocked.MemoryBarrier();
+            return room;
+        }
+
+        /// <summary>
+        /// Lays out a message as a log entry is: the channel and then the message, each after its length.
+        /// </summary>
+        static byte[] ToEntry(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
+        {
+            var entry = new byte[(2 * sizeof(int)) + key.Length + value.Length];
+            MemoryMarshal.Write(entry, key.Length);
+            key.CopyTo(entry.AsSpan(sizeof(int)));
+            MemoryMarshal.Write(entry.AsSpan(sizeof(int) + key.Length), value.Length);
+            value.CopyTo(entry.AsSpan((2 * sizeof(int)) + key.Length));
+            return entry;
         }
 
         /// <summary>
@@ -452,8 +675,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public void Dispose()
         {
+            // The consumer stops at its next wait: for the log, for a subscriber's connection, or before either.
+            // A producer waiting for room stops without appending.
             disposed = true;
             cts.Cancel();
+            capacityWait.Cancel();
+            Interlocked.Exchange(ref roomFreed, null)?.TrySetResult();
             done.WaitOne();
             subscriptions?.Clear();
             patternSubscriptions?.Clear();

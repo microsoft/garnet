@@ -74,7 +74,7 @@ namespace Garnet.server
         /// is written and the publisher waits for room.
         /// </summary>
         /// <remarks>
-        /// The default publishes as <see cref="Publish"/> does, which is to wait for room inside the call.
+        /// The default publishes as <see cref="Publish"/> does.
         /// </remarks>
         /// <param name="key"></param>
         /// <param name="value"></param>
@@ -90,7 +90,7 @@ namespace Garnet.server
         /// nothing is written and the publisher waits for room.
         /// </summary>
         /// <remarks>
-        /// The default publishes as <see cref="PatternPublish"/> does, which is to wait for room inside the call.
+        /// The default publishes as <see cref="PatternPublish"/> does.
         /// </remarks>
         /// <param name="pattern"></param>
         /// <param name="key"></param>
@@ -101,33 +101,6 @@ namespace Garnet.server
             PatternPublish(pattern, key, value);
             return true;
         }
-
-        /// <summary>
-        /// Publish an update to a key to this subscriber without waiting for its connection to have room, sending
-        /// past its limit on outstanding sends if it has none.
-        /// </summary>
-        /// <remarks>
-        /// For a publisher that may neither wait nor hold the message back. The default publishes as
-        /// <see cref="Publish"/> does.
-        /// </remarks>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        internal virtual unsafe void PublishWithoutWaiting(PinnedSpanByte key, PinnedSpanByte value)
-            => Publish(key, value);
-
-        /// <summary>
-        /// Publish an update to a key to this (pattern) subscriber without waiting for its connection to have room,
-        /// sending past its limit on outstanding sends if it has none.
-        /// </summary>
-        /// <remarks>
-        /// For a publisher that may neither wait nor hold the message back. The default publishes as
-        /// <see cref="PatternPublish"/> does.
-        /// </remarks>
-        /// <param name="pattern"></param>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        internal virtual unsafe void PatternPublishWithoutWaiting(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
-            => PatternPublish(pattern, key, value);
 
         /// <summary>
         /// Dispose

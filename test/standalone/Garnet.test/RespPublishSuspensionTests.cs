@@ -12,6 +12,7 @@ using Garnet.networking;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -29,6 +30,11 @@ namespace Garnet.test
     public class RespPublishSuspensionTests : TestBase
     {
         static readonly TimeSpan Bound = TimeSpan.FromSeconds(15);
+
+        /// <summary>
+        /// More messages than the broker's log keeps in memory at the default page size, many times over.
+        /// </summary>
+        const int Many = 2000;
 
         static readonly FieldInfo DeferredField = typeof(RespServerSession).GetField("deferredDeliveries",
             BindingFlags.Instance | BindingFlags.NonPublic);
@@ -301,7 +307,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task APublisherThatCannotParkWaitsForRoomInsideTheBroadcast()
+        public async Task APublisherThatCannotParkWaitsForRoomOutsideTheSend()
         {
             StartServer();
             var subscriber = new ControlledSender(bufferSize: 4096) { WaitingSendsBlock = true };
@@ -314,20 +320,24 @@ namespace Garnet.test
                 var subscribed = subscriber.Sent;
                 subscriber.Full = true;
 
-                // A consume with no receive loop to unwind to, as an embedded transport drives, cannot park, so a
-                // publisher there waits for the room where it stands
+                // A consume with no receive loop to unwind to, as an embedded transport drives, cannot park. The
+                // publisher there still holds its message back and waits for room on the subscriber's connection,
+                // not inside a send to it.
                 var publish = Pinned(Frame("PUBLISH", "c", "hello"));
                 var consume = Task.Run(() => ConsumeSync(publisherSession, publish));
 
-                await WaitUntilAsync(() => subscriber.WaitingSends == 1, "the publisher waited for room inside the send");
+                await WaitUntilAsync(() => subscriber.Waiting == 1, "the publisher waited for the subscriber's connection");
                 ClassicAssert.IsFalse(consume.IsCompleted);
-                ClassicAssert.AreEqual(0, subscriber.Registrations);
+                ClassicAssert.AreEqual(0, subscriber.WaitingSends, "the publisher waited for room inside the send");
+                ClassicAssert.AreEqual(1, subscriber.Registrations);
                 ClassicAssert.AreEqual(subscribed, subscriber.Sent);
 
-                subscriber.ReleaseWaitingSends();
+                subscriber.Full = false;
+                subscriber.SignalCapacity();
                 ClassicAssert.AreEqual(publish.Length, await consume.WaitAsync(Bound));
                 ClassicAssert.AreEqual(subscribed + Message("c", "hello"), subscriber.Sent);
                 ClassicAssert.AreEqual(":1\r\n", publisher.Sent);
+                ClassicAssert.AreEqual(0, subscriber.WaitingSends);
             }
             finally
             {
@@ -335,6 +345,201 @@ namespace Garnet.test
                 subscriberSession.Dispose();
                 publisherSession.Dispose();
             }
+        }
+
+        /// <summary>
+        /// A message forwarded from another cluster node goes through the broker's log, whose consumer holds back
+        /// what a full subscriber cannot take and waits for its connection without a thread, and without moving on
+        /// to the next message.
+        /// </summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task TheBrokerWaitsForAFullSubscriberWithoutAThreadAndDeliversInOrder(bool pattern)
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 4096) { WaitingSendsBlock = true };
+            var open = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var openSession = NewSession(open);
+            try
+            {
+                await ConsumeAsync(subscriberSession, pattern ? Frame("PSUBSCRIBE", "c*") : Frame("SUBSCRIBE", "c"));
+                await ConsumeAsync(openSession, Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+                var openSubscribed = open.Sent;
+                subscriber.Full = true;
+
+                var broker = Broker();
+                AssertEnqueued(Publish(broker, "c", "one"));
+                AssertEnqueued(Publish(broker, "c", "two"));
+
+                await WaitUntilAsync(() => subscriber.Waiting == 1, "the broker waited for the full subscriber");
+                await WaitUntilAsync(() => open.Sent == openSubscribed + Message("c", "one"), "the open subscriber had the first message");
+                ClassicAssert.AreEqual(0, subscriber.WaitingSends, "the broker waited for room inside the send");
+                ClassicAssert.AreEqual(subscribed, subscriber.Sent);
+                ClassicAssert.AreEqual(openSubscribed + Message("c", "one"), open.Sent, "the broker moved past a message it had not delivered");
+
+                // A wake that finds the connection full again waits again, and writes nothing
+                subscriber.SignalCapacity();
+                await WaitUntilAsync(() => subscriber.Registrations == 2, "the broker waited a second time");
+                ClassicAssert.AreEqual(subscribed, subscriber.Sent);
+
+                subscriber.Full = false;
+                subscriber.SignalCapacity();
+                string Delivered(string payload) => pattern ? PatternMessage("c*", "c", payload) : Message("c", payload);
+                await WaitUntilAsync(() => subscriber.Sent == subscribed + Delivered("one") + Delivered("two"), "the subscriber had both messages, in order");
+                await WaitUntilAsync(() => open.Sent == openSubscribed + Message("c", "one") + Message("c", "two"), "the open subscriber had both messages");
+                ClassicAssert.AreEqual(0, subscriber.WaitingSends);
+                ClassicAssert.AreEqual(0, subscriber.Waiting);
+            }
+            finally
+            {
+                subscriber.ReleaseWaitingSends();
+                subscriberSession.Dispose();
+                openSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// The broker's log keeps only a few pages in memory, so a producer that would take it further ahead of a
+        /// consumer held up by a full subscriber waits for room instead, and no message is lost.
+        /// </summary>
+        [Test]
+        public async Task AProducerWaitsForRoomInTheBrokersLogAndNothingIsLost()
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 1 << 16) { WaitingSendsBlock = true };
+            var subscriberSession = NewSession(subscriber);
+            try
+            {
+                await ConsumeAsync(subscriberSession, Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+                subscriber.Full = true;
+
+                var broker = Broker();
+                var payload = new string('x', 100);
+                var expected = new StringBuilder(subscribed);
+                ValueTask parked = default;
+                var published = 0;
+                for (; published < Many; published++)
+                {
+                    var message = $"{published:D4}{payload}";
+                    _ = expected.Append(Message("c", message));
+                    var enqueue = Publish(broker, "c", message);
+                    if (published == 0)
+                        await WaitUntilAsync(() => subscriber.Waiting == 1, "the broker waited for the full subscriber");
+                    if (!enqueue.IsCompleted)
+                    {
+                        parked = enqueue;
+                        published++;
+                        break;
+                    }
+                }
+
+                // The four pages of the log the default page size gives hold some 150 of these
+                ClassicAssert.IsFalse(parked.IsCompleted, "the producer took the log further ahead of the consumer than it keeps");
+                ClassicAssert.Less(published, 200);
+                await Task.Delay(50);
+                ClassicAssert.IsFalse(parked.IsCompleted, "the producer appended although the consumer had not moved");
+                ClassicAssert.AreEqual(subscribed, subscriber.Sent);
+
+                subscriber.Full = false;
+                subscriber.SignalCapacity();
+                await parked.AsTask().WaitAsync(Bound);
+
+                // As the session that published it would, the next goes in only once the last is in
+                for (; published < Many; published++)
+                {
+                    var message = $"{published:D4}{payload}";
+                    _ = expected.Append(Message("c", message));
+                    await Publish(broker, "c", message).AsTask().WaitAsync(Bound);
+                }
+
+                await WaitUntilAsync(() => subscriber.Sent.Length >= expected.Length, "the subscriber had every message");
+                ClassicAssert.AreEqual(expected.ToString(), subscriber.Sent);
+                ClassicAssert.AreEqual(0, subscriber.WaitingSends);
+            }
+            finally
+            {
+                subscriber.ReleaseWaitingSends();
+                subscriberSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A message too large for a page of the broker's log waits beside it, one at a time, and is delivered in
+        /// its place among the others.
+        /// </summary>
+        [Test]
+        public async Task AMessageTooLargeForTheBrokersLogArrivesInItsPlace()
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 1 << 16) { WaitingSendsBlock = true };
+            var subscriberSession = NewSession(subscriber);
+            try
+            {
+                await ConsumeAsync(subscriberSession, Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+                subscriber.Full = true;
+
+                var broker = Broker();
+                var large1 = new string('1', 5000);
+                var large2 = new string('2', 5000);
+                AssertEnqueued(Publish(broker, "c", "small"));
+                await WaitUntilAsync(() => subscriber.Waiting == 1, "the broker waited for the full subscriber");
+                AssertEnqueued(Publish(broker, "c", large1));
+
+                // The first large message has not been taken yet, so the second waits for it to be
+                var second = Publish(broker, "c", large2);
+                await Task.Delay(50);
+                ClassicAssert.IsFalse(second.IsCompleted, "two large messages were placed beside the log at once");
+                ClassicAssert.AreEqual(subscribed, subscriber.Sent, "a large message overtook the one held back");
+
+                subscriber.Full = false;
+                subscriber.SignalCapacity();
+                await second.AsTask().WaitAsync(Bound);
+                AssertEnqueued(Publish(broker, "c", "last"));
+
+                var expected = subscribed + Message("c", "small") + Message("c", large1) + Message("c", large2) + Message("c", "last");
+                await WaitUntilAsync(() => subscriber.Sent.Length >= expected.Length, "the subscriber had every message");
+                ClassicAssert.AreEqual(expected, subscriber.Sent);
+            }
+            finally
+            {
+                subscriber.ReleaseWaitingSends();
+                subscriberSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Disposing the broker stops its consumer while it waits for a full subscriber, and releases a producer
+        /// waiting for room in its log.
+        /// </summary>
+        [Test]
+        public async Task DisposingTheBrokerReleasesItsWaits()
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 1 << 16) { WaitingSendsBlock = true };
+            var subscriberSession = NewSession(subscriber);
+            await ConsumeAsync(subscriberSession, Frame("SUBSCRIBE", "c"));
+            subscriber.Full = true;
+
+            var broker = Broker();
+            var message = new string('x', 100);
+            AssertEnqueued(Publish(broker, "c", message));
+            await WaitUntilAsync(() => subscriber.Waiting == 1, "the broker waited for the full subscriber");
+            ValueTask parked = default;
+            for (var i = 0; i < Many && parked.IsCompleted; i++)
+                parked = Publish(broker, "c", message);
+            ClassicAssert.IsFalse(parked.IsCompleted, "the producer did not wait for room in the log");
+
+            subscriberSession.Dispose();
+            var disposing = server;
+            server = null;
+            await Task.Run(disposing.Dispose).WaitAsync(Bound);
+            await parked.AsTask().WaitAsync(Bound);
+            ClassicAssert.AreEqual(0, subscriber.Waiting, "the broker left its wait registered with the subscriber");
+            ClassicAssert.AreEqual(0, subscriber.WaitingSends);
         }
 
         /// <summary>
@@ -415,6 +620,22 @@ namespace Garnet.test
         {
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: cluster, enableLua: lua);
             server.Start();
+        }
+
+        SubscribeBroker Broker() => server.Provider.StoreWrapper.subscribeBroker;
+
+        static void AssertEnqueued(ValueTask enqueue)
+            => ClassicAssert.IsTrue(enqueue.IsCompletedSuccessfully, "the producer waited for room in the broker's log");
+
+        /// <summary>Publishes through the broker's log, as a message forwarded from another cluster node is.</summary>
+        static ValueTask Publish(SubscribeBroker broker, string channel, string message)
+        {
+            var key = Pinned(channel);
+            var value = Pinned(message);
+            var enqueue = broker.PublishAsync(PinnedSpanByte.FromPinnedSpan(key), PinnedSpanByte.FromPinnedSpan(value));
+            GC.KeepAlive(key);
+            GC.KeepAlive(value);
+            return enqueue;
         }
 
         RespServerSession NewSession(ControlledSender sender)

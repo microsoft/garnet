@@ -187,7 +187,6 @@ namespace Garnet.server
                                 // main thread to hold the sender lock until the response is done.
                                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
                                 writingOutOfBand = true;
-                                outOfBandSendsNoWait = true;
 
                                 // Send async replies with completed outputs
                                 while (completedOutputs.Next())
@@ -235,7 +234,6 @@ namespace Garnet.server
 
                             completedOutputs.Dispose();
                             writingOutOfBand = false;
-                            outOfBandSendsNoWait = false;
                             networkSender.ExitAndReturnResponseObject();
                         }
 

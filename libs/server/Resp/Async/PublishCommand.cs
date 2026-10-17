@@ -110,14 +110,14 @@ namespace Garnet.server
                 var delivery = deferred[i];
                 if (!delivery.IsPattern)
                 {
-                    delivery.Session.PublishWithoutWaiting(key, value);
+                    delivery.Session.Publish(key, value);
                     continue;
                 }
 
                 // Patterns are stored unpinned
                 var pattern = delivery.Pattern.ReadOnlySpan;
                 fixed (byte* patternPtr = pattern)
-                    delivery.Session.PatternPublishWithoutWaiting(PinnedSpanByte.FromPinnedPointer(patternPtr, pattern.Length), key, value);
+                    delivery.Session.PatternPublish(PinnedSpanByte.FromPinnedPointer(patternPtr, pattern.Length), key, value);
             }
 
             // Lets go of the subscribers' sessions, and leaves the list empty for the next publish
