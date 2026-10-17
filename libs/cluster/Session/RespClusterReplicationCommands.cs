@@ -337,11 +337,9 @@ namespace Garnet.cluster
 
             // Commenting due to high verbosity
             // logger?.LogTrace("send_ckpt_file_segment {fileToken} {ckptFileType} {startAddress} {dataLength}", fileToken, ckptFileType, startAddress, data.Length);
-            clusterProvider.replicationManager.recvCheckpointHandler.ProcessFileSegment(fileToken, ckptFileType, startAddress, data);
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
+            return SuspendOnIfPending(
+                clusterProvider.replicationManager.recvCheckpointHandler.ProcessFileSegmentAsync(fileToken, ckptFileType, startAddress, data),
+                PendingReply.Ok);
         }
 
         /// <summary>
@@ -377,11 +375,9 @@ namespace Garnet.cluster
             var fileToken = new Guid(fileTokenBytes);
             var ckptFileType = (CheckpointFileType)ckptFileTypeInt;
 
-            clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotData(fileToken, ckptFileType, startAddress, data);
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
+            return SuspendOnIfPending(
+                clusterProvider.replicationManager.recvCheckpointHandler.ProcessSnapshotDataAsync(fileToken, ckptFileType, startAddress, data),
+                PendingReply.Ok);
         }
 
         /// <summary>

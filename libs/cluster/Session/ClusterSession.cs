@@ -215,23 +215,20 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Hands a wait to <see cref="SuspendOn(ValueTask, PendingReply)"/> unless it has already completed. One that has
-        /// already failed raises here, as one that fails while the session is suspended raises when it resumes.
+        /// Hands a wait to <see cref="SuspendOn(ValueTask, PendingReply)"/> unless it has already completed, in which case
+        /// the reply is written now. One that has already failed raises here, as one that fails while the session is
+        /// suspended raises when it resumes.
         /// </summary>
         /// <param name="wait">The work the command must wait for.</param>
         /// <param name="reply">The reply to write when the wait completes.</param>
         bool SuspendOnIfPending(ValueTask wait, PendingReply reply)
         {
-            if (wait.IsCompletedSuccessfully)
-                return true;
+            if (!wait.IsCompleted)
+                return SuspendOn(wait, reply);
 
-            if (wait.IsCompleted)
-            {
-                wait.GetAwaiter().GetResultGuarded();
-                return true;
-            }
-
-            return SuspendOn(wait, reply);
+            wait.GetAwaiter().GetResultGuarded();
+            WriteReply(reply);
+            return true;
         }
 
         public unsafe void CompletePendingCommand(ref byte* dcurr, ref byte* dend)
@@ -240,39 +237,48 @@ namespace Garnet.cluster
             this.dend = dend;
             try
             {
-                switch (pendingReply)
-                {
-                    case PendingReply.None:
-                        break;
-
-                    case PendingReply.Ok:
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref this.dcurr, this.dend))
-                            SendAndReset();
-                        break;
-
-                    case PendingReply.Error:
-                        while (!RespWriteUtils.TryWriteError(pendingError.Span, ref this.dcurr, this.dend))
-                            SendAndReset();
-                        break;
-
-                    case PendingReply.ReplicationOffset:
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.replicationManager.ReplicationOffset.ToString(), ref this.dcurr, this.dend))
-                            SendAndReset();
-                        break;
-
-                    case PendingReply.AofAddressValue:
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(pendingAofAddress.ToString(), ref this.dcurr, this.dend))
-                            SendAndReset();
-                        break;
-
-                    default:
-                        throw new InvalidOperationException($"Unexpected {nameof(PendingReply)}: {pendingReply}");
-                }
+                WriteReply(pendingReply);
             }
             finally
             {
                 dcurr = this.dcurr;
                 dend = this.dend;
+            }
+        }
+
+        /// <summary>
+        /// Writes the reply of a command that waited.
+        /// </summary>
+        /// <param name="reply">The reply to write.</param>
+        unsafe void WriteReply(PendingReply reply)
+        {
+            switch (reply)
+            {
+                case PendingReply.None:
+                    break;
+
+                case PendingReply.Ok:
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref this.dcurr, this.dend))
+                        SendAndReset();
+                    break;
+
+                case PendingReply.Error:
+                    while (!RespWriteUtils.TryWriteError(pendingError.Span, ref this.dcurr, this.dend))
+                        SendAndReset();
+                    break;
+
+                case PendingReply.ReplicationOffset:
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.replicationManager.ReplicationOffset.ToString(), ref this.dcurr, this.dend))
+                        SendAndReset();
+                    break;
+
+                case PendingReply.AofAddressValue:
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(pendingAofAddress.ToString(), ref this.dcurr, this.dend))
+                        SendAndReset();
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"Unexpected {nameof(PendingReply)}: {reply}");
             }
         }
 

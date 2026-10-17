@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -60,7 +61,11 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc/>
-        public unsafe void WriteChunk(long startAddress, ReadOnlySpan<byte> data)
+        /// <remarks>
+        /// Copies the chunk into a sector-aligned buffer and issues its write, and completes when the device does, so the
+        /// session receiving the checkpoint parks for the write instead of holding its thread.
+        /// </remarks>
+        public unsafe ValueTask WriteChunkAsync(long startAddress, ReadOnlySpan<byte> data)
         {
             if ((startAddress & (device.SectorSize - 1)) != 0)
                 throw new ArgumentException($"startAddress {startAddress} is not aligned to device sector size {device.SectorSize}", nameof(startAddress));
@@ -75,12 +80,16 @@ namespace Garnet.cluster
                 Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, data.Length, data.Length);
 
             device.WriteAsync((IntPtr)pbuffer.aligned_pointer, (ulong)startAddress, (uint)numBytesToWrite, IOCallback, ioContext);
+            return AwaitWriteAsync(pbuffer, startAddress, numBytesToWrite);
+        }
 
+        async ValueTask AwaitWriteAsync(SectorAlignedMemory pbuffer, long startAddress, long numBytesToWrite)
+        {
             // The IOCallbackContext roots the buffer for GC safety while the IO is in-flight.
             // On timeout or cancellation the buffer is intentionally abandoned (not returned to
             // the pool) — the exception aborts the replication session, so the stale semaphore
             // count left by the callback is harmless.
-            if (!writeSemaphore.Wait(timeout, cancellationToken))
+            if (!await writeSemaphore.WaitAsync(timeout, cancellationToken).ConfigureAwait(false))
             {
                 ExceptionUtils.ThrowException(new GarnetException(
                     $"Timed out writing {Type} checkpoint file at address {startAddress} (requested {numBytesToWrite} bytes)"));
