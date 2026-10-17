@@ -67,6 +67,26 @@ namespace Garnet.server
             return asyncSuspended;
         }
 
+        /// <summary>
+        /// Acts on a slot verification that left the command to be run again from the start: parks the session until
+        /// the key being migrated is accessible, or moves the command to an executor thread to look the key up there.
+        /// </summary>
+        /// <returns>True if the session parked, in which case the caller must stop processing the batch.</returns>
+        /// <remarks>Called with the read cursor rewound to the start of the command, as <see cref="ParkForMigration"/> is.</remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        bool ParkForSlotVerification()
+        {
+            if (csvi.mustWait)
+            {
+                csvi.mustWait = false;
+                return ParkForMigration();
+            }
+
+            csvi.mustOffload = false;
+            ParkForOffload(mustRun: false);
+            return true;
+        }
+
         [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
         async ValueTask WaitForMigrationAsync()
         {

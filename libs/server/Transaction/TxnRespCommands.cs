@@ -62,8 +62,12 @@ namespace Garnet.server
 
                 if (clusterSession != null)
                 {
+#if DEBUG
+                    ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Cluster_Txn_Pause_Before_Slot_Verify);
+#endif
                     txnManager.GetSlotVerificationInput(SessionAsking, out var clusterSlotVerificationInput);
                     clusterSlotVerificationInput.canWait = CanSuspend;
+                    clusterSlotVerificationInput.canOffload = clusterSlotVerificationInput.canWait && !storeWrapper.offloadExecutor.RunsInPlace;
 
                     if (txnManager.txnKeysParseState.Count > 0 &&
                         clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))
@@ -74,6 +78,15 @@ namespace Garnet.server
                         {
                             endReadHead = origReadHead;
                             csvi.mustWait = true;
+                            return true;
+                        }
+
+                        // A key being migrated may have to be looked up on the device. The transaction stays queued
+                        // and the EXEC is verified again on an executor thread.
+                        if (clusterSlotVerificationInput.mustOffload)
+                        {
+                            endReadHead = origReadHead;
+                            csvi.mustOffload = true;
                             return true;
                         }
 

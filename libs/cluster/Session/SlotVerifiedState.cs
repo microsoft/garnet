@@ -36,6 +36,11 @@ namespace Garnet.cluster
         /// A key is being migrated, so the request can be neither served nor redirected until the migration
         /// moves on. Never sent to a client: the caller waits for the migration to progress and verifies again.
         /// </summary>
-        WAIT
+        WAIT,
+        /// <summary>
+        /// A key is being migrated, and whether it is still here can only be learned by reading the device. Never sent
+        /// to a client: the caller moves the request to an executor thread and verifies it again there.
+        /// </summary>
+        OFFLOAD
     }
 }

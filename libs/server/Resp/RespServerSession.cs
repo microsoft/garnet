@@ -930,12 +930,11 @@ namespace Garnet.server
                                     _ => NetworkSKIP(cmd),
                                 };
 
-                                // Only EXEC verifies the keys it will lock, and it sets this when one is being migrated
-                                if (csvi.mustWait)
+                                // Only EXEC verifies the keys it will lock, and it defers when one is being migrated
+                                if (SlotVerificationDeferred)
                                 {
-                                    csvi.mustWait = false;
                                     endReadHead = readHead = _origReadHead;
-                                    if (ParkForMigration())
+                                    if (ParkForSlotVerification())
                                         break;
                                     continue;
                                 }
@@ -988,14 +987,24 @@ namespace Garnet.server
                                         break;
                                     continue;
                                 }
+
+                                // A custom transaction whose Prepare added a key being migrated has locked nothing and
+                                // written nothing: it is run again from the start, as a command verified below is
+                                if (cmd is RespCommand.RUNTXP or RespCommand.CustomTxn && SlotVerificationDeferred)
+                                {
+                                    endReadHead = readHead = _origReadHead;
+                                    if (ParkForSlotVerification())
+                                        break;
+                                    continue;
+                                }
                             }
-                            else if (csvi.mustWait)
+                            else if (SlotVerificationDeferred)
                             {
-                                // A key the command touches is being migrated: it has written nothing, and it is
-                                // parsed and verified again from the start once the migration moves on
-                                csvi.mustWait = false;
+                                // A key the command touches is being migrated: it has written nothing, and it is parsed
+                                // and verified again from the start, once the migration moves on, or on an executor
+                                // thread if the key may have to be looked up on the device
                                 endReadHead = readHead = _origReadHead;
-                                if (ParkForMigration())
+                                if (ParkForSlotVerification())
                                     break;
                                 continue;
                             }

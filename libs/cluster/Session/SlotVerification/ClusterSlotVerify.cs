@@ -16,6 +16,13 @@ namespace Garnet.cluster
         private bool Exists(PinnedSpanByte keySlice)
             => basicGarnetApi.EXISTS(keySlice) == GarnetStatus.OK;
 
+        /// <summary>
+        /// Whether looking a key up may read the device: the store has evicted records to its storage tier.
+        /// </summary>
+        private bool MayReadFromDisk
+            => clusterProvider.serverOptions.EnableStorageTier
+                && clusterProvider.storeWrapper.store.Log is var log && log.HeadAddress > log.BeginAddress;
+
         // Version of the migration progress read before the key that last made a verification wait was checked
         long migrationWaitVersion;
 
@@ -27,7 +34,7 @@ namespace Garnet.cluster
         public void RemoveMigrationWaiter(IMigrationWaiter waiter)
             => clusterProvider.migrationManager.Progress.Remove(waiter);
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, bool canWait, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, bool canWait, bool canOffload, int slot = -1)
         {
             Debug.Assert(!waitForStableSlot || (waitForStableSlot && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
 
@@ -151,6 +158,10 @@ namespace Garnet.cluster
                     }
                 }
 
+                // Whether the key is still here may be learned only from the device
+                if (canOffload && MayReadFromDisk)
+                    return new(SlotVerifiedState.OFFLOAD, slot);
+
                 return Exists(key) ? new(SlotVerifiedState.OK, slot) : new(SlotVerifiedState.ASK, slot);
             }
 
@@ -187,10 +198,11 @@ namespace Garnet.cluster
 
             ref var firstKey = ref parseState.GetArgSliceByRef(searchArgs.firstIdx);
             var firstSlot = HashSlotUtils.HashSlot(firstKey);
-            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, firstSlot);
+            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, csvi.canOffload, firstSlot);
 
-            // The request is verified again once the migration moves on, so the other keys have nothing to be compared against yet
-            if (firstSlotVerifyResult.state == SlotVerifiedState.WAIT)
+            // The request is verified again once the migration moves on, or on an executor thread, so the other keys have
+            // nothing to be compared against yet
+            if (firstSlotVerifyResult.state is SlotVerifiedState.WAIT or SlotVerifiedState.OFFLOAD)
                 return firstSlotVerifyResult;
 
             // Verify remaining keys from the first spec (starting from second key)
@@ -227,9 +239,9 @@ namespace Garnet.cluster
                 if (slot != firstSlot)
                     return new(SlotVerifiedState.CROSSSLOT, firstSlot);
 
-                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, slot);
+                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, csvi.canOffload, slot);
 
-                if (result.state == SlotVerifiedState.WAIT)
+                if (result.state is SlotVerifiedState.WAIT or SlotVerifiedState.OFFLOAD)
                     return result;
                 if (result.state != verifyResult.state)
                     return new(SlotVerifiedState.TRYAGAIN, firstSlot);

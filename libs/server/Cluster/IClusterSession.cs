@@ -105,12 +105,18 @@ namespace Garnet.server
         /// Verification method that works iteratively by caching the verification result between calls.
         /// NOTE: Caller must call ResetCachedSlotVerificationResult appropriately
         /// </summary>
-        /// <param name="keySlice"></param>
-        /// <param name="readOnly"></param>
-        /// <param name="SessionAsking"></param>
-        /// <param name="waitForStableSlot"></param>
-        /// <returns></returns>
-        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot);
+        /// <remarks>
+        /// Reads <see cref="ClusterSlotVerificationInput.readOnly"/>, <see cref="ClusterSlotVerificationInput.sessionAsking"/>,
+        /// <see cref="ClusterSlotVerificationInput.waitForStableSlot"/>, <see cref="ClusterSlotVerificationInput.canWait"/> and
+        /// <see cref="ClusterSlotVerificationInput.canOffload"/> for the key. A key being migrated that the caller may not
+        /// wait for here, or look up here, sets <see cref="ClusterSlotVerificationInput.mustWait"/> or
+        /// <see cref="ClusterSlotVerificationInput.mustOffload"/> and fails the verification; the caller then runs the
+        /// request again from the start, after resetting the cached result.
+        /// </remarks>
+        /// <param name="keySlice">Key to verify.</param>
+        /// <param name="csvi">How to verify the key, and whether its verification has to be run again.</param>
+        /// <returns>True if the key, and every key verified since the cached result was reset, can be served here.</returns>
+        bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, ref ClusterSlotVerificationInput csvi);
 
         /// <summary>
         /// Write cached slot verification message to output
@@ -124,7 +130,10 @@ namespace Garnet.server
         /// <remarks>
         /// When <see cref="ClusterSlotVerificationInput.canWait"/> is set and a key of the request is being
         /// migrated, nothing is written: the call returns true with <see cref="ClusterSlotVerificationInput.mustWait"/> set,
-        /// and the caller waits with <see cref="TryRegisterMigrationWaiter"/> before verifying again.
+        /// and the caller waits with <see cref="TryRegisterMigrationWaiter"/> before verifying again. When
+        /// <see cref="ClusterSlotVerificationInput.canOffload"/> is set and a key being migrated may have to be looked up on
+        /// the device, nothing is written either: the call returns true with <see cref="ClusterSlotVerificationInput.mustOffload"/>
+        /// set, and the caller verifies again on an executor thread.
         /// </remarks>
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>

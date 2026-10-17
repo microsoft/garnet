@@ -22,41 +22,37 @@ namespace Garnet.cluster
             initialized = false;
         }
 
-        /// <summary>
-        /// Iterative verify slot for a single key
-        /// </summary>
-        /// <remarks>
-        /// Holds the calling thread while a key is being migrated. It runs from a custom transaction procedure's
-        /// <c>Prepare</c>, which is user code in the middle of a call and cannot be replayed after a wait.
-        /// </remarks>
-        /// <param name="keySlice"></param>
-        /// <param name="readOnly"></param>
-        /// <param name="SessionAsking"></param>
-        /// <returns></returns>
-        public bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot)
+        /// <inheritdoc/>
+        public bool NetworkIterativeSlotVerify(PinnedSpanByte keySlice, ref ClusterSlotVerificationInput csvi)
         {
             ClusterSlotVerificationResult verifyResult;
 
             // If it is the first verification initialize the result cache
             if (!initialized)
             {
-                verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking > 0, waitForStableSlot, canWait: false);
+                verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, csvi.readOnly, csvi.sessionAsking > 0, csvi.waitForStableSlot, csvi.canWait, csvi.canOffload);
                 cachedVerificationResult = verifyResult;
                 initialized = true;
-                return verifyResult.state == SlotVerifiedState.OK;
+                return Verified(verifyResult.state, ref csvi);
             }
 
             // If slot verification failed return early in order to capture the first error
             if (cachedVerificationResult.state != SlotVerifiedState.OK)
                 return false;
 
-            verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, readOnly, SessionAsking > 0, waitForStableSlot, canWait: false);
+            verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, csvi.readOnly, csvi.sessionAsking > 0, csvi.waitForStableSlot, csvi.canWait, csvi.canOffload);
 
             // Check if slot changes between keys
             if (verifyResult.slot != cachedVerificationResult.slot)
             {
                 cachedVerificationResult = new(SlotVerifiedState.CROSSSLOT, cachedVerificationResult.slot);
                 return false;
+            }
+
+            if (verifyResult.state is SlotVerifiedState.WAIT or SlotVerifiedState.OFFLOAD)
+            {
+                cachedVerificationResult = verifyResult;
+                return Verified(verifyResult.state, ref csvi);
             }
 
             // Check if any key might have moved
@@ -67,6 +63,13 @@ namespace Garnet.cluster
             }
 
             return verifyResult.state == SlotVerifiedState.OK;
+
+            static bool Verified(SlotVerifiedState state, ref ClusterSlotVerificationInput csvi)
+            {
+                csvi.mustWait = state == SlotVerifiedState.WAIT;
+                csvi.mustOffload = state == SlotVerifiedState.OFFLOAD;
+                return state == SlotVerifiedState.OK;
+            }
         }
 
         /// <summary>

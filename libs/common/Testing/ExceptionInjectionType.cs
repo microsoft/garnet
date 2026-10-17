@@ -184,5 +184,11 @@ namespace Garnet.common
         /// admitted rather than refused, which is otherwise decided by how quickly a pool thread picks it up.
         /// </summary>
         Session_Teardown_Admits_Queued_Resume,
+        /// <summary>
+        /// Cluster transaction: hold an EXEC or a custom transaction, on the thread that runs it, just before it verifies
+        /// the slots of the keys it will lock, until the condition is set again. Lets a test change the store between the
+        /// transaction being dispatched and its keys being verified.
+        /// </summary>
+        Cluster_Txn_Pause_Before_Slot_Verify,
     }
 }

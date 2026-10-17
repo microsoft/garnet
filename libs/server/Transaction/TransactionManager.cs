@@ -329,6 +329,7 @@ namespace Garnet.server
             where TFinalizeApi : IGarnetApi
         {
             var running = false;
+            var deferred = false;
             scratchBufferAllocator.Reset();
             IsReplaying = isReplaying;
             try
@@ -351,7 +352,18 @@ namespace Garnet.server
                 functionsState.StoredProcMode = true;
 
                 // Prepare phase
-                if (!proc.Prepare(garnetTxPrepareApi, ref procInput))
+                var prepared = proc.Prepare(garnetTxPrepareApi, ref procInput);
+
+                // A key being migrated has the transaction run again from the start, Prepare included, so this run
+                // neither answers nor finalizes, whatever Prepare returned
+                if (IsDeferred())
+                {
+                    deferred = true;
+                    Reset(running);
+                    return false;
+                }
+
+                if (!prepared)
                 {
                     Reset(running);
                     return false;
@@ -384,6 +396,8 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
+                // A Prepare that throws after deferring the transaction is run again too
+                deferred = !running && IsDeferred();
                 Reset(running);
                 logger?.LogError(ex, "TransactionManager.RunTransactionProc error in running transaction proc");
                 return false;
@@ -396,7 +410,7 @@ namespace Garnet.server
                     // If the transaction was invoked during AOF replay skip the finalize step altogether
                     // Finalize logs to AOF accordingly, so let the replay pick up the commits from AOF as
                     // part of normal AOF replay.
-                    if (!isReplaying)
+                    if (!isReplaying && !deferred)
                     {
                         proc.Finalize(garnetTxFinalizeApi, ref procInput, ref output);
                     }
@@ -408,6 +422,8 @@ namespace Garnet.server
             }
 
             return true;
+
+            bool IsDeferred() => state == TxnState.Aborted && clusterEnabled && respSession.SlotVerificationDeferred;
         }
 
         void Log(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc)

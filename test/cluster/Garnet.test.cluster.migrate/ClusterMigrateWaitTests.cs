@@ -14,6 +14,7 @@ using Garnet.networking;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
@@ -196,6 +197,149 @@ namespace Garnet.test.cluster
                 foreach (var txn in txns)
                     txn?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Custom transactions waiting on a migration hold no pool thread either. The pool is smaller than the number of
+        /// transactions, so one whose <c>Prepare</c> held a thread while it waited would leave no thread to serve a read of
+        /// the key. Each transaction is run again from the start once the migration has moved the key, and is redirected.
+        /// </summary>
+        [Test, CancelAfter(TestTimeout)]
+        [Category("CLUSTER")]
+        public void CustomTransactionsWaitingOnAMigrationHoldNoPoolThreads(CancellationToken cancellationToken)
+        {
+            const int TxnCount = 16;
+            const int CappedWorkers = 4;
+            const string Txn = "DELRMW";
+
+            var slot = CreateClusterHolding(Key);
+            var source = context.endpoints[SourceNode];
+            _ = context.nodes[SourceNode].Register.NewTransactionProc(Txn, () => new ClusterDelRmw(), new RespCommandsInfo { Arity = 3 });
+
+            var txns = new RawRespSession[TxnCount];
+            using var probe = new RawRespSession(endpoint: source);
+            try
+            {
+                for (var i = 0; i < txns.Length; i++)
+                {
+                    txns[i] = new RawRespSession(endpoint: source);
+                    ClassicAssert.AreEqual(Pong, txns[i].Execute("PING"));
+                }
+
+                ClassicAssert.AreEqual(Pong, probe.Execute("PING"));
+
+                using var pause = MigrationPause.Start(context, slot, cancellationToken);
+
+                using (ThreadPoolCap.Apply(CappedWorkers))
+                {
+                    string[] txn = [Txn, Key, "5"];
+                    string[] ping = ["PING"];
+
+                    foreach (var session in txns)
+                        session.SendPipeline(txn, ping);
+
+                    probe.Send("GET", Key);
+                    ClassicAssert.AreEqual(StoredValueReply, ReadReplyWithin(probe, TimeSpan.FromSeconds(10), "GET of the migrating key"),
+                        $"A pool of {CappedWorkers} threads could not serve a read while {TxnCount} custom transactions waited on the migration");
+
+                    Thread.Sleep(300);
+                    foreach (var session in txns)
+                        ClassicAssert.IsFalse(session.WaitForReply(TimeSpan.Zero), "A custom transaction on a key being migrated was answered while the migration was held");
+                }
+
+                pause.Release();
+
+                foreach (var session in txns)
+                {
+                    AssertRedirectedToTarget(ReadReplyWithin(session, TimeSpan.FromSeconds(30), "Custom transaction on a key that has moved"), slot);
+                    ClassicAssert.AreEqual(Pong, ReadReplyWithin(session, TimeSpan.FromSeconds(10), "PING behind a custom transaction that waited"));
+                }
+
+                context.clusterTestUtils.WaitForMigrationCleanup(SourceNode, cancellationToken, context.logger);
+                ClassicAssert.AreEqual(StoredValue, GetValue(TargetNode, Key), "The redirected transactions must not have been applied");
+            }
+            finally
+            {
+                foreach (var session in txns)
+                    session?.Dispose();
+            }
+        }
+
+        /// <summary>How the <c>Prepare</c> of <see cref="FinalizeCountingTxn"/> ends.</summary>
+        public enum PrepareOutcome
+        {
+            /// <summary>Returns true.</summary>
+            Succeeds,
+
+            /// <summary>Returns false.</summary>
+            Fails,
+
+            /// <summary>Throws.</summary>
+            Throws,
+        }
+
+        /// <summary>
+        /// A custom transaction that waits on a migration runs its <c>Finalize</c> once, when it is answered, however its
+        /// <c>Prepare</c> ends. The runs that leave the transaction to be run again answer nothing, so they finalize
+        /// nothing.
+        /// </summary>
+        [Test, CancelAfter(TestTimeout)]
+        [Category("CLUSTER")]
+        public void ACustomTransactionWaitingOnAMigrationIsFinalizedOnce([Values] PrepareOutcome outcome, CancellationToken cancellationToken)
+        {
+            const string Txn = "FINALIZECOUNT";
+
+            var slot = CreateClusterHolding(Key);
+            var source = context.endpoints[SourceNode];
+            var finalized = new StrongBox<int>();
+            _ = context.nodes[SourceNode].Register.NewTransactionProc(Txn, () => new FinalizeCountingTxn(outcome, finalized), new RespCommandsInfo { Arity = 2 });
+
+            using var session = new RawRespSession(endpoint: source);
+            ClassicAssert.AreEqual(Pong, session.Execute("PING"));
+
+            using (var pause = MigrationPause.Start(context, slot, cancellationToken))
+            {
+                session.Send(Txn, Key);
+
+                Thread.Sleep(300);
+                ClassicAssert.IsFalse(session.WaitForReply(TimeSpan.Zero), "A custom transaction on a key being migrated was answered while the migration was held");
+                ClassicAssert.AreEqual(0, Volatile.Read(ref finalized.Value), "A custom transaction left to be run again was finalized");
+
+                pause.Release();
+
+                var reply = ReadReplyWithin(session, TimeSpan.FromSeconds(30), "Custom transaction on a key that has moved");
+                if (outcome == PrepareOutcome.Succeeds)
+                    AssertRedirectedToTarget(reply, slot);
+                else
+                    ClassicAssert.AreEqual("-ERR Transaction failed.\r\n", reply);
+            }
+
+            ClassicAssert.AreEqual(1, Volatile.Read(ref finalized.Value), "A custom transaction that waited on a migration was not finalized exactly once");
+        }
+
+        /// <summary>
+        /// Custom transaction on one key that counts the runs of its <c>Finalize</c>, and whose <c>Prepare</c> ends as
+        /// <see cref="PrepareOutcome"/> says once it has added the key.
+        /// </summary>
+        sealed class FinalizeCountingTxn(PrepareOutcome outcome, StrongBox<int> finalized) : CustomTransactionProcedure
+        {
+            public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
+            {
+                var offset = 0;
+                AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
+                return outcome switch
+                {
+                    PrepareOutcome.Succeeds => true,
+                    PrepareOutcome.Fails => false,
+                    _ => throw new InvalidOperationException("Prepare throws"),
+                };
+            }
+
+            public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+                => WriteSimpleString(ref output, "OK");
+
+            public override void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+                => _ = Interlocked.Increment(ref finalized.Value);
         }
 
         /// <summary>

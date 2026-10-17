@@ -47,8 +47,7 @@ namespace Garnet.server
         {
             if (!clusterEnabled || IsReplaying) return;
 
-            var readOnly = type == LockType.Shared;
-            if (!respSession.clusterSession.NetworkIterativeSlotVerify(key, readOnly, respSession.SessionAsking, waitForStableSlot: false))
+            if (!respSession.CanServeTransactionKey(key, readOnly: type == LockType.Shared))
             {
                 this.state = TxnState.Aborted;
             }

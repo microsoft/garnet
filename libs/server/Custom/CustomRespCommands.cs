@@ -25,11 +25,26 @@ namespace Garnet.server
 
             LatencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
-
-            sessionMetrics?.incr_total_transaction_commands_received();
+            if (clusterSession != null)
+            {
+#if DEBUG
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Cluster_Txn_Pause_Before_Slot_Verify);
+#endif
+                // A key being migrated parks the session until it is accessible, or moves the transaction to an executor
+                // thread to look it up on the device, rather than have Prepare wait for it on this thread
+                csvi.canWait = CanSuspend;
+                csvi.canOffload = csvi.canWait && !storeWrapper.offloadExecutor.RunsInPlace;
+            }
 
             var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);
-            if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
+            var succeeded = txnManager.RunTransactionProc(id, ref procInput, proc, ref output);
+
+            // Nothing has been locked or written: the dispatch loop runs the transaction again from the start
+            if (!succeeded && SlotVerificationDeferred)
+                return true;
+
+            sessionMetrics?.incr_total_transaction_commands_received();
+            if (succeeded)
             {
                 // Write output to wire
                 if (output.MemoryOwner != null)
