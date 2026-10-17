@@ -19,7 +19,8 @@ namespace Garnet.test
     /// A real sender has two ways to send: <see cref="SendResponseNoWait"/> returns at once and says whether the
     /// sender is full, and <see cref="SendResponse(int, int)"/> waits for room first. This one makes the
     /// difference observable: <see cref="WaitingSends"/> counts the calls that took the waiting way, and
-    /// <see cref="WaitingSendsBlock"/> holds them while the sender is full.
+    /// <see cref="WaitingSendsBlock"/> holds them while the sender is full. Like a real sender it is entered
+    /// exclusively, so a writer that waits for its holder is observable too.
     /// </remarks>
     internal sealed unsafe class ControlledSender : INetworkSender
     {
@@ -32,10 +33,14 @@ namespace Garnet.test
         readonly List<ISendCapacityWaiter> waiters = [];
         int registrations;
         int waitingSends;
+        int entered;
         volatile bool full;
         volatile bool closed;
         volatile bool waitingSendsBlock;
         volatile Func<bool> saturation;
+        Action onNextSend;
+        Action onNextExit;
+        Func<bool> failTryEnterUntil;
         bool waitingSendsReleased;
 
         public ControlledSender(int bufferSize)
@@ -52,6 +57,25 @@ namespace Garnet.test
         /// looks at a subscriber's connection.
         /// </summary>
         public Func<bool> Saturation { set => saturation = value; }
+
+        /// <summary>
+        /// Runs once, inside the next send, after it is recorded: while its writer still holds the sender.
+        /// </summary>
+        public Action OnNextSend { set => Volatile.Write(ref onNextSend, value); }
+
+        /// <summary>
+        /// Runs once, inside the next exit, after the sender is let go: before its writer does anything else.
+        /// </summary>
+        public Action OnNextExit { set => Volatile.Write(ref onNextExit, value); }
+
+        /// <summary>
+        /// Makes <see cref="TryEnter"/> fail, as if another writer held the sender, until the condition holds;
+        /// from then on it behaves normally.
+        /// </summary>
+        public Func<bool> FailTryEnterUntil { set => Volatile.Write(ref failTryEnterUntil, value); }
+
+        /// <summary>Whether <see cref="FailTryEnterUntil"/> is still making entries fail.</summary>
+        public bool FailingTryEnter => Volatile.Read(ref failTryEnterUntil) != null;
 
         /// <summary>
         /// Makes <see cref="SendResponse(int, int)"/> wait while the sender is full, until
@@ -91,16 +115,8 @@ namespace Garnet.test
         /// </summary>
         public void SignalCapacity()
         {
-            ISendCapacityWaiter[] registered;
-            lock (waiterGate)
-            {
-                registered = [.. waiters];
-                waiters.Clear();
-            }
-
-            ClassicAssert.IsTrue(registered.Length > 0, "no session is waiting for the sender to have room");
-            foreach (var waiter in registered)
-                waiter.OnSendCapacity();
+            ClassicAssert.IsTrue(Waiting > 0, "no session is waiting for the sender to have room");
+            NotifySendCapacityWaiters();
         }
 
         /// <summary>Lets the sends waiting for room, and every later one, through.</summary>
@@ -117,6 +133,8 @@ namespace Garnet.test
         {
             lock (gate)
                 sent.AddRange(new ReadOnlySpan<byte>(head + offset, size).ToArray());
+
+            Interlocked.Exchange(ref onNextSend, null)?.Invoke();
         }
 
         public MaxSizeSettings GetMaxSizeSettings { get; } = new();
@@ -127,17 +145,47 @@ namespace Garnet.test
 
         public bool IsLocalConnection() => true;
 
-        public void Enter() { }
+        /// <summary>Whether a writer has entered the sender and not yet exited.</summary>
+        public bool Entered => Volatile.Read(ref entered) != 0;
+
+        public void Enter()
+        {
+            var spinner = new SpinWait();
+            while (!TryEnter())
+                spinner.SpinOnce();
+        }
+
+        public bool TryEnter()
+        {
+            var until = Volatile.Read(ref failTryEnterUntil);
+            if (until != null)
+            {
+                if (!until())
+                    return false;
+                _ = Interlocked.CompareExchange(ref failTryEnterUntil, null, until);
+            }
+
+            return Interlocked.CompareExchange(ref entered, 1, 0) == 0;
+        }
 
         public void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
+            Enter();
             head = this.head;
             tail = this.head + buffer.Length;
         }
 
-        public void Exit() { }
+        public void Exit()
+        {
+            ClassicAssert.IsTrue(Entered, "exited a sender nobody had entered");
 
-        public void ExitAndReturnResponseObject() { }
+            // A full fence, as the interface requires
+            _ = Interlocked.Exchange(ref entered, 0);
+
+            Interlocked.Exchange(ref onNextExit, null)?.Invoke();
+        }
+
+        public void ExitAndReturnResponseObject() => Exit();
 
         public void GetResponseObject() { }
 
@@ -170,11 +218,28 @@ namespace Garnet.test
 
         public bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter capacityWaiter)
         {
+            AddSendCapacityWaiter(capacityWaiter);
+            return full || !WithdrawSendCapacityWaiter(capacityWaiter);
+        }
+
+        public void AddSendCapacityWaiter(ISendCapacityWaiter capacityWaiter)
+        {
             lock (waiterGate)
                 waiters.Add(capacityWaiter);
             _ = Interlocked.Increment(ref registrations);
+        }
 
-            return full || !WithdrawSendCapacityWaiter(capacityWaiter);
+        public void NotifySendCapacityWaiters()
+        {
+            ISendCapacityWaiter[] registered;
+            lock (waiterGate)
+            {
+                registered = [.. waiters];
+                waiters.Clear();
+            }
+
+            foreach (var waiter in registered)
+                waiter.OnSendCapacity();
         }
 
         public bool WithdrawSendCapacityWaiter(ISendCapacityWaiter capacityWaiter)

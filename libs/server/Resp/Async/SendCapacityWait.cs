@@ -44,20 +44,26 @@ namespace Garnet.server
 
         /// <summary>
         /// Arms the source for one wait on another session's sender and registers it there, as a publisher waits
-        /// for the connection of a subscriber.
+        /// for a subscriber that could not take its message: for the subscriber's connection to have room, or for
+        /// the subscriber to resume from a suspension that holds its response object.
         /// </summary>
-        /// <param name="sender">The other session's sender.</param>
+        /// <param name="subscriber">The other session.</param>
         /// <returns>
-        /// False if the sender has room now, in which case nothing waits. Otherwise the registration holds until
-        /// the sender signals capacity or this session is torn down.
+        /// False if the subscriber can take a message now, in which case nothing waits. Otherwise the registration
+        /// holds until the sender signals or this session is torn down.
         /// </returns>
-        internal bool TryRegisterWithPeer(INetworkSender sender)
+        internal bool TryRegisterWithPeer(ServerSessionBase subscriber)
         {
             Arm();
 
             // Recorded before the registration, so that a teardown that finds the registration finds the sender
+            var sender = subscriber.PublishSender;
             _ = Interlocked.Exchange(ref peerSender, sender);
-            if (!sender.TryRegisterSendCapacityWaiter(this))
+
+            // The sender's notifiers end the reason first and then look for waiters, and this registers first and
+            // then looks for the reason, so whichever of the two goes second sees the other
+            sender.AddSendCapacityWaiter(this);
+            if (!sender.IsSendSaturated && !subscriber.PushesHeldBack && sender.WithdrawSendCapacityWaiter(this))
                 return false;
 
             // The teardown sets its flag and then looks for the sender, and this registers and then looks for

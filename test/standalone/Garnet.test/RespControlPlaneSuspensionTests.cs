@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -273,6 +274,14 @@ namespace Garnet.test
         GarnetServer server;
         DelayedReadDeviceFactoryCreator deviceFactoryCreator;
 
+        static readonly FieldInfo SenderWaitersField = typeof(RespServerSession).GetField("senderWaiters", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        /// <summary>What is waiting for the session to let go of its response object.</summary>
+        static int SenderWaiters(RespServerSession session) => (int)SenderWaitersField.GetValue(session);
+
+        /// <summary>Whether the async GET processor is waiting for the session to let go of its response object.</summary>
+        static bool ProcessorWaitsForSender(RespServerSession session) => (SenderWaiters(session) & 1) != 0;
+
         [SetUp]
         public void Setup()
         {
@@ -511,6 +520,156 @@ namespace Garnet.test
             {
                 sender.ReleaseWaitingSends();
                 session.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// The processor pushes the values of the reads that finished through the session's response object, which
+        /// a command suspended with an operation in flight holds until it resumes. The processor waits for the
+        /// resume without a thread, and pushes after it.
+        /// </summary>
+        [Test]
+        public async Task AsyncGetWaitsWithoutAThreadForASuspendedSessionToResume()
+        {
+            var bound = TimeSpan.FromSeconds(15);
+
+            Populate();
+            deviceFactoryCreator.ReadDelayMs = 1000;
+
+            var sender = new ControlledSender(bufferSize: 4096);
+            var session = (RespServerSession)server.Provider.GetSession(WireFormat.ASCII, sender);
+            try
+            {
+                var input = Pinned(Frame("HELLO", "3"), Frame("ASYNC", "ON"), Frame("GET", Key(0)));
+                var consumed = await Task.Run(() => Consume(session, input).AsTask()).WaitAsync(bound);
+                ClassicAssert.AreEqual(input.Length, consumed);
+                StringAssert.EndsWith("-ASYNC 0\r\n", sender.Sent, "The GET of an on-disk key did not go asynchronous.");
+                var before = sender.Sent;
+
+                // Suspends holding the response object for longer than the read takes
+                var park = await Task.Run(() => Consume(session, Pinned(Frame("DEBUG", "BLOCKIO", "4")))).WaitAsync(bound);
+                ClassicAssert.IsFalse(park.IsCompleted, "The session did not suspend.");
+
+                var clock = Stopwatch.StartNew();
+                while (!ProcessorWaitsForSender(session))
+                {
+                    if (clock.Elapsed > bound)
+                        Assert.Fail($"The processor did not wait for the session to resume within {bound.TotalSeconds:F0}s.");
+                    await Task.Delay(1);
+                }
+
+                ClassicAssert.IsTrue(sender.Entered, "The session resumed before the processor waited for it.");
+                ClassicAssert.AreEqual(before, sender.Sent);
+
+                _ = await park.AsTask().WaitAsync(bound);
+                var push = $">3\r\n$5\r\nasync\r\n$1\r\n0\r\n${ValueLength}\r\n{Value(0)}\r\n";
+                clock.Restart();
+                while (sender.Sent != before + Ok + push)
+                {
+                    if (clock.Elapsed > bound)
+                        Assert.Fail($"The value was not pushed after the reply within {bound.TotalSeconds:F0}s; the session was sent '{sender.Sent[before.Length..]}'.");
+                    await Task.Delay(1);
+                }
+
+                ClassicAssert.AreEqual(0, SenderWaiters(session), "Something is still waiting for the response object.");
+            }
+            finally
+            {
+                session.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// The processor that finds the response object held says it is waiting and then tries again, so a holder
+        /// that let go before it said so, and so did not wake it, does not leave it waiting.
+        /// </summary>
+        [Test]
+        public async Task AsyncGetTakesAResponseObjectLetGoBeforeItsProcessorSaidItWasWaiting()
+        {
+            var bound = TimeSpan.FromSeconds(15);
+
+            Populate();
+            deviceFactoryCreator.ReadDelayMs = 1000;
+
+            var sender = new ControlledSender(bufferSize: 4096);
+            var session = (RespServerSession)server.Provider.GetSession(WireFormat.ASCII, sender);
+            try
+            {
+                var input = Pinned(Frame("HELLO", "3"), Frame("ASYNC", "ON"), Frame("GET", Key(0)));
+                var consumed = await Task.Run(() => Consume(session, input).AsTask()).WaitAsync(bound);
+                ClassicAssert.AreEqual(input.Length, consumed);
+                StringAssert.EndsWith("-ASYNC 0\r\n", sender.Sent, "The GET of an on-disk key did not go asynchronous.");
+                var before = sender.Sent;
+
+                // The response object is held until the processor says it is waiting, and let go without waking it
+                sender.FailTryEnterUntil = () => ProcessorWaitsForSender(session);
+
+                var push = $">3\r\n$5\r\nasync\r\n$1\r\n0\r\n${ValueLength}\r\n{Value(0)}\r\n";
+                var clock = Stopwatch.StartNew();
+                while (sender.Sent != before + push)
+                {
+                    if (clock.Elapsed > bound)
+                        Assert.Fail($"The value was not pushed within {bound.TotalSeconds:F0}s; the processor " +
+                            $"{(ProcessorWaitsForSender(session) ? "is waiting for the response object" : "did not say it was waiting")}.");
+                    await Task.Delay(1);
+                }
+
+                ClassicAssert.IsFalse(sender.FailingTryEnter);
+                ClassicAssert.AreEqual(0, SenderWaiters(session), "Something is still waiting for the response object.");
+            }
+            finally
+            {
+                sender.FailTryEnterUntil = null;
+                session.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Tearing a session down tells its async GET processor to stop once its reads are done. A processor
+        /// waiting for the session to resume when that happens has to see it too, or it keeps the session's
+        /// storage sessions, and shutting the server down waits for them.
+        /// </summary>
+        [Test]
+        public async Task AnAsyncGetWaitingForASuspendedSessionStopsWhenTheSessionIsTornDown()
+        {
+            var bound = TimeSpan.FromSeconds(15);
+
+            Populate();
+            deviceFactoryCreator.ReadDelayMs = 1000;
+
+            var sender = new ControlledSender(bufferSize: 4096);
+            var session = (RespServerSession)server.Provider.GetSession(WireFormat.ASCII, sender);
+            var storeWrapper = server.Provider.StoreWrapper;
+            try
+            {
+                var input = Pinned(Frame("HELLO", "3"), Frame("ASYNC", "ON"), Frame("GET", Key(0)));
+                var consumed = await Task.Run(() => Consume(session, input).AsTask()).WaitAsync(bound);
+                ClassicAssert.AreEqual(input.Length, consumed);
+                StringAssert.EndsWith("-ASYNC 0\r\n", sender.Sent, "The GET of an on-disk key did not go asynchronous.");
+
+                var park = await Task.Run(() => Consume(session, Pinned(Frame("DEBUG", "BLOCKIO", "60")))).WaitAsync(bound);
+                ClassicAssert.IsFalse(park.IsCompleted, "The session did not suspend.");
+
+                var clock = Stopwatch.StartNew();
+                while (!ProcessorWaitsForSender(session))
+                {
+                    if (clock.Elapsed > bound)
+                        Assert.Fail($"The processor did not wait for the session to resume within {bound.TotalSeconds:F0}s.");
+                    await Task.Delay(1);
+                }
+            }
+            finally
+            {
+                session.Dispose();
+            }
+
+            if (!SpinWait.SpinUntil(() => storeWrapper.StorageTeardowns == 0, bound))
+            {
+                // Shutting down would wait for the storage sessions forever, so it is left to run on its own
+                var stuck = server;
+                server = null;
+                _ = Task.Factory.StartNew(stuck.Dispose, TaskCreationOptions.LongRunning);
+                Assert.Fail("The async GET processor of a session torn down while suspended kept its storage sessions.");
             }
         }
 

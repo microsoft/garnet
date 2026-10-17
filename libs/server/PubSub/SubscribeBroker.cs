@@ -26,8 +26,9 @@ namespace Garnet.server
     /// consumer delivers from in order.
     /// </para>
     /// <para>
-    /// Neither waits on a thread for a subscriber whose connection is full. The consumer delivers to everyone else,
-    /// then waits on that connection without a thread, and moves to the next message only once it has delivered
+    /// Neither waits on a thread for a subscriber that cannot take a message now: one whose connection is full, or
+    /// one suspended holding its response object. The consumer delivers to everyone else, then waits on that
+    /// subscriber's connection without a thread, and moves to the next message only once it has delivered
     /// this one. The log keeps only its last <see cref="MemoryPages"/> pages in memory and drops older ones from
     /// under a consumer that lags further, so a producer that would take the log that far ahead of the consumer
     /// waits instead, without a thread, until the consumer catches up.
@@ -134,8 +135,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Delivers to every subscriber, without waiting for a subscriber's connection to have room. A subscriber
-        /// whose connection has none has its delivery recorded in <paramref name="deferred"/>, for the caller to
+        /// Delivers to every subscriber, without waiting for any of them. A subscriber that cannot take the message
+        /// now has its delivery recorded in <paramref name="deferred"/>, for the caller to
         /// complete, and every later delivery to that subscriber is recorded behind it, so the subscriber still
         /// receives them in the order they were made.
         /// </summary>
@@ -215,15 +216,15 @@ namespace Garnet.server
                     if (held is not { Count: > 0 })
                         continue;
 
-                    // Out here, where the log's epoch is not held, the consumer waits for each connection that had
-                    // no room, in the order the deliveries were held back. A completion that frees room can precede
-                    // the registration, so the connection is tried again after each wait rather than trusting the
-                    // signal alone.
+                    // Out here, where the log's epoch is not held, the consumer waits for each subscriber that could
+                    // not take the message, in the order the deliveries were held back. What lets it take the message
+                    // can precede the registration, so the subscriber is tried again after each wait rather than
+                    // trusting the signal alone.
                     for (var i = 0; i < held.Count; i++)
                     {
                         while (!TryDeliverHeld(i))
                         {
-                            if (capacityWait.TryRegisterWithPeer(held[i].Session.PublishSender))
+                            if (capacityWait.TryRegisterWithPeer(held[i].Session))
                                 await capacityWait.WaitAsync().ConfigureAwait(false);
                         }
                     }
@@ -243,10 +244,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Makes one of the deliveries held back, if the subscriber's connection has room for it now.
+        /// Makes one of the deliveries held back, if the subscriber can take it now.
         /// </summary>
         /// <param name="index">Which delivery, in the order they were held back.</param>
-        /// <returns>False if the connection is full and nothing was written.</returns>
+        /// <returns>False if nothing was written.</returns>
         unsafe bool TryDeliverHeld(int index)
         {
             var delivery = held[index];
@@ -268,7 +269,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Delivers one entry of the log. This runs under the log's epoch, which holds back the log's progress for
-        /// every producer, so it does not wait: a delivery a full connection holds back is made by
+        /// every producer, so it does not wait: a delivery a subscriber cannot take now is made by
         /// <see cref="StartAsync"/>, from a copy of the message.
         /// </summary>
         public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
@@ -452,9 +453,9 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Publish the update made to key to all the subscribers, without waiting for any subscriber's
-        /// connection to have room. A subscriber whose connection has none is left in
-        /// <paramref name="deferred"/>, for the publisher to deliver to once the connection does.
+        /// Publish the update made to key to all the subscribers, without waiting for any of them. A subscriber
+        /// that cannot take it now, because its connection is full or it is suspended holding its response
+        /// object, is left in <paramref name="deferred"/>, for the publisher to deliver to once it can.
         /// </summary>
         /// <param name="key">key that has been updated</param>
         /// <param name="value">value that has been updated</param>

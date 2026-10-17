@@ -1057,6 +1057,10 @@ namespace Garnet.networking
             => networkSender.Enter();
 
         /// <inheritdoc />
+        public override bool TryEnter()
+            => networkSender.TryEnter();
+
+        /// <inheritdoc />
         public override unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
             networkSender.Enter();
@@ -1142,6 +1146,14 @@ namespace Garnet.networking
         /// <inheritdoc />
         public override bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter)
             => networkSender.WithdrawSendCapacityWaiter(waiter);
+
+        /// <inheritdoc />
+        public override void AddSendCapacityWaiter(ISendCapacityWaiter waiter)
+            => networkSender.AddSendCapacityWaiter(waiter);
+
+        /// <inheritdoc />
+        public override void NotifySendCapacityWaiters()
+            => networkSender.NotifySendCapacityWaiters();
 
         /// <inheritdoc />
         public override void SendResponse(byte[] buffer, int offset, int count, object context)

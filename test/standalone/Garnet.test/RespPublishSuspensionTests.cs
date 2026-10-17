@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -36,8 +37,22 @@ namespace Garnet.test
         /// </summary>
         const int Many = 2000;
 
+        /// <summary>
+        /// How long a subscriber stays suspended holding its response object: long enough for a publisher to reach
+        /// it, by a wide margin.
+        /// </summary>
+        const double SuspendSeconds = 3;
+
+        const string Ok = "+OK\r\n";
+
         static readonly FieldInfo DeferredField = typeof(RespServerSession).GetField("deferredDeliveries",
             BindingFlags.Instance | BindingFlags.NonPublic);
+
+        static readonly FieldInfo SenderWaitersField = typeof(RespServerSession).GetField("senderWaiters",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        /// <summary>What is waiting for the session to let go of its response object, messages left included.</summary>
+        static int SenderWaiters(RespServerSession session) => (int)SenderWaitersField.GetValue(session);
 
         GarnetServer server;
 
@@ -194,15 +209,23 @@ namespace Garnet.test
         [Test]
         public void AWaitCancelledBeforeItRegistersWithAPeerLeavesNothingRegistered()
         {
+            StartServer();
             var peer = new ControlledSender(bufferSize: 64) { Full = true };
+            var peerSession = NewSession(peer);
             var wait = new SendCapacityWait();
+            try
+            {
+                // A teardown that runs while the body is on its way to registering finds nothing to take back
+                wait.Cancel();
+                ClassicAssert.IsTrue(wait.TryRegisterWithPeer(peerSession));
 
-            // A teardown that runs while the body is on its way to registering finds nothing to take back
-            wait.Cancel();
-            ClassicAssert.IsTrue(wait.TryRegisterWithPeer(peer));
-
-            ClassicAssert.AreEqual(0, peer.Waiting, "a registration made after the teardown stays on the peer");
-            ClassicAssert.IsTrue(wait.WaitAsync().IsCanceled, "the wait was left to wait for a signal that cannot come");
+                ClassicAssert.AreEqual(0, peer.Waiting, "a registration made after the teardown stays on the peer");
+                ClassicAssert.IsTrue(wait.WaitAsync().IsCanceled, "the wait was left to wait for a signal that cannot come");
+            }
+            finally
+            {
+                peerSession.Dispose();
+            }
         }
 
         [Test]
@@ -615,6 +638,386 @@ namespace Garnet.test
                 publisherSession.Dispose();
             }
         }
+
+        /// <summary>
+        /// A session delivers to its subscribers while it holds its own response object for its batch, so two
+        /// sessions each subscribed to what the other publishes deliver to each other at the same time. Neither
+        /// waits on a thread for the other's response object: a message that finds it taken is left for its holder
+        /// to write out, in order.
+        /// </summary>
+        [Test]
+        public async Task TwoSessionsPublishingToEachOtherAtOnceBothFinish()
+        {
+            const int Messages = 20_000;
+
+            StartServer();
+            var senders = new[] { new ControlledSender(bufferSize: 4096), new ControlledSender(bufferSize: 4096) };
+            var sessions = new[] { NewSession(senders[0]), NewSession(senders[1]) };
+            try
+            {
+                await ConsumeAsync(sessions[0], Frame("HELLO", "3"), Frame("SUBSCRIBE", "a"));
+                await ConsumeAsync(sessions[1], Frame("HELLO", "3"), Frame("SUBSCRIBE", "b"));
+
+                var batches = new byte[2][];
+                for (var s = 0; s < 2; s++)
+                {
+                    var frames = new string[Messages];
+                    for (var i = 0; i < Messages; i++)
+                        frames[i] = Frame("PUBLISH", s == 0 ? "b" : "a", i.ToString(CultureInfo.InvariantCulture));
+                    batches[s] = Pinned(frames);
+                }
+
+                using var start = new Barrier(2);
+                var publishing = new Task<int>[2];
+                for (var s = 0; s < 2; s++)
+                {
+                    var session = sessions[s];
+                    var batch = batches[s];
+                    publishing[s] = Task.Factory.StartNew(() =>
+                    {
+                        start.SignalAndWait();
+                        return Consume(session, batch).AsTask().GetAwaiter().GetResult();
+                    }, TaskCreationOptions.LongRunning);
+                }
+
+                var consumed = await Task.WhenAll(publishing).WaitAsync(Bound);
+                ClassicAssert.AreEqual(batches[0].Length, consumed[0]);
+                ClassicAssert.AreEqual(batches[1].Length, consumed[1]);
+
+                for (var s = 0; s < 2; s++)
+                {
+                    var sent = senders[s].Sent;
+                    var channel = s == 0 ? "a" : "b";
+                    var at = 0;
+                    for (var i = 0; i < Messages; i++)
+                    {
+                        at = sent.IndexOf(Message(channel, i.ToString(CultureInfo.InvariantCulture), resp3: true), at, StringComparison.Ordinal);
+                        ClassicAssert.GreaterOrEqual(at, 0, $"Subscriber {s} did not receive message {i} in order.");
+                    }
+                }
+            }
+            finally
+            {
+                sessions[0].Dispose();
+                sessions[1].Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A message left as the subscriber's response object is let go, after the publisher found it held and before
+        /// the message was in place for the holder to write, is written by the publisher that left it.
+        /// </summary>
+        [Test]
+        public async Task AMessageLeftAsTheResponseObjectIsLetGoIsWrittenByItsPublisher()
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 4096);
+            var publisher = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var publisherSession = NewSession(publisher);
+            try
+            {
+                await ConsumeAsync(subscriberSession, Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+
+                // The publisher finds the response object held until its message is in place, and free from then on
+                subscriber.FailTryEnterUntil = () => SenderWaiters(subscriberSession) != 0;
+
+                var publish = Pinned(Frame("PUBLISH", "c", "hello"));
+                var consume = Task.Run(() => ConsumeSync(publisherSession, publish));
+                ClassicAssert.IsTrue(consume.Wait(Bound), "the publisher did not finish");
+                ClassicAssert.AreEqual(publish.Length, consume.Result);
+                ClassicAssert.IsFalse(subscriber.FailingTryEnter, "the publisher did not leave its message");
+
+                ClassicAssert.AreEqual(subscribed + Message("c", "hello"), subscriber.Sent);
+                ClassicAssert.AreEqual(":1\r\n", publisher.Sent);
+                ClassicAssert.AreEqual(0, SenderWaiters(subscriberSession));
+                ClassicAssert.IsFalse(subscriber.Entered);
+            }
+            finally
+            {
+                subscriber.FailTryEnterUntil = null;
+                subscriberSession.Dispose();
+                publisherSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A publisher that takes the subscriber's response object writes the messages left there before its own, so
+        /// a publisher's messages arrive in the order it published them even when it takes the response object between
+        /// its holder letting go and the holder writing them out.
+        /// </summary>
+        [Test]
+        public async Task APublisherWritesTheMessagesLeftBeforeItsOwn()
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 4096);
+            var first = new ControlledSender(bufferSize: 4096);
+            var second = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var firstSession = NewSession(first);
+            var secondSession = NewSession(second);
+            try
+            {
+                await ConsumeAsync(subscriberSession, Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+
+                var publishTwo = Pinned(Frame("PUBLISH", "c", "two"));
+                var publishThree = Pinned(Frame("PUBLISH", "c", "three"));
+                var left = false;
+                var tookOver = false;
+                subscriber.OnNextSend = () =>
+                {
+                    // The first publisher holds the response object, so the second leaves its message
+                    var consume = Task.Run(() => ConsumeSync(secondSession, publishTwo));
+                    left = consume.Wait(Bound) && consume.Result == publishTwo.Length;
+
+                    subscriber.OnNextExit = () =>
+                    {
+                        // The first publisher has let go and not yet written what was left; the second takes over
+                        var again = Task.Run(() => ConsumeSync(secondSession, publishThree));
+                        tookOver = again.Wait(Bound) && again.Result == publishThree.Length;
+                    };
+                };
+
+                var publishOne = Pinned(Frame("PUBLISH", "c", "one"));
+                var consume = await PublishAsync(firstSession, publishOne);
+                ClassicAssert.IsTrue(consume.IsCompleted, "the first publisher parked");
+                ClassicAssert.AreEqual(publishOne.Length, await consume);
+                ClassicAssert.IsTrue(left, "the second publisher did not leave its message");
+                ClassicAssert.IsTrue(tookOver, "the second publisher did not publish again");
+
+                ClassicAssert.AreEqual(subscribed + Message("c", "one") + Message("c", "two") + Message("c", "three"), subscriber.Sent);
+                ClassicAssert.AreEqual(":1\r\n", first.Sent);
+                ClassicAssert.AreEqual(":1\r\n:1\r\n", second.Sent);
+                ClassicAssert.AreEqual(0, SenderWaiters(subscriberSession));
+                ClassicAssert.IsFalse(subscriber.Entered);
+            }
+            finally
+            {
+                subscriberSession.Dispose();
+                firstSession.Dispose();
+                secondSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A message that finds the subscriber's response object held by another publisher is left for that
+        /// publisher, which writes it out as it lets go, so it does not wait for whatever the subscriber does next.
+        /// </summary>
+        [Test]
+        public async Task AMessageLeftWhileAnotherPublisherWritesIsWrittenByThatPublisher()
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 4096);
+            var first = new ControlledSender(bufferSize: 4096);
+            var second = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var firstSession = NewSession(first);
+            var secondSession = NewSession(second);
+            try
+            {
+                await ConsumeAsync(subscriberSession, Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+
+                var publishTwo = Pinned(Frame("PUBLISH", "c", "two"));
+                var leftWhileHeld = false;
+                subscriber.OnNextSend = () =>
+                {
+                    // The first publisher is inside its send to the subscriber, holding the response object
+                    var consume = Task.Run(() => ConsumeSync(secondSession, publishTwo));
+                    leftWhileHeld = consume.Wait(Bound) && consume.Result == publishTwo.Length
+                        && subscriber.Sent == subscribed + Message("c", "one");
+                };
+
+                var publishOne = Pinned(Frame("PUBLISH", "c", "one"));
+                var consume = await PublishAsync(firstSession, publishOne);
+                ClassicAssert.IsTrue(consume.IsCompleted, "the first publisher parked");
+                ClassicAssert.AreEqual(publishOne.Length, await consume);
+                ClassicAssert.IsTrue(leftWhileHeld, "the second publisher did not leave its message while the first held the response object");
+
+                ClassicAssert.AreEqual(subscribed + Message("c", "one") + Message("c", "two"), subscriber.Sent);
+                ClassicAssert.AreEqual(":1\r\n", first.Sent);
+                ClassicAssert.AreEqual(":1\r\n", second.Sent);
+                ClassicAssert.IsFalse(subscriber.Entered);
+            }
+            finally
+            {
+                subscriberSession.Dispose();
+                firstSession.Dispose();
+                secondSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A subscriber suspended with an operation in flight holds its response object until the operation
+        /// completes. A publisher that can park parks for it, and delivers once it resumes, rather than wait for it
+        /// on a thread.
+        /// </summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task APublisherParksForASubscriberSuspendedHoldingItsResponseObject(bool pattern)
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 4096);
+            var publisher = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var publisherSession = NewSession(publisher);
+            try
+            {
+                var (subscribed, park) = await SubscribeAndSuspendAsync(subscriberSession, subscriber, pattern);
+
+                var publish = Pinned(Frame("PUBLISH", "c", "hello"));
+                var consume = await PublishAsync(publisherSession, publish);
+                ClassicAssert.IsFalse(consume.IsCompleted, "the publisher did not park for the subscriber");
+                ClassicAssert.IsTrue(subscriber.Entered, "the subscriber resumed before the publisher parked");
+                ClassicAssert.AreEqual(1, subscriber.Waiting);
+                ClassicAssert.AreEqual(subscribed, subscriber.Sent);
+                ClassicAssert.AreEqual("", publisher.Sent);
+
+                _ = await park.AsTask().WaitAsync(Bound);
+                ClassicAssert.AreEqual(publish.Length, await consume.AsTask().WaitAsync(Bound));
+                ClassicAssert.AreEqual(subscribed + Ok + Delivered(pattern, "hello"), subscriber.Sent);
+                ClassicAssert.AreEqual(":1\r\n", publisher.Sent);
+                ClassicAssert.AreEqual(0, subscriber.Waiting);
+                ClassicAssert.AreEqual(0, DeferredCount(publisherSession));
+            }
+            finally
+            {
+                subscriberSession.Dispose();
+                publisherSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A publisher inside a transaction or a script may not park, and does not wait on a thread for a subscriber
+        /// suspended holding its response object either: it leaves its messages for the subscriber, which writes
+        /// them out, in order, with the replies of the batch it resumes.
+        /// </summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task APublisherThatCannotParkLeavesItsMessagesForASuspendedSubscriber(bool script)
+        {
+            StartServer(lua: script);
+            var subscriber = new ControlledSender(bufferSize: 4096);
+            var publisher = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var publisherSession = NewSession(publisher);
+            try
+            {
+                var (subscribed, park) = await SubscribeAndSuspendAsync(subscriberSession, subscriber, pattern: false);
+
+                var input = script
+                    ? Pinned(Frame("EVAL", "redis.call('PUBLISH', 'c', 'one') return redis.call('PUBLISH', 'c', 'two')", "0"))
+                    : Pinned(Frame("MULTI"), Frame("PUBLISH", "c", "one"), Frame("PUBLISH", "c", "two"), Frame("EXEC"));
+                var consume = await PublishAsync(publisherSession, input);
+                ClassicAssert.IsTrue(consume.IsCompleted, "the publisher parked");
+                ClassicAssert.AreEqual(input.Length, await consume);
+                ClassicAssert.AreEqual(subscribed, subscriber.Sent, "the publisher waited for the subscriber to resume");
+                ClassicAssert.AreEqual(0, subscriber.Registrations);
+                ClassicAssert.AreEqual(script ? ":1\r\n" : "+OK\r\n+QUEUED\r\n+QUEUED\r\n*2\r\n:1\r\n:1\r\n", publisher.Sent);
+
+                _ = await park.AsTask().WaitAsync(Bound);
+                ClassicAssert.AreEqual(subscribed + Ok + Message("c", "one", resp3: true) + Message("c", "two", resp3: true), subscriber.Sent);
+            }
+            finally
+            {
+                subscriberSession.Dispose();
+                publisherSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A subscriber torn down while suspended holding its response object never resumes, so the teardown is what
+        /// releases a publisher parked for it.
+        /// </summary>
+        [Test]
+        public async Task APublisherParkedForASuspendedSubscriberIsReleasedWhenTheSubscriberIsTornDown()
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 4096);
+            var publisher = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var publisherSession = NewSession(publisher);
+            var subscriberTornDown = false;
+            try
+            {
+                var (_, park) = await SubscribeAndSuspendAsync(subscriberSession, subscriber, pattern: false);
+
+                var publish = Pinned(Frame("PUBLISH", "c", "hello"));
+                var consume = await PublishAsync(publisherSession, publish);
+                ClassicAssert.IsFalse(consume.IsCompleted, "the publisher did not park for the subscriber");
+                ClassicAssert.AreEqual(1, subscriber.Waiting);
+
+                subscriberTornDown = true;
+                subscriberSession.Dispose();
+
+                ClassicAssert.AreEqual(publish.Length, await consume.AsTask().WaitAsync(Bound));
+                ClassicAssert.AreEqual(":1\r\n", publisher.Sent);
+                ClassicAssert.AreEqual(0, subscriber.Waiting);
+                _ = Assert.ThrowsAsync<Garnet.common.SessionTornDownException>(async () => await park.AsTask().WaitAsync(Bound));
+            }
+            finally
+            {
+                if (!subscriberTornDown)
+                    subscriberSession.Dispose();
+                publisherSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// The broker waits for a subscriber suspended holding its response object as it waits for one whose
+        /// connection is full: once, without a thread, and without moving on to the next message.
+        /// </summary>
+        [Test]
+        public async Task TheBrokerWaitsForASuspendedSubscriberWithoutAThreadAndDeliversInOrder()
+        {
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            try
+            {
+                var (subscribed, park) = await SubscribeAndSuspendAsync(subscriberSession, subscriber, pattern: false);
+
+                var broker = Broker();
+                AssertEnqueued(Publish(broker, "c", "one"));
+                AssertEnqueued(Publish(broker, "c", "two"));
+
+                await WaitUntilAsync(() => subscriber.Waiting == 1, "the broker waited for the suspended subscriber");
+                ClassicAssert.AreEqual(1, subscriber.Registrations, "the broker tried the subscriber again without waiting");
+                ClassicAssert.IsTrue(subscriber.Entered, "the subscriber resumed before the broker waited");
+                ClassicAssert.AreEqual(subscribed, subscriber.Sent);
+
+                _ = await park.AsTask().WaitAsync(Bound);
+                var delivered = subscribed + Ok + Message("c", "one", resp3: true) + Message("c", "two", resp3: true);
+                await WaitUntilAsync(() => subscriber.Sent == delivered, "the subscriber had both messages, in order");
+                ClassicAssert.AreEqual(0, subscriber.Waiting);
+            }
+            finally
+            {
+                subscriberSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Subscribes <paramref name="session"/> over RESP3, which lets it go on running commands, and then suspends
+        /// it the way a storage operation that went to the device does: holding its response object, for
+        /// <see cref="SuspendSeconds"/>.
+        /// </summary>
+        /// <returns>What the subscriber was sent before it suspended, and the call that suspended.</returns>
+        static async Task<(string Subscribed, ValueTask<int> Park)> SubscribeAndSuspendAsync(RespServerSession session, ControlledSender sender, bool pattern)
+        {
+            await ConsumeAsync(session, Frame("HELLO", "3"), pattern ? Frame("PSUBSCRIBE", "c*") : Frame("SUBSCRIBE", "c"));
+            var subscribed = sender.Sent;
+
+            var park = await PublishAsync(session, Pinned(Frame("DEBUG", "BLOCKIO", SuspendSeconds.ToString("0.0", CultureInfo.InvariantCulture))));
+            ClassicAssert.IsFalse(park.IsCompleted, "the subscriber did not suspend");
+            ClassicAssert.IsTrue(sender.Entered, "the subscriber let go of its response object while suspended");
+            return (subscribed, park);
+        }
+
+        static string Delivered(bool pattern, string payload)
+            => pattern ? PatternMessage("c*", "c", payload, resp3: true) : Message("c", payload, resp3: true);
 
         void StartServer(bool cluster = false, bool lua = false)
         {

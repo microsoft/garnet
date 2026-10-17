@@ -672,9 +672,12 @@ namespace Garnet.server
                 // A command that suspended with an operation in flight is still holding the per-batch scope.
                 // Retaking it would hand the body a different response object and a reset scratch buffer,
                 // and in cluster mode would republish the session at the newer epoch, letting a
-                // configuration change the command is still racing with proceed.
+                // configuration change the command is still racing with proceed. Pushes left while it was
+                // suspended go out once the batch lets go of the response object.
                 if (!asyncCommandRetainsBatchScope)
                     EnterBatchScope();
+                else
+                    ReleaseHeldBackPushes();
                 recvBufferPtr = reqBuffer;
 
                 if (storeWrapper.EnforceConsistentRead())
@@ -786,6 +789,10 @@ namespace Garnet.server
                     // this method when read on every batch.
                     if (--sessionTrimCountdown <= 0)
                         TrimSessionBuffers();
+                }
+                else
+                {
+                    HoldBackPushes();
                 }
             }
 

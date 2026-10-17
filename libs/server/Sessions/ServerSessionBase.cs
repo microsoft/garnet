@@ -70,15 +70,22 @@ namespace Garnet.server
         internal INetworkSender PublishSender => networkSender;
 
         /// <summary>
-        /// Publish an update to a key to this subscriber, unless its connection is full, in which case nothing
-        /// is written and the publisher waits for room.
+        /// Whether a publisher that found this subscriber unable to take a message now has to wait for it to
+        /// resume from a suspension, rather than for its connection to have room. A wait on
+        /// <see cref="PublishSender"/> is notified of either.
+        /// </summary>
+        internal virtual bool PushesHeldBack => false;
+
+        /// <summary>
+        /// Publish an update to a key to this subscriber, unless its connection is full or it cannot take a message
+        /// until it resumes from a suspension, in which case nothing is written and the publisher waits.
         /// </summary>
         /// <remarks>
         /// The default publishes as <see cref="Publish"/> does.
         /// </remarks>
         /// <param name="key"></param>
         /// <param name="value"></param>
-        /// <returns>False if the connection is full and nothing was written</returns>
+        /// <returns>False if nothing was written and the publisher has to wait</returns>
         internal virtual unsafe bool TryPublish(PinnedSpanByte key, PinnedSpanByte value)
         {
             Publish(key, value);
@@ -86,8 +93,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Publish an update to a key to this (pattern) subscriber, unless its connection is full, in which case
-        /// nothing is written and the publisher waits for room.
+        /// Publish an update to a key to this (pattern) subscriber, unless it cannot take a message now, as for
+        /// <see cref="TryPublish"/>.
         /// </summary>
         /// <remarks>
         /// The default publishes as <see cref="PatternPublish"/> does.
@@ -95,7 +102,7 @@ namespace Garnet.server
         /// <param name="pattern"></param>
         /// <param name="key"></param>
         /// <param name="value"></param>
-        /// <returns>False if the connection is full and nothing was written</returns>
+        /// <returns>False if nothing was written and the publisher has to wait</returns>
         internal virtual unsafe bool TryPatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
         {
             PatternPublish(pattern, key, value);

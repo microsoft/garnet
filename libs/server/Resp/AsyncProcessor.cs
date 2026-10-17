@@ -177,15 +177,35 @@ namespace Garnet.server
                             storageSession.StopPendingLatency();
                         }
 
+                        var entered = false;
                         try
                         {
+                            // We are ready to send responses so we take over the network sender from the main ProcessMessage thread
+                            // Note that we cannot take over while ProcessMessage is in progress because partial responses may have been
+                            // sent at that point. For sync responses that span multiple ProcessMessage calls (e.g., MGET), we need the
+                            // main thread to hold the sender lock until the response is done. The lock is waited for without a
+                            // thread: whoever lets go of it next signals the waiter (see ServeSenderWaiters). The wait also ends
+                            // on the processor's other signals, after which the lock is tried again.
+                            while (!TryEnterSenderForPush())
+                            {
+                                _ = Interlocked.Or(ref senderWaiters, ProcessorWaitsForSender);
+                                if (networkSender.TryEnter())
+                                    break;
+
+                                await asyncWaiter.WaitAsync().ConfigureAwait(false);
+                            }
+
+                            entered = true;
+
+                            // Taken back, so that exits do not wake the processor for nothing
+                            if ((Volatile.Read(ref senderWaiters) & ProcessorWaitsForSender) != 0)
+                                _ = Interlocked.And(ref senderWaiters, ~ProcessorWaitsForSender);
+
                             unsafe
                             {
-                                // We are ready to send responses so we take over the network sender from the main ProcessMessage thread
-                                // Note that we cannot take over while ProcessMessage is in progress because partial responses may have been
-                                // sent at that point. For sync responses that span multiple ProcessMessage calls (e.g., MGET), we need the
-                                // main thread to hold the sender lock until the response is done.
-                                networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                                networkSender.GetResponseObject();
+                                dcurr = networkSender.GetResponseObjectHead();
+                                dend = networkSender.GetResponseObjectTail();
                                 writingOutOfBand = true;
 
                                 // Send async replies with completed outputs
@@ -233,8 +253,12 @@ namespace Garnet.server
                             }
 
                             completedOutputs.Dispose();
-                            writingOutOfBand = false;
-                            networkSender.ExitAndReturnResponseObject();
+                            if (entered)
+                            {
+                                writingOutOfBand = false;
+                                networkSender.ExitAndReturnResponseObject();
+                                ServeSenderWaiters();
+                            }
                         }
 
                         // A drain that completed nothing found no read of ours on the completion queue, which the
@@ -246,6 +270,10 @@ namespace Garnet.server
 
                     // Let ongoing barrier command know that all async operations are done
                     asyncDone?.Release();
+
+                    // The wait for the sender lock above can take the signal that came with the stop
+                    if (asyncWaiterCancel.Token.IsCancellationRequested)
+                        break;
 
                     // Wait for next async operation
                     // We do not need to cancel the wait - it should get garbage collected when the session ends

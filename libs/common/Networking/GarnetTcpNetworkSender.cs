@@ -169,6 +169,14 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
+        public override bool TryEnter()
+        {
+            var lockTaken = false;
+            spinLock.TryEnter(ref lockTaken);
+            return lockTaken;
+        }
+
+        /// <inheritdoc />
         public override unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
             var lockTaken = false;
@@ -309,15 +317,9 @@ namespace Garnet.common
         /// <inheritdoc />
         public override bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter)
         {
-            lock (capacityLock)
-            {
-                (capacityWaiters ??= []).Add(waiter);
-
-                // Publish the waiter before reading the sends outstanding. The completion that frees capacity
-                // decrements the count before reading the waiters, so whichever of the two goes second sees the
-                // other.
-                _ = Interlocked.Exchange(ref capacityWaiterCount, capacityWaiters.Count);
-            }
+            // The completion that frees capacity decrements the sends outstanding before reading the waiters, so
+            // whichever of the two goes second sees the other
+            AddSendCapacityWaiter(waiter);
 
             if (IsSendSaturated)
                 return true;
@@ -325,6 +327,25 @@ namespace Garnet.common
             // Capacity is already available. Withdraw the waiter, unless a completion took it first, in which
             // case it will be called and the caller must wait for that.
             return !WithdrawSendCapacityWaiter(waiter);
+        }
+
+        /// <inheritdoc />
+        public override void AddSendCapacityWaiter(ISendCapacityWaiter waiter)
+        {
+            lock (capacityLock)
+            {
+                (capacityWaiters ??= []).Add(waiter);
+
+                // An interlocked write, so that the waiter is published before the caller reads why it waits
+                _ = Interlocked.Exchange(ref capacityWaiterCount, capacityWaiters.Count);
+            }
+        }
+
+        /// <inheritdoc />
+        public override void NotifySendCapacityWaiters()
+        {
+            if (Volatile.Read(ref capacityWaiterCount) != 0)
+                NotifyCapacityWaiters();
         }
 
         /// <inheritdoc />

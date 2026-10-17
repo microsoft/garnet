@@ -12,8 +12,9 @@ namespace Garnet.server
     internal sealed partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
-        /// The deliveries of the message being published that were held back because the subscriber's
-        /// connection had no room. A session runs one command at a time, so its PUBLISH commands share this one.
+        /// The deliveries of the message being published that were held back because the subscriber could not
+        /// take them: its connection had no room, or it was suspended holding its response object. A session runs
+        /// one command at a time, so its PUBLISH commands share this one.
         /// </summary>
         DeferredDeliveries deferredDeliveries;
 
@@ -26,8 +27,9 @@ namespace Garnet.server
         /// The publisher parks for a subscriber that is slow to read, as it would wait for one inside the
         /// broadcast on a thread that could be held, so that subscriber's backlog still holds the publisher back
         /// and cannot grow without bound. The wait is on the subscriber's connection and ends as soon as its
-        /// client reads. If the publisher's session is torn down first, the body is not resumed, and the wait's
-        /// registration with the subscriber's connection is taken back by the teardown
+        /// client reads, or as soon as the subscriber resumes from a suspension that holds its response object
+        /// (see <see cref="pushesHeldBack"/>). If the publisher's session is torn down first, the body is not
+        /// resumed, and the wait's registration with the subscriber's connection is taken back by the teardown
         /// (<see cref="SendCapacityWait"/>). Inside a transaction or a script it does not wait at all: see
         /// <see cref="DeliverDeferredWithoutWaiting"/>.
         /// </remarks>
@@ -53,7 +55,7 @@ namespace Garnet.server
                 // tried again after each wait rather than trusting the signal alone.
                 while (!TryDeliver(i))
                 {
-                    if (wait.TryRegisterWithPeer(deferred[i].Session.PublishSender))
+                    if (wait.TryRegisterWithPeer(deferred[i].Session))
                         await wait.WaitAsync().ConfigureAwait(false);
                 }
             }
@@ -66,10 +68,10 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Makes one of the deliveries held back, if the subscriber's connection has room for it now.
+        /// Makes one of the deliveries held back, if the subscriber can take it now.
         /// </summary>
         /// <param name="index">Which delivery, in the order they were held back.</param>
-        /// <returns>False if the connection is full and nothing was written.</returns>
+        /// <returns>False if nothing was written.</returns>
         /// <remarks>
         /// The message is read from the command's arguments, which stay addressable while the command is
         /// suspended, so it need not be carried through the wait.
@@ -90,14 +92,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Makes the deliveries held back now, past each full connection's limit on outstanding sends, for a
-        /// publisher that may not wait (<see cref="DenyBlocking"/>).
+        /// Makes the deliveries held back now, for a publisher that may not wait (<see cref="DenyBlocking"/>): past
+        /// each full connection's limit on outstanding sends, and to a subscriber suspended holding its response
+        /// object by leaving the message for it to write out when it resumes.
         /// </summary>
         /// <remarks>
         /// Waiting there would hold a transaction's key locks, or a script's thread, for as long as the subscriber
-        /// does not read. A full connection instead buffers one more message per such publish, as Redis buffers
-        /// every publish. They are made in the order they were held back, so each subscriber still receives its
-        /// messages in order.
+        /// does not read or stays suspended. A full connection instead buffers one more message per such publish,
+        /// as Redis buffers every publish. They are made in the order they were held back, so each subscriber
+        /// still receives its messages in order.
         /// </remarks>
         unsafe void DeliverDeferredWithoutWaiting()
         {

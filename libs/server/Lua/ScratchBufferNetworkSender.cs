@@ -87,6 +87,9 @@ namespace Garnet.server
         public void Enter() { }
 
         /// <inheritdoc />
+        public bool TryEnter() => true;
+
+        /// <inheritdoc />
         public void EnterAndGetResponseObject(out byte* head, out byte* tail)
         {
             var remain = scratchBufferBuilder.ViewRemainingArgSlice(serverBufferSize);
@@ -153,6 +156,12 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+
+        /// <inheritdoc />
+        public void AddSendCapacityWaiter(ISendCapacityWaiter waiter) { }
+
+        /// <inheritdoc />
+        public void NotifySendCapacityWaiters() { }
 
         /// <inheritdoc />
         public void SendResponse(byte[] buffer, int offset, int count, object context)

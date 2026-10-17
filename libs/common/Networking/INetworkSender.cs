@@ -38,6 +38,12 @@ namespace Garnet.networking
         void Enter();
 
         /// <summary>
+        /// Enter exclusive use of network sender if it is free, without waiting for its holder.
+        /// </summary>
+        /// <returns>True if entered, in which case the caller exits as it would after <see cref="Enter"/></returns>
+        bool TryEnter();
+
+        /// <summary>
         /// Enter exclusive use of network sender. Allocate and get response object pointers.
         /// </summary>
         /// <param name="head"></param>
@@ -47,11 +53,17 @@ namespace Garnet.networking
         /// <summary>
         /// Exit exclusive use of network sender.
         /// </summary>
+        /// <remarks>
+        /// A full fence: a read the caller makes after exiting is not reordered before the exit. A writer that
+        /// records that it is waiting and then tries <see cref="TryEnter"/> relies on this to be seen by the holder
+        /// that exits and then looks for waiters.
+        /// </remarks>
         void Exit();
 
         /// <summary>
         /// Exit exclusive use of network sender. Free response object.
         /// </summary>
+        /// <remarks>A full fence, as <see cref="Exit"/> is.</remarks>
         void ExitAndReturnResponseObject();
 
         /// <summary>
@@ -125,6 +137,22 @@ namespace Garnet.networking
         /// for notification or was not registered
         /// </returns>
         bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter);
+
+        /// <summary>
+        /// Registers <paramref name="waiter"/> to be notified as <see cref="TryRegisterSendCapacityWaiter"/> does,
+        /// whatever the sends outstanding, for a waiter held back by something other than the throttle limit. The
+        /// registration is published with a full fence, so a waiter that reads why it waits after this call, and
+        /// whoever ends that reason and then calls <see cref="NotifySendCapacityWaiters"/>, cannot both miss the
+        /// other. The waiter takes back a registration it finds it did not need with
+        /// <see cref="WithdrawSendCapacityWaiter"/>.
+        /// </summary>
+        /// <param name="waiter">The waiter to notify</param>
+        void AddSendCapacityWaiter(ISendCapacityWaiter waiter);
+
+        /// <summary>
+        /// Notifies every registered waiter, as the completion of a send that frees capacity does
+        /// </summary>
+        void NotifySendCapacityWaiters();
 
         /// <summary>
         /// Send response (caller owns buffer space)

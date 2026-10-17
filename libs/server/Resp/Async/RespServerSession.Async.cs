@@ -230,10 +230,9 @@ namespace Garnet.server
         /// <para>
         /// Keeping the response object necessarily keeps its lock -- <c>EnterAndGetResponseObject</c>
         /// asserts the session is not already holding a buffer, so the two cannot be separated. A push to
-        /// this session, from <see cref="Publish"/> on a publisher's thread, therefore waits for the
-        /// suspension to end. That is the same exposure a read completed in place already has, since it
-        /// holds the same lock for the same device round trip, and it is the other reason a retaining wait
-        /// must be bounded by the operation.
+        /// this session from another thread cannot be written until the suspension ends, and does not wait
+        /// for it on a thread: the pusher parks, or leaves the message for the session to write out when it
+        /// lets go of the response object (see <see cref="heldPushes"/>).
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -261,7 +260,8 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Gives the per-batch scope back, including the scratch buffers whose contents it kept addressable.
+        /// Gives the per-batch scope back, including the scratch buffers whose contents it kept addressable, and
+        /// serves what was left for the response object while the batch held it.
         /// </summary>
         void ExitBatchScope()
         {
@@ -273,6 +273,7 @@ namespace Garnet.server
 
             scratchBufferBuilder.Reset();
             scratchBufferAllocator.Reset();
+            ServeSenderWaiters();
         }
 
         /// <summary>
@@ -286,8 +287,15 @@ namespace Garnet.server
         /// </remarks>
         void ReleaseRetainedBatchScope()
         {
-            if (asyncCommandRetainsBatchScope)
-                ExitBatchScope();
+            if (!asyncCommandRetainsBatchScope)
+                return;
+
+            DropHeldBackPushes();
+            ExitBatchScope();
+
+            // A publisher parked on the hold delivers to the closed connection, which drops the message
+            Interlocked.MemoryBarrier();
+            networkSender.NotifySendCapacityWaiters();
         }
 
         /// <summary>
