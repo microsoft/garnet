@@ -202,19 +202,21 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A session waiting out a checkpoint holds no thread, so the sessions around it keep being served at
-        /// their usual latency even when the thread pool has far fewer threads than there are sessions.
+        /// A session waiting out a checkpoint holds no thread. The pool is cut to a single free worker, which a save
+        /// that waited in place would hold until the checkpoint is done, leaving neither the sessions around it nor
+        /// the checkpoint's own continuations a thread to run on.
         /// </summary>
         [Test]
         public void ASaveDoesNotStallOtherSessions()
         {
-            const int CappedWorkers = 4;
+            const int PingCount = 50;
+            var stallLimit = TimeSpan.FromSeconds(20);
 
             using var writer = new RawRespSession();
             Populate(writer, 20_000);
 
-            // Without the cap the claim is unfalsifiable: the pool injects a thread for the blocked wait and
-            // the other sessions are served by it, so a blocking SAVE passes too.
+            // With more than one free worker the claim is unfalsifiable: the other sessions are served by the
+            // spare, so a blocking SAVE passes too.
             ThreadPool.GetMinThreads(out var minWorkers, out var minIo);
             ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
 
@@ -222,9 +224,8 @@ namespace Garnet.test
             using var pinger = new RawRespSession();
             try
             {
-                if (!ThreadPool.SetMinThreads(Math.Min(minWorkers, CappedWorkers), minIo) ||
-                    !ThreadPool.SetMaxThreads(CappedWorkers, maxIo))
-                    Assert.Ignore("Could not cap the thread pool, so a held thread cannot be made to matter.");
+                if (!TryCutPoolToOneFreeWorker(minIo, maxIo))
+                    Assert.Ignore("Could not cut the thread pool to one free worker, so a held thread cannot be made to matter.");
 
                 // Warm both sessions so neither measurement includes a first-command cost.
                 ClassicAssert.AreEqual(Pong, saver.Execute("PING"));
@@ -232,23 +233,46 @@ namespace Garnet.test
 
                 saver.Send("SAVE");
 
-                var sw = Stopwatch.StartNew();
-                for (var i = 0; i < 50; i++)
-                    ClassicAssert.AreEqual(Pong, pinger.Execute("PING"));
-                sw.Stop();
+                for (var i = 0; i < PingCount; i++)
+                {
+                    pinger.Send("PING");
+                    ClassicAssert.IsTrue(pinger.WaitForReply(stallLimit),
+                        $"PING {i} was not answered within {stallLimit.TotalSeconds:F0}s while another session was " +
+                        "saving against a pool of one thread, which indicates the save was holding it.");
+                    ClassicAssert.AreEqual(Pong, pinger.ReadReply());
+                }
 
                 ExpectSaveReply(saver.ReadReply());
-
-                ClassicAssert.Less(sw.Elapsed.TotalSeconds, 10.0,
-                    $"50 round trips on an idle session took {sw.Elapsed.TotalSeconds:F1}s while another " +
-                    $"session was saving against a pool of {CappedWorkers} threads, which indicates the save " +
-                    "was holding one of them.");
             }
             finally
             {
                 _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
                 _ = ThreadPool.SetMinThreads(minWorkers, minIo);
             }
+        }
+
+        /// <summary>
+        /// Cuts the pool to the smallest size that still runs work. The test host keeps workers of its own busy
+        /// for the whole run, so that size is not a fixed number, and what it leaves is one worker.
+        /// </summary>
+        static bool TryCutPoolToOneFreeWorker(int minIo, int maxIo)
+        {
+            const int MaxCap = 16;
+
+            if (!ThreadPool.SetMinThreads(1, minIo) || !ThreadPool.SetMaxThreads(1, maxIo))
+                return false;
+
+            for (var cap = 1; cap <= MaxCap; cap++)
+            {
+                if (cap > 1 && (!ThreadPool.SetMaxThreads(cap, maxIo) || !ThreadPool.SetMinThreads(cap, minIo)))
+                    return false;
+
+                var ran = new ManualResetEventSlim();
+                ThreadPool.UnsafeQueueUserWorkItem(static done => done.Set(), ran, preferLocal: false);
+                if (ran.Wait(TimeSpan.FromSeconds(1)))
+                    return true;
+            }
+            return false;
         }
     }
 
