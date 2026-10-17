@@ -1924,6 +1924,6 @@ namespace Garnet.test
         /// Create a new GarnetServer instance with common parameters.
         /// </summary>
         private static GarnetServer CreateGarnetServer(bool tryRecover)
-        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, enableVectorSetPreview: true, enableRangeIndexPreview: true);
+        => TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: tryRecover, enableRangeIndexPreview: true);
     }
 }

@@ -14,11 +14,6 @@ namespace Garnet.server
         private bool NetworkXVCREATE<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count < 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVCREATE));
@@ -213,11 +208,6 @@ namespace Garnet.server
         private bool NetworkXVIMPORT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count is not (2 or 4))
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.XVIMPORT));
@@ -297,11 +287,6 @@ namespace Garnet.server
             //
             // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
             // XPREQ8 is a non-Redis extension, stands for: eXtension PREcalculated Quantization 8-bit - requests no quantization on pre-calculated [0, 255] values
-
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
 
             // key FP32|VALUES vector element
             if (parseState.Count < 4)
@@ -811,11 +796,6 @@ namespace Garnet.server
             // VSIM key (ELE | FP32 | XB8 | VALUES num) (vector | element) [WITHSCORES] [WITHATTRIBS] [COUNT num] [EPSILON delta] [EF search-exploration - factor] [FILTER expression][FILTER-EF max - filtering - effort] [TRUTH][NOTHREAD]
             //
             // XB8 is a non-Redis extension, stands for: eXtension Binary 8-bit values - encodes [0, 255] per dimension
-
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
 
             if (parseState.Count < 3)
             {
@@ -1547,11 +1527,6 @@ namespace Garnet.server
 
             // VEMB key element [RAW]
 
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count < 2 || parseState.Count > 3)
             {
                 return AbortWithWrongNumberOfArguments("VEMB");
@@ -1739,11 +1714,6 @@ namespace Garnet.server
         private bool NetworkVCARD<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count != 1)
             {
                 return AbortWithWrongNumberOfArguments("VCARD");
@@ -1783,11 +1753,6 @@ namespace Garnet.server
         private bool NetworkVDIM<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count != 1)
                 return AbortWithWrongNumberOfArguments("VDIM");
 
@@ -1821,11 +1786,6 @@ namespace Garnet.server
         private bool NetworkVGETATTR<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count != 2)
             {
                 return AbortWithWrongNumberOfArguments("VGETATTR");
@@ -1875,11 +1835,6 @@ namespace Garnet.server
         private bool NetworkVINFO<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count != 1)
             {
                 return AbortWithWrongNumberOfArguments("VINFO");
@@ -1956,11 +1911,6 @@ namespace Garnet.server
         private bool NetworkVISMEMBER<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count != 2)
             {
                 return AbortWithWrongNumberOfArguments("VISMEMBER");
@@ -2015,11 +1965,6 @@ namespace Garnet.server
         {
             const int DefaultResultSetSize = 64;
             const int DefaultIdSize = sizeof(ulong);
-
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
 
             if (parseState.Count is not (2 or 3))
             {
@@ -2120,11 +2065,6 @@ namespace Garnet.server
             const int DefaultResultSetSize = 64;
             const int DefaultIdSize = sizeof(ulong);
 
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count is not (1 or 2))
             {
                 return AbortWithWrongNumberOfArguments("VRANDMEMBER");
@@ -2224,11 +2164,6 @@ namespace Garnet.server
         private bool NetworkVREM<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments("VREM");
 
@@ -2257,11 +2192,6 @@ namespace Garnet.server
         private bool NetworkVSETATTR<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (!storageSession.vectorManager.IsEnabled)
-            {
-                return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
-            }
-
             if (parseState.Count != 3)
             {
                 return AbortWithWrongNumberOfArguments("VSETATTR");
