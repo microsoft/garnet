@@ -103,6 +103,55 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// A transaction holds its key locks until it ends, so a sender that fills while it runs does not park the
+        /// session inside it: the transaction runs to its end, and the session parks before the next command.
+        /// </summary>
+        [Test]
+        public async Task ATransactionRunsToItsEndBeforeTheSessionParksForSendCapacity()
+        {
+            // Two of these replies cannot share the sender's buffer, so the transaction's second GET sends the
+            // first and leaves the sender full with the SET still to run.
+            const int PayloadLength = 700;
+            var payload = new string('x', PayloadLength);
+            var getReply = $"${PayloadLength}\r\n{payload}\r\n";
+
+            var sender = new ControlledSender(bufferSize: 1024);
+            var session = (RespServerSession)server.Provider.GetSession(WireFormat.ASCII, sender);
+            try
+            {
+                var set = RespPublishSuspensionTests.Pinned(RespPublishSuspensionTests.Frame("SET", "big", payload));
+                ClassicAssert.AreEqual(set.Length, await Consume(session, set));
+                ClassicAssert.AreEqual("+OK\r\n", sender.Sent);
+
+                sender.Full = true;
+                var input = RespPublishSuspensionTests.Pinned(
+                    RespPublishSuspensionTests.Frame("MULTI"),
+                    RespPublishSuspensionTests.Frame("GET", "big"),
+                    RespPublishSuspensionTests.Frame("GET", "big"),
+                    RespPublishSuspensionTests.Frame("SET", "k", "v"),
+                    RespPublishSuspensionTests.Frame("EXEC"),
+                    RespPublishSuspensionTests.Frame("PING"));
+                var consume = Consume(session, input);
+
+                ClassicAssert.IsFalse(consume.IsCompleted, "the session ran the PING although the sender was full");
+                ClassicAssert.IsTrue(IsSuspended(session));
+                ClassicAssert.AreEqual(TxnState.None, session.txnManager.state, "the session parked inside its transaction");
+                ClassicAssert.AreEqual(1, sender.Registrations);
+
+                sender.Full = false;
+                sender.SignalCapacity();
+
+                ClassicAssert.AreEqual(input.Length, await consume.AsTask().WaitAsync(Bound));
+                ClassicAssert.AreEqual("+OK\r\n+OK\r\n+QUEUED\r\n+QUEUED\r\n+QUEUED\r\n*3\r\n" + getReply + getReply + "+OK\r\n+PONG\r\n",
+                    sender.Sent);
+            }
+            finally
+            {
+                session.Dispose();
+            }
+        }
+
         static unsafe ValueTask<int> Consume(RespServerSession session, byte[] pinnedInput)
             => session.TryConsumeMessagesAsync((byte*)Unsafe.AsPointer(ref pinnedInput[0]), pinnedInput.Length);
 

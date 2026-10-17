@@ -314,7 +314,7 @@ namespace Garnet.test
                 var subscribed = subscriber.Sent;
                 subscriber.Full = true;
 
-                // The pass that the commands of a script are run in has no receive loop to unwind to, so a
+                // A consume with no receive loop to unwind to, as an embedded transport drives, cannot park, so a
                 // publisher there waits for the room where it stands
                 var publish = Pinned(Frame("PUBLISH", "c", "hello"));
                 var consume = Task.Run(() => ConsumeSync(publisherSession, publish));
@@ -337,9 +337,83 @@ namespace Garnet.test
             }
         }
 
-        void StartServer(bool cluster = false)
+        /// <summary>
+        /// A transaction holds its key locks until it ends, so a publisher inside one neither parks nor waits for a
+        /// subscriber whose connection is full: it sends the message past that connection's limit.
+        /// </summary>
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task APublisherInsideATransactionSendsToAFullSubscriberWithoutWaiting(bool pattern)
         {
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: cluster);
+            StartServer();
+            var subscriber = new ControlledSender(bufferSize: 4096) { WaitingSendsBlock = true };
+            var publisher = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var publisherSession = NewSession(publisher);
+            try
+            {
+                await ConsumeAsync(subscriberSession, pattern ? Frame("PSUBSCRIBE", "c*") : Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+                subscriber.Full = true;
+
+                var transaction = Pinned(Frame("MULTI"), Frame("PUBLISH", "c", "hello"), Frame("EXEC"));
+                var consume = await PublishAsync(publisherSession, transaction);
+
+                ClassicAssert.IsTrue(consume.IsCompleted, "the publisher parked inside its transaction");
+                ClassicAssert.AreEqual(transaction.Length, await consume);
+                ClassicAssert.AreEqual(0, subscriber.WaitingSends, "the publisher waited for room inside the send");
+                ClassicAssert.AreEqual(0, subscriber.Registrations, "the publisher waited for the subscriber");
+                ClassicAssert.AreEqual(subscribed + (pattern ? PatternMessage("c*", "c", "hello") : Message("c", "hello")), subscriber.Sent);
+                ClassicAssert.AreEqual("+OK\r\n+QUEUED\r\n*1\r\n:1\r\n", publisher.Sent);
+                ClassicAssert.AreEqual(0, DeferredCount(publisherSession));
+            }
+            finally
+            {
+                subscriber.ReleaseWaitingSends();
+                subscriberSession.Dispose();
+                publisherSession.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A script runs to completion on the thread that called it, so a publisher inside one neither parks nor
+        /// waits for a subscriber whose connection is full: it sends the message past that connection's limit.
+        /// </summary>
+        [Test]
+        public async Task APublisherInsideAScriptSendsToAFullSubscriberWithoutWaiting()
+        {
+            StartServer(lua: true);
+            var subscriber = new ControlledSender(bufferSize: 4096) { WaitingSendsBlock = true };
+            var publisher = new ControlledSender(bufferSize: 4096);
+            var subscriberSession = NewSession(subscriber);
+            var publisherSession = NewSession(publisher);
+            try
+            {
+                await ConsumeAsync(subscriberSession, Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+                subscriber.Full = true;
+
+                var script = Pinned(Frame("EVAL", "return redis.call('PUBLISH', 'c', 'hello')", "0"));
+                var consume = await PublishAsync(publisherSession, script);
+
+                ClassicAssert.IsTrue(consume.IsCompleted, "the script waited for the subscriber");
+                ClassicAssert.AreEqual(script.Length, await consume);
+                ClassicAssert.AreEqual(0, subscriber.WaitingSends, "the script waited for room inside the send");
+                ClassicAssert.AreEqual(0, subscriber.Registrations, "the script waited for the subscriber");
+                ClassicAssert.AreEqual(subscribed + Message("c", "hello"), subscriber.Sent);
+                ClassicAssert.AreEqual(":1\r\n", publisher.Sent);
+            }
+            finally
+            {
+                subscriber.ReleaseWaitingSends();
+                subscriberSession.Dispose();
+                publisherSession.Dispose();
+            }
+        }
+
+        void StartServer(bool cluster = false, bool lua = false)
+        {
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableCluster: cluster, enableLua: lua);
             server.Start();
         }
 
@@ -369,7 +443,7 @@ namespace Garnet.test
             return ((DeferredDeliveries)DeferredField.GetValue(session))?.Count ?? 0;
         }
 
-        static string Frame(params string[] tokens)
+        internal static string Frame(params string[] tokens)
         {
             var frame = new StringBuilder().Append('*').Append(tokens.Length).Append("\r\n");
             foreach (var token in tokens)
@@ -377,7 +451,7 @@ namespace Garnet.test
             return frame.ToString();
         }
 
-        static byte[] Pinned(params string[] frames)
+        internal static byte[] Pinned(params string[] frames)
         {
             var bytes = Encoding.ASCII.GetBytes(string.Concat(frames));
             var pinned = GC.AllocateArray<byte>(bytes.Length, pinned: true);

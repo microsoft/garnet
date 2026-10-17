@@ -184,10 +184,10 @@ namespace Garnet.test
         /// A suspension releases the session's per-batch resources -- response object, cluster epoch, scratch
         /// buffers -- but deliberately not its transaction. This pins that: while a command parks inside
         /// <c>MULTI</c>/<c>EXEC</c> the keys the transaction locked stay locked, so another session touching
-        /// them waits for the park to finish. The existing blocking list commands do the same, joining the
-        /// running transaction rather than declining to block inside one, so this is the pattern's behaviour
-        /// and not a property of <c>DEBUG BLOCK</c>. A blocking command built on it must therefore bound its
-        /// wait, or refuse to park while <c>txnManager.state == TxnState.Running</c>.
+        /// them waits for the park to finish. This is the pattern's behaviour and not a property of
+        /// <c>DEBUG BLOCK</c>, so a blocking command built on it must bound its wait, or decline to wait while
+        /// <c>RespServerSession.DenyBlocking</c> holds, as the blocking collection commands do (see
+        /// <see cref="BlockingCommandsInsideATransactionAnswerAtOnce"/>).
         /// </summary>
         [Test]
         public void ASuspensionInsideATransactionHoldsItsLocks()
@@ -218,6 +218,54 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual("$5\r\nafter\r\n", read,
                 "The reader observed a value from inside the transaction.");
+        }
+
+        /// <summary>
+        /// Inside <c>MULTI</c>/<c>EXEC</c> a blocking collection command answers at once, as though its timeout
+        /// had already expired, as in Redis. The transaction holds the locks on the keys it would wait on, so the
+        /// push that could end the wait would be held off by the waiter. Every timeout here is 0, to wait forever.
+        /// </summary>
+        [Test]
+        public void BlockingCommandsInsideATransactionAnswerAtOnce()
+        {
+            using var txn = new RawRespSession(useTls);
+            using var other = new RawRespSession(useTls);
+            txn.ReceiveTimeout = TimeSpan.FromSeconds(15);
+            other.ReceiveTimeout = TimeSpan.FromSeconds(15);
+
+            ClassicAssert.AreEqual(":2\r\n", txn.Execute("RPUSH", "l1", "a", "b"));
+            ClassicAssert.AreEqual(":1\r\n", txn.Execute("ZADD", "z", "1", "m"));
+            ClassicAssert.AreEqual(Ok, txn.Execute("SET", "str", "v"));
+
+            ClassicAssert.AreEqual(Ok, txn.Execute("MULTI"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLPOP", "empty", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLPOP", "l1", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLMOVE", "l1", "l2", "LEFT", "RIGHT", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BRPOPLPUSH", "empty", "l2", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BZPOPMIN", "z", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BZPOPMAX", "z", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLMPOP", "0", "1", "l2", "LEFT", "COUNT", "5"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BZMPOP", "0", "1", "z", "MIN"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLPOP", "str", "0"));
+
+            ClassicAssert.AreEqual(
+                "*9\r\n" +
+                NullArray +
+                "*2\r\n$2\r\nl1\r\n$1\r\na\r\n" +
+                "$1\r\nb\r\n" +
+                "$-1\r\n" +
+                "*3\r\n$1\r\nz\r\n$1\r\nm\r\n$1\r\n1\r\n" +
+                "$-1\r\n" +
+                "*2\r\n$2\r\nl2\r\n*1\r\n$1\r\nb\r\n" +
+                "$-1\r\n" +
+                "-WRONGTYPE Operation against a key holding the wrong kind of value.\r\n",
+                txn.Execute("EXEC"));
+
+            // Nothing was left waiting on the keys: a push lands in the list and is served to the next pop, which is
+            // the first to start the broker, after the moves above
+            ClassicAssert.AreEqual(":1\r\n", other.Execute("LPUSH", "empty", "x"));
+            ClassicAssert.AreEqual(":1\r\n", other.Execute("LLEN", "empty"));
+            ClassicAssert.AreEqual("*2\r\n$5\r\nempty\r\n$1\r\nx\r\n", txn.Execute("BLPOP", "empty", "0"));
         }
 
         [Test]

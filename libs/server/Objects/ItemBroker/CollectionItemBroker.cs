@@ -151,6 +151,33 @@ namespace Garnet.server
             RespServerSession session, double timeoutInSeconds, CollectionItemArgs cmdArgs)
             => WaitForResultAsync(new CollectionItemObserver(session, command, cmdArgs), [srcKey], timeoutInSeconds);
 
+        /// <summary>
+        /// Makes the single attempt of a blocking command that may not wait, trying <paramref name="keys"/> in
+        /// order on the calling session's own storage session.
+        /// </summary>
+        /// <remarks>
+        /// For a command inside a transaction or a script (<see cref="RespServerSession.DenyBlocking"/>). It runs
+        /// on the caller's thread, so inside a transaction it works under the locks the transaction already
+        /// holds, which the main loop's session would wait on. No observer is registered, so nothing is left
+        /// behind for a timeout, CLIENT UNBLOCK or the session's disposal to complete.
+        /// </remarks>
+        /// <param name="command">RESP command</param>
+        /// <param name="keys">Keys to try, in order; the source key alone for BLMOVE</param>
+        /// <param name="storageSession">The calling session's storage session</param>
+        /// <param name="cmdArgs">Additional arguments for command</param>
+        /// <returns>The item or a type mismatch from the first key that has one, otherwise an empty result</returns>
+        internal CollectionItemResult TryGetCollectionItemNow(RespCommand command, byte[][] keys,
+            StorageSession storageSession, in CollectionItemArgs cmdArgs = default)
+        {
+            foreach (var key in keys)
+            {
+                if (TryGetResult(key, storageSession, command, cmdArgs, failOnSrcTypeMismatch: true, onMainLoop: false, out _, out var result))
+                    return result;
+            }
+
+            return CollectionItemResult.Empty;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void StartMainLoop()
         {
@@ -289,9 +316,9 @@ namespace Garnet.server
             {
                 keysToObservers ??= new Dictionary<byte[], ConcurrentQueue<CollectionItemObserver>>(ByteArrayComparer.Instance);
 
-                // Held across the first attempt, as in TryAssignItemFromKey: the attempt runs against the
-                // observing session's storage session, and this is the lock a session disposing concurrently
-                // waits on before it tears that storage session down.
+                // Held across the first attempt, as in TryAssignItemFromKey: an attempt that takes an item must
+                // deliver it, so the timeout, CLIENT UNBLOCK and the session's disposal are held off until the
+                // result is set.
                 observer.ObserverStatusLock.WriteLock();
                 try
                 {
@@ -306,7 +333,7 @@ namespace Garnet.server
                             continue;
 
                         // The key has an empty observer queue, try to retrieve next available item
-                        if (!TryGetResult(key, LoopStorageSession(observer.DatabaseId), observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
+                        if (!TryGetResult(key, LoopStorageSession(observer.DatabaseId), observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true, onMainLoop: true,
                                 out _, out var result))
                             continue;
 
@@ -379,7 +406,7 @@ namespace Garnet.server
                             }
 
                             // Try to get next available item from object stored in key
-                            if (!TryGetResult(key, LoopStorageSession(observer.DatabaseId), observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: false,
+                            if (!TryGetResult(key, LoopStorageSession(observer.DatabaseId), observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: false, onMainLoop: true,
                                     out _, out var result))
                             {
                                 // The collection cannot serve the observer at the head of the queue. Stop here rather
@@ -609,7 +636,7 @@ namespace Garnet.server
         }
 
         private bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command,
-            in CollectionItemArgs cmdArgs, bool failOnSrcTypeMismatch, out int currCount, out CollectionItemResult result)
+            in CollectionItemArgs cmdArgs, bool failOnSrcTypeMismatch, bool onMainLoop, out int currCount, out CollectionItemResult result)
         {
             currCount = default;
             result = default;
@@ -716,12 +743,18 @@ namespace Garnet.server
                 if (createTransaction)
                     storageSession.txnManager.Commit(true);
 
-                // Wake observers blocked on the destination key. The event is enqueued directly rather than going
-                // through HandleCollectionUpdate, because callers of this method hold keysToObserversLock and
-                // re-acquiring it here would deadlock. The broker loop resolves the event asynchronously and
-                // tolerates keys that have no observers.
+                // Wake observers blocked on the destination key. The main loop holds keysToObserversLock, so it
+                // enqueues the event directly rather than through HandleCollectionUpdate, which would re-acquire the
+                // lock; the loop resolves the event asynchronously and tolerates keys that have no observers. Any
+                // other caller goes through HandleCollectionUpdate, which enqueues only for a key with observers, as
+                // a push does: the loop may not have started, and the map it resolves the event against with it.
                 if (notifyKey is not null)
-                    brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(notifyKey));
+                {
+                    if (onMainLoop)
+                        brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(notifyKey));
+                    else
+                        HandleCollectionUpdate(notifyKey);
+                }
             }
         }
 

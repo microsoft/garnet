@@ -28,8 +28,8 @@ namespace Garnet.server
         /// and cannot grow without bound. The wait is on the subscriber's connection and ends as soon as its
         /// client reads. If the publisher's session is torn down first, the body is not resumed, and the wait's
         /// registration with the subscriber's connection is taken back by the teardown
-        /// (<see cref="SendCapacityWait"/>). Inside <c>MULTI</c>/<c>EXEC</c> it holds the transaction's key
-        /// locks, as every suspension in a transaction does.
+        /// (<see cref="SendCapacityWait"/>). Inside a transaction or a script it does not wait at all: see
+        /// <see cref="DeliverDeferredWithoutWaiting"/>.
         /// </remarks>
         bool CompleteDeferredPublish(ValueTask forward, int numClients)
         {
@@ -87,6 +87,41 @@ namespace Garnet.server
             var pattern = delivery.Pattern.ReadOnlySpan;
             fixed (byte* patternPtr = pattern)
                 return delivery.Session.TryPatternPublish(PinnedSpanByte.FromPinnedPointer(patternPtr, pattern.Length), key, value);
+        }
+
+        /// <summary>
+        /// Makes the deliveries held back now, past each full connection's limit on outstanding sends, for a
+        /// publisher that may not wait (<see cref="DenyBlocking"/>).
+        /// </summary>
+        /// <remarks>
+        /// Waiting there would hold a transaction's key locks, or a script's thread, for as long as the subscriber
+        /// does not read. A full connection instead buffers one more message per such publish, as Redis buffers
+        /// every publish. They are made in the order they were held back, so each subscriber still receives its
+        /// messages in order.
+        /// </remarks>
+        unsafe void DeliverDeferredWithoutWaiting()
+        {
+            var deferred = deferredDeliveries;
+            var key = parseState.GetArgSliceByRef(0);
+            var value = parseState.GetArgSliceByRef(1);
+
+            for (var i = 0; i < deferred.Count; i++)
+            {
+                var delivery = deferred[i];
+                if (!delivery.IsPattern)
+                {
+                    delivery.Session.PublishWithoutWaiting(key, value);
+                    continue;
+                }
+
+                // Patterns are stored unpinned
+                var pattern = delivery.Pattern.ReadOnlySpan;
+                fixed (byte* patternPtr = pattern)
+                    delivery.Session.PatternPublishWithoutWaiting(PinnedSpanByte.FromPinnedPointer(patternPtr, pattern.Length), key, value);
+            }
+
+            // Lets go of the subscribers' sessions, and leaves the list empty for the next publish
+            deferred.Clear();
         }
     }
 }

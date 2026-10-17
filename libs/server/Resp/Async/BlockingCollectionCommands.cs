@@ -27,6 +27,12 @@ namespace Garnet.server
             if (!parseState.TryGetTimeout(parseState.Count - 1, out var timeout, out var error))
                 return AbortWithErrorMessage(error);
 
+            if (DenyBlocking)
+            {
+                WriteListBlockingPopResult(storeWrapper.itemBroker.TryGetCollectionItemNow(command, keysBytes, storageSession));
+                return true;
+            }
+
             ValueTask body;
             using (BeginAsyncCommand())
                 body = ListBlockingPopBodyAsync(command, keysBytes, timeout);
@@ -40,6 +46,11 @@ namespace Garnet.server
             var result = await storeWrapper.itemBroker
                 .GetCollectionItemAsync(command, keys, this, timeout).ConfigureAwait(false);
 
+            WriteListBlockingPopResult(result);
+        }
+
+        void WriteListBlockingPopResult(CollectionItemResult result)
+        {
             if (TryWriteBlockingFailure(result))
                 return;
 
@@ -100,6 +111,12 @@ namespace Garnet.server
             var dstKey = BlockingKeys.Copy(parseState.GetArgSliceByRef(1).ReadOnlySpan);
             var cmdArgs = CollectionItemArgs.ForMove(dstKey, sourceDirection, destinationDirection);
 
+            if (DenyBlocking)
+            {
+                WriteListBlockingMoveResult(storeWrapper.itemBroker.TryGetCollectionItemNow(RespCommand.BLMOVE, [srcKey], storageSession, cmdArgs));
+                return true;
+            }
+
             ValueTask body;
             using (BeginAsyncCommand())
                 body = ListBlockingMoveBodyAsync(srcKey, cmdArgs, timeout);
@@ -113,6 +130,11 @@ namespace Garnet.server
             var result = await storeWrapper.itemBroker
                 .MoveCollectionItemAsync(RespCommand.BLMOVE, srcKey, this, timeout, cmdArgs).ConfigureAwait(false);
 
+            WriteListBlockingMoveResult(result);
+        }
+
+        void WriteListBlockingMoveResult(CollectionItemResult result)
+        {
             if (TryWriteBlockingFailure(result))
                 return;
 
@@ -141,6 +163,12 @@ namespace Garnet.server
 
             var cmdArgs = CollectionItemArgs.ForListPop(popDirection, popCount);
 
+            if (DenyBlocking)
+            {
+                WriteListBlockingPopMultipleResult(storeWrapper.itemBroker.TryGetCollectionItemNow(RespCommand.BLMPOP, keys, storageSession, cmdArgs));
+                return true;
+            }
+
             ValueTask body;
             using (BeginAsyncCommand())
                 body = ListBlockingPopMultipleBodyAsync(keys, cmdArgs, timeout);
@@ -154,6 +182,11 @@ namespace Garnet.server
             var result = await storeWrapper.itemBroker
                 .GetCollectionItemAsync(RespCommand.BLMPOP, keys, this, timeout, cmdArgs).ConfigureAwait(false);
 
+            WriteListBlockingPopMultipleResult(result);
+        }
+
+        void WriteListBlockingPopMultipleResult(CollectionItemResult result)
+        {
             if (TryWriteBlockingFailure(result))
                 return;
 
@@ -187,6 +220,12 @@ namespace Garnet.server
             for (var i = 0; i < keysBytes.Length; i++)
                 keysBytes[i] = BlockingKeys.Copy(parseState.GetArgSliceByRef(i).ReadOnlySpan);
 
+            if (DenyBlocking)
+            {
+                WriteSortedSetBlockingPopResult(storeWrapper.itemBroker.TryGetCollectionItemNow(command, keysBytes, storageSession));
+                return true;
+            }
+
             ValueTask body;
             using (BeginAsyncCommand())
                 body = SortedSetBlockingPopBodyAsync(command, keysBytes, timeout);
@@ -200,6 +239,11 @@ namespace Garnet.server
             var result = await storeWrapper.itemBroker
                 .GetCollectionItemAsync(command, keys, this, timeout).ConfigureAwait(false);
 
+            WriteSortedSetBlockingPopResult(result);
+        }
+
+        void WriteSortedSetBlockingPopResult(CollectionItemResult result)
+        {
             if (TryWriteBlockingFailure(result))
                 return;
 
@@ -241,6 +285,12 @@ namespace Garnet.server
 
             var cmdArgs = CollectionItemArgs.ForSortedSetPop(lowScoresFirst, popCount);
 
+            if (DenyBlocking)
+            {
+                WriteSortedSetBlockingMPopResult(storeWrapper.itemBroker.TryGetCollectionItemNow(RespCommand.BZMPOP, keys, storageSession, cmdArgs));
+                return true;
+            }
+
             ValueTask body;
             using (BeginAsyncCommand())
                 body = SortedSetBlockingMPopBodyAsync(keys, cmdArgs, timeout);
@@ -254,6 +304,11 @@ namespace Garnet.server
             var result = await storeWrapper.itemBroker
                 .GetCollectionItemAsync(RespCommand.BZMPOP, keys, this, timeout, cmdArgs).ConfigureAwait(false);
 
+            WriteSortedSetBlockingMPopResult(result);
+        }
+
+        void WriteSortedSetBlockingMPopResult(CollectionItemResult result)
+        {
             if (TryWriteBlockingFailure(result))
                 return;
 

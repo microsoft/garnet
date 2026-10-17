@@ -39,12 +39,10 @@ namespace Garnet.server
     /// <para>
     /// What no suspension releases is the transaction. Key locks taken by an enclosing <c>MULTI</c>/
     /// <c>EXEC</c> are held for as long as the body waits, so a command that parks inside a transaction
-    /// stalls every other session contending for those keys. That matches what the existing blocking list
-    /// commands already do -- they join the running transaction rather than opting out of it -- and it is
-    /// why the per-batch scope can be released by an idle suspension but the transaction cannot: the scope
-    /// lasts one batch, whereas the locks are what makes the transaction atomic and cannot be dropped
-    /// mid-transaction. A blocking command whose wait is unbounded should therefore bound it, or decline to
-    /// wait when <c>txnManager.state == TxnState.Running</c>.
+    /// stalls every other session contending for those keys. That is why the per-batch scope can be released
+    /// by an idle suspension but the transaction cannot: the scope lasts one batch, whereas the locks are what
+    /// makes the transaction atomic and cannot be dropped mid-transaction. A command whose wait has no bound
+    /// therefore declines to wait inside a transaction: see <see cref="DenyBlocking"/>.
     /// </para>
     /// <para>
     /// That reasoning is about a wait with no bound on it, and it does not extend to a pending device read.
@@ -97,6 +95,19 @@ namespace Garnet.server
         /// latency to keep the reply on the stack that asked for it.
         /// </remarks>
         internal bool CanSuspend => unparkableConsumeDepth == 0;
+
+        /// <summary>
+        /// Whether a blocking command must answer at once rather than wait: inside <c>MULTI</c>/<c>EXEC</c>
+        /// and inside a script. There, as in Redis, it behaves as though its timeout had already expired.
+        /// </summary>
+        /// <remarks>
+        /// Unlike <see cref="CanSuspend"/>, this is about what the session holds rather than the transport. A
+        /// transaction keeps its key locks until it ends, and those include the keys the command would wait
+        /// on, so the client that could satisfy the wait is held off by the waiter. A script runs to completion
+        /// on the thread that called it, with no receive loop to unwind to. The script session is the one a
+        /// <see cref="LuaRunner"/> was created over, which is what sets <see cref="noScriptBitmap"/>.
+        /// </remarks>
+        internal bool DenyBlocking => txnManager.state == TxnState.Running || noScriptBitmap != null;
 
         /// <summary>
         /// Set while the suspended command keeps the per-batch scope -- response object, scratch buffers,

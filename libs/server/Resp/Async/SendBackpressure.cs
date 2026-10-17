@@ -71,6 +71,11 @@ namespace Garnet.server
                 return false;
             }
 
+            // A running transaction holds its key locks until it ends, so its replies are let past the limit,
+            // bounded by the commands it queued. The flag stays set, so the session parks once it has ended.
+            if (DenyBlocking)
+                return false;
+
             ValueTask body;
             using (BeginAsyncCommand())
                 body = WaitForSendCapacityAsync();

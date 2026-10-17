@@ -46,6 +46,14 @@ namespace Garnet.server
             return true;
         }
 
+        /// <inheritdoc />
+        internal override unsafe void PublishWithoutWaiting(PinnedSpanByte key, PinnedSpanByte value)
+            => PublishCore(key, value, noWait: true);
+
+        /// <inheritdoc />
+        internal override unsafe void PatternPublishWithoutWaiting(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
+            => PatternPublishCore(pattern, key, value, noWait: true);
+
         /// <summary>
         /// Whether a publisher has to hold its message back until this session's connection has room. A session
         /// publishing to itself writes into the batch it is already building, so it never waits.
@@ -205,13 +213,15 @@ namespace Garnet.server
             // Publish()/PatternPublish() without paying this cost on the general command path.
             //
             // A publisher that can park does not wait inside the broadcast for a subscriber whose connection is
-            // full: it delivers to everyone else first, and then parks for the ones it held back.
+            // full: it delivers to everyone else first, and then parks for the ones it held back. One that may not
+            // wait at all, inside a transaction or a script, then sends those past the connection's limit.
             int numClients;
-            var canPark = CanSuspend;
+            var denyBlocking = DenyBlocking;
+            var holdBack = denyBlocking || CanSuspend;
             publishingThreadId = Environment.CurrentManagedThreadId;
             try
             {
-                numClients = canPark
+                numClients = holdBack
                     ? subscribeBroker.PublishNoWait(key, value, ref deferredDeliveries)
                     : subscribeBroker.PublishNow(key, value);
             }
@@ -223,7 +233,10 @@ namespace Garnet.server
             var selfDeliveryFailure = reentrantPublishFailure;
             reentrantPublishFailure = null;
 
-            var holdingDeliveries = canPark && deferredDeliveries is { Count: > 0 };
+            if (denyBlocking && deferredDeliveries is { Count: > 0 })
+                DeliverDeferredWithoutWaiting();
+
+            var holdingDeliveries = holdBack && deferredDeliveries is { Count: > 0 };
             if (storeWrapper.serverOptions.EnableCluster)
             {
                 // Started here, where the spans are still addressable: the forward copies them itself if it
