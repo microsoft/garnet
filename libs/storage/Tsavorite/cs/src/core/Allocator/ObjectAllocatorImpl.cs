@@ -64,6 +64,9 @@ namespace Tsavorite.core
 
         private readonly IDevice objectLogDevice;
 
+        /// <summary>Completion of a pending read's object log reads, cached so issuing them does not allocate a delegate.</summary>
+        private readonly Action<AsyncIOContext, CircularDiskReadBuffer> onObjectLogRead;
+
         /// <summary>The free pages of the log</summary>
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
@@ -77,6 +80,7 @@ namespace Tsavorite.core
             : base(settings, storeFunctions, wrapperCreator, settings.logger, transientObjectIdMap: new ObjectIdMap())
         {
             objectLogDevice = settings.LogSettings.ObjectLogDevice;
+            onObjectLogRead = OnObjectLogRead;
 
             maxInlineKeySize = settings.LogSettings.MaxInlineKeySize;
             maxInlineValueSize = settings.LogSettings.MaxInlineValueSize;
@@ -1204,42 +1208,75 @@ namespace Tsavorite.core
             => new($"{operation} failed reading {readLength} bytes at device offset {sourceAddress}: error {errorCode}; transferred {numBytesRead} bytes", ioException);
 
         /// <inheritdoc />
-        /// <remarks>This override of the base function reads Overflow keys or values, or Object values.</remarks>
-        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+        /// <remarks>This override of the base function reads Overflow keys or values, or Object values. It is called twice for such a record:
+        ///     once to verify the record and issue the reads of its objects, and again, after they have all completed, to deserialize them. The reads
+        ///     are not waited for, as the caller may be a thread that other work is queued behind.</remarks>
+        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead, out bool readIssued)
         {
+            var readBuffers = ctx.objectLogReadBuffers;
+            if (readBuffers is not null)
+            {
+                ctx.objectLogReadBuffers = null;
+                prevLengthToRead = IStreamBuffer.DefaultInitialIORecordSize;
+                readIssued = false;
+                return ReadRecordObjects(ctx, readBuffers, out prevAddressToRead);
+            }
+
             // If this fails it is either too-short main-log record or a key mismatch. Let the top-level retry handle it. This will always
             // use the transientObjectIdMap (unless we are copying to tail, in which case we will remap to the allocator page's objectIdMap).
-            if (!base.VerifyRecordFromDiskCallback(ref ctx, out prevAddressToRead, out prevLengthToRead))
+            if (!base.VerifyRecordFromDiskCallback(ref ctx, out prevAddressToRead, out prevLengthToRead, out readIssued))
                 return false;
 
             // If the record is inline, we have no Overflow or Objects to retrieve.
-            ref var diskLogRecord = ref ctx.diskLogRecord;
-            if (diskLogRecord.DataHeader.RecordIsInline)
+            if (ctx.diskLogRecord.DataHeader.RecordIsInline)
                 return true;
 
             var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogTail.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
-            // 'using' is OK here as we complete the object reads before returning.
-            using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-
-            var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
-            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
+            readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
+            if (!readBuffers.BeginReadAll(startPosition, totalBytesToRead, onObjectLogRead, ctx))
             {
-                // Success. The deserialized heap object's Dispose() will be invoked when the DiskLogRecord
-                // is disposed (ObjectIdMap.Free → IHeapObject.Dispose), unless the object is transferred out
-                // (e.g. via CopyToTail) in which case the transient ObjectIdMap slot is cleared without disposing.
-                // Default the output arguments for reading a previous record.
-                prevAddressToRead = 0;
-                return true;
+                // The reads' completion now owns ctx.
+                readIssued = true;
+                return false;
+            }
+            return ReadRecordObjects(ctx, readBuffers, out prevAddressToRead);
+        }
+
+        /// <summary>Hands a pending read back, with its objects' data, once the object log reads <see cref="VerifyRecordFromDiskCallback"/> issued have all completed.</summary>
+        private void OnObjectLogRead(AsyncIOContext ctx, CircularDiskReadBuffer readBuffers)
+        {
+            ctx.objectLogReadBuffers = readBuffers;
+            OnPendingReadIOComplete(ctx);
+        }
+
+        /// <summary>
+        /// Deserializes the Overflow keys or values, or Object values, of <paramref name="ctx"/>'s record from <paramref name="readBuffers"/>, which hold all their data,
+        /// and disposes <paramref name="readBuffers"/>.
+        /// </summary>
+        /// <returns>True on success; false if the record's Overflow key did not match the requested key, with <paramref name="prevAddressToRead"/> set to the record's
+        ///     previous address</returns>
+        private bool ReadRecordObjects(AsyncIOContext ctx, CircularDiskReadBuffer readBuffers, out long prevAddressToRead)
+        {
+            using (readBuffers)
+            {
+                var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
+                if (logReader.ReadRecordObjects(ref ctx.diskLogRecord.logRecord, ctx.requestKey, objectLogTail.SegmentSizeBits))
+                {
+                    // Success. The deserialized heap object's Dispose() will be invoked when the DiskLogRecord
+                    // is disposed (ObjectIdMap.Free → IHeapObject.Dispose), unless the object is transferred out
+                    // (e.g. via CopyToTail) in which case the transient ObjectIdMap slot is cleared without disposing.
+                    // Default the output arguments for reading a previous record.
+                    prevAddressToRead = 0;
+                    return true;
+                }
+
+                logReader.OnEndReadRecords();
             }
 
-            // Ensure we have finished all object reads
-            logReader.OnEndReadRecords();
-
-            // If readBuffer.Read returned false it was due to an Overflow key mismatch or an Invalid record, so get the previous record.
-            prevAddressToRead = (*(RecordInfo*)ctx.record.GetValidPointer()).PreviousAddress;
+            // ReadRecordObjects returned false due to an Overflow key mismatch, so get the previous record.
+            prevAddressToRead = ctx.diskLogRecord.Info.PreviousAddress;
             return false;
         }
 

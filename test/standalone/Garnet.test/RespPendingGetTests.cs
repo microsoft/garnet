@@ -2074,6 +2074,74 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// An object that has left memory takes two device reads to bring back: its record from the main log, then
+        /// its serialized form from the object log. A session waiting on the second holds no thread either. The pool
+        /// is cut to a single free worker, which a wait in place on the object log would hold, leaving another
+        /// session's PING no thread to run on.
+        /// </summary>
+        [Test]
+        public void AnObjectLogReadDoesNotStallOtherSessions()
+        {
+            // Linux only, for the reason given on the single-read test above.
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
+            // Longer than the test waits, so a read is held until it is released.
+            const int HeldMs = 600_000;
+            var stallLimit = TimeSpan.FromSeconds(5);
+
+            PopulateObjects();
+
+            using var reader = new RawClient();
+            using var pinger = new RawClient();
+
+            // Warm both sessions so neither measurement includes a first-command cost.
+            ClassicAssert.AreEqual("+PONG\r\n", reader.Execute("PING"));
+            ClassicAssert.AreEqual("+PONG\r\n", pinger.Execute("PING"));
+
+            using (ThreadPoolCap.ApplyFree(1))
+            {
+                try
+                {
+                    deviceFactoryCreator.ReadDelayMs = HeldMs;
+                    reader.Send("HGET", HashKey(7), "f0");
+
+                    ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > 0, stallLimit),
+                        "The HGET never read its record from the main log.");
+                    ClassicAssert.AreEqual(0, deviceFactoryCreator.ObjectLogReadCount,
+                        "The HGET read the object log before its record.");
+
+                    // Release the main log read only: the object log read it leads to is held.
+                    deviceFactoryCreator.CompleteHeldReads();
+                    ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ObjectLogReadCount > 0, stallLimit),
+                        "The HGET never read its object from the object log, so the test proves nothing.");
+
+                    pinger.ReceiveTimeout = stallLimit;
+                    pinger.Send("PING");
+                    try
+                    {
+                        ClassicAssert.AreEqual("+PONG\r\n", pinger.ReadReply());
+                    }
+                    catch (IOException e)
+                    {
+                        Assert.Fail($"PING was not answered within {stallLimit.TotalSeconds:F0}s while another session " +
+                            "was reading the object log against a pool of one thread, which indicates the read was " +
+                            $"holding it. {e.Message}");
+                    }
+
+                    ClassicAssert.IsFalse(reader.HasReply, "The HGET answered before its object log read completed.");
+                }
+                finally
+                {
+                    deviceFactoryCreator.ReadDelayMs = 0;
+                    deviceFactoryCreator.CompleteHeldReads();
+                }
+
+                ClassicAssert.AreEqual("$3\r\n7-0\r\n", reader.ReadReply());
+            }
+        }
+
+        /// <summary>
         /// Minimal synchronous RESP client. Unlike a multiplexer it never reorders or coalesces, and it needs
         /// no thread-pool thread of its own, so it can be used while the pool is deliberately exhausted.
         /// </summary>

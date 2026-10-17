@@ -48,9 +48,9 @@ namespace Tsavorite.core
         public SectorAlignedMemory record;
 
         /// <summary>
-        /// Object buffer
+        /// The object log data of the record in <see cref="diskLogRecord"/>, once it has all been read and is waiting to be deserialized
         /// </summary>
-        public SectorAlignedMemory objBuffer;
+        internal CircularDiskReadBuffer objectLogReadBuffers;
 
         /// <summary>
         /// Per-session ready queue this IO completes into. The completion thread enqueues this
@@ -76,7 +76,7 @@ namespace Tsavorite.core
             logicalAddress = 0;
             minAddress = 0;
             record = null;
-            objBuffer = null;
+            objectLogReadBuffers = null;
             callbackQueue = null;
             completionEvent = null;
         }

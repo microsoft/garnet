@@ -128,9 +128,11 @@ namespace Garnet.test
             };
 
         /// <summary>Takes a record for a read that is about to be issued, and counts the read.</summary>
-        PendingRead Rent(DeviceIOCompletionCallback callback, object context)
+        PendingRead Rent(DeviceIOCompletionCallback callback, object context, bool objectLog)
         {
             _ = Interlocked.Increment(ref reads);
+            if (objectLog)
+                _ = Interlocked.Increment(ref objectLogReads);
             if (!inCompletion && !OffloadExecutor.OnExecutorThread)
                 _ = Interlocked.Increment(ref readsOffExecutor);
 
@@ -176,6 +178,7 @@ namespace Garnet.test
         static bool inCompletion;
 
         int reads;
+        int objectLogReads;
         int readsOffExecutor;
 
         /// <summary>
@@ -190,6 +193,12 @@ namespace Garnet.test
         /// on this to show that the records it read really did come from the device rather than from memory.
         /// </summary>
         internal int ReadCount => Volatile.Read(ref reads);
+
+        /// <summary>
+        /// Number of the reads counted by <see cref="ReadCount"/> that went to the store's object log rather than its main
+        /// log.
+        /// </summary>
+        internal int ObjectLogReadCount => Volatile.Read(ref objectLogReads);
 
         /// <summary>
         /// Number of store hybrid log reads issued since the last <see cref="ResetReadCount"/> by a command running on a
@@ -210,11 +219,13 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Clears <see cref="ReadCount"/> and <see cref="ReadsOffExecutor"/>, discounting reads from populating the store.
+        /// Clears <see cref="ReadCount"/>, <see cref="ObjectLogReadCount"/> and <see cref="ReadsOffExecutor"/>, discounting
+        /// reads from populating the store.
         /// </summary>
         internal void ResetReadCount()
         {
             Volatile.Write(ref reads, 0);
+            Volatile.Write(ref objectLogReads, 0);
             Volatile.Write(ref readsOffExecutor, 0);
         }
 
@@ -333,6 +344,12 @@ namespace Garnet.test
             => fileInfo.fileName is not null && fileInfo.fileName.StartsWith("hlog", StringComparison.Ordinal);
 
         /// <summary>
+        /// True for the store's object log, the part of its hybrid log that holds the serialized form of its objects.
+        /// </summary>
+        static bool IsStoreObjectLog(FileDescriptor fileInfo)
+            => fileInfo.fileName is not null && fileInfo.fileName.StartsWith("hlog_objs", StringComparison.Ordinal);
+
+        /// <summary>
         /// Delegating device factory that wraps the store hybrid log device and passes everything else through.
         /// </summary>
         private sealed class DelayedReadNamedDeviceFactory(INamedDeviceFactory underlying, DelayedReadDeviceFactoryCreator owner) : INamedDeviceFactory
@@ -341,7 +358,7 @@ namespace Garnet.test
             public IDevice Get(FileDescriptor fileInfo)
             {
                 var device = underlying.Get(fileInfo);
-                return IsStoreHybridLog(fileInfo) ? new DelayedReadDevice(device, owner) : device;
+                return IsStoreHybridLog(fileInfo) ? new DelayedReadDevice(device, owner, IsStoreObjectLog(fileInfo)) : device;
             }
 
             /// <inheritdoc/>
@@ -355,7 +372,7 @@ namespace Garnet.test
         /// Delegating device that withholds read completion callbacks for its owner's current delay, and write completion
         /// callbacks while its owner holds writes.
         /// </summary>
-        private sealed class DelayedReadDevice(IDevice underlying, DelayedReadDeviceFactoryCreator owner) : IDevice
+        private sealed class DelayedReadDevice(IDevice underlying, DelayedReadDeviceFactoryCreator owner, bool objectLog) : IDevice
         {
             /// <inheritdoc/>
             public uint SectorSize => underlying.SectorSize;
@@ -401,12 +418,12 @@ namespace Garnet.test
             /// <inheritdoc/>
             public void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength,
                 DeviceIOCompletionCallback callback, object context)
-                => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, trampoline, owner.Rent(callback, context));
+                => underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, trampoline, owner.Rent(callback, context, objectLog));
 
             /// <inheritdoc/>
             public void ReadAsync(ulong alignedSourceAddress, IntPtr alignedDestinationAddress, uint alignedReadLength,
                 DeviceIOCompletionCallback callback, object context)
-                => underlying.ReadAsync(alignedSourceAddress, alignedDestinationAddress, alignedReadLength, trampoline, owner.Rent(callback, context));
+                => underlying.ReadAsync(alignedSourceAddress, alignedDestinationAddress, alignedReadLength, trampoline, owner.Rent(callback, context, objectLog));
 
             /// <inheritdoc/>
             public void TruncateUntilAddressAsync(long toAddress, AsyncCallback callback, IAsyncResult result)
