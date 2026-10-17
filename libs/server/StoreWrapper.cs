@@ -165,6 +165,13 @@ namespace Garnet.server
         internal readonly IClusterProvider clusterProvider;
         internal readonly SlowLogContainer slowLogContainer;
         internal readonly ILogger sessionLogger;
+
+        /// <summary>
+        /// Rendezvous used by <c>DEBUG BLOCKON</c> and <c>DEBUG SIGNAL</c> to park and release sessions
+        /// across connections.
+        /// </summary>
+        internal readonly SessionSignalRegistry sessionSignalRegistry = new();
+
         internal long safeAofAddress = -1;
 
         private readonly bool enforceConsistentRead;
@@ -245,7 +252,7 @@ namespace Garnet.server
             this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
             if (!serverOptions.DisableObjects)
-                this.itemBroker = new CollectionItemBroker();
+                this.itemBroker = new CollectionItemBroker(this);
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)

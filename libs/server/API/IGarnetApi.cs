@@ -11,6 +11,11 @@ namespace Garnet.server
     /// <summary>
     /// Interface for Garnet API
     /// </summary>
+    /// <remarks>
+    /// The per-command methods here and on <see cref="IGarnetReadApi"/> wait on the device when the record
+    /// they touch is not in memory. See the remarks on <see cref="IGarnetReadApi"/> for when that is a
+    /// correct thing to do and what to call instead when it is not.
+    /// </remarks>
     public interface IGarnetApi : IGarnetReadApi, IGarnetAdvancedApi
     {
         #region GETEX
@@ -1389,6 +1394,27 @@ namespace Garnet.server
     /// <summary>
     /// Interface for Garnet API
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// These methods complete their operation before returning, which for a record that is not in memory
+    /// means waiting on the device. That is correct on a caller that owns the thread it runs on -- a
+    /// background task, AOF replay, a maintenance path -- and it is why the per-command form exists.
+    /// </para>
+    /// <para>
+    /// It is not correct on a RESP command handler, which runs on the network completion thread: waiting
+    /// there holds a thread-pool thread for a device round trip, so a server can have fewer in-flight
+    /// commands than it has connections. A handler reads through the matching
+    /// <see cref="IGarnetAdvancedApi"/> method instead -- <c>Read_UnifiedStore_WithPending</c>,
+    /// <c>GET_WithPending</c>, and so on -- which reports that the operation went to the device rather than
+    /// waiting on it, and suspends the session so the network thread unwinds. See
+    /// <c>RespServerSession.CompleteUnifiedOp</c> for the shape of that.
+    /// </para>
+    /// <para>
+    /// Custom procedures and custom transaction procedures are invoked from a handler and so run on the
+    /// network completion thread, but read through this interface. Converting them to suspend is tracked
+    /// as follow-up work.
+    /// </para>
+    /// </remarks>
     public interface IGarnetReadApi
     {
         #region GET

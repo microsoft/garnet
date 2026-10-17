@@ -86,8 +86,11 @@ namespace Garnet.server
             {
                 while (asyncCompleted < asyncStarted)
                 {
-                    // First complete all pending ops
+                    // First complete all pending ops. This runs on a background task of its own rather than
+                    // on the network thread, so waiting here costs nothing the session needs.
+#pragma warning disable VSTHRD103 // Call async methods when in an async method
                     storageApi.GET_CompletePending(out var completedOutputs, true);
+#pragma warning restore VSTHRD103
 
                     try
                     {
@@ -98,6 +101,7 @@ namespace Garnet.server
                             // sent at that point. For sync responses that span multiple ProcessMessage calls (e.g., MGET), we need the
                             // main thread to hold the sender lock until the response is done.
                             networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                            writingOutOfBand = true;
 
                             // Send async replies with completed outputs
                             while (completedOutputs.Next())
@@ -126,12 +130,13 @@ namespace Garnet.server
                                 }
                             }
                             if (dcurr > networkSender.GetResponseObjectHead())
-                                Send(networkSender.GetResponseObjectHead());
+                                SendNow(networkSender.GetResponseObjectHead());
                         }
                     }
                     finally
                     {
                         completedOutputs.Dispose();
+                        writingOutOfBand = false;
                         networkSender.ExitAndReturnResponseObject();
                     }
                 }

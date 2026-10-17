@@ -244,8 +244,7 @@ namespace Garnet.cluster
                 GarnetServerNode gsn;
                 if (getOrAddTask.IsCompletedSuccessfully)
                 {
-                    // Cannot remove .GetResult here, but it's gated by IsCompletedSuccessfully so safe
-                    (_, gsn) = AsyncUtils.BlockingWait(getOrAddTask);
+                    (_, gsn) = getOrAddTask.GetAwaiter().GetResultGuarded();
                 }
                 else
                 {
@@ -262,7 +261,7 @@ namespace Garnet.cluster
                 {
                     // Initialization is best-effort for publish forwarding. A live connection may still be
                     // available while gossip initialization is held back by reconnect backoff.
-                    _ = AsyncUtils.BlockingWait(initTask);
+                    _ = initTask.GetAwaiter().GetResultGuarded();
                     gsn.TryClusterPublish(cmd, channel, message);
                 }
                 else

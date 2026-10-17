@@ -22,7 +22,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.Found)
@@ -52,7 +52,7 @@ namespace Garnet.server
                 context.EndUnsafe();
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
                 context.BeginUnsafe();
                 // If either the main-log head or the read-cache head advanced while we waited on
                 // pending I/O, any log/read-cache pointers captured by previous reads in this loop
@@ -133,7 +133,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.Found)
@@ -161,7 +161,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.Found)
@@ -220,7 +220,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.Found)
@@ -266,7 +266,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref o, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.IsWrongType)
@@ -299,7 +299,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
@@ -326,7 +326,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.IsWrongType)
@@ -463,7 +463,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.IsWrongType)

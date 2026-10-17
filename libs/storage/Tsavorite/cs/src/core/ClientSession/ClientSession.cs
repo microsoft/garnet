@@ -27,6 +27,18 @@ namespace Tsavorite.core
 
         internal CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs;
 
+        /// <summary>Pending-completion driver pools, one per session functions wrapper type this session uses.</summary>
+        /// <remarks>
+        /// Append-only, and published with a release so a reader that sees a pool also sees its
+        /// <see cref="PendingCompletionDriverPool.Next"/>. Walking is therefore lock-free; only creation
+        /// takes <see cref="pendingDriverPoolsGate"/>. Garnet parks the session that owns these, so it
+        /// reaches them from one thread at a time, but completing pending requests is public API and so the
+        /// list is kept correct for a caller that drains a session from a thread of its own.
+        /// </remarks>
+        PendingCompletionDriverPool pendingDriverPools;
+
+        readonly object pendingDriverPoolsGate = new();
+
         readonly UnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> uContext;
         readonly TransactionalUnsafeContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
         readonly TransactionalContext<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
@@ -146,6 +158,12 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
+            // A driver may still own this session's drain loop. It runs the whole Tsavorite drain before the
+            // continuation that hands the session back to its caller, so the caller's own teardown ordering
+            // cannot exclude it, and draining here at the same time would put two threads in
+            // InternalCompletePendingRequests on one execution context.
+            ctx.WaitForDriversToFinish();
+
             completedOutputs?.Dispose();
 
             // By the time Dispose is called, we should have no outstanding locks, so can use the BasicContext's sessionFunctions.
@@ -311,16 +329,14 @@ namespace Tsavorite.core
             => CompletePendingAsync(sessionFunctions, getOutputs: false, waitForCommit, token);
 
         /// <inheritdoc/>
-        internal async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
+        /// <remarks>
+        /// Drives the pending-completion loop from a pooled <c>IValueTaskSource</c> rather than an async
+        /// state machine, so a session that reads from disk allocates nothing for the suspension itself. The
+        /// returned <see cref="ValueTask{TResult}"/> must be consumed exactly once, which is what the
+        /// <see cref="ValueTask{TResult}"/> contract already requires of every caller.
+        /// </remarks>
+        internal ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 bool waitForCommit = false, CancellationToken token = default)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        {
-            InitializeCompletedOutputs();
-            await CompletePendingAsync(sessionFunctions, getOutputs: true, waitForCommit, token).ConfigureAwait(false);
-            return completedOutputs;
-        }
-
-        private async ValueTask CompletePendingAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             token.ThrowIfCancellationRequested();
@@ -328,12 +344,78 @@ namespace Tsavorite.core
             if (store.epoch.ThisInstanceProtected())
                 throw new NotSupportedException("Async operations not supported over protected epoch");
 
-            // Complete all pending operations on session
-            await store.CompletePendingAsync(sessionFunctions, token, getOutputs ? completedOutputs : null).ConfigureAwait(false);
+            InitializeCompletedOutputs();
 
-            // Wait for commit if necessary
             if (waitForCommit)
-                await WaitForCommitAsync(sessionFunctions, token).ConfigureAwait(false);
+                return CompletePendingWithOutputsThenWaitForCommitAsync(sessionFunctions, token);
+
+            return PendingDrivers<TSessionFunctionsWrapper>().RunAsync(sessionFunctions, completedOutputs, token);
+        }
+
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+        private async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsThenWaitForCommitAsync<TSessionFunctionsWrapper>(
+                TSessionFunctionsWrapper sessionFunctions, CancellationToken token)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            await PendingDrivers<TSessionFunctionsWrapper>().RunWithoutResultAsync(sessionFunctions, completedOutputs, token).ConfigureAwait(false);
+            await WaitForCommitAsync(sessionFunctions, token).ConfigureAwait(false);
+            return completedOutputs;
+        }
+
+        /// <remarks>
+        /// Drives the pending-completion loop from a pooled <c>IValueTaskSource</c>, so the per-miss park
+        /// costs no state machine here. The returned <see cref="ValueTask"/> is consumed exactly once by each
+        /// of its callers, as the <see cref="ValueTask"/> contract requires.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private ValueTask CompletePendingAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, bool waitForCommit = false, CancellationToken token = default)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            token.ThrowIfCancellationRequested();
+
+            if (store.epoch.ThisInstanceProtected())
+                throw new NotSupportedException("Async operations not supported over protected epoch");
+
+            if (!waitForCommit)
+                return PendingDrivers<TSessionFunctionsWrapper>().RunWithoutResultAsync(sessionFunctions, getOutputs ? completedOutputs : null, token);
+
+            return CompletePendingThenWaitForCommitAsync(sessionFunctions, getOutputs, token);
+        }
+
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+        private async ValueTask CompletePendingThenWaitForCommitAsync<TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, bool getOutputs, CancellationToken token)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            await PendingDrivers<TSessionFunctionsWrapper>().RunWithoutResultAsync(sessionFunctions, getOutputs ? completedOutputs : null, token).ConfigureAwait(false);
+            await WaitForCommitAsync(sessionFunctions, token).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// The session's driver pool for one session functions wrapper type, created on first use. A session
+        /// reaches at most one pool per context it exposes, so the chain is walked rather than hashed.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> PendingDrivers<TSessionFunctionsWrapper>()
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            for (var candidate = Volatile.Read(ref pendingDriverPools); candidate is not null; candidate = candidate.Next)
+            {
+                if (candidate is PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> pool)
+                    return pool;
+            }
+
+            lock (pendingDriverPoolsGate)
+            {
+                for (var candidate = pendingDriverPools; candidate is not null; candidate = candidate.Next)
+                {
+                    if (candidate is PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper> raced)
+                        return raced;
+                }
+
+                var created = new PendingCompletionDriverPool<TInput, TOutput, TContext, TStoreFunctions, TAllocator, TSessionFunctionsWrapper>(store) { Next = pendingDriverPools };
+                Volatile.Write(ref pendingDriverPools, created);
+                return created;
+            }
         }
 
         /// <summary>

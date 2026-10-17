@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading.Tasks;
 using Garnet.networking;
 using Tsavorite.core;
 
@@ -33,6 +34,20 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public abstract unsafe int TryConsumeMessages(byte* req_buf, int bytesRead);
+
+        /// <summary>
+        /// Consume the message incoming on the wire, allowing the session to suspend.
+        /// </summary>
+        /// <remarks>
+        /// Declared here rather than left to <see cref="IMessageConsumer"/>'s default implementation so that
+        /// the interface slot resolves to this hierarchy. A default interface member is bound at the type that
+        /// declares the interface, so an override added further down would otherwise never be dispatched to.
+        /// </remarks>
+        /// <param name="req_buf">Pointer to the first unconsumed byte.</param>
+        /// <param name="bytesRead">Number of unconsumed bytes.</param>
+        /// <returns>Number of bytes consumed.</returns>
+        public virtual unsafe ValueTask<int> TryConsumeMessagesAsync(byte* req_buf, int bytesRead)
+            => new(TryConsumeMessages(req_buf, bytesRead));
 
         /// <summary>
         /// Publish an update to a key to all the subscribers of the key

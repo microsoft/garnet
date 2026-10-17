@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -23,7 +24,11 @@ namespace Garnet.server
             }
 
             pending = false;
-            if (status.Found)
+            if (status.IsWrongType)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
+            else if (status.Found)
             {
                 incr_session_found();
                 return GarnetStatus.OK;
@@ -35,7 +40,31 @@ namespace Garnet.server
             }
         }
 
-        public bool GET_CompletePending<TStringContext>((GarnetStatus, StringOutput)[] outputArr, bool wait, ref TStringContext context)
+        /// <summary>
+        /// Completes this session's pending string reads without waiting on the device, yielding the thread
+        /// until the I/O lands.
+        /// </summary>
+        /// <param name="context">String context to complete against.</param>
+        /// <typeparam name="TStringContext">Type of the string context.</typeparam>
+        /// <returns>The completed outputs, which the caller must dispose.</returns>
+        public ValueTask<CompletedOutputIterator<StringInput, StringOutput, long>> GET_CompletePendingAsync<TStringContext>(ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            => context.CompletePendingWithOutputsAsync();
+
+        /// <summary>
+        /// Records the outcome of a read that completed from pending I/O in the session metrics, which the
+        /// issuing call could not do because it did not yet have a status.
+        /// </summary>
+        /// <param name="found">Whether the record was found.</param>
+        internal void IncrementPendingReadResult(bool found)
+        {
+            if (found)
+                incr_session_found();
+            else
+                incr_session_notfound();
+        }
+
+        public bool GET_CompletePending<TStringContext>((GarnetStatus Status, StringOutput Output)[] outputArr, bool wait, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             Debug.Assert(outputArr != null);
@@ -44,7 +73,24 @@ namespace Garnet.server
             var ret = context.CompletePendingWithOutputs(out var completedOutputs, wait);
             latencyMetrics?.Stop(LatencyMetricsType.PENDING_LAT);
 
-            // Update array with completed outputs
+            ScatterCompletedGets(completedOutputs, outputArr);
+            return ret;
+        }
+
+        /// <summary>
+        /// Places completed reads into their submission slots and records them in the session metrics.
+        /// </summary>
+        /// <remarks>
+        /// Completions arrive in device order, not submission order, so each output is routed by the context
+        /// the caller stamped on it at submission. Disposes the iterator.
+        /// </remarks>
+        /// <param name="completedOutputs">Outputs of the completion, whose contexts index <paramref name="outputArr"/>.</param>
+        /// <param name="outputArr">Per-submission slots to fill.</param>
+        internal void ScatterCompletedGets(CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs,
+            (GarnetStatus Status, StringOutput Output)[] outputArr)
+        {
+            Debug.Assert(outputArr != null);
+
             while (completedOutputs.Next())
             {
                 outputArr[(int)completedOutputs.Current.Context] = (completedOutputs.Current.Status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND, completedOutputs.Current.Output);
@@ -55,8 +101,6 @@ namespace Garnet.server
                     sessionMetrics?.incr_total_notfound();
             }
             completedOutputs.Dispose();
-
-            return ret;
         }
 
         public bool GET_CompletePending<TStringContext>(out CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs, bool wait, ref TStringContext context)

@@ -212,9 +212,6 @@ namespace Garnet.server
             }
         }
 
-        ValueTask<bool> CommitAofAsync(int dbId = -1)
-        => storeWrapper.CommitAOFAsync(dbId);
-
         private bool NetworkMonitor()
         {
             if (parseState.Count != 0)
@@ -618,36 +615,6 @@ namespace Garnet.server
             return true;
         }
 
-        /// <summary>
-        /// COMMITAOF [DBID]
-        /// </summary>
-        /// <returns></returns>
-        private bool NetworkCOMMITAOF()
-        {
-            if (parseState.Count > 1)
-            {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.COMMITAOF));
-            }
-
-            // By default - commit AOF for all active databases, unless database ID specified
-            var dbId = -1;
-
-            // Check if ID specified
-            if (parseState.Count == 1)
-            {
-                if (!TryParseDatabaseId(0, out dbId))
-                    return true;
-            }
-
-            // Have to block as we're on network thread
-            _ = AsyncUtils.BlockingWait(CommitAofAsync(dbId));
-
-            while (!RespWriteUtils.TryWriteSimpleString("AOF file committed"u8, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
-        }
-
         private bool NetworkHCOLLECT<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
@@ -721,8 +688,13 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_CLUSTER_DISABLED);
             }
 
-            clusterSession.ProcessClusterCommands(command, storageSession.vectorManager, ref parseState, ref dcurr, ref dend);
-            return true;
+            if (clusterSession.ProcessClusterCommands(command, storageSession.vectorManager, ref parseState, ref dcurr, ref dend, out var pending))
+                return true;
+
+            ValueTask body;
+            using (BeginAsyncCommand())
+                body = ClusterCommandBodyAsync(pending);
+            return CompleteAsyncCommand(body);
         }
 
         private bool NetworkDebug()
@@ -767,6 +739,26 @@ namespace Garnet.server
 
                 WriteDirect(CmdStrings.RESP_OK);
                 return true;
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCK))
+            {
+                return NetworkDebugBlock();
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKIO))
+            {
+                return NetworkDebugBlockIo();
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.BLOCKON))
+            {
+                return NetworkDebugBlockOn();
+            }
+
+            if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.SIGNAL))
+            {
+                return NetworkDebugSignal();
             }
 
             if (command.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FLUSHANDEVICT))
@@ -831,6 +823,18 @@ namespace Garnet.server
                     "\tunit tests to simulate Redis errors.",
                     "LOG <message>",
                     "\tWrite <message> to the server log.",
+                    "BLOCK <seconds> [key]",
+                    "\tSuspend this connection for <seconds>, then reply +OK, or the value of <key> if one",
+                    "\tis given. The connection is released back to the network while it waits, so the",
+                    "\tnumber of connections that can wait at once does not depend on the thread pool.",
+                    "BLOCKIO <seconds> [key]",
+                    "\tAs BLOCK, but waits the way a storage operation that went to disk does, keeping this",
+                    "\tconnection's cluster epoch for the whole wait so <key> cannot be migrated away before",
+                    "\tit is read.",
+                    "BLOCKON <name>",
+                    "\tSuspend this connection until another connection runs DEBUG SIGNAL <name>.",
+                    "SIGNAL <name>",
+                    "\tRelease every connection suspended on <name>, and reply with how many were released.",
                     "FLUSHANDEVICT",
                     "\tFlush the main store's in-memory log to disk and evict it (shifts HeadAddress to",
                     "\tTailAddress) so subsequent reads are served from disk.",

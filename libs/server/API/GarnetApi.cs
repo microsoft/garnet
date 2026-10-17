@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -47,11 +48,15 @@ namespace Garnet.server
             => storageSession.GET_WithPending(key.ReadOnlySpan, ref input, ref output, ctx, out pending, ref stringContext);
 
         /// <inheritdoc />
-        public bool GET_CompletePending((GarnetStatus, StringOutput)[] outputArr, bool wait = false)
+        public bool GET_CompletePending((GarnetStatus Status, StringOutput Output)[] outputArr, bool wait = false)
             => storageSession.GET_CompletePending(outputArr, wait, ref stringContext);
 
         public bool GET_CompletePending(out CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs, bool wait)
             => storageSession.GET_CompletePending(out completedOutputs, wait, ref stringContext);
+
+        /// <inheritdoc />
+        public ValueTask<CompletedOutputIterator<StringInput, StringOutput, long>> GET_CompletePendingAsync()
+            => storageSession.GET_CompletePendingAsync(ref stringContext);
 
         /// <inheritdoc />
         public unsafe GarnetStatus GETForMemoryResult(PinnedSpanByte key, out MemoryResult<byte> value)
@@ -255,6 +260,34 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
             => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus Read_UnifiedStore_WithPending(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out bool pending)
+            => storageSession.Read_UnifiedStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus RMW_UnifiedStore_WithPending(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out bool pending)
+            => storageSession.RMW_UnifiedStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref unifiedContext);
+
+        /// <inheritdoc />
+        public bool Unified_CompletePending(out CompletedOutputIterator<UnifiedInput, UnifiedOutput, long> completedOutputs, bool wait = false)
+            => storageSession.Unified_CompletePending(out completedOutputs, wait, ref unifiedContext);
+
+        /// <inheritdoc />
+        public ValueTask<CompletedOutputIterator<UnifiedInput, UnifiedOutput, long>> Unified_CompletePendingAsync()
+            => storageSession.Unified_CompletePendingAsync(ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus Read_ObjectStore_WithPending(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, out bool pending)
+            => storageSession.Read_ObjectStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref objectContext);
+
+        /// <inheritdoc />
+        public bool Object_CompletePending(out CompletedOutputIterator<ObjectInput, ObjectOutput, long> completedOutputs, bool wait = false)
+            => storageSession.Object_CompletePending(out completedOutputs, wait, ref objectContext);
+
+        /// <inheritdoc />
+        public ValueTask<CompletedOutputIterator<ObjectInput, ObjectOutput, long>> Object_CompletePendingAsync()
+            => storageSession.Object_CompletePendingAsync(ref objectContext);
 
         /// <inheritdoc />
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)

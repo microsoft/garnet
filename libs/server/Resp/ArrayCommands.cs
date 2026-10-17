@@ -30,9 +30,11 @@ namespace Garnet.server
             // ReadWithPrefetch epoch is held).
             MGetReadArgBatch_SG batch = new(this);
             storageApi.ReadWithPrefetch(ref batch);
-            batch.CompletePending(ref storageApi);
 
-            return true;
+            if (!batch.IsPending)
+                return true;
+
+            return FinishPendingMGet(batch, ref storageApi);
         }
 
         /// <summary>
@@ -356,19 +358,9 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = GetUnifiedOutput();
 
-            var status = storageApi.TYPE(keySlice, ref input, ref output);
+            var status = storageApi.Read_UnifiedStore_WithPending(keySlice, ref input, ref output, out var pending);
 
-            if (status == GarnetStatus.OK)
-            {
-                ProcessOutput(output.SpanByteAndMemory);
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteSimpleString(CmdStrings.none, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return true;
+            return CompleteUnifiedOp(status, ref output, pending, UnifiedMissReply.NoneType, ref storageApi);
         }
 
         /// <summary>
