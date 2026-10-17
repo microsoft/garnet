@@ -318,6 +318,28 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SocketCompletionOptionsReachTheServerOptions()
+        {
+            var ok = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            var serverOptions = options.GetServerOptions();
+            ClassicAssert.IsFalse(serverOptions.NetworkInlineCompletions);
+            ClassicAssert.AreEqual(0, serverOptions.NetworkEventThreads);
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-inline-completions", "--network-event-threads", "8"],
+                out options, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(ok);
+            serverOptions = options.GetServerOptions();
+            ClassicAssert.IsTrue(serverOptions.NetworkInlineCompletions);
+            ClassicAssert.AreEqual(8, serverOptions.NetworkEventThreads);
+
+            ok = ServerSettingsManager.TryParseCommandLineArguments(["--network-event-threads", "-1"],
+                out _, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(ok);
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.NetworkEventThreads)));
+        }
+
+        [Test]
         public void NetworkBufferBudgetOptionParsing()
         {
             // Defaults: a 1 GB process-wide budget with a 16 KB receive floor and a higher 64 KB send floor.

@@ -409,6 +409,26 @@ namespace Garnet.server
         public int NetworkConnectionLimit = DefaultNetworkConnectionLimit;
 
         /// <summary>
+        /// Whether client connections process their input on the socket event thread that receives it (Linux and
+        /// macOS), rather than on the thread pool. This removes a thread hop from every request, and holds the event
+        /// thread, with every other connection it serves, for as long as the input takes to process. A command that
+        /// waits on another client, a timer, the AOF or a cluster peer parks its session and releases the thread; a
+        /// read-modify-write that finds its record on disk still waits for the device on it. Applies to accepted
+        /// connections, not to those the server opens to its peers. Pair with <see cref="NetworkEventThreads"/>.
+        /// Ignored on Windows.
+        /// </summary>
+        public bool NetworkInlineCompletions = false;
+
+        /// <summary>
+        /// Number of socket event threads in the process (Linux and macOS), overriding the
+        /// <c>DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT</c> environment variable. 0 uses that variable if it is set, and
+        /// otherwise the processor count when <see cref="NetworkInlineCompletions"/> is set and the .NET default (one
+        /// per 30 processors) when it is not. The runtime creates the threads on the first asynchronous socket
+        /// operation in the process, so this applies only to a server started before any. Ignored on Windows.
+        /// </summary>
+        public int NetworkEventThreads = 0;
+
+        /// <summary>
         /// Instance of interface to create named device factories
         /// </summary>
         public INamedDeviceFactoryCreator DeviceFactoryCreator = null;

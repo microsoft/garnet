@@ -26,6 +26,7 @@ namespace Garnet.server
         readonly int networkSendThrottleMax;
         readonly TimeSpan networkSendTimeout;
         readonly TimeSpan tlsHandshakeTimeout;
+        readonly bool inlineCompletions;
         readonly NetworkBufferSettings networkBufferSettings;
 
         /// <summary>
@@ -85,6 +86,7 @@ namespace Garnet.server
         /// <param name="networkBufferSettings">Send/receive buffer sizing. Defaults to the built-in sizes when null.</param>
         /// <param name="networkBufferPoolSize">Ceiling on idle bytes retained by the shared buffer pool. Zero uses the pool default.</param>
         /// <param name="networkBufferBudget">Process-wide budget for live connection buffers, shared across listeners. Null disables adaptation.</param>
+        /// <param name="inlineCompletions">Whether accepted connections run their socket completions on the socket event thread, where supported.</param>
         /// <param name="logger"></param>
         /// <param name="networkSendTimeout">Longest a response send waits for the client to accept earlier responses before the connection is closed. Zero or negative waits indefinitely.</param>
         /// <param name="tlsHandshakeTimeout">Longest an accepted connection may take to complete its TLS handshake before it is closed. Zero or negative waits indefinitely.</param>
@@ -99,6 +101,7 @@ namespace Garnet.server
             NetworkBufferSettings networkBufferSettings = null,
             long networkBufferPoolSize = 0,
             NetworkBufferBudget networkBufferBudget = null,
+            bool inlineCompletions = false,
             ILogger logger = null,
             TimeSpan networkSendTimeout = default,
             TimeSpan tlsHandshakeTimeout = default)
@@ -113,6 +116,7 @@ namespace Garnet.server
             this.networkSendThrottleMax = networkSendThrottleMax;
             this.networkSendTimeout = networkSendTimeout;
             this.tlsHandshakeTimeout = tlsHandshakeTimeout;
+            this.inlineCompletions = inlineCompletions && SocketCompletions.InlineCompletionsSupported;
             if (networkBufferSettings == null)
             {
                 var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
@@ -358,6 +362,10 @@ namespace Garnet.server
                         // from the kernel's perspective but already dead.
                         if (e.AcceptSocket.LocalEndPoint is not UnixDomainSocketEndPoint)
                             e.AcceptSocket.NoDelay = true;
+
+                        // Before the handler issues the first receive, which is when the socket joins an event thread
+                        if (inlineCompletions)
+                            SocketCompletions.RunInline(e.AcceptSocket);
 
                         remoteEndpointName = e.AcceptSocket.RemoteEndPoint?.ToString();
                         logger?.LogDebug("Accepted TCP connection from {remoteEndpoint}", remoteEndpointName);

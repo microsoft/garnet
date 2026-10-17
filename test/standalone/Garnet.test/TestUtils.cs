@@ -529,6 +529,7 @@ namespace Garnet.test
             int? networkSendThrottleMax = null,
             TimeSpan? networkSendTimeout = null,
             TimeSpan? tlsHandshakeTimeout = null,
+            bool networkInlineCompletions = false,
             ILoggerFactory loggerFactory = null
         )
         {
@@ -577,6 +578,7 @@ namespace Garnet.test
                 NetworkBufferSize = networkBufferSize,
                 NetworkBufferMemoryBudget = networkBufferMemoryBudget,
                 NetworkConnectionLimit = networkConnectionLimit,
+                NetworkInlineCompletions = networkInlineCompletions,
                 NetworkReceiveBufferMinSize = networkReceiveBufferMinSize,
                 NetworkSendBufferMinSize = networkSendBufferMinSize,
                 SessionScratchBufferMaxRetainedSize = sessionScratchBufferMaxRetainedSize,
