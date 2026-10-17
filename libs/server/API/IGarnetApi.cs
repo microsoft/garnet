@@ -13,6 +13,16 @@ namespace Garnet.server
     /// </summary>
     public interface IGarnetApi : IGarnetReadApi, IGarnetAdvancedApi
     {
+        /// <summary>
+        /// Serialize a supported value as a Redis DUMP bulk reply.
+        /// </summary>
+        GarnetStatus DUMP(PinnedSpanByte key, ref UnifiedOutput output);
+
+        /// <summary>
+        /// Restore a validated value and absolute expiration if the destination is absent.
+        /// </summary>
+        GarnetStatus RESTORE(PinnedSpanByte key, ReadOnlySpan<byte> value, IGarnetObject obj, long expiration);
+
         #region GETEX
 
         /// <summary>

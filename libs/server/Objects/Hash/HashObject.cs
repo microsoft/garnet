@@ -149,6 +149,45 @@ namespace Garnet.server
                 expirationTimeSpanLookup = expirationTimes.GetAlternateLookup<ReadOnlySpan<byte>>();
         }
 
+        internal bool WriteRdb(RdbWriter writer, long now)
+        {
+            var count = hash.Count;
+            if (expirationTimes is { Count: > 0 })
+            {
+                foreach (var item in hash)
+                {
+                    if (expirationTimes.TryGetValue(item.Key, out var expiration))
+                    {
+                        if (expiration >= now)
+                            throw new RdbException(RdbSerializer.ItemExpirationError);
+                        count--;
+                    }
+                }
+            }
+            if (count == 0)
+                return false;
+
+            writer.WriteByte(4);
+            RdbSerializer.WriteCount(writer, count);
+            foreach (var item in hash)
+            {
+                if (expirationTimes is not null && expirationTimes.TryGetValue(item.Key, out var expiration) &&
+                    expiration < now)
+                    continue;
+                writer.WriteString(item.Key);
+                writer.WriteString(item.Value);
+            }
+            return true;
+        }
+
+        internal bool TryAddRdb(byte[] field, byte[] value)
+        {
+            if (!hash.TryAdd(field, value))
+                return false;
+            UpdateSize(field, value, add: true);
+            return true;
+        }
+
         /// <inheritdoc />
         public override byte Type => (byte)GarnetObjectType.Hash;
 

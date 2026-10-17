@@ -15,6 +15,20 @@ namespace Garnet.server
         where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
     {
+        /// <inheritdoc />
+        public GarnetStatus DUMP(PinnedSpanByte key, ref UnifiedOutput output)
+        {
+            var input = new UnifiedInput(RespCommand.DUMP);
+            var status = storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            if (status == GarnetStatus.OK)
+                RdbSerializer.FinishReply(ref output.SpanByteAndMemory);
+            return status;
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus RESTORE(PinnedSpanByte key, ReadOnlySpan<byte> value, IGarnetObject obj, long expiration)
+            => storageSession.RESTORE(key, value, obj, expiration);
+
         #region MEMORY
 
         /// <inheritdoc />

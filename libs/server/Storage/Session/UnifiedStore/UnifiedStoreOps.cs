@@ -11,6 +11,63 @@ namespace Garnet.server
 
     sealed partial class StorageSession : IDisposable
     {
+        internal GarnetStatus RESTORE(PinnedSpanByte key, ReadOnlySpan<byte> value, IGarnetObject obj, long expiration)
+        {
+            using var transaction = txnManager.PromoteToTransaction(TransactionStoreTypes.Unified, key, LockType.Exclusive);
+            if (IsConsistentReadSession)
+                return RestoreValue(key, value, obj, expiration, ref unifiedStoreTransactionalConsistentReadContext);
+            return RestoreValue(key, value, obj, expiration, ref unifiedTransactionalContext);
+        }
+
+        unsafe GarnetStatus RestoreValue<TUnifiedContext>(PinnedSpanByte key, ReadOnlySpan<byte> value, IGarnetObject obj,
+            long expiration,
+            ref TUnifiedContext context)
+            where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long,
+                UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            if (EXISTS(key, ref context) == GarnetStatus.OK)
+                return GarnetStatus.OK;
+
+            var input = new UnifiedInput(RespCommand.RESTORE);
+            var output = new UnifiedOutput();
+            try
+            {
+                var status = obj is null
+                    ? context.Upsert((FixedSpanByteKey)key, ref input, value, ref output)
+                    : context.Upsert((FixedSpanByteKey)key, ref input, obj, ref output);
+                Debug.Assert(!status.IsPending);
+                if (status.IsWrongType || status.IsPending || status.IsCanceled)
+                    throw new GarnetException("Unable to publish restored value");
+                if (expiration != 0)
+                {
+                    output.Dispose();
+                    byte* expireOutput = stackalloc byte[32];
+                    output = UnifiedOutput.FromPinnedPointer(expireOutput, 32);
+                    var expirationWithOption = new ExpirationWithOption(expiration, ExpireOption.None);
+                    var expireInput = new UnifiedInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
+                    try
+                    {
+                        status = context.RMW((FixedSpanByteKey)key, ref expireInput, ref output);
+                        if (status.IsPending)
+                            CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);
+                        if (!status.Found ||
+                            !output.SpanByteAndMemory.ReadOnlySpan.SequenceEqual(CmdStrings.RESP_RETURN_VAL_1))
+                            throw new GarnetException("Unable to set restored value expiration");
+                    }
+                    catch
+                    {
+                        DELETE(key, ref context);
+                        throw;
+                    }
+                }
+                return GarnetStatus.NOTFOUND;
+            }
+            finally
+            {
+                output.Dispose();
+            }
+        }
+
         /// <summary>
         /// GET a value in the unified store context (value is serialized to the <see cref="UnifiedOutput"/>'s <see cref="SpanByteAndMemory"/>).
         /// </summary>
