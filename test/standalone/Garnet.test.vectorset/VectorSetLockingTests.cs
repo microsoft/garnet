@@ -292,6 +292,136 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// While a checkpoint waits for a transaction, the sessions the transaction has locked keys through stay pinned to
+        /// its version. That is only safe for locked keys, whose hash chains no other session can add a next-version record
+        /// to. Vector Set commands read element data on another session, through keys the transaction has not locked, so a
+        /// pinned element session meets a next-version record at the head of an element's hash chain that it can never get
+        /// past while the checkpoint waits for the transaction. That session must not be pinned.
+        /// </summary>
+        [Test]
+        public async Task ReadOnlyCommandInTransactionReadsElementsDuringCheckpointAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const ExceptionInjectionType Pause = ExceptionInjectionType.Transaction_Pause_After_Lock_Acquisition;
+            const string Key = nameof(ReadOnlyCommandInTransactionReadsElementsDuringCheckpointAsync);
+            const int Members = 4;
+
+            // A small hash index, so that a key sharing an element record's hash chain is quick to find
+            const string IndexSize = "1k";
+            const long IndexBuckets = 1024 / 64;
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableVectorSetPreview: true, indexSize: IndexSize);
+            server.Start();
+
+            var store = server.Provider.StoreWrapper.store;
+            var driver = server.Provider.StoreWrapper.DefaultDatabase.StateMachineDriver;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisOther = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var dbOther = redisOther.GetDatabase(0);
+
+            AddMembers(db, Key, count: Members);
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.WaitForQuiescence();
+
+            var (member, collidingKey) = FindKeyInMemberIdChain(store, Key, Members, IndexBuckets);
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // The transaction parks in EXEC with its key locked and its version verified, before running VEMB.
+                var transaction = db.CreateTransaction();
+                var queued = transaction.ExecuteAsync("VEMB", Key, $"member{member}");
+                var exec = transaction.ExecuteAsync();
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(WaitTimeout);
+                var transactionVersion = driver.SystemState.Version;
+
+                // The checkpoint moves the store to the next version, and waits in IN_PROGRESS for the transaction.
+                ClassicAssert.AreEqual("Background saving started", (string)await dbOther.ExecuteAsync("BGSAVE").WaitAsync(WaitTimeout));
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => driver.SystemState.Phase == Phase.IN_PROGRESS, WaitTimeout), "The checkpoint never reached IN_PROGRESS");
+
+                // A record in the next version now heads the hash chain of the element record VEMB reads first.
+                ClassicAssert.IsTrue(await dbOther.StringSetAsync(collidingKey, "value").WaitAsync(WaitTimeout));
+                ClassicAssert.AreEqual(Phase.IN_PROGRESS, driver.SystemState.Phase, "The checkpoint did not wait for the transaction");
+
+                bool ranDuringCheckpoint;
+                ExceptionInjectionHelper.SuspendParking();
+                try
+                {
+                    ranDuringCheckpoint = await CompletesWithinAsync(exec, NotBlockedTimeout);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+
+                ClassicAssert.IsTrue(ranDuringCheckpoint, "EXEC did not finish while a checkpoint waited for it");
+
+                if (exec.IsFaulted)
+                {
+                    // The server dropped the connection without ending the transaction, which the checkpoint would wait for
+                    // forever. End it on the dropped session's behalf, so that the checkpoint completes and the server stops.
+                    driver.EndTransaction(transactionVersion);
+                    _ = SpinWait.SpinUntil(() => driver.SystemState.Phase == Phase.REST, WaitTimeout);
+
+                    Assert.Fail("EXEC failed while a checkpoint waited for it, so VEMB read element data on a session pinned to the " +
+                        $"transaction's version: {exec.Exception?.InnerException?.Message}");
+                }
+
+                ClassicAssert.IsTrue(await exec, "EXEC was aborted");
+                CollectionAssert.AreEqual(new[] { member + 1.0, 2.0, 3.0 }, ((RedisResult[])await queued).Select(static r => Math.Round((double)r, 3)).ToArray());
+
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => driver.SystemState.Phase == Phase.REST, WaitTimeout), "The checkpoint never completed");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+            }
+        }
+
+        /// <summary>
+        /// Picks a member whose internal id record, which VEMB reads first, is in another hash bucket than the Vector Set's
+        /// index record, which a transaction on the Vector Set locks, and finds a key that shares that record's hash chain.
+        /// </summary>
+        private static (int Member, string CollidingKey) FindKeyInMemberIdChain<TStoreFunctions, TAllocator>(
+            TsavoriteKV<TStoreFunctions, TAllocator> store, string key, int members, long indexBuckets)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
+        {
+            var keyBytes = Encoding.ASCII.GetBytes(key);
+
+            ulong context = 0;
+            using (var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress, DiskScanBufferingMode.NoBuffering))
+            {
+                while (iter.GetNext())
+                {
+                    if (!iter.Info.Tombstone && iter.RecordType == VectorManager.RecordType && iter.Key.SequenceEqual(keyBytes))
+                        VectorManager.ReadIndex(iter.ValueSpan, out context, out _, out _, out _, out _, out _, out _, out _, out _);
+                }
+            }
+
+            ClassicAssert.AreNotEqual(0UL, context, "The Vector Set's index record was not found");
+
+            var indexRecordBucket = SpanByteComparer.StaticGetHashCode64(keyBytes) & (indexBuckets - 1);
+
+            Span<byte> namespaceBytes = stackalloc byte[sizeof(uint)];
+            VectorManager.StoreContextInNamespace(context | DiskANNService.InternalIdMap, ref namespaceBytes);
+
+            for (var member = 0; member < members; member++)
+            {
+                var memberIdHash = GarnetKeyComparer.StaticGetHashCode64(new VectorElementKey(namespaceBytes, Encoding.ASCII.GetBytes($"member{member}")));
+                if ((memberIdHash & (indexBuckets - 1)) != indexRecordBucket)
+                    return (member, TestUtils.FindKeyInSameHashChain(memberIdHash, indexBuckets, prefix: "collides"));
+            }
+
+            Assert.Fail("Every member's internal id record is in the index record's hash bucket");
+            return default;
+        }
+
         private static void AddMembers(IDatabase db, string key, int count)
         {
             for (var i = 0; i < count; i++)

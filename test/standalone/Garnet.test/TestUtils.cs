@@ -434,23 +434,33 @@ namespace Garnet.test
         /// <param name="key">The key to share a chain with.</param>
         /// <param name="indexBuckets">The number of hash index buckets, a power of two (the index size divided by 64).</param>
         public static string FindKeyInSameHashChain(string key, long indexBuckets)
+            => FindKeyInSameHashChain(SpanByteComparer.StaticGetHashCode64(Encoding.ASCII.GetBytes(key)), indexBuckets, prefix: key);
+
+        /// <summary>
+        /// Finds a key, starting with <paramref name="prefix"/>, that falls in the same hash index bucket and has the same
+        /// tag as keys whose hash is <paramref name="keyHash"/>, such as a namespaced key, so the records of the two share a
+        /// chain in the hash index.
+        /// </summary>
+        /// <param name="keyHash">The hash of the key to share a chain with.</param>
+        /// <param name="indexBuckets">The number of hash index buckets, a power of two (the index size divided by 64).</param>
+        /// <param name="prefix">The start of the key to return.</param>
+        public static string FindKeyInSameHashChain(long keyHash, long indexBuckets, string prefix)
         {
             Debug.Assert(indexBuckets > 0 && (indexBuckets & (indexBuckets - 1)) == 0, "The hash index has a power-of-two number of buckets");
 
-            var hash = SpanByteComparer.StaticGetHashCode64(Encoding.ASCII.GetBytes(key));
-            var bucket = hash & (indexBuckets - 1);
-            var tag = HashBucketEntry.GetTag(hash);
+            var bucket = keyHash & (indexBuckets - 1);
+            var tag = HashBucketEntry.GetTag(keyHash);
 
             // Random suffixes from a fixed seed: the key hash is a multiply-accumulate, so sequential suffixes barely
             // change the high bits that form the tag.
             var random = new Random(0);
-            var candidate = new byte[key.Length + 9];
-            _ = Encoding.ASCII.GetBytes(key.AsSpan(), candidate);
-            candidate[key.Length] = (byte)'-';
+            var candidate = new byte[prefix.Length + 9];
+            _ = Encoding.ASCII.GetBytes(prefix.AsSpan(), candidate);
+            candidate[prefix.Length] = (byte)'-';
 
             while (true)
             {
-                for (var i = key.Length + 1; i < candidate.Length; i++)
+                for (var i = prefix.Length + 1; i < candidate.Length; i++)
                     candidate[i] = (byte)('a' + random.Next(26));
 
                 var candidateHash = SpanByteComparer.StaticGetHashCode64(candidate);

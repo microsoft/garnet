@@ -80,7 +80,9 @@ namespace Garnet.server
 
         /// <summary>
         /// Transactional context for the session Vector Set operations use for element data. Vector Set commands run under
-        /// <see cref="TransactionStoreTypes.Main"/>, so this session is enrolled with the main store's.
+        /// <see cref="TransactionStoreTypes.Main"/>, so this session is enrolled with the main store's, which lets it run
+        /// while an index grow waits for the transaction. It is not given the transaction's version (see
+        /// <see cref="LocksAcquired"/>).
         /// </summary>
         readonly VectorTransactionalContext vectorTransactionalContext;
 
@@ -504,11 +506,11 @@ namespace Garnet.server
 
         void LocksAcquired(long txnVersion)
         {
+            // The Vector Set element session is left out: a session given the transaction's version stays in that version
+            // while a checkpoint waits for the transaction, and can then only read keys the transaction has locked. That
+            // session reads element keys, which the transaction does not lock.
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-            {
                 stringTransactionalContext.LocksAcquired(txnVersion);
-                vectorTransactionalContext.LocksAcquired(txnVersion);
-            }
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.LocksAcquired(txnVersion);
             unifiedTransactionalContext.LocksAcquired(txnVersion);

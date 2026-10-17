@@ -1347,8 +1347,10 @@ namespace Garnet.server
                 txnKeyEntries.LockAllKeys();
 
                 txnVersion = respServerSession.storageSession.stateMachineDriver.VerifyTransactionVersion(txnVersion);
+
+                // The Vector Set element session is not given the transaction's version, as it reads keys the transaction
+                // does not lock (see TransactionManager.LocksAcquired).
                 respServerSession.storageSession.stringTransactionalContext.LocksAcquired(txnVersion);
-                respServerSession.storageSession.vectorTransactionalContext.LocksAcquired(txnVersion);
                 if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
                     respServerSession.storageSession.objectTransactionalContext.LocksAcquired(txnVersion);
                 if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
