@@ -308,7 +308,15 @@ namespace Garnet.server
                     return;
                 }
 
-                result += incr;
+                // Branchless signed overflow detection: overflow iff both operands have the same sign AND the
+                // result has the opposite sign. On overflow, leave the stored value untouched and return an error.
+                var newResult = unchecked(result + incr);
+                if (((result ^ newResult) & (incr ^ newResult)) < 0)
+                {
+                    writer.WriteError(CmdStrings.RESP_ERR_INCR_DECR_OVERFLOW);
+                    return;
+                }
+                result = newResult;
 
                 var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
                 var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);

@@ -2100,6 +2100,27 @@ namespace Garnet.test
             expectedResponse = $":{2L + int.MaxValue}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
+
+        [Test]
+        public void HashIncrementByOverflow()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myhash";
+
+            // Positive overflow: long.MaxValue + 1
+            db.HashSet(key, "maxField", long.MaxValue.ToString());
+            var ex = ClassicAssert.Throws<RedisServerException>(() => db.HashIncrement(key, "maxField", 1));
+            ClassicAssert.AreEqual("ERR increment or decrement would overflow", ex.Message);
+            ClassicAssert.AreEqual(long.MaxValue.ToString(), (string)db.HashGet(key, "maxField"));
+
+            // Negative overflow: long.MinValue - 1
+            db.HashSet(key, "minField", long.MinValue.ToString());
+            ex = ClassicAssert.Throws<RedisServerException>(() => db.HashIncrement(key, "minField", -1));
+            ClassicAssert.AreEqual("ERR increment or decrement would overflow", ex.Message);
+            ClassicAssert.AreEqual(long.MinValue.ToString(), (string)db.HashGet(key, "minField"));
+        }
         #endregion
 
         private static string FormatWrongNumOfArgsError(string commandName) => $"-{string.Format(CmdStrings.GenericErrWrongNumArgs, commandName)}\r\n";
