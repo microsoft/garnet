@@ -73,9 +73,14 @@ namespace Garnet.server
 
         /// <summary>
         /// Set while a command body is suspended, read by the parse loop to stop consuming the batch.
-        /// Written and read only on the thread that holds the resource scope.
+        /// Written only on the thread that holds the resource scope.
         /// </summary>
         bool asyncSuspended;
+
+        /// <summary>
+        /// Whether a command of this session is suspended, for a thread other than the one holding the resource scope.
+        /// </summary>
+        internal bool HasSuspendedCommand => Volatile.Read(ref asyncSuspended);
 
         /// <summary>
         /// Depth of consume passes with no receive loop to unwind to: those of the embedded and in-process

@@ -669,6 +669,9 @@ namespace Garnet.test
 
         const int ParkedSessionCount = 8;
 
+        static int SuspendedSessionCount(GarnetServerBase listener)
+            => listener.ActiveConsumers().OfType<RespServerSession>().Count(session => session.HasSuspendedCommand);
+
         static bool ReportsTeardown(CapturingLogger.Entry entry)
             => entry.Message.Contains(Garnet.common.SessionTornDownException.LogMessage, StringComparison.Ordinal)
                 || entry.Message.Contains(Garnet.common.SessionTornDownException.ResumeLogMessage, StringComparison.Ordinal);
@@ -739,7 +742,13 @@ namespace Garnet.test
                     Thread.Sleep(1);
                 ClassicAssert.AreEqual(ParkedSessionCount, registry.WaiterCount(Name), "The sessions did not all park");
 
+                // A session joins the waiters before its command suspends, and only the resume of a command that has
+                // suspended can be admitted by the teardown
                 var listener = (GarnetServerBase)server.Provider.StoreWrapper.Servers[0];
+                clock.Restart();
+                while (SuspendedSessionCount(listener) < ParkedSessionCount && clock.Elapsed < TimeSpan.FromSeconds(30))
+                    Thread.Sleep(1);
+                ClassicAssert.AreEqual(ParkedSessionCount, SuspendedSessionCount(listener), "The sessions' commands did not all suspend");
 
                 if (holdThePassThatParked)
                 {
