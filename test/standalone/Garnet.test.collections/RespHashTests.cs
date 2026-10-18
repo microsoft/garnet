@@ -1394,6 +1394,40 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HashExpireOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            var faulted = false;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            redis.ConnectionFailed += delegate { faulted = true; };
+
+            var db = redis.GetDatabase(0);
+            db.HashSet("myhash", [new HashEntry("field1", "value1")]);
+
+            // milliseconds too far in the future
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("HPEXPIRE", "myhash", "300000000000000", "FIELDS", "1", "field1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'hpexpire' command", exc0.Message);
+
+            // seconds too far in the future
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("HEXPIRE", "myhash", "300000000000", "FIELDS", "1", "field1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'hexpire' command", exc1.Message);
+
+            // unix time (seconds) too far in the future
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("HEXPIREAT", "myhash", long.MaxValue.ToString(), "FIELDS", "1", "field1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'hexpireat' command", exc2.Message);
+
+            // unix time (ms) too far in the future
+            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("HPEXPIREAT", "myhash", long.MaxValue.ToString(), "FIELDS", "1", "field1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'hpexpireat' command", exc3.Message);
+
+            // Field TTL unchanged and field undeleted
+            ClassicAssert.AreEqual("value1", (string)db.HashGet("myhash", "field1"));
+
+            // Connection never faulted during operation - previously these all closed the connection with no reply
+            ClassicAssert.IsFalse(faulted);
+        }
+
+        [Test]
         public async Task CanDoHashCollect()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));

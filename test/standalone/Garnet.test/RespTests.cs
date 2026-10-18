@@ -3669,6 +3669,45 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => db.Execute(command, key, expireTimeUnix, optionA, optionA));
         }
 
+        [Test]
+        public void KeyExpireOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            const string Key = nameof(KeyExpireOutOfRangeIsRejectedWithoutKillingSession);
+
+            var faulted = false;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                redis.ConnectionFailed += delegate { faulted = true; };
+
+                var db = redis.GetDatabase();
+
+                // Matches the exact repro from the reported issue: a large PEXPIRE on a key that does not exist
+                ClassicAssert.IsFalse(db.KeyExists(Key));
+
+                // milliseconds too far in the future
+                var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("PEXPIRE", Key, "300000000000000"));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'pexpire' command", exc0.Message);
+
+                // seconds too far in the future
+                var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EXPIRE", Key, "300000000000"));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'expire' command", exc1.Message);
+
+                // unix time (seconds) too far in the future
+                var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EXPIREAT", Key, long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'expireat' command", exc2.Message);
+
+                // unix time (ms) too far in the future
+                var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("PEXPIREAT", Key, long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'pexpireat' command", exc3.Message);
+
+                ClassicAssert.IsFalse(db.KeyExists(Key));
+            }
+
+            // Connection never faulted during operation - previously these all closed the connection with no reply
+            ClassicAssert.IsFalse(faulted);
+        }
+
         #endregion
 
         [Test]
