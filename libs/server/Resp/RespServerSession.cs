@@ -1138,6 +1138,7 @@ namespace Garnet.server
                 RespCommand.VREM => NetworkVREM(ref storageApi),
                 RespCommand.VSETATTR => NetworkVSETATTR(ref storageApi),
                 RespCommand.VSIM => NetworkVSIM(ref storageApi),
+                RespCommand.XVCREATE => NetworkXVCREATE(ref storageApi),
                 // Everything else
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
@@ -1221,6 +1222,9 @@ namespace Garnet.server
                 RespCommand.RIEXISTS => NetworkRIEXISTS(ref storageApi),
                 RespCommand.RICONFIG => NetworkRICONFIG(ref storageApi),
                 RespCommand.RIMETRICS => NetworkRIMETRICS(ref storageApi),
+
+                // Vector Set commands
+                RespCommand.XVIMPORT => NetworkXVIMPORT(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

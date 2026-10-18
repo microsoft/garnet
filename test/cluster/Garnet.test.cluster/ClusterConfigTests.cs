@@ -781,6 +781,8 @@ namespace Garnet.test.cluster
                 context.RestartNode(i);
             }
             context.CreateConnection();
+            for (int i = 0; i < count; i++)
+                Assert.That(ExecuteNode(i, "CLUSTER", "SET-CONFIG-EPOCH", i + 1).ToString(), Is.EqualTo("OK"));
             for (var i = 1; i < count; i++)
                 Assert.That(ExecuteNode(0, "CLUSTER", "MEET", "127.0.0.1", context.endpoints[i].ToIPEndPoint().Port).ToString(), Is.EqualTo("OK"));
             for (var i = 0; i < count; i++)
