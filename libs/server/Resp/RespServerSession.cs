@@ -715,6 +715,7 @@ namespace Garnet.server
             {
                 OnRunningTransactionCommand();
                 _ = ProcessBasicCommands(cmd, ref transactionalApi);
+                OnRanTransactionCommand();
             }
             catch (GarnetException ex) when (ex.ClientResponse && !ex.DisposeSession && !ex.Panic)
             {
@@ -734,6 +735,16 @@ namespace Garnet.server
 
             if (ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Transaction_Throw_During_Exec))
                 throw new InvalidOperationException($"Exception injection triggered {ExceptionInjectionType.Transaction_Throw_During_Exec}");
+        }
+
+        /// <summary>
+        /// Test hook: throws from a running transaction once a command it executes has applied.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnRanTransactionCommand()
+        {
+            if (ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Transaction_Throw_After_Command))
+                throw new InvalidOperationException($"Exception injection triggered {ExceptionInjectionType.Transaction_Throw_After_Command}");
         }
 
         /// <summary>

@@ -985,11 +985,13 @@ namespace Garnet.test
             var exception = ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVCREATE", "vectors", "DIM", 8, quantizer, "QUANT_STATE", new byte[stateLength]));
             ClassicAssert.AreEqual("ERR vector set quantizer state initialization failed", exception.Message);
             ClassicAssert.IsFalse(db.KeyExists("vectors"));
+
+            // The failed create deletes the key while it holds the set's lock, so the index is dropped once the lock is released.
+            vectorManager.WaitForQuiescence();
 #if DEBUG
             ClassicAssert.AreEqual(creates + 1, vectorManager.Service.CreateIndexCalls);
             ClassicAssert.AreEqual(drops + 1, vectorManager.Service.DropIndexCalls);
 #endif
-            vectorManager.WaitForQuiescence();
             ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "vectors", "DIM", 8, "NOQUANT"));
         }
 
@@ -2252,6 +2254,8 @@ namespace Garnet.test
             ClassicAssert.IsFalse(res4);
 
 #if DEBUG
+            // The index is dropped in the background if the set's lock was held when it expired
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.WaitForQuiescence();
             var finalExpireDropCalls = server.Provider.StoreWrapper.DefaultDatabase.VectorManager.Service.DropIndexCalls;
 
             // Check that background cleanup was triggered, not just the key being removed

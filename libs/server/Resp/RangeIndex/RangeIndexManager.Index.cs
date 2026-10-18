@@ -264,12 +264,10 @@ namespace Garnet.server
             if (deleteFiles)
                 SetTransferredFlag(valueSpan);
 
-            // All liveIndexes mutations (cold-pending eviction below, plus the activated path
-            // further down) MUST hold the per-key exclusive lock to serialize against
-            // SetCheckpointBarrier / SnapshotAllTreesForCheckpoint / RegisterIndex /
-            // StageWorkingFileLocked which all touch this entry under the same lock.
-            // Without it, a cold eviction concurrent with checkpoint can silently drop a
-            // pending entry mid-snapshot iteration, narrowing checkpoint coverage for the key.
+            // Removing the entry holds the per-key exclusive lock, which RestoreTree holds while it registers or reuses
+            // the key's tree, so that a retirement never removes or disposes a tree a restore is about to publish. A
+            // promote registers a pending entry without the lock (RegisterPending), from the copy that supersedes this
+            // stub, which is then transferred and not retired.
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
             if (!rangeIndexLocks.TryAcquireExclusiveLock(keyHash, out var lockToken))
             {

@@ -1568,8 +1568,10 @@ namespace Garnet.server
             //  • If src.TreeHandle != 0 (live transfer): dst inherited the handle via byte-copy in
             //    CopyUpdater; clear src.TreeHandle so a later eviction of src does not free the tree.
             //  • If src.TreeHandle == 0 (tree evicted, or src post-recovery): the promoting reader already
-            //    staged data.bftree from src's flush snapshot and registered a pending entry, under the
-            //    per-key lock, which this callback must not wait for (it runs under the bucket latch).
+            //    staged data.bftree from src's flush snapshot, under the per-key lock, which this callback
+            //    must not wait for (it runs under the bucket latch). Register the pending entry for dst now
+            //    that dst is in the log: had the reader registered it, an eviction of src before this copy
+            //    could have removed it, leaving dst's tree out of a checkpoint taken before its restore.
             //  • In BOTH branches: set src.IsTransferred so a later OnEvict on the stale source does
             //    not remove the liveIndexes entry (live: owned by dst's tree; cold: owned by the
             //    pending entry), and a later OnFlush on the stale source does not snapshot a stale view.
@@ -1578,6 +1580,8 @@ namespace Garnet.server
                 var srcSpan = srcLogRecord.ValueSpan;
                 if (RangeIndexManager.ReadIndex(srcSpan).TreeHandle != nint.Zero)
                     RangeIndexManager.ClearTreeHandle(srcSpan);
+                else
+                    functionsState.rangeIndexManager?.RegisterPending(srcLogRecord.Key, rmwInfo.KeyHash);
 
                 RangeIndexManager.SetTransferredFlag(srcSpan);
             }

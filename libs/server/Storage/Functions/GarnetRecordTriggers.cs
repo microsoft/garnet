@@ -247,7 +247,9 @@ namespace Garnet.server
                 // flush snapshot. Staging it into data.bftree needs the per-key exclusive lock, which must not be waited
                 // for here: this runs under the bucket latch, while a data operation can hold the lock for as long as it
                 // runs. Keep dst flushed, with its own copy of the snapshot, so the next data operation promotes it and
-                // stages data.bftree outside any store callback.
+                // stages data.bftree outside any store callback. Without a copy (no source address, or src's snapshot was
+                // deferred and is not taken yet), dst is left unflushed, relying on data.bftree like any stub whose tree
+                // is not restored.
                 if (srcLogicalAddress == Tsavorite.core.LogAddress.kInvalidAddress
                     || !rangeIndexManager.CopyFlushSnapshot(dstLogRecord.Key, srcLogicalAddress, dstLogicalAddress))
                     RangeIndexManager.ClearFlushedFlag(dstSpan);

@@ -84,12 +84,6 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Prevents re-entrant use of <see cref="ReadOptimizedLock"/> by remembering if we've
-        /// already acquired a lock on this thread.
-        /// </summary>
-        private readonly ThreadLocal<(bool Held, int Index)> SharedLockHeldForKeyHash = new(trackAllValues: false);
-
         private readonly ReadOptimizedLock rangeIndexLocks;
 
         /// <summary>
@@ -128,88 +122,83 @@ namespace Garnet.server
         Retry:
             var output = StringOutput.FromPinnedSpan(indexSpan);
             rangeIndexLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
-            SharedLockHeldForKeyHash.Value = (true, rangeIndexLocks.CalculateIndexWithHint(keyHash));
 
+            GarnetStatus readRes;
             try
             {
+                OnSharedLockAcquired();
 
-                GarnetStatus readRes;
-                try
-                {
-                    OnSharedLockAcquired();
+                readRes = session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
+            }
+            catch
+            {
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
+                throw;
+            }
 
-                    readRes = session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);
-                }
-                catch
-                {
-                    rangeIndexLocks.ReleaseLock(sharedLockToken);
-                    throw;
-                }
+            if (readRes != GarnetStatus.OK)
+            {
+                status = readRes;
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
+                return default;
+            }
 
-                if (readRes != GarnetStatus.OK)
+            var outputSpan = output.SpanByteAndMemory.IsSpanByte
+                ? output.SpanByteAndMemory.SpanByte.ReadOnlySpan
+                : output.SpanByteAndMemory.MemorySpan;
+
+            if (outputSpan.Length != IndexSizeBytes)
+            {
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
+                throw new GarnetException($"Unexpected stub size {outputSpan.Length} for RangeIndex read, expected {IndexSizeBytes}");
+            }
+
+            ref readonly var stub = ref ReadIndex(outputSpan);
+
+            // Per-tree checkpoint barrier: one volatile read on hot path (no checkpoint = skipped).
+            if (checkpointInProgress
+                && WaitForTreeCheckpoint(key.ReadOnlySpan, ref output, indexSpan, ref sharedLockToken))
+            {
+                goto Retry;
+            }
+
+            if (stub.IsFlushed)
+            {
+                var treeEvicted = stub.TreeHandle == nint.Zero;
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
+
+                // An evicted predecessor's tree may still be retiring; promotion stages the working file it uses.
+                WaitForRetirement(key.ReadOnlySpan);
+
+                // Promotion stages the working file from the stub's flush snapshot, which may not be taken yet.
+                if (treeEvicted)
+                    WaitForFlushSnapshot(key.ReadOnlySpan);
+
+                PromoteToTail(session, key, keyHash, ref input, indexSpan, treeEvicted);
+                goto Retry;
+            }
+
+            if (stub.TreeHandle == nint.Zero)
+            {
+                rangeIndexLocks.ReleaseLock(sharedLockToken);
+
+                // A retiring tree for this key must be gone before restore, which would otherwise reuse it.
+                WaitForRetirement(key.ReadOnlySpan);
+
+                // Restore under exclusive lock to prevent concurrent restores.
+                // Pre-staging of data.bftree always happened earlier (by the promote of a flushed
+                // stub whose tree was evicted, or OnRecoverySnapshotRead) so RestoreTree just opens
+                // data.bftree directly.
+                if (!RestoreTree(session, key, keyHash, ref input, indexSpan))
                 {
-                    status = readRes;
-                    rangeIndexLocks.ReleaseLock(sharedLockToken);
+                    status = GarnetStatus.NOTFOUND;
                     return default;
                 }
-
-                var outputSpan = output.SpanByteAndMemory.IsSpanByte
-                    ? output.SpanByteAndMemory.SpanByte.ReadOnlySpan
-                    : output.SpanByteAndMemory.MemorySpan;
-
-                if (outputSpan.Length != IndexSizeBytes)
-                {
-                    rangeIndexLocks.ReleaseLock(sharedLockToken);
-                    throw new GarnetException($"Unexpected stub size {outputSpan.Length} for RangeIndex read, expected {IndexSizeBytes}");
-                }
-
-                ref readonly var stub = ref ReadIndex(outputSpan);
-
-                // Per-tree checkpoint barrier: one volatile read on hot path (no checkpoint = skipped).
-                if (checkpointInProgress
-                    && WaitForTreeCheckpoint(key.ReadOnlySpan, ref output, indexSpan, ref sharedLockToken))
-                {
-                    goto Retry;
-                }
-
-                if (stub.IsFlushed)
-                {
-                    var treeEvicted = stub.TreeHandle == nint.Zero;
-                    rangeIndexLocks.ReleaseLock(sharedLockToken);
-
-                    // An evicted predecessor's tree may still be retiring; promotion stages the working file it uses.
-                    WaitForRetirement(key.ReadOnlySpan);
-                    PromoteToTail(session, key, keyHash, ref input, indexSpan, treeEvicted);
-                    goto Retry;
-                }
-
-                if (stub.TreeHandle == nint.Zero)
-                {
-                    rangeIndexLocks.ReleaseLock(sharedLockToken);
-
-                    // A retiring tree for this key must be gone before restore, which would otherwise reuse it.
-                    WaitForRetirement(key.ReadOnlySpan);
-
-                    // Restore under exclusive lock to prevent concurrent restores.
-                    // Pre-staging of data.bftree always happened earlier (by the promote of a flushed
-                    // stub whose tree was evicted, or OnRecoverySnapshotRead) so RestoreTree just opens
-                    // data.bftree directly.
-                    if (!RestoreTree(session, key, keyHash, ref input, indexSpan))
-                    {
-                        status = GarnetStatus.NOTFOUND;
-                        return default;
-                    }
-                    goto Retry;
-                }
-
-                status = GarnetStatus.OK;
-                return new(in rangeIndexLocks, sharedLockToken);
+                goto Retry;
             }
-            finally
-            {
-                // Returning or retrying MUST have released the shared lock
-                SharedLockHeldForKeyHash.Value = (false, 0);
-            }
+
+            status = GarnetStatus.OK;
+            return new(in rangeIndexLocks, sharedLockToken);
         }
 
         /// <summary>
@@ -246,6 +235,21 @@ namespace Garnet.server
             => _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.RangeIndex_Before_Staging_Lock);
 
         /// <summary>
+        /// Test hook: pauses a promote of a flushed stub after it stages the key's working file, before the RMW that copies the
+        /// stub to the tail. The promote holds no lock here.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnBeforePromote()
+            => ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.RangeIndex_Pause_Before_Promote);
+
+        /// <summary>
+        /// Test hook: pauses a restore of a key's tree that holds the key's exclusive lock, before it reads the stub.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnRestoreLockAcquired()
+            => ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.RangeIndex_Pause_Restoring_Tree);
+
+        /// <summary>
         /// Issue an RMW with RIPROMOTE to copy a flushed stub from the read-only region to the mutable region, so that data
         /// operations can use its tree again. Multiple threads may race here — only one wins the CAS; others see the new
         /// record.
@@ -262,13 +266,15 @@ namespace Garnet.server
             if (treeEvicted && !StageEvictedTree(session, key, keyHash, ref input, indexSpan, out stagedFrom))
                 return;
 
+            OnBeforePromote();
             session.PromoteRangeIndexToTail(key, stagedFrom);
         }
 
         /// <summary>
         /// Stage the key's working file from the flush snapshot of its stub, if that stub is still flushed with its tree
         /// evicted. RIPROMOTE then promotes such a stub only from the record staged from (<see cref="CanPromote"/>), so the
-        /// working file holds the tree of the stub it promotes.
+        /// working file holds the tree of the stub it promotes, and registers the key's pending entry once the copy is in
+        /// the log (<see cref="RegisterPending"/>).
         /// </summary>
         /// <param name="session">The storage session for store reads.</param>
         /// <param name="key">The RangeIndex key.</param>
@@ -276,7 +282,8 @@ namespace Garnet.server
         /// <param name="input">The StringInput for the read.</param>
         /// <param name="indexSpan">Span to receive the stub bytes.</param>
         /// <param name="stagedFrom">Address of the record staged from, or <see cref="LogAddress.kInvalidAddress"/>.</param>
-        /// <returns>False if the stub is no longer flushed, so there is nothing to promote.</returns>
+        /// <returns>False if there is nothing to promote now: the stub is no longer flushed, or its flush snapshot, which a
+        /// flush deferred while the lock was held, is not taken yet. The caller retries.</returns>
         private bool StageEvictedTree(StorageSession session, PinnedSpanByte key, long keyHash, ref StringInput input, Span<byte> indexSpan,
             out long stagedFrom)
         {
@@ -284,11 +291,6 @@ namespace Garnet.server
 
             OnBeforeStagingLock();
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
-
-            // A flush drained by the read below may snapshot a stub whose lock shares this one's stripe; mark the lock held,
-            // so that it does not wait for the lock this thread holds.
-            var heldBefore = SharedLockHeldForKeyHash.Value;
-            SharedLockHeldForKeyHash.Value = (true, rangeIndexLocks.CalculateIndexWithHint(keyHash));
             try
             {
                 // Re-read under the lock: another promote may have staged and promoted the stub meanwhile.
@@ -306,18 +308,24 @@ namespace Garnet.server
                 if (!stub.IsFlushed)
                     return false;
 
-                // A stub read from the read cache has no address to name a flush snapshot by; it is promoted unstaged.
-                if (stub.TreeHandle == nint.Zero && address != LogAddress.kInvalidAddress)
+                if (stub.TreeHandle == nint.Zero)
                 {
-                    StageWorkingFileLocked(key.ReadOnlySpan, keyHash, address);
-                    stagedFrom = address;
+                    // The snapshot's task waits for this lock; the caller waits for the task without it.
+                    if (IsFlushSnapshotPending(KeyId(key.ReadOnlySpan)))
+                        return false;
+
+                    // A stub read from the read cache has no address to name a flush snapshot by; it is promoted unstaged.
+                    if (address != LogAddress.kInvalidAddress)
+                    {
+                        StageWorkingFileLocked(key.ReadOnlySpan, address);
+                        stagedFrom = address;
+                    }
                 }
 
                 return true;
             }
             finally
             {
-                SharedLockHeldForKeyHash.Value = heldBefore;
                 rangeIndexLocks.ReleaseLock(exclusiveLockToken);
             }
         }
@@ -368,11 +376,10 @@ namespace Garnet.server
         /// the resulting native pointer into the stub via a RIRESTORE RMW.
         /// </summary>
         /// <remarks>
-        /// <para><b>Split design</b> (essential for deadlock safety): the per-key X-lock is
-        /// held ONLY for the recovery + register step, then RELEASED before issuing the RMW.
-        /// Holding an RI X-lock across a Tsavorite RMW would risk firing a deferred OnFlush on
-        /// this thread (e.g., from the RMW's allocator drain), which would attempt the per-key
-        /// shared lock for the cold case and self-deadlock with the X-lock we still hold.</para>
+        /// <para><b>Split design</b>: the per-key X-lock is held ONLY for the recovery + register step, then RELEASED
+        /// before issuing the RMW, so that it is not held across a store operation, whose record callbacks and epoch
+        /// drains never wait for it (see <see cref="SnapshotTreeForFlush"/> and <see cref="DisposeTreeUnderLock"/>) and
+        /// so would defer their work until the RMW completes.</para>
         ///
         /// <para>Race between releasing X and issuing RIRESTORE RMW: a concurrent DEL could
         /// fire, taking the X-lock, removing our entry from <see cref="liveIndexes"/>, and
@@ -407,6 +414,8 @@ namespace Garnet.server
             rangeIndexLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
             try
             {
+                OnRestoreLockAcquired();
+
                 // Re-read stub under exclusive lock to check if another thread already restored.
                 var output = StringOutput.FromPinnedSpan(indexSpan);
                 var readRes = session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext);

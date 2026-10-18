@@ -198,5 +198,19 @@ namespace Garnet.common
         /// file from a flush snapshot.
         /// </summary>
         RangeIndex_Before_Staging_Lock,
+        /// <summary>
+        /// RangeIndex: pause a restore of a key's tree after it takes the exclusive RangeIndex lock, before it reads the stub.
+        /// </summary>
+        RangeIndex_Pause_Restoring_Tree,
+        /// <summary>
+        /// RangeIndex: pause a promote of a flushed stub after it stages the key's working file, before the RMW that copies the
+        /// stub to the tail.
+        /// </summary>
+        RangeIndex_Pause_Before_Promote,
+        /// <summary>
+        /// Transaction: throw an exception that is not a <see cref="GarnetException"/> after the next command EXEC runs, once
+        /// that command has applied.
+        /// </summary>
+        Transaction_Throw_After_Command,
     }
 }

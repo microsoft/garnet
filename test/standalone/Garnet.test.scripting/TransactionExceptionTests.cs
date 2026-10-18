@@ -12,8 +12,8 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     /// <summary>
-    /// Tests that a transaction ends when an exception interrupts a command EXEC runs: its keys are unlocked and it no longer
-    /// counts as active, which a checkpoint or index grow waits for.
+    /// Tests that a transaction ends when an exception interrupts a command EXEC runs: its keys are unlocked, it no longer
+    /// counts as active, which a checkpoint or index grow waits for, and the AOF records it as committed.
     /// </summary>
     [TestFixture]
     public class TransactionExceptionTests : TestBase
@@ -39,6 +39,7 @@ namespace Garnet.test
             ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Transaction_Fail_During_Exec);
             ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Transaction_Throw_During_Exec);
             ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Transaction_Fail_Locking_Keys);
+            ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Transaction_Throw_After_Command);
 
             server?.Dispose();
             TestUtils.OnTearDown();
@@ -154,6 +155,66 @@ namespace Garnet.test
             ClassicAssert.IsTrue(await nextSet);
             ClassicAssert.AreEqual("value3", (string)await db.StringGetAsync("key1").WaitAsync(WaitTimeout));
             AssertTransactionEnded("key1");
+        }
+
+        /// <summary>
+        /// A transaction that an exception interrupts once some of its commands have applied is committed in the AOF too, so
+        /// that recovering from the AOF applies exactly what the transaction applied.
+        /// </summary>
+        [Test]
+        public async Task InterruptedTransactionIsRecoveredFromAofAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // The transaction applies its first command, and an exception then ends it and its session.
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Transaction_Throw_After_Command);
+                try
+                {
+                    var transaction = db.CreateTransaction();
+                    _ = transaction.StringSetAsync("key1", "value1");
+                    _ = transaction.StringSetAsync("key2", "value2");
+                    _ = Assert.CatchAsync<RedisException>(() => transaction.ExecuteAsync().WaitAsync(WaitTimeout));
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.DisableException(ExceptionInjectionType.Transaction_Throw_After_Command);
+                }
+            }
+
+            AssertTransactionEnded("key1", "key2");
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual("value1", (string)await db.StringGetAsync("key1").WaitAsync(WaitTimeout));
+                ClassicAssert.IsNull((string)await db.StringGetAsync("key2").WaitAsync(WaitTimeout));
+
+                var next = db.CreateTransaction();
+                _ = next.StringSetAsync("key3", "value3");
+                ClassicAssert.IsTrue(await next.ExecuteAsync().WaitAsync(WaitTimeout));
+            }
+
+            _ = await server.Store.CommitAOFAsync(default);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, failOnRecoveryError: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                ClassicAssert.AreEqual("value1", (string)await db.StringGetAsync("key1").WaitAsync(WaitTimeout),
+                    "Recovering from the AOF did not apply what the interrupted transaction applied");
+                ClassicAssert.IsNull((string)await db.StringGetAsync("key2").WaitAsync(WaitTimeout),
+                    "Recovering from the AOF applied a command the interrupted transaction did not run");
+                ClassicAssert.AreEqual("value3", (string)await db.StringGetAsync("key3").WaitAsync(WaitTimeout));
+            }
         }
 
         private void StartServer(bool disableObjects = false)
