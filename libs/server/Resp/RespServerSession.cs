@@ -588,6 +588,8 @@ namespace Garnet.server
             }
             catch (RespParsingException ex)
             {
+                _ = EndInterruptedTransaction();
+
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.Log(ex.LogLevel, ex, "Aborting open session due to RESP parsing error");
 
@@ -604,6 +606,8 @@ namespace Garnet.server
             }
             catch (GarnetException ex)
             {
+                var transactionInterrupted = EndInterruptedTransaction();
+
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.Log(ex.LogLevel, ex, "ProcessMessages threw a GarnetException:");
 
@@ -624,7 +628,9 @@ namespace Garnet.server
                     Environment.Exit(-1);
                 }
 
-                if (ex.DisposeSession)
+                // The rest of an interrupted transaction's commands are still in the receive buffer, and must not run
+                // outside it.
+                if (ex.DisposeSession || transactionInterrupted)
                 {
                     // The session is no longer usable, dispose it
                     networkSender.DisposeNetworkSender(true);
@@ -632,6 +638,8 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
+                _ = EndInterruptedTransaction();
+
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
                 logger?.LogCritical(ex, "ProcessMessages threw an exception:");
                 // The session is no longer usable, dispose it
@@ -694,6 +702,59 @@ namespace Garnet.server
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
+        /// <summary>
+        /// Runs a command of a running transaction. A <see cref="GarnetException"/> that leaves the session usable fails only
+        /// that command, whose reply is the error, as with any other command error: the transaction runs the rest of its
+        /// commands and ends at EXEC. Escaping would instead end the batch with the rest of the transaction still to run.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void ProcessTransactionCommand<TTxnApi>(RespCommand cmd, ref TTxnApi transactionalApi)
+            where TTxnApi : IGarnetApi
+        {
+            try
+            {
+                OnRunningTransactionCommand();
+                _ = ProcessBasicCommands(cmd, ref transactionalApi);
+            }
+            catch (GarnetException ex) when (ex.ClientResponse && !ex.DisposeSession && !ex.Panic)
+            {
+                sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
+                logger?.Log(ex.LogLevel, ex, "A command in a transaction threw a GarnetException:");
+                WriteError($"ERR Garnet Exception: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Test hook: fails, or throws from, a command that a running transaction executes.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnRunningTransactionCommand()
+        {
+            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Transaction_Fail_During_Exec);
+
+            if (ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Transaction_Throw_During_Exec))
+                throw new InvalidOperationException($"Exception injection triggered {ExceptionInjectionType.Transaction_Throw_During_Exec}");
+        }
+
+        /// <summary>
+        /// Ends the transaction an exception interrupted while EXEC ran its commands, so that its keys are unlocked and a
+        /// checkpoint or index grow waiting for it can proceed. A transaction runs entirely within one batch, so only an
+        /// exception escaping the batch can leave one running.
+        /// </summary>
+        /// <returns>True if a transaction was running.</returns>
+        private bool EndInterruptedTransaction()
+        {
+            try
+            {
+                return txnManager?.EndInterrupted() ?? false;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Failed to end a transaction interrupted by an exception");
+                return true;
+            }
+        }
+
         private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi transactionalApi)
             where TBasicApi : IGarnetApi
             where TTxnApi : IGarnetApi
@@ -737,7 +798,7 @@ namespace Garnet.server
                         {
                             if (txnManager.state == TxnState.Running)
                             {
-                                _ = ProcessBasicCommands(cmd, ref transactionalApi);
+                                ProcessTransactionCommand(cmd, ref transactionalApi);
                             }
                             else _ = cmd switch
                             {

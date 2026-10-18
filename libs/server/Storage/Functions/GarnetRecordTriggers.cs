@@ -125,7 +125,7 @@ namespace Garnet.server
             if (!logRecord.DataHeader.ValueIsObject)
             {
                 // Invalidate stale TreeHandle bytes on records loaded from disk.
-                // RIPROMOTE PostCopyUpdater handles file pre-staging when this stub is later promoted.
+                // The promote (RIPROMOTE) of this stub later stages data.bftree from its flush snapshot.
                 if (logRecord.DataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
                     RangeIndexManager.InvalidateStub(logRecord.ValueSpan);
@@ -152,7 +152,7 @@ namespace Garnet.server
             {
                 // Above-FUA-at-checkpoint stubs: pre-stage data.bftree from the checkpoint snapshot
                 // file DURING recovery (snapshot files may be deleted post-recovery). Below-FUA
-                // stubs are handled lazily by RIPROMOTE PostCopyUpdater on first access.
+                // stubs are staged lazily by their promote (RIPROMOTE) on first access.
                 if (rangeIndexManager is not null && logRecord.DataHeader.RecordType == RangeIndexManager.RangeIndexRecordType)
                 {
                     RangeIndexManager.MarkRecoveredFromCheckpoint(logRecord.ValueSpan);
@@ -237,24 +237,28 @@ namespace Garnet.server
                 //       still in the chain (TryCopyToTail does not unlink/seal the source). Mutating
                 //       it in place is safe because the source is logically superseded by dst.
                 RangeIndexManager.ClearTreeHandle(srcSpan);
+
+                // Dst owns the live tree, so subsequent reads need not promote it again.
+                RangeIndexManager.ClearFlushedFlag(dstSpan);
             }
-            else
+            else if (srcStub.IsFlushed)
             {
-                // Disk source (post-eviction or post-OnDiskRead-invalidate): pre-stage data.bftree
-                // from <srcAddr:x16>.flush.bftree, and register a pending entry so the next
-                // checkpoint captures dst's content.
-                if (srcLogicalAddress != Tsavorite.core.LogAddress.kInvalidAddress)
-                    rangeIndexManager.PreStageAndRegisterPending(dstLogRecord.Key, srcLogicalAddress);
+                // Tree evicted (disk source, post-eviction or post-OnDiskRead-invalidate): the tree is only in src's
+                // flush snapshot. Staging it into data.bftree needs the per-key exclusive lock, which must not be waited
+                // for here: this runs under the bucket latch, while a data operation can hold the lock for as long as it
+                // runs. Keep dst flushed, with its own copy of the snapshot, so the next data operation promotes it and
+                // stages data.bftree outside any store callback.
+                if (srcLogicalAddress == Tsavorite.core.LogAddress.kInvalidAddress
+                    || !rangeIndexManager.CopyFlushSnapshot(dstLogRecord.Key, srcLogicalAddress, dstLogicalAddress))
+                    RangeIndexManager.ClearFlushedFlag(dstSpan);
             }
+
+            // Otherwise data.bftree already holds src's tree, with a pending entry, and both stay with the key.
 
             // Mark src as transferred-out so a later OnEvict/OnFlush on the stale source does not
             // remove the liveIndexes entry now owned by dst (live case) or by the pending
             // registration (cold case), and does not snapshot a stale view.
             RangeIndexManager.SetTransferredFlag(srcSpan);
-
-            // Dst is a freshly copied record at the tail. Clear IsFlushed so subsequent reads
-            // don't loop through PromoteToTail again.
-            RangeIndexManager.ClearFlushedFlag(dstSpan);
         }
 
         /// <inheritdoc/>

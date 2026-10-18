@@ -267,7 +267,7 @@ namespace Garnet.server
             // All liveIndexes mutations (cold-pending eviction below, plus the activated path
             // further down) MUST hold the per-key exclusive lock to serialize against
             // SetCheckpointBarrier / SnapshotAllTreesForCheckpoint / RegisterIndex /
-            // PreStageAndRegisterPending which all touch this entry under the same lock.
+            // StageWorkingFileLocked which all touch this entry under the same lock.
             // Without it, a cold eviction concurrent with checkpoint can silently drop a
             // pending entry mid-snapshot iteration, narrowing checkpoint coverage for the key.
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));

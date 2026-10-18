@@ -174,11 +174,12 @@ namespace Garnet.server
 
                 if (stub.IsFlushed)
                 {
+                    var treeEvicted = stub.TreeHandle == nint.Zero;
                     rangeIndexLocks.ReleaseLock(sharedLockToken);
 
                     // An evicted predecessor's tree may still be retiring; promotion stages the working file it uses.
                     WaitForRetirement(key.ReadOnlySpan);
-                    PromoteToTail(session, key);
+                    PromoteToTail(session, key, keyHash, ref input, indexSpan, treeEvicted);
                     goto Retry;
                 }
 
@@ -190,9 +191,9 @@ namespace Garnet.server
                     WaitForRetirement(key.ReadOnlySpan);
 
                     // Restore under exclusive lock to prevent concurrent restores.
-                    // Pre-staging of data.bftree always happened earlier (PostCopyToTail-cold,
-                    // RIPROMOTE PostCopyUpdater-cold, or OnRecoverySnapshotRead) so RestoreTree
-                    // just opens data.bftree directly.
+                    // Pre-staging of data.bftree always happened earlier (by the promote of a flushed
+                    // stub whose tree was evicted, or OnRecoverySnapshotRead) so RestoreTree just opens
+                    // data.bftree directly.
                     if (!RestoreTree(session, key, keyHash, ref input, indexSpan))
                     {
                         status = GarnetStatus.NOTFOUND;
@@ -232,17 +233,104 @@ namespace Garnet.server
         private static void OnSharedLockAcquired()
         {
             ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.RangeIndex_Pause_After_Shared_Lock);
-            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.RangeIndex_Fail_After_Shared_Lock);
+
+            if (ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.RangeIndex_Fail_After_Shared_Lock))
+                throw new GarnetException($"Exception injection triggered {ExceptionInjectionType.RangeIndex_Fail_After_Shared_Lock}");
         }
 
         /// <summary>
-        /// Issue an RMW with RIPROMOTE to copy the stub from read-only to the mutable region.
-        /// CopyUpdater copies the stub bytes and clears the flushed flag.
-        /// Multiple threads may race here — only one wins the CAS; others see the new record.
+        /// Test hook: signals that an operation is about to take the exclusive lock to stage a key's working file.
         /// </summary>
-        private static void PromoteToTail(StorageSession session, PinnedSpanByte key)
+        [Conditional("DEBUG")]
+        private static void OnBeforeStagingLock()
+            => _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.RangeIndex_Before_Staging_Lock);
+
+        /// <summary>
+        /// Issue an RMW with RIPROMOTE to copy a flushed stub from the read-only region to the mutable region, so that data
+        /// operations can use its tree again. Multiple threads may race here — only one wins the CAS; others see the new
+        /// record.
+        /// </summary>
+        /// <remarks>
+        /// A live tree moves with the stub. The tree of a stub whose tree was evicted is only in the stub's flush snapshot,
+        /// and is staged into the key's working file first (<see cref="StageEvictedTree"/>). That staging takes the exclusive
+        /// lock, so it is done here rather than in the RMW's callbacks, which run under the stub's bucket latch while a data
+        /// operation holding the lock shared may be waiting for that latch.
+        /// </remarks>
+        private void PromoteToTail(StorageSession session, PinnedSpanByte key, long keyHash, ref StringInput input, Span<byte> indexSpan, bool treeEvicted)
         {
-            session.PromoteRangeIndexToTail(key);
+            var stagedFrom = LogAddress.kInvalidAddress;
+            if (treeEvicted && !StageEvictedTree(session, key, keyHash, ref input, indexSpan, out stagedFrom))
+                return;
+
+            session.PromoteRangeIndexToTail(key, stagedFrom);
+        }
+
+        /// <summary>
+        /// Stage the key's working file from the flush snapshot of its stub, if that stub is still flushed with its tree
+        /// evicted. RIPROMOTE then promotes such a stub only from the record staged from (<see cref="CanPromote"/>), so the
+        /// working file holds the tree of the stub it promotes.
+        /// </summary>
+        /// <param name="session">The storage session for store reads.</param>
+        /// <param name="key">The RangeIndex key.</param>
+        /// <param name="keyHash">The key hash for lock striping.</param>
+        /// <param name="input">The StringInput for the read.</param>
+        /// <param name="indexSpan">Span to receive the stub bytes.</param>
+        /// <param name="stagedFrom">Address of the record staged from, or <see cref="LogAddress.kInvalidAddress"/>.</param>
+        /// <returns>False if the stub is no longer flushed, so there is nothing to promote.</returns>
+        private bool StageEvictedTree(StorageSession session, PinnedSpanByte key, long keyHash, ref StringInput input, Span<byte> indexSpan,
+            out long stagedFrom)
+        {
+            stagedFrom = LogAddress.kInvalidAddress;
+
+            OnBeforeStagingLock();
+            rangeIndexLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
+
+            // A flush drained by the read below may snapshot a stub whose lock shares this one's stripe; mark the lock held,
+            // so that it does not wait for the lock this thread holds.
+            var heldBefore = SharedLockHeldForKeyHash.Value;
+            SharedLockHeldForKeyHash.Value = (true, rangeIndexLocks.CalculateIndexWithHint(keyHash));
+            try
+            {
+                // Re-read under the lock: another promote may have staged and promoted the stub meanwhile.
+                var output = StringOutput.FromPinnedSpan(indexSpan);
+                if (session.Read_RangeIndex(key.ReadOnlySpan, ref input, ref output, ref session.stringBasicContext, out var address) != GarnetStatus.OK)
+                    return false;
+
+                var outputSpan = output.SpanByteAndMemory.IsSpanByte
+                    ? output.SpanByteAndMemory.SpanByte.ReadOnlySpan
+                    : output.SpanByteAndMemory.MemorySpan;
+                if (outputSpan.Length != IndexSizeBytes)
+                    return false;
+
+                ref readonly var stub = ref ReadIndex(outputSpan);
+                if (!stub.IsFlushed)
+                    return false;
+
+                // A stub read from the read cache has no address to name a flush snapshot by; it is promoted unstaged.
+                if (stub.TreeHandle == nint.Zero && address != LogAddress.kInvalidAddress)
+                {
+                    StageWorkingFileLocked(key.ReadOnlySpan, keyHash, address);
+                    stagedFrom = address;
+                }
+
+                return true;
+            }
+            finally
+            {
+                SharedLockHeldForKeyHash.Value = heldBefore;
+                rangeIndexLocks.ReleaseLock(exclusiveLockToken);
+            }
+        }
+
+        /// <summary>
+        /// True if RIPROMOTE may copy the stub in <paramref name="valueSpan"/>, at <paramref name="address"/>, to the tail:
+        /// it is not flushed, or its tree is live and moves with it, or its tree was evicted and the key's working file was
+        /// staged from this record's flush snapshot (<paramref name="stagedFrom"/>).
+        /// </summary>
+        internal static bool CanPromote(ReadOnlySpan<byte> valueSpan, long address, long stagedFrom)
+        {
+            ref readonly var stub = ref ReadIndex(valueSpan);
+            return !stub.IsFlushed || stub.TreeHandle != nint.Zero || address == stagedFrom;
         }
 
         /// <summary>
@@ -302,8 +390,8 @@ namespace Garnet.server
         ///
         /// <para>Pre-staging of <c>data.bftree</c> always happened earlier:
         /// <list type="bullet">
-        /// <item><c>PostCopyToTail</c>-cold (compaction/CopyReadsToTail with disk source).</item>
-        /// <item>RIPROMOTE <c>PostCopyUpdater</c>-cold (post-eviction or post-recovery first promote).</item>
+        /// <item><see cref="StageEvictedTree"/>, before the promote of a flushed stub whose tree was evicted
+        /// (post-eviction, post-recovery, or copied to the tail by compaction or CopyReadsToTail).</item>
         /// <item><c>OnRecoverySnapshotRead</c> (above-FUA-at-checkpoint stubs DURING recovery, since
         /// the checkpoint snapshot file may be deleted post-recovery).</item>
         /// </list></para>

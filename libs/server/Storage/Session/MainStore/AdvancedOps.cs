@@ -106,24 +106,32 @@ namespace Garnet.server
         /// <see cref="ReadCopyOptions.None"/>, then calls into the standard Read pipeline.
         ///
         /// <para>Why a separate API: RangeIndex performs its own controlled promotion via
-        /// <c>RIPROMOTE</c> RMW (which propagates RecordType, manages TreeHandle ownership in
-        /// <c>PostCopyUpdater</c>, and pre-stages <c>data.bftree</c> with proper locking).
-        /// Allowing Tsavorite's CTT to race with that path would (a) leave the destination
-        /// record without <c>RecordType=RangeIndexRecordType</c> (CTT does not propagate
-        /// RecordType), and (b) trigger <c>PostCopyToTail</c>-cold which takes the per-key
-        /// X-lock, self-deadlocking against the reader's S-lock when CopyReadsToTail is
-        /// enabled at the session/KV level. Keeping this on a dedicated API ensures every
-        /// RangeIndex stub Read goes through the suppression and other Read callers (Bitmap,
-        /// HLL, etc.) incur zero overhead.</para>
+        /// <c>RIPROMOTE</c> RMW (which propagates RecordType and manages TreeHandle ownership in
+        /// <c>PostCopyUpdater</c>, after the promoting reader staged <c>data.bftree</c> under the
+        /// per-key lock). Allowing Tsavorite's CTT to race with that path would leave the destination
+        /// record without <c>RecordType=RangeIndexRecordType</c> (CTT does not propagate RecordType).
+        /// Keeping this on a dedicated API ensures every RangeIndex stub Read goes through the
+        /// suppression and other Read callers (Bitmap, HLL, etc.) incur zero overhead.</para>
         /// </summary>
         public GarnetStatus Read_RangeIndex<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            => Read_RangeIndex(key, ref input, ref output, ref context, out _);
+
+        /// <summary>
+        /// <see cref="Read_RangeIndex{TStringContext}(ReadOnlySpan{byte}, ref StringInput, ref StringOutput, ref TStringContext)"/>,
+        /// also returning the logical address of the stub's record (<see cref="LogAddress.kInvalidAddress"/> if it was read
+        /// from the read cache), which names its flush snapshot.
+        /// </summary>
+        public GarnetStatus Read_RangeIndex<TStringContext>(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref TStringContext context, out long address)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
-            var status = context.Read((FixedSpanByteKey)key, ref input, ref output, ref readOptions);
+            var status = context.Read((FixedSpanByteKey)key, ref input, ref output, ref readOptions, out var recordMetadata);
 
             if (status.IsPending)
-                CompletePendingForSession(ref status, ref output, ref context);
+                CompletePendingForSession(ref status, ref output, ref context, out recordMetadata);
+
+            address = recordMetadata.Address;
 
             if (status.Found)
                 return GarnetStatus.OK;

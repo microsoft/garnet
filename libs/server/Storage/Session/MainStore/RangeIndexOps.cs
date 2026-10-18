@@ -143,11 +143,14 @@ namespace Garnet.server
         /// Issues an RMW with RIPROMOTE; CopyUpdater copies the stub bytes and clears the flushed flag.
         /// Uses a local parseState to avoid corrupting the caller's parseState.
         /// </summary>
-        internal void PromoteRangeIndexToTail(PinnedSpanByte key)
+        /// <param name="key">The RangeIndex key.</param>
+        /// <param name="stagedFrom">Address of the record whose flush snapshot the key's working file was staged from, or
+        /// <see cref="LogAddress.kInvalidAddress"/> if none was; a stub whose tree was evicted is promoted only from that record.</param>
+        internal void PromoteRangeIndexToTail(PinnedSpanByte key, long stagedFrom)
         {
             var promoteParseState = new SessionParseState();
             promoteParseState.InitializeWithArgument(key);
-            var input = new StringInput(RespCommand.RIPROMOTE, ref promoteParseState);
+            var input = new StringInput(RespCommand.RIPROMOTE, ref promoteParseState, arg1: stagedFrom);
             var output = new StringOutput();
 
             var status = stringBasicContext.RMW((FixedSpanByteKey)key, ref input, ref output);

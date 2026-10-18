@@ -29,6 +29,7 @@ namespace Garnet.test
 
         private const ExceptionInjectionType Pause = ExceptionInjectionType.RangeIndex_Pause_After_Shared_Lock;
         private const ExceptionInjectionType Fail = ExceptionInjectionType.RangeIndex_Fail_After_Shared_Lock;
+        private const ExceptionInjectionType StagingLock = ExceptionInjectionType.RangeIndex_Before_Staging_Lock;
 
         private GarnetServer server;
 
@@ -45,6 +46,7 @@ namespace Garnet.test
         {
             ExceptionInjectionHelper.DisableException(Pause);
             ExceptionInjectionHelper.DisableException(Fail);
+            ExceptionInjectionHelper.DisableException(StagingLock);
 
             server.Dispose();
             TestUtils.OnTearDown();
@@ -214,6 +216,184 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "Evicting the deleted stub retired the recreated key's tree");
             ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
             ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
+        }
+
+        /// <summary>
+        /// Promoting a flushed stub whose tree was evicted stages the key's working file from the stub's flush snapshot,
+        /// under the exclusive RangeIndex lock. A data operation holding the lock shared reads the stub next, which needs the
+        /// stub's bucket latch, so the promote must wait for the lock without holding that latch, unlike a store callback.
+        /// </summary>
+        [Test]
+        public async Task PromoteWaitsForLockWithoutHoldingBucketLatchAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisHolder = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisPromoter = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var dbHolder = redisHolder.GetDatabase(0);
+            var dbPromoter = redisPromoter.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            EvictToDisk(Key);
+
+            ExceptionInjectionHelper.EnableException(Pause);
+
+            // The holder parks holding the shared RangeIndex lock, before it reads the stub.
+            var holder = dbHolder.ExecuteAsync("RI.GET", Key, "field1");
+            await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(WaitTimeout);
+
+            // The promoter reads the flushed stub and promotes it, which stages the working file under the exclusive lock.
+            ExceptionInjectionHelper.EnableException(StagingLock);
+            var promoter = dbPromoter.ExecuteAsync("RI.GET", Key, "field1");
+            await ExceptionInjectionHelper.WaitOnClearAsync(StagingLock).WaitAsync(WaitTimeout);
+
+            // The promoter waits for the holder's lock. A read of the stub's bucket, which the holder does next, must get through.
+            var exists = db.KeyExistsAsync(Key);
+            var existsRanAlongside = await CompletesWithinAsync(exists, NotBlockedTimeout);
+
+            if (!existsRanAlongside)
+            {
+                // The promoter holds the bucket latch while it waits for the holder's lock. Releasing the holder into its read
+                // of that bucket would deadlock the two, so fail the holder instead, which releases its lock.
+                ExceptionInjectionHelper.EnableException(Fail);
+
+                _ = Assert.CatchAsync<RedisException>(() => ReleaseParkedAndAwaitAsync(holder));
+                _ = await promoter.WaitAsync(WaitTimeout);
+                _ = await exists.WaitAsync(WaitTimeout);
+
+                Assert.Fail("Promoting a flushed stub waited for the RangeIndex lock held by a data operation while holding the " +
+                    "stub's bucket latch, which that operation needs next");
+            }
+
+            ClassicAssert.IsTrue(await exists, "The key does not exist");
+            ClassicAssert.AreEqual("value1", (string)await ReleaseParkedAndAwaitAsync(holder));
+            ClassicAssert.AreEqual("value1", (string)await promoter.WaitAsync(WaitTimeout));
+
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "The restored tree is not registered");
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
+            ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
+        }
+
+        /// <summary>
+        /// Copying a flushed stub whose tree was evicted to the tail, as a read with CopyReadsToTail or compaction does, runs a
+        /// store callback that holds the stub's bucket latch and the epoch. A data operation can hold the RangeIndex lock shared
+        /// for as long as it runs, so the callback must not wait for that lock, which would hold up every writer to the bucket
+        /// and every wait for the epoch to advance, including the data operation's own.
+        /// </summary>
+        [Test]
+        public async Task CopyToTailDoesNotWaitForDataOperationHoldingLockAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+
+            // A small hash index, so that a key sharing the stub's bucket is quick to find
+            const string IndexSize = "1k";
+            const long IndexBuckets = 1024 / 64;
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, copyReadsToTail: true, indexSize: IndexSize);
+            server.Start();
+
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+            var keyInSameBucket = TestUtils.FindKeyInSameHashChain(Key, IndexBuckets);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisHolder = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisCopier = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var dbHolder = redisHolder.GetDatabase(0);
+            var dbCopier = redisCopier.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            EvictToDisk(Key);
+
+            ExceptionInjectionHelper.EnableException(Pause);
+
+            // The holder parks holding the shared RangeIndex lock, before it reads the stub.
+            var holder = dbHolder.ExecuteAsync("RI.GET", Key, "field1");
+            await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(WaitTimeout);
+
+            // EXISTS reads the evicted stub from disk and copies it to the tail.
+            var copier = dbCopier.KeyExistsAsync(Key);
+            var copierRanAlongside = await CompletesWithinAsync(copier, NotBlockedTimeout);
+
+            if (!copierRanAlongside)
+            {
+                var write = db.StringSetAsync(keyInSameBucket, "value");
+                var writeRanAlongside = await CompletesWithinAsync(write, TimeSpan.FromSeconds(1));
+
+                // Fail the holder rather than run it, which releases its lock.
+                ExceptionInjectionHelper.EnableException(Fail);
+
+                _ = Assert.CatchAsync<RedisException>(() => ReleaseParkedAndAwaitAsync(holder));
+                _ = await copier.WaitAsync(WaitTimeout);
+                _ = await write.WaitAsync(WaitTimeout);
+
+                Assert.Fail("Copying a flushed stub to the tail waited, in a store callback, for the RangeIndex lock held by a data " +
+                    $"operation (a write to the stub's bucket {(writeRanAlongside ? "completed" : "waited for it too")})");
+            }
+
+            ClassicAssert.IsTrue(await copier, "The key does not exist");
+            ClassicAssert.IsTrue(await db.StringSetAsync(keyInSameBucket, "value").WaitAsync(WaitTimeout));
+            ClassicAssert.AreEqual("value1", (string)await ReleaseParkedAndAwaitAsync(holder));
+
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "The restored tree is not registered");
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
+            ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
+        }
+
+        /// <summary>
+        /// A flushed stub whose tree was evicted keeps its flushed state when copied to the tail, with its own copy of the flush
+        /// snapshot. It can then be flushed and evicted again before any data operation promotes it, and its tree is still
+        /// restored from that snapshot.
+        /// </summary>
+        [Test]
+        public void CopiedStubKeepsFlushSnapshotThroughEviction()
+        {
+            const string Key = "rikey";
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, copyReadsToTail: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            EvictToDisk(Key);
+
+            // EXISTS reads the evicted stub from disk and copies it to the tail.
+            var tailBeforeCopy = server.Provider.StoreWrapper.store.Log.TailAddress;
+            ClassicAssert.IsTrue(db.KeyExists(Key));
+            ClassicAssert.Greater(server.Provider.StoreWrapper.store.Log.TailAddress, tailBeforeCopy, "EXISTS did not copy the stub to the tail");
+
+            EvictToDisk(Key);
+
+            ClassicAssert.AreEqual("value1", (string)db.Execute("RI.GET", Key, "field1"));
+            ClassicAssert.AreEqual(1, server.Provider.StoreWrapper.rangeIndexManager.LiveIndexCount, "The restored tree is not registered");
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
+            ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
+        }
+
+        /// <summary>
+        /// Flushes the RangeIndex key's stub and evicts it, which retires its tree; the tree is then only in the stub's flush
+        /// snapshot, and the next data operation promotes the stub and restores the tree from that snapshot.
+        /// </summary>
+        private void EvictToDisk(string key)
+        {
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+
+            ClassicAssert.AreEqual(0, server.Provider.StoreWrapper.rangeIndexManager.LiveIndexCount, $"Eviction did not retire the tree of {key}");
         }
 
         /// <summary>

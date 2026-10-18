@@ -449,6 +449,44 @@ namespace Garnet.server
             Reset(true);
         }
 
+        /// <summary>
+        /// Ends a running transaction that an exception interrupted. What it applied stays applied, so it is committed,
+        /// which also unlocks its keys and ends its version for a checkpoint or index grow waiting for it.
+        /// </summary>
+        /// <returns>True if a transaction was running.</returns>
+        internal bool EndInterrupted()
+        {
+            if (state != TxnState.Running)
+                return false;
+
+            Commit();
+            return true;
+        }
+
+        /// <summary>
+        /// Ends a transaction whose start an exception interrupted, after it acquired its version.
+        /// </summary>
+        /// <param name="begun">Whether its sessions began the transaction.</param>
+        private void EndUnstarted(bool begun)
+        {
+            try
+            {
+                if (begun)
+                {
+                    Reset(true);
+                }
+                else
+                {
+                    stateMachineDriver.EndTransaction(txnVersion);
+                    Reset(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Failed to end a transaction whose start was interrupted by an exception");
+            }
+        }
+
         internal void Watch(PinnedSpanByte key)
         {
             watchContainer.AddWatch(key);
@@ -525,18 +563,32 @@ namespace Garnet.server
             // Acquire transaction version
             txnVersion = stateMachineDriver.AcquireTransactionVersion();
 
-            // Acquire lock sessions
-            BeginTransaction();
-
             bool lockSuccess;
-            if (fail_fast_on_lock)
+            var begun = false;
+            try
             {
-                lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                // Acquire lock sessions
+                BeginTransaction();
+                begun = true;
+
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Transaction_Fail_Locking_Keys);
+
+                if (fail_fast_on_lock)
+                {
+                    lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                }
+                else
+                {
+                    keyEntries.LockAllKeys();
+                    lockSuccess = true;
+                }
             }
-            else
+            catch
             {
-                keyEntries.LockAllKeys();
-                lockSuccess = true;
+                // The transaction is not running yet, so the session does not end it if this escapes; unlock what was
+                // locked and end its version here.
+                EndUnstarted(begun);
+                throw;
             }
 
             if (!lockSuccess ||

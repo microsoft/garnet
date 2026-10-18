@@ -970,9 +970,12 @@ namespace Garnet.server
                     // Index already exists at this key — reject with error
                     return IPUResult.NotUpdated;
                 case RespCommand.RIPROMOTE:
-                    // Record is in mutable region — no-op. Not logged to AOF (internal maintenance).
-                    Debug.Assert(!RangeIndexManager.ReadIndex(logRecord.ValueSpan).IsFlushed,
-                        "Mutable record should never have Flushed flag set");
+                    // A flushed stub in the mutable region was copied to the tail with its flush snapshot (see
+                    // GarnetRecordTriggers.PostCopyToTail): promote it to a new record, which keeps the snapshot at this
+                    // address unchanged. Any other record here is already at the tail. Not logged to AOF (internal maintenance).
+                    if (RangeIndexManager.ReadIndex(logRecord.ValueSpan).IsFlushed
+                        && RangeIndexManager.CanPromote(logRecord.ValueSpan, rmwInfo.Address, input.arg1))
+                        return IPUResult.Failed;
                     return IPUResult.NotUpdated;
                 case RespCommand.RIRESTORE:
                     // Set the TreeHandle from the restored BfTree pointer. Not logged to AOF (transient pointer).
@@ -1025,8 +1028,9 @@ namespace Garnet.server
                     // Index already exists — never copy-update, reject in caller
                     return false;
                 case RespCommand.RIPROMOTE:
-                    // Always copy to tail to promote from read-only region
-                    return true;
+                    // Copy to tail to promote from read-only region; a stub whose tree was evicted only from the record
+                    // its working file was staged from (see RangeIndexManager.PromoteToTail).
+                    return RangeIndexManager.CanPromote(srcLogRecord.ValueSpan, rmwInfo.Address, input.arg1);
                 case RespCommand.RIRESTORE:
                     // Copy to tail if needed, then IPU will set TreeHandle
                     return true;
@@ -1563,32 +1567,17 @@ namespace Garnet.server
             // RIPROMOTE: pass ownership of the BfTree from src to dst.
             //  • If src.TreeHandle != 0 (live transfer): dst inherited the handle via byte-copy in
             //    CopyUpdater; clear src.TreeHandle so a later eviction of src does not free the tree.
-            //  • If src.TreeHandle == 0 (cold case — src was post-eviction or post-recovery): pre-stage
-            //    data.bftree from <srcAddr:x16>.flush.bftree and register a pending entry so the next
-            //    checkpoint captures dst's content. Cleanly handles steady-state cold-restore, recovery
-            //    Scenario D (below-FUA-at-checkpoint stub recovered), and any other path that promotes
-            //    a flushed stub with TreeHandle == 0.
+            //  • If src.TreeHandle == 0 (tree evicted, or src post-recovery): the promoting reader already
+            //    staged data.bftree from src's flush snapshot and registered a pending entry, under the
+            //    per-key lock, which this callback must not wait for (it runs under the bucket latch).
             //  • In BOTH branches: set src.IsTransferred so a later OnEvict on the stale source does
-            //    not remove the liveIndexes entry (live: owned by dst's tree; cold: owned by the new
+            //    not remove the liveIndexes entry (live: owned by dst's tree; cold: owned by the
             //    pending entry), and a later OnFlush on the stale source does not snapshot a stale view.
             if (cmd == RespCommand.RIPROMOTE)
             {
                 var srcSpan = srcLogRecord.ValueSpan;
-                var srcHandle = RangeIndexManager.ReadIndex(srcSpan).TreeHandle;
-                if (srcHandle != nint.Zero)
-                {
+                if (RangeIndexManager.ReadIndex(srcSpan).TreeHandle != nint.Zero)
                     RangeIndexManager.ClearTreeHandle(srcSpan);
-                }
-                else
-                {
-                    // rmwInfo.SourceAddress is the source logical address (preserved through
-                    // CopyUpdater; rmwInfo.Address has been reassigned to the destination).
-                    if (functionsState.storeWrapper?.rangeIndexManager is { } rim
-                        && rmwInfo.SourceAddress != Tsavorite.core.LogAddress.kInvalidAddress)
-                    {
-                        rim.PreStageAndRegisterPending(dstLogRecord.Key, rmwInfo.SourceAddress);
-                    }
-                }
 
                 RangeIndexManager.SetTransferredFlag(srcSpan);
             }

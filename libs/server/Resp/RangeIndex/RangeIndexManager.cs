@@ -409,7 +409,7 @@ namespace Garnet.server
             //   - RestoreTree: holds the per-key rangeIndexLocks X-lock for the duration of
             //     RegisterIndex, so concurrent RegisterIndex on the same key is impossible.
             //     The only legitimate prior entry is a pending one (Tree==null) registered
-            //     earlier by PreStageAndRegisterPending; we activate it in place.
+            //     earlier by StageWorkingFileLocked; we activate it in place.
             // CompareExchange makes the activation atomic so even a future caller-invariant
             // violation cannot result in two threads both believing they activated the entry
             // (one would observe a non-null prior in CompareExchange and dispose its duplicate).
@@ -500,29 +500,21 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Atomically pre-stage <c>data.bftree</c> from <c>&lt;srcAddr:x16&gt;.flush.bftree</c>
-        /// and register a pending entry in <see cref="liveIndexes"/> so a subsequent checkpoint
-        /// will capture it via <see cref="SnapshotAllTreesForCheckpoint"/>.
+        /// Pre-stage <c>data.bftree</c> from <c>&lt;srcAddr:x16&gt;.flush.bftree</c> and register a
+        /// pending entry in <see cref="liveIndexes"/> so a subsequent checkpoint will capture it via
+        /// <see cref="SnapshotAllTreesForCheckpoint"/>.
         ///
-        /// <para>Called from RIPROMOTE PostCopyUpdater (cold case: src.TreeHandle == 0) and
-        /// from <c>PostCopyToTail</c> (compaction with disk source).</para>
+        /// <para>Called by <see cref="StageEvictedTree"/>, before the promote of a flushed stub whose tree
+        /// was evicted, with the per-key EXCLUSIVE rangeIndex lock held. The lock serializes this against
+        /// <c>RestoreTree</c>, which opens <c>data.bftree</c> under the same lock, so it never observes a
+        /// partial file, and against other concurrent staging of the same key. A direct
+        /// <c>File.Copy(overwrite: true)</c> is sufficient under it.</para>
         ///
-        /// <para>Concurrency: takes the per-key EXCLUSIVE rangeIndex lock for the duration of the
-        /// file copy. This is required because <c>CASRecordIntoChain</c> unseals dst immediately
-        /// on CAS-success (in <c>Helpers.cs.CASRecordIntoChain</c>), so by the time this trigger
-        /// fires, concurrent readers can already observe dst with <c>TreeHandle == 0</c> and
-        /// invoke <c>RestoreTree</c>, which opens <c>data.bftree</c> under its own per-key
-        /// exclusive lock. Holding the exclusive lock here blocks <c>RestoreTree</c> until the
-        /// file is fully written, preventing it from observing a partial <c>data.bftree</c>.</para>
-        ///
-        /// <para>A direct <c>File.Copy(overwrite: true)</c> is sufficient under this lock — the
-        /// exclusive lock serializes against any reader that would open <c>data.bftree</c>, and
-        /// against other concurrent <c>PreStageAndRegisterPending</c> calls for the same key.
-        /// A crash mid-copy is self-healing: post-recovery either <c>OnRecoverySnapshotRead</c>
-        /// (above-FUA stub) or the next RIPROMOTE-cold (IsFlushed=true stub) re-pre-stages and
-        /// overwrites any partial file before <c>RestoreTree</c> can observe it.</para>
+        /// <para>A crash mid-copy is self-healing: post-recovery either <c>OnRecoverySnapshotRead</c>
+        /// (above-FUA stub) or the next promote of the still-flushed stub re-stages and overwrites any
+        /// partial file before <c>RestoreTree</c> can observe it.</para>
         /// </summary>
-        internal void PreStageAndRegisterPending(ReadOnlySpan<byte> keyBytes, long srcFlushAddress)
+        private void StageWorkingFileLocked(ReadOnlySpan<byte> keyBytes, long keyHash, long srcFlushAddress)
         {
             if (string.IsNullOrEmpty(riLogRoot))
                 return;
@@ -539,37 +531,51 @@ namespace Garnet.server
                 // with TreeHandle=0 and no pending entry; the next RestoreTree will return NOTFOUND
                 // for the affected key, surfacing the data loss explicitly rather than silently
                 // restoring incorrect data.
-                logger?.LogError("PreStageAndRegisterPending: invariant violation — source flush file missing: {Path}. " +
+                logger?.LogError("StageWorkingFileLocked: invariant violation — source flush file missing: {Path}. " +
                     "The destination record at the tail will have no pending entry; subsequent RestoreTree " +
                     "will return NOTFOUND for the affected key. NOT falling back to any other flush file " +
                     "to avoid restoring an incorrect tree version.", snapshotPath);
                 return;
             }
 
-            var dataPath = LogDataPath(hashPrefix);
-            var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(keyBytes));
-
-            // Acquire the per-key exclusive lock for the duration of the file copy AND the
-            // pending-entry registration. This blocks any concurrent RestoreTree (which also
-            // takes the exclusive lock) from observing a partial data.bftree.
-            // riLogRoot was created in the constructor.
-            rangeIndexLocks.AcquireExclusiveLock(keyHash, out var lockToken);
             try
             {
-                File.Copy(snapshotPath, dataPath, overwrite: true);
+                File.Copy(snapshotPath, LogDataPath(hashPrefix), overwrite: true);
 
                 var keyId = KeyId(keyBytes);
                 _ = liveIndexes.TryAdd(keyId, new TreeEntry(tree: null, keyHash, hashPrefix));
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "PreStageAndRegisterPending: copy/register failed for {Hash}; " +
+                logger?.LogError(ex, "StageWorkingFileLocked: copy/register failed for {Hash}; " +
                     "destination record will have no pending entry; subsequent RestoreTree will return NOTFOUND",
                     hashPrefix);
             }
-            finally
+        }
+
+        /// <summary>
+        /// Give a stub copied to the tail from a flushed stub whose tree was evicted its own copy of the source's flush
+        /// snapshot, so that it stays flushed at its new address and the next data operation promotes it (see
+        /// <see cref="GarnetRecordTriggers.PostCopyToTail"/>). Flush snapshots are named by address, and the destination's is
+        /// new, so this takes no lock.
+        /// </summary>
+        /// <returns>True if the destination has its flush snapshot.</returns>
+        internal bool CopyFlushSnapshot(ReadOnlySpan<byte> keyBytes, long srcFlushAddress, long dstAddress)
+        {
+            if (string.IsNullOrEmpty(riLogRoot))
+                return false;
+
+            var hashPrefix = HashKeyToPrefix(keyBytes);
+            try
             {
-                rangeIndexLocks.ReleaseLock(lockToken);
+                File.Copy(LogFlushPath(hashPrefix, srcFlushAddress), LogFlushPath(hashPrefix, dstAddress), overwrite: true);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "CopyFlushSnapshot: copying the flush snapshot of {Hash} from 0x{Src:x16} to 0x{Dst:x16} failed",
+                    hashPrefix, srcFlushAddress, dstAddress);
+                return false;
             }
         }
 
@@ -604,8 +610,8 @@ namespace Garnet.server
             var snapshotPath = CheckpointSnapshotPath(hashPrefix, recoveredCheckpointToken);
             if (!File.Exists(snapshotPath))
             {
-                // Below-FUA stubs have no checkpoint snapshot; RIPROMOTE PostCopyUpdater handles
-                // them lazily via the per-flush snapshot file on first access. NOT an error.
+                // Below-FUA stubs have no checkpoint snapshot; their promote (RIPROMOTE) stages them
+                // lazily from the per-flush snapshot file on first access. NOT an error.
                 logger?.LogDebug("OnRecoverySnapshotRead: snapshot absent for {Hash} — RIPROMOTE will handle lazily", hashPrefix);
                 return;
             }
@@ -660,8 +666,8 @@ namespace Garnet.server
         /// concurrent <see cref="SnapshotAllTreesForCheckpoint"/> for the same tree (otherwise
         /// bftree's internal <c>snapshot_in_progress</c> would no-op one of them).</para>
         ///
-        /// <para><b>Cold case</b> (<c>stub.TreeHandle == 0</c>): the stub was just CAS'd at the
-        /// tail by PostCopyToTail-cold or RIPROMOTE-PostCopyUpdater-cold; PreStage already
+        /// <para><b>Cold case</b> (<c>stub.TreeHandle == 0</c>): the stub was just promoted to the
+        /// tail from a flushed stub whose tree was evicted; <see cref="StageEvictedTree"/> already
         /// copied <c>&lt;srcAddr&gt;.flush.bftree → data.bftree</c> but RestoreTree hasn't
         /// activated a live tree yet. ANOTHER stub for the same key may have a live tree in
         /// <see cref="liveIndexes"/> (RestoreTree ran against a different addr's stub) — workers
@@ -676,9 +682,12 @@ namespace Garnet.server
         /// <item>Else → safe to <c>File.Copy(data.bftree → flushPath)</c>.</item>
         /// </list></para>
         ///
+        /// <para>A cold stub that is already flushed was copied to the tail by
+        /// <see cref="GarnetRecordTriggers.PostCopyToTail"/> together with its flush snapshot, so it
+        /// is skipped.</para>
+        ///
         /// <para>Sets <see cref="RangeIndexStub.IsFlushed"/> on the in-memory stub on success so
-        /// the next data operation routes through <see cref="GarnetRecordTriggers.PostCopyToTail"/>
-        /// or RIPROMOTE PostCopyUpdater to re-anchor the tree at the tail.</para>
+        /// the next data operation promotes it (RIPROMOTE) to re-anchor the tree at the tail.</para>
         /// </summary>
         /// <param name="key">The raw key bytes (used for hash prefix + lock acquisition).</param>
         /// <param name="valueSpan">The store value span containing the stub.</param>
@@ -689,6 +698,10 @@ namespace Garnet.server
 
             // Stale source whose ownership was transferred to a newer record at the tail: no-op.
             if (stub.IsTransferred)
+                return;
+
+            // Copied to the tail with its tree evicted, and with its own flush snapshot: nothing to snapshot.
+            if (stub.IsFlushed && stub.TreeHandle == nint.Zero)
                 return;
 
             // Need riLogRoot for any disk artifact (both backends use it as staging directory).
@@ -725,7 +738,7 @@ namespace Garnet.server
         /// concurrent RestoreTree (X-lock) that could activate a tree mid-copy and start
         /// writing to data.bftree from a worker thread. Use SHARED RI lock — deadlock-free
         /// because no firing-thread holds an X-lock across a Tsavorite op that fires deferred
-        /// OnFlush (RestoreTree releases X before its RMW; PreStage / DisposeTreeUnderLock
+        /// OnFlush (RestoreTree releases X before its RMW; staging / DisposeTreeUnderLock
         /// don't issue Tsavorite ops while holding X; OnFlush itself doesn't take X).
         /// </summary>
         private void SnapshotForFlushCold(ReadOnlySpan<byte> key, string hashPrefix,
@@ -807,7 +820,7 @@ namespace Garnet.server
         /// <item>Activated entries (Tree != null) → take a CPR snapshot via the tree handle
         /// straight to the checkpoint destination (<see cref="TreeEntry.SnapshotUnderClaim"/>).</item>
         /// <item>Pending entries (Tree == null) → <c>File.Copy(data.bftree)</c> (no live tree
-        /// to snapshot from; data.bftree was pre-staged by PreStage).</item>
+        /// to snapshot from; data.bftree was pre-staged by StageWorkingFileLocked).</item>
         /// </list></para>
         ///
         /// <para>Uses the per-tree atomic <see cref="TreeEntry.SnapshotInProgress"/> to serialize
@@ -851,7 +864,7 @@ namespace Garnet.server
                         else
                         {
                             // Pending entry: data.bftree was pre-staged from the source flush
-                            // file by PreStageAndRegisterPending. data.bftree is the only
+                            // file by StageWorkingFileLocked. data.bftree is the only
                             // correct source. No live tree means no concurrent writer.
                             var dataPath = LogDataPath(entry.HashPrefix);
                             if (File.Exists(dataPath))
@@ -991,7 +1004,7 @@ namespace Garnet.server
         /// </list>
         ///
         /// <para>Multiple flush files per key hash are possible and all within the range are
-        /// included — <see cref="PreStageAndRegisterPending"/> uses the exact source address
+        /// included — <see cref="StageWorkingFileLocked"/> uses the exact source address
         /// to locate the specific flush file.</para>
         /// </summary>
         /// <param name="checkpointToken">The checkpoint token (storeHlogToken) to locate

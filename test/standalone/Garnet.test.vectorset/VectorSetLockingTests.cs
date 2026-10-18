@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -197,7 +196,7 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db.KeyExists(Key), "DEL did not remove the Vector Set");
 
             var deletedRecords = 0;
-            var deletedRecordsWithIndex = new List<long>();
+            var deletedRecordWithIndex = LogAddress.kInvalidAddress;
             using (var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress, DiskScanBufferingMode.NoBuffering, includeClosedRecords: true))
             {
                 while (iter.GetNext())
@@ -210,13 +209,13 @@ namespace Garnet.test
 
                     VectorManager.ReadIndex(iter.ValueSpan, out _, out _, out _, out _, out _, out _, out _, out _, out var indexPtr);
                     if (indexPtr != 0)
-                        deletedRecordsWithIndex.Add(iter.CurrentAddress);
+                        deletedRecordWithIndex = iter.CurrentAddress;
                 }
             }
 
             ClassicAssert.AreEqual(1, deletedRecords, "DEL elided the index record rather than superseding it");
-            ClassicAssert.IsEmpty(deletedRecordsWithIndex,
-                $"the deleted index record at {string.Join(", ", deletedRecordsWithIndex)} still carries the index pointer that DEL dropped");
+            ClassicAssert.AreEqual(LogAddress.kInvalidAddress, deletedRecordWithIndex,
+                $"the deleted index record at {deletedRecordWithIndex} still carries the index pointer that DEL dropped");
 
             // Evicting the sealed record must not request another drop.
             store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
@@ -338,7 +337,6 @@ namespace Garnet.test
                 var queued = transaction.ExecuteAsync("VEMB", Key, $"member{member}");
                 var exec = transaction.ExecuteAsync();
                 await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(WaitTimeout);
-                var transactionVersion = driver.SystemState.Version;
 
                 // The checkpoint moves the store to the next version, and waits in IN_PROGRESS for the transaction.
                 ClassicAssert.AreEqual("Background saving started", (string)await dbOther.ExecuteAsync("BGSAVE").WaitAsync(WaitTimeout));
@@ -360,18 +358,8 @@ namespace Garnet.test
                 }
 
                 ClassicAssert.IsTrue(ranDuringCheckpoint, "EXEC did not finish while a checkpoint waited for it");
-
-                if (exec.IsFaulted)
-                {
-                    // The server dropped the connection without ending the transaction, which the checkpoint would wait for
-                    // forever. End it on the dropped session's behalf, so that the checkpoint completes and the server stops.
-                    driver.EndTransaction(transactionVersion);
-                    _ = SpinWait.SpinUntil(() => driver.SystemState.Phase == Phase.REST, WaitTimeout);
-
-                    Assert.Fail("EXEC failed while a checkpoint waited for it, so VEMB read element data on a session pinned to the " +
-                        $"transaction's version: {exec.Exception?.InnerException?.Message}");
-                }
-
+                Assert.DoesNotThrowAsync(() => exec,
+                    "EXEC failed while a checkpoint waited for it: VEMB read element data on a session pinned to the transaction's version");
                 ClassicAssert.IsTrue(await exec, "EXEC was aborted");
                 CollectionAssert.AreEqual(new[] { member + 1.0, 2.0, 3.0 }, ((RedisResult[])await queued).Select(static r => Math.Round((double)r, 3)).ToArray());
 

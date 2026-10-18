@@ -165,7 +165,7 @@ namespace Garnet.common
         /// </summary>
         RangeIndex_Pause_After_Shared_Lock,
         /// <summary>
-        /// RangeIndex: fail a data operation after it takes the shared RangeIndex lock, before it reads the stub.
+        /// RangeIndex: fail the next data operation that takes the shared RangeIndex lock, before it reads the stub.
         /// </summary>
         RangeIndex_Fail_After_Shared_Lock,
         /// <summary>
@@ -180,5 +180,23 @@ namespace Garnet.common
         /// Transaction: pause EXEC after the transaction locks its keys, before it runs the queued commands.
         /// </summary>
         Transaction_Pause_After_Lock_Acquisition,
+        /// <summary>
+        /// Transaction: fail each command EXEC runs with a <see cref="GarnetException"/> that ends the session.
+        /// </summary>
+        Transaction_Fail_During_Exec,
+        /// <summary>
+        /// Transaction: fail EXEC with a <see cref="GarnetException"/> that ends the session, after it acquires the transaction
+        /// version and before it locks the transaction's keys.
+        /// </summary>
+        Transaction_Fail_Locking_Keys,
+        /// <summary>
+        /// Transaction: throw an exception that is not a <see cref="GarnetException"/> from the next command EXEC runs.
+        /// </summary>
+        Transaction_Throw_During_Exec,
+        /// <summary>
+        /// RangeIndex: cleared when an operation is about to take the exclusive RangeIndex lock to stage a key's working
+        /// file from a flush snapshot.
+        /// </summary>
+        RangeIndex_Before_Staging_Lock,
     }
 }
