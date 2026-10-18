@@ -163,7 +163,7 @@ namespace Garnet.server
                 RespCommand.RISCAN,
                 RespCommand.VADD, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB,
                 RespCommand.VGETATTR, RespCommand.VINFO, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER,
-                RespCommand.VSIM,
+                RespCommand.VSIM, RespCommand.XVCREATE, RespCommand.XVIMPORT,
                 RespCommand.CONFIG_REWRITE, RespCommand.ACL_LOAD, RespCommand.ACL_SAVE,
                 RespCommand.MODULE_LOADCS, RespCommand.REGISTERCS,
                 RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT, RespCommand.CLUSTER_SEND_CKPT_METADATA,

@@ -644,6 +644,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public void XVCREATEAndXVIMPORTRunOnAnExecutorThread()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            var executor = server.Provider.StoreWrapper.offloadExecutor;
+            var id = BitConverter.GetBytes(1u);
+            var vector = MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray();
+
+            foreach (var args in new object[][]
+            {
+                ["XVCREATE", "target", "DIM", 3, "NOQUANT", "M", 4],
+                ["XVIMPORT", "target", "VECTOR", id, vector],
+            })
+            {
+                var posts = executor.Posts;
+                ClassicAssert.AreEqual("OK", (string)db.Execute((string)args[0], args[1..]));
+                ClassicAssert.Greater(executor.Posts, posts, $"{args[0]} ran on the thread that received it.");
+            }
+        }
+
+        [Test]
         public void XVCREATE([Values(RedisProtocol.Resp2, RedisProtocol.Resp3)] RedisProtocol protocol)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: protocol));
