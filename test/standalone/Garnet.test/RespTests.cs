@@ -1496,6 +1496,41 @@ namespace Garnet.test
             ClassicAssert.IsTrue(exception);
         }
 
+        /// <summary>
+        /// A command argument whose magnitude is >= 2^64 (20+ digits) used to throw an uncaught
+        /// RespParsingException out of the shared digit-parsing helper, which closed the connection
+        /// and reported "ERR Protocol Error" instead of the ordinary out-of-range command error.
+        /// A trailing PING on the same connection confirms the session survives.
+        /// </summary>
+        [Test]
+        [TestCase("18446744073709551616")]     // 2^64
+        [TestCase("-18446744073709551616")]    // -2^64
+        [TestCase("99999999999999999999999")]  // much larger than 2^64
+        public void HugeIntegerArgumentDoesNotCloseConnection(string hugeValue)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var notIntegerResponse = "-ERR value is not an integer or out of range.\r\n+PONG\r\n";
+
+            lightClientRequest.SendCommand("SET incrkey 1");
+            var response = lightClientRequest.SendCommands($"INCRBY incrkey {hugeValue}", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(notIntegerResponse, response);
+
+            response = lightClientRequest.SendCommands($"PEXPIRE incrkey {hugeValue}", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(notIntegerResponse, response);
+
+            lightClientRequest.SendCommand("RPUSH listkey a b c");
+            response = lightClientRequest.SendCommands($"LRANGE listkey {hugeValue} 100", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(notIntegerResponse, response);
+
+            response = lightClientRequest.SendCommands($"LINDEX listkey {hugeValue}", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(notIntegerResponse, response);
+
+            // The key must not have been mutated by the rejected INCRBY.
+            response = lightClientRequest.SendCommand("GET incrkey");
+            TestUtils.AssertEqualUpToExpectedLength("$1\r\n1\r\n", response);
+        }
+
         [Test]
         public void SimpleIncrementByFloatWithNoKey()
         {
