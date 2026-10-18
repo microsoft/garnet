@@ -412,8 +412,9 @@ namespace Garnet.server
         /// Whether client connections process their input on the socket event thread that receives it (Linux and
         /// macOS), rather than on the thread pool. This removes a thread hop from every request, and holds the event
         /// thread, with every other connection it serves, for as long as the input takes to process. A command that
-        /// waits on another client, a timer, the AOF, a cluster peer or a device read parks its session and releases
-        /// the thread, and one that may wait on synchronous storage IO runs on an offload thread (see
+        /// waits on another client, a timer, the AOF, a cluster peer, a device read or, for most key commands, a key
+        /// another client holds locked parks its session and releases the thread, and one that may wait on synchronous
+        /// storage IO runs on an offload thread (see
         /// <see cref="OffloadMaxThreads"/>). Applies to accepted connections, not to those the server opens to its
         /// peers. Pair with <see cref="NetworkEventThreads"/>. Ignored on Windows.
         /// </summary>

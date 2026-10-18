@@ -420,7 +420,7 @@ namespace Garnet
         public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
-        [Option("network-inline-completions", Required = false, HelpText = "Process the input of client connections on the socket event thread that receives it (Linux and macOS), rather than handing each receive to the thread pool. Saves a thread hop per request; the event thread and the other connections it serves wait while a request runs. A command that waits on another client, a timer, the AOF, a cluster peer or a device read releases the thread, and one that may wait on synchronous storage IO runs on an offload thread (see --offload-max-threads). Pair with --network-event-threads. Ignored on Windows.")]
+        [Option("network-inline-completions", Required = false, HelpText = "Process the input of client connections on the socket event thread that receives it (Linux and macOS), rather than handing each receive to the thread pool. Saves a thread hop per request; the event thread and the other connections it serves wait while a request runs. A command that waits on another client, a timer, the AOF, a cluster peer, a device read or, for most key commands, a key another client holds locked releases the thread, and one that may wait on synchronous storage IO runs on an offload thread (see --offload-max-threads). Pair with --network-event-threads. Ignored on Windows.")]
         public bool? NetworkInlineCompletions { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
