@@ -46,6 +46,43 @@ namespace Garnet.server
         static readonly OffloadClass[] OffloadClasses = CreateOffloadClasses();
 
         /// <summary>
+        /// Which of the checks a command meets before it is dispatched can park it, given what the server is configured
+        /// with. A command none of whose bits a session has in its <see cref="preDispatchMask"/> runs without meeting them.
+        /// </summary>
+        [Flags]
+        enum PreDispatchCheck : byte
+        {
+            None = 0,
+
+            /// <summary>
+            /// The command is of class <see cref="OffloadClass.Always"/> or <see cref="OffloadClass.Conditional"/>.
+            /// </summary>
+            Offload = 1,
+
+            /// <summary>
+            /// The command is of class <see cref="OffloadClass.WhenSpilled"/>, which can only apply with a storage tier.
+            /// </summary>
+            WhenSpilled = 2,
+
+            /// <summary>
+            /// The command may append to the AOF or add records to the store's log, which can only make it wait with an
+            /// AOF or a storage tier.
+            /// </summary>
+            AddsRecords = 4,
+        }
+
+        /// <summary>
+        /// The <see cref="PreDispatchCheck"/> bits of each command, indexed by the command: a superset of those that
+        /// <see cref="MustWaitForAofGate"/> and <see cref="MustOffload"/> can say yes to.
+        /// </summary>
+        static readonly PreDispatchCheck[] PreDispatchChecks = CreatePreDispatchChecks();
+
+        /// <summary>
+        /// The <see cref="PreDispatchCheck"/> bits that can apply on this server.
+        /// </summary>
+        readonly PreDispatchCheck preDispatchMask;
+
+        /// <summary>
         /// Set by <see cref="OffloadAwaitable"/> while the session suspends to be run on the executor, and read by
         /// <see cref="ParkSuspension"/> once the session has parked: 0 for none, 1 to run it on the executor, 2 to run it
         /// there even if every executor thread is busy.
@@ -147,17 +184,126 @@ namespace Garnet.server
             return classes;
         }
 
+        static PreDispatchCheck[] CreatePreDispatchChecks()
+        {
+            var checks = new PreDispatchCheck[OffloadClasses.Length];
+            for (var i = 0; i < checks.Length; i++)
+            {
+                var cmd = (RespCommand)i;
+                checks[i] = OffloadClasses[i] switch
+                {
+                    OffloadClass.Always or OffloadClass.Conditional => PreDispatchCheck.Offload,
+                    OffloadClass.WhenSpilled => PreDispatchCheck.WhenSpilled,
+                    _ => PreDispatchCheck.None,
+                };
+
+                // Every command MayAddRecords can say yes to, a custom command whatever its type
+                if (cmd.IsWriteOnly()
+                    || cmd is RespCommand.EVAL or RespCommand.EVALSHA or RespCommand.RUNTXP or RespCommand.CustomTxn
+                        or RespCommand.CustomProcedure or RespCommand.CustomRawStringCmd or RespCommand.CustomObjCmd
+                        or RespCommand.CLUSTER_APPENDLOG or RespCommand.CLUSTER_MIGRATE
+                        or RespCommand.CLUSTER_DELKEYSINSLOT or RespCommand.CLUSTER_DELKEYSINSLOTRANGE)
+                    checks[i] |= PreDispatchCheck.AddsRecords;
+            }
+            return checks;
+        }
+
+        /// <summary>
+        /// The <see cref="PreDispatchCheck"/> bits that can apply on a server with <paramref name="serverOptions"/>.
+        /// </summary>
+        /// <param name="serverOptions">The server's options.</param>
+        /// <param name="hasAof">Whether the server has an AOF.</param>
+        static PreDispatchCheck CreatePreDispatchMask(GarnetServerOptions serverOptions, bool hasAof)
+        {
+            var mask = PreDispatchCheck.Offload;
+
+            // Only a log with a storage tier evicts records, which a command may then read from the device
+            if (serverOptions.EnableStorageTier)
+                mask |= PreDispatchCheck.WhenSpilled;
+
+            // Only a log with a storage tier, or an AOF, has to flush before it can allocate, and only an AOF has a gate
+            if (serverOptions.EnableStorageTier || serverOptions.EnableAOF || hasAof)
+                mask |= PreDispatchCheck.AddsRecords;
+
+            return mask;
+        }
+
+        /// <summary>
+        /// Whether <paramref name="cmd"/>, which has just been parsed, may have to park before it is dispatched, so that
+        /// <see cref="ParkBeforeDispatch"/> or <see cref="MustOffload"/> has to be asked.
+        /// </summary>
+        /// <remarks>
+        /// A command that does not wait, on a server without an AOF or a storage tier, pays one load and a test here.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool MayParkBeforeDispatch(RespCommand cmd)
+        {
+            var checks = PreDispatchChecks;
+            return (uint)cmd < (uint)checks.Length && (checks[(int)cmd] & preDispatchMask) != 0;
+        }
+
+        /// <summary>
+        /// What the dispatch loop does with a command <see cref="ParkBeforeDispatch"/> has been asked about.
+        /// </summary>
+        enum PreDispatchOutcome : byte
+        {
+            /// <summary>
+            /// Dispatch the command.
+            /// </summary>
+            Run,
+
+            /// <summary>
+            /// The session has parked, with the read cursor at the start of the command: stop processing the batch.
+            /// </summary>
+            Stop,
+
+            /// <summary>
+            /// The read cursor is back at the start of the command: parse it again.
+            /// </summary>
+            Reparse,
+        }
+
+        /// <summary>
+        /// Parks the session, before <paramref name="cmd"/> is dispatched outside a transaction, if the command has to wait
+        /// for the AOF to admit appends or has to run on an executor thread.
+        /// </summary>
+        /// <param name="cmd">The command, which has just been parsed.</param>
+        /// <param name="commandReadHead">Receive-buffer offset of the first byte of the command.</param>
+        /// <remarks>
+        /// A command parked here has run nothing: it is parsed and verified again from the start when the session resumes.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        PreDispatchOutcome ParkBeforeDispatch(RespCommand cmd, int commandReadHead)
+        {
+            // A write the AOF is too far ahead of its replicas to take waits here rather than stalling on a thread inside
+            // the append
+            if (MustWaitForAofGate(cmd))
+            {
+                endReadHead = readHead = commandReadHead;
+                return ParkForAofGate() ? PreDispatchOutcome.Stop : PreDispatchOutcome.Reparse;
+            }
+
+            // A command that would wait on this thread, for the device or for a file, runs on an executor thread instead
+            if (MustOffload(cmd))
+            {
+                endReadHead = readHead = commandReadHead;
+                ParkForOffload(mustRun: false);
+                return PreDispatchOutcome.Stop;
+            }
+
+            return PreDispatchOutcome.Run;
+        }
+
         /// <summary>
         /// Whether <paramref name="cmd"/>, which has just been parsed, has to run on an executor thread: it would wait on
         /// the thread it runs on, which receives for other sessions, and this session can park to move it.
         /// </summary>
         /// <remarks>
-        /// A command that does not wait is classed <see cref="OffloadClass.Never"/>, so it pays one load, and a few more
-        /// if it may add records while a log has a storage tier or there is an AOF. A command already on an executor thread
+        /// Asked only of a command <see cref="MayParkBeforeDispatch"/> says yes to. A command already on an executor thread
         /// runs there, as does one in a consume that cannot park, such as a script's, and one resumed on the thread pool by
         /// an executor that has been disposed.
         /// </remarks>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         bool MustOffload(RespCommand cmd)
         {
             var classes = OffloadClasses;

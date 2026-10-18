@@ -342,6 +342,7 @@ namespace Garnet.server
 
             allowMultiDb = storeWrapper.serverOptions.AllowMultiDb;
             aofBackpressure = storeWrapper.appendOnlyFile?.backpressure;
+            preDispatchMask = CreatePreDispatchMask(storeWrapper.serverOptions, hasAof: storeWrapper.appendOnlyFile != null);
             // Create the default DB session (for DB 0) & add it to the session map
             activeDbId = 0;
             var dbSession = CreateDatabaseSession(0);
@@ -903,7 +904,7 @@ namespace Garnet.server
                             {
                                 // The transaction holds its locks, so a command that would wait on this thread moves
                                 // to an executor thread that is started for it if every one is busy
-                                if (MustOffload(cmd))
+                                if (MayParkBeforeDispatch(cmd) && MustOffload(cmd))
                                 {
                                     endReadHead = readHead = _origReadHead;
                                     ParkForOffload(mustRun: true);
@@ -954,24 +955,16 @@ namespace Garnet.server
                         }
                         else
                         {
-                            // A write the AOF is too far ahead of its replicas to take waits here, with nothing run
-                            // yet, rather than stalling on a thread inside the append. It is parsed and verified
-                            // again from the start once the AOF admits appends.
-                            if (MustWaitForAofGate(cmd))
+                            // A write the AOF is too far ahead of its replicas to take, or a command that would wait on
+                            // this thread, parks here with nothing run yet, and is parsed and verified again from the start
+                            // once the session resumes
+                            if (MayParkBeforeDispatch(cmd))
                             {
-                                endReadHead = readHead = _origReadHead;
-                                if (ParkForAofGate())
+                                var outcome = ParkBeforeDispatch(cmd, _origReadHead);
+                                if (outcome == PreDispatchOutcome.Stop)
                                     break;
-                                continue;
-                            }
-
-                            // A command that would wait on this thread, for the device or for a file, runs on an
-                            // executor thread instead, parsed and verified again from the start there
-                            if (MustOffload(cmd))
-                            {
-                                endReadHead = readHead = _origReadHead;
-                                ParkForOffload(mustRun: false);
-                                break;
+                                if (outcome == PreDispatchOutcome.Reparse)
+                                    continue;
                             }
 
                             if (clusterSession == null || CanServeSlot(cmd))

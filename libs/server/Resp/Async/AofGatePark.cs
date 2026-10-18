@@ -74,9 +74,8 @@ namespace Garnet.server
         /// it may append, the AOF is too far ahead of its replicas for that, and this session can park to wait.
         /// </summary>
         /// <remarks>
-        /// The switch is read first, so with the gate off, which is the default, a command pays one load. A consume
-        /// that cannot park, such as a script's, does not wait here; its appends are held by the gate in the
-        /// append itself.
+        /// Asked only of a command <see cref="MayParkBeforeDispatch"/> says yes to. A consume that cannot park, such as a
+        /// script's, does not wait here; its appends are held by the gate in the append itself.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool MustWaitForAofGate(RespCommand cmd)
