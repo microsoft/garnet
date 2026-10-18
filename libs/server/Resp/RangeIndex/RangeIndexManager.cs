@@ -124,6 +124,22 @@ namespace Garnet.server
         private Guid recoveredCheckpointToken;
 
         /// <summary>
+        /// Last value returned by <see cref="NextSequence"/>.
+        /// </summary>
+        private static long lastSequence;
+
+        /// <summary>
+        /// The sequence of a <see cref="TreeEntry"/> that a retirement has claimed for removal.
+        /// </summary>
+        private const long ClaimedSequence = long.MaxValue;
+
+        /// <summary>
+        /// Next value of a counter that orders entry registrations (<see cref="TreeEntry"/>) and retirement requests
+        /// (<see cref="DisposeTreeUnderLock"/>).
+        /// </summary>
+        private static long NextSequence() => Interlocked.Increment(ref lastSequence);
+
+        /// <summary>
         /// Per-tree entry in <see cref="liveIndexes"/>. Class (not struct) so the
         /// <see cref="SnapshotPending"/> field can be updated in-place via <c>Volatile.Write</c>.
         /// </summary>
@@ -166,6 +182,53 @@ namespace Garnet.server
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void ReleaseSnapshot()
                 => Volatile.Write(ref SnapshotInProgress, 0);
+
+            /// <summary>
+            /// When the entry was registered, or re-registered for a newer stub of the key (<see cref="TryReregister"/>), from
+            /// <see cref="NextSequence"/>. A retirement removes the entry only if it was registered before the retirement was
+            /// requested (<see cref="TryClaimForRemoval"/>). <see cref="ClaimedSequence"/> once a retirement has claimed it.
+            /// </summary>
+            private long sequence = NextSequence();
+
+            /// <summary>
+            /// Claim the entry for a retirement requested at <paramref name="requestedAt"/>, which then removes it and disposes
+            /// its tree, if it was registered before then.
+            /// </summary>
+            public bool TryClaimForRemoval(long requestedAt)
+            {
+                var current = Volatile.Read(ref sequence);
+                while (current <= requestedAt)
+                {
+                    var observed = Interlocked.CompareExchange(ref sequence, ClaimedSequence, current);
+                    if (observed == current)
+                        return true;
+                    current = observed;
+                }
+
+                return false;
+            }
+
+            /// <summary>
+            /// Mark the entry registered now, so that a retirement requested before now leaves it.
+            /// </summary>
+            /// <returns>False if a retirement has claimed it.</returns>
+            public bool TryReregister()
+            {
+                var stamp = NextSequence();
+                var current = Volatile.Read(ref sequence);
+                while (current != ClaimedSequence)
+                {
+                    if (current >= stamp)
+                        return true;
+
+                    var observed = Interlocked.CompareExchange(ref sequence, stamp, current);
+                    if (observed == current)
+                        return true;
+                    current = observed;
+                }
+
+                return false;
+            }
 
             /// <summary>
             /// Spin to claim the per-tree snapshot atomic, take a CPR snapshot of the live tree
@@ -440,11 +503,22 @@ namespace Garnet.server
             if (storeEpoch != null)
             {
                 var loser = bfTree;
-                storeEpoch.BumpCurrentEpoch(() =>
+
+                // RegisterIndex's callers do not hold the epoch, which BumpCurrentEpoch requires.
+                var resumed = storeEpoch.ResumeIfNotProtected();
+                try
                 {
-                    try { loser.Dispose(); }
-                    catch (Exception ex) { logger?.LogWarning(ex, "Deferred dispose failed: {Reason}", reason); }
-                });
+                    storeEpoch.BumpCurrentEpoch(() =>
+                    {
+                        try { loser.Dispose(); }
+                        catch (Exception ex) { logger?.LogWarning(ex, "Deferred dispose failed: {Reason}", reason); }
+                    });
+                }
+                finally
+                {
+                    if (resumed)
+                        storeEpoch.Suspend();
+                }
             }
             else
             {
@@ -460,16 +534,40 @@ namespace Garnet.server
         /// </summary>
         /// <remarks>
         /// Called by the RIPROMOTE copy of a stub whose tree was evicted, once the copy is in the log, so that an eviction of
-        /// the source stub before then cannot remove the entry the copy needs. Runs under the bucket latch, so it does not
+        /// the source stub before then cannot remove the entry the copy needs, and by a copy to the tail that relies on the
+        /// working file (<see cref="GarnetRecordTriggers.PostCopyToTail"/>). Runs under the bucket latch, so it does not
         /// take the key's lock.
         /// </remarks>
         internal void RegisterPending(ReadOnlySpan<byte> keyBytes, long keyHash)
         {
-            var hashPrefix = HashKeyToPrefix(keyBytes);
             var keyId = KeyId(keyBytes);
-            var pending = new TreeEntry(tree: null, keyHash, hashPrefix);
-            // Add only if no entry exists; if one exists (activated or pending), leave it alone.
-            _ = liveIndexes.TryAdd(keyId, pending);
+            TreeEntry pending = null;
+
+            // Each retry follows a concurrent change to the key's entry.
+            while (true)
+            {
+                if (!liveIndexes.TryGetValue(keyId, out var existing))
+                {
+                    pending ??= new TreeEntry(tree: null, keyHash, HashKeyToPrefix(keyBytes));
+                    if (liveIndexes.TryAdd(keyId, pending))
+                        return;
+                    continue;
+                }
+
+                // An active entry's tree is the key's: a stub holds it, or a restore is about to publish it in one.
+                if (existing.Tree != null)
+                    return;
+
+                // A pending entry is re-registered for this stub, so that a retirement requested before now, which is for an
+                // older stub of the key, leaves it.
+                if (existing.TryReregister())
+                    return;
+
+                // Such a retirement has claimed it; replace it, and the retirement leaves the replacement.
+                pending ??= new TreeEntry(tree: null, keyHash, HashKeyToPrefix(keyBytes));
+                if (liveIndexes.TryUpdate(keyId, pending, existing))
+                    return;
+            }
         }
 
         /// <summary>

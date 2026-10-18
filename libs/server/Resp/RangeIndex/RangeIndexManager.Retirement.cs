@@ -20,7 +20,8 @@ namespace Garnet.server
     /// <para>The record triggers that retire a tree run under the record's bucket latch (delete) or in an epoch drain
     /// (eviction), while a data operation holding the per-key lock shared may be waiting for that latch or be the thread
     /// running the drain. So when the lock is held, <see cref="DisposeTreeUnderLock"/> hands the retirement to a task
-    /// that takes the lock once those operations release it. Until that retirement completes, operations that would
+    /// that takes the lock once those operations release it. A retirement, deferred or not, is pending until its tree is
+    /// disposed and the key's working file deleted, which waits for the store epoch. Meanwhile operations that would
     /// register, restore or recreate a tree for the key wait for it (<see cref="WaitForRetirement"/>), so they cannot
     /// reuse the retiring tree, have their registration removed by the retirement, or have the key's working file
     /// deleted under them.</para>
@@ -28,15 +29,17 @@ namespace Garnet.server
     public sealed partial class RangeIndexManager
     {
         /// <summary>
-        /// A retirement handed to <see cref="RunRetirementTaskAsync"/>.
+        /// A retirement handed to <see cref="RunRetirementTaskAsync"/>, requested at <paramref name="requestedAt"/> (see
+        /// <see cref="RetireLocked"/>).
         /// </summary>
-        private sealed class Retirement(byte[] key, long keyHash, Guid keyId, nint treeHandle, bool deleteFiles)
+        private sealed class Retirement(byte[] key, long keyHash, Guid keyId, nint treeHandle, bool deleteFiles, long requestedAt)
         {
             internal byte[] Key { get; } = key;
             internal long KeyHash { get; } = keyHash;
             internal Guid KeyId { get; } = keyId;
             internal nint TreeHandle { get; } = treeHandle;
             internal bool DeleteFiles { get; } = deleteFiles;
+            internal long RequestedAt { get; } = requestedAt;
 
             private int completed;
 
@@ -64,18 +67,26 @@ namespace Garnet.server
         /// <summary>
         /// Hand the retirement of the key's tree to <see cref="RunRetirementTaskAsync"/>, because the key's lock is held.
         /// </summary>
-        private void DeferRetirement(ReadOnlySpan<byte> key, long keyHash, nint treeHandle, bool deleteFiles)
+        private void DeferRetirement(ReadOnlySpan<byte> key, long keyHash, nint treeHandle, bool deleteFiles, long requestedAt)
         {
             var keyId = KeyId(key);
 
-            _ = Interlocked.Increment(ref pendingRetirementCount);
-            _ = pendingRetirements.AddOrUpdate(keyId, 1, static (_, count) => count + 1);
+            AddPendingRetirement(keyId);
 
-            if (!retirements.Writer.TryWrite(new Retirement(key.ToArray(), keyHash, keyId, treeHandle, deleteFiles)))
+            if (!retirements.Writer.TryWrite(new Retirement(key.ToArray(), keyHash, keyId, treeHandle, deleteFiles, requestedAt)))
             {
                 // Only once disposed, which disposes every remaining tree itself.
                 CompleteRetirement(keyId);
             }
+        }
+
+        /// <summary>
+        /// Count a retirement of the key's tree pending until <see cref="CompleteRetirement(Guid)"/>.
+        /// </summary>
+        private void AddPendingRetirement(Guid keyId)
+        {
+            _ = Interlocked.Increment(ref pendingRetirementCount);
+            _ = pendingRetirements.AddOrUpdate(keyId, 1, static (_, count) => count + 1);
         }
 
         /// <summary>
@@ -110,7 +121,8 @@ namespace Garnet.server
             rangeIndexLocks.AcquireExclusiveLock(retirement.KeyHash, out var lockToken);
             try
             {
-                RetireLocked(retirement.Key, retirement.KeyId, retirement.TreeHandle, retirement.DeleteFiles, out disposedTree, out hashPrefix);
+                RetireLocked(retirement.Key, retirement.KeyId, retirement.TreeHandle, retirement.DeleteFiles, retirement.RequestedAt,
+                    out disposedTree, out hashPrefix);
             }
             finally
             {
@@ -175,9 +187,21 @@ namespace Garnet.server
                 return;
 
             var keyId = KeyId(key);
+            if (!pendingRetirements.ContainsKey(keyId))
+                return;
+
+            OnWaitForRetirement();
+
             while (pendingRetirements.ContainsKey(keyId))
                 _ = Thread.Yield();
         }
+
+        /// <summary>
+        /// Test hook: signals that an operation waits for a pending retirement of its key's tree.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnWaitForRetirement()
+            => _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.RangeIndex_Waits_For_Retirement);
 
         /// <summary>
         /// Stop accepting deferred retirements, and retire the ones already handed over.

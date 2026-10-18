@@ -292,6 +292,87 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A Lua script run as a transaction enrolls the sessions Vector Sets use for index and element data, as EXEC does, so
+        /// a read-only Vector Set command in the script proceeds while an index grow waits in PREPARE_GROW for the transaction.
+        /// </summary>
+        [Test]
+        public async Task ReadOnlyCommandsInLuaTransactionProceedDuringPrepareGrowAsync([Values("VCARD", "VEMB", "VSIM")] string command)
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const ExceptionInjectionType Pause = ExceptionInjectionType.Transaction_Pause_After_Lock_Acquisition;
+            const string Key = nameof(ReadOnlyCommandsInLuaTransactionProceedDuringPrepareGrowAsync);
+            const string DeclaredKey = "declared";
+
+            // The default index size of TestUtils.CreateGarnetServer, 1m, in buckets of 64 bytes
+            const long IndexBuckets = (1L << 20) / 64;
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableVectorSetPreview: true, enableLua: true, luaTransactionMode: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            AddMembers(db, Key, count: 4);
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.WaitForQuiescence();
+
+            // A script runs as a transaction only if it declares a key, which the transaction locks exclusively, and a Vector
+            // Set command's index read does not go through the transaction's locks, so it would wait on that lock forever.
+            // The script declares another key instead, in another bucket, and is passed the set's key as an argument.
+            ClassicAssert.AreNotEqual(SpanByteComparer.StaticGetHashCode64(Encoding.ASCII.GetBytes(Key)) & (IndexBuckets - 1),
+                SpanByteComparer.StaticGetHashCode64(Encoding.ASCII.GetBytes(DeclaredKey)) & (IndexBuckets - 1), "The declared key shares the set's bucket");
+
+            var arguments = new object[] { command }.Concat(ReadOnlyCommandArguments(command, Key)).Select(static arg => (RedisValue)arg.ToString()).ToArray();
+            var script = $"return redis.call({string.Join(", ", Enumerable.Range(1, arguments.Length).Select(static i => $"ARGV[{i}]"))})";
+
+            var driver = server.Provider.StoreWrapper.DefaultDatabase.StateMachineDriver;
+            var prepareGrow = new HoldPrepareGrowStateMachine();
+            var registered = false;
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                // The script parks with its key locked, before it runs.
+                var run = db.ScriptEvaluateAsync(script, [DeclaredKey], arguments);
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(WaitTimeout);
+
+                // Hold the store in PREPARE_GROW, as an index grow does while it waits for transactions to finish.
+                registered = driver.Register(prepareGrow);
+                ClassicAssert.IsTrue(registered, "Could not start the PREPARE_GROW state machine");
+                ClassicAssert.IsTrue(prepareGrow.Entered.Wait(WaitTimeout), "The state machine never reached PREPARE_GROW");
+
+                bool ranDuringPrepareGrow;
+                RedisResult result;
+                ExceptionInjectionHelper.SuspendParking();
+                try
+                {
+                    ranDuringPrepareGrow = await CompletesWithinAsync(run, NotBlockedTimeout);
+
+                    prepareGrow.Release();
+                    result = await run.WaitAsync(WaitTimeout);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+
+                ClassicAssert.IsTrue(ranDuringPrepareGrow,
+                    $"{command} in a Lua transaction waited out PREPARE_GROW: a session it uses is not enrolled in the transaction");
+                AssertReadOnlyCommandResult(command, result, expectedCard: 4);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+                prepareGrow.Release();
+
+                if (registered)
+                    ClassicAssert.IsTrue(SpinWait.SpinUntil(() => driver.SystemState.Phase == Phase.REST, WaitTimeout), "The state machine never returned to REST");
+            }
+        }
+
+        /// <summary>
         /// While a checkpoint waits for a transaction, the sessions the transaction has locked keys through stay pinned to
         /// its version. That is only safe for locked keys, whose hash chains no other session can add a next-version record
         /// to. Vector Set commands read element data on another session, through keys the transaction has not locked, so a

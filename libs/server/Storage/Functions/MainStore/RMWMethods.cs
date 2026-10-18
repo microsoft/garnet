@@ -1538,6 +1538,10 @@ namespace Garnet.server
                         srcValue.CopyTo(dstLogRecord.ValueSpan);
                         RangeIndexManager.RecreateIndex((nint)input.arg1, dstLogRecord.ValueSpan);
 
+                        // The source may have been flushed since the restore read it, but the copy has no flush snapshot at
+                        // its address and holds the live tree.
+                        RangeIndexManager.ClearFlushedFlag(dstLogRecord.ValueSpan);
+
                         var dataHeader = dstLogRecord.DataHeader;
                         dataHeader.RecordType = RangeIndexManager.RangeIndexRecordType;
                         dstLogRecord.SetDataHeader(dataHeader);
@@ -1575,12 +1579,13 @@ namespace Garnet.server
             //  • In BOTH branches: set src.IsTransferred so a later OnEvict on the stale source does
             //    not remove the liveIndexes entry (live: owned by dst's tree; cold: owned by the
             //    pending entry), and a later OnFlush on the stale source does not snapshot a stale view.
-            if (cmd == RespCommand.RIPROMOTE)
+            // RIRESTORE: dst holds the restored tree, which the restore has registered, so src is transferred likewise.
+            if (cmd is RespCommand.RIPROMOTE or RespCommand.RIRESTORE)
             {
                 var srcSpan = srcLogRecord.ValueSpan;
                 if (RangeIndexManager.ReadIndex(srcSpan).TreeHandle != nint.Zero)
                     RangeIndexManager.ClearTreeHandle(srcSpan);
-                else
+                else if (cmd == RespCommand.RIPROMOTE)
                     functionsState.rangeIndexManager?.RegisterPending(srcLogRecord.Key, rmwInfo.KeyHash);
 
                 RangeIndexManager.SetTransferredFlag(srcSpan);

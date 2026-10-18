@@ -249,10 +249,15 @@ namespace Garnet.server
                 // runs. Keep dst flushed, with its own copy of the snapshot, so the next data operation promotes it and
                 // stages data.bftree outside any store callback. Without a copy (no source address, or src's snapshot was
                 // deferred and is not taken yet), dst is left unflushed, relying on data.bftree like any stub whose tree
-                // is not restored.
+                // is not restored, which needs the key's pending entry for a checkpoint to capture it: src's eviction has
+                // removed it, or will once its deferred retirement runs, which leaves an entry registered after it.
                 if (srcLogicalAddress == Tsavorite.core.LogAddress.kInvalidAddress
                     || !rangeIndexManager.CopyFlushSnapshot(dstLogRecord.Key, srcLogicalAddress, dstLogicalAddress))
+                {
                     RangeIndexManager.ClearFlushedFlag(dstSpan);
+                    rangeIndexManager.RegisterPending(dstLogRecord.Key,
+                        GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(dstLogRecord.Key)));
+                }
             }
 
             // Otherwise data.bftree already holds src's tree, with a pending entry, and both stay with the key.

@@ -2402,13 +2402,15 @@ namespace Garnet.test
             // power of the IsTransferred check.
             var pendingStub = new byte[RangeIndexManager.IndexSizeBytes];
             // IsTransferred=0, TreeHandle=0 — looks like a pending entry being evicted.
-            // Use a DIFFERENT key for this part to avoid disturbing the live entry above.
-            db.Execute("RI.CREATE", "pendkey", "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
-            ClassicAssert.AreEqual(2, rim.LiveIndexCount, "second tree created");
+            // Use a DIFFERENT key for this part to avoid disturbing the live entry above, and register
+            // its entry pending, as a promote does before the tree is restored: an eviction of a stub
+            // whose tree is not restored leaves an active entry, whose tree a newer stub holds.
+            var pendKeyBytes = System.Text.Encoding.ASCII.GetBytes("pendkey");
+            rim.RegisterPending(pendKeyBytes, Tsavorite.core.SpanByteComparer.StaticGetHashCode64(pendKeyBytes));
+            ClassicAssert.AreEqual(2, rim.LiveIndexCount, "pending entry registered");
             // Now simulate eviction of a pending-entry stub for "pendkey".
             unsafe
             {
-                var pendKeyBytes = System.Text.Encoding.ASCII.GetBytes("pendkey");
                 fixed (byte* keyPtr = pendKeyBytes)
                 {
                     var pinnedKey = new ReadOnlySpan<byte>(keyPtr, pendKeyBytes.Length);

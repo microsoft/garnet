@@ -718,34 +718,5 @@ namespace Garnet.server
 
             return new(in vectorSetLocks, exclusiveLockToken);
         }
-
-        /// <summary>
-        /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
-        /// </summary>
-        internal VectorSetLock ReadForDeleteVectorIndex(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
-        {
-            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
-
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
-            ActiveThreadSession = storageSession;
-
-            var indexConfigOutput = StringOutput.FromPinnedSpan(indexSpan);
-
-            // Get the index
-            var acquiredLock = AcquireExclusiveLocks(storageSession, key);
-            try
-            {
-                status = storageSession.Read_MainStore(key, ref input, ref indexConfigOutput, ref storageSession.stringBasicContext);
-                Debug.Assert(indexConfigOutput.SpanByteAndMemory.IsSpanByte, "Should never need to move index onto the heap");
-            }
-            catch
-            {
-                acquiredLock.Dispose();
-
-                throw;
-            }
-
-            return acquiredLock;
-        }
     }
 }

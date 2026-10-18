@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -192,7 +193,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Zero the TreeHandle in a stub span. Used by CopyUpdater (RIPROMOTE) to prevent
+        /// Zero the TreeHandle in a stub span. Used by PostCopyUpdater (RIPROMOTE, RIRESTORE) to prevent
         /// the old record's eviction callback from freeing the BfTree that the new
         /// (promoted) record now owns.
         /// </summary>
@@ -207,7 +208,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Set the <see cref="RangeIndexStub.IsTransferred"/> flag on a stub span. Called by
-        /// PostCopyToTail (compaction) and RIPROMOTE PostCopyUpdater on the SOURCE record after
+        /// PostCopyToTail (compaction) and the RIPROMOTE and RIRESTORE PostCopyUpdater on the SOURCE record after
         /// ownership is transferred to a new tail destination. This guarantees a later
         /// <see cref="GarnetRecordTriggers.OnEvict"/> on the stale source no-ops (does not remove
         /// the liveIndexes entry that now belongs to the destination), and a later
@@ -245,12 +246,15 @@ namespace Garnet.server
         /// their address. When <c>false</c> (eviction), files are preserved for lazy restore.</param>
         internal void DisposeTreeUnderLock(ReadOnlySpan<byte> key, Span<byte> valueSpan, bool deleteFiles)
         {
+            // Entries registered from now on belong to newer stubs of the key, which this retirement leaves.
+            var requestedAt = NextSequence();
+
             ref readonly var stub = ref ReadIndex(valueSpan);
 
             // Stale-source eviction (OnEvict) on a record whose ownership was transferred to a
             // newer tail record: no-op. The liveIndexes entry now belongs to the destination
             // record; removing it here would lose the newer record's tree (live transfer) or
-            // pending entry (cold transfer). IsTransferred is set by PostCopyToTail and RIPROMOTE
+            // pending entry (cold transfer). IsTransferred is set by PostCopyToTail and the RIPROMOTE and RIRESTORE
             // PostCopyUpdater on the source after a successful CAS.
             // For DEL/UNLINK (deleteFiles=true), we still proceed — the user explicitly asked to
             // delete this key, and the tombstone path supersedes any newer record as well.
@@ -265,55 +269,67 @@ namespace Garnet.server
                 SetTransferredFlag(valueSpan);
 
             // Removing the entry holds the per-key exclusive lock, which RestoreTree holds while it registers or reuses
-            // the key's tree, so that a retirement never removes or disposes a tree a restore is about to publish. A
-            // promote registers a pending entry without the lock (RegisterPending), from the copy that supersedes this
-            // stub, which is then transferred and not retired.
+            // the key's tree, so that a retirement never removes or disposes a tree a restore is about to publish. A copy
+            // of the stub registers its pending entry without the lock (RegisterPending): the stub is then transferred and
+            // not retired, or, if it was evicted before the copy, this retirement was requested first and leaves the entry.
             var keyHash = GarnetKeyComparer.StaticGetHashCode64((FixedSpanByteKey)PinnedSpanByte.FromPinnedSpan(key));
             if (!rangeIndexLocks.TryAcquireExclusiveLock(keyHash, out var lockToken))
             {
-                DeferRetirement(key, keyHash, treeHandle, deleteFiles);
+                DeferRetirement(key, keyHash, treeHandle, deleteFiles, requestedAt);
                 return;
             }
 
+            var keyId = KeyId(key);
             BfTreeService disposedTree;
             string hashPrefix;
             try
             {
-                RetireLocked(key, KeyId(key), treeHandle, deleteFiles, out disposedTree, out hashPrefix);
+                RetireLocked(key, keyId, treeHandle, deleteFiles, requestedAt, out disposedTree, out hashPrefix);
+
+                // Until the tree is disposed and the working file deleted, a restore or recreation of the key must wait, as
+                // for a deferred retirement, or it may open the file the cleanup then closes or deletes. Counted before the
+                // lock is released, because a restore checks under the lock.
+                if (disposedTree != null || hashPrefix != null)
+                    AddPendingRetirement(keyId);
             }
             finally
             {
                 rangeIndexLocks.ReleaseLock(lockToken);
             }
 
-            DisposeAndDeleteFilesAfterReaders(disposedTree, hashPrefix, onCompleted: null);
+            if (disposedTree != null || hashPrefix != null)
+                DisposeAndDeleteFilesAfterReaders(disposedTree, hashPrefix, () => CompleteRetirement(keyId));
         }
 
         /// <summary>
-        /// Removes the key's tree from <see cref="liveIndexes"/> for a stub that is being deleted or evicted. The caller
-        /// holds the key's exclusive lock and disposes <paramref name="disposedTree"/> and deletes the working file for
-        /// <paramref name="hashPrefix"/> (each when non-null) via <see cref="DisposeAndDeleteFilesAfterReaders"/>.
+        /// Removes the key's entry from <see cref="liveIndexes"/> for a stub that is being deleted or evicted, if the entry is
+        /// the stub's: registered before the retirement was requested at <paramref name="requestedAt"/>, and pending if the
+        /// stub's tree is not restored and the stub is evicted. The caller holds the key's exclusive lock and disposes
+        /// <paramref name="disposedTree"/> and deletes the working file for <paramref name="hashPrefix"/> (each when non-null)
+        /// via <see cref="DisposeAndDeleteFilesAfterReaders"/>.
         /// </summary>
-        private void RetireLocked(ReadOnlySpan<byte> key, Guid keyId, nint treeHandle, bool deleteFiles,
+        private void RetireLocked(ReadOnlySpan<byte> key, Guid keyId, nint treeHandle, bool deleteFiles, long requestedAt,
             out BfTreeService disposedTree, out string hashPrefix)
         {
             disposedTree = null;
-            hashPrefix = null;
+            hashPrefix = deleteFiles ? HashKeyToPrefix(key) : null;
 
-            if (treeHandle == nint.Zero && !deleteFiles)
-            {
-                // Pending entry cleanup on eviction: remove from liveIndexes (no native tree to dispose).
-                _ = liveIndexes.TryRemove(keyId, out _);
+            if (!liveIndexes.TryGetValue(keyId, out var entry))
                 return;
-            }
 
-            // Remove entry from liveIndexes so concurrent restorers see no tree for this key.
-            // Stash the BfTree wrapper (if any) for deferred disposal.
-            if (liveIndexes.TryRemove(keyId, out var entry))
-                disposedTree = entry?.Tree;
+            // A stub whose tree is not restored has at most the key's pending entry. An active entry's tree is held by a newer
+            // stub, or a restore, which activates entries holding the key's lock, is about to publish it in one.
+            if (treeHandle == nint.Zero && !deleteFiles && entry.Tree != null)
+                return;
 
-            if (deleteFiles)
-                hashPrefix = HashKeyToPrefix(key);
+            // An entry registered after the retirement was requested is a newer stub's, such as a copy's registered while the
+            // retirement was deferred.
+            if (!entry.TryClaimForRemoval(requestedAt))
+                return;
+
+            // A copy registering meanwhile replaces the claimed entry rather than reuse it (RegisterPending).
+            _ = liveIndexes.TryRemove(KeyValuePair.Create(keyId, entry));
+            disposedTree = entry.Tree;
         }
 
         /// <summary>

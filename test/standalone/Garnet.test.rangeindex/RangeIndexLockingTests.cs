@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -9,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
+using Garnet.server.BfTreeInterop;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -19,7 +21,7 @@ namespace Garnet.test
     /// <summary>
     /// Tests that RangeIndex store callbacks (DEL, page eviction, flush, copy to the tail) never wait for the RangeIndex lock,
     /// which a data operation holds while it waits for the record's bucket latch or runs an epoch drain, and that the work they
-    /// defer or hand to a data operation keeps every tree recoverable.
+    /// defer or hand to a data operation keeps every tree registered and recoverable.
     /// </summary>
     [TestFixture]
     public class RangeIndexLockingTests : TestBase
@@ -36,6 +38,8 @@ namespace Garnet.test
         private const ExceptionInjectionType StagingLock = ExceptionInjectionType.RangeIndex_Before_Staging_Lock;
         private const ExceptionInjectionType RestorePause = ExceptionInjectionType.RangeIndex_Pause_Restoring_Tree;
         private const ExceptionInjectionType PromotePause = ExceptionInjectionType.RangeIndex_Pause_Before_Promote;
+        private const ExceptionInjectionType PublishPause = ExceptionInjectionType.RangeIndex_Pause_Before_Restore_Publish;
+        private const ExceptionInjectionType RetirementWait = ExceptionInjectionType.RangeIndex_Waits_For_Retirement;
 
         private GarnetServer server;
 
@@ -55,6 +59,8 @@ namespace Garnet.test
             ExceptionInjectionHelper.DisableException(StagingLock);
             ExceptionInjectionHelper.DisableException(RestorePause);
             ExceptionInjectionHelper.DisableException(PromotePause);
+            ExceptionInjectionHelper.DisableException(PublishPause);
+            ExceptionInjectionHelper.DisableException(RetirementWait);
 
             server.Dispose();
             TestUtils.OnTearDown();
@@ -510,6 +516,303 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Registering a tree for a key whose tree is already registered keeps the registered tree and disposes the new one
+        /// once no reader can be using it, which is deferred on the store epoch. The registration's callers do not hold the
+        /// epoch, so the deferral must take it.
+        /// </summary>
+        [Test]
+        public void DuplicateRegistrationDisposesNewTreeAfterReaders()
+        {
+            const string Key = "rikey";
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+            var keyBytes = Encoding.ASCII.GetBytes(Key);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateIndex(db, Key);
+
+            // Memory-backed, so that it does not open the key's working file
+            var duplicate = rangeIndexManager.CreateBfTree(StorageBackendType.Memory, keyBytes, cacheSize: 65536, minRecordSize: 8,
+                maxRecordSize: 1024, maxKeyLen: 128, leafPageSize: RangeIndexManager.ComputeLeafPageSize(1024));
+            try
+            {
+                rangeIndexManager.RegisterIndex(duplicate, SpanByteComparer.StaticGetHashCode64(keyBytes), keyBytes);
+            }
+            catch
+            {
+                duplicate.Dispose();
+                throw;
+            }
+
+            ClassicAssert.IsFalse(server.Provider.StoreWrapper.DefaultDatabase.Epoch.ThisInstanceProtected(), "The registration left the epoch held");
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount);
+            ClassicAssert.AreEqual("value1", (string)db.Execute("RI.GET", Key, "field1"), "The registration replaced the key's tree");
+            ClassicAssert.IsTrue(SpinWait.SpinUntil(() => duplicate.NativePtr == nint.Zero, WaitTimeout), "The new tree was not disposed");
+        }
+
+        /// <summary>
+        /// A restore whose stub is flushed meanwhile copies the stub to the tail with the restored tree, as a promote does. The
+        /// old copy must then be marked transferred, so that its eviction leaves the key's entry, which by then holds the live
+        /// tree; and the new copy, which has no flush snapshot at its address, must not be flushed, or it is promoted again.
+        /// </summary>
+        [Test]
+        public async Task EvictionOfRestoredStubsOldCopyKeepsTreeAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+            var store = server.Provider.StoreWrapper.store;
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            using var redisRestorer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var dbRestorer = redisRestorer.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            EvictToDisk(Key);
+
+            ExceptionInjectionHelper.EnableException(RestorePause);
+
+            // The restorer promotes the evicted stub to the tail, then parks restoring its tree.
+            var restorer = dbRestorer.ExecuteAsync("RI.GET", Key, "field1");
+            await ExceptionInjectionHelper.WaitOnClearAsync(RestorePause).WaitAsync(WaitTimeout);
+
+            // Flush the promoted stub, so that the restore copies it to the tail.
+            await Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true)).WaitAsync(WaitTimeout);
+            var endOfOldCopy = store.Log.TailAddress;
+
+            ClassicAssert.AreEqual("value1", (string)await ReleaseParkedAndAwaitAsync(restorer));
+
+            var stubs = ReadStubs(store, Key);
+            ClassicAssert.IsTrue(stubs.Single(s => s.Address < endOfOldCopy).Stub.IsTransferred, "The old copy of a restored stub is not marked transferred");
+            ClassicAssert.AreEqual(1, stubs.Count(s => s.Address >= endOfOldCopy), "The restore's copy of a flushed stub was promoted again");
+
+            // Evict the old copy, but not the restore's.
+            store.Log.ShiftHeadAddress(endOfOldCopy, wait: true);
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "Evicting the old copy of a restored stub removed the key's tree");
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SAVE"));
+            ClassicAssert.IsTrue(IsCapturedByCheckpoint(Key), "A checkpoint did not capture the restored tree");
+
+            ClassicAssert.IsTrue(db.KeyDelete(Key));
+            ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "DEL did not retire the restored tree");
+        }
+
+        /// <summary>
+        /// The eviction of a stub that a promote is about to copy defers its retirement while the key's lock is held, so the
+        /// retirement can run after the copy has registered the key's pending entry. It must leave that entry, which belongs
+        /// to the copy, and from which a checkpoint taken before the copy's tree is restored captures the tree.
+        /// </summary>
+        [Test]
+        public async Task DeferredRetirementOfPromotedStubKeepsCopysEntryAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, copyReadsToTail: true);
+            server.Start();
+
+            var store = server.Provider.StoreWrapper.store;
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            using var redisPromoter = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var dbPromoter = redisPromoter.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            EvictToDisk(Key);
+
+            // EXISTS reads the evicted stub from disk and copies it to the tail, still flushed, so that it is in memory.
+            ClassicAssert.IsTrue(db.KeyExists(Key));
+
+            ExceptionInjectionHelper.EnableException(PromotePause);
+
+            // The promoter stages the working file from the stub's flush snapshot, then parks before copying the stub to the tail.
+            var promoter = dbPromoter.ExecuteAsync("RI.GET", Key, "field1");
+            await ExceptionInjectionHelper.WaitOnClearAsync(PromotePause).WaitAsync(WaitTimeout);
+
+            WithLockHeld(Key, () =>
+            {
+                // Evict the stub, which defers its retirement.
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+
+                // The promoter copies the stub to the tail, which registers the key's pending entry, then fails before it
+                // restores the tree, once it gets the lock.
+                ExceptionInjectionHelper.EnableException(Fail);
+                ExceptionInjectionHelper.EnableException(PromotePause);
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => rangeIndexManager.LiveIndexCount == 1, WaitTimeout), "The promote did not register the key's pending entry");
+                ExceptionInjectionHelper.DisableException(PromotePause);
+            });
+
+            _ = Assert.CatchAsync<RedisException>(() => promoter.WaitAsync(WaitTimeout));
+            rangeIndexManager.WaitForRetirement(Encoding.ASCII.GetBytes(Key));
+
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "The deferred retirement of the promoted stub removed the copy's entry");
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SAVE"));
+            ClassicAssert.IsTrue(IsCapturedByCheckpoint(Key), "A checkpoint taken before the promoted stub's tree was restored did not capture the tree");
+            ClassicAssert.AreEqual("value1", (string)db.Execute("RI.GET", Key, "field1"));
+        }
+
+        /// <summary>
+        /// A restore registers the key's tree and then, without the key's lock, publishes the tree's handle in the stub. An
+        /// eviction of the stub in between sees a stub whose tree is not restored, and must leave the key's entry, which is
+        /// already the restored tree's.
+        /// </summary>
+        [Test]
+        public async Task EvictionBeforeRestorePublishesTreeKeepsTreeAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+            var store = server.Provider.StoreWrapper.store;
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisRestorer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var dbRestorer = redisRestorer.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            EvictToDisk(Key);
+
+            ExceptionInjectionHelper.EnableException(PublishPause);
+
+            // The restorer promotes the evicted stub to the tail, restores and registers its tree, then parks before publishing it.
+            var restorer = dbRestorer.ExecuteAsync("RI.GET", Key, "field1");
+            await ExceptionInjectionHelper.WaitOnClearAsync(PublishPause).WaitAsync(WaitTimeout);
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount);
+
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+            var registered = rangeIndexManager.LiveIndexCount == 1;
+
+            ClassicAssert.AreEqual("value1", (string)await ReleaseParkedAndAwaitAsync(restorer));
+            ClassicAssert.IsTrue(registered, "Evicting a stub whose tree a restore was about to publish removed the tree's entry");
+
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
+            ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
+
+            ClassicAssert.IsTrue(db.KeyDelete(Key));
+            ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "DEL did not retire the restored tree");
+        }
+
+        /// <summary>
+        /// A stub flushed while its tree is not restored and the key's lock is held has its flush snapshot deferred. Evicted and
+        /// copied back to the tail before that snapshot is taken, the copy has none and relies on the key's working file, so it
+        /// needs the key's pending entry, which the eviction's retirement removes, for a checkpoint to capture its tree.
+        /// </summary>
+        [Test]
+        public async Task CopyOfStubWithPendingFlushSnapshotKeepsEntryAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, copyReadsToTail: true);
+            server.Start();
+
+            var store = server.Provider.StoreWrapper.store;
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            using var redisPromoter = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var dbPromoter = redisPromoter.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            EvictToDisk(Key);
+
+            // The promoter copies the evicted stub to the tail, which registers the key's pending entry, then fails before it
+            // restores the tree.
+            ExceptionInjectionHelper.EnableException(PromotePause);
+            var promoter = dbPromoter.ExecuteAsync("RI.GET", Key, "field1");
+            await ExceptionInjectionHelper.WaitOnClearAsync(PromotePause).WaitAsync(WaitTimeout);
+
+            ExceptionInjectionHelper.EnableException(Fail);
+            ExceptionInjectionHelper.EnableException(PromotePause);
+            _ = Assert.CatchAsync<RedisException>(() => promoter.WaitAsync(WaitTimeout));
+            ExceptionInjectionHelper.DisableException(PromotePause);
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "The promote did not register the key's pending entry");
+
+            WithLockHeld(Key, () =>
+            {
+                // Flush the promoted stub, which defers its snapshot, and evict it, which defers its retirement.
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                ClassicAssert.AreEqual(1, rangeIndexManager.PendingFlushSnapshotCount, "The flush snapshot was not deferred");
+                store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+
+                // EXISTS reads the evicted stub from disk and copies it to the tail, before its flush snapshot is taken.
+                var tailBeforeCopy = store.Log.TailAddress;
+                ClassicAssert.IsTrue(db.KeyExists(Key));
+                ClassicAssert.Greater(store.Log.TailAddress, tailBeforeCopy, "EXISTS did not copy the stub to the tail");
+            });
+
+            rangeIndexManager.WaitForRetirement(Encoding.ASCII.GetBytes(Key));
+            ClassicAssert.IsTrue(SpinWait.SpinUntil(() => rangeIndexManager.PendingFlushSnapshotCount == 0, WaitTimeout),
+                "The flush snapshot deferred while the lock was held was not taken");
+
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "The copy of a stub evicted before its flush snapshot was taken has no entry for the key");
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("SAVE"));
+            ClassicAssert.IsTrue(IsCapturedByCheckpoint(Key), "A checkpoint taken before the copy's tree was restored did not capture the tree");
+            ClassicAssert.AreEqual("value1", (string)db.Execute("RI.GET", Key, "field1"));
+        }
+
+        /// <summary>
+        /// DEL that gets the RangeIndex lock at once retires the tree there and then, but disposes it and deletes the key's
+        /// working file only once every thread holding the store epoch has moved on. Recreating the key must wait for that, as
+        /// it does for a deferred retirement, or the new tree opens the old working file, which the cleanup then deletes.
+        /// </summary>
+        [Test]
+        public async Task RecreateWaitsForCleanupOfDeletedTreeAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+            var dataPath = rangeIndexManager.LogDataPathFor(Encoding.ASCII.GetBytes(Key));
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateIndex(db, Key);
+
+            Task<RedisResult> recreate;
+            bool recreateWaited;
+
+            // A thread holding the store epoch keeps the deleted tree's cleanup from running.
+            using (new EpochHolder(server.Provider.StoreWrapper.DefaultDatabase.Epoch))
+            {
+                ClassicAssert.IsTrue(db.KeyDelete(Key));
+                ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount, "DEL did not retire the tree at once");
+
+                ExceptionInjectionHelper.EnableException(RetirementWait);
+                recreate = db.ExecuteAsync("RI.CREATE", Key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+                var waiting = ExceptionInjectionHelper.WaitOnClearAsync(RetirementWait);
+                recreateWaited = await Task.WhenAny(recreate, waiting).WaitAsync(WaitTimeout) == waiting;
+            }
+
+            ClassicAssert.AreEqual("OK", (string)await recreate.WaitAsync(WaitTimeout));
+            ClassicAssert.IsTrue(recreateWaited, "RI.CREATE did not wait for the cleanup of the deleted key's tree");
+
+            ClassicAssert.IsTrue(File.Exists(dataPath), "The cleanup of the deleted tree deleted the recreated tree's working file");
+            ClassicAssert.IsTrue(db.Execute("RI.GET", Key, "field1").IsNull, "The recreated index has the deleted index's data");
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
+            ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
+        }
+
+        /// <summary>
         /// Number of flush snapshots of the RangeIndex key.
         /// </summary>
         private static int CountFlushSnapshots(string key)
@@ -549,6 +852,46 @@ namespace Garnet.test
             return count;
         }
 
+        /// <summary>
+        /// The stubs of the RangeIndex key's in-memory records that are neither elided nor tombstones, with their addresses,
+        /// oldest first.
+        /// </summary>
+        private static List<(long Address, RangeIndexManager.RangeIndexStub Stub)> ReadStubs<TStoreFunctions, TAllocator>(
+            TsavoriteKV<TStoreFunctions, TAllocator> store, string key)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
+        {
+            var keyBytes = Encoding.ASCII.GetBytes(key);
+            var stubs = new List<(long Address, RangeIndexManager.RangeIndexStub Stub)>();
+
+            using var iter = store.Log.Scan(store.Log.HeadAddress, store.Log.TailAddress, DiskScanBufferingMode.NoBuffering, includeClosedRecords: true);
+            while (iter.GetNext())
+            {
+                if (!iter.Info.Invalid && !iter.Info.Tombstone && iter.RecordType == RangeIndexManager.RangeIndexRecordType && iter.Key.SequenceEqual(keyBytes))
+                    stubs.Add((iter.CurrentAddress, RangeIndexManager.ReadIndex(iter.ValueSpan)));
+            }
+
+            return stubs;
+        }
+
+        /// <summary>
+        /// True if a checkpoint has a snapshot of the RangeIndex key's tree.
+        /// </summary>
+        private static bool IsCapturedByCheckpoint(string key)
+            => Directory.EnumerateFiles(TestUtils.MethodTestDir, RangeIndexManager.HashKeyToPrefix(Encoding.ASCII.GetBytes(key)) + ".bftree",
+                SearchOption.AllDirectories).Any();
+
+        /// <summary>
+        /// Runs <paramref name="action"/> holding the RangeIndex key's lock exclusively, as a restore of its tree does, which
+        /// defers the key's flush snapshots and retirements until the lock is released.
+        /// </summary>
+        private void WithLockHeld(string key, Action action)
+        {
+            var keyHash = SpanByteComparer.StaticGetHashCode64(Encoding.ASCII.GetBytes(key));
+            using (server.Provider.StoreWrapper.rangeIndexManager.AcquireExclusiveForDelete(keyHash))
+                action();
+        }
+
         private static void CreateIndex(IDatabase db, string key)
         {
             ClassicAssert.AreEqual("OK", (string)db.Execute("RI.CREATE", key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"));
@@ -572,6 +915,49 @@ namespace Garnet.test
             finally
             {
                 ExceptionInjectionHelper.ResumeParking();
+            }
+        }
+
+        /// <summary>
+        /// Holds the store epoch on a thread of its own until disposed, which keeps epoch actions queued meanwhile from running.
+        /// </summary>
+        private sealed class EpochHolder : IDisposable
+        {
+            private readonly ManualResetEventSlim held = new();
+            private readonly ManualResetEventSlim release = new();
+            private readonly Thread thread;
+
+            public EpochHolder(LightEpoch epoch)
+            {
+                thread = new Thread(() =>
+                {
+                    epoch.Resume();
+                    try
+                    {
+                        held.Set();
+                        release.Wait();
+                    }
+                    finally
+                    {
+                        epoch.Suspend();
+                    }
+                })
+                { IsBackground = true, Name = nameof(EpochHolder) };
+                thread.Start();
+
+                if (!held.Wait(WaitTimeout))
+                {
+                    release.Set();
+                    throw new TimeoutException("The epoch holder did not take the epoch");
+                }
+            }
+
+            public void Dispose()
+            {
+                release.Set();
+                thread.Join();
+                held.Dispose();
+                release.Dispose();
             }
         }
     }

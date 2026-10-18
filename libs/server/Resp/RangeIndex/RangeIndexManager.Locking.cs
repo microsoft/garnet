@@ -250,6 +250,14 @@ namespace Garnet.server
             => ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.RangeIndex_Pause_Restoring_Tree);
 
         /// <summary>
+        /// Test hook: pauses a restore of a key's tree after it registers the tree and releases the key's lock, before the RMW
+        /// that publishes the tree's handle in the stub.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnBeforeRestorePublish()
+            => ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.RangeIndex_Pause_Before_Restore_Publish);
+
+        /// <summary>
         /// Issue an RMW with RIPROMOTE to copy a flushed stub from the read-only region to the mutable region, so that data
         /// operations can use its tree again. Multiple threads may race here — only one wins the CAS; others see the new
         /// record.
@@ -499,6 +507,7 @@ namespace Garnet.server
             // X-lock from any code path that may fire as a deferred epoch action.
             // RIRESTORE.NeedInitialUpdate=false → if the key was concurrently DEL'd (tombstone),
             // the RMW returns NOTFOUND and the caller does not loop.
+            OnBeforeRestorePublish();
             try
             {
                 session.RestoreRangeIndexStub(key, nativePtr);

@@ -525,7 +525,8 @@ namespace Garnet.test
             string networkReceiveBufferMinSize = null,
             string networkSendBufferMinSize = null,
             string sessionScratchBufferMaxRetainedSize = null,
-            int? sessionParseStateMaxRetainedArgs = null
+            int? sessionParseStateMaxRetainedArgs = null,
+            bool luaTransactionMode = false
         )
         {
             if (useAzureStorage)
@@ -582,6 +583,7 @@ namespace Garnet.test
                 UseNativeAllocator = nativeAllocator ?? false,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
+                LuaTransactionMode = luaTransactionMode,
                 AofMemorySize = aofMemorySize,
                 CommitFrequencyMs = commitFrequencyMs,
                 WaitForCommit = commitWait,

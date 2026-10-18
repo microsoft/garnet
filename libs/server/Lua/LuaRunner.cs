@@ -1355,6 +1355,9 @@ namespace Garnet.server
                     respServerSession.storageSession.objectTransactionalContext.LocksAcquired(txnVersion);
                 if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
                     respServerSession.storageSession.unifiedTransactionalContext.LocksAcquired(txnVersion);
+
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Transaction_Pause_After_Lock_Acquisition);
+
                 RunCommon(ref response);
             }
             finally

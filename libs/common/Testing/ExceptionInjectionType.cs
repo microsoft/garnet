@@ -177,7 +177,8 @@ namespace Garnet.common
         /// </summary>
         VectorSet_Fail_After_Index_Read,
         /// <summary>
-        /// Transaction: pause EXEC after the transaction locks its keys, before it runs the queued commands.
+        /// Transaction: pause EXEC, or a Lua script run as a transaction, after the transaction locks its keys, before it runs
+        /// the queued commands or the script.
         /// </summary>
         Transaction_Pause_After_Lock_Acquisition,
         /// <summary>
@@ -212,5 +213,14 @@ namespace Garnet.common
         /// that command has applied.
         /// </summary>
         Transaction_Throw_After_Command,
+        /// <summary>
+        /// RangeIndex: pause a restore of a key's tree after it registers the tree and releases the exclusive RangeIndex lock,
+        /// before the RMW that publishes the tree's handle in the stub.
+        /// </summary>
+        RangeIndex_Pause_Before_Restore_Publish,
+        /// <summary>
+        /// RangeIndex: cleared when an operation waits for a pending retirement of its key's tree.
+        /// </summary>
+        RangeIndex_Waits_For_Retirement,
     }
 }
