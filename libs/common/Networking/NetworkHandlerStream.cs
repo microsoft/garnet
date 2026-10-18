@@ -160,6 +160,9 @@ namespace Garnet.networking
                     garnetNetworkHandler.readerStatus = TlsReaderStatus.Waiting;
                     if (garnetNetworkHandler.expectingData.CurrentCount == 0) garnetNetworkHandler.expectingData.Release();
                     await garnetNetworkHandler.receivedData.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    // A handshake waits with its caller's token, which disposing the handler does not cancel. The
+                    // wait still holds the buffers, so it must end when the handler is disposed.
+                    garnetNetworkHandler.cancellationTokenSource.Token.ThrowIfCancellationRequested();
                     // Releaser of semaphore should have updated readerStatus
                     Debug.Assert(garnetNetworkHandler.readerStatus == TlsReaderStatus.Active || garnetNetworkHandler.disposeCount > 0);
                 }

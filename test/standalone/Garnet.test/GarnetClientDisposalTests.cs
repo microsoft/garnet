@@ -6,8 +6,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
+using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -143,6 +146,48 @@ namespace Garnet.test
                 $"{awaited.Count(t => !t.IsCompleted)} of {awaited.Count} requests were left unresolved after a " +
                 "callback threw during disposal.");
             ClassicAssert.IsTrue(client.Disposed, "Disposal did not finish after a callback threw.");
+        }
+
+        [Test]
+        public void DisposeDuringATlsHandshakeReturnsTheSessionsBuffers()
+        {
+            using var silent = new SilentServer();
+            var pool = new NetworkBufferSettings().CreateBufferPool();
+            var session = TestUtils.GetGarnetClientSession(useTLS: true, endPoint: silent.EndPoint, networkPool: pool);
+            // A token of the caller's own, which disposing the session does not cancel.
+            using var callerToken = new CancellationTokenSource();
+            var connect = session.ConnectAsync(token: callerToken.Token);
+
+            ClassicAssert.IsTrue(SpinWait.SpinUntil(() => IsWaitingForTransportData(session), Bound),
+                "The TLS handshake never started waiting for the server's reply.");
+
+            session.Dispose();
+            ClassicAssert.IsTrue(SpinWait.SpinUntil(() => pool.LiveBytes == 0, Bound),
+                "The session's buffers were not returned: the handshake waiting on the silent server kept them.");
+            ClassicAssert.IsTrue(Settled(connect).Wait(Bound), "The connect did not complete after the session was disposed.");
+            ClassicAssert.IsFalse(connect.IsCompletedSuccessfully, "The connect succeeded against a server that never replied.");
+            pool.Dispose();
+        }
+
+        /// <summary>
+        /// Whether the session's TLS stream is waiting for bytes from the socket, which during a handshake
+        /// means the handshake is waiting for the server's reply.
+        /// </summary>
+        static bool IsWaitingForTransportData(GarnetClientSession session)
+        {
+            const BindingFlags Instance = BindingFlags.Instance | BindingFlags.NonPublic;
+            var handler = typeof(GarnetClientSession).GetField("networkHandler", Instance)!.GetValue(session);
+            if (handler == null)
+                return false;
+
+            for (var type = handler.GetType(); type != null; type = type.BaseType)
+            {
+                var status = type.GetField("readerStatus", Instance);
+                if (status != null)
+                    return status.GetValue(handler).ToString() == "Waiting";
+            }
+
+            throw new MissingFieldException("The network handler has no readerStatus field.");
         }
 
         /// <summary>

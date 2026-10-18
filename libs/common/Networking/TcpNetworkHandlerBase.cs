@@ -130,6 +130,11 @@ namespace Garnet.common
         /// <param name="useTLS"></param>
         void Start(bool useTLS)
         {
+            // The receive loop holds the buffers until it ends in Dispose(SocketAsyncEventArgs). A handler disposed
+            // before it starts has already returned them, so it does not receive at all.
+            if (!TryTakeBufferHold())
+                return;
+
             var receiveEventArgs = new SocketAsyncEventArgs { AcceptSocket = socket };
             receiveEventArgs.SetBuffer(networkReceiveBuffer, 0, networkReceiveBuffer.Length);
             receiveEventArgs.Completed += useTLS ? RecvEventArgCompletedWithTLS : RecvEventArgCompletedWithoutTLS;
@@ -185,6 +190,9 @@ namespace Garnet.common
             DisposeImpl();
         }
 
+        /// <summary>
+        /// Ends the receive loop. Every way out of the loop comes here, with no receive outstanding.
+        /// </summary>
         void Dispose(SocketAsyncEventArgs e)
         {
             try
@@ -205,6 +213,7 @@ namespace Garnet.common
             }
             DisposeImpl();
             e.Dispose();
+            ReleaseBufferHold();
         }
 
         void RecvEventArgCompletedWithTLS(object sender, SocketAsyncEventArgs e) =>
@@ -295,7 +304,12 @@ namespace Garnet.common
             {
                 while (true)
                 {
-                    CompleteNetworkReceiveWithoutTLS(await pending.ConfigureAwait(false), demand);
+                    var consumed = await pending.ConfigureAwait(false);
+#if DEBUG
+                    if (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Receive_Hold_Resumed_Pass))
+                        await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Receive_Hold_Resumed_Pass).ConfigureAwait(false);
+#endif
+                    CompleteNetworkReceiveWithoutTLS(consumed, demand);
 
                     e.SetBuffer(networkReceiveBuffer, networkBytesRead, networkReceiveBuffer.Length - networkBytesRead);
                     if (e.AcceptSocket.ReceiveAsync(e))

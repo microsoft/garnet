@@ -157,6 +157,12 @@ namespace Garnet.common
         /// </summary>
         Tls_Hold_Pass_After_Batch_Suspends,
         /// <summary>
+        /// Receive loop or TLS reader: hold a pass whose suspended batch has just finished, on the thread running it,
+        /// until the condition is cleared. The pass has not yet compacted or resized its buffers, so a test can tear
+        /// the connection down and see whether the buffers are still the pass's to use.
+        /// </summary>
+        Receive_Hold_Resumed_Pass,
+        /// <summary>
         /// Replica full sync: fail recovery of the checkpoint received from the primary, before any of it is applied.
         /// </summary>
         Replication_Fail_Replica_Checkpoint_Recovery,

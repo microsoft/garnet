@@ -251,7 +251,8 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Number of threads waiting in <see cref="WaitOnClear"/> for the given condition to be cleared
+        /// Number of callers waiting in <see cref="WaitOnClear"/> or <see cref="WaitOnClearAsync"/> for the given
+        /// condition to be cleared
         /// </summary>
         /// <param name="exceptionType"></param>
         /// <returns></returns>
@@ -265,16 +266,27 @@ namespace Garnet.common
         /// <returns></returns>
         public static async Task WaitOnClearAsync(ExceptionInjectionType exceptionType)
         {
-            while (IsEnabled(exceptionType))
+            if (!IsEnabled(exceptionType))
+                return;
+
+            _ = Interlocked.Increment(ref WaitingOnClearCounts[(int)exceptionType]);
+            try
             {
-                Task task;
-                lock (@lock)
+                while (IsEnabled(exceptionType))
                 {
-                    if (!IsEnabled(exceptionType))
-                        break;
-                    task = update.Task;
+                    Task task;
+                    lock (@lock)
+                    {
+                        if (!IsEnabled(exceptionType))
+                            break;
+                        task = update.Task;
+                    }
+                    await task.ConfigureAwait(false);
                 }
-                await task.ConfigureAwait(false);
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref WaitingOnClearCounts[(int)exceptionType]);
             }
         }
     }

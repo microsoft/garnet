@@ -1251,7 +1251,7 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency, epoch: epoch);
         }
 
-        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)
+        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null, LimitedFixedBufferPool networkPool = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -1264,7 +1264,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions, rawResult: raw);
+            return new GarnetClientSession(endPoint ?? EndPoint, new(), networkPool, tlsOptions: sslOptions, rawResult: raw);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)

@@ -652,6 +652,21 @@ namespace Garnet.test
             AssertTeardownWasNotReportedAsAFailure(log);
         }
 
+        /// <summary>
+        /// A receive pass owns its connection's buffers until it ends, even once the connection is disposed. The resume
+        /// a teardown admits finishes the parked batch after that, and the pass then compacts and resizes the buffers,
+        /// so the server does not take them back, and does not finish disposing, before the pass has ended.
+        /// </summary>
+        [Test]
+        public void ADisposedConnectionKeepsItsBuffersUntilItsResumedPassEnds()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var log = ShutDownWithParkedSessions(Arrival.AfterAnAnsweredCommand, admitTheQueuedResume: true, holdTheResumedPass: true);
+
+            AssertTeardownWasNotReportedAsAFailure(log);
+        }
+
         const int ParkedSessionCount = 8;
 
         static bool ReportsTeardown(CapturingLogger.Entry entry)
@@ -680,10 +695,14 @@ namespace Garnet.test
         /// <param name="arrival">How the command that parks reaches the server.</param>
         /// <param name="admitTheQueuedResume">Whether each session's teardown waits for the resume its cancellations queue.</param>
         /// <param name="holdThePassThatParked">
-        /// Whether each TLS receive pass whose batch suspends is held, once its session has parked, until the server has
-        /// been disposed.
+        /// Whether each TLS receive pass whose batch suspends is held, once its session has parked, until every
+        /// connection has been disposed.
         /// </param>
-        IReadOnlyList<CapturingLogger.Entry> ShutDownWithParkedSessions(Arrival arrival, bool admitTheQueuedResume, bool holdThePassThatParked = false)
+        /// <param name="holdTheResumedPass">
+        /// Whether each receive pass is held, once the resume its teardown admits has finished the batch, while the
+        /// server disposes. Requires <paramref name="admitTheQueuedResume"/>.
+        /// </param>
+        IReadOnlyList<CapturingLogger.Entry> ShutDownWithParkedSessions(Arrival arrival, bool admitTheQueuedResume, bool holdThePassThatParked = false, bool holdTheResumedPass = false)
         {
             const string Name = "quiet-shutdown";
 
@@ -720,6 +739,8 @@ namespace Garnet.test
                     Thread.Sleep(1);
                 ClassicAssert.AreEqual(ParkedSessionCount, registry.WaiterCount(Name), "The sessions did not all park");
 
+                var listener = (GarnetServerBase)server.Provider.StoreWrapper.Servers[0];
+
                 if (holdThePassThatParked)
                 {
                     clock.Restart();
@@ -734,8 +755,17 @@ namespace Garnet.test
                 if (admitTheQueuedResume)
                     Garnet.common.ExceptionInjectionHelper.EnableException(Garnet.common.ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume);
 
-                server.Dispose();
+                var disposing = server;
                 server = null;
+                if (holdTheResumedPass)
+                {
+                    Garnet.common.ExceptionInjectionHelper.EnableException(Garnet.common.ExceptionInjectionType.Receive_Hold_Resumed_Pass);
+                    DisposeWhilePassesAreHeld(disposing, listener, Garnet.common.ExceptionInjectionType.Receive_Hold_Resumed_Pass);
+                }
+                else if (holdThePassThatParked)
+                    DisposeWhilePassesAreHeld(disposing, listener, Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
+                else
+                    disposing.Dispose();
 
                 Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
 
@@ -760,9 +790,34 @@ namespace Garnet.test
             {
                 Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
                 Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume);
+                Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Receive_Hold_Resumed_Pass);
                 foreach (var waiter in waiters)
                     waiter?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Disposes <paramref name="disposing"/> while a receive pass of every parked session is held at
+        /// <paramref name="hold"/>, which must be enabled, and releases the passes once every connection has been
+        /// disposed. Checks the server does not finish disposing, which returns the connections' buffers to its pool,
+        /// before the passes have ended.
+        /// </summary>
+        static void DisposeWhilePassesAreHeld(GarnetServer disposing, GarnetServerBase listener, Garnet.common.ExceptionInjectionType hold)
+        {
+            var disposal = Task.Run(disposing.Dispose);
+
+            var clock = Stopwatch.StartNew();
+            while ((Garnet.common.ExceptionInjectionHelper.WaitingOnClear(hold) < ParkedSessionCount || listener.get_conn_active() > 0)
+                && clock.Elapsed < TimeSpan.FromSeconds(30))
+                Thread.Sleep(1);
+            ClassicAssert.AreEqual(ParkedSessionCount, Garnet.common.ExceptionInjectionHelper.WaitingOnClear(hold), "The passes were not all held");
+            ClassicAssert.AreEqual(0, listener.get_conn_active(), "The connections were not all disposed");
+
+            ClassicAssert.IsFalse(disposal.Wait(TimeSpan.FromSeconds(1)),
+                "The server finished disposing while receive passes were still using their connections' buffers");
+
+            Garnet.common.ExceptionInjectionHelper.DisableException(hold);
+            ClassicAssert.IsTrue(disposal.Wait(TimeSpan.FromSeconds(30)), "The server did not finish disposing once the passes were released");
         }
 
         /// <summary>

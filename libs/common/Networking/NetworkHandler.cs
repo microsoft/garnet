@@ -174,6 +174,17 @@ namespace Garnet.networking
         static readonly TimeSpan MaxTlsHandshakeTimeout = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
 
         /// <summary>
+        /// Holds on the pooled receive and transport buffers. The connection owns one until it is disposed, and
+        /// so does each receive loop or TLS reader until it ends; the last to release returns the buffers.
+        /// </summary>
+        /// <remarks>
+        /// Dispose can run on any thread, while a receive pass that owns the buffers is still running or is
+        /// parked on a suspended command, so returning them from Dispose would hand memory back to the pool
+        /// that the pass goes on to read, compact and resize.
+        /// </remarks>
+        int bufferHolds = 1;
+
+        /// <summary>
         /// <see cref="HandshakeExecutor"/> for the length of a server handshake that validates a client certificate,
         /// and null otherwise.
         /// </summary>
@@ -283,8 +294,15 @@ namespace Garnet.networking
             // The deadline is absolute; handshake bytes that arrive before it do not extend it
             using var handshakeDeadline = tlsHandshakeTimeout > TimeSpan.Zero ? CancellationTokenSource.CreateLinkedTokenSource(token) : null;
             handshakeDeadline?.CancelAfter(tlsHandshakeTimeout);
+
+            // The handshake reads the receive buffer, and the reader it starts holds the buffers after it.
+            var held = false;
             try
             {
+                if (!TryTakeBufferHold())
+                    throw new ObjectDisposedException(nameof(NetworkHandler<TServerHook, TNetworkSender>));
+                held = true;
+
                 if (tlsOptions.ClientCertificateRequired)
                     handshakeExecutor = HandshakeExecutor;
                 await sslStream.AuthenticateAsServerAsync(tlsOptions, handshakeDeadline?.Token ?? token).ConfigureAwait(false);
@@ -300,6 +318,7 @@ namespace Garnet.networking
                 // There may be extra bytes left over after auth, we need to process them (non-blocking) before returning
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
                 _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
+                held = false;
             }
             catch (Exception ex)
             {
@@ -314,6 +333,11 @@ namespace Garnet.networking
                 if (timedOut)
                     throw new TimeoutException($"TLS handshake did not complete within {tlsHandshakeTimeout}", ex);
                 throw;
+            }
+            finally
+            {
+                if (held)
+                    ReleaseBufferHold();
             }
         }
 
@@ -356,8 +380,14 @@ namespace Garnet.networking
         async Task AuthenticateAsClientAsync(SslClientAuthenticationOptions sslClientOptions, string remoteEndpointName, CancellationToken token)
         {
             Debug.Assert(readerStatus == TlsReaderStatus.Active);
+            // The handshake reads the receive buffer, and the reader it starts holds the buffers after it.
+            var held = false;
             try
             {
+                if (!TryTakeBufferHold())
+                    throw new ObjectDisposedException(nameof(NetworkHandler<TServerHook, TNetworkSender>));
+                held = true;
+
                 await sslStream.AuthenticateAsClientAsync(sslClientOptions, token).ConfigureAwait(false);
 
                 if (token.IsCancellationRequested) throw new TaskCanceledException("AuthenticateAsClientAsync was cancelled");
@@ -370,6 +400,7 @@ namespace Garnet.networking
                 // There may be extra bytes left over after auth, we need to process them (non-blocking) before returning
                 var result = sslStream.ReadAsync(new Memory<byte>(transportReceiveBuffer, transportBytesRead, transportReceiveBuffer.Length - transportBytesRead), cancellationTokenSource.Token);
                 _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
+                held = false;
             }
             catch (Exception ex)
             {
@@ -378,6 +409,11 @@ namespace Garnet.networking
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
                 throw;
+            }
+            finally
+            {
+                if (held)
+                    ReleaseBufferHold();
             }
         }
 
@@ -740,6 +776,7 @@ namespace Garnet.networking
 #if DEBUG
                         ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
 #endif
+                        TakeBufferHold();
                         _ = SslReaderResumeAsync(processing, transportDemand, cancellationTokenSource.Token);
                         return;
                     }
@@ -750,6 +787,7 @@ namespace Garnet.networking
                 else
                 {
                     // Rare case: Our read has gone async, we need to invoke the async read processing code.
+                    TakeBufferHold();
                     _ = SslReaderAsync(result.AsTask(), cancellationTokenSource.Token);
                     return;
                 }
@@ -815,16 +853,23 @@ namespace Garnet.networking
         /// Finishes a synchronous TLS reader pass whose processing suspended, then hands back to the
         /// asynchronous reader loop.
         /// </summary>
+        /// <remarks>Owns a buffer hold, which it releases when it ends or passes to the loop it chains to.</remarks>
         async Task SslReaderResumeAsync(ValueTask processing, int transportDemand, CancellationToken token)
         {
+            var handedOff = false;
             try
             {
                 await processing.ConfigureAwait(false);
+#if DEBUG
+                if (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Receive_Hold_Resumed_Pass))
+                    await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Receive_Hold_Resumed_Pass).ConfigureAwait(false);
+#endif
 
                 var retry = FinishTransportPass(transportDemand);
                 if (TlsReaderHasWork(retry))
                 {
                     _ = SslReaderLoopAsync(retry, token);
+                    handedOff = true;
                     return;
                 }
 
@@ -840,10 +885,17 @@ namespace Garnet.networking
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
             }
+            finally
+            {
+                if (!handedOff)
+                    ReleaseBufferHold();
+            }
         }
 
+        /// <remarks>Owns a buffer hold, which it releases when it ends or passes to the loop it chains to.</remarks>
         async Task SslReaderAsync(Task<int> readTask, CancellationToken token = default)
         {
+            var handedOff = false;
             try
             {
                 bool retry = false;
@@ -873,6 +925,7 @@ namespace Garnet.networking
                 if (TlsReaderHasWork(retry))
                 {
                     _ = SslReaderLoopAsync(retry, token);
+                    handedOff = true;
                 }
                 else
                 {
@@ -888,8 +941,14 @@ namespace Garnet.networking
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
             }
+            finally
+            {
+                if (!handedOff)
+                    ReleaseBufferHold();
+            }
         }
 
+        /// <remarks>Owns a buffer hold, which it releases when it ends.</remarks>
         async Task SslReaderLoopAsync(bool initialRetry, CancellationToken token = default)
         {
             Debug.Assert(readerStatus == TlsReaderStatus.Active);
@@ -944,6 +1003,10 @@ namespace Garnet.networking
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
+            }
+            finally
+            {
+                ReleaseBufferHold();
             }
         }
 
@@ -1206,9 +1269,9 @@ namespace Garnet.networking
             => transportSendBufferPtr + transportSendBuffer.Length;
 
         /// <summary>
-        /// Implementation of dispose for network handler.
-        /// Expected to be called exactly once, by the same thread that listens to network
-        /// and calls the mono-threaded ProcessMessage.
+        /// Implementation of dispose for network handler. Runs its logic once, whichever thread calls it first.
+        /// The buffers are returned to the pool by the last holder, which is this call only if no receive loop
+        /// or TLS reader is still running; see <see cref="bufferHolds"/>.
         /// </summary>
         /// <exception cref="Exception"></exception>
         protected void DisposeImpl()
@@ -1234,6 +1297,41 @@ namespace Garnet.networking
             // another thread -- one whose batch parked returns from the session before it waits -- and it must
             // observe the cancellation rather than an ObjectDisposedException. No wait handle is ever taken from
             // them, so disposing them would release nothing.
+            ReleaseBufferHold();
+        }
+
+        /// <summary>
+        /// Takes a hold on the buffers for a receive loop or TLS reader. The caller must be on a path that
+        /// already owns a hold, which guarantees the count cannot have reached zero.
+        /// </summary>
+        private protected void TakeBufferHold()
+            => Interlocked.Increment(ref bufferHolds);
+
+        /// <summary>
+        /// Takes a hold on the buffers unless they have already been returned.
+        /// </summary>
+        /// <returns>False if the handler is disposed and nothing holds the buffers any longer.</returns>
+        private protected bool TryTakeBufferHold()
+        {
+            var holds = Volatile.Read(ref bufferHolds);
+            while (holds > 0)
+            {
+                var observed = Interlocked.CompareExchange(ref bufferHolds, holds + 1, holds);
+                if (observed == holds)
+                    return true;
+                holds = observed;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Releases a hold on the buffers, returning them to the pool when it is the last one.
+        /// </summary>
+        private protected void ReleaseBufferHold()
+        {
+            if (Interlocked.Decrement(ref bufferHolds) != 0)
+                return;
+
             networkReceiveBufferEntry?.Dispose();
             transportSendBufferEntry?.Dispose();
             transportReceiveBufferEntry?.Dispose();

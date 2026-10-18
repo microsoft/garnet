@@ -464,7 +464,8 @@ namespace Garnet.client
             networkSender?.ReturnResponseObject();
             socket?.Dispose();
             networkHandler?.Dispose();
-            if (!usingManagedNetworkPool) networkPool.Dispose();
+            // The receive buffers come back when the receive loop ends, on a socket completion that may need this thread
+            if (!usingManagedNetworkPool) networkPool.DisposeOnLastReturn();
         }
 
         /// <summary>
