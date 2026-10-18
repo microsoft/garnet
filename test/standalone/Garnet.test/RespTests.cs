@@ -4121,6 +4121,24 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetKeepTtlLargerValueCopyUpdateTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "keepTtlKey";
+            var newValue = new string('x', 300);
+
+            ClassicAssert.AreEqual("OK", db.Execute("SET", key, "value1", "EX", "100")?.ToString());
+            ClassicAssert.AreEqual("OK", db.Execute("SET", key, newValue, "KEEPTTL")?.ToString());
+
+            ClassicAssert.IsTrue(db.KeyExists(key));
+            var ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsNotNull(ttl);
+            ClassicAssert.IsTrue(ttl.Value.TotalSeconds > 90 && ttl.Value.TotalSeconds <= 100, $"Unexpected TTL {ttl}");
+            ClassicAssert.AreEqual(newValue, (string)db.StringGet(key));
+        }
+
+        [Test]
         public void StrlenTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

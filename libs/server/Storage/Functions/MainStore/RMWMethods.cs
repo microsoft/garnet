@@ -1129,6 +1129,10 @@ namespace Garnet.server
                     if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return false;
 
+                    // Carry the existing expiration into the new record.
+                    if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
+                        return false;
+
                     break;
 
                 case RespCommand.INCR:
