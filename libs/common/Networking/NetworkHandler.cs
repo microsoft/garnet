@@ -630,6 +630,7 @@ namespace Garnet.networking
         /// exactly once -- this method performs no bookkeeping of its own.
         /// </returns>
 #pragma warning disable VSTHRD200 // See BeginNetworkReceiveWithoutTLS.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         unsafe ValueTask<int> BeginProcess()
         {
             // A pass that is still outstanding means its completion half was skipped, which leaves the bytes
@@ -653,6 +654,7 @@ namespace Garnet.networking
         /// Accounts for what the session consumed and compacts the transport buffer.
         /// </summary>
         /// <param name="consumed">Bytes the session consumed, or <see cref="NothingProcessed"/>.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void CompleteProcess(int consumed)
         {
             SetProcessPassOutstanding(false);

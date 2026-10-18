@@ -1083,7 +1083,13 @@ namespace Garnet.server
             // same buffer, at this same dcurr, and flushes once the batch finishes. A synchronous
             // completion holds its replies back over the operation in exactly the same way.
             if (!SuspendedHoldingBatchScope)
-                FlushBatch();
+            {
+                // A batch with nothing held back for the AOF commit, and not ending the session, sends inline
+                if (!waitForAofBlocking && !toDispose && aofDeferredReplies is null)
+                    SendNow(networkSender.GetResponseObjectHead());
+                else
+                    FlushBatch();
+            }
         }
 
         /// <summary>

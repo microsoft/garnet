@@ -269,6 +269,7 @@ namespace Garnet.server
         /// Takes the per-batch scope: the response object replies are written into, and, in cluster mode, the
         /// cluster epoch. See the remarks on <see cref="BeginAsyncCommand(bool)"/>.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void EnterBatchScope()
         {
             // Before the lock below, whose acquire is a full fence: teardown either sees the batch in scope or
@@ -283,6 +284,7 @@ namespace Garnet.server
         /// Gives the per-batch scope back, including the scratch buffers whose contents it kept addressable, and
         /// serves what was left for the response object while the batch held it.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void ExitBatchScope()
         {
             asyncCommandRetainsBatchScope = false;
