@@ -52,6 +52,7 @@ namespace Garnet.test
         public void TearDown()
         {
             server?.Dispose();
+            server = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
             TestUtils.OnTearDown();
         }
@@ -78,6 +79,9 @@ namespace Garnet.test
         [Test]
         public void RequestsRunWhereTheSwitchSays([Values] bool inlineCompletions)
         {
+            if (!inlineCompletions && TestUtils.InlineCompletionsForcedByEnvironment)
+                Assert.Ignore("The environment runs every socket's completions inline, with the switch off too");
+
             StartServer(inlineCompletions);
             using var client = Connect();
 

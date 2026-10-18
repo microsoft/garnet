@@ -5,7 +5,9 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -22,7 +24,9 @@ namespace Garnet.test
     /// <remarks>
     /// Each test holds a key with a stored procedure that locks it and then waits, inside its main phase, until the test
     /// lets it go. A command that meets the key parks behind it, which the test observes through the store's
-    /// <see cref="LockReleaseSignal"/> listing a waiter.
+    /// <see cref="LockReleaseSignal"/> listing a waiter. The procedure runs on a session the test drives in process, on a
+    /// thread of its own (see <see cref="InProcessSession"/>), while the commands that meet the key arrive over
+    /// connections.
     /// </remarks>
     [TestFixture, NonParallelizable]
     public class RespLockContentionTests : TestBase
@@ -32,6 +36,7 @@ namespace Garnet.test
         GarnetServer server;
         LockHolder holderA, holderB;
         Gate slowSetGate;
+        readonly List<InProcessSession> inProcessSessions = [];
 
         [SetUp]
         public void Setup()
@@ -53,10 +58,14 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            // Lets go of anything still held, so no network thread is left waiting inside a procedure or an update
+            // Lets go of anything still held, so no thread is left waiting inside a procedure or an update
             holderA.Release.Release(100);
             holderB.Release.Release(100);
             slowSetGate.Release.Release(100);
+
+            foreach (var session in inProcessSessions)
+                session.Dispose();
+            inProcessSessions.Clear();
 
             server.Dispose();
             TestUtils.OnTearDown();
@@ -69,7 +78,7 @@ namespace Garnet.test
         [Test]
         public void AReadThatMeetsALatchedKeyIsRunAgainWithItsReplyStartedOver()
         {
-            using var holder = Session();
+            var holder = InProcess();
             using var client = Session();
 
             Hold(holder, "HOLDA", holderA, "lc:held");
@@ -94,7 +103,7 @@ namespace Garnet.test
         [Test]
         public void MsetThatMeetsALatchedKeyContinuesFromThatKey()
         {
-            using var holder = Session();
+            var holder = InProcess();
             using var client = Session();
             using var other = Session();
 
@@ -122,7 +131,7 @@ namespace Garnet.test
         [Test]
         public void DelThatMeetsALatchedKeyContinuesFromThatKeyAndCountsEveryKey()
         {
-            using var holder = Session();
+            var holder = InProcess();
             using var client = Session();
             using var other = Session();
 
@@ -152,7 +161,7 @@ namespace Garnet.test
         [Test]
         public void ExecThatMeetsALatchedKeyRunsOnceReleasedAndLeavesNoTransactionOpen()
         {
-            using var holder = Session();
+            var holder = InProcess();
             using var client = Session();
 
             Hold(holder, "HOLDA", holderA, "lc:held");
@@ -181,8 +190,8 @@ namespace Garnet.test
         [Test]
         public void ExecRunAgainListsItsWatchedKeysToLockOnce()
         {
-            using var holder1 = Session();
-            using var holder2 = Session();
+            var holder1 = InProcess();
+            var holder2 = InProcess();
             using var client = Session();
 
             var clientId = ClientId(client);
@@ -219,7 +228,7 @@ namespace Garnet.test
         [Test]
         public void AProcedureThatMeetsALatchedKeyIsRunAgainFromItsPreparePhase()
         {
-            using var holder = Session();
+            var holder = InProcess();
             using var client = Session();
 
             Hold(holder, "HOLDA", holderA, "lc:held");
@@ -246,7 +255,7 @@ namespace Garnet.test
         [Test]
         public void AProcedureThatCatchesTheUnwindStillParks()
         {
-            using var holder = Session();
+            var holder = InProcess();
             using var client = Session();
 
             Hold(holder, "HOLDA", holderA, "lc:held");
@@ -266,7 +275,7 @@ namespace Garnet.test
         [Test]
         public void AProcedureRunAgainIsNotFailedByAKeyItsEarlierRunRead()
         {
-            using var holder = Session();
+            var holder = InProcess();
             using var client = Session();
             using var other = Session();
 
@@ -286,13 +295,12 @@ namespace Garnet.test
         /// waiting on it, while the key is still held.
         /// </summary>
         /// <remarks>
-        /// Disposes the connection's handler, as server shutdown does for each connection, but for this one alone: the
-        /// holder's thread is inside its procedure, so its own connection cannot be torn down under it.
+        /// Disposes the connection's handler, as server shutdown does for each connection, but for this one alone.
         /// </remarks>
         [Test]
         public void AConnectionTornDownWhileParkedIsNoLongerListed()
         {
-            using var holder = Session();
+            var holder = InProcess();
             using var client = Session();
 
             var clientId = ClientId(client);
@@ -312,7 +320,7 @@ namespace Garnet.test
         [Test]
         public void AReadParkedOnASingleUpdateRunsOnceTheUpdateCompletes()
         {
-            using var updater = Session();
+            var updater = InProcess();
             using var client = Session();
 
             ClassicAssert.AreEqual("+OK\r\n", client.Execute("SET", "lc:held", "aa"));
@@ -332,10 +340,20 @@ namespace Garnet.test
         static RawRespSession Session() => new() { ReceiveTimeout = WaitLimit };
 
         /// <summary>
+        /// A session driven in process, which the teardown disposes once it has let go of anything still held.
+        /// </summary>
+        InProcessSession InProcess()
+        {
+            var session = new InProcessSession(server);
+            inProcessSessions.Add(session);
+            return session;
+        }
+
+        /// <summary>
         /// Has <paramref name="session"/> run procedure <paramref name="proc"/>, which locks <paramref name="keys"/>, sets
         /// each to "held", and waits until <paramref name="holder"/> is released, and returns once it holds them.
         /// </summary>
-        static void Hold(RawRespSession session, string proc, LockHolder holder, params string[] keys)
+        static void Hold(InProcessSession session, string proc, LockHolder holder, params string[] keys)
         {
             session.Send([proc, .. keys]);
             ClassicAssert.IsTrue(holder.Entered.Wait(WaitLimit), $"{proc} never took its locks");
@@ -377,6 +395,59 @@ namespace Garnet.test
             var keyEntries = typeof(TransactionManager).GetField("keyEntries", BindingFlags.Instance | BindingFlags.NonPublic);
             ClassicAssert.IsNotNull(keyEntries, "TransactionManager should still hold its keys to lock in a 'keyEntries' field");
             return (TxnKeyEntries)keyEntries.GetValue(((RespServerSession)Handler(clientId).Session).txnManager);
+        }
+
+        /// <summary>
+        /// A session the test drives in process, running each command it is sent on a thread of its own. A command that
+        /// waits inside the server until the test lets it go holds the thread that runs it. Sent over a connection, that
+        /// thread would be a server receive thread, which with inline socket completions also serves other connections,
+        /// so the commands that are to meet the held key could not be received.
+        /// </summary>
+        sealed unsafe class InProcessSession : IDisposable
+        {
+            readonly ScratchBufferNetworkSender sender = new();
+            readonly RespServerSession session;
+            Task<string> reply = Task.FromResult<string>(null);
+
+            public InProcessSession(GarnetServer server)
+                => session = (RespServerSession)server.Provider.GetSession(WireFormat.ASCII, sender);
+
+            public void Send(params string[] args)
+            {
+                ClassicAssert.IsTrue(reply.IsCompleted, "The previous command is still running");
+                var input = Encode(args);
+                reply = Task.Factory.StartNew(() => Run(input), TaskCreationOptions.LongRunning);
+            }
+
+            public string ReadReply()
+            {
+                ClassicAssert.IsTrue(reply.Wait(WaitLimit), "No reply arrived");
+                return reply.Result;
+            }
+
+            string Run(byte[] input)
+            {
+                fixed (byte* ptr = input)
+                    _ = session.TryConsumeMessages(ptr, input.Length);
+
+                var response = Encoding.ASCII.GetString(sender.GetResponse().ReadOnlySpan);
+                sender.Reset();
+                return response;
+            }
+
+            static byte[] Encode(string[] args)
+            {
+                var request = new StringBuilder($"*{args.Length}\r\n");
+                foreach (var arg in args)
+                    _ = request.Append($"${arg.Length}\r\n{arg}\r\n");
+                return Encoding.ASCII.GetBytes(request.ToString());
+            }
+
+            public void Dispose()
+            {
+                _ = reply.Wait(WaitLimit);
+                session.Dispose();
+            }
         }
 
         sealed class LockHolder

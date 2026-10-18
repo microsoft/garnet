@@ -426,6 +426,13 @@ namespace Garnet.test
 #endif
         }
 
+        /// <summary>
+        /// Whether <c>DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS=1</c> makes every socket in the process run its
+        /// completions on its socket event thread, whatever a server's own setting says.
+        /// </summary>
+        public static bool InlineCompletionsForcedByEnvironment
+            => Environment.GetEnvironmentVariable("DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS") == "1";
+
         public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
         {
             // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has

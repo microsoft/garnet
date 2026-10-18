@@ -643,6 +643,10 @@ namespace Garnet.test
             if (!useTls)
                 Assert.Ignore("The pass held here is the TLS reader's");
 
+            // Each held pass holds the thread running it, which with inline completions is a socket event thread
+            if (TestUtils.InlineCompletionsForcedByEnvironment && SocketCompletions.EventThreadCount < ParkedSessionCount)
+                Assert.Ignore($"Holds {ParkedSessionCount} receive passes at once, more than the socket event threads running them");
+
             var log = ShutDownWithParkedSessions(Arrival.AfterAnAnsweredCommand, admitTheQueuedResume: false, holdThePassThatParked: true);
 
             AssertTeardownWasNotReportedAsAFailure(log);
