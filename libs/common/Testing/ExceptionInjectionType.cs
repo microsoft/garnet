@@ -152,6 +152,11 @@ namespace Garnet.common
         /// </summary>
         Tls_Pause_With_Partial_Frame,
         /// <summary>
+        /// TLS network reader: hold a synchronous pass whose batch has just suspended, on the thread running it, until
+        /// the condition is cleared. The session is parked by then, so a test can tear it down before the pass unwinds.
+        /// </summary>
+        Tls_Hold_Pass_After_Batch_Suspends,
+        /// <summary>
         /// Replica full sync: fail recovery of the checkpoint received from the primary, before any of it is applied.
         /// </summary>
         Replication_Fail_Replica_Checkpoint_Recovery,

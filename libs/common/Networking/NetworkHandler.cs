@@ -735,6 +735,9 @@ namespace Garnet.networking
                     {
                         // Rare case: a command in this batch suspended. Finish this pass, and the rest of the
                         // loop, asynchronously. The reader stays Active, so the receive loop keeps waiting.
+#if DEBUG
+                        ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
+#endif
                         _ = SslReaderResumeAsync(processing, transportDemand, cancellationTokenSource.Token);
                         return;
                     }
@@ -830,7 +833,7 @@ namespace Garnet.networking
             {
                 if (!TryLogSessionTornDown(ex))
                     logger?.LogWarning(ex, "An exception has occurred during SslReaderResumeAsync");
-                // Wake the receive-loop waiter BEFORE Dispose() tears down the semaphore.
+                // Wake the receive-loop waiter before Dispose() cancels its wait.
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
@@ -935,7 +938,7 @@ namespace Garnet.networking
             {
                 if (!TryLogSessionTornDown(ex))
                     logger?.LogWarning(ex, "An exception has occurred during SslReaderLoopAsync");
-                // Wake the receive-loop waiter BEFORE Dispose() tears down the semaphore.
+                // Wake the receive-loop waiter before Dispose() cancels its wait.
                 readerStatus = TlsReaderStatus.Rest;
                 if (expectingData.CurrentCount == 0) expectingData.Release();
                 Dispose();
@@ -1222,11 +1225,13 @@ namespace Garnet.networking
             sslStream?.Dispose();
             // Release the reader so it sees the cancellation
             receivedData?.Release();
-            receivedData?.Dispose();
             // Release the expecter so it sees the cancellation
             expectingData?.Release();
-            expectingData?.Dispose();
-            cancellationTokenSource?.Dispose();
+
+            // The token source and the semaphores are left undisposed. A TLS receive pass can still be running on
+            // another thread -- one whose batch parked returns from the session before it waits -- and it must
+            // observe the cancellation rather than an ObjectDisposedException. No wait handle is ever taken from
+            // them, so disposing them would release nothing.
             networkReceiveBufferEntry?.Dispose();
             transportSendBufferEntry?.Dispose();
             transportReceiveBufferEntry?.Dispose();

@@ -630,6 +630,24 @@ namespace Garnet.test
             AssertTeardownWasNotReportedAsAFailure(log);
         }
 
+        /// <summary>
+        /// A TLS receive pass whose batch suspends returns from the session with the session already parked, and
+        /// only then hands the rest of the pass to the asynchronous reader and waits for it. A shutdown can tear
+        /// the connection down in between, so the pass goes on against a handler that has been disposed. It
+        /// observes the cancellation that ends it like any other, and does not report the teardown as a failure.
+        /// </summary>
+        [Test]
+        public void ATlsPassStillUnwindingWhenItsParkedSessionIsTornDownEndsWithoutReportingAFailure()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+            if (!useTls)
+                Assert.Ignore("The pass held here is the TLS reader's");
+
+            var log = ShutDownWithParkedSessions(Arrival.AfterAnAnsweredCommand, admitTheQueuedResume: false, holdThePassThatParked: true);
+
+            AssertTeardownWasNotReportedAsAFailure(log);
+        }
+
         const int ParkedSessionCount = 8;
 
         static bool ReportsTeardown(CapturingLogger.Entry entry)
@@ -637,7 +655,7 @@ namespace Garnet.test
                 || entry.Message.Contains(Garnet.common.SessionTornDownException.ResumeLogMessage, StringComparison.Ordinal);
 
         static string Describe(IEnumerable<CapturingLogger.Entry> log)
-            => Environment.NewLine + string.Join(Environment.NewLine, log.Take(300).Select(entry => $"{entry.Level}: {entry.Message} ({entry.Exception?.GetType().Name})"));
+            => Environment.NewLine + string.Join(Environment.NewLine, log.Take(300).Select(entry => $"{entry.Level}: {entry.Message} ({entry.Exception})"));
 
         static void AssertTeardownWasNotReportedAsAFailure(IReadOnlyList<CapturingLogger.Entry> log)
         {
@@ -657,7 +675,11 @@ namespace Garnet.test
         /// </summary>
         /// <param name="arrival">How the command that parks reaches the server.</param>
         /// <param name="admitTheQueuedResume">Whether each session's teardown waits for the resume its cancellations queue.</param>
-        IReadOnlyList<CapturingLogger.Entry> ShutDownWithParkedSessions(Arrival arrival, bool admitTheQueuedResume)
+        /// <param name="holdThePassThatParked">
+        /// Whether each TLS receive pass whose batch suspends is held, once its session has parked, until the server has
+        /// been disposed.
+        /// </param>
+        IReadOnlyList<CapturingLogger.Entry> ShutDownWithParkedSessions(Arrival arrival, bool admitTheQueuedResume, bool holdThePassThatParked = false)
         {
             const string Name = "quiet-shutdown";
 
@@ -671,6 +693,8 @@ namespace Garnet.test
 
             var registry = server.Provider.StoreWrapper.sessionSignalRegistry;
             var waiters = new RawRespSession[ParkedSessionCount];
+            if (holdThePassThatParked)
+                Garnet.common.ExceptionInjectionHelper.EnableException(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
             try
             {
                 for (var i = 0; i < ParkedSessionCount; i++)
@@ -692,11 +716,24 @@ namespace Garnet.test
                     Thread.Sleep(1);
                 ClassicAssert.AreEqual(ParkedSessionCount, registry.WaiterCount(Name), "The sessions did not all park");
 
+                if (holdThePassThatParked)
+                {
+                    clock.Restart();
+                    while (Garnet.common.ExceptionInjectionHelper.WaitingOnClear(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends) < ParkedSessionCount
+                        && clock.Elapsed < TimeSpan.FromSeconds(30))
+                        Thread.Sleep(1);
+                    ClassicAssert.AreEqual(ParkedSessionCount,
+                        Garnet.common.ExceptionInjectionHelper.WaitingOnClear(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends),
+                        "The passes whose batches suspended were not all held");
+                }
+
                 if (admitTheQueuedResume)
                     Garnet.common.ExceptionInjectionHelper.EnableException(Garnet.common.ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume);
 
                 server.Dispose();
                 server = null;
+
+                Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
 
                 // The loops end on pool threads once the teardown has released them, whether or not they say so
                 // quietly, so wait for every one of them to have reported before judging what they reported
@@ -717,6 +754,7 @@ namespace Garnet.test
             }
             finally
             {
+                Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
                 Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume);
                 foreach (var waiter in waiters)
                     waiter?.Dispose();
