@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -53,6 +54,22 @@ namespace Garnet.server
         {
             sliceCount = 0;
             watchScratchBufferAllocator.Reset();
+        }
+
+        /// <summary>
+        /// Number of keys added since the last <see cref="Reset"/>, watched or not.
+        /// </summary>
+        internal int Count => sliceCount;
+
+        /// <summary>
+        /// Forgets the keys added after the first <paramref name="count"/>, as a transaction procedure run again from the
+        /// start adds them again.
+        /// </summary>
+        /// <param name="count">Number of keys to keep, as read from <see cref="Count"/>.</param>
+        internal void Truncate(int count)
+        {
+            Debug.Assert(count <= sliceCount);
+            sliceCount = count;
         }
 
         /// <summary>

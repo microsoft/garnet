@@ -734,6 +734,11 @@ namespace Garnet.server
                 // Send message and dispose the network sender to end the session
                 FlushFatal();
             }
+            catch (LockContendedException)
+            {
+                // The command found a key latched by another session and unwound so the session can park until it is let go
+                ParkOnLockContention();
+            }
             catch (GarnetException ex)
             {
                 sessionMetrics?.incr_total_number_resp_server_session_exceptions(1);
@@ -848,6 +853,10 @@ namespace Garnet.server
             // Debug.WriteLine($"RECV: [{Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
+            // A command that parked on a latched key part way through goes on from where it got to
+            if (lockContinuationCmd != RespCommand.NONE)
+                ContinueAfterLockRelease(ref basicApi);
+
             var _origReadHead = readHead;
 
             // Re-checked each iteration: a command that suspends must stop the batch here, after its own
@@ -870,6 +879,9 @@ namespace Garnet.server
                     endReadHead = readHead = _origReadHead;
                     break;
                 }
+
+                // Every command arms the point, so one that finds a key latched never runs again from an earlier one's
+                restartPoint.Arm(cmd, _origReadHead, dcurr);
 
                 // Check ACL permissions for the command
                 if (cmd != RespCommand.INVALID)
@@ -1897,6 +1909,9 @@ namespace Garnet.server
             if (sendBytes <= 0)
                 return;
 
+            // A command whose reply has started to go out cannot be run again
+            restartPoint.OnSend(dcurr);
+
             // The AOF records behind these bytes are not committed yet, and the commit cannot be waited for
             // here: this runs inside a synchronous write loop, deep below any point that could suspend. Hold
             // the bytes instead. FlushBatch waits for the commit at the end of the batch and writes them out.
@@ -2147,6 +2162,7 @@ namespace Garnet.server
                 database.VectorManager,
                 logger,
                 respProtocolVersion);
+            dbStorageSession.SetLockContentionHandler(this, restartPoint);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
                 dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
@@ -2187,6 +2203,7 @@ namespace Garnet.server
                 database.VectorManager,
                 logger,
                 respProtocolVersion);
+            dbStorageSession.SetLockContentionHandler(this, restartPoint);
 
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
                 dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);

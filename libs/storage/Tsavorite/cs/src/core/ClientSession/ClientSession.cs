@@ -145,6 +145,21 @@ namespace Tsavorite.core
         public long HeadAddress => store.Log.HeadAddress;
 
         /// <summary>
+        /// Decides how this session's operations wait for a key whose bucket another session holds latched, or null to
+        /// retry on the calling thread with the epoch held. See <see cref="ILockContentionHandler"/>.
+        /// </summary>
+        public ILockContentionHandler LockContentionHandler
+        {
+            get => ctx.lockContentionHandler;
+            set => ctx.lockContentionHandler = value;
+        }
+
+        /// <summary>
+        /// Operations of this session that have gone to the device and not yet been completed.
+        /// </summary>
+        public int PendingOperationCount => ctx.pendingCount;
+
+        /// <summary>
         /// The current head address of the underlying store's read cache, or 0 if the read cache is
         /// not configured. Reads the live value. Callers that capture pointers into records returned
         /// by <c>Read</c> must check this in addition to <see cref="HeadAddress"/>: a synchronously

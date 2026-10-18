@@ -554,7 +554,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: false));
 
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
@@ -587,7 +587,7 @@ namespace Tsavorite.core
 
                 do
                     internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
-                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, hash, exclusive: false));
 
                 batch.SetStatus(0, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                 batch.SetOutput(0, output);
@@ -653,7 +653,7 @@ namespace Tsavorite.core
 
                             do
                                 internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
-                            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+                            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, hash, exclusive: false));
 
                             batch.SetStatus(nextBatchIx, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                             batch.SetOutput(nextBatchIx, output);
@@ -679,7 +679,7 @@ namespace Tsavorite.core
 
                         do
                             internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
-                        while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+                        while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, hash, exclusive: false));
 
                         batch.SetStatus(i, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                         batch.SetOutput(i, output);
@@ -700,7 +700,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: false));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -753,7 +753,7 @@ namespace Tsavorite.core
             do
                 internalStatus = InternalUpsert<TKey, SpanUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
                         key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -772,7 +772,7 @@ namespace Tsavorite.core
             do
                 internalStatus = InternalUpsert<TKey, ObjectUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -791,7 +791,7 @@ namespace Tsavorite.core
             do
                 internalStatus = InternalUpsert<TKey, LogRecordUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -808,7 +808,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -832,7 +832,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -848,7 +848,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalDelete(key, keyHash, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }

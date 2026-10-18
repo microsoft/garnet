@@ -78,7 +78,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            functionsState.OnKeyChanged(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
@@ -106,8 +106,7 @@ namespace Garnet.server
 
             if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo))
             {
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                functionsState.OnKeyChanged(rmwInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
                 if (functionsState.appendOnlyFile != null)
                     rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                 return true;
@@ -133,8 +132,7 @@ namespace Garnet.server
                     return true;
                 if (output.HasRemoveKey)
                 {
-                    if (!logRecord.Info.Modified)
-                        functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                    functionsState.OnKeyChanged(rmwInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog;
                     rmwInfo.Action = RMWAction.ExpireAndStop;
@@ -242,7 +240,7 @@ namespace Garnet.server
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
             // TODO: Object store ETags
 
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            functionsState.OnKeyChanged(rmwInfo.KeyHash);
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {

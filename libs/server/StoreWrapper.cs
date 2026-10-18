@@ -178,6 +178,12 @@ namespace Garnet.server
         /// </summary>
         internal readonly SessionSignalRegistry sessionSignalRegistry = new();
 
+        /// <summary>
+        /// Sessions parked until another session lets go of the key locks they wait on. Shared with the copy that replays
+        /// the AOF, whose transactions lock the same store.
+        /// </summary>
+        internal readonly LockReleaseSignal lockReleaseSignal = new();
+
         internal long safeAofAddress = -1;
 
         private readonly bool enforceConsistentRead;
@@ -342,6 +348,7 @@ namespace Garnet.server
             loggerFactory: storeWrapper.loggerFactory,
             runtimeConfig: storeWrapper.runtimeConfig)
         {
+            lockReleaseSignal = storeWrapper.lockReleaseSignal;
         }
 
         /// <summary>

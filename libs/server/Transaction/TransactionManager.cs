@@ -107,6 +107,9 @@ namespace Garnet.server
         // Whether txnKeysParseState holds the watched keys. An EXEC that waits for a migration is verified again, and the
         // watched keys are listed once however many times that happens
         bool watchedKeysListed;
+
+        // Whether keyEntries holds the watched keys. An EXEC that found a key locked and is run again locks them once
+        bool watchKeysSaved;
         private readonly GarnetAppendOnlyFile appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
@@ -182,7 +185,7 @@ namespace Garnet.server
             txnScratchBufferAllocator = new ScratchBufferAllocator(
                 maxInitialCapacity: storeWrapper.serverOptions.GetSessionScratchBufferMaxRetainedSize());
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
-            keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
+            keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext, storeWrapper.lockReleaseSignal);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
@@ -257,13 +260,7 @@ namespace Garnet.server
                 try
                 {
                     keyEntries.UnlockAllKeys();
-
-                    // Release contexts
-                    if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                        stringTransactionalContext.EndTransaction();
-                    if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
-                        objectTransactionalContext.EndTransaction();
-                    unifiedTransactionalContext.EndTransaction();
+                    EndTransactions();
                 }
                 finally
                 {
@@ -277,6 +274,7 @@ namespace Garnet.server
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
+            watchKeysSaved = false;
 
             // Reset cluster key parse state
             if (clusterEnabled)
@@ -330,6 +328,7 @@ namespace Garnet.server
         {
             var running = false;
             var deferred = false;
+            var watchCount = watchContainer.Count;
             scratchBufferAllocator.Reset();
             IsReplaying = isReplaying;
             try
@@ -353,6 +352,9 @@ namespace Garnet.server
 
                 // Prepare phase
                 var prepared = proc.Prepare(garnetTxPrepareApi, ref procInput);
+
+                // Prepare may have caught the exception that parks the session on a key another session holds locked
+                respSession?.RethrowLockContention();
 
                 // A key being migrated has the transaction run again from the start, Prepare included, so this run
                 // neither answers nor finalizes, whatever Prepare returned
@@ -394,6 +396,16 @@ namespace Garnet.server
                 // Transaction Commit
                 Commit();
             }
+            catch (LockContendedException) when (!running)
+            {
+                // The session parks until the key is released, then runs the procedure again from the start, Prepare
+                // included, so this run neither answers nor finalizes, and forgets the keys Prepare added
+                deferred = true;
+                keyEntries.UnlockAllKeys();
+                watchContainer.Truncate(watchCount);
+                Reset(running);
+                throw;
+            }
             catch (Exception ex)
             {
                 // A Prepare that throws after deferring the transaction is run again too
@@ -406,6 +418,9 @@ namespace Garnet.server
             {
                 try
                 {
+                    // The procedure has run, or failed, and is not run again: a key Finalize finds locked is waited for in place
+                    functionsState.restartPoint.Disarm();
+
                     // Run finalize procedure at the end.
                     // If the transaction was invoked during AOF replay skip the finalize step altogether
                     // Finalize logs to AOF accordingly, so let the replay pick up the commits from AOF as
@@ -514,6 +529,15 @@ namespace Garnet.server
             unifiedTransactionalContext.BeginTransaction();
         }
 
+        void EndTransactions()
+        {
+            if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
+                stringTransactionalContext.EndTransaction();
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
+                objectTransactionalContext.EndTransaction();
+            unifiedTransactionalContext.EndTransaction();
+        }
+
         void LocksAcquired(long txnVersion)
         {
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
@@ -526,8 +550,11 @@ namespace Garnet.server
         internal bool Run(bool internal_txn = false, bool fail_fast_on_lock = false, TimeSpan lock_timeout = default)
         {
             // Save watch keys to lock list
-            if (!internal_txn)
-                watchContainer.SaveKeysToLock(this);
+            if (!internal_txn && !watchKeysSaved)
+            {
+                _ = watchContainer.SaveKeysToLock(this);
+                watchKeysSaved = true;
+            }
 
             // Acquire transaction version
             txnVersion = stateMachineDriver.AcquireTransactionVersion();
@@ -542,7 +569,15 @@ namespace Garnet.server
             }
             else
             {
-                keyEntries.LockAllKeys();
+                try
+                {
+                    keyEntries.LockAllKeys();
+                }
+                catch (LockContendedException)
+                {
+                    AbandonLocking(internal_txn);
+                    throw;
+                }
                 lockSuccess = true;
             }
 
@@ -574,6 +609,33 @@ namespace Garnet.server
 
             state = TxnState.Running;
             return true;
+        }
+
+        /// <summary>
+        /// Undoes a <see cref="Run"/> whose session parks on a key another session holds locked, having taken none of
+        /// the locks (see <see cref="RespServerSession.OnLockContended"/>). A transaction the client queued keeps its keys
+        /// to lock, for the EXEC run again once the key is released; an internal one forgets them, as the command that
+        /// started it is run again from the start.
+        /// </summary>
+        /// <param name="internal_txn">Whether the transaction was started by a command rather than by the client.</param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void AbandonLocking(bool internal_txn)
+        {
+            try
+            {
+                EndTransactions();
+            }
+            finally
+            {
+                stateMachineDriver.EndTransaction(txnVersion);
+                txnVersion = 0;
+            }
+
+            if (internal_txn)
+            {
+                keyEntries.UnlockAllKeys();
+                Reset(false);
+            }
         }
 
         /// <summary>

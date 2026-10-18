@@ -85,7 +85,8 @@ namespace Tsavorite.core
                     DoTransactionalUnlock(clientSession, keys[..keyIdx]);
 
                     // We've released our locks so this refresh will let other threads advance and release their locks, and we will retry with a full timeout.
-                    _ = clientSession.store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions);
+                    if (!HandOffContendedLock(sessionFunctions, clientSession, in key))
+                        _ = clientSession.store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions);
                     retryCount++;
                     if (retryCount >= KeyLockMaxRetryAttempts)
                         return false;
@@ -94,6 +95,38 @@ namespace Tsavorite.core
             }
 
             // We reached the end of the list, possibly after a duplicate keyhash; all locks were successful.
+            return true;
+        }
+
+        /// <summary>
+        /// Hands the wait for a key whose lock another session holds to the session's <see cref="ILockContentionHandler"/>,
+        /// if it has one and holds no locks, so that waiting holds none either.
+        /// </summary>
+        /// <returns>Whether the handler returned, so that the locks are to be retried.</returns>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static bool HandOffContendedLock<TSessionFunctionsWrapper, TTransactionalKey>(TSessionFunctionsWrapper sessionFunctions,
+                ClientSession<TKey, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession, in TTransactionalKey key)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TTransactionalKey : ITransactionalKey
+        {
+            if (sessionFunctions.Ctx.lockContentionHandler is not { } handler || clientSession.TotalLockCount != 0)
+                return false;
+
+            var store = clientSession.store;
+            var contention = new LockContention(store, key.KeyHash, key.LockType == LockType.Exclusive);
+
+            // Resumed in the finally, so a handler that throws leaves the epoch held once, for Lock to release on its way out
+            store.epoch.Suspend();
+            try
+            {
+                handler.OnLockContended(in contention);
+            }
+            finally
+            {
+                store.epoch.Resume();
+            }
+
+            store.InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
             return true;
         }
 

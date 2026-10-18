@@ -264,7 +264,8 @@ namespace Garnet.server
             if (txnMode)
             {
                 txnKeyEntries = new TxnKeyEntries(16,
-                    respServerSession.storageSession.unifiedTransactionalContext);
+                    respServerSession.storageSession.unifiedTransactionalContext,
+                    respServerSession.storageSession.functionsState.storeWrapper.lockReleaseSignal);
 
                 garnetCall = &LuaRunnerTrampolines.GarnetCallWithTransaction;
             }

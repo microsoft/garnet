@@ -48,22 +48,33 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSET));
             }
 
-            for (var c = 0; c < parseState.Count; c += 2)
+            // Continued from the pair it reached if it parked on a latched key after setting the ones before it
+            var c = lockProgressIndex;
+            lockProgressIndex = 0;
+            try
             {
-                var key = parseState.GetArgSliceByRef(c);
-                var val = parseState.GetArgSliceByRef(c + 1);
-
-                var res = storageApi.SET(key, val);
-
-                // Type already stored in key which requires an explicit delete
-                if (res == GarnetStatus.WRONGTYPE)
+                for (; c < parseState.Count; c += 2)
                 {
-                    using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
+                    var key = parseState.GetArgSliceByRef(c);
+                    var val = parseState.GetArgSliceByRef(c + 1);
+
+                    var res = storageApi.SET(key, val);
+
+                    // Type already stored in key which requires an explicit delete
+                    if (res == GarnetStatus.WRONGTYPE)
                     {
-                        _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
-                        _ = storageSession.SET(key, val, ref storageSession.stringTransactionalContext);
+                        using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
+                        {
+                            _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
+                            _ = storageSession.SET(key, val, ref storageSession.stringTransactionalContext);
+                        }
                     }
                 }
+            }
+            catch (LockContendedException) when (lockContendedRaised == 2)
+            {
+                lockProgressIndex = c;
+                throw;
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -95,18 +106,29 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            int keysDeleted = 0;
-
-            for (int c = 0; c < parseState.Count; c++)
+            // Continued from the key it reached if it parked on a latched key after deleting the ones before it
+            var c = lockProgressIndex;
+            var keysDeleted = lockProgressCount;
+            lockProgressIndex = lockProgressCount = 0;
+            try
             {
-                var key = parseState.GetArgSliceByRef(c);
+                for (; c < parseState.Count; c++)
+                {
+                    var key = parseState.GetArgSliceByRef(c);
 
-                // DELETE reports an expired record as not found, while still physically deleting it
-                var status = storageApi.DELETE(key);
+                    // DELETE reports an expired record as not found, while still physically deleting it
+                    var status = storageApi.DELETE(key);
 
-                // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
-                if (status == GarnetStatus.OK)
-                    keysDeleted++;
+                    // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
+                    if (status == GarnetStatus.OK)
+                        keysDeleted++;
+                }
+            }
+            catch (LockContendedException) when (lockContendedRaised == 2)
+            {
+                lockProgressIndex = c;
+                lockProgressCount = keysDeleted;
+                throw;
             }
 
             while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))

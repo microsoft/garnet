@@ -188,6 +188,34 @@ namespace Garnet.server
             functionsState.respProtocolVersion = respProtocolVersion;
         }
 
+        /// <summary>
+        /// Operations of this session's string, object and unified contexts that have gone to the device and not yet been
+        /// completed.
+        /// </summary>
+        internal int PendingOperationCount
+            => stringBasicContext.Session.PendingOperationCount
+                + (objectBasicContext.Session?.PendingOperationCount ?? 0)
+                + unifiedBasicContext.Session.PendingOperationCount;
+
+        /// <summary>
+        /// Hands waits on a latched key by this session's string, object and unified operations to <paramref name="handler"/>,
+        /// and has the store callbacks that change a record disarm <paramref name="restartPoint"/>.
+        /// </summary>
+        /// <param name="handler">Decides how an operation waits on a latched key.</param>
+        /// <param name="restartPoint">Where the command being run can be run again from.</param>
+        /// <remarks>
+        /// The vector session is left without a handler: vector commands run in place (see
+        /// <see cref="RespServerSession.LockWaitClass"/>).
+        /// </remarks>
+        internal void SetLockContentionHandler(ILockContentionHandler handler, CommandRestartPoint restartPoint)
+        {
+            functionsState.restartPoint = restartPoint;
+            stringBasicContext.Session.LockContentionHandler = handler;
+            if (objectBasicContext.Session is { } objectSession)
+                objectSession.LockContentionHandler = handler;
+            unifiedBasicContext.Session.LockContentionHandler = handler;
+        }
+
         public void Dispose()
         {
             while (!_zcollectTaskLock.TryWriteLock())

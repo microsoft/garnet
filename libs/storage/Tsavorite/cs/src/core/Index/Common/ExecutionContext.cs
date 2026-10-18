@@ -80,6 +80,9 @@ namespace Tsavorite.core
             internal RevivificationStats RevivificationStats = new();
             public bool isAcquiredTransactional;
 
+            /// <summary>Decides how this session's operations wait on a latched bucket; null to retry in place.</summary>
+            internal ILockContentionHandler lockContentionHandler;
+
             public TsavoriteExecutionContext(int sessionID)
             {
                 SessionState = SystemState.Make(Phase.REST, 1);

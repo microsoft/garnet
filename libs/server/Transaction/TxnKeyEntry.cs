@@ -49,11 +49,19 @@ namespace Garnet.server
 
         readonly TxnKeyComparison comparison;
 
+        /// <summary>
+        /// Sessions parked on a key lock, woken as these keys are unlocked.
+        /// </summary>
+        readonly LockReleaseSignal lockReleaseSignal;
+
         public int phase;
 
         internal TxnKeyEntries(int initialCount,
-                TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
+                TransactionalContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext,
+                LockReleaseSignal lockReleaseSignal)
         {
+            this.lockReleaseSignal = lockReleaseSignal;
+
             // Not pinned: every use is through AsSpan, indexing or Array.Copy, and no caller takes a
             // stable address into this array. The growth path below has always allocated unpinned, so
             // pinning here only applied until the first resize while adding pinned-heap pressure.
@@ -156,7 +164,13 @@ namespace Garnet.server
         {
             phase = 2;
             if (unifiedStoreKeyLocked && keyCount > 0)
+            {
                 comparison.UnifiedTransactionalContext.Unlock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
+
+                // Read after the unlock, which is interlocked, so a waiter listed before it probed one of these keys is seen
+                if (lockReleaseSignal.HasWaiters)
+                    lockReleaseSignal.OnKeysUnlocked(keys.AsSpan(0, keyCount));
+            }
             keyCount = 0;
             unifiedStoreKeyLocked = false;
             phase = 0;

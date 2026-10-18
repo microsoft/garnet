@@ -1536,6 +1536,93 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// With a transaction holding a key's lock across a device read, and more commands waiting for that lock than
+        /// the thread pool has threads, another connection is still served, and every waiting command completes once the
+        /// transaction releases the lock.
+        /// </summary>
+        /// <remarks>
+        /// The transaction's <c>GET</c> waits on the device for as long as the test holds the read, and the transaction
+        /// keeps its lock on <c>H</c> until it completes. A <c>GET</c> of <c>H</c> runs where it is received, so waiting
+        /// there for the lock would hold a thread-pool thread for the whole device read, and with the pool clamped
+        /// nothing would be left to serve the <c>PING</c>.
+        /// </remarks>
+        [Test]
+        public void ANetworkThreadIsFreeWhileMoreCommandsThanThreadsWaitForALockHeldAcrossADeviceRead()
+        {
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("Starving the worker pool only constrains session dispatch on Linux.");
+
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
+
+            var cappedWorkers = Math.Max(Environment.ProcessorCount, minWorkers);
+            var sessionCount = cappedWorkers * 2;
+            const string LockedKey = "pendingget:locked";
+
+            RestartServer();
+            Populate();
+
+            var clients = new RawClient[sessionCount];
+            RawClient transaction = null;
+            RawClient probe = null;
+            var clamped = false;
+            try
+            {
+                transaction = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(60) };
+                ClassicAssert.AreEqual("+OK\r\n", transaction.Execute("SET", LockedKey, "before"));
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i] = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(60) };
+                probe = new RawClient { ReceiveTimeout = TimeSpan.FromSeconds(10) };
+
+                clamped = ThreadPool.SetMaxThreads(cappedWorkers, maxIo);
+                ClassicAssert.IsTrue(clamped, "Could not clamp the worker pool, so this test proves nothing.");
+
+                deviceFactoryCreator.ReadDelayMs = 600_000;
+
+                transaction.SendPipeline(["MULTI"], ["SET", LockedKey, "after"], ["GET", Key(0)], ["EXEC"]);
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadCount > 0, TimeSpan.FromSeconds(30)),
+                    "The transaction's GET never reached the device.");
+
+                foreach (var client in clients)
+                    client.Send("GET", LockedKey);
+
+                // Long enough for every pool thread to have picked up a waiting GET
+                Thread.Sleep(1000);
+
+                try
+                {
+                    ClassicAssert.AreEqual("+PONG\r\n", probe.Execute("PING"));
+                }
+                catch (IOException e)
+                {
+                    Assert.Fail($"No thread served a PING while {sessionCount} commands waited, against {cappedWorkers} " +
+                        $"worker threads, for a lock held across a device read. {e.Message}");
+                }
+
+                deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.CompleteHeldReads();
+
+                ClassicAssert.AreEqual("+OK\r\n", transaction.ReadReply());
+                ClassicAssert.AreEqual("+QUEUED\r\n", transaction.ReadReply());
+                ClassicAssert.AreEqual("+QUEUED\r\n", transaction.ReadReply());
+                ClassicAssert.AreEqual($"*2\r\n+OK\r\n${ValueLength}\r\n{Value(0)}\r\n", transaction.ReadReply());
+                for (var i = 0; i < sessionCount; i++)
+                    ClassicAssert.AreEqual("$5\r\nafter\r\n", clients[i].ReadReply(), $"Wrong reply for session {i}");
+            }
+            finally
+            {
+                deviceFactoryCreator.ReadDelayMs = 0;
+                deviceFactoryCreator.CompleteHeldReads();
+                if (clamped)
+                    _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                foreach (var c in clients)
+                    c?.Dispose();
+                transaction?.Dispose();
+                probe?.Dispose();
+            }
+        }
+
+        /// <summary>
         /// A flush, which waits on the store's log as it resets it, runs on an executor thread whether or not the store
         /// has spilled to the device, while a command that waits on nothing does not.
         /// </summary>
