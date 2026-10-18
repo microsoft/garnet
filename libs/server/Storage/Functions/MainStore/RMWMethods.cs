@@ -400,6 +400,16 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
+            // Expired data is logically absent, so check this before any type-mismatch gate below; otherwise an
+            // expired record of a different type (object, RangeIndex, or Vector Set) would incorrectly block a
+            // command that should treat the key as non-existent.
+            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                _ = logRecord.RemoveETag();
+                return false;
+            }
+
             if (logRecord.DataHeader.ValueIsObject)
             {
                 rmwInfo.Action = RMWAction.WrongType;
@@ -450,13 +460,6 @@ namespace Garnet.server
         private readonly IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             var cmd = input.header.cmd;
-            // Expired data
-            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
-            {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
-                _ = logRecord.RemoveETag();
-                return IPUResult.Failed;
-            }
 
             // sizeInfo is declared lazily inside each switch case that needs it (the non-inline / growing branches).
             // INCR / DECR / INCRBY / DECRBY / INCRBYFLOAT and the inline forks of SET / SETKEEPTTL / SETBIT / BITFIELD

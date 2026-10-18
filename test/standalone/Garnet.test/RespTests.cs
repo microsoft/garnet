@@ -1213,7 +1213,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-2, ttl);
 
             // px .. nx, non-existing key
-            ClassicAssert.IsTrue(db.KeyDelete(key));
+            // Key already expired from the "ex .. xx" block above, so DEL is a no-op (see issue #2244).
+            ClassicAssert.IsFalse(db.KeyDelete(key));
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "nx");
             ClassicAssert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
@@ -1793,6 +1794,77 @@ namespace Garnet.test
 
             var keysDel = db.KeyDelete(redisKeys);
             ClassicAssert.AreEqual(keysDel, 0);
+        }
+
+        [Test]
+        public void DeleteExpiredObjectKeyReturnsZero()
+        {
+            // https://github.com/microsoft/garnet/issues/2244
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            db.ListRightPush(key, "listItem");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var deleted = db.KeyDelete(key);
+            ClassicAssert.IsFalse(deleted);
+        }
+
+        [Test]
+        public void LlenOnExpiredStringKeyReturnsZero()
+        {
+            // https://github.com/microsoft/garnet/issues/2244: LLEN (object-store read) on an expired
+            // string-typed key must report the key as missing (0), not WRONGTYPE.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            db.StringSet(key, "v", TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var listLength = db.ListLength(key);
+            ClassicAssert.AreEqual(0, listLength);
+        }
+
+        [Test]
+        public void GetOnExpiredObjectKeyReturnsNil()
+        {
+            // Same root cause as the LLEN/DEL/SETNX bugs in #2244: a string-store read on an
+            // expired object-typed key must report the key as missing, not WRONGTYPE.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            db.ListRightPush(key, "listItem");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            string result = db.StringGet(key);
+            ClassicAssert.IsNull(result);
+        }
+
+        [Test]
+        public void RPushOnExpiredStringKeyCreatesNewList()
+        {
+            // Same root cause as the LLEN/DEL/SETNX bugs in #2244: an object-store write on an
+            // expired string-typed key must treat the key as missing and create a fresh value,
+            // not report WRONGTYPE.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            db.StringSet(key, "oldStringValue");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var newLength = db.ListRightPush(key, "listItem");
+            ClassicAssert.AreEqual(1, newLength);
+
+            var values = db.ListRange(key);
+            ClassicAssert.AreEqual(1, values.Length);
+            ClassicAssert.AreEqual("listItem", (string)values[0]);
         }
 
         [Test]
@@ -5242,6 +5314,28 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("GET key1");
             expectedResponse = "$1\r\n2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void SetNXOnExpiredObjectKeySucceeds()
+        {
+            // https://github.com/microsoft/garnet/issues/2244: an expired key must be treated as
+            // non-existent, even when its stored type differs from the command being issued.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            var newValue = "myNewValue";
+
+            db.ListRightPush(key, "listItem");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var setNxResult = (long)db.Execute("SETNX", key, newValue);
+            ClassicAssert.AreEqual(1, setNxResult);
+
+            string result = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue, result);
         }
         #endregion
 
