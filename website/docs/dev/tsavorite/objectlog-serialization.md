@@ -619,6 +619,12 @@ page. ReadOnly does not consume `ObjectLogPosition`; after Snapshot completes th
 `ObjectIdMap`, serializes it to the main object log, and replaces the Snapshot position. No page-image copy or metadata
 journal is required.
 
+ReadOnly's image is not discardable. `mainLogRecoveryEndAddress` is the main log's `FlushedUntilAddress` at
+`PERSISTENCE_CALLBACK`, and recovery reads the main log below it, so a page that ReadOnly writes after Snapshot has
+completed it, but before that sample, is recovered from ReadOnly's image. A `(v)` record superseded during the checkpoint
+must therefore keep its `(v)` content for ReadOnly too, until the checkpoint completes - not only until Snapshot has
+written its page.
+
 Snapshot leaves fuzzy v+1 records unchanged. Recovery uses the exact persisted `fuzzyRegionStartAddress` as the fuzzy lower
 boundary and invalidates such records before hashing overflow keys or reading payloads. RDH must still describe the record's
 stable allocation so recovery can advance to the next record.

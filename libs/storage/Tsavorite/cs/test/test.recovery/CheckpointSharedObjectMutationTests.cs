@@ -426,6 +426,156 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
+        /// A Snapshot checkpoint recovers from the main log every page below the main log's <c>FlushedUntilAddress</c> as
+        /// sampled at <see cref="Phase.PERSISTENCE_CALLBACK"/>, and overlays the snapshot file only above it. So a page that
+        /// Snapshot has written and that the ReadOnly flush then rewrites before that sample is recovered from the ReadOnly
+        /// image, and that image must still carry the <c>(v)</c> content.
+        /// </summary>
+        /// <remarks>
+        /// Snapshot is held on a record of the following page, so the source's page is complete while coordination is still
+        /// installed. The RMW runs in that window, while the source is still in the mutable region and so not frozen for
+        /// flush. <paramref name="readOnlyFlushesThePageFirst"/> selects whether the ReadOnly flush then writes the source's
+        /// page before the checkpoint samples the main log's FlushedUntilAddress. When it does not, recovery reads the page
+        /// from the snapshot file; that case is the control.
+        /// </remarks>
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("CheckpointRestore")]
+        public async Task SnapshotPageRewrittenByReadOnlyKeepsSourceImage([Values] bool readOnlyFlushesThePageFirst)
+        {
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the Snapshot flush cannot be held on a later page.");
+
+            const int InitialCount = 8;
+            const int RmwValue = 99;
+
+            var dir = Path.Join(MethodTestDir, "SnapshotThenReadOnly");
+            _ = Directory.CreateDirectory(dir);
+            var key = new TestObjectKey { key = 1 };
+
+            using var ckptLog = Devices.CreateLogDevice(Path.Join(dir, "Ckpt.log"), deleteOnClose: false);
+            using var ckptObjLog = Devices.CreateLogDevice(Path.Join(dir, "Ckpt.obj.log"), deleteOnClose: false);
+
+            static TsavoriteKV<ClassStoreFunctions, ClassAllocator> CreateStore(IDevice log, IDevice objlog, string dir)
+                => new(new()
+                {
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    ObjectLogDevice = objlog,
+                    MutableFraction = 0.9,
+                    LogMemorySize = 1L << 16,
+                    PageSize = 1L << 13,
+                    CheckpointDir = dir
+                }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new SharedListSerializer())
+                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            var shared = new List<int>();
+            for (var ii = 1; ii <= InitialCount; ++ii)
+                shared.Add(ii);
+
+            using var snapshotHeld = new ManualResetEventSlim(false);
+            using var releaseSnapshot = new ManualResetEventSlim(false);
+
+            long sourceAddress, sourceTail;
+            var writeStore = CreateStore(ckptLog, ckptObjLog, dir);
+            try
+            {
+                long holdAddress;
+                using (var session = writeStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    sourceAddress = writeStore.Log.TailAddress;
+                    _ = session.BasicContext.Upsert(key, new SharedListHeapObject(shared), Empty.Default);
+                    sourceTail = writeStore.Log.TailAddress;
+
+                    // Fill the source's page, then put one object record on the next page for Snapshot to be held on.
+                    var nextKey = 2;
+                    while (writeStore.hlogBase.GetPage(writeStore.Log.TailAddress) == writeStore.hlogBase.GetPage(sourceAddress))
+                        _ = session.BasicContext.Upsert(new TestObjectKey { key = nextKey++ }, new SharedListHeapObject([nextKey]), Empty.Default);
+                    holdAddress = writeStore.Log.TailAddress;
+                    _ = session.BasicContext.Upsert(new TestObjectKey { key = nextKey }, new SharedListHeapObject([nextKey]), Empty.Default);
+                }
+
+                var sourcePageEnd = writeStore.hlogBase.GetLogicalAddressOfStartOfPage(writeStore.hlogBase.GetPage(sourceAddress) + 1);
+                Assert.That(writeStore.hlogBase.GetPage(writeStore.Log.TailAddress), Is.EqualTo(writeStore.hlogBase.GetPage(sourceAddress) + 1));
+                Assert.That(writeStore.Log.ReadOnlyAddress, Is.LessThanOrEqualTo(sourceAddress), "The source must start in the mutable region");
+
+                // Only the Snapshot flush reaches the next page: the ReadOnly flush below stops at the end of the source's page.
+                var holdPage = writeStore.hlogBase.GetPage(holdAddress);
+                ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+                {
+                    if (phase != ObjectFlushPhase.AfterRecordWritten || writeStore.hlogBase.GetPage(logicalAddress) != holdPage || snapshotHeld.IsSet)
+                        return;
+                    snapshotHeld.Set();
+                    _ = releaseSnapshot.Wait(TimeSpan.FromSeconds(30));
+                };
+
+                Assert.That(writeStore.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot), Is.True);
+                Assert.That(snapshotHeld.Wait(TimeSpan.FromSeconds(30)), Is.True, "Snapshot never reached the record on the next page");
+
+                // The source's page write was issued before the held page; wait for its completion to advance the limit.
+                var coordination = writeStore._hybridLogCheckpoint.snapshotFlushCoordination;
+                Assert.That(coordination, Is.Not.Null, "Snapshot coordination was not created");
+                var sourcePage = writeStore.hlogBase.GetPage(sourceAddress);
+                var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+                while (coordination.ReadOnlyFlushPageLimit <= sourcePage && DateTime.UtcNow < deadline)
+                    Thread.Sleep(1);
+                Assert.That(coordination.ReadOnlyFlushPageLimit, Is.GreaterThan(sourcePage), "Snapshot did not complete the source's page");
+                Assert.That(writeStore.hlogBase.HasSnapshotFlushCoordination, Is.True, "Snapshot finished instead of being held");
+
+                using (var session = writeStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    TestObjectInput input = new() { value = RmwValue };
+                    TestObjectOutput output = new();
+                    var status = session.BasicContext.RMW(key, ref input, ref output);
+                    if (status.IsPending)
+                        _ = session.BasicContext.CompletePending(wait: true);
+                }
+                Assert.That(shared, Has.Count.EqualTo(InitialCount + 1), "The RMW did not take the CopyUpdate path");
+
+                if (readOnlyFlushesThePageFirst)
+                {
+                    writeStore.Log.ShiftReadOnlyAddress(sourcePageEnd, wait: true);
+                    Assert.That(writeStore.Log.FlushedUntilAddress, Is.GreaterThanOrEqualTo(sourcePageEnd), "The ReadOnly flush did not write the source's page");
+                }
+
+                releaseSnapshot.Set();
+                await writeStore.CompleteCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                releaseSnapshot.Set();
+                ObjectFlushInjection.Reset();
+                writeStore.Dispose();
+            }
+
+            var recoverStore = CreateStore(ckptLog, ckptObjLog, dir);
+            try
+            {
+                _ = await recoverStore.RecoverAsync().ConfigureAwait(false);
+
+                var functions = new SharedListFunctions();
+                using var session = recoverStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(functions);
+                TestObjectInput input = new();
+                TestObjectOutput output = new();
+                var status = session.BasicContext.Read(key, ref input, ref output);
+                if (status.IsPending)
+                    _ = session.BasicContext.CompletePending(wait: true);
+
+                Assert.That(status.Found, Is.True, "The key did not survive recovery");
+                Assert.That(functions.LastReadAddress, Is.LessThan(sourceTail), "Recovery should resolve the key to the (v) record");
+                Assert.That(functions.LastRead, Is.Not.Null,
+                    $"The recovered (v) record at {functions.LastReadAddress} no longer holds an object value "
+                    + $"(readOnlyFlushesThePageFirst: {readOnlyFlushesThePageFirst})");
+                Assert.That(functions.LastRead.Items, Has.Count.EqualTo(InitialCount),
+                    $"The recovered (v) record carries {functions.LastRead.Items.Count} items rather than its own {InitialCount}");
+            }
+            finally
+            {
+                recoverStore.Dispose();
+            }
+        }
+
+        /// <summary>
         /// A Delete that supersedes a (v) record while the checkpoint is still capturing it must NOT dispose the source.
         /// <para>
         /// CPR and the epoch bumps in <c>RunStateMachine</c> make the *version* decision correct — the Delete below
@@ -511,7 +661,7 @@ namespace Tsavorite.test.recovery
 
             public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref ReadInfo readInfo)
             {
-                LastRead = srcLogRecord.ValueObject as SharedListHeapObject;
+                LastRead = srcLogRecord.DataHeader.ValueIsObject ? srcLogRecord.ValueObject as SharedListHeapObject : null;
                 LastReadAddress = readInfo.Address;
                 return true;
             }

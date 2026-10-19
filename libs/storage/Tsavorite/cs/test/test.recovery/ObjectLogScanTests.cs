@@ -446,54 +446,6 @@ namespace Tsavorite.test
 
         [Test]
         [Category("TsavoriteKV")]
-        public void SnapshotCompletionWatermarkReportsFlushedPages()
-        {
-            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Watermark.log"), deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Watermark.obj.log"), deleteOnClose: true);
-            store = new(new()
-            {
-                IndexSize = 1L << 13,
-                LogDevice = log,
-                ObjectLogDevice = objlog,
-                MutableFraction = 0.1,
-                LogMemorySize = 1L << 15,
-                PageSize = MinKvLogPageSize
-            }, StoreFunctions.Create(comparer, () => new TrackingHeapObjectSerializer())
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
-            );
-
-            var addressOnPage0 = store.hlogBase.GetFirstValidLogicalAddressOnPage(0);
-            var addressOnPage3 = store.hlogBase.GetFirstValidLogicalAddressOnPage(3);
-
-            // With no Snapshot installed the answer is conservatively false, so callers cache exactly as before.
-            Assert.That(store.hlogBase.SnapshotHasFlushedPageFor(addressOnPage0), Is.False);
-
-            using var coordination = new SnapshotFlushCoordination();
-            store.hlogBase.PrepareSnapshotFlushCoordination(coordination);
-            try
-            {
-                coordination.BeginCutoffCapture(0);
-                coordination.PublishReadOnlyFlushCutoff(0);
-                coordination.AdvanceReadOnlyFlushPageLimit(3);
-                coordination.BeginFlushing();
-
-                // Strictly below the exclusive watermark means the Snapshot has written that page.
-                Assert.That(store.hlogBase.SnapshotHasFlushedPageFor(addressOnPage0), Is.True);
-
-                // The page at the watermark has not been written yet, so its (v) image must still be cached.
-                Assert.That(store.hlogBase.SnapshotHasFlushedPageFor(addressOnPage3), Is.False);
-            }
-            finally
-            {
-                store.hlogBase.ClearSnapshotFlushCoordination(coordination);
-            }
-
-            // Removing coordination returns the conservative answer.
-            Assert.That(store.hlogBase.SnapshotHasFlushedPageFor(addressOnPage0), Is.False);
-        }
-
-        [Test]
-        [Category("TsavoriteKV")]
         public async Task CleanupWithoutCachedDataTest()
         {
             var value = new BlockingSerializationHeapObject();

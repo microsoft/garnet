@@ -126,8 +126,13 @@ namespace Tsavorite.core
         /// The fuzzy-region test mirrors <see cref="IsFrozen{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>:
         /// <see cref="RecordInfo.IsInNewVersion"/> is never cleared, so on its own it cannot distinguish a record written after
         /// *this* checkpoint's transaction start from one left over from an earlier checkpoint; the fuzzy-region start is what
-        /// scopes it to the current one. The last test uses the Snapshot completion watermark: once the Snapshot has written
-        /// the page holding the source, the <c>(v)</c> image is durable and caching it again preserves nothing.
+        /// scopes it to the current one.
+        /// </para>
+        /// <para>
+        /// Snapshot having written the source's page does not make the image unnecessary. Snapshot recovery reads the main log
+        /// below the <c>FlushedUntilAddress</c> sampled at <see cref="Phase.PERSISTENCE_CALLBACK"/> and the snapshot file only
+        /// above it, so a page the ReadOnly flush writes again before that sample is recovered from the ReadOnly image, and that
+        /// flush still needs the <c>(v)</c> content.
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -136,10 +141,7 @@ namespace Tsavorite.core
             if (hlog.IsFrozenForFlush(srcLogicalAddress))
                 return true;
 
-            if (srcLogicalAddress > _hybridLogCheckpoint.info.fuzzyRegionStartAddress && srcRecordInfo.IsInNewVersion)
-                return false;
-
-            return !hlogBase.SnapshotHasFlushedPageFor(srcLogicalAddress);
+            return srcLogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress || !srcRecordInfo.IsInNewVersion;
         }
 
         /// <summary>

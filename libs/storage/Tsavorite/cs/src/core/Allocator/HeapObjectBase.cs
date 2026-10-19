@@ -128,8 +128,8 @@ namespace Tsavorite.core
                 return false;
 
             // No (v) image is at stake: either this is not a checkpoint's new-version record, or the checkpoint does not
-            // capture this source (it was written after the transaction start, or the Snapshot has already written its
-            // page). Release the old version rather than serializing it; the new version of the object already exists.
+            // capture this source (it was written after the transaction start). Release the old version rather than
+            // serializing it; the new version of the object already exists.
             if (!dstLogRecord.Info.IsInNewVersion || !checkpointNeedsSourceImage)
             {
                 // Wait for any concurrent ongoing serialization of oldValue to complete
