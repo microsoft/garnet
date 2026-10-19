@@ -209,6 +209,8 @@ namespace Garnet.test
             const int Waiters = 128;
             const int WarmUpRounds = 20;
             const int Rounds = 100;
+            const int Attempts = 3;
+            const long Allowance = 32 * 1024;
 
             using var gate = CreateGate();
             var waiters = Enumerable.Range(0, Waiters).Select(_ => new Waiter()).ToArray();
@@ -245,17 +247,26 @@ namespace Garnet.test
             for (var i = 0; i < WarmUpRounds; i++)
                 ClassicAssert.IsTrue(Round(), $"Warm-up round {i} did not wake every waiter");
 
-            var completed = 0;
-            var before = GC.GetTotalAllocatedBytes(precise: true);
-            while (completed < Rounds && Round())
-                completed++;
-            var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+            // Allocating a list per wake costs over 2 KB a round with this many waiters, in every measurement. The
+            // count is process-wide, so it also takes in whatever else the process does meanwhile, such as
+            // finalizers of earlier tests' tasks. That only adds, so the least of a few measurements is kept.
+            var allocated = long.MaxValue;
+            for (var attempt = 0; attempt < Attempts && allocated >= Allowance; attempt++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
 
-            ClassicAssert.AreEqual(Rounds, completed, "A round did not wake every waiter");
+                var completed = 0;
+                var before = GC.GetTotalAllocatedBytes(precise: true);
+                while (completed < Rounds && Round())
+                    completed++;
+                var measured = GC.GetTotalAllocatedBytes(precise: true) - before;
 
-            // Allocating a list per wake costs over 2 KB a round with this many waiters. The allowance covers
-            // whatever else the test process does while the rounds run.
-            ClassicAssert.Less(allocated, 32 * 1024, $"Waking {Waiters} waiters {Rounds} times allocated {allocated} bytes");
+                ClassicAssert.AreEqual(Rounds, completed, "A round did not wake every waiter");
+                allocated = Math.Min(allocated, measured);
+            }
+
+            ClassicAssert.Less(allocated, Allowance, $"Waking {Waiters} waiters {Rounds} times allocated {allocated} bytes");
         }
 
         /// <summary>
