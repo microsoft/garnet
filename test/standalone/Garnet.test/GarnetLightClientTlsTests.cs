@@ -86,6 +86,29 @@ namespace Garnet.test
             ClassicAssert.AreEqual("tail", await third.WaitAsync(Deadline));
         }
 
+        [Test]
+        public async Task AReplyEndingExactlyAtTheTransportBufferEndDoesNotStrandTheRestOfItsRecord()
+        {
+            using var cts = new CancellationTokenSource(Deadline);
+            using var listener = Listen();
+            using var client = TestUtils.GetGarnetLightClient(useTLS: true, networkWriterOptions: SmallBuffers());
+            var connect = client.ConnectAsync(cts.Token);
+            using var peer = await AcceptTlsAsync(listener, cts.Token);
+            await connect.WaitAsync(Deadline);
+
+            var first = client.PingAsync(cts.Token);
+            var second = client.PingAsync(cts.Token);
+            await ReadPingsAsync(peer, 2, cts.Token);
+
+            // The first reply fills the client's 256-byte plaintext buffer exactly and is fully consumed, so the
+            // buffer is neither full nor holding a partial reply. The second reply is still inside the same TLS
+            // record and no further socket traffic follows.
+            var body = new string('a', 256 - 3);
+            await peer.WriteAsync(Encoding.ASCII.GetBytes($"+{body}\r\n+tail\r\n"), cts.Token);
+            ClassicAssert.AreEqual(body, await first.WaitAsync(Deadline));
+            ClassicAssert.AreEqual("tail", await second.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+
         [TestCase(0)]
         [TestCase(257)]
         [TestCase(1 << 20)]
