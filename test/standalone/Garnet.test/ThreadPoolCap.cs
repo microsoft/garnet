@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using NUnit.Framework;
 
@@ -50,6 +51,8 @@ namespace Garnet.test
             const int MaxHeld = 16;
 
             var cap = Apply(1);
+            WaitForExcessWorkersToRetire();
+
             for (var held = 0; held <= MaxHeld; held++)
             {
                 if (held > 0 && !cap.TrySet(held + 1))
@@ -69,6 +72,36 @@ namespace Garnet.test
             cap.Dispose();
             Assert.Ignore($"Could not leave the thread pool {freeWorkers} free worker(s), so a held thread cannot be made to matter.");
             return null;
+        }
+
+        /// <summary>
+        /// Waits until no work item has completed for a while, or a bound passes. A worker already dispatching when the
+        /// cap fell keeps taking queued items until its dispatch quantum ends, so it could run the probe in a slot the cap
+        /// does not admit, and the host's busy threads would then be undercounted. Once it retires, nothing beyond the cap
+        /// runs, and with the host's own threads holding every admitted slot, nothing completes.
+        /// </summary>
+        static void WaitForExcessWorkersToRetire()
+        {
+            const int QuietMs = 50;
+            const int MaxMs = 2000;
+
+            var elapsed = Stopwatch.StartNew();
+            var completed = ThreadPool.CompletedWorkItemCount;
+            var quietSince = 0L;
+            while (elapsed.ElapsedMilliseconds < MaxMs)
+            {
+                Thread.Sleep(10);
+                var now = ThreadPool.CompletedWorkItemCount;
+                if (now != completed)
+                {
+                    completed = now;
+                    quietSince = elapsed.ElapsedMilliseconds;
+                }
+                else if (elapsed.ElapsedMilliseconds - quietSince >= QuietMs)
+                {
+                    return;
+                }
+            }
         }
 
         bool TrySet(int workers)
