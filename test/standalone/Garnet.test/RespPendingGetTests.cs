@@ -1391,13 +1391,14 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A session that resumes from a device read on the thread that completed it, and has next to run a command that
-        /// waits for the device in place, moves to the thread pool for that command.
+        /// A session that resumes from a device read, and has next to run a command that waits for the device in place,
+        /// does not run that command on the thread that completed the read.
         /// </summary>
         /// <remarks>
-        /// The <c>GET</c> parks on its read and resumes on the device's completion thread, with the <c>BITFIELD_RO</c>
-        /// queued behind it in the same batch. Run there, the <c>BITFIELD_RO</c> would wait for its own read on the one
-        /// thread that completes it.
+        /// The <c>GET</c> parks on its read, with the <c>BITFIELD_RO</c> queued behind it in the same batch. The read's
+        /// completion queues the session's resume to the thread pool, where the <c>BITFIELD_RO</c> waits for its own read
+        /// in place. Run on the device's completion thread, it would wait for its read on the one thread that completes
+        /// it, and never reply.
         /// </remarks>
         [Test]
         public void ACommandThatWaitsForTheDeviceInPlaceLeavesTheThreadThatCompletedARead()
@@ -1413,7 +1414,6 @@ namespace Garnet.test
                 ClassicAssert.AreEqual($"${ValueLength}\r\n{Value(0)}\r\n", client.ReadReply());
                 ClassicAssert.AreEqual($"*1\r\n:{(int)Value(1)[0]}\r\n", client.ReadReply());
                 ClassicAssert.GreaterOrEqual(deviceFactoryCreator.ReadCount, 2, "A command never went to the device, so this proves nothing.");
-                ClassicAssert.Greater(Offloads, 0, "BITFIELD_RO resumed on the device's completion thread, yet was not moved off it.");
             }
             catch (IOException e)
             {
@@ -1427,13 +1427,14 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A transaction that resumes from a device read on the thread that completed it, and has next to run a command
-        /// that waits for the device in place, moves to the thread pool for that command, with its locks held.
+        /// A transaction that resumes from a device read, and has next to run a command that waits for the device in
+        /// place, does not run that command on the thread that completed the read.
         /// </summary>
         /// <remarks>
-        /// The transaction parks on the device for its <c>GET</c> and resumes on the device's completion thread. Run
-        /// there, its <c>BITFIELD</c> would wait for its own read on the one thread that completes it, holding the
-        /// transaction's locks.
+        /// The transaction parks on the device for its <c>GET</c>, and the read's completion queues its resume to the
+        /// thread pool, where its <c>BITFIELD</c> waits for its own read in place with the transaction's locks held. Run
+        /// on the device's completion thread, the <c>BITFIELD</c> would wait for its read on the one thread that completes
+        /// it, and never reply.
         /// </remarks>
         [Test]
         public void ATransactionThatWaitsForTheDeviceInPlaceLeavesTheThreadThatCompletedARead()
@@ -1457,7 +1458,6 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("+QUEUED\r\n", transaction.ReadReply());
                 ClassicAssert.AreEqual("+QUEUED\r\n", transaction.ReadReply());
                 ClassicAssert.AreEqual($"*2\r\n${ValueLength}\r\n{Value(0)}\r\n*1\r\n:{Value(1)[0] + 1}\r\n", transaction.ReadReply());
-                ClassicAssert.Greater(Offloads, 0, "The transaction resumed on the device's completion thread, yet was not moved off it.");
             }
             catch (IOException e)
             {

@@ -185,19 +185,6 @@ namespace Garnet.networking
         int bufferHolds = 1;
 
         /// <summary>
-        /// Set for the length of a server handshake that validates a client certificate.
-        /// </summary>
-        /// <remarks>
-        /// <see cref="SslStream"/> builds and validates the client's certificate chain synchronously, on the thread that
-        /// completed the read carrying the certificate. Building the chain may download issuer certificates named by
-        /// the certificate itself and, when revocation is checked online, revocation lists, each holding the thread
-        /// until it arrives or times out. While this is set, a read of the handshake that completes on a thread that
-        /// must not wait, such as a socket event thread running completions inline, continues on the thread pool, so
-        /// the chain is built there.
-        /// </remarks>
-        bool validatingClientCertificate;
-
-        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="tlsHandshakeTimeout">Longest a server-side TLS handshake may take before the connection is closed. Zero or negative waits indefinitely; a timeout beyond the longest a timer supports, about 49.7 days, is limited to it.</param>
@@ -298,9 +285,7 @@ namespace Garnet.networking
                     throw new ObjectDisposedException(nameof(NetworkHandler<TServerHook, TNetworkSender>));
                 held = true;
 
-                validatingClientCertificate = tlsOptions.ClientCertificateRequired;
                 await sslStream.AuthenticateAsServerAsync(tlsOptions, handshakeDeadline?.Token ?? token).ConfigureAwait(false);
-                validatingClientCertificate = false;
 
                 if (token.IsCancellationRequested) throw new TaskCanceledException("AuthenticateAsServerAsync was cancelled");
 

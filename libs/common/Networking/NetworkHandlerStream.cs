@@ -4,10 +4,8 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.networking
@@ -67,24 +65,12 @@ namespace Garnet.networking
 
             public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
             {
-                return ReadAsync(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
+                return ReadAsyncInternalAsync(new Memory<byte>(buffer, offset, count), cancellationToken).AsTask();
             }
 
             public override ValueTask<int> ReadAsync(Memory<byte> destination, CancellationToken cancellationToken = default)
-                => garnetNetworkHandler.validatingClientCertificate
-                    ? HandshakeReadAsync(destination, cancellationToken)
-                    : ReadAsyncInternalAsync(destination, cancellationToken);
-
-            /// <summary>
-            /// A read of a handshake that validates a client certificate: completes on the thread pool if the thread
-            /// that completed it must not wait, so <see cref="SslStream"/> continues there.
-            /// </summary>
-            async ValueTask<int> HandshakeReadAsync(Memory<byte> destination, CancellationToken cancellationToken)
             {
-                var read = await ReadAsyncInternalAsync(destination, cancellationToken).ConfigureAwait(false);
-                if (ThreadPoolHop.Required)
-                    await new ThreadPoolHop();
-                return read;
+                return ReadAsyncInternalAsync(destination, cancellationToken);
             }
 
             public override int Read(byte[] buffer, int offset, int count)
@@ -156,6 +142,11 @@ namespace Garnet.networking
                     // Set readerStatus to indicate we are waiting for the semaphore
                     garnetNetworkHandler.readerStatus = TlsReaderStatus.Waiting;
                     if (garnetNetworkHandler.expectingData.CurrentCount == 0) garnetNetworkHandler.expectingData.Release();
+
+                    // SemaphoreSlim resumes its waiters on the thread pool, never on the releasing thread, so a handshake
+                    // continues there rather than on a socket event thread that runs completions inline. SslStream
+                    // validates a client certificate synchronously, which may download issuer certificates and
+                    // revocation lists, and it does so on the pool.
                     await garnetNetworkHandler.receivedData.WaitAsync(cancellationToken).ConfigureAwait(false);
                     // A handshake waits with its caller's token, which disposing the handler does not cancel. The
                     // wait still holds the buffers, so it must end when the handler is disposed.
