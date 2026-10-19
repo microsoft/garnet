@@ -297,7 +297,8 @@ namespace Garnet
                         File.Delete(opts.UnixSocketPath);
                     }
                     servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, connectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission,
-                        networkBufferSettings, opts.GetNetworkBufferPoolSize(), networkBufferBudget, logger);
+                        networkBufferSettings, opts.GetNetworkBufferPoolSize(), networkBufferBudget, logger,
+                        networkSendTimeout: opts.NetworkSendTimeout, tlsHandshakeTimeout: opts.TlsHandshakeTimeout);
                 }
             }
 
