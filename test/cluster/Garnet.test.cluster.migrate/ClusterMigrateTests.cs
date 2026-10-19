@@ -1156,6 +1156,48 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("Done ClusterMigrateLargeObjectMultiLogAofReplay");
         }
 
+        [Test, Order(103)]
+        [Category("CLUSTER")]
+        public void ClusterScriptWritingAKeyBeingMigratedDoesNotStallTheMigration([Values("SET", "APPEND")] string command)
+        {
+            context.CreateInstances(defaultShards, useTLS: UseTLS, enableLua: true);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            const string key = "{abc}a";
+            var keyBytes = Encoding.ASCII.GetBytes(key);
+            var slot = ClusterTestUtils.HashSlot(keyBytes);
+            ClassicAssert.AreEqual(7638, slot);
+            ClassicAssert.AreEqual(ResponseState.OK, context.clusterTestUtils.SetKey(sourceNodeIndex, keyBytes, "v"u8.ToArray(), out _, out _, logger: context.logger));
+
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(targetNodeIndex, slot, "IMPORTING", sourceNodeId, logger: context.logger));
+            ClassicAssert.AreEqual("OK", context.clusterTestUtils.SetSlot(sourceNodeIndex, slot, "MIGRATING", targetNodeId, logger: context.logger));
+
+            // The script is still running when the migration starts, and writes the key only afterwards. The migration
+            // waits for every session, this one included, to move past the configuration it changes, while the script's
+            // write waits for the migration to release the key; each must be able to proceed. SET is served by the script
+            // fast path, APPEND by RESP dispatch.
+            var script = $"local start = os.clock() while os.clock() - start < 2 do end return redis.call('{command}', KEYS[1], 'script')";
+            using var scriptClient = context.clusterTestUtils.CreateGarnetClientSession(sourceNodeIndex, useTLS: UseTLS);
+            scriptClient.Connect();
+            var eval = scriptClient.ExecuteAsync("EVAL", script, "1", key);
+
+            Thread.Sleep(500);
+            var migrate = Task.Run(() => context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), [keyBytes], context.logger));
+
+            var evalFinished = eval.ContinueWith(static _ => { }, TaskScheduler.Default);
+            ClassicAssert.IsTrue(Task.WaitAll([evalFinished, migrate], TimeSpan.FromSeconds(30)), "The script and the migration of the key it writes deadlocked");
+
+            // The key moved while the script waited, so the write is redirected to the node that now holds it
+            var exception = Assert.Throws<Exception>(() => eval.GetAwaiter().GetResult());
+            StringAssert.Contains("ASK", exception.Message);
+        }
+
         [Test, Order(10)]
         [Category("CLUSTER")]
         public void ClusterSimpleMigrateKeysWithObjects()

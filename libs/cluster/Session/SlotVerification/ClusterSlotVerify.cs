@@ -120,9 +120,9 @@ namespace Garnet.cluster
                 // as long as the key is being actively migrated
                 while (!clusterProvider.migrationManager.CanAccessKey(key, slot, readOnly))
                 {
-                    ReleaseCurrentEpoch();
+                    ReleaseEpochForWait();
                     Thread.Yield();
-                    AcquireCurrentEpoch();
+                    AcquireEpochAfterWait();
                 }
                 return Exists(key);
             }
@@ -136,9 +136,9 @@ namespace Garnet.cluster
 
                 do
                 {
-                    ReleaseCurrentEpoch();
+                    ReleaseEpochForWait();
                     _ = Thread.Yield();
-                    AcquireCurrentEpoch();
+                    AcquireEpochAfterWait();
 
                     config = clusterProvider.clusterManager.CurrentConfig;
                 }

@@ -158,13 +158,23 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
             var input = new ObjectInput(header, ref parseState);
 
-            var output = new ObjectOutput();
+            // The reply is written to a stack buffer sized for typical field values, which avoids
+            // renting a pooled buffer per call. A larger reply spills to a pooled buffer.
+            const int outputContainerSize = 256;
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             value = default;
             if (status == GarnetStatus.OK)
-                value = ProcessRespSingleTokenOutput(output);
+            {
+                // A hash that lacks the field replies nil, which converts to the same empty value as an
+                // existing field holding an empty value. The absent field reports NOTFOUND, like an absent
+                // key, so the two cases stay distinguishable.
+                if (!TryProcessRespSingleTokenOutput(output, out value))
+                    status = GarnetStatus.NOTFOUND;
+            }
 
             return status;
         }
@@ -318,7 +328,11 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
             var input = new ObjectInput(header, 1 << 2, seed);
 
-            var output = new ObjectOutput();
+            // The reply is written to a stack buffer sized for typical field names, which avoids
+            // renting a pooled buffer per call. A larger reply spills to a pooled buffer.
+            const int outputContainerSize = 256;
+            var outputContainer = stackalloc byte[outputContainerSize];
+            var output = ObjectOutput.FromPinnedPointer(outputContainer, outputContainerSize);
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 

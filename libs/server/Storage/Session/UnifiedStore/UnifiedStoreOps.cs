@@ -193,7 +193,8 @@ namespace Garnet.server
         public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, long expiration, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, RespCommand respCommand)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Span<byte> rmwOutput = stackalloc byte[sizeof(int)];
+            // CopyDefaultResp writes the reply into this buffer only when the buffer is strictly larger than the reply
+            Span<byte> rmwOutput = stackalloc byte[8];
             var unifiedOutput = new UnifiedOutput(SpanByteAndMemory.FromPinnedSpan(rmwOutput));
 
             // Convert to expiration time in ticks, rejecting values that would overflow the representable date range

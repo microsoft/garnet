@@ -106,18 +106,28 @@ namespace Garnet.server
         /// batch boundary of its own to drive the trim from, and Lua resets its buffer many times
         /// within a single script -- once per string while decoding JSON, for instance -- so those resets
         /// cannot drive it either. The owning network session calls this from its own trim, outside any
-        /// script execution. Both the buffer <c>redis.call</c> requests are built in and the one their replies
-        /// are written into are covered.
+        /// script execution. The buffer <c>redis.call</c> requests are built in, the one their replies
+        /// are written into, and the allocator that holds the values the fast-path commands read are covered.
         /// </remarks>
         internal void TrimScratchBuffer()
         {
             processor.scratchBufferBuilder.ResetAndTrimNow();
+            processor.scratchBufferAllocator.Trim();
             scratchBufferNetworkSender.Trim();
         }
 
         public void SetUserHandle(UserHandle userHandle)
         {
             processor.SetUserHandle(userHandle);
+        }
+
+        /// <summary>
+        /// Makes the commands the processor runs wait for migrating keys on behalf of the network session that owns this cache.
+        /// </summary>
+        /// <param name="owner">The owning network session's cluster session.</param>
+        internal void SetEpochOwner(IClusterSession owner)
+        {
+            processor.clusterSession?.SetEpochOwner(owner);
         }
 
         /// <summary>
