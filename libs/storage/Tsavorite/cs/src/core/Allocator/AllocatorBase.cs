@@ -2425,9 +2425,11 @@ namespace Tsavorite.core
             // FlushRunner releases it when issuance ends, and each issued write's callback releases its own unit.
             BeginNativeSnapshotFlush();
 
-            // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
+            // Throttled issuance waits for each page's write to complete before issuing the next, so it gets a thread of
+            // its own: a device may complete its writes on pool workers, which a pool worker waiting for them keeps from
+            // running when the pool is capped.
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(FlushRunner);
+                new Thread(FlushRunner) { IsBackground = true, Name = "SnapshotCheckpointFlush" }.Start();
             else
                 FlushRunner();
 

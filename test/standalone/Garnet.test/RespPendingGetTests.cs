@@ -115,6 +115,21 @@ namespace Garnet.test
             Thread.Sleep(50);
         }
 
+        /// <summary>
+        /// Waits for the log's flushes to pass its head, so a command that adds a record does not wait for one. Flushes
+        /// complete asynchronously, so the log can be waiting on one for a moment after writes that turned its tail.
+        /// </summary>
+        void WaitUntilAllocationNeedNotWaitForFlush(string what)
+        {
+            var log = server.Provider.StoreWrapper.store.Log;
+            var clock = Stopwatch.StartNew();
+            while (log.AllocationMayWaitForFlush)
+            {
+                ClassicAssert.Less(clock.Elapsed, TimeSpan.FromSeconds(10), what);
+                Thread.Sleep(1);
+            }
+        }
+
         [TearDown]
         public void TearDown()
         {
@@ -1283,8 +1298,7 @@ namespace Garnet.test
             Populate();
             Settle(client);
 
-            ClassicAssert.IsFalse(server.Provider.StoreWrapper.store.Log.AllocationMayWaitForFlush,
-                "The log has to wait for a flush to add a record, so every write moves to the thread pool.");
+            WaitUntilAllocationNeedNotWaitForFlush("The log has to wait for a flush to add a record, so every write moves to the thread pool.");
 
             void AssertInPlace(string expected, params string[] argv)
             {
@@ -2284,8 +2298,7 @@ namespace Garnet.test
 
             WriteExpiredObjects(client);
             PopulateObjects();
-            ClassicAssert.IsFalse(server.Provider.StoreWrapper.store.Log.AllocationMayWaitForFlush,
-                "The log has to wait for a flush to add a record, so an update could be moved for that alone.");
+            WaitUntilAllocationNeedNotWaitForFlush("The log has to wait for a flush to add a record, so an update could be moved for that alone.");
 
             ClassicAssert.AreEqual("+PONG\r\n", pinger.Execute("PING"));
 
@@ -2601,8 +2614,7 @@ namespace Garnet.test
                 payload = redis.GetDatabase(0).KeyDump("pendingstrdump");
 
             PopulateStringRecords(client);
-            ClassicAssert.IsFalse(server.Provider.StoreWrapper.store.Log.AllocationMayWaitForFlush,
-                "The log has to wait for a flush to add a record, so an update could be moved for that alone.");
+            WaitUntilAllocationNeedNotWaitForFlush("The log has to wait for a flush to add a record, so an update could be moved for that alone.");
 
             ClassicAssert.AreEqual("+PONG\r\n", pinger.Execute("PING"));
 

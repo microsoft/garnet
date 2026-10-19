@@ -13,6 +13,7 @@ using Garnet.networking;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -207,11 +208,23 @@ namespace Garnet.test
         /// that waited in place would hold until the checkpoint is done, leaving neither the sessions around it nor
         /// the checkpoint's own continuations a thread to run on.
         /// </summary>
+        /// <remarks>
+        /// <see cref="DeviceType.RandomAccess"/> completes its IO on pool workers, as the default device does on
+        /// Windows, so with it the checkpoint's writes need the free worker too, and nothing on the checkpoint path
+        /// may wait for them on one.
+        /// </remarks>
         [Test]
-        public void ASaveDoesNotStallOtherSessions()
+        public void ASaveDoesNotStallOtherSessions([Values(DeviceType.Default, DeviceType.RandomAccess)] DeviceType deviceType)
         {
             const int PingCount = 50;
             var stallLimit = TimeSpan.FromSeconds(20);
+
+            if (deviceType != DeviceType.Default)
+            {
+                server.Dispose();
+                server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, deviceType: deviceType);
+                server.Start();
+            }
 
             using var writer = new RawRespSession();
             Populate(writer, 20_000);

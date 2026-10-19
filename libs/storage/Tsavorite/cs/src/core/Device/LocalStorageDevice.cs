@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -47,6 +48,17 @@ namespace Tsavorite.core
         private int numPending = 0;
 
         private IntPtr ioCompletionPort;
+        internal Thread[] completionThreads;
+
+        // Holders of ioCompletionPort: the device until Dispose, each completion thread, and each TryComplete
+        // call in progress. The last to release it closes it, so no thread waits on a closed handle that
+        // Windows may have reused.
+        private int portHolders;
+
+        // Bounds Dispose's wait for in-flight IO. Reaching it means completions are lost rather than slow.
+        const int DisposeDrainTimeoutMs = 30_000;
+
+        const int CompletionBatchSize = 16;
 
         /// <inheritdoc/>
         public override string ToString()
@@ -76,7 +88,7 @@ namespace Tsavorite.core
                                   bool useIoCompletionPort = false,
                                   bool readOnly = false,
                                   ILogger logger = null)
-            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort, readOnly: readOnly)
+            : this(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, null, useIoCompletionPort, readOnly: readOnly, logger: logger)
         {
         }
 
@@ -133,14 +145,18 @@ namespace Tsavorite.core
             if (useIoCompletionPort)
             {
                 ThreadPool.GetMaxThreads(out int workerThreads, out _);
-                ioCompletionPort = Native32.CreateIoCompletionPort(new SafeFileHandle(new IntPtr(-1), false), IntPtr.Zero, UIntPtr.Zero, (uint)(workerThreads + NumCompletionThreads));
-                for (int i = 0; i < NumCompletionThreads; i++)
+                var numCompletionThreads = NumCompletionThreads;
+                ioCompletionPort = Native32.CreateIoCompletionPort(new SafeFileHandle(new IntPtr(-1), false), IntPtr.Zero, UIntPtr.Zero, (uint)(workerThreads + numCompletionThreads));
+                portHolders = 1 + numCompletionThreads;
+                completionThreads = new Thread[numCompletionThreads];
+                for (int i = 0; i < numCompletionThreads; i++)
                 {
-                    var thread = new Thread(() => LocalStorageDeviceCompletionWorker.Start(ioCompletionPort, _callback))
+                    completionThreads[i] = new Thread(RunCompletionThread)
                     {
-                        IsBackground = true
+                        IsBackground = true,
+                        Name = "LocalStorageDeviceCompletion"
                     };
-                    thread.Start();
+                    completionThreads[i].Start();
                 }
             }
 
@@ -382,36 +398,131 @@ namespace Tsavorite.core
                 logHandle.Dispose();
 
             if (useIoCompletionPort)
-                new SafeFileHandle(ioCompletionPort, true).Dispose();
+                StopCompletionPort();
 
             while (results.TryDequeue(out var entry))
                 Overlapped.Free(entry.nativeOverlapped);
+        }
+
+        /// <summary>
+        /// Delivers the callback of every IO still in flight, as the thread-pool binding does, then stops the
+        /// completion threads. Dispose drains on its own thread, so it makes progress when called from a
+        /// completion callback or with no completion threads.
+        /// </summary>
+        void StopCompletionPort()
+        {
+            var entries = stackalloc Native32.OVERLAPPED_ENTRY[CompletionBatchSize];
+            var drainStart = Stopwatch.StartNew();
+            while (Volatile.Read(ref numPending) > 0)
+            {
+                if (drainStart.ElapsedMilliseconds >= DisposeDrainTimeoutMs)
+                {
+                    logger?.LogError("LocalStorageDevice.Dispose() timed out after {timeoutMs}ms with {inFlight} in-flight IO(s) whose completions were never delivered", DisposeDrainTimeoutMs, numPending);
+                    break;
+                }
+
+                // No exit packet is posted until the drain ends, so every entry is an IO completion.
+                if (Native32.GetQueuedCompletionStatusEx(ioCompletionPort, entries, CompletionBatchSize, out var count, 1, false))
+                    _ = CompleteBatch(entries, count);
+            }
+
+            PostExitPackets(completionThreads.Length);
+            ReleasePort();
         }
 
         /// <inheritdoc/>
         public override bool TryComplete()
         {
             if (!useIoCompletionPort) return true;
+            if (!TryHoldPort()) return false;
 
-            const int COMPLETION_BATCH_SIZE = 8;
-            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[COMPLETION_BATCH_SIZE];
-
-            // Dequeue a batch of completed I/O operations
-            var succeeded = Native32.GetQueuedCompletionStatusEx(ioCompletionPort, pEntries, COMPLETION_BATCH_SIZE, out uint numEntriesRemoved, 0, false);
-
-            if (succeeded)
+            try
             {
-                for (int i = 0; i < numEntriesRemoved; i++)
+                var entries = stackalloc Native32.OVERLAPPED_ENTRY[CompletionBatchSize];
+                if (!Native32.GetQueuedCompletionStatusEx(ioCompletionPort, entries, CompletionBatchSize, out var count, 0, false))
+                    return false;
+
+                // Exit packets belong to the completion threads, so return any taken here.
+                var exits = CompleteBatch(entries, count);
+                PostExitPackets(exits);
+                return exits == 0;
+            }
+            finally
+            {
+                ReleasePort();
+            }
+        }
+
+        void RunCompletionThread()
+        {
+            var entries = stackalloc Native32.OVERLAPPED_ENTRY[CompletionBatchSize];
+            try
+            {
+                while (true)
                 {
-                    var entry = pEntries[i];
-                    if (entry.lpOverlapped == null)
-                        return false;
-                    uint errorCode = entry.Internal == 0 ? 0 : (uint)Native32.RtlNtStatusToDosError(entry.Internal);
-                    _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
+                    Thread.Yield();
+
+                    if (!Native32.GetQueuedCompletionStatusEx(ioCompletionPort, entries, CompletionBatchSize, out var count, uint.MaxValue, false))
+                        break;
+
+                    // One exit packet is posted per thread, so pass on any extra taken in this batch.
+                    var exits = CompleteBatch(entries, count);
+                    if (exits > 0)
+                    {
+                        PostExitPackets(exits - 1);
+                        break;
+                    }
                 }
-                return true;
+            }
+            finally
+            {
+                ReleasePort();
+            }
+        }
+
+        /// <summary>
+        /// Runs the callbacks for the IO completions in a dequeued batch and returns the number of exit packets in it.
+        /// </summary>
+        int CompleteBatch(Native32.OVERLAPPED_ENTRY* entries, uint count)
+        {
+            var exits = 0;
+            for (var i = 0; i < count; i++)
+            {
+                var entry = entries[i];
+                if (entry.lpOverlapped == null)
+                {
+                    exits++;
+                    continue;
+                }
+                var errorCode = entry.Internal == 0 ? 0 : Native32.RtlNtStatusToDosError(entry.Internal);
+                _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
+            }
+            return exits;
+        }
+
+        void PostExitPackets(int count)
+        {
+            for (var i = 0; i < count; i++)
+                _ = Native32.PostQueuedCompletionStatus(ioCompletionPort, 0, UIntPtr.Zero, null);
+        }
+
+        bool TryHoldPort()
+        {
+            var holders = Volatile.Read(ref portHolders);
+            while (holders > 0)
+            {
+                var seen = Interlocked.CompareExchange(ref portHolders, holders + 1, holders);
+                if (seen == holders)
+                    return true;
+                holders = seen;
             }
             return false;
+        }
+
+        void ReleasePort()
+        {
+            if (Interlocked.Decrement(ref portHolders) == 0)
+                new SafeFileHandle(ioCompletionPort, true).Dispose();
         }
 
         /// <inheritdoc/>
@@ -554,39 +665,5 @@ namespace Tsavorite.core
         public bool CompletedSynchronously => throw new NotImplementedException();
 
         public bool IsCompleted => throw new NotImplementedException();
-    }
-
-    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    sealed unsafe class LocalStorageDeviceCompletionWorker
-    {
-        public static void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
-        {
-            const int COMPLETION_BATCH_SIZE = 16;
-            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[COMPLETION_BATCH_SIZE];
-
-            while (true)
-            {
-                Thread.Yield();
-
-                // Dequeue a batch of completed I/O operations
-                var succeeded = Native32.GetQueuedCompletionStatusEx(ioCompletionPort, pEntries, COMPLETION_BATCH_SIZE, out uint numEntriesRemoved, uint.MaxValue, false);
-
-                if (succeeded)
-                {
-                    for (int i = 0; i < numEntriesRemoved; i++)
-                    {
-                        var entry = pEntries[i];
-                        if (entry.lpOverlapped == null)
-                            return;
-                        uint errorCode = entry.Internal == 0 ? 0 : Native32.RtlNtStatusToDosError(entry.Internal);
-                        _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
-                    }
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
     }
 }

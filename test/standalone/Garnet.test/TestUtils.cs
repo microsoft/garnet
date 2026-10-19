@@ -538,7 +538,8 @@ namespace Garnet.test
             TimeSpan? tlsHandshakeTimeout = null,
             bool networkInlineCompletions = false,
             ILoggerFactory loggerFactory = null,
-            SslServerAuthenticationOptions tlsServerOptionsOverride = null
+            SslServerAuthenticationOptions tlsServerOptionsOverride = null,
+            DeviceType deviceType = DeviceType.Default
         )
         {
             if (useAzureStorage)
@@ -618,7 +619,7 @@ namespace Garnet.test
                 CommandStatsMonitor = commandStatsMonitor,
                 DeviceFactoryCreator = useAzureStorage ?
                         logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
-                        : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
+                        : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
                 AuthSettings = authenticationSettings,
                 ExtensionBinPaths = extensionBinPaths,
                 ExtensionAllowUnsignedAssemblies = extensionAllowUnsignedAssemblies,

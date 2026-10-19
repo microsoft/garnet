@@ -16,6 +16,11 @@ namespace Tsavorite.core
         {
         }
 
+        /// <summary>
+        /// The steps write the checkpoint metadata and wait for the device to complete the write.
+        /// </summary>
+        public override bool StepsMayBlock => true;
+
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {
