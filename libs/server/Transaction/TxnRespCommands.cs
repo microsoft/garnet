@@ -190,6 +190,9 @@ namespace Garnet.server
             if (cmd is RespCommand.VADD or RespCommand.XVCREATE)
             {
                 txnManager.LockVectorSetContextMetadata();
+
+                // Still need to lock the outer index key
+                txnManager.LockKeys(commandInfo, isSubCommand);
             }
             else if (cmd == RespCommand.KEYS)
             {
