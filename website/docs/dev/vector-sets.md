@@ -184,18 +184,21 @@ All other commands are implemented using their paired DiskANN functions.
 
 ### Deletion (via `DEL`, `UNLINK`, `FLUSHDB`, `FLUSHALL`)
 
-Deletion of Vector Sets is detected in the `GarnetTriggers.OnDispose` callback, which calls `VectorManager.RequestDeletion` to begin the process of deletion.
+Deletion of Vector Sets is detected in the `GarnetRecordTriggers.OnDispose` callback, which calls `VectorManager.RequestDeletion` to begin the process of deletion.
 
-This takes place in four steps:
-  1. The Vector Set context is marked for deletion from `GarnetTriggers.OnDispose`
-     * A background task does this, as we do not have a usable storage session in the `GarnetTriggers` callback
-  2. `GarnetTriggers.OnDispose` returns, deleting the index key
-  3. A background cleanup task scans the Tsavorite log for element keys, [see Cleanup](#cleanup) for more detail
-  4. The Vector Set context is marked available
+This takes place in five steps:
+  1. The Vector Set context is marked for deletion from `GarnetRecordTriggers.OnDispose`
+     * A background task does this, as we do not have a usable storage session in the `GarnetRecordTriggers` callback
+  2. The DiskANN index is dropped, under an exclusive `ReadOptimizedLock` acquisition since operations use the index while holding the lock shared ([more details on locking](#locking))
+     * `GarnetRecordTriggers.OnDispose` runs under the index record's bucket latch, which an operation holding the lock may be waiting for, so it only tries the lock.  If the lock is held, the drop is handed to the background drop task, which takes the lock once those operations release it
+     * The deleted record's index pointer is cleared, so that a later eviction of that record (a superseded record stays in the log, sealed) does not drop the index a second time
+  3. `GarnetRecordTriggers.OnDispose` returns, deleting the index key
+  4. A background cleanup task scans the Tsavorite log for element keys, [see Cleanup](#cleanup) for more detail
+  5. The Vector Set context is marked available
 
 During recovery partially deleted Vector Sets are found by checking [`ContextMetadata`](#global-metadata).  Those whose index keys no longer are exist are rescheduled for cleanup, and those who still have an index key have their "mark for deletion"-bit cleared.
 
-`FLUSHDB` and `FLUSHALL` acquire _all_ exclusive locks on `VectorManager` before beginning a flush, and resets context metadata before releasing those locks.  In combination with `GarnetTriggers.OnEvict` dropping DiskANN indexes this cleanly removes all index keys and element data.
+`FLUSHDB` and `FLUSHALL` acquire _all_ exclusive locks on `VectorManager` before beginning a flush, and resets context metadata before releasing those locks.  In combination with `GarnetRecordTriggers.OnEvict` dropping DiskANN indexes this cleanly removes all index keys and element data.
 
 ## Quantization
 
@@ -246,9 +249,9 @@ Whenever we read or write a key/value pair in the store, we acquire locks in Tsa
 
 As noted above, to prevent `DEL` from clobbering in use Vector Sets and concurrent `VADD`s from calling `create_index` multiple times we have to hold locks based on the Vector Set key.  As every Vector Set operations starts by taking these locks, we have sharded them into separate locks.  To derive many related keys from a single key, we mangle the low bits of a key's hash value - this is implemented in the new (but not bound to Vector Sets) type `ReadOptimizedLock`.
 
-For operations which remain reads, we only acquire a single shared lock (based on the current thread) to prevent destructive operations.
+For operations which remain reads (`VSIM`, `VEMB`, `VCARD`, and the like), we only acquire a single shared lock (based on the current thread) to prevent destructive operations, and hold it for as long as we use the index.  They take an exclusive lock only to recreate an index that is not loaded ([see Recovery](#recovery)), and then retry with a shared lock.
 
-For operations which are always writes (like `DEL`) we acquire all sharded locks in exclusive mode.
+For operations which are always writes we acquire all sharded locks in exclusive mode.  Dropping the index of a deleted Vector Set needs this exclusive lock, but `DEL` runs the drop from `GarnetRecordTriggers.OnDispose`, under the index record's bucket latch, so it only tries the lock and hands the drop to a background task when the lock is held (see Deletion above).
 
 For operations which might be either (like `VADD`) we first acquire the usual single sharded lock (in shared mode), then promote to an exclusive lock if needed.
 
@@ -264,7 +267,7 @@ The `RMW`s into Tsavorite still proceeds in parallel, outside of the lock, but a
 
 ### Spin wait around `drop_index` calls
 
-When a DiskANN index needs to be dropped due to memory pressure (as indicated by a `GarnetRecordTriggers.OnEvict` call) we move that drop on a background task and guard it with exclusive `ReadOptimizedLock` acquisitions.  This is necessary to prevent an index from being dropped while it is in use.
+When a DiskANN index needs to be dropped due to memory pressure (as indicated by a `GarnetRecordTriggers.OnEvict` call) we move that drop on a background task and guard it with exclusive `ReadOptimizedLock` acquisitions.  This is necessary to prevent an index from being dropped while it is in use.  The same task drops the index of a Vector Set that was deleted while in use, once the operations using it release the lock.
 
 This introduces a rare race where we might try to recreate an index that was evicted to disk and then reloaded from disk _before_ the drop actually executes.  If we allowed that, the two DiskANN index instances could disagree about internal state and corrupt future inserts.
 
@@ -294,6 +297,12 @@ This lock is based on the Vector Set name and the element name, and is a simple 
 |                 96 |      131,072 |                    3% |
 |                128 |      131,072 |                    6% |
 |                192 |      524,288 |                    3% |
+
+### Transactions
+
+Vector Set commands declare `StoreType` `Main` in their command metadata (`RespCommandsInfo.json`).  A transaction that contains them (`MULTI`/`EXEC`, or a Lua script run as a transaction) therefore begins a transaction on its main-store session and also on the session `VectorManager` uses for element data, so that the commands can run while an index grow waits for the transaction to finish.
+
+Unlike the main-store session, the element session is not held at the transaction's version while a checkpoint waits for the transaction.  It reads element keys that the transaction does not lock, and a session held at the old version could not read past a record that a session in the new version has already written to the same hash chain.
 
 ## Replication
 
@@ -399,7 +408,7 @@ During startup we discover any old `ContextMetadata`s in Tsavorite via `GarnetRe
 
 While reading out [`Index`](#indexes) before performing a DiskANN function call, we check the stored `IndexPtr`.  If it is null, we know that the DiskANN side needs to be recreated.
 
-To recreate, we acquire exclusive locks (in the same way we would for `VADD` or `DEL`) and invoke `create_index` again.  From DiskANN's perspective, there's no difference between creating a new empty index and recreating an old one which has existing data.
+To recreate, we acquire exclusive locks (in the same way `VADD` does to create an index) and invoke `create_index` again.  From DiskANN's perspective, there's no difference between creating a new empty index and recreating an old one which has existing data.
 
 This means we recreate indexes lazily after recovery.  Consequently the _first_ command (regardless of if it's a `VADD`, a `VSIM`, or whatever) against an index after recovery will be slower since it needs to do extra work, and will block other commands since it needs exclusive locking.
 

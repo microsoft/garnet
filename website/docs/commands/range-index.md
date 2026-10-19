@@ -155,6 +155,8 @@ Returns a WRONGTYPE error if the key is not a Range Index.
 ### DEL / UNLINK
 
 Deleting a Range Index uses the standard `DEL` or `UNLINK` commands. The underlying BfTree is freed automatically.
+Commands already running on the index are not cut short: if any are using the tree, it is freed once they finish,
+and `RI.CREATE` of the same key waits until then.
 
 ```bash
 DEL myindex

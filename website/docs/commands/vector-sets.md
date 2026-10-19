@@ -379,7 +379,8 @@ data type.
 ### DEL / UNLINK
 
 Deleting a Vector Set uses the standard `DEL` or `UNLINK` commands. Garnet asynchronously drops the vector index
-and releases all internal per-element storage.
+and releases all internal per-element storage. Commands already running on the set are not cut short: if any are
+using the vector index, it is dropped once they finish.
 
 ```bash
 DEL movies

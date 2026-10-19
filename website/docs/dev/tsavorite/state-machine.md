@@ -436,7 +436,7 @@ does.
 | `IN_PROGRESS` | Notify the checkpoint manager that the version shift is starting, issue the version-shift trigger, publish the incremented version, and then track transactions that remain in the old version. |
 | `WAIT_INDEX_CHECKPOINT` | Add the already-running main-index and overflow-bucket checkpoint tasks to the waiting list. |
 | `WAIT_FLUSH` | End the version shift, issue the flush-begin trigger, verify old-version transactions are drained, and capture the final fuzzy-region address. Snapshot starts copying pages to snapshot devices; fold-over shifts the read-only address and waits for its flush; streaming snapshot performs phase-two scanning. |
-| `PERSISTENCE_CALLBACK` | Commit index and hybrid-log metadata, capture final object-log positions, and dispose snapshot devices. |
+| `PERSISTENCE_CALLBACK` | Commit index and hybrid-log metadata, capture final object-log positions, and dispose snapshot devices. Before writing the hybrid-log metadata, issue the flush-completed trigger, so the application can finish persisting what recovery from the checkpoint depends on. Streaming snapshot has no `PERSISTENCE_CALLBACK` phase and does not issue it. |
 | `REST` | Clean old checkpoint artifacts, issue the checkpoint-completed trigger, dispose/reset checkpoint state, and advance the checkpoint completion chain. |
 
 All task-specific work in this table is invoked from

@@ -45,6 +45,9 @@ namespace Tsavorite.core
         /// <see cref="CheckpointCompleted"/>. The application should finish persisting any external resource that recovery
         /// from this checkpoint depends on, including those it deferred from <see cref="IRecordTriggers.OnFlush"/>.
         /// </summary>
+        /// <remarks>
+        /// Not raised by streaming snapshot checkpoints, which have no PERSISTENCE_CALLBACK phase.
+        /// </remarks>
         FlushCompleted
     }
 }

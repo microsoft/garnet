@@ -36,8 +36,10 @@ Executes all previously queued commands in a transaction and restores the connec
 
 One of the following:
 
-* Array reply: each element being the reply to each of the commands in the atomic transaction.
+* Array reply: each element being the reply to each of the commands in the atomic transaction. A command that fails has its error reply in place, and the rest of the commands still run.
 * Nil reply: the transaction was aborted because a WATCHed key was touched.
+
+If an unexpected server error interrupts `EXEC`, the commands that already ran stay applied, the transaction's keys are unlocked, and the connection is closed.
 
 ---
 ### MULTI

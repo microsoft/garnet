@@ -60,7 +60,7 @@ During the `TrySkip` we call `TxnKeyManager.LockKeys`, which is key-spec driven:
 #### Execution
 
 When the `TxnState` is *Started* and we encounter the `EXEC` we call `TransactionManager.Run()`. What this function does:
-1. first acquires the `TransactionalContext` for the store based on the store type.
+1. first acquires the `TransactionalContext` for the store based on the store type, from the queued commands' `StoreType` metadata. For the main store, it also begins a transaction on the session Vector Set commands use for element data, so that they run while an index grow waits for the transaction; unlike the main-store session, that session is not held at the transaction's version during a checkpoint, as it reads keys the transaction does not lock (see [Vector Sets](vector-sets.md#transactions)).
 2. Goes over `TxnKeyEntry`s and locks all the needed keys.
 3. Calls `WatchedKeyContainer.ValidateWatchVersion()`
     - It goes over all the watched keys and checks whether their version is the same as the time watch or not
@@ -72,6 +72,14 @@ After that, the TxnState is set to *Running* and the network `readHead` is set t
 - Unlock all the keys that we locked in `Run`
 - Reset `TransactionManager` and `WatchedKeyContainer`
 - It also appends the commit message to the AOF
+
+#### Errors and exceptions during execution
+
+A command that fails while `EXEC` runs it replies with its error in place, and the transaction goes on with the rest of its commands, as in Redis. This includes a `GarnetException` meant for the client that does not end the session: the command replies `ERR Garnet Exception: <message>`.
+
+Any other exception that escapes a command while `EXEC` runs it leaves the rest of the transaction's commands in the receive buffer. Before handling it, the session ends the transaction with `TransactionManager.EndInterrupted()`, which commits what the transaction applied: it unlocks the keys, ends the transaction's version, so that a checkpoint or index grow waiting for the transaction can proceed, and appends the commit message to the AOF, so that recovery replays what was applied. The session is then closed, so that the remaining commands do not run outside the transaction.
+
+An exception while `Run` locks the keys unlocks the keys it locked and ends the transaction's version before it propagates.
 
 ### Recovery Optimization
 
