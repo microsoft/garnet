@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+#if DEBUG
 using System.Diagnostics;
+#endif
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -366,6 +368,95 @@ namespace Garnet.test.cluster
                 if (replication.IsRecovering)
                     replication.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
             }
+        }
+
+        /// <summary>
+        /// A replica that recovers from the checkpoint its primary sent then replays its own AOF over it. Replay holds the
+        /// thread replaying for as long as the AOF is long, and replaying a record can wait there on work the thread pool
+        /// runs. Replay runs on threads of its own, whether the AOF is a single log, several sublogs, or a log replayed by
+        /// several tasks, so the node answers its clients from a single free pool thread meanwhile.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void TheAofReplayOfAReplicaRecoveryHoldsNoPoolThread([Values(1, 2)] int sublogCount, [Values(1, 2)] int replayTaskCount)
+        {
+            const ExceptionInjectionType hold = ExceptionInjectionType.AofRecovery_Hold_Replay_Thread;
+            const int keyCount = 64;
+
+            context.CreateInstances(1, tryRecover: true, enableAOF: true, disableObjects: true, sublogCount: sublogCount, replayTaskCount: replayTaskCount);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 0, logger: context.logger);
+
+            using (var writer = new RawRespSession(endpoint: context.endpoints[0]))
+            {
+                for (var i = 0; i < keyCount; i++)
+                    ClassicAssert.AreEqual("+OK\r\n", writer.Execute("SET", $"key{i}", $"value{i}"));
+                ClassicAssert.AreEqual("+AOF file committed\r\n", writer.Execute("COMMITAOF"));
+            }
+
+            // Replays only an AOF recovered from its commits, which is what records the sequence number that bounds the
+            // replay of several sublogs
+            context.RestartNode(0);
+
+            using var client = new RawRespSession(endpoint: context.endpoints[0]);
+            var storeWrapper = context.nodes[0].Provider.StoreWrapper;
+            var replication = ((ClusterProvider)storeWrapper.clusterProvider).replicationManager;
+            var beginAddress = storeWrapper.appendOnlyFile.Log.BeginAddress;
+            var tailAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
+
+            // What a replica holds while its primary syncs it, and what the recovery ends
+            ClassicAssert.IsTrue(replication.BeginRecovery(RecoveryStatus.ClusterReplicate, upgradeLock: false));
+
+            // Recovers nothing from the checkpoint, and replays the whole AOF over the store
+            var input = Frame(
+                Ascii("CLUSTER"), Ascii("begin_replica_recover"),
+                Ascii("0"), Ascii("1"), Ascii(new string('c', 40)),
+                new CheckpointEntry(sublogCount).ToByteArray(), beginAddress.Span.ToArray(), tailAddress.Span.ToArray());
+
+            var sender = new ControlledSender(1024);
+            var session = NewSession(sender);
+            ExceptionInjectionHelper.EnableException(hold);
+            try
+            {
+                ValueTask<int> consume;
+
+                // Waited on from the test thread, which is outside the pool, so that the cap holds for the test alone
+                using (ThreadPoolCap.ApplyFree(1))
+                {
+                    var call = OffThePool(() => Consume(session, input));
+                    ClassicAssert.IsTrue(call.Wait(Bound), "The command did not return to the receive loop");
+                    consume = call.Result;
+
+                    var clock = Stopwatch.StartNew();
+                    while (ExceptionInjectionHelper.WaitingOnClear(hold) == 0)
+                    {
+                        ClassicAssert.Less(clock.Elapsed, Bound, "The replay did not reach a record");
+                        Thread.Sleep(10);
+                    }
+
+                    client.Send("PING");
+                    ClassicAssert.IsTrue(client.WaitForReply(Bound), "The node did not answer PING with one free pool thread, which the replay holds");
+                    ClassicAssert.AreEqual("+PONG\r\n", client.ReadReply());
+                    ClassicAssert.IsFalse(consume.IsCompleted, "The command waits for the replay");
+                }
+
+                ExceptionInjectionHelper.DisableException(hold);
+                var finished = consume.AsTask();
+                ClassicAssert.IsTrue(finished.Wait(Bound), "The recovery did not finish once the replay was let go");
+                ClassicAssert.AreEqual(input.Length, finished.Result);
+                StringAssert.StartsWith("$", sender.Sent, "The recovery answers with the offset it reached");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(hold);
+                session.Dispose();
+                GC.KeepAlive(input);
+                if (replication.IsRecovering)
+                    replication.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+            }
+
+            for (var i = 0; i < keyCount; i++)
+                ClassicAssert.AreEqual($"${$"value{i}".Length}\r\nvalue{i}\r\n", client.Execute("GET", $"key{i}"));
         }
 
         /// <summary>

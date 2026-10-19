@@ -5,9 +5,8 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.ExceptionServices;
 using System.Threading;
-using System.Threading.Tasks;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
@@ -97,6 +96,9 @@ namespace Garnet.server
             while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out var nextAofAddress))
             {
                 count++;
+#if DEBUG
+                Garnet.common.ExceptionInjectionHelper.WaitOnClear(Garnet.common.ExceptionInjectionType.AofRecovery_Hold_Replay_Thread);
+#endif
                 unsafe
                 {
                     fixed (byte* ptr = entry.Memory.Span)
@@ -148,11 +150,40 @@ namespace Garnet.server
 
                 try
                 {
-                    // TODO: Can we async this method rather than blocking?  We're in recovery.
-                    var recoveryTasks = Task.WhenAll([.. recoverDrivers.Select(driver => driver.RunAsync())]);
-                    AsyncUtils.BlockingWait(recoveryTasks);
+                    // This thread, which replay runs on alone (StoreWrapper.ReplayAOFAsync), replays the first sublog, and
+                    // each other sublog replays on a thread of its own
+                    var failures = new Exception[recoverDrivers.Length];
+                    var threads = new Thread[recoverDrivers.Length];
+                    for (var physicalSublogIdx = 1; physicalSublogIdx < recoverDrivers.Length; physicalSublogIdx++)
+                    {
+                        var idx = physicalSublogIdx;
+                        threads[idx] = new Thread(() => Run(idx)) { IsBackground = true, Name = $"AofRecover-{idx}" };
+                        threads[idx].Start();
+                    }
+
+                    Run(0);
+                    for (var physicalSublogIdx = 1; physicalSublogIdx < threads.Length; physicalSublogIdx++)
+                        threads[physicalSublogIdx].Join();
+
+                    foreach (var failure in failures)
+                    {
+                        if (failure != null)
+                            ExceptionDispatchInfo.Throw(failure);
+                    }
 
                     recordsReplayed = recoverDrivers.Sum(driver => driver.ReplayedRecordCount);
+
+                    void Run(int physicalSublogIdx)
+                    {
+                        try
+                        {
+                            recoverDrivers[physicalSublogIdx].Run();
+                        }
+                        catch (Exception ex)
+                        {
+                            failures[physicalSublogIdx] = ex;
+                        }
+                    }
                 }
                 finally
                 {

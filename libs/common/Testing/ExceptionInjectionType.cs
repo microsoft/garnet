@@ -226,5 +226,11 @@ namespace Garnet.common
         /// them, without holding a thread, until the condition is cleared. Keeps the adds queued.
         /// </summary>
         VectorSet_Hold_Replication_Replay,
+        /// <summary>
+        /// AOF recovery: hold each record that the replay of a single log replays, and each page that the replay of a
+        /// sublog or one of its replay tasks replays, on the thread replaying it, until the condition is cleared. Stands in
+        /// for replaying a record that waits.
+        /// </summary>
+        AofRecovery_Hold_Replay_Thread,
     }
 }

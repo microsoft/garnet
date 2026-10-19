@@ -434,7 +434,7 @@ namespace Garnet.server
 
                     await RecoverAOFAsync().ConfigureAwait(false);
                     databaseManager.VerifyRecoveryIsComplete();
-                    _ = ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
+                    _ = await ReplayAOFAsync(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1)).ConfigureAwait(false);
                 }
                 else
                 {
@@ -486,7 +486,7 @@ namespace Garnet.server
             // concurrently with recovery, which owns the log: recovery does its own budget-aware eviction and directly resets
             // log addresses (RecoveryReset). Racing the resizer against that can lose a page read/flush completion and hang the
             // main recovery thread in WaitRead/WaitFlush. The size tracker object still tracks size during recovery. The resizer
-            // is started once checkpoint recovery is done: in ReplayAOF, which is ordinary store traffic and must be budget-managed,
+            // is started once checkpoint recovery is done: in ReplayAOFAsync, which is ordinary store traffic and must be budget-managed,
             // and otherwise in StoreWrapper.Start().
             await databaseManager.RecoverCheckpointAsync(replicaRecover, recoverFromToken, metadata).ConfigureAwait(false);
         }
@@ -535,26 +535,33 @@ namespace Garnet.server
         /// Main-log heap size sampled at the end of AOF replay, or -1 if no replay has run.
         /// </summary>
         /// <remarks>
-        /// Replay is memory-budget-managed (see <see cref="ReplayAOF"/>), and this records how much heap it actually held.
+        /// Replay is memory-budget-managed (see <see cref="ReplayAOFAsync"/>), and this records how much heap it actually held.
         /// Sampling after startup cannot show that: the resizer keeps trimming once the server is up, so an unmanaged replay
         /// and a managed one converge to the same floor despite very different peaks.
         /// </remarks>
         public long AofReplayEndHeapSizeBytes { get; private set; } = -1;
 
         /// <summary>
-        /// When replaying AOF we do not want to write AOF records again.
+        /// Replays the AOF until <paramref name="untilAddress"/>, without writing the replayed records to it again.
         /// </summary>
-        public AofAddress ReplayAOF(AofAddress untilAddress)
-        {
-            // AOF replay is ordinary store traffic, so it must be memory-budget-managed like normal operation. Checkpoint
-            // recovery runs before this and cannot tolerate a concurrent resizer, so this is the earliest point at which the
-            // size trackers can be started. Starting is idempotent; Start() calls this again for the non-recovery path.
-            StartSizeTrackers();
+        /// <remarks>
+        /// Replay runs on a thread of its own: it holds its thread for as long as the AOF is long, and replaying a record
+        /// can wait there on work the thread pool runs.
+        /// </remarks>
+        /// <param name="untilAddress">Address to replay until, or -1 for each sublog to replay until its tail</param>
+        /// <returns>The address replay reached</returns>
+        public Task<AofAddress> ReplayAOFAsync(AofAddress untilAddress)
+            => DedicatedThread.RunAsync("AofRecover", () =>
+            {
+                // AOF replay is ordinary store traffic, so it must be memory-budget-managed like normal operation. Checkpoint
+                // recovery runs before this and cannot tolerate a concurrent resizer, so this is the earliest point at which the
+                // size trackers can be started. Starting is idempotent; Start() calls this again for the non-recovery path.
+                StartSizeTrackers();
 
-            var replayedUntil = databaseManager.ReplayAOF(untilAddress);
-            AofReplayEndHeapSizeBytes = store.Log.HeapSizeBytes;
-            return replayedUntil;
-        }
+                var replayedUntil = databaseManager.ReplayAOF(untilAddress);
+                AofReplayEndHeapSizeBytes = store.Log.HeapSizeBytes;
+                return replayedUntil;
+            });
 
         /// <summary>
         /// Append a checkpoint commit to the AOF

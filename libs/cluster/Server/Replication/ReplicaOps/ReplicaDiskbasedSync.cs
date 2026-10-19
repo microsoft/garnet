@@ -318,7 +318,7 @@ namespace Garnet.cluster
                     var replayUntil = recoveredReplicationOffset;
                     for (var sublogIdx = 0; sublogIdx < recoveredReplicationOffset.Length; sublogIdx++)
                         replayUntil[sublogIdx] = (((1UL) << sublogIdx) > 0) ? recoveredReplicationOffset[sublogIdx] : beginAddress[sublogIdx];
-                    recoveredReplicationOffset = storeWrapper.ReplayAOF(replayUntil);
+                    recoveredReplicationOffset = await storeWrapper.ReplayAOFAsync(replayUntil).ConfigureAwait(false);
                 }
 
                 logger?.LogInformation("Initializing AOF");

@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if DEBUG
 using System;
+#endif
 using System.Threading;
 #if DEBUG
 using System.Threading.Tasks;

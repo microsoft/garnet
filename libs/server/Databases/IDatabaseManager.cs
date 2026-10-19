@@ -160,7 +160,9 @@ namespace Garnet.server
         public void VerifyRecoveryIsComplete(bool canBeRepairedBySync = false) { }
 
         /// <summary>
-        /// When replaying AOF we do not want to write AOF records again.
+        /// Replays the AOF on the calling thread, without writing the replayed records to it again. Replay holds the
+        /// thread for as long as the AOF is long, and can wait there on work the thread pool runs, so it is called from
+        /// a thread of its own (<see cref="StoreWrapper.ReplayAOFAsync"/>).
         /// </summary>
         public AofAddress ReplayAOF(AofAddress untilAddress);
 

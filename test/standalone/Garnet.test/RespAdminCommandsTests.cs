@@ -509,7 +509,7 @@ namespace Garnet.test
         {
             // Hash values keep the object heap far over the size tracker budget while the page count stays under the limit.
             // Recovering that AOF must stay within the budget and must never block on an eviction that cannot happen:
-            // ReplayAOF starts the size trackers so replay is budget-managed, and the allocator's page-turn path does not
+            // ReplayAOFAsync starts the size trackers so replay is budget-managed, and the allocator's page-turn path does not
             // wait on a size tracker whose resizer is not running (checkpoint recovery, which precedes replay, is in that
             // state). If either side regresses, the recovering server.Start() below never returns, so bound the wait to
             // report a named test failure instead of hanging the whole test run.
