@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -27,10 +26,10 @@ namespace Garnet.test.cluster
 
             // Issue DELETE
             var status = api.DELETE(key);
-            Debug.Assert(status == GarnetStatus.OK);
+            GarnetAsserts.Assert(status == GarnetStatus.OK);
 
             var parsed = ParseUtils.TryReadLong(value, out var valueToIncrement);
-            Debug.Assert(parsed, "Value to increment must be a valid long integer.");
+            GarnetAsserts.Assert(parsed, "Value to increment must be a valid long integer.");
 
             var input = new StringInput(RespCommand.INCRBY, 0, valueToIncrement);
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
@@ -38,7 +37,7 @@ namespace Garnet.test.cluster
 
             // Increment key
             _ = api.Increment(key, ref input, ref stringOutput);
-            Debug.Assert(!stringOutput.HasError);
+            GarnetAsserts.Assert(!stringOutput.HasError);
 
             WriteSimpleString(ref output, "OK");
         }

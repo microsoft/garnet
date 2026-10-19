@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
-
 namespace Tsavorite.core
 {
     /// <summary>
@@ -31,8 +29,8 @@ namespace Tsavorite.core
 
                 case Phase.IN_PROGRESS_GROW:
                     // Verify full transaction barrier
-                    Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0);
-                    Debug.Assert(stateMachineDriver.GetNumActiveTransactions(next.Version) == 0);
+                    GarnetAsserts.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0);
+                    GarnetAsserts.Assert(stateMachineDriver.GetNumActiveTransactions(next.Version) == 0);
                     stateMachineDriver.ResetLastVersion();
 
                     // Set up the transition to new version of HT

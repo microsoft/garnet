@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
-
 namespace Garnet.server
 {
     /// <summary>
@@ -27,7 +25,7 @@ namespace Garnet.server
         /// <returns></returns>
         bool CanServeSlot(RespCommand cmd)
         {
-            Debug.Assert(clusterSession != null);
+            GarnetAsserts.Assert(clusterSession != null);
 
             if (!cmd.IsDataCommand())
             {
@@ -87,7 +85,7 @@ namespace Garnet.server
         /// <returns></returns>
         bool CanServeSlotNoResponse(RespCommand cmd)
         {
-            Debug.Assert(clusterSession != null);
+            GarnetAsserts.Assert(clusterSession != null);
 
             cmd = cmd.NormalizeForACLs();
             if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdInfo))

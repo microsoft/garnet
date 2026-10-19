@@ -404,7 +404,7 @@ namespace Garnet.cluster
         /// <param name="downgradeLock">If true, downgrades the held write lock to a read lock instead of just releasing the write lock.</param>
         public void EndRecovery(RecoveryStatus nextRecoveryStatus, bool downgradeLock)
         {
-            Debug.Assert(!downgradeLock || nextRecoveryStatus == RecoveryStatus.ReadRole, "Can only downgrade to a read lock for ReadRole status");
+            GarnetAsserts.Assert(!downgradeLock || nextRecoveryStatus == RecoveryStatus.ReadRole, "Can only downgrade to a read lock for ReadRole status");
 
             logger?.LogTrace("{method} [{currentRecoveryStatus},{nextRecoveryStatus}]", nameof(EndRecovery), currentRecoveryStatus, nextRecoveryStatus);
 
@@ -422,7 +422,7 @@ namespace Garnet.cluster
                         switch (nextRecoveryStatus)
                         {
                             case RecoveryStatus.CheckpointRecoveredAtReplica:
-                                Debug.Assert(currentRecoveryStatus is not RecoveryStatus.NoRecovery and not RecoveryStatus.CheckpointRecoveredAtReplica);
+                                GarnetAsserts.Assert(currentRecoveryStatus is not RecoveryStatus.NoRecovery and not RecoveryStatus.CheckpointRecoveredAtReplica);
                                 currentRecoveryStatus = nextRecoveryStatus;
                                 break;
                             case RecoveryStatus.NoRecovery:

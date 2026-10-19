@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -125,7 +124,7 @@ namespace Tsavorite.core
                     _ = Thread.Yield();
                 }
                 var txnVersion = systemState.Version;
-                Debug.Assert(txnVersion > 0);
+                GarnetAsserts.Assert(txnVersion > 0);
                 IncrementActiveTransactions(txnVersion);
                 return txnVersion;
             }
@@ -148,12 +147,12 @@ namespace Tsavorite.core
                 epoch.Resume();
             try
             {
-                Debug.Assert(txnVersion > 0);
+                GarnetAsserts.Assert(txnVersion > 0);
                 var currentTxnVersion = systemState.Version;
                 if (currentTxnVersion > txnVersion)
                 {
                     // We transfer the active transaction from txnVersion to currentTxnVersion
-                    Debug.Assert(currentTxnVersion == txnVersion + 1);
+                    GarnetAsserts.Assert(currentTxnVersion == txnVersion + 1);
                     DecrementActiveTransactions(txnVersion);
                     IncrementActiveTransactions(currentTxnVersion);
                 }
@@ -264,7 +263,7 @@ namespace Tsavorite.core
 
             logger?.LogTrace("SMD: Moved to {0}, {1}", nextState.Phase, nextState.Version);
 
-            Debug.Assert(!epoch.ThisInstanceProtected());
+            GarnetAsserts.Assert(!epoch.ThisInstanceProtected());
             try
             {
                 epoch.Resume();

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using Garnet.common;
 using Garnet.server;
@@ -244,7 +243,7 @@ namespace Garnet.cluster
                     curr = curr.next;
                 }
 
-                Debug.Assert(curr == tail);
+                GarnetAsserts.Assert(curr == tail);
                 // Tail is checked separately because we don't want to lock readers, just check for shared tokens.
                 return !curr.ContainsSharedToken(toDelete, fileType);
             }

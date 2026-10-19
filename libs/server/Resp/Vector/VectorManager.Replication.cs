@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -85,7 +84,7 @@ namespace Garnet.server
         /// </summary>
         internal void ReplicateVectorSetAdd(ReadOnlySpan<byte> key, ref StringInput input, ref StringBasicContext context)
         {
-            Debug.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
+            GarnetAsserts.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
 
             var inputCopy = input;
             inputCopy.arg1 = VADDAppendLogArg;
@@ -117,7 +116,7 @@ namespace Garnet.server
         /// </summary>
         internal void ReplicateVectorSetRemove(ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ref StringInput input, ref StringBasicContext context)
         {
-            Debug.Assert(input.header.cmd == RespCommand.VREM, "Shouldn't be called with anything but VREM inputs");
+            GarnetAsserts.Assert(input.header.cmd == RespCommand.VREM, "Shouldn't be called with anything but VREM inputs");
 
             var inputCopy = input;
             inputCopy.arg1 = VREMAppendLogArg;
@@ -142,7 +141,7 @@ namespace Garnet.server
 
         internal void ReplicateVectorSetSetAttribute(ReadOnlySpan<byte> key, ReadOnlySpan<byte> element, ReadOnlySpan<byte> attribute, ref StringInput input, ref StringBasicContext context)
         {
-            Debug.Assert(input.header.cmd == RespCommand.VSETATTR, "Shouldn't be called with anything but VSETATTR inputs");
+            GarnetAsserts.Assert(input.header.cmd == RespCommand.VSETATTR, "Shouldn't be called with anything but VSETATTR inputs");
 
             var inputCopy = input;
             inputCopy.arg1 = VSETATTRAppendLogArg;
@@ -221,7 +220,7 @@ namespace Garnet.server
                 throw new GarnetException("Vector Set preview is disabled during import replay");
             }
 
-            Debug.Assert(input.header.cmd is RespCommand.XVCREATE or RespCommand.XVIMPORT, "Only XVCREATE and XVIMPORT should be redirected here");
+            GarnetAsserts.Assert(input.header.cmd is RespCommand.XVCREATE or RespCommand.XVIMPORT, "Only XVCREATE and XVIMPORT should be redirected here");
 
             WaitForImportFinalization(key);
 
@@ -297,7 +296,7 @@ namespace Garnet.server
         /// </summary>
         private void ClearMigratedContextRemap()
         {
-            Debug.Assert(Monitor.IsEntered(this), "Migration remap is guarded by lock (this)");
+            GarnetAsserts.Assert(Monitor.IsEntered(this), "Migration remap is guarded by lock (this)");
 
             migratedContextRemap.Clear();
             migratedContextTargets.Clear();
@@ -390,7 +389,7 @@ namespace Garnet.server
             ref StringInput input
         )
         {
-            Debug.Assert(Volatile.Read(ref replicationReplayStarted) != -1, "VectorManager replication channels were disposed and HandleVectorSetAddReplication was called");
+            GarnetAsserts.Assert(Volatile.Read(ref replicationReplayStarted) != -1, "VectorManager replication channels were disposed and HandleVectorSetAddReplication was called");
 
             WaitForImportFinalization(key);
 
@@ -410,7 +409,7 @@ namespace Garnet.server
 
                 var value = input.parseState.GetArgSliceByRef(1);
 
-                Debug.Assert(elementNsLen == 4, "Should always receive a 4-byte namespace");
+                GarnetAsserts.Assert(elementNsLen == 4, "Should always receive a 4-byte namespace");
                 ulong ns = BinaryPrimitives.ReadUInt32LittleEndian(elementNsBytes);
 
                 // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
@@ -480,7 +479,7 @@ namespace Garnet.server
                 return;
             }
 
-            Debug.Assert(input.arg1 == VADDAppendLogArg, "Unexpected operation during replication");
+            GarnetAsserts.Assert(input.arg1 == VADDAppendLogArg, "Unexpected operation during replication");
 
             // Undo mangling that got replication going
             var inputCopy = input;
@@ -540,7 +539,7 @@ namespace Garnet.server
             if (!queued)
             {
                 logger?.LogCritical("VectorManager replication replay channel dropped a VADD, this should never happen, data loss will occur");
-                Debug.Assert(false, "VectorManager replication replay channel should never drop a VADD");
+                GarnetAsserts.Assert(false, "VectorManager replication replay channel should never drop a VADD");
                 replicationBlockEvent.Decrement();
                 ReleaseReplayEntry(state);
 
@@ -754,7 +753,7 @@ namespace Garnet.server
             if (previousValue == -1 || !completed)
             {
                 logger.LogWarning("VectorManager replication replay tasks failed disposal - probably duplicate call");
-                Debug.Assert(false, "VectorManager replication tasks were already disposed");
+                GarnetAsserts.Assert(false, "VectorManager replication tasks were already disposed");
             }
         }
 
@@ -776,8 +775,8 @@ namespace Garnet.server
             // Don't need *WithElement lock here because removes won't be concurrent to adds or updates
             using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status, out var importPending))
             {
-                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
-                Debug.Assert(!importPending, "Replication should only occur when a remove is successful, so index should not be importing");
+                GarnetAsserts.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
+                GarnetAsserts.Assert(!importPending, "Replication should only occur when a remove is successful, so index should not be importing");
 
                 var remRes = TryRemove(indexSpan, element.ReadOnlySpan);
 
@@ -807,8 +806,8 @@ namespace Garnet.server
             // Don't need *WithElement lock here because setattrs won't be concurrent to adds or updates
             using (ReadVectorIndex(storageSession, key, ref inputCopy, indexSpan, out var status, out var importPending))
             {
-                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");
-                Debug.Assert(!importPending, "Replication should only occur when a setattr is successful, so index should not be importing");
+                GarnetAsserts.Assert(status == GarnetStatus.OK, "Replication should only occur when a setattr is successful, so index must exist");
+                GarnetAsserts.Assert(!importPending, "Replication should only occur when a setattr is successful, so index should not be importing");
 
                 if (!TrySetAttribute(indexSpan, element, attribute))
                 {
@@ -854,10 +853,10 @@ namespace Garnet.server
             {
                 _ = unifiedContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 var more = completedOutputs.Next();
-                Debug.Assert(more);
+                GarnetAsserts.Assert(more);
                 readStatus = completedOutputs.Current.Status;
                 output = completedOutputs.Current.Output;
-                Debug.Assert(!completedOutputs.Next());
+                GarnetAsserts.Assert(!completedOutputs.Next());
                 completedOutputs.Dispose();
             }
 
@@ -877,9 +876,9 @@ namespace Garnet.server
                 {
                     _ = unifiedContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                     var more = completedOutputs.Next();
-                    Debug.Assert(more);
+                    GarnetAsserts.Assert(more);
                     upsertStatus = completedOutputs.Current.Status;
-                    Debug.Assert(!completedOutputs.Next());
+                    GarnetAsserts.Assert(!completedOutputs.Next());
                     completedOutputs.Dispose();
                 }
             }

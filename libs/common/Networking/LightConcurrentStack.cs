@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 
 namespace Garnet.common
@@ -27,7 +26,7 @@ namespace Garnet.common
         {
             var lockTaken = false;
             latch.Enter(ref lockTaken);
-            Debug.Assert(lockTaken);
+            GarnetAsserts.Assert(lockTaken);
             disposed = true;
             while (tail > 0)
             {
@@ -42,7 +41,7 @@ namespace Garnet.common
         {
             var lockTaken = false;
             latch.Enter(ref lockTaken);
-            Debug.Assert(lockTaken);
+            GarnetAsserts.Assert(lockTaken);
             if (disposed || tail == stack.Length)
             {
                 latch.Exit();
@@ -58,7 +57,7 @@ namespace Garnet.common
             elem = null;
             var lockTaken = false;
             latch.Enter(ref lockTaken);
-            Debug.Assert(lockTaken);
+            GarnetAsserts.Assert(lockTaken);
             disposed = this.disposed;
             if (tail == 0)
             {

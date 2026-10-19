@@ -135,7 +135,7 @@ namespace Embedded.perftest
                 int percent = rng.Next(100);
                 OperationType op = SelectOpType(percent);
 
-                Debug.Assert(batchBufferLength + operations[op].Length <= kMaxCommandLength * batchSize);
+                GarnetAsserts.Assert(batchBufferLength + operations[op].Length <= kMaxCommandLength * batchSize);
                 Array.Copy(operations[op], 0, batchBuffer, batchBufferLength, operations[op].Length);
                 batchBufferLength += operations[op].Length;
             }

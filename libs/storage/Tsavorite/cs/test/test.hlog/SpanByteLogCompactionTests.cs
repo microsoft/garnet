@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -341,14 +340,14 @@ namespace Tsavorite.test
 
             _ = bContext.Upsert(key, value, 0);
             var status = bContext.Read(key, ref input, ref output, 0);
-            Debug.Assert(status.Found);
+            GarnetAsserts.Assert(status.Found);
 
             store.Log.Flush(true);
 
             valueStruct = new ValueStruct { vfield1 = 11, vfield2 = 21 };
             _ = bContext.Upsert(key, value, 0);
             status = bContext.Read(key, ref input, ref output, 0);
-            Debug.Assert(status.Found);
+            GarnetAsserts.Assert(status.Found);
 
             if (flushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(true);

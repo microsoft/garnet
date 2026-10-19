@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using static Tsavorite.core.LogAddress;
 
@@ -26,7 +25,7 @@ namespace Tsavorite.core
             var logRecord = log._wrapper.CreateLogRecord(logicalAddress, physicalAddress);
             logRecord.InitializeHeadersForNewRecord(inNewVersion, previousAddress);
             log._wrapper.InitializeRecord(key, logicalAddress, in sizeInfo, ref logRecord);
-            Debug.Assert(logRecord.AllocatedSize == sizeInfo.AllocatedInlineRecordSize, $"Framed record length {logRecord.AllocatedSize} does not match the allocated size {sizeInfo.AllocatedInlineRecordSize}");
+            GarnetAsserts.Assert(logRecord.AllocatedSize == sizeInfo.AllocatedInlineRecordSize, $"Framed record length {logRecord.AllocatedSize} does not match the allocated size {sizeInfo.AllocatedInlineRecordSize}");
             return logRecord;
         }
 
@@ -81,7 +80,7 @@ namespace Tsavorite.core
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call CanElide() for readcache records");
+            GarnetAsserts.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call CanElide() for readcache records");
             return stackCtx.hei.Address == stackCtx.recSrc.LogicalAddress && srcRecordInfo.PreviousAddress < hlogBase.BeginAddress
                         && !IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcRecordInfo);
         }
@@ -93,7 +92,7 @@ namespace Tsavorite.core
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
+            GarnetAsserts.Assert(!stackCtx.recSrc.HasReadCacheSrc, "Should not call IsFrozen() for readcache records");
             return sessionFunctions.Ctx.IsInV1
                         && (stackCtx.recSrc.LogicalAddress <= _hybridLogCheckpoint.info.startLogicalAddress     // In checkpoint range
                             || !srcRecordInfo.IsInNewVersion);                                                  // In fuzzy region and an old version
@@ -130,7 +129,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Try to CAS out of the hashtable and if successful, add it to the free list.
-            Debug.Assert(logRecord.Info.IsSealed, "Expected a Sealed record in TryElideAndTransferToFreeList");
+            GarnetAsserts.Assert(logRecord.Info.IsSealed, "Expected a Sealed record in TryElideAndTransferToFreeList");
 
             if (!stackCtx.hei.TryElide())
                 return (false, false);
@@ -143,7 +142,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // The record has been CAS'd out of the hashtable or elided from the chain, so add it to the free list.
-            Debug.Assert(logRecord.Info.IsClosed, "Expected a Closed record in TryTransferToFreeList");
+            GarnetAsserts.Assert(logRecord.Info.IsClosed, "Expected a Closed record in TryTransferToFreeList");
 
             // If its address is not revivifiable, just leave it orphaned and invalid.
             if (logicalAddress < GetMinRevivifiableAddress())
@@ -166,7 +165,7 @@ namespace Tsavorite.core
             if (RevivificationManager.TryTake(sizeInfo.ActualInlineRecordSize, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
             {
                 var logRecord = hlog.CreateLogRecord(logicalAddress);
-                Debug.Assert(logRecord.Info.IsSealed, "TryTakeFreeRecord: recordInfo should still have the revivification Seal");
+                GarnetAsserts.Assert(logRecord.Info.IsSealed, "TryTakeFreeRecord: recordInfo should still have the revivification Seal");
 
                 // Preserve the Sealed bit due to checkpoint/recovery; see RecordInfo.WriteInfo.
                 physicalAddress = logRecord.physicalAddress;
@@ -296,7 +295,7 @@ namespace Tsavorite.core
                 srcLogRecord.InfoRef.SealAndInvalidate();
 
                 // TODO: Reviv stats are added to SessionFunction's stats and not revivification manager - check why
-                Debug.Assert(stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress || srcLogRecord.Info.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcLogRecord.Info.ToString()}");
+                GarnetAsserts.Assert(stackCtx.recSrc.LogicalAddress < hlogBase.ReadOnlyAddress || srcLogRecord.Info.Tombstone, $"Unexpected loss of Tombstone; Record should have been XLocked or SealInvalidated. RecordInfo: {srcLogRecord.Info.ToString()}");
                 var (isElided, isAdded) = TryElideAndTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
 
                 if (!isElided)

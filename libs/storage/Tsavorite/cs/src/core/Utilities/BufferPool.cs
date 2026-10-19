@@ -449,7 +449,7 @@ namespace Tsavorite.core
         public void Free()
         {
 #if CHECK_FOR_LEAKS
-            System.Diagnostics.Debug.Assert(totalGets == totalReturns);
+            GarnetAsserts.Assert(totalGets == totalReturns);
 #endif
             if (legacy is not null)
             {

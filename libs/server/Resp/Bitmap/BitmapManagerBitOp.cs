@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Numerics.Tensors;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
@@ -25,10 +24,10 @@ namespace Garnet.server
         /// <param name="shortestSrcLength">The length of shortest source buffer.</param>
         public static void InvokeBitOperationUnsafe(BitmapOperation op, int srcCount, byte** srcPtrs, byte** srcEndPtrs, byte* dstPtr, int dstLength, int shortestSrcLength)
         {
-            Debug.Assert(op is BitmapOperation.NOT or BitmapOperation.AND or BitmapOperation.OR or BitmapOperation.XOR or BitmapOperation.DIFF);
-            Debug.Assert(srcCount > 0);
-            Debug.Assert(dstLength >= 0 && shortestSrcLength >= 0);
-            Debug.Assert(dstLength >= shortestSrcLength);
+            GarnetAsserts.Assert(op is BitmapOperation.NOT or BitmapOperation.AND or BitmapOperation.OR or BitmapOperation.XOR or BitmapOperation.DIFF);
+            GarnetAsserts.Assert(srcCount > 0);
+            GarnetAsserts.Assert(dstLength >= 0 && shortestSrcLength >= 0);
+            GarnetAsserts.Assert(dstLength >= shortestSrcLength);
 
             if (srcCount == 1)
             {

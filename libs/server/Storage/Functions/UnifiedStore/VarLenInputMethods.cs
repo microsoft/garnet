@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -106,7 +105,7 @@ namespace Garnet.server
             if (input.header.cmd is RespCommand.RENAME or RespCommand.RENAMENX)
             {
                 recordType = (byte)input.arg1;
-                Debug.Assert(recordType is 0 or VectorManager.RecordType or RangeIndexManager.RangeIndexRecordType, "Unexpected RecordType on rename operation");
+                GarnetAsserts.Assert(recordType is 0 or VectorManager.RecordType or RangeIndexManager.RangeIndexRecordType, "Unexpected RecordType on rename operation");
             }
             else
             {

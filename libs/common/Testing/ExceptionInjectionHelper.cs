@@ -174,7 +174,7 @@ namespace Garnet.common
         {
             lock (@lock)
             {
-                Debug.Assert(parkingSuspensions > 0, "ResumeParking without a matching SuspendParking");
+                GarnetAsserts.DebugOnlyAssert(parkingSuspensions > 0, "ResumeParking without a matching SuspendParking");
                 parkingSuspensions--;
             }
         }

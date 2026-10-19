@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -19,10 +18,10 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var version = sessionCtx.version;
-            Debug.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");
-            Debug.Assert(sessionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({sessionCtx.phase}) should == Phase.PREPARE");
+            GarnetAsserts.Assert(sessionCtx.version == version, $"sessionCtx.version ({sessionCtx.version}) should == version ({version})");
+            GarnetAsserts.Assert(sessionCtx.phase == Phase.PREPARE, $"sessionCtx.phase ({sessionCtx.phase}) should == Phase.PREPARE");
             InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-            Debug.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
+            GarnetAsserts.Assert(sessionCtx.version > version, $"sessionCtx.version ({sessionCtx.version}) should be > version ({version})");
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -31,7 +30,7 @@ namespace Tsavorite.core
             // Unlike HeadAddress, ClosedUntilAddress is a high-water mark; a record that is == to ClosedUntilAddress has *not* been closed yet.
             while (address >= hlogBase.ClosedUntilAddress)
             {
-                Debug.Assert(address < hlogBase.HeadAddress, "expected address < hlog.HeadAddress");
+                GarnetAsserts.Assert(address < hlogBase.HeadAddress, "expected address < hlog.HeadAddress");
                 epoch.ProtectAndDrain();
                 Thread.Yield();
             }
@@ -40,7 +39,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void SpinWaitUntilRecordIsClosed(long logicalAddress, AllocatorBase<TStoreFunctions, TAllocator> log)
         {
-            Debug.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilRecordIsClosed should not be called for addresses above HeadAddress");
+            GarnetAsserts.Assert(logicalAddress < log.HeadAddress, "SpinWaitUntilRecordIsClosed should not be called for addresses above HeadAddress");
 
             // The caller checks for logicalAddress < HeadAddress, so we must ProtectAndDrain at least once, even if logicalAddress >= ClosedUntilAddress.
             // Otherwise, let's say we have two OnPagesClosed operations in the epoch drainlist:

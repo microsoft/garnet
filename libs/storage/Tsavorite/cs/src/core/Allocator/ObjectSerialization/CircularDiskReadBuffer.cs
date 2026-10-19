@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -79,7 +78,7 @@ namespace Tsavorite.core
                 buffer = CreateBuffer(bufferIndex);
             else
             {
-                Debug.Assert(buffer.countdownEvent.CurrentCount == 0, $"Unexpected countdownEvent.CurrentCount ({buffer.countdownEvent.CurrentCount}) when preparing to read into buffer");
+                GarnetAsserts.Assert(buffer.countdownEvent.CurrentCount == 0, $"Unexpected countdownEvent.CurrentCount ({buffer.countdownEvent.CurrentCount}) when preparing to read into buffer");
                 buffer.Initialize();
             }
 
@@ -91,12 +90,12 @@ namespace Tsavorite.core
             if ((ulong)unalignedReadLength > unreadLengthRemaining)
                 unalignedReadLength = (int)unreadLengthRemaining;
 
-            Debug.Assert(IsAligned(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize), $"filePosition.Offset ({nextFileReadPosition.Offset}) is not sector-aligned");
+            GarnetAsserts.Assert(IsAligned(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize), $"filePosition.Offset ({nextFileReadPosition.Offset}) is not sector-aligned");
             var segmentIsComplete = false;
             if (nextFileReadPosition.Offset + (ulong)unalignedReadLength >= nextFileReadPosition.SegmentSize)
             {
                 unalignedReadLength = (int)(nextFileReadPosition.SegmentSize - nextFileReadPosition.Offset);
-                Debug.Assert(IsAligned(unalignedReadLength, (int)objectLogDevice.SectorSize), $"unalignedReadLength ({unalignedReadLength}) is not sector-aligned at segment end");
+                GarnetAsserts.Assert(IsAligned(unalignedReadLength, (int)objectLogDevice.SectorSize), $"unalignedReadLength ({unalignedReadLength}) is not sector-aligned at segment end");
                 segmentIsComplete = true;
             }
 
@@ -109,7 +108,7 @@ namespace Tsavorite.core
             // Note: If segmentIsComplete, this increment results in nextFileReadPosition.Offset == SegmentSize, which will mask off to a 0.
             nextFileReadPosition.Offset += (uint)alignedReadLength;
 
-            Debug.Assert(nextFileReadPosition.Offset <= nextFileReadPosition.SegmentSize, $"filePosition.Offset ({nextFileReadPosition.Offset}) must be <= filePosition.SegmentSize ({nextFileReadPosition.SegmentSize})");
+            GarnetAsserts.Assert(nextFileReadPosition.Offset <= nextFileReadPosition.SegmentSize, $"filePosition.Offset ({nextFileReadPosition.Offset}) must be <= filePosition.SegmentSize ({nextFileReadPosition.SegmentSize})");
             if (segmentIsComplete)
                 nextFileReadPosition.AdvanceToNextSegment();
 
@@ -127,7 +126,7 @@ namespace Tsavorite.core
             if (disposed)
                 throw new ObjectDisposedException(nameof(CircularDiskReadBuffer));
 
-            Debug.Assert(totalLength > 0, "TotalLength cannot be 0");
+            GarnetAsserts.Assert(totalLength > 0, "TotalLength cannot be 0");
             nextFileReadPosition = startFilePosition;
             unreadLengthRemaining = totalLength;
 
@@ -161,7 +160,7 @@ namespace Tsavorite.core
         {
             for (var ii = 0; ii < buffers.Length; ii++)
             {
-                Debug.Assert(buffers[ii] is null || !buffers[ii].HasInFlightRead, $"All reads should have been completed by OnEndReadRecords()");
+                GarnetAsserts.Assert(buffers[ii] is null || !buffers[ii].HasInFlightRead, $"All reads should have been completed by OnEndReadRecords()");
             }
         }
 
@@ -177,10 +176,10 @@ namespace Tsavorite.core
             while (true)
             {
                 var bufferFilePosition = buffer.GetCurrentFilePosition();
-                Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
-                Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
+                GarnetAsserts.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
+                GarnetAsserts.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
                 var increment = recordFilePosition - bufferFilePosition;
-                Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
+                GarnetAsserts.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
 
                 // We might cleanly align to the start of the next buffer, if there was a flush that ended on a buffer boundary.
                 // Otherwise, we should always be within the current buffer. We should only do this "continue" once.
@@ -190,7 +189,7 @@ namespace Tsavorite.core
                     break;
                 }
 
-                Debug.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
+                GarnetAsserts.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
                 if (!MoveToNextBuffer(out buffer))
                     break;
             }
@@ -225,7 +224,7 @@ namespace Tsavorite.core
             if (nextBuffer is not null && nextBuffer.WaitForDataAvailable())
                 return true;
 
-            Debug.Assert(unreadLengthRemaining == 0, $"unreadLengthRemaining ({unreadLengthRemaining}) was not 0 when WaitForDataAvailable returned false");
+            GarnetAsserts.Assert(unreadLengthRemaining == 0, $"unreadLengthRemaining ({unreadLengthRemaining}) was not 0 when WaitForDataAvailable returned false");
             return false;
         }
 
@@ -244,9 +243,9 @@ namespace Tsavorite.core
 
             buffer.endPosition += (int)numBytes;
             if (buffer.endPosition == 0)
-                Debug.Assert(buffer.currentPosition == 0, $"buffer.currentPosition ({buffer.currentPosition}) must be 0 if buffer.endPosition ({buffer.endPosition}) is 0");
+                GarnetAsserts.Assert(buffer.currentPosition == 0, $"buffer.currentPosition ({buffer.currentPosition}) must be 0 if buffer.endPosition ({buffer.endPosition}) is 0");
             else
-                Debug.Assert(buffer.endPosition > buffer.currentPosition, $"buffer.endPosition ({buffer.endPosition}) must be >= buffer.currentPosition ({buffer.currentPosition})");
+                GarnetAsserts.Assert(buffer.endPosition > buffer.currentPosition, $"buffer.endPosition ({buffer.endPosition}) must be >= buffer.currentPosition ({buffer.currentPosition})");
 
             // Signal the buffer's event to indicate the data is available.
             _ = buffer.countdownEvent.Signal();

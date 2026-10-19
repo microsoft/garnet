@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -136,7 +135,7 @@ namespace Garnet.networking
                     if (garnetNetworkHandler.expectingData.CurrentCount == 0) garnetNetworkHandler.expectingData.Release();
                     await garnetNetworkHandler.receivedData.WaitAsync(cancellationToken).ConfigureAwait(false);
                     // Releaser of semaphore should have updated readerStatus
-                    Debug.Assert(garnetNetworkHandler.readerStatus == TlsReaderStatus.Active || garnetNetworkHandler.disposeCount > 0);
+                    GarnetAsserts.Assert(garnetNetworkHandler.readerStatus == TlsReaderStatus.Active || garnetNetworkHandler.disposeCount > 0);
                 }
 
                 if (copiedBytes > 0)

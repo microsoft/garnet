@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -56,7 +55,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetNewRecordInvalid(ref RecordInfo newRecordInfo)
         {
-            Debug.Assert(newRecordInfo.Invalid, "Records should be invalidated until successfully inserted");   // TODO: If this does not fire, remove the following line that sets it
+            GarnetAsserts.Assert(newRecordInfo.Invalid, "Records should be invalidated until successfully inserted");   // TODO: If this does not fire, remove the following line that sets it
             newRecordInfo.SetInvalid();
             newLogicalAddress = kInvalidAddress;
         }

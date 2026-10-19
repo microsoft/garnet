@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -98,7 +97,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 var dstKey = input.parseState.GetArgSliceByRef(0);
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
@@ -141,7 +140,7 @@ namespace Garnet.server
                     // The PFCOUNT/PFMERGE backend is contracted to populate SpanByte (sector-aligned native
                     // memory we passed in) and never overflow to heap Memory. Assert the contract so any
                     // future regression is caught immediately rather than silently returning garbage.
-                    Debug.Assert(srcMergeBuffer.SpanByteAndMemory.IsSpanByte, "PFCOUNT backend must populate SpanByte");
+                    GarnetAsserts.Assert(srcMergeBuffer.SpanByteAndMemory.IsSpanByte, "PFCOUNT backend must populate SpanByte");
                     // Invalid Type
                     if (*(long*)srcReadBuffer == -1)
                     {
@@ -199,7 +198,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
                 var dstKey = input.parseState.GetArgSliceByRef(0);
@@ -241,7 +240,7 @@ namespace Garnet.server
                     // The PFCOUNT/PFMERGE backend is contracted to populate SpanByte (sector-aligned native
                     // memory we passed in) and never overflow to heap Memory. Assert the contract so any
                     // future regression is caught immediately rather than silently returning garbage.
-                    Debug.Assert(mergeBuffer.SpanByteAndMemory.IsSpanByte, "PFMERGE backend must populate SpanByte");
+                    GarnetAsserts.Assert(mergeBuffer.SpanByteAndMemory.IsSpanByte, "PFMERGE backend must populate SpanByte");
 
                     // Invalid Type
                     if (*(long*)readBuffer == -1)

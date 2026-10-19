@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -105,7 +104,7 @@ namespace Tsavorite.core
                             goto CreateNewRecord;
 
                         default:
-                            Debug.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
+                            GarnetAsserts.Assert(latchDestination == LatchDestination.NormalProcessing, "Unknown latchDestination value; expected NormalProcessing");
                             break;
                     }
                 }
@@ -220,7 +219,7 @@ namespace Tsavorite.core
                 }
 
                 // No record exists - drop through to create new record.
-                Debug.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Transactional-session RMW() of an on-disk or non-existent key requires a LockTable lock");
+                GarnetAsserts.Assert(!sessionFunctions.IsTransactionalLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Transactional-session RMW() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
                 {
@@ -472,7 +471,7 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(!allocOptions.elideSourceRecord, "Elidable records going down the deletion via RMW path from NCU should have already been handled." +
+                GarnetAsserts.Assert(!allocOptions.elideSourceRecord, "Elidable records going down the deletion via RMW path from NCU should have already been handled." +
                     "This block only handles NCU requested deletion, or expiration without an initial update, for unelidable src records.");
                 sizeInfo = hlog.GetDeleteRecordSize(key);
             }
@@ -537,7 +536,7 @@ namespace Tsavorite.core
                 }
                 if (rmwInfo.Action == RMWAction.ExpireAndStop)
                 {
-                    Debug.Assert(!addTombstone, "Should not have gone down RCU if NCU had already requested tombstoning." +
+                    GarnetAsserts.Assert(!addTombstone, "Should not have gone down RCU if NCU had already requested tombstoning." +
                         "This block should only handle expiration/tombstoning via RCU.");
                     // Dispose the source record's resources immediately, unless frozen by a checkpoint.
                     if (stackCtx.recSrc.HasMainLogSrc)
@@ -581,7 +580,7 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU, or expiration without an initial update, where the previous record was not elidable.");
+                GarnetAsserts.Assert(addTombstone, "This block should only be handling tombstoning requests by NCU, or expiration without an initial update, where the previous record was not elidable.");
                 newLogRecord.InfoRef.SetModified();
                 newLogRecord.InfoRef.SetTombstone();
 
@@ -604,7 +603,7 @@ namespace Tsavorite.core
                 if (!doingCU)
                 {
                     // If IU, status will be NOTFOUND. ReinitializeExpiredRecord has many paths but is straightforward so no need to assert here.
-                    Debug.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
+                    GarnetAsserts.Assert(forExpiration || OperationStatus.NOTFOUND == OperationStatusUtils.BasicOpCode(status), $"Expected NOTFOUND but was {status}");
                     if (!addTombstone)
                     {
                         sessionFunctions.PostInitialUpdater(ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);

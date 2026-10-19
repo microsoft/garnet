@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Buffers.Text;
-using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -72,7 +71,7 @@ namespace GarnetRoaringBitmap
 
         public override bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
-            Debug.Assert(value is RoaringBitmapObject);
+            GarnetAsserts.Assert(value is RoaringBitmapObject);
             var rb = (RoaringBitmapObject)value;
 
             var offset = 0;
@@ -104,7 +103,7 @@ namespace GarnetRoaringBitmap
 
         public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
-            Debug.Assert(value is RoaringBitmapObject);
+            GarnetAsserts.Assert(value is RoaringBitmapObject);
             var rb = (RoaringBitmapObject)value;
 
             var offsetArg = GetFirstArg(ref input);
@@ -135,7 +134,7 @@ namespace GarnetRoaringBitmap
     {
         public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
-            Debug.Assert(value is RoaringBitmapObject);
+            GarnetAsserts.Assert(value is RoaringBitmapObject);
             var rb = (RoaringBitmapObject)value;
             writer.WriteInt64(rb.BitCount());
             return true;
@@ -159,7 +158,7 @@ namespace GarnetRoaringBitmap
 
         public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
-            Debug.Assert(value is RoaringBitmapObject);
+            GarnetAsserts.Assert(value is RoaringBitmapObject);
             var rb = (RoaringBitmapObject)value;
 
             if (!TryParseArgs(ref input, ref writer, out var bit, out var from))

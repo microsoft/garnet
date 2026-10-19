@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -555,7 +554,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
                 foreach (var item in keys)
@@ -604,7 +603,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
                 txnManager.SaveKeyEntryToLock(destinationKey, LockType.Exclusive);
@@ -682,13 +681,13 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                Debug.Assert(*outputContainer == (byte)'$' || *outputContainer == (byte)':');
+                GarnetAsserts.Assert(*outputContainer == (byte)'$' || *outputContainer == (byte)':');
                 if (*outputContainer == (byte)':')
                 {
                     // member exists -> read the rank
                     var read = TryProcessRespSimple64IntOutput(output, out var value);
                     var rankValue = read ? (int)value : default;
-                    Debug.Assert(read);
+                    GarnetAsserts.Assert(read);
                     rank = rankValue;
                 }
             }
@@ -742,7 +741,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
                 txnManager.SaveKeyEntryToLock(dstKey, LockType.Exclusive);
@@ -792,7 +791,7 @@ namespace Garnet.server
                     return GarnetStatus.OK;
                 }
 
-                Debug.Assert(!rangeOutputMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
+                GarnetAsserts.Assert(!rangeOutputMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
 
                 var rangeOutputHandler = rangeOutputMem.Memory.Memory.Pin();
                 try
@@ -805,7 +804,7 @@ namespace Garnet.server
                     ssUnifiedTransactionalContext.Delete((FixedSpanByteKey)destinationKey);
 
                     RespReadUtils.TryReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
-                    Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
+                    GarnetAsserts.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
                     var result = arrayLen / 2;
 
                     if (result > 0)
@@ -976,10 +975,10 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                Debug.Assert(*outputContainer == (byte)':');
+                GarnetAsserts.Assert(*outputContainer == (byte)':');
                 var read = TryProcessRespSimple64IntOutput(output, out var value);
                 numElements = read ? (int)value : default;
-                Debug.Assert(read);
+                GarnetAsserts.Assert(read);
             }
             return status;
         }
@@ -1105,7 +1104,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
                 foreach (var item in keys)
@@ -1148,7 +1147,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
                 txnManager.SaveKeyEntryToLock(destinationKey, LockType.Exclusive);
@@ -1339,7 +1338,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
                 foreach (var key in keys)
@@ -1406,7 +1405,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
                 txnManager.SaveKeyEntryToLock(destinationKey, LockType.Exclusive);
@@ -1468,7 +1467,7 @@ namespace Garnet.server
 
             if (txnManager.state != TxnState.Running)
             {
-                Debug.Assert(txnManager.state == TxnState.None);
+                GarnetAsserts.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
                 foreach (var item in keys)

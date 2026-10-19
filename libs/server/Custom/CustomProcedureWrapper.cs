@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using Garnet.common;
 
 namespace Garnet.server
@@ -39,7 +38,7 @@ namespace Garnet.server
             if (customProcedureFactory == null)
                 throw new ArgumentNullException(nameof(customProcedureFactory));
 
-            Debug.Assert(customCommandManager != null);
+            GarnetAsserts.Assert(customCommandManager != null);
 
             NameStr = name.ToUpperInvariant();
             Name = System.Text.Encoding.ASCII.GetBytes(NameStr);

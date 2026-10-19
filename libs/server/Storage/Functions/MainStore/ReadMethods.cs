@@ -1,7 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -83,7 +82,7 @@ namespace Garnet.server
                 {
                     var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
                         .Reader(srcLogRecord.Key, ref input, value, ref writer, ref readInfo);
-                    Debug.Assert(valueLength <= value.Length);
+                    GarnetAsserts.Assert(valueLength <= value.Length);
                     return ret;
                 }
                 finally

@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Collections.Frozen;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Garnet.client;
@@ -29,7 +28,7 @@ namespace Garnet.cluster
         /// </summary>
         public async Task<bool> ReserveDestinationVectorSetsAsync()
         {
-            Debug.Assert((_namespaces.Count % (int)VectorManager.ContextStep) == 0, "Expected to be migrating Vector Sets, and thus to have an even number of namespaces");
+            GarnetAsserts.Assert((_namespaces.Count % (int)VectorManager.ContextStep) == 0, "Expected to be migrating Vector Sets, and thus to have an even number of namespaces");
 
             var neededContexts = _namespaces.Count / (int)VectorManager.ContextStep;
 

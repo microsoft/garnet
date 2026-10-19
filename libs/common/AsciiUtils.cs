@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Text;
 
 namespace Garnet.common;
@@ -79,7 +78,7 @@ public static class AsciiUtils
             var b2 = right[i];
 
             // Debug assert that b2 is an upper case letter 'A'-'Z'
-            Debug.Assert(b2 is >= 65 and <= 90);
+            GarnetAsserts.Assert(b2 is >= 65 and <= 90);
 
             if (b1 == b2 || b1 - 32 == b2)
                 continue;

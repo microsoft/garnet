@@ -305,7 +305,7 @@ namespace Garnet.server
                 _ = logRecord.TrySetExpiration(input.arg1);
 
             // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-            Debug.Assert(sizeInfo.FieldInfo.HasETag, "Expected sizeInfo.FieldInfo.HasETag to be true");
+            GarnetAsserts.Assert(sizeInfo.FieldInfo.HasETag, "Expected sizeInfo.FieldInfo.HasETag to be true");
             var newEtag = input.parseState.GetLong(1) + (cmd == RespCommand.SETIFMATCH ? 1 : 0);
             _ = logRecord.TrySetETag(newEtag);
 
@@ -333,7 +333,7 @@ namespace Garnet.server
             if (!logRecord.TrySetValueSpanAndPrepareOptionals(newInputValue, in sizeInfo))
                 return false;
 
-            Debug.Assert(sizeInfo.FieldInfo.HasETag, "Expected sizeInfo.FieldInfo.HasETag to be true");
+            GarnetAsserts.Assert(sizeInfo.FieldInfo.HasETag, "Expected sizeInfo.FieldInfo.HasETag to be true");
             _ = logRecord.TrySetETag(LogRecord.NoETag + 1);
 
             // Set expiration if provided

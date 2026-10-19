@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
@@ -52,7 +51,7 @@ namespace Garnet.server
 
         internal ModuleLoadContext(CustomCommandManager customCommandManager, ILogger logger)
         {
-            Debug.Assert(customCommandManager != null);
+            GarnetAsserts.Assert(customCommandManager != null);
 
             Initialized = false;
             this.customCommandManager = customCommandManager;

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Garnet.server;
 using Tsavorite.core;
@@ -143,7 +142,7 @@ namespace Garnet
             else
             {
                 HeapMemorySize -= memorySize;
-                Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+                GarnetAsserts.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
             }
         }
 

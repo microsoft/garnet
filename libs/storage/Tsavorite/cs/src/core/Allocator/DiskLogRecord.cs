@@ -4,7 +4,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using Tsavorite.core.Allocator.ObjectSerialization;
@@ -615,7 +614,7 @@ namespace Tsavorite.core
             GetChunkedRecordInlineSize(headerSpan.ReadOnlySpan, requireCompleteInlinePortion: true);
             var ptr = headerSpan.ToPointer();
             var serializedLogRecord = new LogRecord((long)ptr, transientObjectIdMap);
-            Debug.Assert(!serializedLogRecord.DataHeader.RecordIsInline, "CompleteDeserializeChunkedRecord is only for a non-inline record");
+            GarnetAsserts.Assert(!serializedLogRecord.DataHeader.RecordIsInline, "CompleteDeserializeChunkedRecord is only for a non-inline record");
 
             var keyWasSet = false;
             try

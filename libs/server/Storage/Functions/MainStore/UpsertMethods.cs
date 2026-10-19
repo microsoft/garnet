@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
@@ -58,7 +57,7 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
-                Debug.Assert(!inputLogRecord.DataHeader.ValueIsObject, "String store should not be called with IHeapObject");
+                GarnetAsserts.Assert(!inputLogRecord.DataHeader.ValueIsObject, "String store should not be called with IHeapObject");
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
         }

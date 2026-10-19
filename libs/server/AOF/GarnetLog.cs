@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -226,8 +225,8 @@ namespace Garnet.server
         /// <param name="logAccessBitmap"></param>
         public void LockSublogs(ulong logAccessBitmap)
         {
-            Debug.Assert(serverOptions != null);
-            Debug.Assert(BitOperations.PopCount(logAccessBitmap) <= shardedLog.Length);
+            GarnetAsserts.Assert(serverOptions != null);
+            GarnetAsserts.Assert(BitOperations.PopCount(logAccessBitmap) <= shardedLog.Length);
             shardedLog.LockSublogs(logAccessBitmap);
         }
 
@@ -237,8 +236,8 @@ namespace Garnet.server
         /// <param name="logAccessBitmap"></param>
         public void UnlockSublogs(ulong logAccessBitmap)
         {
-            Debug.Assert(shardedLog != null);
-            Debug.Assert(BitOperations.PopCount(logAccessBitmap) <= shardedLog.Length);
+            GarnetAsserts.Assert(shardedLog != null);
+            GarnetAsserts.Assert(BitOperations.PopCount(logAccessBitmap) <= shardedLog.Length);
             shardedLog.UnlockSublogs(logAccessBitmap);
         }
 
@@ -251,12 +250,12 @@ namespace Garnet.server
         {
             if (singleLog != null)
             {
-                Debug.Assert(sublogIdx == 0);
+                GarnetAsserts.Assert(sublogIdx == 0);
                 return singleLog.log;
             }
             else
             {
-                Debug.Assert(sublogIdx < shardedLog.Length);
+                GarnetAsserts.Assert(sublogIdx < shardedLog.Length);
                 return shardedLog.sublog[sublogIdx];
             }
         }
@@ -271,12 +270,12 @@ namespace Garnet.server
         {
             if (singleLog != null)
             {
-                Debug.Assert(sublogIdx == 0);
+                GarnetAsserts.Assert(sublogIdx == 0);
                 return singleLog.log.TailAddress;
             }
             else
             {
-                Debug.Assert(sublogIdx < shardedLog.Length);
+                GarnetAsserts.Assert(sublogIdx < shardedLog.Length);
                 return shardedLog.sublog[sublogIdx].TailAddress;
             }
         }
@@ -291,12 +290,12 @@ namespace Garnet.server
         {
             if (singleLog != null)
             {
-                Debug.Assert(sublogIdx == 0);
+                GarnetAsserts.Assert(sublogIdx == 0);
                 return singleLog.log.BeginAddress;
             }
             else
             {
-                Debug.Assert(sublogIdx < shardedLog.Length);
+                GarnetAsserts.Assert(sublogIdx < shardedLog.Length);
                 return shardedLog.sublog[sublogIdx].BeginAddress;
             }
         }
@@ -333,12 +332,12 @@ namespace Garnet.server
         {
             if (singleLog != null)
             {
-                Debug.Assert(sublogIdx == 0);
+                GarnetAsserts.Assert(sublogIdx == 0);
                 return singleLog.log.Scan(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
             }
             else
             {
-                Debug.Assert(sublogIdx < shardedLog.Length);
+                GarnetAsserts.Assert(sublogIdx < shardedLog.Length);
                 return shardedLog.sublog[sublogIdx].Scan(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
             }
         }
@@ -358,12 +357,12 @@ namespace Garnet.server
         {
             if (singleLog != null)
             {
-                Debug.Assert(sublogIdx == 0);
+                GarnetAsserts.Assert(sublogIdx == 0);
                 return singleLog.log.ScanSingle(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
             }
             else
             {
-                Debug.Assert(sublogIdx < shardedLog.Length);
+                GarnetAsserts.Assert(sublogIdx < shardedLog.Length);
                 return shardedLog.sublog[sublogIdx].ScanSingle(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
             }
         }
@@ -458,12 +457,12 @@ namespace Garnet.server
         {
             if (singleLog != null)
             {
-                Debug.Assert(beginAddress.Length == 1);
+                GarnetAsserts.Assert(beginAddress.Length == 1);
                 singleLog.log.Initialize(beginAddress[0], committedUntilAddress[0], lastCommitNum);
             }
             else
             {
-                Debug.Assert(beginAddress.Length == shardedLog.Length);
+                GarnetAsserts.Assert(beginAddress.Length == shardedLog.Length);
                 for (var i = 0; i < shardedLog.Length; i++)
                     shardedLog.sublog[i].Initialize(beginAddress[i], committedUntilAddress[i], lastCommitNum);
             }

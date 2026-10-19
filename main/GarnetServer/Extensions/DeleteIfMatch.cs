@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
@@ -60,7 +59,7 @@ namespace Garnet
         public override bool CopyUpdater(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
             rmwInfo.Action = RMWAction.ExpireAndStop;
-            Debug.Assert(oldValue.Length == newValue.Length);
+            GarnetAsserts.Assert(oldValue.Length == newValue.Length);
             oldValue.CopyTo(newValue);
 
             return false;

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1258,7 +1257,7 @@ namespace Tsavorite.core
         /// <param name="waitForEviction">Wait for eviction to complete, i.e., until ClosedUntilAddress catches up (may involve page flushing, closing, and eviction callbacks)</param>
         public void ShiftAddressesWithWait(long newReadOnlyAddress, long newHeadAddress, bool waitForEviction)
         {
-            Debug.Assert(newHeadAddress <= newReadOnlyAddress, $"new HeadAddress {newHeadAddress} must not be ahead of newReadOnlyAddress {newReadOnlyAddress}");
+            GarnetAsserts.Assert(newHeadAddress <= newReadOnlyAddress, $"new HeadAddress {newHeadAddress} must not be ahead of newReadOnlyAddress {newReadOnlyAddress}");
 
             // First shift read-only; force wait so that we do not close unflushed page
             ShiftReadOnlyAddressWithWait(newReadOnlyAddress, wait: true);
@@ -1523,7 +1522,7 @@ namespace Tsavorite.core
 
             PageOffset localTailPageOffset = default;
             localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
-            Debug.Assert(localTailPageOffset.Offset >= pageHeaderSize, $"TailPageOffset consistency error: Offset {localTailPageOffset.Offset} should equal be >= pageHeaderSize {pageHeaderSize}");
+            GarnetAsserts.Assert(localTailPageOffset.Offset >= pageHeaderSize, $"TailPageOffset consistency error: Offset {localTailPageOffset.Offset} should equal be >= pageHeaderSize {pageHeaderSize}");
 
             // If the TailAddress.Offset is already past PageSize, another thread has incremented it and is working in HandlePageOverflow.
             // Necessary to check because threads keep retrying and we do not want to overflow the offset more than once per thread.
@@ -1680,8 +1679,8 @@ namespace Tsavorite.core
             }
 
             // The HeadAddress page is always calculated to be below the TailAddress page once we have more than a page of records.
-            Debug.Assert(readOnlyAddress <= tailAddress, $"ReadOnlyAddress {readOnlyAddress} must not exceed TailAddress {tailAddress}");
-            Debug.Assert(readOnlyAddress >= headAddress, $"ReadOnlyAddress {readOnlyAddress} must not be less than HeadAddress {headAddress}");
+            GarnetAsserts.Assert(readOnlyAddress <= tailAddress, $"ReadOnlyAddress {readOnlyAddress} must not exceed TailAddress {tailAddress}");
+            GarnetAsserts.Assert(readOnlyAddress >= headAddress, $"ReadOnlyAddress {readOnlyAddress} must not be less than HeadAddress {headAddress}");
 
             //Debug.WriteLine($"Calcalating ROA: tailAddress={tailAddress}, headAddress={headAddress}, readOnlyAddress={readOnlyAddress}");
             return readOnlyAddress;
@@ -1838,7 +1837,7 @@ namespace Tsavorite.core
         /// <summary>Action to be performed when all threads have agreed that a page range is closed.</summary>
         private void OnPagesClosed(long newSafeHeadAddress)
         {
-            Debug.Assert(newSafeHeadAddress > 0);
+            GarnetAsserts.Assert(newSafeHeadAddress > 0);
             if (MonotonicUpdate(ref SafeHeadAddress, newSafeHeadAddress, out _ /*oldSafeHeadAddress*/))
             {
                 // This thread is responsible for [oldSafeHeadAddress -> newSafeHeadAddress]
@@ -2312,7 +2311,7 @@ namespace Tsavorite.core
         public void AsyncFlushPagesForRecovery<TContext>(long scanFromAddress, long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context,
             IDevice snapshotObjectLogDevice = null, long formerFlushedUntilAddress = long.MaxValue)
         {
-            Debug.Assert(scanFromAddress < GetLogicalAddressOfStartOfPage(flushPageStart + 1), $"scanFromAddress ({scanFromAddress}) must be on flushPageStart ({flushPageStart})");
+            GarnetAsserts.Assert(scanFromAddress < GetLogicalAddressOfStartOfPage(flushPageStart + 1), $"scanFromAddress ({scanFromAddress}) must be on flushPageStart ({flushPageStart})");
 
             // When copying snapshot object bytes into the main object-log, we need write buffers on the main object-log device (as for a normal flush).
             var copyObjects = snapshotObjectLogDevice is not null;
@@ -2771,16 +2770,16 @@ namespace Tsavorite.core
 
             // available_bytes is the count of valid bytes starting at GetValidPointer() (= aligned_pointer + valid_offset),
             // so subtract valid_offset from the device's reported transfer count (total bytes written from aligned_pointer).
-            Debug.Assert(numBytes <= (uint)(ctx.record.available_bytes + ctx.record.valid_offset),
+            GarnetAsserts.Assert(numBytes <= (uint)(ctx.record.available_bytes + ctx.record.valid_offset),
                 $"Expected numBytes ({numBytes}) <= (available_bytes ({ctx.record.available_bytes}) + valid_offset ({ctx.record.valid_offset})), per {nameof(GetAndPopulateReadBuffer)}()");
-            Debug.Assert(numBytes >= (uint)ctx.record.valid_offset,
+            GarnetAsserts.Assert(numBytes >= (uint)ctx.record.valid_offset,
                 $"Short read: {numBytes} bytes were read, which is below the valid_offset ({ctx.record.valid_offset}); the record start was not delivered by the device");
             ctx.record.available_bytes = (int)numBytes - ctx.record.valid_offset;
 
             if (ctx.record.available_bytes >= RecordInfo.Size)
             {
                 var recordInfo = *(RecordInfo*)ctx.record.GetValidPointer();
-                Debug.Assert(!recordInfo.Invalid,
+                GarnetAsserts.Assert(!recordInfo.Invalid,
                     $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {recordInfo}");
             }
 

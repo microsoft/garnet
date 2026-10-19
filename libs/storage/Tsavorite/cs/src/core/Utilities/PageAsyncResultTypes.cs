@@ -4,7 +4,6 @@
 #define CALLOC
 
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -203,7 +202,7 @@ namespace Tsavorite.core
         /// <param name="refGcHandle"></param>
         public void SetRefCountedHandle(RefCountedPinnedGCHandle refGcHandle)
         {
-            Debug.Assert(!gcHandle.IsAllocated, "Cannot have both GCHandle and RefCountedPinnedGCHandle");
+            GarnetAsserts.Assert(!gcHandle.IsAllocated, "Cannot have both GCHandle and RefCountedPinnedGCHandle");
             refCountedGCHandle = refGcHandle;
             refCountedGCHandle.AddRef();
         }
@@ -394,7 +393,7 @@ namespace Tsavorite.core
         /// <param name="refGcHandle"></param>
         public void SetRefCountedHandle(RefCountedPinnedGCHandle refGcHandle)
         {
-            Debug.Assert(!gcHandle.IsAllocated, "Cannot have both GCHandle and RefCountedPinnedGCHandle");
+            GarnetAsserts.Assert(!gcHandle.IsAllocated, "Cannot have both GCHandle and RefCountedPinnedGCHandle");
             refCountedGCHandle = refGcHandle;
             refCountedGCHandle.AddRef();
         }

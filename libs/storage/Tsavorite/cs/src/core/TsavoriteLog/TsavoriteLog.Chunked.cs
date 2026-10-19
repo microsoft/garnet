@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Tsavorite.core.Allocator.ObjectSerialization;
@@ -297,11 +296,11 @@ namespace Tsavorite.core
 
             // A page-tail filler (AllocatorBase.HandlePageOverflow) records the wasted tail in the main-store
             // RecordDataHeader.ValueLength field, and that tail is bounded by MinPartialAllocSize; ensure it fits that field.
-            Debug.Assert(MinPartialAllocSize <= (int)RecordDataHeader.kValueLengthLowBitsMask,
+            GarnetAsserts.Assert(MinPartialAllocSize <= (int)RecordDataHeader.kValueLengthLowBitsMask,
                 "MinPartialAllocSize must fit the main-store RecordDataHeader.ValueLength field used by page-tail fillers");
             // MinPartialAllocSize must hold a chunk header plus a component's int length prefix so the key length prefix is
             // always written whole in the first chunk (it need not be length-aligned like value/input prefixes).
-            Debug.Assert(MinPartialAllocSize >= sizeof(THeader) + sizeof(int),
+            GarnetAsserts.Assert(MinPartialAllocSize >= sizeof(THeader) + sizeof(int),
                 "MinPartialAllocSize must hold a chunk header plus a component length prefix");
 
             var pageSize = (int)allocator.GetPageSize();
@@ -540,7 +539,7 @@ namespace Tsavorite.core
                     return logicalAddress;
                 }
 
-                Debug.Assert(logicalAddress == 0);
+                GarnetAsserts.Assert(logicalAddress == 0);
                 EndInflightEnqueue();
                 epoch.Suspend();
                 var suspended = epochAccessor?.TrySuspend() ?? false;

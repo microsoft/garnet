@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -71,7 +70,7 @@ namespace Garnet.server
         public unsafe GarnetStatus ObjectScan<TObjectContext>(GarnetObjectType objectType, PinnedSpanByte key, long cursor, string match, int count, out PinnedSpanByte[] items, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Debug.Assert(objectType is GarnetObjectType.Hash or GarnetObjectType.Set or GarnetObjectType.SortedSet);
+            GarnetAsserts.Assert(objectType is GarnetObjectType.Hash or GarnetObjectType.Set or GarnetObjectType.SortedSet);
 
             items = default;
 
@@ -360,13 +359,13 @@ namespace Garnet.server
                             if (isNestedArray && (i != 0))
                             {
                                 c = (char)*refPtr;
-                                Debug.Assert(IsSupportedArrayType(c));
+                                GarnetAsserts.Assert(IsSupportedArrayType(c));
 
                                 // We still need to read the field to advance the pointer.
                                 if (!RespReadUtils.TryReadUnsignedLengthHeader(out var nestedArrayLen, ref refPtr, end, c))
                                     return default;
 
-                                Debug.Assert(nestedArrayLen == innerLen);
+                                GarnetAsserts.Assert(nestedArrayLen == innerLen);
                             }
 
                             for (var j = 0; j < innerLen; ++j)
@@ -717,7 +716,7 @@ namespace Garnet.server
                         if (!RespReadUtils.TryReadUnsignedArrayLength(out var arraySize, ref refPtr, outputPtr + outputSpan.Length))
                             return default;
 
-                        Debug.Assert(arraySize % 2 == 0, "Array elements are expected to be in pairs");
+                        GarnetAsserts.Assert(arraySize % 2 == 0, "Array elements are expected to be in pairs");
                         arraySize /= 2; // Halve the array size to hold items as pairs
                         result = new (PinnedSpanByte member, PinnedSpanByte score)[arraySize];
 
@@ -825,7 +824,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = objectContext.Delete((FixedSpanByteKey)key);
-            Debug.Assert(!status.IsPending);
+            GarnetAsserts.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 

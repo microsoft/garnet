@@ -27,7 +27,7 @@ namespace Tsavorite.core
         internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(OperationStatus internalStatus, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(epoch.ThisInstanceProtected());
+            GarnetAsserts.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
@@ -49,7 +49,7 @@ namespace Tsavorite.core
             ref OperationState<TInput, TOutput, TContext> operationState)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(epoch.ThisInstanceProtected());
+            GarnetAsserts.Assert(epoch.ThisInstanceProtected());
 
             switch (internalStatus)
             {
@@ -74,7 +74,7 @@ namespace Tsavorite.core
                 case OperationStatus.ALLOCATE_FAILED:
                     operationState.logicalAddress = LogAddress.kInvalidAddress;
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.
-                    Debug.Assert(!operationState.flushEvent.IsDefault(), "flushEvent is required for ALLOCATE_FAILED");
+                    GarnetAsserts.Assert(!operationState.flushEvent.IsDefault(), "flushEvent is required for ALLOCATE_FAILED");
                     try
                     {
                         epoch.Suspend();
@@ -127,9 +127,9 @@ namespace Tsavorite.core
             OperationStatus operationStatus,
             out AsyncIOContext request)
         {
-            Debug.Assert(operationStatus != OperationStatus.RETRY_NOW, "OperationStatus.RETRY_NOW should have been handled before HandleOperationStatus");
-            Debug.Assert(operationStatus != OperationStatus.RETRY_LATER, "OperationStatus.RETRY_LATER should have been handled before HandleOperationStatus");
-            Debug.Assert(operationStatus != OperationStatus.CPR_SHIFT_DETECTED, "OperationStatus.CPR_SHIFT_DETECTED should have been handled before HandleOperationStatus");
+            GarnetAsserts.Assert(operationStatus != OperationStatus.RETRY_NOW, "OperationStatus.RETRY_NOW should have been handled before HandleOperationStatus");
+            GarnetAsserts.Assert(operationStatus != OperationStatus.RETRY_LATER, "OperationStatus.RETRY_LATER should have been handled before HandleOperationStatus");
+            GarnetAsserts.Assert(operationStatus != OperationStatus.CPR_SHIFT_DETECTED, "OperationStatus.CPR_SHIFT_DETECTED should have been handled before HandleOperationStatus");
 
             // AsyncIOContext is now a class; default = null. Only allocate when we actually need an IO request.
             request = null;
@@ -139,20 +139,20 @@ namespace Tsavorite.core
 
             if (operationStatus == OperationStatus.ALLOCATE_FAILED)
             {
-                Debug.Assert(!operationState.flushEvent.IsDefault(), "Expected flushEvent for ALLOCATE_FAILED");
+                GarnetAsserts.Assert(!operationState.flushEvent.IsDefault(), "Expected flushEvent for ALLOCATE_FAILED");
                 Debug.Fail("Should have handled ALLOCATE_FAILED before HandleOperationStatus");
                 return new(StatusCode.Pending);
             }
             else if (operationStatus == OperationStatus.RECORD_ON_DISK)
             {
-                Debug.Assert(operationState.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
+                GarnetAsserts.Assert(operationState.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
 
                 // The pending-going helper (CreatePendingReadContext / CreatePendingRMWContext /
                 // PrepareIOForConditionalOperation / PrepareIOForConditionalScan) has already rented the op and
                 // populated `op.pendingState` in place. Pick it up here, snapshot the in-memory hot-path bookkeeping into
                 // `op.baseOperationState`, fill the device-facing fields on the op base, and issue the IO.
                 var op = operationState.pendingOp;
-                Debug.Assert(op is not null, "RECORD_ON_DISK requires the pending-going helper to have stashed pendingOp");
+                GarnetAsserts.Assert(op is not null, "RECORD_ON_DISK requires the pending-going helper to have stashed pendingOp");
                 operationState.pendingOp = null;
 
                 op.baseOperationState = operationState;

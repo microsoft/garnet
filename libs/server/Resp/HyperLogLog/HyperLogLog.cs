@@ -7,7 +7,6 @@ using System;
 #if DEBUG
 using System.Collections.Generic;
 #endif
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -171,7 +170,7 @@ namespace Garnet.server
             byte _lsb = (byte)(m & 0x7); // find bits in byte zero
             byte _msb = (byte)(8 - _lsb);
 
-            Debug.Assert(_b0 < ((this.mcnt * reg_bits) / 8));
+            GarnetAsserts.Assert(_b0 < ((this.mcnt * reg_bits) / 8));
 
             reg[_b0] &= (byte)~(reg_bits_msk << _lsb);//clear bits for lsb
             reg[_b0] |= (byte)(val << _lsb);//set new value for lsb
@@ -598,8 +597,8 @@ namespace Garnet.server
             ushort idx = RegIdx(hv);
             byte cntlz = clz(hv);
 
-            Debug.Assert(idx < mcnt);
-            Debug.Assert(cntlz < qbit + 1);
+            GarnetAsserts.Assert(idx < mcnt);
+            GarnetAsserts.Assert(cntlz < qbit + 1);
 
             return UpdateDenseRegister(ptr, idx, cntlz);
         }
@@ -981,7 +980,7 @@ namespace Garnet.server
             if (dTypeDst == (byte)HLL_DTYPE.HLL_SPARSE)
             {
                 //when dst of merge is sparse then src can only be from sparse, else we need to grow to dense.
-                Debug.Assert(dTypeSrc == (byte)HLL_DTYPE.HLL_SPARSE);
+                GarnetAsserts.Assert(dTypeSrc == (byte)HLL_DTYPE.HLL_SPARSE);
                 return SparseToSparse(srcBlob, dstBlob);
             }
             throw new GarnetException("Merge exception");

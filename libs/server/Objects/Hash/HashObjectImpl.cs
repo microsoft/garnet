@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -320,7 +319,7 @@ namespace Garnet.server
 
                 var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatInt64Length];
                 var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
-                Debug.Assert(success);
+                GarnetAsserts.Assert(success);
 
                 formattedValue = formattedValue.Slice(0, bytesWritten);
 
@@ -404,7 +403,7 @@ namespace Garnet.server
 
                 var formattedValue = (Span<byte>)stackalloc byte[NumUtils.MaximumFormatDoubleLength];
                 var success = result.TryFormat(formattedValue, out var bytesWritten, provider: CultureInfo.InvariantCulture);
-                Debug.Assert(success);
+                GarnetAsserts.Assert(success);
 
                 formattedValue = formattedValue.Slice(0, bytesWritten);
 

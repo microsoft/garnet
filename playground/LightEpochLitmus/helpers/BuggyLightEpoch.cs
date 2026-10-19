@@ -13,7 +13,6 @@
 //   * Release() clears localCurrentEpoch before threadId.
 // ---------------------------------------------------------------------------------------------
 using System;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -53,7 +52,7 @@ namespace Tsavorite.epoch.litmus
             [UnscopedRef]
             internal ref int GetRef(int instanceId)
             {
-                Debug.Assert(instanceId >= 0 && instanceId < MaxInstances);
+                GarnetAsserts.Assert(instanceId >= 0 && instanceId < MaxInstances);
                 return ref Unsafe.Add(ref field0, instanceId);
             }
         }
@@ -311,8 +310,8 @@ namespace Tsavorite.epoch.litmus
         {
             ref var entry = ref Metadata.Entries.GetRef(instanceId);
 
-            Debug.Assert(entry > 0, "Trying to refresh unacquired epoch");
-            Debug.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
+            GarnetAsserts.Assert(entry > 0, "Trying to refresh unacquired epoch");
+            GarnetAsserts.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
 
             // Protect CurrentEpoch by copying it to the instance-specific epoch table
             // so that ComputeNewSafeToReclaimEpoch() will see it.
@@ -376,7 +375,7 @@ namespace Tsavorite.epoch.litmus
         /// <returns></returns>
         internal long BumpCurrentEpoch()
         {
-            Debug.Assert(ThisInstanceProtected(), "BumpCurrentEpoch must be called on a protected thread");
+            GarnetAsserts.Assert(ThisInstanceProtected(), "BumpCurrentEpoch must be called on a protected thread");
             var nextEpoch = Interlocked.Increment(ref CurrentEpoch);
 
             if (drainCount > 0)
@@ -527,15 +526,15 @@ namespace Tsavorite.epoch.litmus
         void Acquire()
         {
             ref var entry = ref Metadata.Entries.GetRef(instanceId);
-            Debug.Assert(entry == kInvalidIndex,
+            GarnetAsserts.Assert(entry == kInvalidIndex,
                 "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
             // Reserve an entry in the epoch table for this thread
             ReserveEntryForThread(ref entry);
 
-            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch == 0,
+            GarnetAsserts.Assert((*(tableAligned + entry)).localCurrentEpoch == 0,
                 "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
-            Debug.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
+            GarnetAsserts.Assert((*(tableAligned + entry)).threadId > 0, "Epoch table entry missing threadId");
 
             // Protect CurrentEpoch by copying it to the instance-specific epoch table
             // so that ComputeNewSafeToReclaimEpoch() will see it.
@@ -556,7 +555,7 @@ namespace Tsavorite.epoch.litmus
         {
             ref var entry = ref Metadata.Entries.GetRef(instanceId);
 
-            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
+            GarnetAsserts.Assert((*(tableAligned + entry)).localCurrentEpoch != 0,
                 "Trying to release unprotected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
 
             // Clear "ThisInstanceProtected()" (non-static epoch table)
@@ -803,8 +802,8 @@ namespace Tsavorite.epoch.litmus
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ref long ThisThreadUserWord(int wordIndex)
         {
-            Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
-            Debug.Assert(ThisInstanceProtected(), "ThisThreadUserWord must be called while epoch is protected");
+            GarnetAsserts.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
+            GarnetAsserts.Assert(ThisInstanceProtected(), "ThisThreadUserWord must be called while epoch is protected");
             int entryIndex = Metadata.Entries.GetRef(instanceId);
             return ref UserWordRef(entryIndex, wordIndex);
         }
@@ -818,7 +817,7 @@ namespace Tsavorite.epoch.litmus
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetMinUserWord(int wordIndex)
         {
-            Debug.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
+            GarnetAsserts.Assert((uint)wordIndex < MaxUserWords, "Invalid user-word index");
 
             // Derive the base address from the actual Entry field layout via UserWordRef,
             // rather than hardcoding byte offsets. Entries occupy indices 1..kTableSize

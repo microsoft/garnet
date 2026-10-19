@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -70,7 +69,7 @@ namespace Garnet.server
             subAllocators.Add(newAlloc);
 
             ref var newRet = ref newAlloc.AllocateNew(sizeBytes, out failed);
-            Debug.Assert(!failed, "Failure shouldn't be possible with new alloc");
+            GarnetAsserts.Assert(!failed, "Failure shouldn't be possible with new alloc");
 
             return ref newRet;
         }

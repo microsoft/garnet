@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Diagnostics;
-
 namespace Tsavorite.core
 {
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
@@ -47,7 +45,7 @@ namespace Tsavorite.core
             {
                 if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 {
-                    Debug.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
+                    GarnetAsserts.Assert(status != OperationStatus.NOTFOUND, "Expected to FindTag in InternalContinuePendingRead");
                     if (HandleImmediateRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(status, sessionFunctions, ref operationState))
                         continue;
                     return status;
@@ -268,7 +266,7 @@ namespace Tsavorite.core
                     // now below HeadAddress and there is at least one record below HeadAddress but above InitialLatestLogicalAddress. We must do InternalRMW.
                     if (stackCtx.recSrc.LogicalAddress > operationState.initialLatestLogicalAddress)
                     {
-                        Debug.Assert(operationState.initialLatestLogicalAddress < hlogBase.HeadAddress, "Failed to search all in-memory records");
+                        GarnetAsserts.Assert(operationState.initialLatestLogicalAddress < hlogBase.HeadAddress, "Failed to search all in-memory records");
                         break;
                     }
 

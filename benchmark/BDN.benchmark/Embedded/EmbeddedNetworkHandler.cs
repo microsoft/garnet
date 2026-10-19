@@ -3,7 +3,6 @@
 
 #nullable disable
 
-using System.Diagnostics;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
@@ -44,8 +43,8 @@ namespace Embedded.server
             else
                 OnNetworkReceiveWithoutTLS(request.buffer.Length);
 
-            Debug.Assert(networkBytesRead == 0);
-            Debug.Assert(networkReadHead == 0);
+            GarnetAsserts.Assert(networkBytesRead == 0);
+            GarnetAsserts.Assert(networkReadHead == 0);
         }
     }
 }

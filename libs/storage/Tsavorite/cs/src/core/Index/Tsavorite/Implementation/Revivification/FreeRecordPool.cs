@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -277,7 +276,7 @@ namespace Tsavorite.core
             if (sizeOffset < 0)
                 sizeOffset = 0;
             var segmentIndex = sizeOffset / segmentRecordSizeIncrement;
-            Debug.Assert(segmentIndex >= 0 && segmentIndex < segmentCount, $"Internal error: Segment index ({segmentIndex}) must be >= 0 && < segmentCount ({segmentCount})");
+            GarnetAsserts.Assert(segmentIndex >= 0 && segmentIndex < segmentCount, $"Internal error: Segment index ({segmentIndex}) must be >= 0 && < segmentCount ({segmentCount})");
             return segmentSize * segmentIndex;
         }
 
@@ -435,7 +434,7 @@ namespace Tsavorite.core
                 {
                     // Still not empty; only the CheckEmptyWorker thread should set this.isEmpty, so the value should not have changed.
                     // Don't set it spuriously, to avoid unnecessary cache-coherency overhead.
-                    Debug.Assert(!isEmpty, "Should never have a bin marked Empty when there are records added");
+                    GarnetAsserts.Assert(!isEmpty, "Should never have a bin marked Empty when there are records added");
                     return;
                 }
             }
