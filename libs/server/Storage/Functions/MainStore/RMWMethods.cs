@@ -39,7 +39,8 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTL:
                     return true;
                 case RespCommand.RICREATE:
-                    return true;
+                    // The RMW of RangeIndexManager.PrepareToCreate creates nothing
+                    return input.arg1 != RangeIndexManager.CreateProbeArg;
                 case RespCommand.RIPROMOTE:
                     return false; // Key must already exist; don't create new
                 case RespCommand.RIRESTORE:
@@ -400,6 +401,15 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
+            // RI.CREATE takes an expired record of any type as absent. It removes the record rather than reinitialize it,
+            // because the record's tree must be retired before a new tree opens the key's working file (see
+            // RangeIndexManager.PrepareToCreate).
+            if (input.header.cmd == RespCommand.RICREATE && logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndStop;
+                return false;
+            }
+
             if (logRecord.DataHeader.ValueIsObject)
             {
                 rmwInfo.Action = RMWAction.WrongType;
@@ -1025,7 +1035,10 @@ namespace Garnet.server
                     }
                     return true;
                 case RespCommand.RICREATE:
-                    // Index already exists — never copy-update, reject in caller
+                    // An expired record is absent, and RI.CREATE removes it (see InPlaceUpdater). Otherwise the key exists:
+                    // never copy-update, reject in caller.
+                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 case RespCommand.RIPROMOTE:
                     // Copy to tail to promote from read-only region; a stub whose tree was evicted only from the record

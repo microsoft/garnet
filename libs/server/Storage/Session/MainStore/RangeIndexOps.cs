@@ -34,9 +34,11 @@ namespace Garnet.server
         /// </summary>
         /// <remarks>
         /// <para>No external lock is needed — RMW is atomic at the store level.</para>
-        /// <para>Corner case: If the key already exists (duplicate RI.CREATE), the RMW
-        /// returns <c>InPlaceUpdated</c> (existing RI key) or <c>Found</c> (non-RI key).
-        /// In both cases, the freshly created BfTree is disposed and an error is returned.</para>
+        /// <para>The new tree opens the key's working file, so it is created only once the key has no record and no earlier
+        /// tree of the key is retiring (<see cref="RangeIndexManager.PrepareToCreate"/>, which first removes an expired
+        /// record). If the key exists (duplicate RI.CREATE), no tree is created and an error is returned. If a record appears
+        /// before the RMW, the RMW leaves it alone and the new tree is disposed; if that record has expired, the RMW removes
+        /// it instead and the creation starts again.</para>
         /// </remarks>
         /// <param name="key">The Garnet key for the new index.</param>
         /// <param name="storageBackend">0 for Disk, 1 for Memory.</param>
@@ -64,57 +66,68 @@ namespace Garnet.server
 
             var rangeIndexManager = functionsState.rangeIndexManager;
 
-            // A deleted predecessor's tree may still be retiring; the new tree may share its working file.
-            rangeIndexManager.WaitForRetirement(key.ReadOnlySpan);
-
             // Auto-compute leaf page size if not specified
             if (leafPageSize == 0)
                 leafPageSize = RangeIndexManager.ComputeLeafPageSize(maxRecordSize);
 
-            // Create the BfTree instance via interop
-            BfTreeService bfTree;
-            try
+            BfTreeService bfTree = null;
+            Status status;
+            while (true)
             {
-                bfTree = rangeIndexManager.CreateBfTree(
-                    (StorageBackendType)storageBackend, key.ReadOnlySpan, cacheSize,
-                    minRecordSize, maxRecordSize, maxKeyLen, leafPageSize);
+                status = rangeIndexManager.PrepareToCreate(key, flags: 0, ref stringBasicContext);
+                if (!status.NotFound || status.IsWrongType)
+                    break;
+
+                OnBeforeCreateTree();
+
+                // Create the BfTree instance via interop
+                try
+                {
+                    bfTree = rangeIndexManager.CreateBfTree(
+                        (StorageBackendType)storageBackend, key.ReadOnlySpan, cacheSize,
+                        minRecordSize, maxRecordSize, maxKeyLen, leafPageSize);
+                }
+                catch (Exception ex)
+                {
+                    errorMsg = System.Text.Encoding.UTF8.GetBytes($"ERR {ex.Message}");
+                    return GarnetStatus.OK;
+                }
+
+                var stub = new RangeIndexManager.RangeIndexStub
+                {
+                    TreeHandle = bfTree.NativePtr,
+                    CacheSize = cacheSize,
+                    MinRecordSize = minRecordSize,
+                    MaxRecordSize = maxRecordSize,
+                    MaxKeyLen = maxKeyLen,
+                    LeafPageSize = leafPageSize,
+                    StorageBackend = storageBackend,
+                    SerializationPhase = 0,
+                };
+
+                var psb = PinnedSpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref stub), RangeIndexManager.RangeIndexStub.Size);
+
+                parseState.InitializeWithArgument(psb);
+
+                var input = new StringInput(RespCommand.RICREATE, ref parseState);
+                var output = new StringOutput();
+
+                status = stringBasicContext.RMW((FixedSpanByteKey)key, ref input, ref output);
+
+                if (status.IsPending)
+                    CompletePendingForSession(ref status, ref output, ref stringBasicContext);
+
+                if (!status.IsExpired)
+                    break;
+
+                // A record created since the check above had expired: the RMW removed it rather than store the new tree.
+                bfTree.Dispose();
+                bfTree = null;
             }
-            catch (Exception ex)
+
+            if (bfTree != null && RangeIndexManager.StoredStub(status))
             {
-                errorMsg = System.Text.Encoding.UTF8.GetBytes($"ERR {ex.Message}");
-                return GarnetStatus.OK;
-            }
-
-            var treePtr = bfTree.NativePtr;
-
-            var stub = new RangeIndexManager.RangeIndexStub
-            {
-                TreeHandle = treePtr,
-                CacheSize = cacheSize,
-                MinRecordSize = minRecordSize,
-                MaxRecordSize = maxRecordSize,
-                MaxKeyLen = maxKeyLen,
-                LeafPageSize = leafPageSize,
-                StorageBackend = storageBackend,
-                SerializationPhase = 0,
-            };
-
-            var psb = PinnedSpanByte.FromPinnedPointer((byte*)Unsafe.AsPointer(ref stub), RangeIndexManager.RangeIndexStub.Size);
-
-            parseState.InitializeWithArgument(psb);
-
-            var input = new StringInput(RespCommand.RICREATE, ref parseState);
-            var output = new StringOutput();
-
-            // RMW is atomic — no external lock needed
-            var status = stringBasicContext.RMW((FixedSpanByteKey)key, ref input, ref output);
-
-            if (status.IsPending)
-                CompletePendingForSession(ref status, ref output, ref stringBasicContext);
-
-            if (status.Record.Created)
-            {
-                // Register for lifecycle management (cold path), once any predecessor deleted since the wait above is
+                // Register for lifecycle management (cold path), once any predecessor deleted since the check above is
                 // retired; its retirement would otherwise remove this registration.
                 var keyHash = stringBasicContext.GetKeyHash((FixedSpanByteKey)key);
                 rangeIndexManager.WaitForRetirement(key.ReadOnlySpan);
@@ -123,20 +136,27 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            if (status.Record.InPlaceUpdated || status.Found)
+            // The RMW did not store the new tree
+            bfTree?.Dispose();
+
+            if (status.Found)
             {
-                // Key already existed — free the new tree and return error
-                bfTree.Dispose();
+                // Key already exists
                 result = RangeIndexResult.Error;
                 errorMsg = "ERR index already exists"u8;
                 return GarnetStatus.OK;
             }
 
-            // RMW failed - free the BfTree
-            bfTree.Dispose();
             errorMsg = "ERR failed to create range index"u8;
             return status.IsWrongType ? GarnetStatus.WRONGTYPE : GarnetStatus.OK;
         }
+
+        /// <summary>
+        /// Test hook: pauses RI.CREATE after it has found the key without a record, before it creates the new tree.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnBeforeCreateTree()
+            => ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.RangeIndex_Pause_Before_Create_Tree);
 
         /// <summary>
         /// Promote a RangeIndex stub from the read-only region to the mutable region (tail).

@@ -232,5 +232,9 @@ namespace Garnet.common
         /// key's tree.
         /// </summary>
         RangeIndex_Waits_For_Checkpoint,
+        /// <summary>
+        /// RangeIndex: pause RI.CREATE after it has found the key without a record, before it creates the new tree.
+        /// </summary>
+        RangeIndex_Pause_Before_Create_Tree,
     }
 }

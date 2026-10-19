@@ -158,6 +158,26 @@ stub, AOF replay of `RI.CREATE`, and migration. So they cannot reuse the retirin
 registration removed by it, or have the working file deleted under them. They wait holding neither a
 RangeIndex lock nor epoch protection.
 
+### Creation
+
+`RI.CREATE` (`StorageSession.RangeIndexCreate`), its AOF replay (`HandleRangeIndexCreateReplay`) and
+migration (`PublishMigratedIndex`) create a tree that opens the key's working file, and a disk-backed
+tree writes its root page there as it opens. So they first ready the key (`PrepareToCreate`), holding no
+lock:
+
+1. Issue an `RICREATE` RMW that creates nothing (`input.arg1 = CreateProbeArg`). It reports whether the
+   key has a record, and removes an expired record of any type (`RMWAction.ExpireAndStop`, from
+   `InPlaceUpdater` and `NeedCopyUpdate`), which retires the record's tree through `OnDispose(Deleted)`.
+2. Wait for pending retirements of the key, and repeat from step 1 while it removed an expired record.
+
+If the key has a record, the command fails ("index already exists") without creating a tree. Otherwise
+it creates the tree and issues the `RICREATE` RMW that stores the stub. That RMW never writes into an
+existing record: it leaves a live record alone, and removes an expired one (created since step 1), in
+which case the command disposes the tree and starts again. The stub is stored when Tsavorite reports a
+new record, or a revivified deleted record, which it reports as updated in place with a not-found
+status (`StoredStub`). AOF replay decides whether a record has expired with the logged entry's flags, as
+the original command did.
+
 ### Lazy Promote (Flush → Tail)
 
 When `ReadRangeIndex` detects `IsFlushed`:
@@ -368,7 +388,7 @@ successful operation, a synthetic no-op RMW is injected to trigger AOF logging. 
 | **RI.CONFIG** | `RI.CONFIG key` | Return current config of the RangeIndex as key-value pairs | `BfTree::config()` |
 | **RI.METRICS** | `RI.METRICS key` | Return buffer/tree metrics (JSON) | `BfTree::get_buffer_metrics()` / `get_metrics()` |
 
-Deletion of RangeIndex keys uses the standard `DEL` / `UNLINK` commands, and expiry. The `OnDispose` record trigger detects the RangeIndex `RecordType` and retires the key's tree: it removes the tree's registration, then disposes the tree and deletes its working file once no reader can still be using them (see Retirement above). No special drop command is needed. `RI.CREATE` of a deleted key waits until the old tree is retired.
+Deletion of RangeIndex keys uses the standard `DEL` / `UNLINK` commands, and expiry. The `OnDispose` record trigger detects the RangeIndex `RecordType` and retires the key's tree: it removes the tree's registration, then disposes the tree and deletes its working file once no reader can still be using them (see Retirement above). No special drop command is needed. `RI.CREATE` of a deleted key waits until the old tree is retired, and `RI.CREATE` of an expired key removes it first (see Creation above).
 
 Snapshot and restore are handled automatically by the cache checkpointing mechanism.
 
@@ -2917,14 +2937,17 @@ finalizes the stream:
      vector), publish is skipped with `SkippedAlreadyExists` (or `SkippedReplaceNotSupported`
      when `MIGRATE REPLACE` was requested — REPLACE is not yet implemented for RI keys). No
      destructive action is taken; these are non-error outcomes.
-   - **Otherwise (no existing key)**: waits for any pending retirement of the key (a deleted
-     predecessor's tree may still use the working file), deletes any stale
+   - **Otherwise (no existing key)**: readies the key as `RI.CREATE` does (see Creation above):
+     removes an expired record of the key and waits for any pending retirement (a deleted or expired
+     predecessor's tree may still use the working file), and skips with `SkippedAlreadyExists` if a key
+     was created meanwhile. Then it deletes any stale
      `{riLogRoot}/{key_hash}.data.bftree` left from a prior migration of the same key (enables
      round-trip P0→P1→P0), moves the temp file into place, calls
      `BfTreeService.RecoverFromCprSnapshot()` to load the native tree, rewrites the stub
      (`TreeHandle = bfTree.NativePtr`, `ResetFlags()`, clears `SerializationPhase`), publishes via
      `RICREATE` RMW, and registers the tree via `RegisterIndex()`, after waiting again for any
-     retirement requested meanwhile → `Success`.
+     retirement requested meanwhile → `Success`. If a record raced in before the RMW, the RMW leaves it
+     alone (or removes it, if it has expired) and the recovered tree is disposed.
    - Only `Failed` (an exception or store-level error) is propagated as an error.
 
 On disposal (error or abort), the deserializer's temp file is deleted.

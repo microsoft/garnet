@@ -42,6 +42,7 @@ namespace Garnet.test
         private const ExceptionInjectionType RetirementWait = ExceptionInjectionType.RangeIndex_Waits_For_Retirement;
         private const ExceptionInjectionType CheckpointWait = ExceptionInjectionType.RangeIndex_Checkpoint_Waits_For_Flush_Snapshots;
         private const ExceptionInjectionType CheckpointWaitForTree = ExceptionInjectionType.RangeIndex_Waits_For_Checkpoint;
+        private const ExceptionInjectionType CreatePause = ExceptionInjectionType.RangeIndex_Pause_Before_Create_Tree;
         private const ExceptionInjectionType TransactionPause = ExceptionInjectionType.Transaction_Pause_After_Lock_Acquisition;
 
         private GarnetServer server;
@@ -66,6 +67,7 @@ namespace Garnet.test
             ExceptionInjectionHelper.DisableException(RetirementWait);
             ExceptionInjectionHelper.DisableException(CheckpointWait);
             ExceptionInjectionHelper.DisableException(CheckpointWaitForTree);
+            ExceptionInjectionHelper.DisableException(CreatePause);
             ExceptionInjectionHelper.DisableException(TransactionPause);
 
             server.Dispose();
@@ -967,6 +969,262 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "The restored tree is not registered");
             ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
             ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
+        }
+
+        /// <summary>
+        /// RI.CREATE over an expired RangeIndex key whose record is in the mutable region must create a new index. Tsavorite
+        /// would reinitialize the expired record in place, writing the new tree into it, and the expired tree's retirement
+        /// deletes the key's working file, which the new tree must not have opened before.
+        /// </summary>
+        [Test]
+        public void CreateOverExpiredKeyInMutableRegionCreatesNewIndex()
+        {
+            const string Key = "rikey";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            ExpireNow(db, Key);
+
+            AssertCreateMakesNewIndex(db, Key);
+        }
+
+        /// <summary>
+        /// RI.CREATE over an expired RangeIndex key whose record is in the read-only region must create a new index, rather
+        /// than report that the index exists.
+        /// </summary>
+        [Test]
+        public void CreateOverExpiredKeyInReadOnlyRegionCreatesNewIndex()
+        {
+            const string Key = "rikey";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            ExpireNow(db, Key);
+
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
+            AssertCreateMakesNewIndex(db, Key);
+        }
+
+        /// <summary>
+        /// RI.CREATE over a deleted RangeIndex key whose tombstone is revivified must register the new tree. Tsavorite reports
+        /// a revivified record as updated in place, as it does an existing one.
+        /// </summary>
+        [Test]
+        public void CreateOverRevivifiedTombstoneRegistersNewTree()
+        {
+            const string Key = "rikey";
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, useReviv: true, useInChainRevivOnly: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateIndex(db, Key);
+
+            // A deleted record stays in its chain, where it can be revivified, only if an older record of the key is below it:
+            // flush the stub, then promote it to the tail.
+            var store = server.Provider.StoreWrapper.store;
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            ClassicAssert.AreEqual("value1", (string)db.Execute("RI.GET", Key, "field1"));
+            ClassicAssert.IsTrue(db.KeyDelete(Key));
+
+            AssertCreateMakesNewIndex(db, Key);
+        }
+
+        /// <summary>
+        /// AOF replay of an RI.CREATE that created an index over an expired key must create it as well.
+        /// </summary>
+        [Test]
+        public void ReplayOfCreateOverExpiredKeyCreatesNewIndex()
+        {
+            const string Key = "rikey";
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                CreateIndex(db, Key);
+                ExpireNow(db, Key);
+                AssertCreateMakesNewIndex(db, Key);
+                _ = db.Execute("COMMITAOF");
+            }
+
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, enableAOF: true, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                RedisResult value = null;
+                Assert.DoesNotThrow(() => value = db.Execute("RI.GET", Key, "field2"), "The replayed RI.CREATE did not create the index");
+                ClassicAssert.AreEqual("value2", (string)value);
+                ClassicAssert.IsTrue(db.Execute("RI.GET", Key, "field1").IsNull, "The replayed index has the expired index's data");
+            }
+        }
+
+        /// <summary>
+        /// An RI.CREATE that found no record of the key, and then finds one that has expired when it stores its stub, must not
+        /// store the stub in that record: it removes the record and creates the index once the record's tree is retired.
+        /// </summary>
+        [Test]
+        public async Task CreateOverKeyExpiredDuringCreateCreatesNewIndexAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            using var otherRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var otherDb = otherRedis.GetDatabase(0);
+
+            ExceptionInjectionHelper.EnableException(CreatePause);
+            var create = db.ExecuteAsync("RI.CREATE", Key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8");
+            await ExceptionInjectionHelper.WaitOnClearAsync(CreatePause).WaitAsync(WaitTimeout);
+
+            // Another client creates the key, which then expires, while the first RI.CREATE is paused.
+            CreateIndex(otherDb, Key);
+            ExpireNow(otherDb, Key);
+
+            RedisResult created = null;
+            RedisServerException error = null;
+            try
+            {
+                created = await ReleaseParkedAndAwaitAsync(create);
+            }
+            catch (RedisServerException ex)
+            {
+                error = ex;
+            }
+
+            ClassicAssert.IsNull(error, $"RI.CREATE over a key that expired during the command failed: {error?.Message}");
+            ClassicAssert.AreEqual("OK", (string)created);
+            AssertKeyHoldsNewIndex(db, Key);
+        }
+
+        /// <summary>
+        /// Publishing a migrated RangeIndex over an expired key must register the published tree, and must not replace the key's
+        /// working file until the expired record's tree, which uses that file, is retired.
+        /// </summary>
+        [Test]
+        public void PublishOfMigratedIndexOverExpiredKeyRegistersTree()
+        {
+            const string SourceKey = "risource";
+            const string Key = "rikey";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.CREATE", SourceKey, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"));
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", SourceKey, "migrated", "value"));
+
+            CreateIndex(db, Key);
+            ExpireNow(db, Key);
+
+            var storeWrapper = server.Provider.StoreWrapper;
+            var rangeIndexManager = storeWrapper.rangeIndexManager;
+            using (var localSession = new LocalServerSession(storeWrapper))
+            {
+                var sourceKeyBytes = Encoding.ASCII.GetBytes(SourceKey);
+                string snapshotPath;
+                byte[] stubBytes;
+                unsafe
+                {
+                    fixed (byte* sourceKeyPtr = sourceKeyBytes)
+                    {
+                        ClassicAssert.IsTrue(rangeIndexManager.SnapshotForMigration(localSession.storageSession,
+                            PinnedSpanByte.FromPinnedPointer(sourceKeyPtr, sourceKeyBytes.Length), out snapshotPath, out _, out stubBytes));
+                    }
+                }
+
+                ref var ctx = ref localSession.storageSession.stringBasicContext;
+                ClassicAssert.AreEqual(RangeIndexManager.PublishMigratedIndexResult.Success,
+                    rangeIndexManager.PublishMigratedIndex(Encoding.ASCII.GetBytes(Key), stubBytes, snapshotPath, replaceOption: false, ref ctx, appendOnlyFile: null));
+            }
+
+            ClassicAssert.AreEqual("value", (string)db.Execute("RI.GET", Key, "migrated"));
+            AssertKeyHoldsNewIndex(db, Key);
+        }
+
+        /// <summary>
+        /// RI.CREATE of a key that holds a live index must fail without creating a tree: a new disk-backed tree writes its root
+        /// page to the key's working file, which the live tree uses.
+        /// </summary>
+        [Test]
+        public void DuplicateCreateDoesNotWriteIntoLiveIndexFile()
+        {
+            const string Key = "rikey";
+            var dataPath = server.Provider.StoreWrapper.rangeIndexManager.LogDataPathFor(Encoding.ASCII.GetBytes(Key));
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            var length = new FileInfo(dataPath).Length;
+
+            var error = Assert.Throws<RedisServerException>(() => db.Execute("RI.CREATE", Key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"));
+            ClassicAssert.AreEqual("ERR index already exists", error.Message);
+            ClassicAssert.AreEqual(length, new FileInfo(dataPath).Length, "The duplicate RI.CREATE wrote into the live index's working file");
+            ClassicAssert.AreEqual("value1", (string)db.Execute("RI.GET", Key, "field1"));
+        }
+
+        /// <summary>
+        /// Sets the key's expiration in the past, so that the key expires at once and its record stays in the store.
+        /// </summary>
+        private static void ExpireNow(IDatabase db, string key)
+        {
+            ClassicAssert.AreEqual(1, (int)db.Execute("PEXPIREAT", key, "1"));
+            ClassicAssert.IsFalse(db.KeyExists(key), "The key did not expire");
+        }
+
+        /// <summary>
+        /// Runs RI.CREATE over the key, which does not hold a live index, and checks that it makes a new index.
+        /// </summary>
+        private void AssertCreateMakesNewIndex(IDatabase db, string key)
+        {
+            RedisResult created = null;
+            Assert.DoesNotThrow(() => created = db.Execute("RI.CREATE", key, "DISK", "CACHESIZE", "65536", "MINRECORD", "8"),
+                "RI.CREATE over a key without a live index failed");
+            ClassicAssert.AreEqual("OK", (string)created);
+
+            AssertKeyHoldsNewIndex(db, key);
+        }
+
+        /// <summary>
+        /// Checks that the key holds a new index, without the data of the index created by <see cref="CreateIndex"/>: the key's
+        /// record holds the registered tree, whose working file remains once every earlier tree of the key is retired.
+        /// </summary>
+        private void AssertKeyHoldsNewIndex(IDatabase db, string key)
+        {
+            var keyBytes = Encoding.ASCII.GetBytes(key);
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            ClassicAssert.IsTrue(rangeIndexManager.TryGetEntry(keyBytes, out var entry) && entry.Tree != null, "The new tree is not registered");
+            var stubs = ReadStubs(server.Provider.StoreWrapper.store, key);
+            ClassicAssert.AreEqual(entry.Tree.NativePtr, stubs[^1].Stub.TreeHandle, "The key's record does not hold the registered tree");
+
+            rangeIndexManager.WaitForRetirement(keyBytes);
+            ClassicAssert.IsTrue(File.Exists(rangeIndexManager.LogDataPathFor(keyBytes)), "Retiring an earlier tree of the key deleted the new tree's working file");
+
+            ClassicAssert.IsTrue(db.Execute("RI.GET", key, "field1").IsNull, "The new index has the earlier index's data");
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", key, "field2", "value2"));
+            ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", key, "field2"));
         }
 
         /// <summary>

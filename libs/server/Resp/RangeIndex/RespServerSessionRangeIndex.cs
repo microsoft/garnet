@@ -23,7 +23,8 @@ namespace Garnet.server
         /// All numeric parameters must be greater than zero. MINRECORD must not exceed MAXRECORD.
         /// If PAGESIZE is not specified (or 0), it is auto-computed from MAXRECORD via
         /// <see cref="RangeIndexManager.ComputeLeafPageSize"/>.
-        /// Duplicate RI.CREATE on the same key returns an error ("ERR index already exists").
+        /// Duplicate RI.CREATE on the same key returns an error ("ERR index already exists"). An expired key counts as
+        /// absent: RI.CREATE removes it and creates the index.
         /// </remarks>
         /// <typeparam name="TGarnetApi">The Garnet API type.</typeparam>
         /// <param name="storageApi">Reference to the storage API.</param>

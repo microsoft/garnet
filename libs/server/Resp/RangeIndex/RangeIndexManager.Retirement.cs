@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.BfTreeInterop;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -24,10 +25,17 @@ namespace Garnet.server
     /// disposed and the key's working file deleted, which waits for the store epoch. Meanwhile operations that would
     /// register, restore or recreate a tree for the key wait for it (<see cref="WaitForRetirement"/>), so they cannot
     /// reuse the retiring tree, have their registration removed by the retirement, or have the key's working file
-    /// deleted under them.</para>
+    /// deleted under them. A new tree waits as well for the retirement of an expired record's tree, which RI.CREATE
+    /// removes before it creates the tree (<see cref="PrepareToCreate"/>).</para>
     /// </summary>
     public sealed partial class RangeIndexManager
     {
+        /// <summary>
+        /// Sentinel in <c>StringInput.arg1</c> of the <see cref="RespCommand.RICREATE"/> RMW that <see cref="PrepareToCreate"/>
+        /// issues: it creates no record, and removes the key's record if that has expired.
+        /// </summary>
+        internal const long CreateProbeArg = long.MinValue + 1;
+
         /// <summary>
         /// A retirement handed to <see cref="RunRetirementTaskAsync"/>, requested at <paramref name="requestedAt"/> (see
         /// <see cref="RetireLocked"/>).
@@ -189,6 +197,43 @@ namespace Garnet.server
             while (pendingRetirements.ContainsKey(keyId))
                 _ = Thread.Yield();
         }
+
+        /// <summary>
+        /// Ready a key for a new tree, which opens the key's working file. Remove the key's record if it has expired, which
+        /// retires its tree, and wait until no retirement of the key's tree is pending, since a retirement deletes that file.
+        /// Like <see cref="WaitForRetirement"/>, this must not be called while holding a RangeIndex lock or epoch protection.
+        /// </summary>
+        /// <param name="key">The key.</param>
+        /// <param name="flags">The input flags that decide whether a record has expired: those of a replayed RI.CREATE, so that
+        /// the replay decides as the original command did, or none, to decide by the clock.</param>
+        /// <param name="context">The string context to issue the RMW on.</param>
+        /// <returns>The status of the RMW once it found no expired record: not found if the key has no record.</returns>
+        internal Status PrepareToCreate<TStringContext>(PinnedSpanByte key, RespInputFlags flags, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var parseState = new SessionParseState();
+            var input = new StringInput(RespCommand.RICREATE, ref parseState, arg1: CreateProbeArg, flags: flags);
+
+            while (true)
+            {
+                WaitForRetirement(key.ReadOnlySpan);
+
+                var output = new StringOutput();
+                var status = context.RMW((FixedSpanByteKey)key, ref input, ref output);
+                if (status.IsPending)
+                    StorageSession.CompletePendingForSession(ref status, ref output, ref context);
+
+                if (!status.IsExpired)
+                    return status;
+            }
+        }
+
+        /// <summary>
+        /// True if the <see cref="RespCommand.RICREATE"/> RMW that returned <paramref name="status"/> stored its stub: it
+        /// found no record, and created one or revivified a deleted one, which Tsavorite reports as updated in place.
+        /// </summary>
+        internal static bool StoredStub(Status status)
+            => status.NotFound && !status.IsExpired && (status.Record.Created || status.Record.InPlaceUpdated);
 
         /// <summary>
         /// Test hook: signals that an operation waits for a pending retirement of its key's tree.

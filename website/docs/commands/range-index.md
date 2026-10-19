@@ -79,7 +79,8 @@ RI.CREATE myindex DISK
 
 #### Resp Reply
 
-Simple string reply: `OK` on success, or error if the key already exists or configuration is invalid.
+Simple string reply: `OK` on success, or error if the key already exists or configuration is invalid. An expired key
+counts as absent: `RI.CREATE` removes it and creates the index.
 
 ---
 

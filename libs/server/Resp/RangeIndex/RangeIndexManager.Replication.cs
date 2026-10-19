@@ -119,14 +119,14 @@ namespace Garnet.server
         /// The AOF entry contains the serialized stub bytes (including a stale TreeHandle
         /// from the original process). This method:
         /// <list type="number">
+        /// <item>Readies the key as RI.CREATE does (<see cref="PrepareToCreate"/>), deciding expiry with the entry's flags.</item>
         /// <item>Extracts BfTree configuration from the stale stub.</item>
         /// <item>Creates a fresh BfTree instance with a new native pointer.</item>
         /// <item>Replaces the stale TreeHandle in the stub bytes with the new pointer.</item>
         /// <item>Lets the normal RMW path (InitialUpdater) create the store record.</item>
         /// </list>
         /// If the key already exists (e.g., AOF replay of a duplicate RI.CREATE after
-        /// checkpoint recovery), the RMW returns <c>InPlaceUpdated</c> and the fresh
-        /// BfTree is disposed.
+        /// checkpoint recovery), no BfTree is created.
         /// </remarks>
         /// <param name="session">The storage session for issuing the RMW.</param>
         /// <param name="key">The Garnet key being created.</param>
@@ -138,45 +138,58 @@ namespace Garnet.server
                 throw new GarnetException($"Corrupt RI.CREATE AOF entry: stub size {stubSpan.Length}, expected {IndexSizeBytes}");
 
             ref var stub = ref Unsafe.As<byte, RangeIndexStub>(ref MemoryMarshal.GetReference(stubSpan));
-
-            // A deleted predecessor's tree may still be retiring; the new tree may share its working file.
-            WaitForRetirement(key);
-
-            // Create a fresh BfTree from the config in the stub
-            BfTreeService bfTree;
-            try
-            {
-                bfTree = CreateBfTree(
-                    (StorageBackendType)stub.StorageBackend, key,
-                    stub.CacheSize, stub.MinRecordSize, stub.MaxRecordSize,
-                    stub.MaxKeyLen, stub.LeafPageSize);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Failed to recreate BfTree during AOF replay");
-                return;
-            }
-
-            // Replace stale handle with fresh one in the stub bytes
-            stub.TreeHandle = bfTree.NativePtr;
-            stub.ResetFlags();
-
-            // Let the normal RMW path create the record from the updated stub bytes
-            var output = new StringOutput();
             var pinnedKey = PinnedSpanByte.FromPinnedSpan(key);
-            var status = session.stringBasicContext.RMW((FixedSpanByteKey)pinnedKey, ref input, ref output);
-            if (status.IsPending)
-                StorageSession.CompletePendingForSession(ref status, ref output, ref session.stringBasicContext);
 
-            if (status.Record.Created)
+            while (true)
             {
-                var keyHash = session.stringBasicContext.GetKeyHash((FixedSpanByteKey)pinnedKey);
-                WaitForRetirement(key);
-                RegisterIndex(bfTree, keyHash, key);
-            }
-            else
-            {
-                bfTree.Dispose();
+                var status = PrepareToCreate(pinnedKey, input.header.flags, ref session.stringBasicContext);
+                if (!status.NotFound || status.IsWrongType)
+                    return;
+
+                // Create a fresh BfTree from the config in the stub
+                BfTreeService bfTree;
+                try
+                {
+                    bfTree = CreateBfTree(
+                        (StorageBackendType)stub.StorageBackend, key,
+                        stub.CacheSize, stub.MinRecordSize, stub.MaxRecordSize,
+                        stub.MaxKeyLen, stub.LeafPageSize);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Failed to recreate BfTree during AOF replay");
+                    return;
+                }
+
+                // Replace stale handle with fresh one in the stub bytes
+                stub.TreeHandle = bfTree.NativePtr;
+                stub.ResetFlags();
+
+                // Let the normal RMW path create the record from the updated stub bytes
+                var output = new StringOutput();
+                status = session.stringBasicContext.RMW((FixedSpanByteKey)pinnedKey, ref input, ref output);
+                if (status.IsPending)
+                    StorageSession.CompletePendingForSession(ref status, ref output, ref session.stringBasicContext);
+
+                if (status.IsExpired)
+                {
+                    // A record created since the check above had expired: the RMW removed it rather than store the new tree.
+                    bfTree.Dispose();
+                    continue;
+                }
+
+                if (StoredStub(status))
+                {
+                    var keyHash = session.stringBasicContext.GetKeyHash((FixedSpanByteKey)pinnedKey);
+                    WaitForRetirement(key);
+                    RegisterIndex(bfTree, keyHash, key);
+                }
+                else
+                {
+                    bfTree.Dispose();
+                }
+
+                return;
             }
         }
 

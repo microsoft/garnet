@@ -151,8 +151,17 @@ namespace Garnet.server
             {
                 var bftreeDataPath = LogDataPathFor(keyBytes);
 
-                // A deleted predecessor's tree may still be retiring; it may use the working file replaced below.
-                WaitForRetirement(keyBytes);
+                // The working file is replaced below: remove an expired record of the key, and wait until no earlier tree of
+                // the key, which may use that file, is retiring.
+                fixed (byte* keyPtr = keyBytes)
+                {
+                    var prepared = PrepareToCreate(PinnedSpanByte.FromPinnedPointer(keyPtr, keyBytes.Length), flags: 0, ref ctx);
+                    if (!prepared.NotFound || prepared.IsWrongType)
+                    {
+                        logger?.LogWarning("PublishMigratedIndex: a key was created at this name during the publish; skipping");
+                        return PublishMigratedIndexResult.SkippedAlreadyExists;
+                    }
+                }
 
                 // TODO(RI): Acquire Checkpoint lock to prevent a concurrent checkpoint from deleting the
                 // RangeIndexStream chunks added to the AOF before the BFTree is created
@@ -206,25 +215,20 @@ namespace Garnet.server
                     if (status.IsPending)
                         StorageSession.CompletePendingForSession(ref status, ref output, ref ctx);
 
-                    // Expect a fresh Created record: the KeyExists gate above confirmed nothing
-                    // existed at this key.
+                    // Expect a fresh Created record: the checks above confirmed nothing existed at this key.
                     //
                     // TODO(RI): Handle the race below - claim the key using some transactional mechanism.
-                    if (status.Record.Created)
+                    if (StoredStub(status))
                     {
                         var keyHash = ctx.GetKeyHash((FixedSpanByteKey)pinnedKey);
                         WaitForRetirement(keyBytes);
                         RegisterIndex(bfTree, keyHash, keyBytes);
                     }
-                    else if (status.Record.InPlaceUpdated || status.Record.CopyUpdated)
-                    {
-                        // A record raced in between the gate and this RMW (e.g. an adversarial ASKING
-                        // write while the slot is still IMPORTING) and our RICREATE has now clobbered
-                        // it. Don't dispose: the updated record may now reference this bfTree.
-                        logger?.LogWarning("PublishMigratedIndex: RICREATE RMW updated an existing record (status: {status}); a concurrent write raced the migration publish", status.ToString());
-                    }
                     else
                     {
+                        // A record raced in between the checks and this RMW (e.g. an adversarial ASKING write while the slot
+                        // is still IMPORTING). RICREATE leaves an existing record alone, and removes an expired one, so no
+                        // record references the recovered BfTree.
                         logger?.LogWarning("PublishMigratedIndex: RICREATE RMW did not create a record (status: {status}); discarding the recovered BfTree without registering it", status.ToString());
                         bfTree.Dispose();
                     }
