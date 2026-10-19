@@ -3,6 +3,7 @@
 
 #pragma warning disable VSTHRD002 // The whole point of this class is to segregate problematic blocking
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
@@ -47,12 +48,25 @@ namespace Garnet.common
         /// <c>IsCompletedSuccessfully</c>. This is the synchronous arm of the dual-path idiom, where no
         /// blocking can occur; the name distinguishes it from a genuine blocking wait.
         /// </summary>
+        /// <remarks>
+        /// An <c>async</c> command body that lacks <c>[AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]</c>
+        /// returns incomplete without suspending its session, and reaches here still pending; the assert reports
+        /// that instead of letting the call block the thread.
+        /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void GetResultGuarded(this ValueTaskAwaiter awaiter) => awaiter.GetResult();
+        public static void GetResultGuarded(this ValueTaskAwaiter awaiter)
+        {
+            Debug.Assert(awaiter.IsCompleted, "Reading the result of a value task that has not completed blocks the thread");
+            awaiter.GetResult();
+        }
 
         /// <inheritdoc cref="GetResultGuarded(ValueTaskAwaiter)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static T GetResultGuarded<T>(this ValueTaskAwaiter<T> awaiter) => awaiter.GetResult();
+        public static T GetResultGuarded<T>(this ValueTaskAwaiter<T> awaiter)
+        {
+            Debug.Assert(awaiter.IsCompleted, "Reading the result of a value task that has not completed blocks the thread");
+            return awaiter.GetResult();
+        }
 
         /// <summary>
         /// Block on a given <see cref="Task{TResult}"/>.
