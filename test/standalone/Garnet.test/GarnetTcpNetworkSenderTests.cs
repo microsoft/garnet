@@ -364,9 +364,8 @@ namespace Garnet.test
         {
             rig = new SenderRig(throttleMax: 1);
 
-            // The first send takes the only slot and stays in flight
-            _ = rig.Send(Chunk, noWait: false);
-            ClassicAssert.AreEqual(1, rig.Sender.BlockingInFlight, "the first send did not stay in flight");
+            // The first send to stay in flight takes the only slot
+            var sent = rig.SendUntilOneStaysInFlight();
 
             // One blocked sender takes the sender lock, as a session's send does, and the other is a caller
             // of Throttle, as the replication senders are
@@ -382,8 +381,8 @@ namespace Garnet.test
 
             if (graceful)
             {
-                // Only the send that was in flight reaches the peer: the queued ones are dropped when they wake
-                rig.ReadAndVerify(Chunk);
+                // Only the sends that went out before the close reach the peer: the queued ones are dropped when they wake
+                rig.ReadAndVerify(sent);
                 rig.ExpectEndOfStream();
             }
 
@@ -507,6 +506,9 @@ namespace Garnet.test
             /// <summary>Sends issued before concluding that the platform absorbs them instead of holding them in flight</summary>
             const int MaxSaturatingSends = 256;
 
+            /// <summary>How long a send in flight has to stay there to count as held, rather than on its way to completing</summary>
+            static readonly TimeSpan InFlightSettle = TimeSpan.FromMilliseconds(100);
+
             readonly NetworkBufferSettings settings;
             readonly LimitedFixedBufferPool pool;
             readonly Socket accepted;
@@ -602,6 +604,25 @@ namespace Garnet.test
                 if (sent < 0)
                     Assert.Ignore("The platform absorbs sends instead of holding them in flight, so capacity cannot be made to run out.");
                 return sent;
+            }
+
+            /// <summary>
+            /// Issues blocking sends until one stays in flight. A platform can take a whole send into its buffer while
+            /// the buffer has room, so the first sends can complete at once.
+            /// </summary>
+            /// <returns>The number of bytes sent</returns>
+            internal long SendUntilOneStaysInFlight()
+            {
+                var before = produced;
+                for (var i = 0; i < MaxSaturatingSends; i++)
+                {
+                    _ = Send(Chunk, noWait: false);
+                    if (!SpinWait.SpinUntil(() => Sender.BlockingInFlight == 0, InFlightSettle))
+                        return produced - before;
+                }
+
+                Assert.Ignore("The platform absorbs sends instead of holding them in flight, so capacity cannot be made to run out.");
+                return -1;
             }
 
             /// <summary>
