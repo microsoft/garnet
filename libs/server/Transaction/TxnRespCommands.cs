@@ -67,7 +67,7 @@ namespace Garnet.server
 #endif
                     txnManager.GetSlotVerificationInput(SessionAsking, out var clusterSlotVerificationInput);
                     clusterSlotVerificationInput.canWait = CanSuspend;
-                    clusterSlotVerificationInput.canOffload = clusterSlotVerificationInput.canWait && !storeWrapper.offloadExecutor.RunsInPlace;
+                    clusterSlotVerificationInput.canOffload = clusterSlotVerificationInput.canWait && ThreadPoolHop.Required;
 
                     if (txnManager.txnKeysParseState.Count > 0 &&
                         clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))
@@ -82,7 +82,7 @@ namespace Garnet.server
                         }
 
                         // A key being migrated may have to be looked up on the device. The transaction stays queued
-                        // and the EXEC is verified again on an executor thread.
+                        // and the EXEC is verified again on the thread pool.
                         if (clusterSlotVerificationInput.mustOffload)
                         {
                             endReadHead = origReadHead;

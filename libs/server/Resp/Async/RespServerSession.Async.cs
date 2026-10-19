@@ -477,16 +477,12 @@ namespace Garnet.server
         /// </summary>
         void DrainResumes()
         {
-            // An executor thread hands the receive loop back to the thread pool, rather than run it, and every
-            // batch it receives, itself
-            var leaveThread = OffloadExecutor.OnExecutorThread;
-
             while (true)
             {
                 if (!TryEnterResume())
                 {
                     AbandonSuspension();
-                    consumeSource.SetException(new SessionTornDownException(nameof(RespServerSession)), leaveThread);
+                    consumeSource.SetException(new SessionTornDownException(nameof(RespServerSession)));
                     return;
                 }
 
@@ -502,7 +498,7 @@ namespace Garnet.server
                     // itself is unusable. Surface it to the receive loop, which tears the connection down.
                     ExitResume();
                     AbandonSuspension();
-                    consumeSource.SetException(ex, leaveThread);
+                    consumeSource.SetException(ex);
                     return;
                 }
 
@@ -511,7 +507,7 @@ namespace Garnet.server
                 if (!asyncSuspended)
                 {
                     handoff.Complete();
-                    consumeSource.SetResult(consumed, leaveThread);
+                    consumeSource.SetResult(consumed);
                     return;
                 }
 
@@ -640,6 +636,7 @@ namespace Garnet.server
                 aofGateWait?.Cancel();
                 freshnessWait?.Cancel();
                 lockReleaseWait?.Cancel();
+                indexDropWait?.Cancel();
             }
             catch (Exception ex)
             {
@@ -672,26 +669,16 @@ namespace Garnet.server
         /// Completes the receive with the bytes its batch consumed.
         /// </summary>
         /// <param name="consumed">Bytes consumed.</param>
-        /// <param name="runContinuationAsynchronously">
-        /// Whether the receive loop waiting on this must continue on the thread pool rather than on the calling
-        /// thread, which is the case when the caller is an <see cref="OffloadExecutor"/> thread.
-        /// </param>
-        internal void SetResult(int consumed, bool runContinuationAsynchronously)
-        {
-            core.RunContinuationsAsynchronously = runContinuationAsynchronously;
-            core.SetResult(consumed);
-        }
+        /// <remarks>
+        /// The receive loop waiting on this continues on the calling thread, the one that finished the batch.
+        /// </remarks>
+        internal void SetResult(int consumed) => core.SetResult(consumed);
 
         /// <summary>
         /// Fails the receive, which ends the connection.
         /// </summary>
         /// <param name="exception">Why the batch could not be finished.</param>
-        /// <param name="runContinuationAsynchronously">As for <see cref="SetResult"/>.</param>
-        internal void SetException(Exception exception, bool runContinuationAsynchronously)
-        {
-            core.RunContinuationsAsynchronously = runContinuationAsynchronously;
-            core.SetException(exception);
-        }
+        internal void SetException(Exception exception) => core.SetException(exception);
 
         /// <inheritdoc />
         public int GetResult(short token) => core.GetResult(token);

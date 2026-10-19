@@ -27,6 +27,9 @@ namespace Tsavorite.core
         public abstract SystemState NextState(SystemState start);
 
         /// <inheritdoc />
+        public virtual bool StepsMayBlock => false;
+
+        /// <inheritdoc />
         public void GlobalBeforeEnteringState(SystemState next, StateMachineDriver stateMachineDriver)
         {
             foreach (var task in tasks)

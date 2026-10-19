@@ -39,7 +39,7 @@ namespace Garnet.cluster
         WAIT,
         /// <summary>
         /// A key is being migrated, and whether it is still here can only be learned by reading the device. Never sent
-        /// to a client: the caller moves the request to an executor thread and verifies it again there.
+        /// to a client: the caller moves the request to the thread pool and verifies it again there.
         /// </summary>
         OFFLOAD
     }

@@ -114,13 +114,20 @@ namespace Garnet.server
 
         /// <summary>
         /// During replication replay, waits until no finalization of <paramref name="key"/> is in progress. Every attempt
-        /// ends, at the latest when <see cref="Dispose"/> ends those still registered. Blocks the calling thread, so it must
-        /// only be called from a thread that replays or recovers the log, never from a network or thread-pool thread.
+        /// ends, at the latest when <see cref="Dispose"/> ends those still registered. Blocks the calling thread, so it
+        /// throws <see cref="ReplayMustWaitException"/> instead when <paramref name="mustNotWait"/> is set.
         /// </summary>
-        internal void WaitForImportFinalization(ReadOnlySpan<byte> key)
+        /// <param name="key">The key of the Vector Set.</param>
+        /// <param name="mustNotWait">Whether the record is replayed on a thread that must not wait, as
+        /// <see cref="StorageSession.replayMustNotWait"/> reports.</param>
+        internal void WaitForImportFinalization(ReadOnlySpan<byte> key, bool mustNotWait = false)
         {
             while (activeImportFinalizationsLookup.TryGetValue(key, out var finalization))
+            {
+                if (mustNotWait)
+                    ReplayMustWaitException.ThrowForThread();
                 finalization.Wait();
+            }
         }
 
         /// <summary>

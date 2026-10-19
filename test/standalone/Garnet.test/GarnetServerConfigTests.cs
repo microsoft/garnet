@@ -340,20 +340,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void OffloadMaxThreadsOptionReachesTheServerOptions()
-        {
-            var ok = ServerSettingsManager.TryParseCommandLineArguments(["--offload-max-threads", "8"],
-                out var options, out _, out _, out _, silentMode: true);
-            ClassicAssert.IsTrue(ok);
-            ClassicAssert.AreEqual(8, options.GetServerOptions().OffloadMaxThreads);
-
-            ok = ServerSettingsManager.TryParseCommandLineArguments(["--offload-max-threads", "-1"],
-                out _, out var invalidOptions, out _, out _, silentMode: true);
-            ClassicAssert.IsFalse(ok);
-            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.OffloadMaxThreads)));
-        }
-
-        [Test]
         public void NetworkBufferBudgetOptionParsing()
         {
             // Defaults: a 1 GB process-wide budget with a 16 KB receive floor and a higher 64 KB send floor.

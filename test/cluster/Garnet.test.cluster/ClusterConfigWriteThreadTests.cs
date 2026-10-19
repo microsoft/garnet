@@ -10,13 +10,16 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using ClusterNodeRole = Garnet.cluster.NodeRole;
+using SocketCompletions = Garnet.common.SocketCompletions;
 
 namespace Garnet.test.cluster
 {
     /// <summary>
     /// A node writes its cluster configuration files, <c>nodes.conf</c> and <c>replication.conf</c>, as the
     /// configuration changes. A write that a pool thread waited for would be a thread the node's clients could not use,
-    /// so each test holds the writes of one node until a client has been answered from a single free pool thread.
+    /// so each test holds the writes of one node until a client has been answered from a single free pool thread. A
+    /// command that writes the configuration on the session that received it may wait for the write on a pool thread, so
+    /// it is tested only for leaving a socket event thread first.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -168,13 +171,22 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// <c>FAILOVER ABORT</c> on a primary writes its configuration on the session that received it.
+        /// <c>FAILOVER ABORT</c> on a primary writes its configuration on the session that received it, so one received on
+        /// a socket event thread moves to the thread pool before it writes.
         /// </summary>
         [Test, CancelAfter(100_000)]
         [Category("CLUSTER")]
-        public void FailoverAbortHoldsNoPoolThread()
+        public void FailoverAbortLeavesAnEventThread()
         {
-            context.CreateInstances(1, enableAOF: true, disableObjects: true, configureNode: HoldWritesOf(0, NodesConf));
+            if (!SocketCompletions.InlineCompletionsSupported)
+                Assert.Ignore("Sockets cannot run their completions inline on this platform.");
+
+            var holdWrites = HoldWritesOf(0, NodesConf);
+            context.CreateInstances(1, enableAOF: true, disableObjects: true, configureNode: (i, options) =>
+            {
+                holdWrites(i, options);
+                options.NetworkInlineCompletions = true;
+            });
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(1, 0, logger: context.logger);
 
@@ -183,13 +195,17 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(Pong, primary.Execute("PING"));
             ClassicAssert.AreEqual(Pong, pinger.Execute("PING"));
 
-            using (ThreadPoolCap.ApplyFree(1))
-            {
-                held.HoldWrites = true;
-                primary.Send("FAILOVER", "ABORT");
-                DriveHeldWrites(pinger, () => primary.WaitForReply(TimeSpan.Zero), "FAILOVER ABORT");
-                ClassicAssert.AreEqual(Ok, primary.ReadReply());
-            }
+            // Lets the server's receive for each connection be outstanding, so the next request reaches it on an event thread
+            Thread.Sleep(50);
+            var storeWrapper = context.nodes[0].Provider.StoreWrapper;
+            var offloads = Interlocked.Read(ref storeWrapper.offloads);
+
+            held.HoldWrites = true;
+            primary.Send("FAILOVER", "ABORT");
+            DriveHeldWrites(pinger, () => primary.WaitForReply(TimeSpan.Zero), "FAILOVER ABORT");
+            ClassicAssert.AreEqual(Ok, primary.ReadReply());
+            ClassicAssert.AreEqual(offloads + 1, Interlocked.Read(ref storeWrapper.offloads),
+                "FAILOVER ABORT wrote its configuration on the event thread that received it.");
         }
 
         /// <summary>
@@ -321,6 +337,53 @@ namespace Garnet.test.cluster
             }
 
             ClassicAssert.AreEqual(ClusterNodeRole.REPLICA, Provider(1).clusterManager.CurrentConfig.LocalNodeRole);
+        }
+
+        /// <summary>
+        /// A command that writes the configuration on the pool thread that received it waits there for a write already
+        /// in flight from an async caller. That write must be followed by the command's own without another pool thread.
+        /// </summary>
+        [Test, CancelAfter(100_000)]
+        [Category("CLUSTER")]
+        public void AConfigurationWriteWaitedForOnThePoolNeedsNoOtherPoolThreadToFollowTheOneInFlight()
+        {
+            context.CreateInstances(1, configureNode: HoldWritesOf(0, NodesConf));
+            using var session = new RawRespSession(endpoint: context.endpoints[0]);
+            ClassicAssert.AreEqual(Pong, session.Execute("PING"));
+            var clusterManager = Provider(0).clusterManager;
+
+            held.HoldWrites = true;
+            var inFlight = clusterManager.FlushConfigAsync().AsTask();
+            WaitUntil(() => held.WritesHeld == 1, "the async configuration write to be held");
+
+            using (ThreadPoolCap.ApplyFree(1))
+            {
+                var epoch = clusterManager.CurrentConfig.LocalNodeConfigEpoch;
+                session.Send("CLUSTER", "BUMPEPOCH");
+                WaitUntil(() => clusterManager.CurrentConfig.LocalNodeConfigEpoch != epoch, "CLUSTER BUMPEPOCH to change the configuration");
+                Thread.Sleep(100);
+
+                var clock = Stopwatch.StartNew();
+                while (!session.WaitForReply(TimeSpan.FromMilliseconds(10)))
+                {
+                    ClassicAssert.Less(clock.Elapsed, Bound, "CLUSTER BUMPEPOCH was not answered once the write in flight completed");
+                    held.CompleteHeldWrites();
+                }
+
+                ClassicAssert.AreEqual(Ok, session.ReadReply());
+            }
+
+            ClassicAssert.IsTrue(inFlight.Wait(Bound), "The async configuration write did not complete");
+        }
+
+        static void WaitUntil(Func<bool> condition, string what)
+        {
+            var clock = Stopwatch.StartNew();
+            while (!condition())
+            {
+                ClassicAssert.Less(clock.Elapsed, Bound, $"Timed out waiting for {what}");
+                Thread.Sleep(10);
+            }
         }
 
         /// <summary>

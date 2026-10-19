@@ -30,10 +30,10 @@ namespace Garnet.server
 #if DEBUG
                 ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Cluster_Txn_Pause_Before_Slot_Verify);
 #endif
-                // A key being migrated parks the session until it is accessible, or moves the transaction to an executor
-                // thread to look it up on the device, rather than have Prepare wait for it on this thread
+                // A key being migrated parks the session until it is accessible, or moves the transaction to the thread
+                // pool to look it up on the device, rather than have Prepare wait for it on this thread
                 csvi.canWait = CanSuspend;
-                csvi.canOffload = csvi.canWait && !storeWrapper.offloadExecutor.RunsInPlace;
+                csvi.canOffload = csvi.canWait && ThreadPoolHop.Required;
             }
 
             var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);

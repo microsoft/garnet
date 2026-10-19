@@ -14,8 +14,5 @@ namespace Garnet.server
             : base(serverHook, socket, networkBufferSettings, networkPool, useTLS, null, networkSendThrottleMax: networkSendThrottleMax, logger: logger, networkSendTimeout: networkSendTimeout, tlsHandshakeTimeout: tlsHandshakeTimeout)
         {
         }
-
-        /// <inheritdoc />
-        protected override IOffloadExecutor HandshakeExecutor => serverHook.HandshakeExecutor;
     }
 }

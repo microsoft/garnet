@@ -434,25 +434,10 @@ namespace Garnet.cluster
             var checkpointEntryBytes = parseState.GetArgSliceByRef(0).ToArray();
             var syncMetadata = SyncMetadata.FromByteArray(checkpointEntryBytes);
 
-            ReadOnlySpan<byte> errorMessage;
-            var replicationOffset = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
-                return SuspendOn(BeginDisklessSyncAsync(syncMetadata, replicationOffset));
+                return SuspendOn(BeginDisklessSyncAsync(syncMetadata, AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1)));
 
-            replicationOffset = clusterProvider.replicationManager.TryReplicaDisklessRecovery(syncMetadata, out errorMessage);
-
-            if (errorMessage.IsEmpty)
-            {
-                while (!RespWriteUtils.TryWriteAsciiBulkString(replicationOffset.ToString(), ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                    SendAndReset();
-            }
-
-            return true;
+            return SuspendOn(EndReplicaDisklessRecoveryAsync(syncMetadata));
         }
 
         /// <summary>

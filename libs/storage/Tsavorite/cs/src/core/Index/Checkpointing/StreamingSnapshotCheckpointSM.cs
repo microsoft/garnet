@@ -15,6 +15,12 @@ namespace Tsavorite.core
             : base(tasks)
         { }
 
+        /// <summary>
+        /// The scans run in the steps, and the <see cref="IStreamingSnapshotIteratorFunctions"/> they call may wait for the
+        /// consumer of the stream.
+        /// </summary>
+        public override bool StepsMayBlock => true;
+
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {

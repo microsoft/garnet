@@ -90,6 +90,11 @@ namespace Garnet.server
         private readonly VectorSetCleanupWorkChannel<ulong> requestCleanupTaskChannel;
         private readonly VectorSetCleanupWorkChannel<object> requestDropTaskChannel;
         private readonly VectorSetCleanupWorkSet<(ulong Context, nint IndexPtr)> requestedDrops;
+
+        /// <summary>
+        /// Sessions parked until a drop in <see cref="requestedDrops"/> is done, woken by <see cref="RunRequestDropTaskAsync"/>.
+        /// </summary>
+        internal readonly IndexDropSignal indexDropSignal = new();
         private readonly ConcurrentDictionary<ulong, byte[]> potentiallyDeleted;
         private readonly Task cleanupTask;
         private readonly Task requestCleanupTask;
@@ -139,6 +144,10 @@ namespace Garnet.server
                 // Every pass services the whole of requestedDrops, so the backlog collapses into one pass
                 requestDropTaskChannel.DrainPending();
 
+                // Lets a test hold drops pending without holding a thread. Before ActiveThreadSession is set, as it is
+                // per thread.
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Hold_Index_Drop).ConfigureAwait(false);
+
                 // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
                 using var dropSession = (RespServerSession)getTempSession();
                 if (dropSession.activeDbId != dbId && !dropSession.TrySwitchActiveDatabaseSession(dbId))
@@ -174,6 +183,9 @@ namespace Garnet.server
                             {
                                 logger?.LogCritical("Drop for {key} raced with some other cleanup, this should never happen", SpanByte.ToShortString(k));
                             }
+
+                            // After the drop is no longer pending, so that a session that lists itself later finds it done
+                            indexDropSignal.OnDropped(keyHash);
                         }
                     }
                 }
@@ -389,6 +401,26 @@ namespace Garnet.server
         /// Do not call this while holding any Vector Set related locks, we will deadlock.
         /// </summary>
         public void WaitForDiskANNIndexDrop(ReadOnlySpan<byte> key) => requestedDrops.WaitForCompletion(key);
+
+        /// <summary>
+        /// Completes once <see cref="DropRequested(ReadOnlySpan{byte})"/> would return false, as
+        /// <see cref="WaitForDiskANNIndexDrop"/> returns, without blocking a thread meanwhile.
+        /// </summary>
+        /// <param name="wait">The wait to arm, which no other wait is using.</param>
+        /// <param name="key">The key of the Vector Set.</param>
+        /// <param name="keyHash">The hash of <paramref name="key"/>, which the drop task wakes the waiters of.</param>
+        /// <remarks>
+        /// Do not call this while holding any Vector Set related locks, as the drop takes them.
+        /// </remarks>
+        internal ValueTask WaitForIndexDropAsync(IndexDropWait wait, ReadOnlyMemory<byte> key, long keyHash)
+        {
+            wait.Register(indexDropSignal, keyHash);
+            if (DropRequested(key.Span))
+                return wait.WaitAsync();
+
+            wait.Withdraw();
+            return default;
+        }
 
         /// <summary>
         /// For use during recovery, wait for any background processing (deletion, cleanup, cleanup requests, etc.) to finish.

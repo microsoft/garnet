@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -625,30 +626,35 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Remove and dispose all active aof sync drivers
+        /// Remove and dispose all active aof sync drivers, awaiting their tasks' exit instead of blocking a thread until they leave
         /// </summary>
-        public void Reset()
+        public async ValueTask ResetAsync()
         {
+            AofSyncDriver[] removed;
+            _lock.WriteLock();
             try
             {
-                _lock.WriteLock();
                 if (_disposed) return;
-                for (var i = 0; i < numDrivers; i++)
-                {
-                    var syncDriver = syncDrivers[i];
-                    syncDrivers[i] = null;
-                    try
-                    {
-                        syncDriver?.Dispose();
-                    }
-                    catch { }
-                }
+                removed = syncDrivers[..numDrivers];
                 numDrivers = 0;
                 Array.Clear(syncDrivers);
             }
             finally
             {
                 _lock.WriteUnlock();
+            }
+
+            // The drivers are out of the store, so their tasks finish without the store lock held
+            foreach (var syncDriver in removed)
+            {
+                try
+                {
+                    await syncDriver.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Disposing the AOF sync driver for {remoteNodeId} failed", syncDriver.RemoteNodeId);
+                }
             }
 
             // No drivers remain, so PublishShippedAddresses writes a max watermark per sublog and

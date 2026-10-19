@@ -4,6 +4,7 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 
@@ -14,7 +15,8 @@ namespace Garnet.server
     internal sealed partial class RespServerSession
     {
         /// <summary>
-        /// When a command has to run on an <see cref="OffloadExecutor"/> thread rather than the thread that received it.
+        /// When a command received on a thread that must not wait, such as a socket event thread running completions
+        /// inline or a device completion thread, has to run on the thread pool instead.
         /// </summary>
         enum OffloadClass : byte
         {
@@ -24,18 +26,18 @@ namespace Garnet.server
             Never,
 
             /// <summary>
-            /// Runs on the executor when the store has evicted records to its storage tier, because it then completes a
+            /// Runs on the thread pool when the store has evicted records to its storage tier, because it then completes a
             /// device read, or a scan over the device, on the thread it runs on.
             /// </summary>
             WhenSpilled,
 
             /// <summary>
-            /// Always runs on the executor: it does file IO, or waits on other sessions, on the thread it runs on.
+            /// Always runs on the thread pool: it does file IO, or waits on other sessions, on the thread it runs on.
             /// </summary>
             Always,
 
             /// <summary>
-            /// Runs on the executor when <see cref="MustOffloadConditional"/> says so.
+            /// Runs on the thread pool when <see cref="MustOffloadConditional"/> says so.
             /// </summary>
             Conditional,
         }
@@ -83,11 +85,10 @@ namespace Garnet.server
         readonly PreDispatchCheck preDispatchMask;
 
         /// <summary>
-        /// Set by <see cref="OffloadAwaitable"/> while the session suspends to be run on the executor, and read by
-        /// <see cref="ParkSuspension"/> once the session has parked: 0 for none, 1 to run it on the executor, 2 to run it
-        /// there even if every executor thread is busy.
+        /// Set by <see cref="OffloadAwaitable"/> while the session suspends to be run on the thread pool, and read by
+        /// <see cref="ParkSuspension"/> once the session has parked.
         /// </summary>
-        byte deferredOffload;
+        bool deferredOffload;
 
         static OffloadClass[] CreateOffloadClasses()
         {
@@ -172,7 +173,7 @@ namespace Garnet.server
                 classes[(int)cmd] = OffloadClass.Always;
 
             foreach (var cmd in (ReadOnlySpan<RespCommand>)[
-                RespCommand.SELECT, RespCommand.INFO, RespCommand.DEBUG, RespCommand.CLUSTER_APPENDLOG,
+                RespCommand.SELECT, RespCommand.INFO, RespCommand.DEBUG, RespCommand.CONFIG_SET, RespCommand.CLUSTER_APPENDLOG,
                 RespCommand.CLUSTER_ADDSLOTS, RespCommand.CLUSTER_ADDSLOTSRANGE, RespCommand.CLUSTER_DELSLOTS,
                 RespCommand.CLUSTER_DELSLOTSRANGE, RespCommand.CLUSTER_SETSLOT, RespCommand.CLUSTER_SETSLOTSRANGE,
                 RespCommand.CLUSTER_MEET, RespCommand.CLUSTER_FORGET, RespCommand.CLUSTER_RESET,
@@ -265,7 +266,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Parks the session, before <paramref name="cmd"/> is dispatched outside a transaction, if the command has to wait
-        /// for the AOF to admit appends or has to run on an executor thread.
+        /// for the AOF to admit appends or has to run on the thread pool.
         /// </summary>
         /// <param name="cmd">The command, which has just been parsed.</param>
         /// <param name="commandReadHead">Receive-buffer offset of the first byte of the command.</param>
@@ -283,11 +284,11 @@ namespace Garnet.server
                 return ParkForAofGate() ? PreDispatchOutcome.Stop : PreDispatchOutcome.Reparse;
             }
 
-            // A command that would wait on this thread, for the device or for a file, runs on an executor thread instead
+            // A command that would wait on this thread, for the device or for a file, runs on the thread pool instead
             if (MustOffload(cmd))
             {
                 endReadHead = readHead = commandReadHead;
-                ParkForOffload(mustRun: false);
+                ParkForOffload();
                 return PreDispatchOutcome.Stop;
             }
 
@@ -295,13 +296,13 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Whether <paramref name="cmd"/>, which has just been parsed, has to run on an executor thread: it would wait on
-        /// the thread it runs on, which receives for other sessions, and this session can park to move it.
+        /// Whether <paramref name="cmd"/>, which has just been parsed, has to run on the thread pool: it would wait on
+        /// the thread it runs on, which must not wait, and this session can park to move it.
         /// </summary>
         /// <remarks>
-        /// Asked only of a command <see cref="MayParkBeforeDispatch"/> says yes to. A command already on an executor thread
-        /// runs there, as does one in a consume that cannot park, such as a script's, and one resumed on the thread pool by
-        /// an executor that has been disposed.
+        /// Asked only of a command <see cref="MayParkBeforeDispatch"/> says yes to. A command on a thread-pool thread runs
+        /// there, as main runs every command, since the pool adds threads when its threads wait. So does one in a consume
+        /// that cannot park, such as a script's.
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         bool MustOffload(RespCommand cmd)
@@ -315,7 +316,7 @@ namespace Garnet.server
                     && (c == OffloadClass.Always
                         || (c == OffloadClass.WhenSpilled ? storageSession.MayReadFromDisk : MustOffloadConditional(cmd))))
                     || (MayAddRecords(cmd) && storageSession.MayWaitToAllocate))
-                && CanSuspend && !storeWrapper.offloadExecutor.RunsInPlace;
+                && ThreadPoolHop.Required && CanSuspend;
         }
 
         /// <summary>
@@ -329,17 +330,7 @@ namespace Garnet.server
                     or RespCommand.CLUSTER_DELKEYSINSLOT or RespCommand.CLUSTER_DELKEYSINSLOTRANGE;
 
         /// <summary>
-        /// Whether an EXEC, which has just been parsed against a transaction that has queued its commands, has to run on
-        /// an executor thread: the queued commands may read from the device, or wait for a flush to add their records.
-        /// Moving the EXEC before it locks anything runs the whole transaction there.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool MustOffloadExec()
-            => (storageSession.MayReadFromDisk || storageSession.MayWaitToAllocate)
-                && CanSuspend && !storeWrapper.offloadExecutor.RunsInPlace;
-
-        /// <summary>
-        /// Whether a command of class <see cref="OffloadClass.Conditional"/> has to run on an executor thread, decided
+        /// Whether a command of class <see cref="OffloadClass.Conditional"/> has to run on the thread pool, decided
         /// from its arguments or from the server's configuration.
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -361,12 +352,16 @@ namespace Garnet.server
                     // Its blocking subcommands park the session themselves; this one waits for the log's flush
                     return parseState.Count > 0 && parseState.GetArgSliceByRef(0).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.FLUSHANDEVICT);
 
+                case RespCommand.CONFIG_SET:
+                    // Naming a certificate file loads the certificate from it
+                    return storeWrapper.serverOptions.TlsOptions != null && NamesCertificateFile();
+
                 case RespCommand.CLUSTER_APPENDLOG:
-                    // Synchronous replay applies the stream to the store on this thread, where a record waits for the
-                    // Vector Set replays queued before it, which other sublogs' streams may queue at any time. A replica
-                    // that truncates its AOF fast resets it, on the device, when the stream skips ahead.
+                    // Synchronous replay applies the stream to the store on this thread, where a record may read from
+                    // the device. A replica that truncates its AOF fast resets it, on the device, when the stream skips
+                    // ahead.
                     return (storeWrapper.runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES) == 0
-                            && (storageSession.MayReadFromDisk || storeWrapper.serverOptions.EnableVectorSetPreview))
+                            && storageSession.MayReadFromDisk)
                         || (storeWrapper.serverOptions.FastAofTruncate && AppendLogSkipsAhead());
 
                 default:
@@ -374,6 +369,19 @@ namespace Garnet.server
                     // flushes are batched
                     return storeWrapper.serverOptions.ClusterConfigFlushFrequencyMs == 0;
             }
+        }
+
+        /// <summary>
+        /// Whether the CONFIG SET just parsed names a certificate file.
+        /// </summary>
+        bool NamesCertificateFile()
+        {
+            for (var i = 0; i < parseState.Count; i += 2)
+            {
+                if (parseState.GetArgSliceByRef(i).ReadOnlySpan.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertFileName, allowNonAlphabeticChars: true))
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -389,63 +397,59 @@ namespace Garnet.server
                     parseState.GetArgSliceByRef(5).Length, appendOnlyFile.Log.UnsafeGetLogPageSizeBits());
 
         /// <summary>
-        /// Parks the session and has an executor thread resume it, so the command the read cursor has been rewound to is
+        /// Parks the session and has a thread-pool thread resume it, so the command the read cursor has been rewound to is
         /// parsed, authorized and run again there.
         /// </summary>
-        /// <param name="mustRun">
-        /// Whether to start an executor thread for the session even when every one is busy, because the session holds
-        /// locks that what the busy threads run may be waiting for.
-        /// </param>
         /// <remarks>
-        /// The park does not retain the batch scope, so the cluster epoch is released while the session waits for an
-        /// executor thread.
+        /// The park does not retain the batch scope, so the cluster epoch is released while the session waits for a
+        /// thread-pool thread.
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        void ParkForOffload(bool mustRun)
+        void ParkForOffload()
         {
             ValueTask body;
             using (BeginAsyncCommand())
-                body = OffloadAsync(mustRun);
+                body = OffloadAsync();
 
             _ = CompleteAsyncCommand(body);
             Debug.Assert(asyncSuspended, "An offload always suspends");
         }
 
         [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
-        async ValueTask OffloadAsync(bool mustRun)
-            => await new OffloadAwaitable(this, mustRun);
+        async ValueTask OffloadAsync()
+            => await new OffloadAwaitable(this);
 
         /// <summary>
-        /// Parks a session that has suspended, and posts it to the executor if it suspended to be moved there.
+        /// Parks a session that has suspended, and queues it to the thread pool if it suspended to be moved there.
         /// </summary>
         /// <returns>True if the caller must drive the resume, false if another thread will.</returns>
         /// <remarks>
-        /// The post waits for the park: the executor resumes the session by claiming the parked suspension, which it
+        /// The queue waits for the park: the pool thread resumes the session by claiming the parked suspension, which it
         /// can only do once the thread that suspended it has left the session.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool ParkSuspension()
         {
-            var offload = deferredOffload;
-            if (offload == 0)
+            if (!deferredOffload)
                 return handoff.Park();
 
-            deferredOffload = 0;
+            deferredOffload = false;
             var box = resumeBox;
 
             // Nothing else holds the resume of an offload, so it cannot have arrived while the session was arming
             if (handoff.Park())
-                Debug.Fail("An offload was resumed before it was posted");
+                Debug.Fail("An offload was resumed before it was queued");
 
-            storeWrapper.offloadExecutor.Post(box, mustRun: offload == 2);
+            Interlocked.Increment(ref storeWrapper.offloads);
+            ThreadPool.UnsafeQueueUserWorkItem(box, preferLocal: false);
             return false;
         }
 
         /// <summary>
-        /// Awaiter that suspends a command without waiting on anything, and has <see cref="ParkSuspension"/> post the
-        /// session to the executor once it has parked.
+        /// Awaiter that suspends a command without waiting on anything, and has <see cref="ParkSuspension"/> queue the
+        /// session to the thread pool once it has parked.
         /// </summary>
-        readonly struct OffloadAwaitable(RespServerSession session, bool mustRun) : ICriticalNotifyCompletion
+        readonly struct OffloadAwaitable(RespServerSession session) : ICriticalNotifyCompletion
         {
             public OffloadAwaitable GetAwaiter() => this;
 
@@ -453,10 +457,10 @@ namespace Garnet.server
 
             public void GetResult() { }
 
-            // The continuation is the resume of the session's own suspension box, which the executor runs instead
-            public void OnCompleted(Action continuation) => session.deferredOffload = mustRun ? (byte)2 : (byte)1;
+            // The continuation is the resume of the session's own suspension box, which the pool runs instead
+            public void OnCompleted(Action continuation) => session.deferredOffload = true;
 
-            public void UnsafeOnCompleted(Action continuation) => session.deferredOffload = mustRun ? (byte)2 : (byte)1;
+            public void UnsafeOnCompleted(Action continuation) => session.deferredOffload = true;
         }
     }
 }

@@ -420,16 +420,12 @@ namespace Garnet
         public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
-        [Option("network-inline-completions", Required = false, HelpText = "Process the input of client connections on the socket event thread that receives it (Linux and macOS), rather than handing each receive to the thread pool. Saves a thread hop per request; the event thread and the other connections it serves wait while a request runs. A command that waits on another client, a timer, the AOF, a cluster peer, a device read or, for most key commands, a key another client holds locked releases the thread, and one that may wait on synchronous storage IO runs on an offload thread (see --offload-max-threads). Pair with --network-event-threads. Ignored on Windows.")]
+        [Option("network-inline-completions", Required = false, HelpText = "Process the input of client connections on the socket event thread that receives it (Linux and macOS), rather than handing each receive to the thread pool. Saves a thread hop per request; the event thread and the other connections it serves wait while a request runs. A command that waits on another client, a timer, the AOF, a cluster peer, a device read or, for most key commands, a key another client holds locked releases the thread, and one that may wait on synchronous storage IO moves to the thread pool. Pair with --network-event-threads. Ignored on Windows.")]
         public bool? NetworkInlineCompletions { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("network-event-threads", Required = false, HelpText = "Number of socket event threads in the process (Linux and macOS), overriding DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT. 0 uses that variable if set, otherwise the processor count with --network-inline-completions and the .NET default without. Fixed by the first socket operation in the process. Ignored on Windows.")]
         public int NetworkEventThreads { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("offload-max-threads", Required = false, HelpText = "Most threads that commands which may wait on synchronous storage IO, such as a multi-key command that reads records on disk, a key scan, or a database flush, run on in place of a network or thread pool thread. Beyond this, such commands queue for a thread. 0 uses the larger of 64 and twice the processor count.")]
-        public int OffloadMaxThreads { get; set; }
 
         [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
@@ -1024,7 +1020,6 @@ namespace Garnet
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 NetworkInlineCompletions = NetworkInlineCompletions.GetValueOrDefault(),
                 NetworkEventThreads = NetworkEventThreads,
-                OffloadMaxThreads = OffloadMaxThreads,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
                     : new LocalStorageNamedDeviceFactoryCreator(
                         deviceType: deviceType,

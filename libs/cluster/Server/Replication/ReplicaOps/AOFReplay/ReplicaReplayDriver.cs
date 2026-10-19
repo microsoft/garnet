@@ -232,8 +232,9 @@ namespace Garnet.cluster
 
         /// <summary>
         /// Processes record on a single replay task directly, from a session's network thread. Records are replayed on
-        /// the calling thread up to the first one that can block, which and everything after it is replayed on a thread
-        /// of its own.
+        /// the calling thread until one has to wait. A record that waits for queued Vector Set operations is replayed
+        /// once they have completed, without holding a thread meanwhile; one that waits on anything else is replayed,
+        /// with everything after it, on a thread of its own.
         /// </summary>
         private unsafe ValueTask ConsumeDirectFromSessionAsync(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
@@ -242,20 +243,82 @@ namespace Garnet.cluster
 
             var ptr = record;
             var replicationOffset = currentAddress;
-            if (ReplayRecords(record, recordLength, currentAddress, isProtected, stopAtBlockingRecord: true, ref ptr, ref replicationOffset))
-                return new OffloadedPage(this, record, recordLength, currentAddress, nextAddress, isProtected, ptr, replicationOffset).StartAsync();
+            switch (ReplayRecords(record, recordLength, currentAddress, isProtected, stopAtBlockingRecord: true, ref ptr, ref replicationOffset))
+            {
+                case ReplayWait.Thread:
+                    return new OffloadedPage(this, record, recordLength, currentAddress, nextAddress, isProtected, ptr, replicationOffset).StartAsync();
+                case ReplayWait.VectorOperations:
+                    return ReplayAfterVectorOperationsAsync((nint)record, recordLength, currentAddress, nextAddress, (nint)ptr, replicationOffset);
+            }
 
-            CompleteDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+            var vectorOperations = replicationManager.AofProcessor.WaitForVectorOperationsToCompleteAsync(cts.Token);
+            if (!vectorOperations.IsCompletedSuccessfully)
+                return AdvertiseAfterVectorOperationsAsync(vectorOperations, recordLength, currentAddress, nextAddress, replicationOffset);
+
+            AdvertiseDirect(recordLength, currentAddress, nextAddress, replicationOffset);
             return default;
         }
+
+        /// <summary>
+        /// Replays the rest of a page received by a session, from a record that waits for the Vector Set operations queued
+        /// before it, as <see cref="ConsumeDirectFromSessionAsync"/> does, awaiting those operations on each such record.
+        /// </summary>
+        private async ValueTask ReplayAfterVectorOperationsAsync(nint record, int recordLength, long currentAddress, long nextAddress, nint ptr, long replicationOffset)
+        {
+            ReplayWait wait;
+            do
+            {
+                await replicationManager.AofProcessor.WaitForVectorOperationsToCompleteAsync(cts.Token).ConfigureAwait(false);
+                wait = ReplayRecordsFromSession(record, recordLength, currentAddress, ref ptr, ref replicationOffset);
+            }
+            while (wait == ReplayWait.VectorOperations);
+
+            if (wait == ReplayWait.Thread)
+            {
+                await OffloadPageAsync(record, recordLength, currentAddress, nextAddress, ptr, replicationOffset).ConfigureAwait(false);
+                return;
+            }
+
+            await replicationManager.AofProcessor.WaitForVectorOperationsToCompleteAsync(cts.Token).ConfigureAwait(false);
+            AdvertiseDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+        }
+
+        /// <summary>
+        /// Advertises the replication offset reached by a page received by a session, once the Vector Set operations it
+        /// queued have completed.
+        /// </summary>
+        private async ValueTask AdvertiseAfterVectorOperationsAsync(ValueTask vectorOperations, int recordLength, long currentAddress, long nextAddress, long replicationOffset)
+        {
+            await vectorOperations.ConfigureAwait(false);
+            AdvertiseDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+        }
+
+        /// <summary>
+        /// Replays the records of a page received by a session from <paramref name="ptr"/> on, until one has to wait, as
+        /// <see cref="ReplayRecords"/> does. The session receives with no epoch held, so the page is unprotected.
+        /// </summary>
+        private unsafe ReplayWait ReplayRecordsFromSession(nint record, int recordLength, long currentAddress, ref nint ptr, ref long replicationOffset)
+        {
+            var next = (byte*)ptr;
+            var wait = ReplayRecords((byte*)record, recordLength, currentAddress, isProtected: false, stopAtBlockingRecord: true, ref next, ref replicationOffset);
+            ptr = (nint)next;
+            return wait;
+        }
+
+        /// <summary>
+        /// Replays the rest of an unprotected page received by a session, from <paramref name="ptr"/> on, on a thread of its own.
+        /// </summary>
+        private unsafe ValueTask OffloadPageAsync(nint record, int recordLength, long currentAddress, long nextAddress, nint ptr, long replicationOffset)
+            => new OffloadedPage(this, (byte*)record, recordLength, currentAddress, nextAddress, isProtected: false, (byte*)ptr, replicationOffset).StartAsync();
 
         /// <summary>
         /// Replays the records of a page from <paramref name="ptr"/> on, advancing <paramref name="ptr"/> and
         /// <paramref name="replicationOffset"/> past each record replayed.
         /// </summary>
-        /// <param name="stopAtBlockingRecord">Whether to stop before a record that can block, leaving it to the caller.</param>
-        /// <returns>True when it stopped before a record that can block.</returns>
-        private unsafe bool ReplayRecords(byte* record, int recordLength, long currentAddress, bool isProtected, bool stopAtBlockingRecord, ref byte* ptr, ref long replicationOffset)
+        /// <param name="stopAtBlockingRecord">Whether the calling thread must not wait, so that replay stops at a record
+        /// that would wait, leaving it unreplayed.</param>
+        /// <returns>What the record replay stopped at waits on, or <see cref="ReplayWait.None"/> once the page has been replayed.</returns>
+        private unsafe ReplayWait ReplayRecords(byte* record, int recordLength, long currentAddress, bool isProtected, bool stopAtBlockingRecord, ref byte* ptr, ref long replicationOffset)
         {
             // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
 
@@ -268,11 +331,19 @@ namespace Garnet.cluster
                     var payloadLength = physicalSublog.UnsafeGetLength(ptr);
                     if (payloadLength > 0)
                     {
-                        if (stopAtBlockingRecord && replicationManager.AofProcessor.ReplayCanBlock(ptr + entryLength))
-                            return true;
-
                         var logAddressSequenceNumber = currentAddress + (ptr - record);
-                        replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
+                        bool isCheckpointStart;
+                        if (stopAtBlockingRecord)
+                        {
+                            var wait = replicationManager.AofProcessor.TryProcessAofRecordWithoutWaiting(physicalSublogIdx, ptr + entryLength, payloadLength, true, out isCheckpointStart, logAddressSequenceNumber);
+                            if (wait != ReplayWait.None)
+                                return wait;
+                        }
+                        else
+                        {
+                            replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out isCheckpointStart, logAddressSequenceNumber);
+                        }
+
                         // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                         // point when we take a checkpoint at the checkpoint end marker
                         if (isCheckpointStart)
@@ -293,7 +364,7 @@ namespace Garnet.cluster
                     replicationOffset += entryLength;
                 }
                 // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
-                return false;
+                return ReplayWait.None;
             }
             catch
             {
@@ -311,7 +382,15 @@ namespace Garnet.cluster
         {
             // Before updating replication offset, we must wait for any pending Vector Set ops to complete
             replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
+            AdvertiseDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+        }
 
+        /// <summary>
+        /// Advertises the replication offset reached once every record of a page has been replayed and the Vector Set
+        /// operations they queued have completed, and checks that it is the address the page was expected to end at.
+        /// </summary>
+        private void AdvertiseDirect(int recordLength, long currentAddress, long nextAddress, long replicationOffset)
+        {
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
 
             if (replicationOffset != nextAddress)

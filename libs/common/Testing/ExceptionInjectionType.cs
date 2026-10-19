@@ -211,5 +211,20 @@ namespace Garnet.common
         /// without holding the worker's thread. The finalization stays registered until the step is released.
         /// </summary>
         VectorSet_Pause_Before_Import_Finalize_Step,
+        /// <summary>
+        /// Background expired key deletion: hold each scan cycle, without holding a thread, until the condition is
+        /// cleared. The cycle does not observe cancellation while held, so it stands in for a scan that is slow to stop.
+        /// </summary>
+        ExpiredKeyDeletion_Hold_Scan,
+        /// <summary>
+        /// Vector Sets: hold each pass of the task that drops DiskANN indexes, before it drops any, without holding a
+        /// thread, until the condition is cleared. Keeps the drops it would make pending.
+        /// </summary>
+        VectorSet_Hold_Index_Drop,
+        /// <summary>
+        /// Vector Sets: hold each batch of the replication replay tasks, before they apply any of the adds queued for
+        /// them, without holding a thread, until the condition is cleared. Keeps the adds queued.
+        /// </summary>
+        VectorSet_Hold_Replication_Replay,
     }
 }

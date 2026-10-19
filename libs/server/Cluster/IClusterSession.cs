@@ -133,7 +133,7 @@ namespace Garnet.server
         /// and the caller waits with <see cref="TryRegisterMigrationWaiter"/> before verifying again. When
         /// <see cref="ClusterSlotVerificationInput.canOffload"/> is set and a key being migrated may have to be looked up on
         /// the device, nothing is written either: the call returns true with <see cref="ClusterSlotVerificationInput.mustOffload"/>
-        /// set, and the caller verifies again on an executor thread.
+        /// set, and the caller verifies again on the thread pool.
         /// </remarks>
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>

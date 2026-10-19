@@ -6,7 +6,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
-using Garnet.server;
 using Tsavorite.core;
 
 namespace Garnet.test
@@ -133,8 +132,8 @@ namespace Garnet.test
             _ = Interlocked.Increment(ref reads);
             if (objectLog)
                 _ = Interlocked.Increment(ref objectLogReads);
-            if (!inCompletion && !OffloadExecutor.OnExecutorThread)
-                _ = Interlocked.Increment(ref readsOffExecutor);
+            if (!inCompletion && !Thread.CurrentThread.IsThreadPoolThread)
+                _ = Interlocked.Increment(ref readsOffThreadPool);
 
             if (!pool.TryDequeue(out var read))
                 read = new PendingRead { owner = this };
@@ -179,7 +178,7 @@ namespace Garnet.test
 
         int reads;
         int objectLogReads;
-        int readsOffExecutor;
+        int readsOffThreadPool;
 
         /// <summary>
         /// How long each store hybrid log read completion is withheld, in milliseconds. Read on every
@@ -202,11 +201,11 @@ namespace Garnet.test
 
         /// <summary>
         /// Number of store hybrid log reads issued since the last <see cref="ResetReadCount"/> by a command running on a
-        /// thread other than an <see cref="OffloadExecutor"/> thread. A command that completes its reads on the thread it
-        /// runs on has to run on an executor thread, so for such a command this stays at zero; a command that parks on
+        /// thread other than a thread-pool thread, outside a read's completion. A command that completes its reads on the
+        /// thread it runs on has to leave such a thread, so for such a command this stays at zero; a command that parks on
         /// its reads issues them wherever it runs.
         /// </summary>
-        internal int ReadsOffExecutor => Volatile.Read(ref readsOffExecutor);
+        internal int ReadsOffThreadPool => Volatile.Read(ref readsOffThreadPool);
 
         internal DelayedReadDeviceFactoryCreator()
         {
@@ -219,14 +218,14 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// Clears <see cref="ReadCount"/>, <see cref="ObjectLogReadCount"/> and <see cref="ReadsOffExecutor"/>, discounting
+        /// Clears <see cref="ReadCount"/>, <see cref="ObjectLogReadCount"/> and <see cref="ReadsOffThreadPool"/>, discounting
         /// reads from populating the store.
         /// </summary>
         internal void ResetReadCount()
         {
             Volatile.Write(ref reads, 0);
             Volatile.Write(ref objectLogReads, 0);
-            Volatile.Write(ref readsOffExecutor, 0);
+            Volatile.Write(ref readsOffThreadPool, 0);
         }
 
         /// <summary>
@@ -246,6 +245,25 @@ namespace Garnet.test
                     pending.Enqueue(read, 0);
 
                 Monitor.Pulse(gate);
+            }
+        }
+
+        /// <summary>
+        /// Completes every read currently withheld on the calling thread, so a read still completes when the thread that
+        /// completes delayed reads is itself waiting for one. A test calls this on failure, to release such a wait.
+        /// </summary>
+        internal void CompleteHeldReadsHere()
+        {
+            while (true)
+            {
+                PendingRead read;
+                lock (gate)
+                {
+                    if (!pending.TryDequeue(out read, out _))
+                        return;
+                }
+
+                Complete(read);
             }
         }
 

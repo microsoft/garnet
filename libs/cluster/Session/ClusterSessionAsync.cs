@@ -44,7 +44,7 @@ namespace Garnet.cluster
                 _ = await UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 await clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync().ConfigureAwait(false);
-                clusterProvider.storeWrapper.StartPrimaryTasks();
+                await clusterProvider.storeWrapper.StartPrimaryTasksAsync().ConfigureAwait(false);
             }
             finally
             {
@@ -137,6 +137,17 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Ends the diskless sync that a primary drove into this replica, and answers with the address the replica
+        /// resumes streaming from.
+        /// </summary>
+        /// <param name="syncMetadata">Metadata the primary sent with the attach.</param>
+        async ValueTask EndReplicaDisklessRecoveryAsync(SyncMetadata syncMetadata)
+        {
+            var (replicationOffset, errorMessage) = await clusterProvider.replicationManager.TryReplicaDisklessRecoveryAsync(syncMetadata).ConfigureAwait(false);
+            SetPendingAofAddress(replicationOffset, errorMessage);
+        }
+
+        /// <summary>
         /// Waits until this replica has caught up to the given primary replication offset, and answers with
         /// the offset it reached.
         /// </summary>
@@ -174,6 +185,44 @@ namespace Garnet.cluster
                 if (ownsReplay)
                     driver.SuspendReplay();
             }
+        }
+
+        /// <summary>
+        /// Advertises the address that the primary's stream skips ahead to once the vector set operations in progress
+        /// finish, and then appends and applies the records that follow it, as <see cref="ProcessPrimaryStreamAsync"/>
+        /// does. Gives up the replay that <see cref="ProcessPrimaryStreamAsync"/> took when it owns it.
+        /// </summary>
+        /// <param name="vectorsDone">Completes once no vector set operation is in progress.</param>
+        /// <param name="physicalSublogIdx">Sublog the records belong to.</param>
+        /// <param name="record">Address of the records, valid until this completes.</param>
+        /// <param name="recordLength">Length of the records.</param>
+        /// <param name="previousAddress">Primary address the records follow.</param>
+        /// <param name="currentAddress">Primary address of the records, which the stream skips ahead to.</param>
+        /// <param name="nextAddress">Primary address after the records.</param>
+        /// <param name="syncReplay">Whether the records are applied before the session goes on.</param>
+        async ValueTask SkipAheadAsync(ValueTask vectorsDone, int physicalSublogIdx, nint record, int recordLength, long previousAddress, long currentAddress, long nextAddress, bool syncReplay)
+        {
+            ValueTask pending;
+            var handedOff = false;
+            try
+            {
+                await vectorsDone.ConfigureAwait(false);
+                clusterProvider.replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
+                pending = AppendPrimaryStreamAsync(physicalSublogIdx, record, recordLength, previousAddress, currentAddress, nextAddress, syncReplay, out handedOff);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ProcessPrimaryStream");
+                throw new GarnetException(ex.Message, ex, LogLevel.Warning, clientResponse: false);
+            }
+            finally
+            {
+                if (syncReplay && !handedOff)
+                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).SuspendReplay();
+            }
+
+            // A task still applying the records gives up the replay itself
+            await pending.ConfigureAwait(false);
         }
 
         /// <summary>

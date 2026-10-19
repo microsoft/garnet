@@ -92,6 +92,52 @@ namespace Garnet.test.cluster
             WaitUntil(() => replica.Execute("GET", Key) == ValueReply, "the write to be replayed once released");
         }
 
+        /// <summary>
+        /// A replica that keeps the sublogs of a sharded log aligned stops a sublog that runs ahead at the replay barrier
+        /// until the others catch up. A sublog replayed on the thread that received its stream waits there on a thread of
+        /// its own, so the streams it waits for still find a pool thread to arrive on, and the replica its clients.
+        /// </summary>
+        [Test, CancelAfter(100_000)]
+        [Category("REPLICATION")]
+        public void ASublogWaitingAtTheReplayBarrierHoldsNoPoolThread()
+        {
+            const int Writes = 200;
+
+            // Sequence numbers are clock ticks, so a drift of one opens a round at nearly every record
+            context.CreateInstances(2, enableAOF: true, disableObjects: true, sublogCount: 2,
+                configureNode: (_, options) => (options.AofReplayDriftThreshold, options.AofReplayDriftCheckFreq) = (1, 1));
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
+
+            using var primary = new RawRespSession(endpoint: context.endpoints[0]);
+            using var replica = new RawRespSession(endpoint: context.endpoints[1]);
+            ClassicAssert.AreEqual(Pong, primary.Execute("PING"));
+            ClassicAssert.AreEqual("+OK\r\n", replica.Execute("READONLY"));
+            ClassicAssert.AreEqual(Nil, replica.Execute("GET", Key));
+
+            using (ThreadPoolCap.ApplyFree(1))
+            {
+                for (var i = 0; i < Writes; i++)
+                {
+                    primary.Send("SET", $"{Key}{i}", "value");
+                    ClassicAssert.AreEqual("+OK\r\n", ReadReplyWithin(primary, "SET on the primary"));
+                }
+
+                var clock = Stopwatch.StartNew();
+                while (true)
+                {
+                    replica.Send("GET", $"{Key}{Writes - 1}");
+                    if (ReadReplyWithin(replica, "GET on the replica, with one free pool thread, while its sublogs are aligned") == ValueReply)
+                        break;
+                    ClassicAssert.Less(clock.Elapsed, Bound, "Timed out waiting for the replica to replay the writes");
+                    Thread.Sleep(10);
+                }
+            }
+
+            for (var i = 0; i < Writes; i++)
+                ClassicAssert.AreEqual(ValueReply, replica.Execute("GET", $"{Key}{i}"));
+        }
+
         static string ReadReplyWithin(RawRespSession session, string what)
         {
             ClassicAssert.IsTrue(session.WaitForReply(Bound), $"{what}: no reply within {Bound.TotalSeconds:F0}s");

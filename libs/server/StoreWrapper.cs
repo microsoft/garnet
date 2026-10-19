@@ -162,9 +162,9 @@ namespace Garnet.server
         internal readonly CollectionItemBroker itemBroker;
 
         /// <summary>
-        /// Threads that commands which may wait on synchronous IO run on; see <see cref="OffloadExecutor"/>.
+        /// Number of commands moved to the thread pool because they would wait on a thread that must not wait.
         /// </summary>
-        internal readonly OffloadExecutor offloadExecutor;
+        internal long offloads;
 
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
@@ -265,10 +265,6 @@ namespace Garnet.server
 
             if (!serverOptions.DisableObjects)
                 this.itemBroker = new CollectionItemBroker(this);
-
-            this.offloadExecutor = new OffloadExecutor(
-                serverOptions.OffloadMaxThreads > 0 ? serverOptions.OffloadMaxThreads : OffloadExecutor.DefaultMaxThreads,
-                TimeSpan.FromSeconds(30), loggerFactory?.CreateLogger("OffloadExecutor"));
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
@@ -961,11 +957,22 @@ namespace Garnet.server
         {
             Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
 
-            return RunMaintenanceLoopAsync((_) =>
+            return RunMaintenanceLoopAsync(ScanAsync, TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs),
+                "background expired key deletion scan task", logger, token);
+
+#if DEBUG
+            async ValueTask ScanAsync(CancellationToken _)
+            {
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.ExpiredKeyDeletion_Hold_Scan).ConfigureAwait(false);
+                databaseManager.ExpiredKeyDeletionScan();
+            }
+#else
+            ValueTask ScanAsync(CancellationToken _)
             {
                 databaseManager.ExpiredKeyDeletionScan();
                 return ValueTask.CompletedTask;
-            }, TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs), "background expired key deletion scan task", logger, token);
+            }
+#endif
         }
 
         /// <summary>
@@ -1022,7 +1029,8 @@ namespace Garnet.server
             // Start background maintenance tasks that should run only on the primary
             if (clusterProvider == null || clusterProvider.IsPrimary())
             {
-                StartPrimaryTasks();
+                // No lifecycle change is pending at startup, so the tasks start before this returns
+                _ = StartPrimaryTasksAsync();
             }
             else if (clusterProvider?.IsReplica() ?? false)
             {
@@ -1133,9 +1141,6 @@ namespace Garnet.server
             for (var spinner = new SpinWait(); StorageTeardowns != 0;)
                 spinner.SpinOnce();
 
-            // Commands still queued for the executor run on the thread pool from here. A torn-down session's
-            // refuses to resume there, as it would on the executor.
-            offloadExecutor.Dispose();
             clusterProvider?.Dispose();
             itemBroker?.Dispose();
             monitor?.Dispose();
@@ -1174,30 +1179,55 @@ namespace Garnet.server
         readonly object taskLifecycleLock = new();
 
         /// <summary>
-        /// Start background maintenance tasks that should only run when this node is a primary
+        /// The latest primary-task lifecycle change that may still be waiting for a task to stop. These changes run one
+        /// at a time, in the order requested, so no task is started while an instance of it is still stopping. Guarded
+        /// by <see cref="taskLifecycleLock"/>, which is never held while waiting.
         /// </summary>
-        /// <returns></returns>
-        public void StartPrimaryTasks()
+        Task pendingPrimaryTaskChange = Task.CompletedTask;
+
+        /// <summary>
+        /// Start background maintenance tasks that should only run when this node is a primary. Starts them at once
+        /// unless a lifecycle change is still waiting for a task to stop, in which case they start after it.
+        /// </summary>
+        /// <returns>A task that completes once the tasks have been started.</returns>
+        public Task StartPrimaryTasksAsync()
         {
             lock (taskLifecycleLock)
             {
-                if (serverOptions.AofSizeLimit.Length > 0)
-                {
-                    var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                    taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimitAsync(aofSizeLimitBytes, token, logger));
-                }
+                if (!pendingPrimaryTaskChange.IsCompleted)
+                    return pendingPrimaryTaskChange = StartPrimaryTasksAfterAsync(pendingPrimaryTaskChange);
 
-                TryStartCommitTask();
-                TryStartScheduledCheckpointTask();
-
-                if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
-                {
-                    taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTaskAsync(serverOptions.CompactionFrequencySecs, token));
-                }
-
-                TryStartObjectCollectTask();
-                TryStartExpiredKeyDeletionTask();
+                StartPrimaryTasksCore();
+                return Task.CompletedTask;
             }
+        }
+
+        async Task StartPrimaryTasksAfterAsync(Task predecessor)
+        {
+            await predecessor.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+            lock (taskLifecycleLock)
+                StartPrimaryTasksCore();
+        }
+
+        void StartPrimaryTasksCore()
+        {
+            if (serverOptions.AofSizeLimit.Length > 0)
+            {
+                var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
+                taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimitAsync(aofSizeLimitBytes, token, logger));
+            }
+
+            TryStartCommitTask();
+            TryStartScheduledCheckpointTask();
+
+            if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
+            {
+                taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTaskAsync(serverOptions.CompactionFrequencySecs, token));
+            }
+
+            TryStartObjectCollectTask();
+            TryStartExpiredKeyDeletionTask();
         }
 
         // Start the periodic AOF commit task if enabled by the current runtime config. Reads the interval
@@ -1235,18 +1265,27 @@ namespace Garnet.server
         /// <summary>
         /// Reconcile a background primary task with the current runtime configuration after a CONFIG SET:
         /// stop the running instance (so a killed or retuned task does not keep its old interval) and, when
-        /// this node is not a replica, restart it if the new value re-enables it. Runs synchronously on the
-        /// CONFIG SET thread under <see cref="taskLifecycleLock"/> so concurrent updates are serialized.
+        /// this node is not a replica, restart it once that instance has stopped, if the new value re-enables it.
+        /// Runs after any earlier lifecycle change still pending (see <see cref="pendingPrimaryTaskChange"/>),
+        /// without holding a thread while it waits.
         /// Primary tasks are intentionally not started on a replica; a later failover starts them from the
-        /// (now updated) runtime configuration through <see cref="StartPrimaryTasks"/>.
+        /// (now updated) runtime configuration through <see cref="StartPrimaryTasksAsync"/>.
         /// </summary>
         /// <param name="taskType">Primary task to reconcile.</param>
-        internal void ReconcilePrimaryTask(TaskType taskType)
+        /// <returns>A task that completes once the task has been stopped and, if enabled, restarted.</returns>
+        internal Task ReconcilePrimaryTaskAsync(TaskType taskType)
         {
             lock (taskLifecycleLock)
-            {
-                AsyncUtils.BlockingWait(taskManager.CancelAsync(taskType));
+                return pendingPrimaryTaskChange = ReconcilePrimaryTaskAfterAsync(pendingPrimaryTaskChange, taskType);
+        }
 
+        async Task ReconcilePrimaryTaskAfterAsync(Task predecessor, TaskType taskType)
+        {
+            await predecessor.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await taskManager.CancelAsync(taskType).ConfigureAwait(false);
+
+            lock (taskLifecycleLock)
+            {
                 if (clusterProvider?.IsReplica() ?? false)
                     return;
 

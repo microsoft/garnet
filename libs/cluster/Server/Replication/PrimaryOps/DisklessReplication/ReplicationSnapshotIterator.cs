@@ -13,6 +13,10 @@ using Tsavorite.core.Allocator.ObjectSerialization;
 
 namespace Garnet.cluster
 {
+    /// <summary>
+    /// Streams the records of a streaming snapshot to the replicas being synced. Tsavorite calls it on a dedicated thread
+    /// (see <see cref="IStreamingSnapshotIteratorFunctions"/>), so it waits there for the replicas to take what it sends.
+    /// </summary>
     internal sealed unsafe class SnapshotIteratorManager : IChunkedObjectSerializerConsumer
     {
         public readonly ReplicationSyncManager replicationSyncManager;

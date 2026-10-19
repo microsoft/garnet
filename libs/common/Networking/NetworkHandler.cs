@@ -185,22 +185,17 @@ namespace Garnet.networking
         int bufferHolds = 1;
 
         /// <summary>
-        /// <see cref="HandshakeExecutor"/> for the length of a server handshake that validates a client certificate,
-        /// and null otherwise.
-        /// </summary>
-        IOffloadExecutor handshakeExecutor;
-
-        /// <summary>
-        /// Executor a server handshake that validates a client certificate runs on, or null to run it on the thread pool.
+        /// Set for the length of a server handshake that validates a client certificate.
         /// </summary>
         /// <remarks>
         /// <see cref="SslStream"/> builds and validates the client's certificate chain synchronously, on the thread that
         /// completed the read carrying the certificate. Building the chain may download issuer certificates named by
         /// the certificate itself and, when revocation is checked online, revocation lists, each holding the thread
-        /// until it arrives or times out. While the executor is set, every read of the handshake completes on one of
-        /// its threads, so the chain is built there.
+        /// until it arrives or times out. While this is set, a read of the handshake that completes on a thread that
+        /// must not wait, such as a socket event thread running completions inline, continues on the thread pool, so
+        /// the chain is built there.
         /// </remarks>
-        protected virtual IOffloadExecutor HandshakeExecutor => null;
+        bool validatingClientCertificate;
 
         /// <summary>
         /// Constructor
@@ -303,10 +298,9 @@ namespace Garnet.networking
                     throw new ObjectDisposedException(nameof(NetworkHandler<TServerHook, TNetworkSender>));
                 held = true;
 
-                if (tlsOptions.ClientCertificateRequired)
-                    handshakeExecutor = HandshakeExecutor;
+                validatingClientCertificate = tlsOptions.ClientCertificateRequired;
                 await sslStream.AuthenticateAsServerAsync(tlsOptions, handshakeDeadline?.Token ?? token).ConfigureAwait(false);
-                handshakeExecutor = null;
+                validatingClientCertificate = false;
 
                 if (token.IsCancellationRequested) throw new TaskCanceledException("AuthenticateAsServerAsync was cancelled");
 

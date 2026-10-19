@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading.Tasks;
 
 namespace Garnet.server
 {
@@ -18,8 +19,10 @@ namespace Garnet.server
     /// <param name="oldValue">The value the option held before this update (the roll-back target on failure).</param>
     /// <param name="newValue">The validated new configuration value.</param>
     /// <param name="error">The error message returned to the client if the update is rejected (typically formatted as <c>"ERR ..."</c>).</param>
+    /// <param name="enacted">Completes once the update has taken effect, such as when a restarted task's old instance has
+    /// stopped. <c>CONFIG SET</c> replies after it completes, so the action must not wait for it.</param>
     /// <returns><see langword="true"/> if the update succeeded and can be committed; otherwise, <see langword="false"/>.</returns>
-    internal delegate bool ConfigUpdateAction(RuntimeServerConfig config, long oldValue, long newValue, out string error);
+    internal delegate bool ConfigUpdateAction(RuntimeServerConfig config, long oldValue, long newValue, out string error, out Task enacted);
 
     /// <summary>
     /// Per-option description of a runtime configuration slot: how the raw 8-byte cell is interpreted,

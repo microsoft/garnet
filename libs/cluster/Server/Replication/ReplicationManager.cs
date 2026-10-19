@@ -154,6 +154,7 @@ namespace Garnet.cluster
             var deviceFactory = opts.GetInitializedDeviceFactory(opts.CheckpointDir ?? string.Empty);
             replicationConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "cluster", fileName: "replication.conf"));
             replicationConfigDevicePool = new(1, (int)replicationConfigDevice.SectorSize);
+            replicationConfigWriter = new ConfigFileWriter(replicationConfigDevice, replicationConfigDevicePool, () => currentReplicationConfig.ToByteArray(), logger);
 
             var canRecoverReplicationHistory = replicationConfigDevice.GetFileSize(0) > 0;
             if (clusterProvider.serverOptions.Recover && canRecoverReplicationHistory)

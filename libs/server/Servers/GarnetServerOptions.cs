@@ -414,8 +414,7 @@ namespace Garnet.server
         /// thread, with every other connection it serves, for as long as the input takes to process. A command that
         /// waits on another client, a timer, the AOF, a cluster peer, a device read or, for most key commands, a key
         /// another client holds locked parks its session and releases the thread, and one that may wait on synchronous
-        /// storage IO runs on an offload thread (see
-        /// <see cref="OffloadMaxThreads"/>). Applies to accepted connections, not to those the server opens to its
+        /// storage IO moves to the thread pool. Applies to accepted connections, not to those the server opens to its
         /// peers. Pair with <see cref="NetworkEventThreads"/>. Ignored on Windows.
         /// </summary>
         public bool NetworkInlineCompletions = false;
@@ -428,14 +427,6 @@ namespace Garnet.server
         /// operation in the process, so this applies only to a server started before any. Ignored on Windows.
         /// </summary>
         public int NetworkEventThreads = 0;
-
-        /// <summary>
-        /// Most threads that commands which may wait on synchronous storage IO run on, in place of a network or thread
-        /// pool thread: a multi-key command that reads records on disk, a key scan, a database flush, and the like. Beyond
-        /// this, such commands queue for a thread, except those of a running transaction, which may hold key locks the
-        /// queued commands wait on. 0 uses <see cref="OffloadExecutor.DefaultMaxThreads"/>.
-        /// </summary>
-        public int OffloadMaxThreads = 0;
 
         /// <summary>
         /// Instance of interface to create named device factories

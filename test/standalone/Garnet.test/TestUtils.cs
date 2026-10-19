@@ -1093,7 +1093,7 @@ namespace Garnet.test
                 : null,
                 DeviceFactoryCreator = useAzureStorage ?
                     logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
-                    : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
+                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
                 FastAofTruncate = fastAofTruncate,
                 AofMemorySize = aofMemorySize,
                 AofPageSize = aofPageSize ?? "32m",

@@ -21,12 +21,20 @@ namespace Garnet.server
 
     interface IPreprocessKey
     {
-        public abstract unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long logAddressSequenceNumber, out PreparedParameters preparedParameters);
+        /// <summary>
+        /// Reads the key of the record at <paramref name="entryPtr"/>, and records its sequence number for read consistency.
+        /// </summary>
+        /// <param name="virtualSublogIdx">The virtual sublog replaying the record.</param>
+        /// <param name="entryPtr">The record, starting at its header.</param>
+        /// <param name="logAddressSequenceNumber">The log address of the record, used as its sequence number on a single physical log.</param>
+        /// <param name="mustNotWait">Whether the record is replayed on a thread that must not wait at the replay barrier.</param>
+        /// <param name="preparedParameters">The key, its hash, and the payload that follows it.</param>
+        public abstract unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long logAddressSequenceNumber, bool mustNotWait, out PreparedParameters preparedParameters);
     }
 
     struct SingleLogPreprocessKey : IPreprocessKey
     {
-        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long logAddressSequenceNumber, out PreparedParameters preparedParameters)
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long logAddressSequenceNumber, bool mustNotWait, out PreparedParameters preparedParameters)
         {
             var keyPtr = entryPtr + sizeof(AofHeader);
             preparedParameters = new()
@@ -42,7 +50,7 @@ namespace Garnet.server
     {
         public GarnetAppendOnlyFile appendOnlyFile;
 
-        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long logAddressSequenceNumber, out PreparedParameters preparedParameters)
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long logAddressSequenceNumber, bool mustNotWait, out PreparedParameters preparedParameters)
         {
             // Single physical log + multi-replay: entries use BasicHeader, ordering via log address
             var keyPtr = entryPtr + sizeof(AofHeader);
@@ -56,7 +64,8 @@ namespace Garnet.server
             appendOnlyFile.readConsistencyManager.UpdateVirtualSublogKeySequenceNumber(
                 virtualSublogIdx,
                 preparedParameters.KeyHash,
-                logAddressSequenceNumber);
+                logAddressSequenceNumber,
+                mustNotWait);
         }
     }
 
@@ -64,7 +73,7 @@ namespace Garnet.server
     {
         public GarnetAppendOnlyFile appendOnlyFile;
 
-        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long logAddressSequenceNumber, out PreparedParameters preparedParameters)
+        public unsafe void PrepareKey(int virtualSublogIdx, byte* entryPtr, long logAddressSequenceNumber, bool mustNotWait, out PreparedParameters preparedParameters)
         {
             var shardedHeader = *(AofShardedHeader*)entryPtr;
             var keyPtr = entryPtr + sizeof(AofShardedHeader);
@@ -77,7 +86,8 @@ namespace Garnet.server
             appendOnlyFile.readConsistencyManager.UpdateVirtualSublogKeySequenceNumber(
                 virtualSublogIdx,
                 preparedParameters.KeyHash,
-                shardedHeader.sequenceNumber);
+                shardedHeader.sequenceNumber,
+                mustNotWait);
         }
     }
 
@@ -236,13 +246,60 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Whether replaying the record at <paramref name="entryPtr"/> can wait on something other than the local store:
-        /// a rendezvous with the other replay participants, or a checkpoint. A caller that replays on a network
-        /// receive thread must replay such a record on a thread that may block.
+        /// Replays the record at <paramref name="ptr"/>, as <see cref="ProcessAofRecordInternal(int, byte*, int, bool, out bool, long)"/>
+        /// does, on a thread that must not wait on anything other than the local store, such as a network receive thread.
+        /// A record that would wait is left unreplayed, and what it waits on is returned, so that the caller replays it
+        /// again once that wait is over, or replays it on a thread that may block.
         /// </summary>
-        /// <param name="entryPtr">The record, starting at its header.</param>
-        public bool ReplayCanBlock(byte* entryPtr)
-            => ReplayCanBlock(((AofHeader*)entryPtr)->opType, usingShardedLog);
+        /// <param name="virtualSublogIdx">The virtual sublog replaying the record.</param>
+        /// <param name="ptr">The record, starting at its header.</param>
+        /// <param name="length">The length of the record.</param>
+        /// <param name="asReplica">Whether the record is replayed by a replica.</param>
+        /// <param name="isCheckpointStart">Whether the record replayed is a checkpoint start marker.</param>
+        /// <param name="logAddressSequenceNumber">The log address of the record, used as its sequence number on a single physical log.</param>
+        /// <returns><see cref="ReplayWait.None"/> once the record has been replayed; otherwise what it waits on, having changed nothing.</returns>
+        /// <remarks>
+        /// A record that can rendezvous with the other replay participants or wait on a checkpoint is sent to a thread
+        /// without being started, as is one that cannot be replayed again from its start once it has begun: a chunk of a
+        /// record, or a transaction or procedure, whose operations are applied one by one. Every other wait throws
+        /// <see cref="ReplayMustWaitException"/> before the record has changed anything (see
+        /// <see cref="StorageSession.replayMustNotWait"/>); none is reachable without Vector Sets or a sharded log.
+        /// </remarks>
+        public ReplayWait TryProcessAofRecordWithoutWaiting(int virtualSublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart, long logAddressSequenceNumber = 0)
+        {
+            var header = (AofHeader*)ptr;
+            var mayWait = usingShardedLog || activeVectorManager.IsEnabled;
+
+            if (ReplayCanBlock(header->opType, usingShardedLog)
+                || (mayWait && (header->IsChunked || header->opType is AofEntryType.TxnCommit or AofEntryType.StoredProcedure)))
+            {
+                isCheckpointStart = false;
+                return ReplayWait.Thread;
+            }
+
+            if (!mayWait)
+            {
+                ProcessAofRecordInternal(virtualSublogIdx, ptr, length, asReplica, out isCheckpointStart, logAddressSequenceNumber);
+                return ReplayWait.None;
+            }
+
+            var storageSession = aofReplayCoordinator.GetReplayContext(virtualSublogIdx).respServerSession.storageSession;
+            storageSession.replayMustNotWait = true;
+            try
+            {
+                ProcessAofRecordInternal(virtualSublogIdx, ptr, length, asReplica, out isCheckpointStart, logAddressSequenceNumber);
+                return ReplayWait.None;
+            }
+            catch (ReplayMustWaitException e)
+            {
+                isCheckpointStart = false;
+                return e.Wait;
+            }
+            finally
+            {
+                storageSession.replayMustNotWait = false;
+            }
+        }
 
         /// <summary>
         /// Whether replaying a record of type <paramref name="opType"/> can wait on something other than the local store.
@@ -332,7 +389,7 @@ namespace Garnet.server
             // otherwise we might loose consistency
             if (header.opType != AofEntryType.StoreRMW)
             {
-                activeVectorManager.WaitForVectorOperationsToComplete();
+                activeVectorManager.WaitForVectorOperationsToComplete(replayContext.respServerSession.storageSession);
             }
 
             // Handle transactions
@@ -508,28 +565,30 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Shared preamble for both <c>ReplayOp</c> overloads (with and without chunking): wait for pending vector operations (unless this is a StoreRMW),
-        /// honor the skip/skip-buffer decision (<paramref name="skip"/>), and expose the object-output buffer. Returns true to
-        /// proceed with dispatch (<paramref name="bufferPtr"/>/<paramref name="bufferLength"/> set); false if the op was skipped
-        /// or buffered and the caller should stop.
+        /// Shared preamble for both <c>ReplayOp</c> overloads (with and without chunking): honor the skip/skip-buffer decision
+        /// (<paramref name="skip"/>), wait for pending vector operations (unless this is a StoreRMW), and expose the
+        /// object-output buffer. Returns true to proceed with dispatch (<paramref name="bufferPtr"/>/<paramref name="bufferLength"/>
+        /// set); false if the op was skipped or buffered and the caller should stop.
         /// </summary>
         /// <remarks>
-        /// This may throw: it waits on the vector-replication event. Callers holding a resource for the record must therefore
-        /// call it from within whatever scope releases that resource, rather than relying on it to return. The chunked
-        /// <c>ReplayOp</c> overload does exactly that for its accumulator's pooled chunk buffers.
+        /// A skipped or buffered record applies nothing here, so it does not wait. Otherwise this may throw: it waits on the
+        /// vector-replication event, and throws <see cref="ReplayMustWaitException"/> instead on a thread that must not wait.
+        /// The skip decision is made first because buffering a record is not undone by such a throw. Callers holding a
+        /// resource for the record must call this from within whatever scope releases that resource, rather than relying on
+        /// it to return. The chunked <c>ReplayOp</c> overload does exactly that for its accumulator's pooled chunk buffers.
         /// </remarks>
         private bool BeginReplayOp(AofReplayContext replayContext, AofEntryType opType, bool skip, out byte* bufferPtr, out int bufferLength)
         {
-            // StoreRMW can queue vector operations onto different threads; everything else must wait for those to complete first for consistency.
-            if (opType != AofEntryType.StoreRMW)
-                activeVectorManager.WaitForVectorOperationsToComplete();
-
             if (skip)
             {
                 bufferPtr = null;
                 bufferLength = 0;
                 return false;
             }
+
+            // StoreRMW can queue vector operations onto different threads; everything else must wait for those to complete first for consistency.
+            if (opType != AofEntryType.StoreRMW)
+                activeVectorManager.WaitForVectorOperationsToComplete(replayContext.respServerSession.storageSession);
 
             bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             bufferLength = replayContext.objectOutputBuffer.Length;
@@ -560,7 +619,7 @@ namespace Garnet.server
             if (!BeginReplayOp(replayContext, header.opType, ShouldSkipRecord(virtualSublogIdx, replayContext.inFuzzyRegion, entryPtr, length, asReplica), out var bufferPtr, out var bufferLength))
                 return false;
 
-            preprocessKey.PrepareKey(virtualSublogIdx, entryPtr, logAddressSequenceNumber, out var preparedParameters);
+            preprocessKey.PrepareKey(virtualSublogIdx, entryPtr, logAddressSequenceNumber, replayContext.respServerSession.storageSession.replayMustNotWait, out var preparedParameters);
 
             // Entries written before AOF header version 4 used the legacy RespCommand numbering
             // (reads-first) and packed the object sub-operation id into the low 5 bits of the flags
@@ -696,7 +755,7 @@ namespace Garnet.server
             if (input.header.cmd == RespCommand.VADD)
             {
                 if (input.arg1 != VectorManager.VADDAppendLogArg)
-                    vectorManager.WaitForVectorOperationsToComplete();
+                    vectorManager.WaitForVectorOperationsToComplete(storageSession);
                 if (input.arg1 == VectorManager.VADDSetFlagsArg)
                     return false;
                 vectorManager.HandleVectorSetAddReplication(storageSession, obtainServerSession, key, ref input);
@@ -704,7 +763,7 @@ namespace Garnet.server
             }
 
             // Must sequence releative to other operations
-            vectorManager.WaitForVectorOperationsToComplete();
+            vectorManager.WaitForVectorOperationsToComplete(storageSession);
 
             switch (input.header.cmd)
             {

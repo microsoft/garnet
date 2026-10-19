@@ -2,14 +2,14 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.cluster;
-#if DEBUG
 using Garnet.common;
-#endif
 using Garnet.networking;
 using Garnet.server;
 using NUnit.Framework;
@@ -108,8 +108,8 @@ namespace Garnet.test.cluster
         /// parked.
         /// </summary>
         /// <remarks>
-        /// The configuration is never written to its file, so the command is not moved to an executor thread and runs
-        /// on the thread that delivered it.
+        /// The configuration is never written to its file, so the command is not moved to the thread pool and runs on the
+        /// thread that delivered it.
         /// </remarks>
         [Test]
         [Category("CLUSTER")]
@@ -154,21 +154,34 @@ namespace Garnet.test.cluster
 
         /// <summary>
         /// A replica that replays its primary's stream synchronously applies each chunk on the thread that delivered it,
-        /// where a record waits for the Vector Set replays queued before it, which the streams of other sublogs can queue
-        /// at any time. With Vector Sets enabled the chunks run on an executor thread; without them, and with nothing to
-        /// read from the device, they run in place.
+        /// where a record waits for the Vector Set replays queued before it. The chunk awaits those replays parked, so a
+        /// chunk that reaches the replica on a socket event thread runs in place, whether or not it queues Vector Set
+        /// replays and has records that wait for them, as long as there is nothing to read from the device.
         /// </summary>
         [Test]
         [Category("CLUSTER")]
-        public void ASynchronouslyReplayedStreamRunsOnAnExecutorThreadOnlyWhenVectorSetsMayHoldItUp([Values] bool vectorSets)
+        public void ASynchronouslyReplayedStreamRunsOnTheEventThreadThatDeliveredIt([Values] bool vectorSets)
         {
-            context.CreateInstances(2, enableAOF: true, disableObjects: true, clusterConfigFlushFrequencyMs: -1, enableVectorSetPreview: vectorSets);
+            if (!SocketCompletions.InlineCompletionsSupported)
+                Assert.Ignore("Sockets cannot run their completions inline on this platform.");
+
+            context.CreateInstances(2, enableAOF: true, disableObjects: true, clusterConfigFlushFrequencyMs: -1, enableVectorSetPreview: vectorSets,
+                configureNode: (i, options) => options.NetworkInlineCompletions = i == 1);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
 
-            var executor = context.nodes[1].Provider.StoreWrapper.offloadExecutor;
-            var posts = executor.Posts;
+            // Lets the replica's receive for the stream be outstanding, so the next chunk reaches it on an event thread
+            Thread.Sleep(50);
+            var offloads = Offloads(1);
+
+            if (vectorSets)
+            {
+                // Queued on the replica ahead of the writes below, which wait for them
+                using var primary = new RawRespSession(endpoint: context.endpoints[0]);
+                ClassicAssert.AreEqual(":1\r\n", primary.Execute("VADD", "vector", "VALUES", "3", "1", "2", "3", "a", "NOQUANT"));
+                ClassicAssert.AreEqual(":1\r\n", primary.Execute("VADD", "vector", "VALUES", "3", "4", "5", "6", "b", "NOQUANT"));
+            }
 
             context.kvPairs = [];
             context.SimplePopulateDB(disableObjects: true, keyLength: 16, kvpairCount: 64, primaryIndex: 0);
@@ -185,39 +198,44 @@ namespace Garnet.test.cluster
                 }
             }
 
+            ClassicAssert.AreEqual(offloads, Offloads(1), "The replica moved a stream that waits on nothing but Vector Set replays to the thread pool.");
+
             if (vectorSets)
-                ClassicAssert.Greater(executor.Posts, posts, "The replica applied its stream in place, where a record waits for queued Vector Set replays.");
-            else
-                ClassicAssert.AreEqual(posts, executor.Posts, "The replica moved a stream that waits on nothing to an executor thread.");
+            {
+                // Run on the thread pool, so read only once the stream has been accounted for
+                using var replica = new RawRespSession(endpoint: context.endpoints[1]);
+                ClassicAssert.AreEqual("+OK\r\n", replica.Execute("READONLY"));
+                ClassicAssert.AreEqual(":2\r\n", replica.Execute("VCARD", "vector"), "The writes were replayed before the adds queued ahead of them");
+            }
         }
 
         /// <summary>
         /// A replica that truncates its AOF fast resets a sublog, on the device, before it enqueues a chunk the primary
-        /// shipped from an address it skipped ahead to. Such a chunk runs on an executor thread; a chunk that follows on
-        /// from the previous one runs in place.
+        /// shipped from an address it skipped ahead to. Such a chunk, delivered on a thread that must not wait, moves to the
+        /// thread pool; a chunk that follows on from the previous one runs in place.
         /// </summary>
         /// <remarks>
         /// Where a chunk runs is decided before the command is run, so the node need not be a replica to show it. Being
-        /// none, it fails the command and closes the session either way.
+        /// none, it fails the command and closes the session either way. Each chunk is delivered from a thread outside the
+        /// pool, as a socket event thread delivers it when completions run inline.
         /// </remarks>
         [Test]
         [Category("CLUSTER")]
-        public async Task AChunkThatSkipsAheadRunsOnAnExecutorThreadWhenTheAofIsTruncatedFast()
+        public async Task AChunkThatSkipsAheadLeavesAThreadThatMustNotWaitWhenTheAofIsTruncatedFast()
         {
             context.CreateInstances(1, enableAOF: true, FastAofTruncate: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, asyncReplay: true,
                 disableObjects: true, clusterConfigFlushFrequencyMs: -1, enableVectorSetPreview: false);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(1, 0, logger: context.logger);
 
-            var executor = context.nodes[0].Provider.StoreWrapper.offloadExecutor;
             var record = new byte[64];
 
-            var posts = executor.Posts;
+            var offloads = Offloads(0);
             await AppendAsync(previousAddress: 64, currentAddress: 64);
-            ClassicAssert.AreEqual(posts, executor.Posts, "A chunk that follows on from the previous one was moved to an executor thread.");
+            ClassicAssert.AreEqual(offloads, Offloads(0), "A chunk that follows on from the previous one was moved to the thread pool.");
 
             await AppendAsync(previousAddress: 64, currentAddress: 64 + record.Length + 8);
-            ClassicAssert.AreEqual(posts + 1, executor.Posts, "A chunk that skips ahead did not run on an executor thread.");
+            ClassicAssert.AreEqual(offloads + 1, Offloads(0), "A chunk that skips ahead was run on the thread that delivered it.");
 
             async Task AppendAsync(long previousAddress, long currentAddress)
             {
@@ -226,14 +244,70 @@ namespace Garnet.test.cluster
                 var session = NewSession(new ControlledSender(1024));
                 try
                 {
-                    var consume = Task.Run(() => Consume(session, input).AsTask());
-                    await WithinBoundAsync(consume, "the chunk to be run");
+                    var call = OffThePool(() => Consume(session, input));
+                    await WithinBoundAsync(call, "the chunk to return to the receive loop");
+                    await WithinBoundAsync((await call).AsTask(), "the chunk to be run");
                 }
                 finally
                 {
                     session.Dispose();
                     GC.KeepAlive(input);
                 }
+            }
+        }
+
+        /// <summary>
+        /// A primary ends a diskless sync by attaching to the replica it synced, which then records the primary's history
+        /// in its configuration file before it answers. A device that writes on the thread pool completes that write there,
+        /// so the attach, which runs on the pool, awaits the write instead of waiting for it, and finishes with a single
+        /// free pool thread.
+        /// </summary>
+        /// <remarks>
+        /// The attach is delivered from a thread outside the pool, as a socket event thread delivers it when completions
+        /// run inline, and moves to the pool from there.
+        /// </remarks>
+        [Test]
+        [Category("CLUSTER")]
+        public void TheRecoveryThatEndsADisklessSyncFinishesWithOneFreePoolThread()
+        {
+            context.CreateInstances(1, enableAOF: true, disableObjects: true, deviceType: Tsavorite.core.DeviceType.RandomAccess);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 0, logger: context.logger);
+
+            var replication = ((ClusterProvider)context.nodes[0].Provider.StoreWrapper.clusterProvider).replicationManager;
+
+            // What a replica holds while its primary syncs it, and what the recovery ends
+            ClassicAssert.IsTrue(replication.BeginRecovery(RecoveryStatus.ClusterReplicate, upgradeLock: false));
+
+            var address = AofAddress.Create(1, 64);
+            var attach = new SyncMetadata(fullSync: true, Garnet.cluster.NodeRole.PRIMARY, new string('a', 40), new string('b', 40),
+                currentStoreVersion: 0, address, address, address, checkpointEntry: null);
+            var input = Frame(Ascii("CLUSTER"), Ascii("attach_sync"), attach.ToByteArray());
+
+            var sender = new ControlledSender(1024);
+            var session = NewSession(sender);
+            try
+            {
+                // Waited on from the test thread, which is outside the pool, so that the cap holds for the test alone
+                using (ThreadPoolCap.ApplyFree(1))
+                {
+                    var call = OffThePool(() => Consume(session, input));
+                    ClassicAssert.IsTrue(call.Wait(Bound), "The attach did not return to the receive loop");
+
+                    var finished = call.Result.AsTask();
+                    ClassicAssert.IsTrue(finished.Wait(Bound), "The attach did not finish with one free pool thread, which it holds while the configuration is written on the pool");
+                    ClassicAssert.AreEqual(input.Length, finished.Result);
+                }
+
+                var offset = address.ToString();
+                ClassicAssert.AreEqual($"${offset.Length}\r\n{offset}\r\n", sender.Sent, "The recovery answers with the offset the replica resumes from");
+            }
+            finally
+            {
+                session.Dispose();
+                GC.KeepAlive(input);
+                if (replication.IsRecovering)
+                    replication.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
             }
         }
 
@@ -297,8 +371,13 @@ namespace Garnet.test.cluster
         /// <summary>
         /// A primary ends a diskless sync by attaching to the replica it synced, which then resets its AOF, records the
         /// primary's history and waits for its queued Vector Set replays before it answers. The session that received
-        /// the attach parks while that runs elsewhere, and answers with the offset the replica resumes from.
+        /// the attach on a thread that must not wait parks while that runs on the thread pool, and answers with the offset
+        /// the replica resumes from.
         /// </summary>
+        /// <remarks>
+        /// The attach is delivered from a thread outside the pool, as a socket event thread delivers it when completions
+        /// run inline.
+        /// </remarks>
         [Test]
         [Category("CLUSTER")]
         public async Task TheRecoveryThatEndsADisklessSyncParksTheSessionThatAskedForIt()
@@ -326,7 +405,7 @@ namespace Garnet.test.cluster
             ExceptionInjectionHelper.EnableException(pause);
             try
             {
-                var call = Task.Run(() => Consume(session, input));
+                var call = OffThePool(() => Consume(session, input));
                 await WithinBoundAsync(call, "the attach to return to the receive loop, which a recovery run on the thread that delivered it never does");
                 var consume = await call;
 
@@ -352,10 +431,183 @@ namespace Garnet.test.cluster
                     replication.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
             }
         }
+
+        /// <summary>
+        /// The attach that ends a diskless sync waits for the Vector Set replays the replica has queued before it answers.
+        /// Those replays run on the thread pool, so the attach, which runs on the pool, waits for them parked, and the
+        /// replica answers its clients from a single free pool thread meanwhile.
+        /// </summary>
+        [Test]
+        [Category("CLUSTER")]
+        public void TheRecoveryThatEndsADisklessSyncWaitsForQueuedVectorSetReplaysParked()
+        {
+            const ExceptionInjectionType hold = ExceptionInjectionType.VectorSet_Hold_Replication_Replay;
+
+            context.CreateInstances(2, enableAOF: true, clusterConfigFlushFrequencyMs: -1);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
+
+            using var primary = new RawRespSession(endpoint: context.endpoints[0]);
+            using var replica = new RawRespSession(endpoint: context.endpoints[1]);
+            ClassicAssert.AreEqual(":1\r\n", primary.Execute("VADD", "vector", "VALUES", "3", "1", "2", "3", "a", "NOQUANT"));
+            ClassicAssert.AreEqual("+OK\r\n", replica.Execute("READONLY"));
+            while (replica.Execute("VCARD", "vector") != ":1\r\n")
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token, msg: "waiting for the first add on the replica");
+
+            var replication = ((ClusterProvider)context.nodes[1].Provider.StoreWrapper.clusterProvider).replicationManager;
+            var address = AofAddress.Create(1, 64);
+            var attach = new SyncMetadata(fullSync: false, Garnet.cluster.NodeRole.PRIMARY, new string('a', 40), new string('b', 40),
+                currentStoreVersion: 0, address, address, address, checkpointEntry: null);
+            var input = Frame(Ascii("CLUSTER"), Ascii("attach_sync"), attach.ToByteArray());
+
+            var sender = new ControlledSender(1024);
+            var session = NewSession(sender, node: 1);
+            ExceptionInjectionHelper.EnableException(hold);
+            try
+            {
+                // Queued on the replica and held there
+                ClassicAssert.AreEqual(":1\r\n", primary.Execute("VADD", "vector", "VALUES", "3", "4", "5", "6", "b", "NOQUANT"));
+                while (ExceptionInjectionHelper.WaitingOnClear(hold) == 0)
+                    ClusterTestUtils.BackOff(cancellationToken: context.cts.Token, msg: "waiting for the replica to queue the add");
+
+                // What a replica holds while its primary syncs it, and what the recovery ends
+                ClassicAssert.IsTrue(replication.BeginRecovery(RecoveryStatus.ClusterReplicate, upgradeLock: false));
+
+                ValueTask<int> consume;
+
+                // Waited on from the test thread, which is outside the pool, so that the cap holds for the test alone
+                using (ThreadPoolCap.ApplyFree(1))
+                {
+                    var call = OffThePool(() => Consume(session, input));
+                    ClassicAssert.IsTrue(call.Wait(Bound), "The attach did not return to the receive loop");
+                    consume = call.Result;
+                    ClassicAssert.IsFalse(consume.IsCompleted, "The attach waits for the queued add");
+
+                    // Nothing neutral shows the attach reaching the wait, which follows a configuration write, so the
+                    // replica is kept busy for long enough
+                    var clock = Stopwatch.StartNew();
+                    do
+                    {
+                        replica.Send("PING");
+                        ClassicAssert.IsTrue(replica.WaitForReply(Bound), "The replica did not answer PING with one free pool thread, which the attach holds while it waits for the queued add");
+                        ClassicAssert.AreEqual("+PONG\r\n", replica.ReadReply());
+                        Thread.Sleep(10);
+                    }
+                    while (clock.Elapsed < TimeSpan.FromSeconds(1));
+
+                    ClassicAssert.IsEmpty(sender.Sent, "Nothing is answered until the add has been applied");
+                }
+
+                ExceptionInjectionHelper.DisableException(hold);
+                var finished = consume.AsTask();
+                ClassicAssert.IsTrue(finished.Wait(Bound), "The attach did not finish once the add was let go");
+                ClassicAssert.AreEqual(input.Length, finished.Result);
+                StringAssert.StartsWith("$", sender.Sent, "The recovery answers with the offset the replica resumes from");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(hold);
+                session.Dispose();
+                GC.KeepAlive(input);
+                if (replication.IsRecovering)
+                    replication.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+            }
+        }
+
+        /// <summary>
+        /// A chunk that skips ahead resets the sublog and then waits for the Vector Set replays the replica has queued
+        /// before it advertises the address skipped to. Those replays run on the thread pool, so the chunk, which runs on
+        /// the pool, waits for them parked, and the replica answers its clients from a single free pool thread meanwhile.
+        /// </summary>
+        /// <remarks>
+        /// The chunk is crafted, and sent on a session of its own, which the replica runs as it does its primary's. The
+        /// session has not set up the replay, so the replica is set to replay in the background, which it hands the chunk
+        /// to after the reset; failing there once the replays are let go is no part of what is shown.
+        /// </remarks>
+        [Test]
+        [Category("CLUSTER")]
+        public void AChunkThatSkipsAheadWaitsForQueuedVectorSetReplaysParked()
+        {
+            const ExceptionInjectionType hold = ExceptionInjectionType.VectorSet_Hold_Replication_Replay;
+
+            context.CreateInstances(2, enableAOF: true, FastAofTruncate: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, asyncReplay: true,
+                clusterConfigFlushFrequencyMs: -1);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
+
+            using var primary = new RawRespSession(endpoint: context.endpoints[0]);
+            using var replica = new RawRespSession(endpoint: context.endpoints[1]);
+            ClassicAssert.AreEqual(":1\r\n", primary.Execute("VADD", "vector", "VALUES", "3", "1", "2", "3", "a", "NOQUANT"));
+            ClassicAssert.AreEqual("+OK\r\n", replica.Execute("READONLY"));
+            while (replica.Execute("VCARD", "vector") != ":1\r\n")
+                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token, msg: "waiting for the first add on the replica");
+
+            var session = NewSession(new ControlledSender(1024), node: 1);
+            byte[] input = null;
+            ExceptionInjectionHelper.EnableException(hold);
+            try
+            {
+                // Queued on the replica and held there
+                ClassicAssert.AreEqual(":1\r\n", primary.Execute("VADD", "vector", "VALUES", "3", "4", "5", "6", "b", "NOQUANT"));
+                while (ExceptionInjectionHelper.WaitingOnClear(hold) == 0)
+                    ClusterTestUtils.BackOff(cancellationToken: context.cts.Token, msg: "waiting for the replica to queue the add");
+
+                var tail = context.nodes[1].Provider.StoreWrapper.appendOnlyFile.Log.GetTailAddress(0);
+                var record = new byte[64];
+                input = Frame(Ascii("CLUSTER"), Ascii("appendlog"), Ascii(context.clusterTestUtils.GetNodeIdFromNode(0, context.logger)), Ascii("0"),
+                    Ascii(tail.ToString()), Ascii((tail + record.Length).ToString()), Ascii((tail + 2 * record.Length).ToString()), record);
+
+                ValueTask<int> consume;
+
+                // Waited on from the test thread, which is outside the pool, so that the cap holds for the test alone
+                using (ThreadPoolCap.ApplyFree(1))
+                {
+                    var call = OffThePool(() => Consume(session, input));
+                    ClassicAssert.IsTrue(call.Wait(Bound), "The chunk did not return to the receive loop");
+                    consume = call.Result;
+                    ClassicAssert.IsFalse(consume.IsCompleted, "The chunk waits for the queued add");
+
+                    replica.Send("PING");
+                    ClassicAssert.IsTrue(replica.WaitForReply(Bound), "The replica did not answer PING with one free pool thread, which the chunk holds while it waits for the queued add");
+                    ClassicAssert.AreEqual("+PONG\r\n", replica.ReadReply());
+                }
+
+                ExceptionInjectionHelper.DisableException(hold);
+                ClassicAssert.IsTrue(Task.WhenAny(consume.AsTask()).Wait(Bound), "The chunk did not go on once the add was let go");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(hold);
+                session.Dispose();
+                GC.KeepAlive(input);
+            }
+        }
 #endif
 
-        RespServerSession NewSession(ControlledSender sender)
-            => (RespServerSession)context.nodes[0].Provider.GetSession(WireFormat.ASCII, sender);
+        /// <summary>Commands <paramref name="node"/> has moved to the thread pool because they would wait on a thread that must not.</summary>
+        long Offloads(int node) => Interlocked.Read(ref context.nodes[node].Provider.StoreWrapper.offloads);
+
+        /// <summary>Runs <paramref name="call"/> on a thread outside the pool.</summary>
+        static Task<T> OffThePool<T>(Func<T> call)
+        {
+            var result = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            new Thread(() =>
+            {
+                try
+                {
+                    result.SetResult(call());
+                }
+                catch (Exception e)
+                {
+                    result.SetException(e);
+                }
+            })
+            { IsBackground = true }.Start();
+            return result.Task;
+        }
+
+        RespServerSession NewSession(ControlledSender sender, int node = 0)
+            => (RespServerSession)context.nodes[node].Provider.GetSession(WireFormat.ASCII, sender);
 
         static unsafe ValueTask<int> Consume(RespServerSession session, byte[] pinnedInput)
             => session.TryConsumeMessagesAsync((byte*)Unsafe.AsPointer(ref pinnedInput[0]), pinnedInput.Length);

@@ -64,75 +64,26 @@ namespace Garnet.cluster
                 {
                     // If the incoming AOF chunk fits in the space between previousAddress and currentAddress (ReplicationOffset),
                     // an enqueue will result in an offset mismatch. So, we have to first reset the AOF to point to currentAddress.
-                    // Dispatch runs a chunk that skips ahead on an executor thread, as the reset waits on the device.
+                    // Dispatch moves a chunk that skips ahead off a thread that must not wait, as the reset waits on the device.
                     if (GarnetAppendOnlyFile.ReplicaStreamSkipsAhead(previousAddress, currentAddress, recordLength, clusterProvider.replicationManager.PageSizeBits))
                     {
                         logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), currentAddress);
                         clusterProvider.storeWrapper.appendOnlyFile.Log.SafeInitialize(physicalSublogIdx, currentAddress, currentAddress);
 
-                        // If any Vector Set ops in progress, we must wait for them before we advertise a new eplication offset
-                        clusterProvider.storeWrapper.DefaultDatabase?.VectorManager.WaitForVectorOperationsToComplete();
+                        // Vector set operations in progress finish before a new replication offset is advertised. They
+                        // run on the thread pool, so the session parks rather than holds a thread until they do.
+                        var vectorsDone = clusterProvider.storeWrapper.DefaultDatabase?.VectorManager?.WaitForVectorOperationsToCompleteAsync() ?? default;
+                        if (!vectorsDone.IsCompletedSuccessfully)
+                        {
+                            handedOff = true;
+                            return SkipAheadAsync(vectorsDone, physicalSublogIdx, (nint)record, recordLength, previousAddress, currentAddress, nextAddress, syncReplay);
+                        }
 
                         clusterProvider.replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
                     }
                 }
 
-                // Injection for a "something went wrong with THIS Replica's AOF file"
-                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Divergent_AOF_Stream);
-
-                var tail = clusterProvider.storeWrapper.appendOnlyFile.Log.GetTailAddress(physicalSublogIdx);
-                var nextPageBeginAddress = ((tail >> clusterProvider.replicationManager.PageSizeBits) + 1) << clusterProvider.replicationManager.PageSizeBits;
-                // Check to ensure:
-                // 1. if record fits in current page tailAddress of this local node (replica) should be equal to the incoming currentAddress (address of chunk send from primary node)
-                // 2. if record does not fit in current page start address of the next page matches incoming currentAddress (address of chunk send from primary node)
-                // otherwise fail and break the connection
-                if ((tail + recordLength <= nextPageBeginAddress && tail != currentAddress) ||
-                    (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
-                {
-                    logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
-                    throw new GarnetException($"Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", LogLevel.Warning, clientResponse: false);
-                }
-
-                // Address check only if synchronous replication is enabled
-                if (syncReplay && clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != tail)
-                {
-                    logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
-                    logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), tail);
-                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx)}, aof.TailAddress {tail}", LogLevel.Warning, clientResponse: false);
-                }
-
-                // Initialize sublog ref if first time
-                physicalSublog ??= clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
-
-                // Enqueue to AOF
-                _ = physicalSublog.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: true);
-
-                var driver = replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx);
-                ValueTask pending;
-                var pulseFollows = false;
-                if (syncReplay)
-                {
-                    // Synchronous replay
-                    pending = driver.ConsumeFromSessionAsync(record, recordLength, currentAddress, nextAddress, isProtected: false);
-                    if (pending.IsCompletedSuccessfully)
-                        pending = driver.ThrottleAsync();
-                    else
-                        pulseFollows = true;
-                }
-                else
-                {
-                    // Initialize iterator and run background task once
-                    driver.InitializeBackgroundReplayTask(previousAddress);
-
-                    // Throttle to give the opportunity to the background replay task to catch up
-                    pending = driver.ThrottlePrimaryAsync();
-                }
-
-                if (pending.IsCompletedSuccessfully)
-                    return default;
-
-                handedOff = true;
-                return FinishReplayAsync(driver, pending, pulseFollows, ownsReplay: syncReplay);
+                return AppendPrimaryStreamAsync(physicalSublogIdx, (nint)record, recordLength, previousAddress, currentAddress, nextAddress, syncReplay, out handedOff);
             }
             catch (Exception ex)
             {
@@ -144,6 +95,81 @@ namespace Garnet.cluster
                 if (syncReplay && !failReplay && !handedOff)
                     replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).SuspendReplay();
             }
+        }
+
+        /// <summary>
+        /// Appends primary AOF records that follow on from this replica's tail, and applies them or hands them to the
+        /// replay task.
+        /// </summary>
+        /// <param name="physicalSublogIdx">Sublog the records belong to.</param>
+        /// <param name="record">Address of the records, valid until the task returned completes.</param>
+        /// <param name="recordLength">Length of the records.</param>
+        /// <param name="previousAddress">Primary address the records follow.</param>
+        /// <param name="currentAddress">Primary address of the records.</param>
+        /// <param name="nextAddress">Primary address after the records.</param>
+        /// <param name="syncReplay">Whether the records are applied before the session goes on.</param>
+        /// <param name="handedOff">Set when the task returned gives up the replay that the caller took.</param>
+        /// <returns>As for <see cref="ProcessPrimaryStreamAsync"/>.</returns>
+        ValueTask AppendPrimaryStreamAsync(int physicalSublogIdx, nint record, int recordLength, long previousAddress, long currentAddress, long nextAddress, bool syncReplay, out bool handedOff)
+        {
+            handedOff = false;
+
+            // Injection for a "something went wrong with THIS Replica's AOF file"
+            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Divergent_AOF_Stream);
+
+            var tail = clusterProvider.storeWrapper.appendOnlyFile.Log.GetTailAddress(physicalSublogIdx);
+            var nextPageBeginAddress = ((tail >> clusterProvider.replicationManager.PageSizeBits) + 1) << clusterProvider.replicationManager.PageSizeBits;
+            // Check to ensure:
+            // 1. if record fits in current page tailAddress of this local node (replica) should be equal to the incoming currentAddress (address of chunk send from primary node)
+            // 2. if record does not fit in current page start address of the next page matches incoming currentAddress (address of chunk send from primary node)
+            // otherwise fail and break the connection
+            if ((tail + recordLength <= nextPageBeginAddress && tail != currentAddress) ||
+                (tail + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
+            {
+                logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
+                throw new GarnetException($"Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", LogLevel.Warning, clientResponse: false);
+            }
+
+            // Address check only if synchronous replication is enabled
+            if (syncReplay && clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != tail)
+            {
+                logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
+                logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), tail);
+                throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx)}, aof.TailAddress {tail}", LogLevel.Warning, clientResponse: false);
+            }
+
+            // Initialize sublog ref if first time
+            physicalSublog ??= clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
+
+            // Enqueue to AOF
+            _ = physicalSublog.UnsafeEnqueueRaw(new Span<byte>((byte*)record, recordLength), noCommit: true);
+
+            var driver = replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx);
+            ValueTask pending;
+            var pulseFollows = false;
+            if (syncReplay)
+            {
+                // Synchronous replay
+                pending = driver.ConsumeFromSessionAsync((byte*)record, recordLength, currentAddress, nextAddress, isProtected: false);
+                if (pending.IsCompletedSuccessfully)
+                    pending = driver.ThrottleAsync();
+                else
+                    pulseFollows = true;
+            }
+            else
+            {
+                // Initialize iterator and run background task once
+                driver.InitializeBackgroundReplayTask(previousAddress);
+
+                // Throttle to give the opportunity to the background replay task to catch up
+                pending = driver.ThrottlePrimaryAsync();
+            }
+
+            if (pending.IsCompletedSuccessfully)
+                return default;
+
+            handedOff = true;
+            return FinishReplayAsync(driver, pending, pulseFollows, ownsReplay: syncReplay);
         }
     }
 }

@@ -71,9 +71,9 @@ namespace Garnet.cluster
         int flushCount = 0;
 
         /// <summary>
-        /// Admits one write of the configuration file at a time.
+        /// Writes the configuration file.
         /// </summary>
-        readonly SemaphoreSlim configFlushGate = new(1, 1);
+        readonly ConfigFileWriter configWriter;
 
         /// <summary>
         /// Shared epoch instance for connection store
@@ -96,6 +96,7 @@ namespace Garnet.cluster
 
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "cluster", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
+            configWriter = new ConfigFileWriter(clusterConfigDevice, pool, () => currentConfig.ToByteArray(), logger);
 
             var clusterEndpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
 
@@ -154,7 +155,7 @@ namespace Garnet.cluster
                             return;
 
                         if (Interlocked.CompareExchange(ref flushCount, 0, 0) > 0)
-                            await ClusterUtils.WriteIntoAsync(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger).ConfigureAwait(false);
+                            await configWriter.WriteAsync().ConfigureAwait(false);
 
                         await Task.Delay(flushConfigFrequency, ctsGossip.Token).ConfigureAwait(false);
                     }
@@ -199,7 +200,7 @@ namespace Garnet.cluster
         /// Flush current config to disk
         /// </summary>
         /// <remarks>
-        /// Holds the calling thread for the write unless flushes are batched, so is called only from an executor thread
+        /// Holds the calling thread for the write unless flushes are batched, so is called only from a thread that may wait,
         /// or at startup; an async caller uses <see cref="FlushConfigAsync"/>.
         /// </remarks>
         public void FlushConfig()
@@ -210,17 +211,7 @@ namespace Garnet.cluster
             if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
                 Interlocked.Increment(ref flushCount);
             else
-            {
-                configFlushGate.Wait();
-                try
-                {
-                    ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
-                }
-                finally
-                {
-                    _ = configFlushGate.Release();
-                }
-            }
+                configWriter.Write();
         }
 
         /// <summary>
@@ -234,20 +225,7 @@ namespace Garnet.cluster
                 return default;
             }
 
-            return WriteConfigAsync();
-
-            async ValueTask WriteConfigAsync()
-            {
-                await configFlushGate.WaitAsync().ConfigureAwait(false);
-                try
-                {
-                    await ClusterUtils.WriteIntoAsync(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger).ConfigureAwait(false);
-                }
-                finally
-                {
-                    _ = configFlushGate.Release();
-                }
-            }
+            return new ValueTask(configWriter.WriteAsync());
         }
 
         /// <summary>

@@ -112,9 +112,9 @@ namespace Garnet.cluster
         readonly SectorAlignedBufferPool replicationConfigDevicePool;
 
         /// <summary>
-        /// Admits one write of the replication history file at a time.
+        /// Writes the replication history file.
         /// </summary>
-        readonly SemaphoreSlim replicationConfigFlushGate = new(1, 1);
+        readonly ConfigFileWriter replicationConfigWriter;
 
         private void InitializeReplicationHistory(int aofPhysicalSublogCount)
         {
@@ -134,12 +134,6 @@ namespace Garnet.cluster
                 logger?.LogWarning(ex, "Corrupt or incompatible replication history on disk, reinitializing fresh state");
                 InitializeReplicationHistory(storeWrapper.serverOptions.AofPhysicalSublogCount);
             }
-        }
-
-        private void TryUpdateMyPrimaryReplId(string primaryReplicationId)
-        {
-            PublishPrimaryReplId(primaryReplicationId);
-            FlushConfig();
         }
 
         private ValueTask TryUpdateMyPrimaryReplIdAsync(string primaryReplicationId)
@@ -177,40 +171,14 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Writes the replication history, holding the calling thread for the write: called only from an executor thread
-        /// or at startup.
+        /// Writes the replication history, holding the calling thread for the write: called only from a thread that may
+        /// wait, or at startup.
         /// </summary>
-        private void FlushConfig()
-        {
-            replicationConfigFlushGate.Wait();
-            try
-            {
-                logger?.LogTrace("Flushing replication history {path}", replicationConfigDevice.FileName);
-                ClusterUtils.WriteInto(replicationConfigDevice, replicationConfigDevicePool, 0, currentReplicationConfig.ToByteArray(), logger: logger);
-                logger?.LogTrace("Replication history flush completed {path}", replicationConfigDevice.FileName);
-            }
-            finally
-            {
-                _ = replicationConfigFlushGate.Release();
-            }
-        }
+        private void FlushConfig() => replicationConfigWriter.Write();
 
         /// <summary>
         /// Writes the replication history, completing when the write does rather than holding the calling thread for it.
         /// </summary>
-        private async ValueTask FlushConfigAsync()
-        {
-            await replicationConfigFlushGate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                logger?.LogTrace("Flushing replication history {path}", replicationConfigDevice.FileName);
-                await ClusterUtils.WriteIntoAsync(replicationConfigDevice, replicationConfigDevicePool, 0, currentReplicationConfig.ToByteArray(), logger).ConfigureAwait(false);
-                logger?.LogTrace("Replication history flush completed {path}", replicationConfigDevice.FileName);
-            }
-            finally
-            {
-                _ = replicationConfigFlushGate.Release();
-            }
-        }
+        private ValueTask FlushConfigAsync() => new(replicationConfigWriter.WriteAsync());
     }
 }

@@ -90,6 +90,11 @@ namespace Garnet.common
         => resetEvent.Wait(millisecondsTimeout);
 
         /// <summary>
+        /// Whether the count is 0, as <see cref="Wait"/> with a timeout of 0 reports, but without throwing once disposed.
+        /// </summary>
+        public readonly bool IsSet => resetEvent.IsSet;
+
+        /// <summary>
         /// Completes when the internal count is 0, as <see cref="Wait"/> returns, without blocking a thread while it is
         /// above 0.
         /// </summary>

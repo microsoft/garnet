@@ -902,12 +902,12 @@ namespace Garnet.server
                         {
                             if (txnManager.state == TxnState.Running)
                             {
-                                // The transaction holds its locks, so a command that would wait on this thread moves
-                                // to an executor thread that is started for it if every one is busy
+                                // A command that would wait on this thread moves to the thread pool, with the
+                                // transaction's locks held
                                 if (MayParkBeforeDispatch(cmd) && MustOffload(cmd))
                                 {
                                     endReadHead = readHead = _origReadHead;
-                                    ParkForOffload(mustRun: true);
+                                    ParkForOffload();
                                     break;
                                 }
 
@@ -923,15 +923,6 @@ namespace Garnet.server
                                     if (ParkForAofGate())
                                         break;
                                     continue;
-                                }
-
-                                // A transaction whose commands may read from the device runs on an executor thread,
-                                // moved there before it locks anything
-                                if (cmd == RespCommand.EXEC && MustOffloadExec())
-                                {
-                                    endReadHead = readHead = _origReadHead;
-                                    ParkForOffload(mustRun: false);
-                                    break;
                                 }
 
                                 _ = cmd switch
@@ -1006,8 +997,8 @@ namespace Garnet.server
                             else if (SlotVerificationDeferred)
                             {
                                 // A key the command touches is being migrated: it has written nothing, and it is parsed
-                                // and verified again from the start, once the migration moves on, or on an executor
-                                // thread if the key may have to be looked up on the device
+                                // and verified again from the start, once the migration moves on, or on the thread
+                                // pool if the key may have to be looked up on the device
                                 endReadHead = readHead = _origReadHead;
                                 if (ParkForSlotVerification())
                                     break;
@@ -2161,7 +2152,7 @@ namespace Garnet.server
                 database.VectorManager,
                 logger,
                 respProtocolVersion);
-            dbStorageSession.SetLockContentionHandler(this, restartPoint);
+            dbStorageSession.SetLockContentionHandler(this);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
                 dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
@@ -2202,7 +2193,7 @@ namespace Garnet.server
                 database.VectorManager,
                 logger,
                 respProtocolVersion);
-            dbStorageSession.SetLockContentionHandler(this, restartPoint);
+            dbStorageSession.SetLockContentionHandler(this);
 
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
                 dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);

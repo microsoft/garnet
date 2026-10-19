@@ -1,8 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -123,6 +126,87 @@ namespace Garnet.test
                 foreach (var blocker in blockers)
                     blocker?.Dispose();
             }
+        }
+
+        [Test]
+        public void LoadingACertificateLeavesTheEventThreadsToOtherConnections()
+        {
+            if (!useTls)
+                Assert.Ignore("Only a TLS server loads a certificate.");
+            if (!OperatingSystem.IsLinux())
+                Assert.Ignore("The certificate file is a FIFO, made with mkfifo.");
+
+            StartServer(inlineCompletions: true);
+
+            // The certificate file is a FIFO, whose open waits for a writer, and every event thread has a load of it, twice
+            var file = Path.Combine(TestUtils.MethodTestDir, "cert.pfx");
+            using (var mkfifo = Process.Start("mkfifo", file))
+            {
+                mkfifo.WaitForExit();
+                ClassicAssert.AreEqual(0, mkfifo.ExitCode, $"mkfifo {file} failed.");
+            }
+
+            var eventThreads = SocketCompletions.EventThreadCount;
+            ClassicAssert.Greater(eventThreads, 0);
+            var loaders = new RawRespSession[(2 * eventThreads) + 1];
+            try
+            {
+                for (var i = 0; i < loaders.Length; i++)
+                    loaders[i] = Connect();
+
+                Task<string> probe;
+                bool answeredWhileLoading;
+                try
+                {
+                    foreach (var loader in loaders)
+                        loader.Send("CONFIG", "SET", "cert-file-name", file, "cert-password", TestUtils.certPassword);
+                    Thread.Sleep(200);
+
+                    probe = Task.Run(() =>
+                    {
+                        using var client = Connect();
+                        return client.Execute("PING");
+                    });
+                    answeredWhileLoading = probe.Wait(TimeSpan.FromSeconds(5));
+                }
+                finally
+                {
+                    ReleaseLoads(file);
+                }
+
+                ClassicAssert.IsTrue(answeredWhileLoading,
+                    "A new connection waited for the certificate loads, so they held the event threads rather than leaving them.");
+                ClassicAssert.AreEqual(Pong, probe.Result);
+                foreach (var loader in loaders)
+                    ClassicAssert.AreEqual(Ok, loader.ReadReply());
+            }
+            finally
+            {
+                foreach (var loader in loaders)
+                    loader?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Lets the loads of <paramref name="fifo"/> through to the test certificate. Opening the FIFO lets every load
+        /// waiting to open it go on; the certificate then takes the FIFO's name, and closing the FIFO ends their first
+        /// reads empty, so each load, finding no PEM marker, opens the name again as PKCS#12 and gets the certificate.
+        /// A load that opens the name after it has been taken gets the certificate at once.
+        /// </summary>
+        static void ReleaseLoads(string fifo)
+        {
+            var certificate = fifo + ".tmp";
+            File.Copy(TestUtils.certFile, certificate);
+
+            var releaser = new Thread(() =>
+            {
+                using var writer = new FileStream(fifo, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+                File.Move(certificate, fifo, overwrite: true);
+            })
+            { IsBackground = true };
+            releaser.Start();
+
+            ClassicAssert.IsTrue(releaser.Join(TimeSpan.FromSeconds(30)), "No certificate load opened the file.");
         }
     }
 }

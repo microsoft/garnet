@@ -216,7 +216,7 @@ namespace Garnet.cluster
             var firstSlot = HashSlotUtils.HashSlot(firstKey);
             var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, csvi.canOffload, firstSlot);
 
-            // The request is verified again once the migration moves on, or on an executor thread, so the other keys have
+            // The request is verified again once the migration moves on, or on the thread pool, so the other keys have
             // nothing to be compared against yet
             if (firstSlotVerifyResult.state is SlotVerifiedState.WAIT or SlotVerifiedState.OFFLOAD)
                 return firstSlotVerifyResult;

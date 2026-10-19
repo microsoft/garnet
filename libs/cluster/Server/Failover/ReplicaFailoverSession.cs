@@ -162,7 +162,7 @@ namespace Garnet.cluster
                 _ = clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
 
                 // Resume all background maintenance that were possibly shutdown when this node became a replica
-                clusterProvider.storeWrapper.StartPrimaryTasks();
+                await clusterProvider.storeWrapper.StartPrimaryTasksAsync().ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -328,7 +328,7 @@ namespace Garnet.cluster
                 await IssueAttachReplicasAsync().ConfigureAwait(false);
 
                 await clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync();
-                clusterProvider.storeWrapper.StartPrimaryTasks();
+                await clusterProvider.storeWrapper.StartPrimaryTasksAsync().ConfigureAwait(false);
 
                 return true;
             }

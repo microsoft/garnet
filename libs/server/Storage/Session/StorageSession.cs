@@ -198,22 +198,34 @@ namespace Garnet.server
                 + unifiedBasicContext.Session.PendingOperationCount;
 
         /// <summary>
-        /// Hands waits on a latched key by this session's string, object and unified operations to <paramref name="handler"/>,
-        /// and has the store callbacks that change a record disarm <paramref name="restartPoint"/>.
+        /// The network session this session runs the commands of, which can park while a command waits, or null.
         /// </summary>
-        /// <param name="handler">Decides how an operation waits on a latched key.</param>
-        /// <param name="restartPoint">Where the command being run can be run again from.</param>
+        internal RespServerSession parkingSession;
+
+        /// <summary>
+        /// Set while this session replays a record on a thread that must not wait. A wait the record reaches before it
+        /// has changed anything throws <see cref="ReplayMustWaitException"/> instead, so the record is replayed again once
+        /// the wait is over.
+        /// </summary>
+        internal bool replayMustNotWait;
+
+        /// <summary>
+        /// Hands waits on a latched key by this session's string, object and unified operations to <paramref name="session"/>,
+        /// and has the store callbacks that change a record disarm its restart point.
+        /// </summary>
+        /// <param name="session">Decides how an operation waits on a latched key, and parks for other waits.</param>
         /// <remarks>
         /// The vector session is left without a handler: vector commands run in place (see
         /// <see cref="RespServerSession.LockWaitClass"/>).
         /// </remarks>
-        internal void SetLockContentionHandler(ILockContentionHandler handler, CommandRestartPoint restartPoint)
+        internal void SetLockContentionHandler(RespServerSession session)
         {
-            functionsState.restartPoint = restartPoint;
-            stringBasicContext.Session.LockContentionHandler = handler;
+            parkingSession = session;
+            functionsState.restartPoint = session.restartPoint;
+            stringBasicContext.Session.LockContentionHandler = session;
             if (objectBasicContext.Session is { } objectSession)
-                objectSession.LockContentionHandler = handler;
-            unifiedBasicContext.Session.LockContentionHandler = handler;
+                objectSession.LockContentionHandler = session;
+            unifiedBasicContext.Session.LockContentionHandler = session;
         }
 
         public void Dispose()

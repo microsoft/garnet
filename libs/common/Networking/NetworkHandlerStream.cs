@@ -71,22 +71,19 @@ namespace Garnet.networking
             }
 
             public override ValueTask<int> ReadAsync(Memory<byte> destination, CancellationToken cancellationToken = default)
-            {
-                var executor = garnetNetworkHandler.handshakeExecutor;
-                return executor == null
-                    ? ReadAsyncInternalAsync(destination, cancellationToken)
-                    : HandshakeReadAsync(executor, destination, cancellationToken);
-            }
+                => garnetNetworkHandler.validatingClientCertificate
+                    ? HandshakeReadAsync(destination, cancellationToken)
+                    : ReadAsyncInternalAsync(destination, cancellationToken);
 
             /// <summary>
-            /// A read of a handshake that runs on <paramref name="executor"/>: completes on one of its threads, so
-            /// <see cref="SslStream"/> continues there.
+            /// A read of a handshake that validates a client certificate: completes on the thread pool if the thread
+            /// that completed it must not wait, so <see cref="SslStream"/> continues there.
             /// </summary>
-            async ValueTask<int> HandshakeReadAsync(IOffloadExecutor executor, Memory<byte> destination, CancellationToken cancellationToken)
+            async ValueTask<int> HandshakeReadAsync(Memory<byte> destination, CancellationToken cancellationToken)
             {
                 var read = await ReadAsyncInternalAsync(destination, cancellationToken).ConfigureAwait(false);
-                if (!executor.RunsInPlace)
-                    await new OffloadHop(executor);
+                if (ThreadPoolHop.Required)
+                    await new ThreadPoolHop();
                 return read;
             }
 

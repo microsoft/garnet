@@ -87,7 +87,7 @@ namespace Garnet.cluster
                     await clusterProvider.replicationManager.ResetReplicaReplayDriverStoreAsync().ConfigureAwait(false);
 
                     // Remove aofSync tasks if this node was a primary
-                    aofSyncDriverStore.Reset();
+                    await aofSyncDriverStore.ResetAsync().ConfigureAwait(false);
 
                     // Reset the database in preparation for connecting to primary
                     // only if we expect to have disk checkpoint to recover from,
@@ -204,12 +204,21 @@ namespace Garnet.cluster
             }
         }
 
-        public AofAddress TryReplicaDisklessRecovery(SyncMetadata primarySyncMetadata, out ReadOnlySpan<byte> errorMessage)
+        /// <summary>
+        /// Ends the diskless sync that the primary drove into this replica, and answers with the offset the replica
+        /// resumes streaming from.
+        /// </summary>
+        /// <param name="primarySyncMetadata">Metadata the primary sent with the attach.</param>
+        /// <returns>The offset to resume from, or an error message when the recovery fails.</returns>
+        /// <remarks>
+        /// Waits for the vector set operations queued by the snapshot without holding a thread, because those
+        /// operations run on the thread pool and a pool that cannot grow would otherwise never run them.
+        /// </remarks>
+        public async Task<(AofAddress ReplicationOffset, ReadOnlyMemory<byte> ErrorMessage)> TryReplicaDisklessRecoveryAsync(SyncMetadata primarySyncMetadata)
         {
             try
             {
-                errorMessage = [];
-                logger?.LogSyncMetadata(LogLevel.Trace, nameof(TryReplicaDisklessRecovery), primarySyncMetadata);
+                logger?.LogSyncMetadata(LogLevel.Trace, nameof(TryReplicaDisklessRecoveryAsync), primarySyncMetadata);
 
                 var aofBeginAddress = primarySyncMetadata.currentAofBeginAddress;
                 var aofTailAddress = aofBeginAddress;
@@ -222,7 +231,7 @@ namespace Garnet.cluster
                     aofTailAddress = _replicationOffset = this.replicationOffset;
                 }
 
-                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery);
+                await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery).ConfigureAwait(false);
 
                 storeWrapper.appendOnlyFile.Log.Initialize(aofBeginAddress, aofTailAddress);
 
@@ -231,10 +240,12 @@ namespace Garnet.cluster
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
-                TryUpdateMyPrimaryReplId(primarySyncMetadata.currentPrimaryReplId);
+                await TryUpdateMyPrimaryReplIdAsync(primarySyncMetadata.currentPrimaryReplId).ConfigureAwait(false);
 
                 // Before advertising updated replication offset, wait for Vector Set ops to finish
-                storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
+                var vectorManager = storeWrapper.DefaultDatabase.VectorManager;
+                if (vectorManager != null)
+                    await vectorManager.WaitForVectorOperationsToCompleteAsync().ConfigureAwait(false);
 
                 // Full sync only: a partial sync replays AOF instead of streaming raw records.
                 if (primarySyncMetadata.fullSync)
@@ -249,13 +260,12 @@ namespace Garnet.cluster
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetInternalWriteSession();
 
-                return this.replicationOffset;
+                return (this.replicationOffset, default);
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(TryReplicaDisklessRecovery)}");
-                errorMessage = Encoding.ASCII.GetBytes(ex.Message);
-                return AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
+                logger?.LogError(ex, $"{nameof(TryReplicaDisklessRecoveryAsync)}");
+                return (AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1), Encoding.ASCII.GetBytes(ex.Message));
             }
             finally
             {

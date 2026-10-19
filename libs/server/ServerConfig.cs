@@ -199,22 +199,53 @@ namespace Garnet.server
                 return CompleteAsyncCommand(body);
             }
 
-            ApplyDynamicConfigSets(dynamicSets, sbErrorMsg);
+            var enacting = ApplyDynamicConfigSetsAsync(dynamicSets, sbErrorMsg);
+            if (!enacting.IsCompleted)
+            {
+                ValueTask body;
+                using (BeginAsyncCommand())
+                    body = ConfigSetReplyWhenEnactedAsync(enacting, sbErrorMsg);
+
+                return CompleteAsyncCommand(body);
+            }
+
             WriteConfigSetReply(sbErrorMsg);
 
             return true;
         }
 
-        private void ApplyDynamicConfigSets(List<(ServerConfigType type, string value)> dynamicSets, StringBuilder sbErrorMsg)
+        /// <summary>
+        /// Applies runtime settings.
+        /// </summary>
+        /// <returns>A task that completes once every applied setting has taken effect.</returns>
+        private Task ApplyDynamicConfigSetsAsync(List<(ServerConfigType type, string value)> dynamicSets, StringBuilder sbErrorMsg)
         {
+            var enacting = Task.CompletedTask;
             if (dynamicSets == null)
-                return;
+                return enacting;
 
             foreach (var (type, value) in dynamicSets)
             {
-                if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
+                if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error, out var enacted))
                     AppendError(sbErrorMsg, error);
+
+                if (!enacted.IsCompleted)
+                    enacting = enacting.IsCompleted ? enacted : Task.WhenAll(enacting, enacted);
             }
+
+            return enacting;
+        }
+
+        /// <summary>
+        /// Parks the session until the applied settings have taken effect, then replies to the CONFIG SET.
+        /// </summary>
+        /// <param name="enacting">Completes once the applied settings have taken effect.</param>
+        /// <param name="sbErrorMsg">Errors accumulated while applying the settings.</param>
+        [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
+        private async ValueTask ConfigSetReplyWhenEnactedAsync(Task enacting, StringBuilder sbErrorMsg)
+        {
+            await enacting.ConfigureAwait(false);
+            WriteConfigSetReply(sbErrorMsg);
         }
 
         private unsafe void WriteConfigSetReply(StringBuilder sbErrorMsg)
@@ -289,7 +320,8 @@ namespace Garnet.server
         {
             await HandleIndexSizeChangeAsync(index, sbErrorMsg).ConfigureAwait(false);
 
-            ApplyDynamicConfigSets(dynamicSets, sbErrorMsg);
+            await ApplyDynamicConfigSetsAsync(dynamicSets, sbErrorMsg).ConfigureAwait(false);
+
             WriteConfigSetReply(sbErrorMsg);
         }
 

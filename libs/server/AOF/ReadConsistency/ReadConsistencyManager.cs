@@ -31,7 +31,7 @@ namespace Garnet.server
         /// (AofReplayDriftCheckFreq &gt; 0), the barrier itself is enabled (AofReplayDriftThreshold
         /// &gt;= 0), and there is more than one virtual sublog (so cross-sublog drift can exist).
         /// When false, each sublog's next-scan boundary is seeded to long.MaxValue, which disables
-        /// the proactive scan branch in <see cref="UpdateVirtualSublogKeySequenceNumber(int, long, long)"/>.
+        /// the proactive scan branch in <see cref="UpdateVirtualSublogKeySequenceNumber(int, long, long, bool)"/>.
         /// </summary>
         readonly bool proactiveReplayDriftCheckEnabled = serverOptions.ProactiveReplayDriftCheckEnabled;
 
@@ -223,7 +223,10 @@ namespace Garnet.server
         /// <param name="virtualSublogIdx"></param>
         /// <param name="keyHash"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateVirtualSublogKeySequenceNumber(int virtualSublogIdx, long keyHash, long sequenceNumber)
+        /// <param name="mustNotWait">Whether the caller replays on a thread that must not wait at the replay barrier; see
+        /// <see cref="ReplayAlignBarrier.SignalArrivalAndWait(int, long, bool)"/>. Everything done before the barrier
+        /// only advances monotonically, so replaying the record again repeats none of it.</param>
+        public void UpdateVirtualSublogKeySequenceNumber(int virtualSublogIdx, long keyHash, long sequenceNumber, bool mustNotWait = false)
         {
             // Eagerly publish this sublog's max frontier BEFORE parking and writing the key sketch entry.
             //
@@ -256,7 +259,7 @@ namespace Garnet.server
             // Pause this replay thread when it has run ahead of an active round's target, bounding
             // drift from the lagging sublogs. Fast path is a single Volatile.Read + compare when no
             // round is active.
-            replayBarrier.SignalArrivalAndWait(virtualSublogIdx, vsrs[virtualSublogIdx].Max);
+            replayBarrier.SignalArrivalAndWait(virtualSublogIdx, vsrs[virtualSublogIdx].Max, mustNotWait);
 
             // Publish the key's sketch entry AFTER the park (deferred-KRT order): while parked, a
             // reader touching this key still sees its previous value and advances its session

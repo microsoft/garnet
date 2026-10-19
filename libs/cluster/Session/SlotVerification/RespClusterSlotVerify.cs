@@ -95,7 +95,7 @@ namespace Garnet.cluster
         /// true so the caller stops processing the request, waits and verifies it again. With
         /// <see cref="ClusterSlotVerificationInput.canOffload"/> set, a key being migrated that may have to be looked up
         /// on the device is likewise neither served nor answered: <see cref="ClusterSlotVerificationInput.mustOffload"/>
-        /// is set instead, and the caller verifies the request again on an executor thread.
+        /// is set instead, and the caller verifies the request again on the thread pool.
         /// </remarks>
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>

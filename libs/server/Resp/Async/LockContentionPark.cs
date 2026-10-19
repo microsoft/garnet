@@ -58,7 +58,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Set as <see cref="lockContended"/> is thrown, and cleared by the park it unwinds to: 1 to run the command again
-        /// from its parse, 2 to continue it from its recorded progress.
+        /// from its parse, 2 to continue it from its recorded progress, 3 to run it again from its parse once the Vector Set
+        /// index it found pending a drop has been dropped (see <see cref="ParkUntilIndexDropped"/>).
         /// </summary>
         internal byte lockContendedRaised;
 
@@ -207,7 +208,8 @@ namespace Garnet.server
         const int LockSpinIterations = 32;
 
         /// <summary>
-        /// Parks the session on the latch its command found held, once the command has unwound to <see cref="ConsumeCore"/>.
+        /// Parks the session on the latch its command found held, or on the Vector Set index drop it found pending, once the
+        /// command has unwound to <see cref="ConsumeCore"/>.
         /// </summary>
         /// <remarks>
         /// <para>
@@ -230,7 +232,7 @@ namespace Garnet.server
             var raised = lockContendedRaised;
             lockContendedRaised = 0;
 
-            if (raised == 1)
+            if (raised is 1 or 3)
             {
                 endReadHead = readHead = restartPoint.ReadHead;
                 dcurr = restartPoint.replyStart != null ? restartPoint.replyStart : networkSender.GetResponseObjectHead();
@@ -239,7 +241,10 @@ namespace Garnet.server
                 // A transaction that deferred to a migration before it found the key latched verifies its keys again
                 csvi.mustWait = csvi.mustOffload = false;
 
-                ParkForLockRelease(retainBatchScope: false);
+                if (raised == 1)
+                    ParkForLockRelease(retainBatchScope: false);
+                else
+                    ParkForIndexDrop();
             }
             else
             {

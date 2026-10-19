@@ -16,7 +16,7 @@ namespace Garnet.server
     /// A box is rented when a command body first suspends and returned once that body completes, so a session
     /// that repeatedly runs the same command allocates one box for its lifetime. The resume delegate is built
     /// once per box, which is what keeps a suspension allocation-free. The box is also the work item a suspension
-    /// that hands the session to the <see cref="OffloadExecutor"/> is posted as, for the same reason.
+    /// that hands the session to the thread pool is queued as, for the same reason.
     /// </remarks>
     internal abstract class RespAsyncBox : IValueTaskSource, IThreadPoolWorkItem
     {
