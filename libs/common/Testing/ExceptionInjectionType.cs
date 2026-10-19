@@ -42,6 +42,11 @@ namespace Garnet.common
         /// </summary>
         Migration_Slot_Keys_Transmitting,
         /// <summary>
+        /// Hold the migration slot driver, until cleared, once it has suspended config merges to hand the slots over.
+        /// A node shutting down does not release the hold.
+        /// </summary>
+        Migration_Hold_Ownership_Transfer,
+        /// <summary>
         /// AOF on replica has diverged from stream coming from primary.
         /// </summary>
         Divergent_AOF_Stream,

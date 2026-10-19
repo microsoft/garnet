@@ -132,6 +132,10 @@ namespace Garnet.cluster
                 // so we can mark them as being associated with this newly added session
                 foreach (var slot in mSession.GetSlots)
                     sessions[slot] = mSession;
+
+                // The reference the migration task started on the session owns. Taking it under the lock means a
+                // removal, which disposes the session, cannot dispose the migration operations before the task runs.
+                mSession.AddReference();
             }
             catch (Exception ex)
             {

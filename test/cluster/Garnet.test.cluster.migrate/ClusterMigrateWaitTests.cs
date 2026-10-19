@@ -427,6 +427,84 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
+        /// Forgetting the target of a migration while a batch is being transmitted ends the migration, but leaves the
+        /// connections to the tasks still using them: disposing one from another thread races the task's send through
+        /// it, and can return the send buffer twice or let the task write into it after it is back in the pool. The
+        /// last task to finish disposes them, and every buffer the migration rented is then back in its pool.
+        /// </summary>
+        [Test, CancelAfter(TestTimeout)]
+        [Category("CLUSTER")]
+        public void AMigrationWhoseTargetIsForgottenMidBatchKeepsItsConnectionsUntilItIsDone(CancellationToken cancellationToken)
+        {
+            var slot = CreateClusterHolding(Key);
+            var manager = ((ClusterProvider)context.nodes[SourceNode].Provider.StoreWrapper.clusterProvider).migrationManager;
+
+            using var pause = MigrationPause.Start(context, slot, cancellationToken);
+
+            var migration = MigrateSessions(MigrationTaskStore(manager))[slot];
+            ClassicAssert.IsNotNull(migration, "The held migration is not in the task store");
+            var clients = Array.ConvertAll(MigrateOperations(migration), static o => o.Client);
+
+            var targetId = context.clusterTestUtils.ClusterMyId(TargetNode, context.logger);
+            _ = context.clusterTestUtils.ClusterForget(SourceNode, targetId, 60, context.logger);
+
+            ClassicAssert.IsNull(MigrateSessions(MigrationTaskStore(manager))[slot], "Forgetting the target left its migration in the task store");
+            ClassicAssert.IsFalse(Array.Exists(clients, static c => c.Disposed), "Forgetting the target disposed a connection the held migration is still using");
+
+            pause.Release();
+
+            while (!Array.TrueForAll(clients, static c => c.Disposed) || manager.GetNetworkPool.LiveBytes != 0)
+                ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: $"Waiting for the migration to dispose its connections ({manager.GetNetworkPool.GetStats()})");
+        }
+
+        /// <summary>
+        /// A node shut down while a migration hands its slots over finishes shutting down, and the migration disposes
+        /// its connections. Shutdown disposes the cluster manager before the migrations, so the migration cannot resume
+        /// config merges when it goes on, and it still releases its connections, which shutdown waits for the buffers of.
+        /// </summary>
+        [Test, CancelAfter(TestTimeout)]
+        [Category("CLUSTER")]
+        public void ANodeShutDownWhileAMigrationHandsOverItsSlotsFinishesShuttingDown(CancellationToken cancellationToken)
+        {
+            const ExceptionInjectionType Hold = ExceptionInjectionType.Migration_Hold_Ownership_Transfer;
+
+            var slot = CreateClusterHolding(Key);
+            var store = MigrationTaskStore(((ClusterProvider)context.nodes[SourceNode].Provider.StoreWrapper.clusterProvider).migrationManager);
+
+            ExceptionInjectionHelper.EnableException(Hold);
+            try
+            {
+                context.clusterTestUtils.MigrateSlotsIndex(SourceNode, TargetNode, [slot], logger: context.logger);
+                while (ExceptionInjectionHelper.WaitingOnClear(Hold) == 0)
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for the migration to hand its slots over");
+
+                var clients = Array.ConvertAll(MigrateOperations(MigrateSessions(store)[slot]), static o => o.Client);
+                var shutdown = Task.Factory.StartNew(() => context.ShutdownNode(SourceNode), TaskCreationOptions.LongRunning);
+
+                // The task store is disposed after the cluster manager, and removes the migration when it is
+                while (MigrateSessions(store)[slot] != null)
+                    ClusterTestUtils.BackOff(cancellationToken: cancellationToken, msg: "Waiting for the shutdown to dispose the migration");
+
+                ExceptionInjectionHelper.DisableException(Hold);
+                ClassicAssert.IsTrue(shutdown.Wait(TimeSpan.FromSeconds(30), cancellationToken), "A node shut down while a migration handed its slots over did not finish shutting down");
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => Array.TrueForAll(clients, static c => c.Disposed), TimeSpan.FromSeconds(30)), "A migration ended by its node shutting down left its connections undisposed");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Hold);
+            }
+        }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "migrationTaskStore")]
+        static extern ref MigrateSessionTaskStore MigrationTaskStore(MigrationManager manager);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "sessions")]
+        static extern ref MigrateSession[] MigrateSessions(MigrateSessionTaskStore store);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "migrateOperation")]
+        static extern ref MigrateSession.MigrateOperation[] MigrateOperations(MigrateSession session);
+
+        /// <summary>
         /// Vector Set writes to a slot that is migrating, or importing, wait for the slot to become stable again, and
         /// are parked on the cluster configuration while they do rather than each holding the thread it runs on. Once
         /// the slot is stable they are verified again and served, in order with what follows them.
