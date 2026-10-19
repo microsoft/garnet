@@ -441,13 +441,11 @@ namespace Garnet.server
         /// <param name="beginAddress"></param>
         /// <param name="committedUntilAddress"></param>
         /// <param name="lastCommitNum"></param>
-        public void SafeInitialize(int sublogIdx, long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
-        {
-            if (singleLog != null)
-                singleLog.log.SafeInitialize(beginAddress, committedUntilAddress, lastCommitNum);
-            else
-                shardedLog.sublog[sublogIdx].SafeInitialize(beginAddress, committedUntilAddress, lastCommitNum);
-        }
+        /// <returns>A task that completes once the sublog is initialized, as <see cref="TsavoriteLog.SafeInitializeAsync"/> does.</returns>
+        public Task SafeInitializeAsync(int sublogIdx, long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
+            => singleLog != null
+                ? singleLog.log.SafeInitializeAsync(beginAddress, committedUntilAddress, lastCommitNum)
+                : shardedLog.sublog[sublogIdx].SafeInitializeAsync(beginAddress, committedUntilAddress, lastCommitNum);
 
         /// <summary>
         /// Conditional initialize

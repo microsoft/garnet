@@ -188,11 +188,16 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Advertises the address that the primary's stream skips ahead to once the vector set operations in progress
-        /// finish, and then appends and applies the records that follow it, as <see cref="ProcessPrimaryStreamAsync"/>
-        /// does. Gives up the replay that <see cref="ProcessPrimaryStreamAsync"/> took when it owns it.
+        /// Advertises the address that the primary's stream skips ahead to once the sublog has been reset to it and the
+        /// vector set operations in progress finish, and then appends and applies the records that follow it, as
+        /// <see cref="ProcessPrimaryStreamAsync"/> does. Gives up the replay that <see cref="ProcessPrimaryStreamAsync"/>
+        /// took when it owns it.
         /// </summary>
-        /// <param name="vectorsDone">Completes once no vector set operation is in progress.</param>
+        /// <param name="initialized">Completes once the sublog has been reset to the address skipped to.</param>
+        /// <param name="vectorsDone">
+        /// Completes once no vector set operation is in progress, when <paramref name="initialized"/> had completed and the
+        /// wait was started; otherwise default, and the wait starts once the sublog has been reset.
+        /// </param>
         /// <param name="physicalSublogIdx">Sublog the records belong to.</param>
         /// <param name="record">Address of the records, valid until this completes.</param>
         /// <param name="recordLength">Length of the records.</param>
@@ -200,12 +205,17 @@ namespace Garnet.cluster
         /// <param name="currentAddress">Primary address of the records, which the stream skips ahead to.</param>
         /// <param name="nextAddress">Primary address after the records.</param>
         /// <param name="syncReplay">Whether the records are applied before the session goes on.</param>
-        async ValueTask SkipAheadAsync(ValueTask vectorsDone, int physicalSublogIdx, nint record, int recordLength, long previousAddress, long currentAddress, long nextAddress, bool syncReplay)
+        async ValueTask SkipAheadAsync(ValueTask initialized, ValueTask vectorsDone, int physicalSublogIdx, nint record, int recordLength, long previousAddress, long currentAddress, long nextAddress, bool syncReplay)
         {
             ValueTask pending;
             var handedOff = false;
             try
             {
+                if (!initialized.IsCompletedSuccessfully)
+                {
+                    await initialized.ConfigureAwait(false);
+                    vectorsDone = WaitForVectorOperationsAsync();
+                }
                 await vectorsDone.ConfigureAwait(false);
                 clusterProvider.replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
                 pending = AppendPrimaryStreamAsync(physicalSublogIdx, record, recordLength, previousAddress, currentAddress, nextAddress, syncReplay, out handedOff);
@@ -224,6 +234,12 @@ namespace Garnet.cluster
             // A task still applying the records gives up the replay itself
             await pending.ConfigureAwait(false);
         }
+
+        /// <summary>
+        /// Completes once the vector set operations in progress finish, without holding a thread meanwhile.
+        /// </summary>
+        ValueTask WaitForVectorOperationsAsync()
+            => clusterProvider.storeWrapper.DefaultDatabase?.VectorManager?.WaitForVectorOperationsToCompleteAsync() ?? default;
 
         /// <summary>
         /// Waits for every sublog of the primary to have connected. A timeout is not an error: the primary

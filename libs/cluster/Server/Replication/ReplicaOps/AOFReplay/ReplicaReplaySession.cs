@@ -68,15 +68,16 @@ namespace Garnet.cluster
                     if (GarnetAppendOnlyFile.ReplicaStreamSkipsAhead(previousAddress, currentAddress, recordLength, clusterProvider.replicationManager.PageSizeBits))
                     {
                         logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), currentAddress);
-                        clusterProvider.storeWrapper.appendOnlyFile.Log.SafeInitialize(physicalSublogIdx, currentAddress, currentAddress);
-
-                        // Vector set operations in progress finish before a new replication offset is advertised. They
-                        // run on the thread pool, so the session parks rather than holds a thread until they do.
-                        var vectorsDone = clusterProvider.storeWrapper.DefaultDatabase?.VectorManager?.WaitForVectorOperationsToCompleteAsync() ?? default;
-                        if (!vectorsDone.IsCompletedSuccessfully)
+                        // The reset waits for every reader of the sublog to move on, and background replay reads a chunk
+                        // for as long as replaying it waits, which can be on Vector Set operations that run on the thread
+                        // pool. Those also finish before a new replication offset is advertised. The session parks rather
+                        // than holds a thread for either.
+                        var initialized = new ValueTask(clusterProvider.storeWrapper.appendOnlyFile.Log.SafeInitializeAsync(physicalSublogIdx, currentAddress, currentAddress));
+                        var vectorsDone = initialized.IsCompletedSuccessfully ? WaitForVectorOperationsAsync() : default;
+                        if (!initialized.IsCompletedSuccessfully || !vectorsDone.IsCompletedSuccessfully)
                         {
                             handedOff = true;
-                            return SkipAheadAsync(vectorsDone, physicalSublogIdx, (nint)record, recordLength, previousAddress, currentAddress, nextAddress, syncReplay);
+                            return SkipAheadAsync(initialized, vectorsDone, physicalSublogIdx, (nint)record, recordLength, previousAddress, currentAddress, nextAddress, syncReplay);
                         }
 
                         clusterProvider.replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);

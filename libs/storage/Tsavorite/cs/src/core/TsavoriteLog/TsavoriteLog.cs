@@ -547,26 +547,44 @@ namespace Tsavorite.core
         /// <summary>
         /// Initialize new log instance safely by notifying readers that initialization is in progress.
         /// </summary>
+        /// <remarks>
+        /// The log is initialized once every thread protected by the epoch has moved past it, which a reader consuming a
+        /// chunk of the log under protection can delay for as long as it takes to consume it.
+        /// </remarks>
         /// <param name="beginAddress"></param>
         /// <param name="committedUntilAddress"></param>
         /// <param name="lastCommitNum"></param>
-        public void SafeInitialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
+        /// <returns>
+        /// A task that completes once the log is initialized, or with the exception that failed initialization. Its
+        /// continuations do not run on the thread that initialized the log.
+        /// </returns>
+        public Task SafeInitializeAsync(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
         {
+            var initialized = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             try
             {
                 epoch.Resume();
                 // Signal initialization in progress
                 Initializing = true;
-                epoch.BumpCurrentEpoch(() => Initialize(beginAddress, committedUntilAddress, lastCommitNum));
+                epoch.BumpCurrentEpoch(() =>
+                {
+                    try
+                    {
+                        Initialize(beginAddress, committedUntilAddress, lastCommitNum);
+                        initialized.SetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        initialized.SetException(ex);
+                    }
+                });
             }
             finally
             {
                 epoch.Suspend();
             }
 
-            // Wait for initialization to complete
-            while (Initializing)
-                _ = Thread.Yield();
+            return initialized.Task;
         }
 
         /// <summary>
