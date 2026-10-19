@@ -526,7 +526,8 @@ namespace Garnet.test
             string networkSendBufferMinSize = null,
             string sessionScratchBufferMaxRetainedSize = null,
             int? sessionParseStateMaxRetainedArgs = null,
-            bool luaTransactionMode = false
+            bool luaTransactionMode = false,
+            bool useFoldOverCheckpoints = false
         )
         {
             if (useAzureStorage)
@@ -634,6 +635,7 @@ namespace Garnet.test
                 MutablePercent = mutablePercent,
                 CompactionMaxSegments = compactionMaxSegments,
                 SegmentSize = segmentSize,
+                UseFoldOverCheckpoints = useFoldOverCheckpoints,
             };
 
             if (!string.IsNullOrEmpty(memorySize))

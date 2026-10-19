@@ -222,5 +222,10 @@ namespace Garnet.common
         /// RangeIndex: cleared when an operation waits for a pending retirement of its key's tree.
         /// </summary>
         RangeIndex_Waits_For_Retirement,
+        /// <summary>
+        /// RangeIndex: cleared when a checkpoint starts waiting for flush snapshots that were deferred while their RangeIndex
+        /// lock was held, before it writes its metadata.
+        /// </summary>
+        RangeIndex_Checkpoint_Waits_For_Flush_Snapshots,
     }
 }

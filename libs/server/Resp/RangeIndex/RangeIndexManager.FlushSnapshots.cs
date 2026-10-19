@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Channels;
@@ -22,8 +23,12 @@ namespace Garnet.server
     /// marked flushed and its snapshot is handed to a task that takes it once the lock is free, and publishes it under its
     /// name only once complete. Until then, a promote of the stub, which stages the working file from that snapshot, waits
     /// for it (<see cref="WaitForFlushSnapshot"/>), a copy of the stub to the tail goes without it
-    /// (<see cref="CopyFlushSnapshot"/>), and a checkpoint waits for all of them, so that every flushed stub it covers has
-    /// its snapshot.</para>
+    /// (<see cref="CopyFlushSnapshot"/>), and a checkpoint waits for all of them before it writes its metadata
+    /// (<see cref="WaitForFlushSnapshots"/>), so that every flushed stub it covers has its snapshot, including the stubs a
+    /// fold-over checkpoint flushes itself.</para>
+    ///
+    /// <para>Waiters block on each pending snapshot rather than poll the count: a snapshot waits for a RangeIndex lock, which
+    /// a restore or staging holds for as long as it reads or copies a tree's file.</para>
     /// </summary>
     public sealed partial class RangeIndexManager
     {
@@ -37,18 +42,31 @@ namespace Garnet.server
             internal Guid KeyId { get; } = keyId;
             internal string HashPrefix { get; } = hashPrefix;
             internal long LogicalAddress { get; } = logicalAddress;
+
+            private readonly TaskCompletionSource done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            /// <summary>
+            /// Releases the waiters of a snapshot that is taken, or abandoned.
+            /// </summary>
+            internal void MarkDone() => done.TrySetResult();
+
+            /// <summary>
+            /// Blocks until the snapshot is taken or abandoned. A blocking task wait spins briefly before it blocks, which
+            /// suits a wait that is usually short but lasts as long as the key's lock is held.
+            /// </summary>
+            internal void WaitUntilDone() => AsyncUtils.BlockingWait(done.Task);
         }
 
         private readonly Channel<FlushSnapshot> flushSnapshots =
             Channel.CreateUnbounded<FlushSnapshot>(new() { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false });
 
         /// <summary>
-        /// Number of flush snapshots not yet taken for each key, by <see cref="KeyId"/>.
+        /// Flush snapshots handed to <see cref="RunFlushSnapshotTaskAsync"/> and not yet taken.
         /// </summary>
-        private readonly ConcurrentDictionary<Guid, int> pendingFlushSnapshots = new();
+        private readonly ConcurrentDictionary<FlushSnapshot, byte> pendingFlushSnapshots = new();
 
         /// <summary>
-        /// Total of <see cref="pendingFlushSnapshots"/>, so that the usual case of none skips hashing the key.
+        /// Number of <see cref="pendingFlushSnapshots"/>, so that the usual case of none skips looking through them.
         /// </summary>
         private int pendingFlushSnapshotCount;
 
@@ -66,13 +84,14 @@ namespace Garnet.server
         /// </summary>
         private void DeferFlushSnapshot(ReadOnlySpan<byte> key, long keyHash, Guid keyId, string hashPrefix, long logicalAddress)
         {
+            var snapshot = new FlushSnapshot(key.ToArray(), keyHash, keyId, hashPrefix, logicalAddress);
+            _ = pendingFlushSnapshots.TryAdd(snapshot, 0);
             _ = Interlocked.Increment(ref pendingFlushSnapshotCount);
-            _ = pendingFlushSnapshots.AddOrUpdate(keyId, 1, static (_, count) => count + 1);
 
-            if (!flushSnapshots.Writer.TryWrite(new FlushSnapshot(key.ToArray(), keyHash, keyId, hashPrefix, logicalAddress)))
+            if (!flushSnapshots.Writer.TryWrite(snapshot))
             {
                 // Only once disposed
-                DecrementPending(pendingFlushSnapshots, keyId, ref pendingFlushSnapshotCount);
+                CompleteFlushSnapshot(snapshot);
             }
         }
 
@@ -97,10 +116,21 @@ namespace Garnet.server
                     }
                     finally
                     {
-                        DecrementPending(pendingFlushSnapshots, snapshot.KeyId, ref pendingFlushSnapshotCount);
+                        CompleteFlushSnapshot(snapshot);
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Stop counting a flush snapshot as pending, then release its waiters, which may check that count again.
+        /// </summary>
+        private void CompleteFlushSnapshot(FlushSnapshot snapshot)
+        {
+            if (pendingFlushSnapshots.TryRemove(snapshot, out _))
+                _ = Interlocked.Decrement(ref pendingFlushSnapshotCount);
+
+            snapshot.MarkDone();
         }
 
         private void TakeFlushSnapshot(FlushSnapshot snapshot)
@@ -172,11 +202,22 @@ namespace Garnet.server
         /// True if a flush snapshot of one of the key's stubs is not taken yet.
         /// </summary>
         private bool IsFlushSnapshotPending(Guid keyId)
-            => Volatile.Read(ref pendingFlushSnapshotCount) != 0 && pendingFlushSnapshots.ContainsKey(keyId);
+        {
+            if (Volatile.Read(ref pendingFlushSnapshotCount) == 0)
+                return false;
+
+            foreach (var pending in pendingFlushSnapshots)
+            {
+                if (pending.Key.KeyId == keyId)
+                    return true;
+            }
+
+            return false;
+        }
 
         /// <summary>
-        /// Wait until the flush snapshots of the key's stubs are taken. Their task waits for the key's lock, so this must not be
-        /// called while holding a RangeIndex lock or epoch protection.
+        /// Wait until the flush snapshots of the key's stubs that are pending now are taken. Their task waits for the key's
+        /// lock, so this must not be called while holding a RangeIndex lock or epoch protection.
         /// </summary>
         internal void WaitForFlushSnapshot(ReadOnlySpan<byte> key)
         {
@@ -184,19 +225,38 @@ namespace Garnet.server
                 return;
 
             var keyId = KeyId(key);
-            while (pendingFlushSnapshots.ContainsKey(keyId))
-                _ = Thread.Yield();
+            foreach (var pending in pendingFlushSnapshots)
+            {
+                if (pending.Key.KeyId == keyId)
+                    pending.Key.WaitUntilDone();
+            }
         }
 
         /// <summary>
-        /// Wait until no flush snapshot is pending. Their task waits for the keys' locks, so this must not be called while
-        /// holding a RangeIndex lock or epoch protection.
+        /// Wait until every flush snapshot that is pending now is taken. Called by a checkpoint before it writes its metadata
+        /// (<see cref="Tsavorite.core.CheckpointTrigger.FlushCompleted"/>), when the flushes of every page it covers have
+        /// handed over their snapshots. It looks through the pending snapshots once, so it may also wait for some deferred
+        /// while it looks, which belong to later flushes, but a steady stream of them cannot hold up the checkpoint. Their task
+        /// waits for the keys' locks, so this must not be called while holding a RangeIndex lock or epoch protection; the
+        /// checkpoint state machine holds neither.
         /// </summary>
-        private void WaitForFlushSnapshots()
+        internal void WaitForFlushSnapshots()
         {
-            while (Volatile.Read(ref pendingFlushSnapshotCount) != 0)
-                _ = Thread.Yield();
+            if (Volatile.Read(ref pendingFlushSnapshotCount) == 0)
+                return;
+
+            OnCheckpointWaitsForFlushSnapshots();
+
+            foreach (var pending in pendingFlushSnapshots)
+                pending.Key.WaitUntilDone();
         }
+
+        /// <summary>
+        /// Test hook: signals that a checkpoint is about to wait for pending flush snapshots.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnCheckpointWaitsForFlushSnapshots()
+            => _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.RangeIndex_Checkpoint_Waits_For_Flush_Snapshots);
 
         /// <summary>
         /// Stop accepting deferred flush snapshots, and take the ones already handed over.

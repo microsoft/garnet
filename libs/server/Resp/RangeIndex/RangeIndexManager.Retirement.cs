@@ -144,31 +144,25 @@ namespace Garnet.server
                 CompleteRetirement(retirement.KeyId);
         }
 
-        private void CompleteRetirement(Guid keyId) => DecrementPending(pendingRetirements, keyId, ref pendingRetirementCount);
-
-        /// <summary>
-        /// Count one of a key's deferred operations complete: decrement its count in <paramref name="pending"/>, removing the
-        /// key at zero, and the <paramref name="total"/> over all keys.
-        /// </summary>
-        private static void DecrementPending(ConcurrentDictionary<Guid, int> pending, Guid keyId, ref int total)
+        private void CompleteRetirement(Guid keyId)
         {
             while (true)
             {
-                if (!pending.TryGetValue(keyId, out var count))
+                if (!pendingRetirements.TryGetValue(keyId, out var count))
                 {
-                    Debug.Fail("Completed a deferred RangeIndex operation that was not pending");
+                    Debug.Fail("Completed a RangeIndex retirement that was not pending");
                     return;
                 }
 
                 var updated = count == 1
-                    ? pending.TryRemove(KeyValuePair.Create(keyId, count))
-                    : pending.TryUpdate(keyId, count - 1, count);
+                    ? pendingRetirements.TryRemove(KeyValuePair.Create(keyId, count))
+                    : pendingRetirements.TryUpdate(keyId, count - 1, count);
 
                 if (updated)
                     break;
             }
 
-            _ = Interlocked.Decrement(ref total);
+            _ = Interlocked.Decrement(ref pendingRetirementCount);
         }
 
         /// <summary>

@@ -36,6 +36,15 @@ namespace Tsavorite.core
         /// <remarks>
         /// May be raised even when <see cref="VersionShift"/> was never reached, so handling must be idempotent.
         /// </remarks>
-        CheckpointFailed
+        CheckpointFailed,
+
+        /// <summary>
+        /// PERSISTENCE_CALLBACK phase, after the checkpoint's log pages are flushed (and therefore after
+        /// <see cref="IRecordTriggers.OnFlush"/> has been called for every record they hold) and before the checkpoint's
+        /// metadata is written, which makes the checkpoint recoverable. Raised after <see cref="FlushBegin"/> and before
+        /// <see cref="CheckpointCompleted"/>. The application should finish persisting any external resource that recovery
+        /// from this checkpoint depends on, including those it deferred from <see cref="IRecordTriggers.OnFlush"/>.
+        /// </summary>
+        FlushCompleted
     }
 }

@@ -40,6 +40,7 @@ namespace Garnet.test
         private const ExceptionInjectionType PromotePause = ExceptionInjectionType.RangeIndex_Pause_Before_Promote;
         private const ExceptionInjectionType PublishPause = ExceptionInjectionType.RangeIndex_Pause_Before_Restore_Publish;
         private const ExceptionInjectionType RetirementWait = ExceptionInjectionType.RangeIndex_Waits_For_Retirement;
+        private const ExceptionInjectionType CheckpointWait = ExceptionInjectionType.RangeIndex_Checkpoint_Waits_For_Flush_Snapshots;
 
         private GarnetServer server;
 
@@ -61,6 +62,7 @@ namespace Garnet.test
             ExceptionInjectionHelper.DisableException(PromotePause);
             ExceptionInjectionHelper.DisableException(PublishPause);
             ExceptionInjectionHelper.DisableException(RetirementWait);
+            ExceptionInjectionHelper.DisableException(CheckpointWait);
 
             server.Dispose();
             TestUtils.OnTearDown();
@@ -810,6 +812,65 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.Execute("RI.GET", Key, "field1").IsNull, "The recreated index has the deleted index's data");
             ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
             ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
+        }
+
+        /// <summary>
+        /// A fold-over checkpoint persists its version by flushing the log to its tail, which flushes the stubs on those pages.
+        /// Recovery from the checkpoint restores a flushed stub's tree from its flush snapshot, and the snapshot of a stub whose
+        /// tree is not restored is deferred while the key's RangeIndex lock is held, so the checkpoint must not complete before
+        /// the snapshots its flush deferred are taken.
+        /// </summary>
+        [Test]
+        public async Task FoldOverCheckpointWaitsForDeferredFlushSnapshotAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, useFoldOverCheckpoints: true);
+            server.Start();
+
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            using var redisRestorer = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var dbRestorer = redisRestorer.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            EvictToDisk(Key);
+            var flushSnapshots = CountFlushSnapshots(Key);
+
+            ExceptionInjectionHelper.EnableException(RestorePause);
+
+            // The restorer promotes the evicted stub to the tail, then parks restoring its tree, holding the exclusive lock.
+            var restorer = dbRestorer.ExecuteAsync("RI.GET", Key, "field1");
+            await ExceptionInjectionHelper.WaitOnClearAsync(RestorePause).WaitAsync(WaitTimeout);
+
+            // The checkpoint flushes the promoted stub, whose snapshot is deferred until the restorer releases the lock.
+            ExceptionInjectionHelper.EnableException(CheckpointWait);
+            var save = db.ExecuteAsync("SAVE");
+            var checkpointWaits = ExceptionInjectionHelper.WaitOnClearAsync(CheckpointWait);
+            var first = await Task.WhenAny(save, checkpointWaits).WaitAsync(WaitTimeout);
+            var pendingWhenCompleted = first == save ? rangeIndexManager.PendingFlushSnapshotCount : 0;
+
+            ClassicAssert.AreEqual("value1", (string)await ReleaseParkedAndAwaitAsync(restorer));
+            ClassicAssert.AreEqual("OK", (string)await save.WaitAsync(WaitTimeout));
+
+            ClassicAssert.IsTrue(first != save || pendingWhenCompleted == 0,
+                "The fold-over checkpoint completed while the flush snapshot of a stub it flushed was still to be taken");
+            ClassicAssert.AreEqual(0, rangeIndexManager.PendingFlushSnapshotCount, "A flush snapshot is still pending after the checkpoint");
+            ClassicAssert.AreEqual(flushSnapshots + 1, CountFlushSnapshots(Key), "The stub the checkpoint flushed has no flush snapshot");
+
+            // Recovering from the checkpoint restores the flushed stub's tree from that snapshot.
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableRangeIndexPreview: true, useFoldOverCheckpoints: true, tryRecover: true);
+            server.Start();
+
+            using var redisRecovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            ClassicAssert.AreEqual("value1", (string)redisRecovered.GetDatabase(0).Execute("RI.GET", Key, "field1"));
         }
 
         /// <summary>

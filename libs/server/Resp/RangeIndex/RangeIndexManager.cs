@@ -919,18 +919,12 @@ namespace Garnet.server
         /// <para>Memory-backed trees are also captured via CPR snapshot (bftree supports
         /// CPR for memory-backed trees uniformly with disk-backed).</para>
         ///
-        /// <para>First waits for flush snapshots deferred while their key's lock was held (<see cref="DeferFlushSnapshot"/>),
-        /// so that every flushed stub the checkpoint covers has its snapshot. This runs on the state machine's thread without
-        /// epoch protection, so waiting for those snapshots, which wait for the keys' locks, cannot hold up their holders.</para>
-        ///
         /// <para>Failure is fatal — the exception propagates to the state machine driver.</para>
         /// </summary>
         internal void SnapshotAllTreesForCheckpoint(Guid checkpointToken)
         {
             try
             {
-                WaitForFlushSnapshots();
-
                 if (string.IsNullOrEmpty(cprDir))
                     return;
 

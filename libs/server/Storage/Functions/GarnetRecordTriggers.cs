@@ -183,6 +183,13 @@ namespace Garnet.server
                     rangeIndexManager?.ClearCheckpointBarrier();
                     ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Checkpoint_Pause_At_Flush_Begin);
                     break;
+                case CheckpointTrigger.FlushCompleted:
+                    // Recovery from this checkpoint restores a flushed stub's tree from its flush snapshot. Pages are flushed
+                    // after FlushBegin too: a fold-over checkpoint flushes its own, and a snapshot checkpoint recovers the log
+                    // up to the address flushed by now. So every snapshot deferred until now must be taken before the metadata
+                    // that makes the checkpoint recoverable is written.
+                    rangeIndexManager?.WaitForFlushSnapshots();
+                    break;
                 case CheckpointTrigger.CheckpointCompleted:
                     vectorManager?.CheckpointCompleted();
                     break;
