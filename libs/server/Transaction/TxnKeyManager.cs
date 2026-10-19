@@ -84,5 +84,13 @@ namespace Garnet.server
                 }
             }
         }
+
+        /// <summary>
+        /// Indicates that an update to <see cref="vectorManager"/>'s ContextMetadata may be necessary, and thus needs to be locked.
+        /// </summary>
+        internal void LockVectorSetContextMetadata()
+        {
+            lockVectorManagerContextMetadata = true;
+        }
     }
 }

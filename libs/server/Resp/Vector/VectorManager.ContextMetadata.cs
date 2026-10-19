@@ -805,5 +805,23 @@ namespace Garnet.server
                 isMigrating = metadata.IsMigrating(contextIndex != 0, contextValue);
             }
         }
+
+        /// <summary>
+        /// Attempt to manually acquire an exclusion lock for update the in memory copy of ContextMetadata.
+        /// </summary>
+        internal bool TryLockContextMetadata(TimeSpan timeout)
+        => Monitor.TryEnter(this, timeout);
+
+        /// <summary>
+        /// Acquire an exclusion for updating the in memory copy of ContextMetadata.
+        /// </summary>
+        internal void LockContextMetadata()
+        => Monitor.Enter(this);
+
+        /// <summary>
+        /// Release lock previously acquired with <see cref="TryLockContextMetadata"/> or <see cref="LockContextMetadata"/>.
+        /// </summary>
+        internal void UnlockContextMetadata()
+        => Monitor.Exit(this);
     }
 }

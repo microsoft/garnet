@@ -186,6 +186,12 @@ namespace Garnet.server
                 return true;
             }
 
+            // Commands which might need to update ContextMetadata on the current thread
+            if (cmd is RespCommand.VADD or RespCommand.XVCREATE)
+            {
+                txnManager.LockVectorSetContextMetadata();
+            }
+
             txnManager.LockKeys(commandInfo, isSubCommand);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))

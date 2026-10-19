@@ -139,6 +139,18 @@ namespace Garnet.server
         /// </summary>
         private TxnKeyEntries keyEntries;
 
+        private readonly VectorManager vectorManager;
+
+        /// <summary>
+        /// True if we need to try and lock <see cref="vectorManager"/>'s ContextMetadata before starting the transaction.
+        /// </summary>
+        private bool lockVectorManagerContextMetadata;
+
+        /// <summary>
+        /// True if <see cref="vectorManager"/>'s ContextMetadata is currently locked.
+        /// </summary>
+        private bool vectorContextMetadataLocked;
+
         internal TransactionManager(
             StoreWrapper storeWrapper,
             RespServerSession respSession,
@@ -197,6 +209,8 @@ namespace Garnet.server
                 garnetConsistentTxFinalizeApi = garnetConsistentApi;
             }
 
+            this.vectorManager = storageSession.vectorManager;
+
             this.clusterEnabled = clusterEnabled;
             if (clusterEnabled)
             {
@@ -254,6 +268,11 @@ namespace Garnet.server
                 {
                     keyEntries.UnlockAllKeys();
 
+                    if (vectorContextMetadataLocked)
+                    {
+                        vectorManager.UnlockContextMetadata();
+                    }
+
                     // Release contexts
                     if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
                         stringTransactionalContext.EndTransaction();
@@ -273,6 +292,8 @@ namespace Garnet.server
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
             this.PerformWrites = false;
+            this.lockVectorManagerContextMetadata = false;
+            this.vectorContextMetadataLocked = false;
 
             // Reset cluster key parse state
             if (clusterEnabled)
@@ -512,10 +533,32 @@ namespace Garnet.server
             bool lockSuccess;
             if (fail_fast_on_lock)
             {
-                lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                if (lockVectorManagerContextMetadata)
+                {
+                    if (vectorManager.TryLockContextMetadata(lock_timeout))
+                    {
+                        vectorContextMetadataLocked = true;
+
+                        lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                    }
+                    else
+                    {
+                        lockSuccess = false;
+                    }
+                }
+                else
+                {
+                    lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
+                }
             }
             else
             {
+                if (lockVectorManagerContextMetadata)
+                {
+                    vectorManager.LockContextMetadata();
+                    vectorContextMetadataLocked = true;
+                }
+
                 keyEntries.LockAllKeys();
                 lockSuccess = true;
             }
