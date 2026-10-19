@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -209,6 +210,22 @@ namespace Garnet.test
         {
             var wait = new FreshnessWait(TimeSpan.FromMilliseconds(100));
             var parked = Park(wait, manager, 0, Target);
+
+            ClassicAssert.IsTrue(parked.Wait(Bound), "The timeout should end the wait");
+            ClassicAssert.AreEqual(0, manager.ParkedFreshnessWaiterCount());
+            _ = Assert.Throws<TimeoutException>(wait.Finish);
+        }
+
+        [Test]
+        public void ATimerThatFiresShortOfTheDeadlineStillEndsTheWait()
+        {
+            // The timer's clock and TickCount64 advance in steps of different sizes on some platforms, so the one firing
+            // of a wait's timer can land short of the deadline it checks
+            var wait = new FreshnessWait(TimeSpan.FromMilliseconds(500));
+            var parked = Park(wait, manager, 0, Target);
+            var timer = (Timer)typeof(FreshnessWait).GetField("timer", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(wait);
+            _ = timer.Change(Timeout.Infinite, Timeout.Infinite);
+            wait.OnTimer();
 
             ClassicAssert.IsTrue(parked.Wait(Bound), "The timeout should end the wait");
             ClassicAssert.AreEqual(0, manager.ParkedFreshnessWaiterCount());

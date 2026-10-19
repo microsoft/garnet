@@ -324,9 +324,14 @@ namespace Garnet.server
         {
             lock (gate)
             {
-                // The timer of an earlier wait can fire during a later one, whose own timeout is already scheduled
-                if (Environment.TickCount64 < deadline)
+                // The timer of an earlier wait can fire during a later one, and the timer's clock and TickCount64 advance in
+                // steps of different sizes on some platforms, so a timer can fire short of the deadline: wait out the rest
+                var remaining = deadline - Environment.TickCount64;
+                if (remaining > 0)
+                {
+                    _ = timer.Change(remaining, Timeout.Infinite);
                     return;
+                }
 
                 // Whoever takes the waiter off the list completes the wait, so a replay that got there first has
                 // already woken it and the timeout is moot
