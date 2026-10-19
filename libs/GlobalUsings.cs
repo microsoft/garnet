@@ -184,6 +184,14 @@ global using ConsistentReadUnifiedTransactionalContext = Tsavorite.core.Transact
     Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>;
 
+global using VectorTransactionalContext = Tsavorite.core.TransactionalContext<
+    Garnet.common.VectorElementKey,
+    Garnet.server.VectorInput,
+    Garnet.server.VectorOutput,
+    long, Garnet.server.VectorSessionFunctions,
+    Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Garnet.common.GarnetKeyComparer, Garnet.server.GarnetRecordTriggers>>>;
+
 global using UnsafeVectorNullLockingContext = Tsavorite.core.BasicContext<
     Garnet.common.VectorElementKey,
     Garnet.server.VectorInput,

@@ -622,7 +622,8 @@ namespace Garnet.server
         /// <summary>
         /// Called when an index creation succeeds to flush <see cref="contextMetadatas"/> into the store.
         /// </summary>
-        private void UpdateContextMetadata(ref VectorBasicContext ctx)
+        private void UpdateContextMetadata<TVectorContext>(ref TVectorContext ctx)
+            where TVectorContext : ITsavoriteContext<VectorElementKey, VectorInput, VectorOutput, long, VectorSessionFunctions, StoreFunctions, StoreAllocator>
         {
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
@@ -809,14 +810,50 @@ namespace Garnet.server
         /// <summary>
         /// Attempt to manually acquire an exclusion lock for update the in memory copy of ContextMetadata.
         /// </summary>
-        internal bool TryLockContextMetadata(TimeSpan timeout)
-        => Monitor.TryEnter(this, timeout);
+        internal bool TryLockContextMetadata(TimeSpan timeout, ref Span<TxnKeyEntry> contextKeys)
+        {
+            if (!Monitor.TryEnter(this, timeout))
+            {
+                contextKeys = default;
+                return false;
+            }
+
+            // +1 so we can allocate the next block if our existing MetadataContexts are all in use
+            var ctxMetadataIndexesToLock = contextMetadatas.Length + 1;
+
+            if (contextKeys.Length < ctxMetadataIndexesToLock)
+            {
+                contextKeys = new TxnKeyEntry[ctxMetadataIndexesToLock];
+            }
+            else
+            {
+                contextKeys = contextKeys[..ctxMetadataIndexesToLock];
+            }
+
+#pragma warning disable IDE0302 // [...]-style collection initialization doesn't actually _guarantee_ stackalloc (or inline arrays), which we need here
+            ReadOnlySpan<byte> nsBytes = stackalloc byte[1] { MetadataNamespace };
+#pragma warning restore IDE0302
+
+            Span<byte> keyBytes = stackalloc byte[sizeof(int)];
+
+            for (var contextIndex = 0; contextIndex < ctxMetadataIndexesToLock; contextIndex++)
+            {
+                BinaryPrimitives.WriteInt32LittleEndian(keyBytes, contextIndex);
+                VectorElementKey key = new(nsBytes, keyBytes);
+                contextKeys[contextIndex] = new() { keyHash = GarnetKeyComparer.StaticGetHashCode64(key), lockType = LockType.Exclusive };
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Acquire an exclusion for updating the in memory copy of ContextMetadata.
         /// </summary>
-        internal void LockContextMetadata()
-        => Monitor.Enter(this);
+        internal void LockContextMetadata(ref Span<TxnKeyEntry> contextKeys)
+        {
+            var res = TryLockContextMetadata(TimeSpan.FromMilliseconds(-1), ref contextKeys);
+            Debug.Assert(res, "Should never fail to lock");
+        }
 
         /// <summary>
         /// Release lock previously acquired with <see cref="TryLockContextMetadata"/> or <see cref="LockContextMetadata"/>.

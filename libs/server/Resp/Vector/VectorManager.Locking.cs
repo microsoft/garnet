@@ -672,7 +672,14 @@ namespace Garnet.server
 
                             if (!needsRecreate)
                             {
-                                UpdateContextMetadata(ref storageSession.vectorBasicContext);
+                                if (InTransaction)
+                                {
+                                    UpdateContextMetadata(ref storageSession.vectorTransactionalContext);
+                                }
+                                else
+                                {
+                                    UpdateContextMetadata(ref storageSession.vectorBasicContext);
+                                }
                             }
                         }
                         catch

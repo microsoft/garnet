@@ -520,6 +520,8 @@ namespace Garnet.server
 
         internal bool Run(bool internal_txn = false, bool fail_fast_on_lock = false, TimeSpan lock_timeout = default)
         {
+            const int VectorSetMetadataContextKeySpace = 8;
+
             // Save watch keys to lock list
             if (!internal_txn)
                 watchContainer.SaveKeysToLock(this);
@@ -535,9 +537,13 @@ namespace Garnet.server
             {
                 if (lockVectorManagerContextMetadata)
                 {
-                    if (vectorManager.TryLockContextMetadata(lock_timeout))
+                    Span<TxnKeyEntry> contextMetadataLocks = stackalloc TxnKeyEntry[VectorSetMetadataContextKeySpace];
+
+                    if (vectorManager.TryLockContextMetadata(lock_timeout, ref contextMetadataLocks))
                     {
                         vectorContextMetadataLocked = true;
+
+                        keyEntries.AddKeys(contextMetadataLocks);
 
                         lockSuccess = keyEntries.TryLockAllKeys(lock_timeout);
                     }
@@ -555,8 +561,13 @@ namespace Garnet.server
             {
                 if (lockVectorManagerContextMetadata)
                 {
-                    vectorManager.LockContextMetadata();
+                    Span<TxnKeyEntry> contextMetadataLocks = stackalloc TxnKeyEntry[VectorSetMetadataContextKeySpace];
+
+                    vectorManager.LockContextMetadata(ref contextMetadataLocks);
+
                     vectorContextMetadataLocked = true;
+
+                    keyEntries.AddKeys(contextMetadataLocks);
                 }
 
                 keyEntries.LockAllKeys();

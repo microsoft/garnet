@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -92,18 +93,26 @@ namespace Garnet.server
         {
             var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash((FixedSpanByteKey)keyArgSlice);
 
+            TxnKeyEntry key = new() { keyHash = keyHash, lockType = type };
+
+            AddKeys(key);
+        }
+
+        internal void AddKeys(params ReadOnlySpan<TxnKeyEntry> toAdd)
+        {
+            var neededLength = keyCount + toAdd.Length;
+
             // Grow the buffer if needed
-            if (keyCount >= keys.Length)
+            if (neededLength >= keys.Length)
             {
                 var oldKeys = keys;
-                keys = new TxnKeyEntry[keys.Length * 2];
+                keys = new TxnKeyEntry[(int)BitOperations.RoundUpToPowerOf2((uint)neededLength)];
                 Array.Copy(oldKeys, keys, oldKeys.Length);
             }
 
-            // Populate the new key slot.
-            keys[keyCount].keyHash = keyHash;
-            keys[keyCount].lockType = type;
-            ++keyCount;
+            // Populate the new key slots
+            toAdd.CopyTo(keys.AsSpan()[keyCount..]);
+            keyCount += toAdd.Length;
         }
 
         internal void LockAllKeys()

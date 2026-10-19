@@ -45,6 +45,7 @@ namespace Garnet.server
         /// Session Contexts for vector store
         /// </summary>
         public VectorBasicContext vectorBasicContext;
+        public VectorTransactionalContext vectorTransactionalContext;
 
         public UnsafeVectorNullLockingContext unsafeVectorNullLockingBasicContext;
 
@@ -144,6 +145,7 @@ namespace Garnet.server
             unifiedStoreTransactionalConsistentReadContext = unifiedStoreSession.TransactionalConsistentReadContext;
 
             vectorBasicContext = vectorSession.BasicContext;
+            vectorTransactionalContext = vectorSession.TransactionalContext;
             unsafeVectorNullLockingBasicContext = vectorSession.UnsafeBasicNullLockingContext;
         }
 
