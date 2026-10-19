@@ -147,6 +147,11 @@ When `ReadRangeIndex` detects `TreeHandle == 0` (and the stub is not flushed):
 ### Checkpoint Consistency
 
 - At `VersionShift`: `SnapshotPending=1` set on **all** entries (activated + pending).
+- Between `VersionShift` and `FlushBegin`, a data operation on a key whose entry has `SnapshotPending=1` releases the
+  key's lock and waits until the flag is cleared (`WaitForTreeCheckpoint`), then retries. `FlushBegin` clears it on the
+  entries still in `liveIndexes`; an entry that leaves `liveIndexes` first, because its stub's tree is retired by
+  eviction or `DEL`, clears it itself (`TreeEntry.ReleaseCheckpointWaiters`). The retried operation then finds the stub as
+  it is now.
 - At `FlushBegin`: each entry is snapshotted using the per-tree atomic
   `TreeEntry.SnapshotInProgress` (no per-key X-lock — that would risk deadlock with
   deferred `OnFlush` firing on the checkpoint thread):

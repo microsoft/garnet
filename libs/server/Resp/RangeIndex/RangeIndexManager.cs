@@ -66,6 +66,10 @@ namespace Garnet.server
         /// <summary>Gets the number of live (registered) BfTree indexes (activated + pending).</summary>
         internal int LiveIndexCount => liveIndexes.Count;
 
+        /// <summary>Gets the key's entry in <see cref="liveIndexes"/>, if it has one.</summary>
+        internal bool TryGetEntry(ReadOnlySpan<byte> keyBytes, out TreeEntry entry)
+            => liveIndexes.TryGetValue(KeyId(keyBytes), out entry);
+
         /// <summary>Gets the log-tied root directory for RI files. Used by the cluster replication layer
         /// to determine the target directory for received flush files on the replica side.</summary>
         public string RiLogRoot => riLogRoot;
@@ -159,7 +163,8 @@ namespace Garnet.server
 
             /// <summary>
             /// 1 while this tree is being snapshotted for checkpoint, 0 otherwise.
-            /// Set at <see cref="CheckpointTrigger.VersionShift"/> time, cleared after snapshot completes.
+            /// Set at <see cref="CheckpointTrigger.VersionShift"/> time, cleared after snapshot completes, or when the entry
+            /// leaves <see cref="liveIndexes"/> (<see cref="ReleaseCheckpointWaiters"/>).
             /// RI data operations spin-wait on this flag when <see cref="checkpointInProgress"/> is set.
             /// </summary>
             public int SnapshotPending;
@@ -182,6 +187,15 @@ namespace Garnet.server
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void ReleaseSnapshot()
                 => Volatile.Write(ref SnapshotInProgress, 0);
+
+            /// <summary>
+            /// Release the data operations waiting for a checkpoint's snapshot of this entry's tree (see
+            /// <see cref="WaitForTreeCheckpoint"/>), once the entry has left <see cref="liveIndexes"/>: the checkpoint clears
+            /// <see cref="SnapshotPending"/> only on the entries it finds there. They then retry, and find the key's stub as
+            /// it is now.
+            /// </summary>
+            public void ReleaseCheckpointWaiters()
+                => Volatile.Write(ref SnapshotPending, 0);
 
             /// <summary>
             /// When the entry was registered, or re-registered for a newer stub of the key (<see cref="TryReregister"/>), from
@@ -580,6 +594,7 @@ namespace Garnet.server
             var keyId = KeyId(keyBytes);
             if (liveIndexes.TryRemove(keyId, out var entry))
             {
+                entry.ReleaseCheckpointWaiters();
                 try { entry.Tree?.Dispose(); }
                 catch (Exception ex) { logger?.LogWarning(ex, "Failed to dispose BfTree on unregister"); }
                 return true;

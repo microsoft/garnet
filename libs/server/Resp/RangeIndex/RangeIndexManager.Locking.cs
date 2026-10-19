@@ -352,7 +352,9 @@ namespace Garnet.server
         /// <summary>
         /// Cold path: checks if this key's tree (activated or pending) is currently being snapshotted
         /// for a checkpoint. If so, releases the shared lock, spin-waits for the snapshot to complete,
-        /// and signals the caller to retry the entire read operation.
+        /// and signals the caller to retry the entire read operation. The wait also ends if the entry leaves
+        /// <see cref="liveIndexes"/> meanwhile, such as when the stub's tree is retired
+        /// (<see cref="TreeEntry.ReleaseCheckpointWaiters"/>); the checkpoint then no longer snapshots it.
         ///
         /// <para>Lookup is by <see cref="KeyId"/> (XxHash128 → Guid) so it works uniformly for activated
         /// (TreeHandle != 0) and pending (TreeHandle == 0) entries. Hot-path Guid derivation is gated
@@ -374,10 +376,19 @@ namespace Garnet.server
                 return false;
 
             rangeIndexLocks.ReleaseLock(sharedLockToken);
+            OnWaitForTreeCheckpoint();
             while (Volatile.Read(ref treeEntry.SnapshotPending) != 0)
                 Thread.Yield();
             return true;
         }
+
+        /// <summary>
+        /// Test hook: signals that a data operation has released the key's lock to wait for a checkpoint's snapshot of its
+        /// key's tree.
+        /// </summary>
+        [Conditional("DEBUG")]
+        private static void OnWaitForTreeCheckpoint()
+            => _ = ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.RangeIndex_Waits_For_Checkpoint);
 
         /// <summary>
         /// Restore a BfTree from its pre-staged CPR snapshot (<c>data.bftree</c>) and publish

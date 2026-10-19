@@ -41,6 +41,8 @@ namespace Garnet.test
         private const ExceptionInjectionType PublishPause = ExceptionInjectionType.RangeIndex_Pause_Before_Restore_Publish;
         private const ExceptionInjectionType RetirementWait = ExceptionInjectionType.RangeIndex_Waits_For_Retirement;
         private const ExceptionInjectionType CheckpointWait = ExceptionInjectionType.RangeIndex_Checkpoint_Waits_For_Flush_Snapshots;
+        private const ExceptionInjectionType CheckpointWaitForTree = ExceptionInjectionType.RangeIndex_Waits_For_Checkpoint;
+        private const ExceptionInjectionType TransactionPause = ExceptionInjectionType.Transaction_Pause_After_Lock_Acquisition;
 
         private GarnetServer server;
 
@@ -63,6 +65,8 @@ namespace Garnet.test
             ExceptionInjectionHelper.DisableException(PublishPause);
             ExceptionInjectionHelper.DisableException(RetirementWait);
             ExceptionInjectionHelper.DisableException(CheckpointWait);
+            ExceptionInjectionHelper.DisableException(CheckpointWaitForTree);
+            ExceptionInjectionHelper.DisableException(TransactionPause);
 
             server.Dispose();
             TestUtils.OnTearDown();
@@ -871,6 +875,98 @@ namespace Garnet.test
 
             using var redisRecovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             ClassicAssert.AreEqual("value1", (string)redisRecovered.GetDatabase(0).Execute("RI.GET", Key, "field1"));
+        }
+
+        /// <summary>
+        /// A data operation whose key's tree a checkpoint has yet to snapshot releases the RangeIndex lock and waits until the
+        /// checkpoint has taken that snapshot, which the checkpoint marks taken only on the trees still registered. If the
+        /// key's tree is retired meanwhile, here by evicting its stub, the operation must stop waiting and retry, which finds
+        /// the stub evicted and restores the tree from its flush snapshot.
+        /// </summary>
+        [Test]
+        public async Task ReadWaitingForCheckpointProceedsWhenTreeIsRetiredAsync()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            const string Key = "rikey";
+            const string TransactionKey = "txnkey";
+
+            // The default index size of TestUtils.CreateGarnetServer, 1m, in buckets of 64 bytes
+            const long IndexBuckets = (1L << 20) / 64;
+
+            var store = server.Provider.StoreWrapper.store;
+            var rangeIndexManager = server.Provider.StoreWrapper.rangeIndexManager;
+            var driver = server.Provider.StoreWrapper.DefaultDatabase.StateMachineDriver;
+            var keyBytes = Encoding.ASCII.GetBytes(Key);
+
+            // The transaction that holds up the checkpoint must not lock the bucket of the key the reader reads.
+            ClassicAssert.AreNotEqual(SpanByteComparer.StaticGetHashCode64(keyBytes) & (IndexBuckets - 1),
+                SpanByteComparer.StaticGetHashCode64(Encoding.ASCII.GetBytes(TransactionKey)) & (IndexBuckets - 1),
+                "The transaction's key shares the RangeIndex key's bucket");
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            using var redisTransaction = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redisReader = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            CreateIndex(db, Key);
+            ClassicAssert.IsTrue(rangeIndexManager.TryGetEntry(keyBytes, out var entry), "The key's tree is not registered");
+
+            Task<bool> exec = null;
+            Task<RedisResult> reader = null;
+            bool readerFinished;
+
+            ExceptionInjectionHelper.EnableException(TransactionPause);
+            try
+            {
+                // The transaction parks with its version verified, so a checkpoint waits for it in IN_PROGRESS, its barrier set.
+                var transaction = redisTransaction.GetDatabase(0).CreateTransaction();
+                _ = transaction.StringSetAsync(TransactionKey, "value");
+                exec = transaction.ExecuteAsync();
+                await ExceptionInjectionHelper.WaitOnClearAsync(TransactionPause).WaitAsync(WaitTimeout);
+
+                ClassicAssert.AreEqual("Background saving started", (string)await db.ExecuteAsync("BGSAVE").WaitAsync(WaitTimeout));
+                ClassicAssert.IsTrue(SpinWait.SpinUntil(() => driver.SystemState.Phase == Phase.IN_PROGRESS, WaitTimeout),
+                    "The checkpoint did not reach IN_PROGRESS");
+                ClassicAssert.AreEqual(1, Volatile.Read(ref entry.SnapshotPending), "The checkpoint did not mark the key's tree for its snapshot");
+
+                // The reader releases the lock to wait for the checkpoint's snapshot of the key's tree.
+                ExceptionInjectionHelper.EnableException(CheckpointWaitForTree);
+                reader = redisReader.GetDatabase(0).ExecuteAsync("RI.GET", Key, "field1");
+                await ExceptionInjectionHelper.WaitOnClearAsync(CheckpointWaitForTree).WaitAsync(WaitTimeout);
+
+                // Evicting the stub retires the key's tree before the checkpoint snapshots it.
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+                store.Log.ShiftHeadAddress(store.Log.TailAddress, wait: true);
+                ClassicAssert.IsFalse(rangeIndexManager.TryGetEntry(keyBytes, out var current) && ReferenceEquals(current, entry),
+                    "Eviction did not retire the key's tree");
+
+                readerFinished = await CompletesWithinAsync(reader, NotBlockedTimeout);
+            }
+            finally
+            {
+                // Release a reader still waiting for the retired tree, then the transaction, which lets the checkpoint finish.
+                Volatile.Write(ref entry.SnapshotPending, 0);
+
+                ExceptionInjectionHelper.SuspendParking();
+                try
+                {
+                    if (exec != null)
+                        _ = await exec.WaitAsync(WaitTimeout);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+            }
+
+            ClassicAssert.AreEqual("value1", (string)await reader.WaitAsync(WaitTimeout));
+            ClassicAssert.IsTrue(readerFinished, "A read waiting for the checkpoint's snapshot of a tree retired meanwhile did not finish");
+            ClassicAssert.IsTrue(SpinWait.SpinUntil(() => driver.SystemState.Phase == Phase.REST, WaitTimeout), "The checkpoint did not complete");
+
+            ClassicAssert.AreEqual(1, rangeIndexManager.LiveIndexCount, "The restored tree is not registered");
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.SET", Key, "field2", "value2"));
+            ClassicAssert.AreEqual("value2", (string)db.Execute("RI.GET", Key, "field2"));
         }
 
         /// <summary>

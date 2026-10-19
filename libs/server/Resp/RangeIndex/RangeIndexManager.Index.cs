@@ -329,6 +329,9 @@ namespace Garnet.server
 
             // A copy registering meanwhile replaces the claimed entry rather than reuse it (RegisterPending).
             _ = liveIndexes.TryRemove(KeyValuePair.Create(keyId, entry));
+
+            // The entry is gone either way, so a checkpoint will not mark its snapshot taken; its waiters retry instead.
+            entry.ReleaseCheckpointWaiters();
             disposedTree = entry.Tree;
         }
 

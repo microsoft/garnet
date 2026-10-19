@@ -227,5 +227,10 @@ namespace Garnet.common
         /// lock was held, before it writes its metadata.
         /// </summary>
         RangeIndex_Checkpoint_Waits_For_Flush_Snapshots,
+        /// <summary>
+        /// RangeIndex: cleared when a data operation releases the RangeIndex lock to wait for a checkpoint's snapshot of its
+        /// key's tree.
+        /// </summary>
+        RangeIndex_Waits_For_Checkpoint,
     }
 }
