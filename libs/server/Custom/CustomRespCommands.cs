@@ -33,7 +33,6 @@ namespace Garnet.server
                 // A key being migrated parks the session until it is accessible, or moves the transaction to the thread
                 // pool to look it up on the device, rather than have Prepare wait for it on this thread
                 csvi.canWait = CanSuspend;
-                csvi.canOffload = csvi.canWait && ThreadPoolHop.Required;
             }
 
             var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);

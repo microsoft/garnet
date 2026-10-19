@@ -301,16 +301,19 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.NoInlining)]
         bool MustOffload(RespCommand cmd)
         {
+            // Asked first, as they rule out most commands for less than the state of the logs costs to read
+            if (!CanSuspend || !HopRequired)
+                return false;
+
             var classes = OffloadClasses;
             if ((uint)cmd >= (uint)classes.Length)
                 return false;
 
             var c = classes[(int)cmd];
-            return ((c != OffloadClass.Never
+            return (c != OffloadClass.Never
                     && (c == OffloadClass.Always
                         || (c == OffloadClass.WhenSpilled ? storageSession.MayReadFromDisk : MustOffloadConditional(cmd))))
-                    || (MayAddRecords(cmd) && storageSession.MayWaitToAllocate))
-                && ThreadPoolHop.Required && CanSuspend;
+                || (MayAddRecords(cmd) && storageSession.MayWaitToAllocate);
         }
 
         /// <summary>

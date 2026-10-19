@@ -37,7 +37,9 @@ namespace Garnet.server
         /// <summary>
         /// Whether the caller can park until a key being migrated becomes accessible, or until a slot that
         /// <see cref="waitForStableSlot"/> requires to be stable stops importing or migrating, and verify again,
-        /// rather than have the verification hold the calling thread for it.
+        /// rather than have the verification hold the calling thread for it. A caller that can park can also have a
+        /// thread-pool thread verify the request again, rather than have the verification wait on the device on a
+        /// calling thread that must not wait, to learn whether a key being migrated is still here.
         /// </summary>
         public bool canWait;
 
@@ -50,16 +52,10 @@ namespace Garnet.server
         public bool mustWait;
 
         /// <summary>
-        /// Whether the caller can have a thread-pool thread verify the request again, rather than have the verification
-        /// wait on the device on the calling thread, which must not wait, to learn whether a key being migrated is still here.
-        /// </summary>
-        public bool canOffload;
-
-        /// <summary>
-        /// Set by a verification that found a key being migrated, which it could only look up on the device, and was
-        /// allowed by <see cref="canOffload"/> to leave the lookup to the thread pool. The request is neither served nor
-        /// answered: the caller moves it to the thread pool and verifies it again there. Cleared by the caller that acts
-        /// on it.
+        /// Set by a verification that found a key being migrated, which it could only look up on the device, on a calling
+        /// thread that must not wait, and was allowed by <see cref="canWait"/> to leave the lookup to the thread pool. The
+        /// request is neither served nor answered: the caller moves it to the thread pool and verifies it again there.
+        /// Cleared by the caller that acts on it.
         /// </summary>
         public bool mustOffload;
     }

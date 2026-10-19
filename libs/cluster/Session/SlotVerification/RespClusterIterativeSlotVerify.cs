@@ -30,7 +30,7 @@ namespace Garnet.cluster
             // If it is the first verification initialize the result cache
             if (!initialized)
             {
-                verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, csvi.readOnly, csvi.sessionAsking > 0, csvi.waitForStableSlot, csvi.canWait, csvi.canOffload);
+                verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, csvi.readOnly, csvi.sessionAsking > 0, csvi.waitForStableSlot, csvi.canWait);
                 cachedVerificationResult = verifyResult;
                 initialized = true;
                 return Verified(verifyResult.state, ref csvi);
@@ -40,7 +40,7 @@ namespace Garnet.cluster
             if (cachedVerificationResult.state != SlotVerifiedState.OK)
                 return false;
 
-            verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, csvi.readOnly, csvi.sessionAsking > 0, csvi.waitForStableSlot, csvi.canWait, csvi.canOffload);
+            verifyResult = SingleKeySlotVerify(ref configSnapshot, ref keySlice, csvi.readOnly, csvi.sessionAsking > 0, csvi.waitForStableSlot, csvi.canWait);
 
             // Check if slot changes between keys
             if (verifyResult.slot != cachedVerificationResult.slot)

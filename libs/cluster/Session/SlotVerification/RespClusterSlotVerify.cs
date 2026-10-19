@@ -92,8 +92,8 @@ namespace Garnet.cluster
         /// <remarks>
         /// With <see cref="ClusterSlotVerificationInput.canWait"/> set, a key being migrated is neither served nor
         /// answered: <see cref="ClusterSlotVerificationInput.mustWait"/> is set, nothing is written, and the call returns
-        /// true so the caller stops processing the request, waits and verifies it again. With
-        /// <see cref="ClusterSlotVerificationInput.canOffload"/> set, a key being migrated that may have to be looked up
+        /// true so the caller stops processing the request, waits and verifies it again. On a calling thread that must not
+        /// wait, a key being migrated that may have to be looked up
         /// on the device is likewise neither served nor answered: <see cref="ClusterSlotVerificationInput.mustOffload"/>
         /// is set instead, and the caller verifies the request again on the thread pool.
         /// </remarks>

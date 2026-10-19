@@ -107,8 +107,8 @@ namespace Garnet.server
         /// </summary>
         /// <remarks>
         /// Reads <see cref="ClusterSlotVerificationInput.readOnly"/>, <see cref="ClusterSlotVerificationInput.sessionAsking"/>,
-        /// <see cref="ClusterSlotVerificationInput.waitForStableSlot"/>, <see cref="ClusterSlotVerificationInput.canWait"/> and
-        /// <see cref="ClusterSlotVerificationInput.canOffload"/> for the key. A key being migrated that the caller may not
+        /// <see cref="ClusterSlotVerificationInput.waitForStableSlot"/> and <see cref="ClusterSlotVerificationInput.canWait"/>
+        /// for the key. A key being migrated that the caller may not
         /// wait for here, or look up here, sets <see cref="ClusterSlotVerificationInput.mustWait"/> or
         /// <see cref="ClusterSlotVerificationInput.mustOffload"/> and fails the verification; the caller then runs the
         /// request again from the start, after resetting the cached result.
@@ -130,8 +130,8 @@ namespace Garnet.server
         /// <remarks>
         /// When <see cref="ClusterSlotVerificationInput.canWait"/> is set and a key of the request is being
         /// migrated, nothing is written: the call returns true with <see cref="ClusterSlotVerificationInput.mustWait"/> set,
-        /// and the caller waits with <see cref="TryRegisterMigrationWaiter"/> before verifying again. When
-        /// <see cref="ClusterSlotVerificationInput.canOffload"/> is set and a key being migrated may have to be looked up on
+        /// and the caller waits with <see cref="TryRegisterMigrationWaiter"/> before verifying again. When it is set on a
+        /// calling thread that must not wait, and a key being migrated may have to be looked up on
         /// the device, nothing is written either: the call returns true with <see cref="ClusterSlotVerificationInput.mustOffload"/>
         /// set, and the caller verifies again on the thread pool.
         /// </remarks>

@@ -67,7 +67,6 @@ namespace Garnet.server
 #endif
                     txnManager.GetSlotVerificationInput(SessionAsking, out var clusterSlotVerificationInput);
                     clusterSlotVerificationInput.canWait = CanSuspend;
-                    clusterSlotVerificationInput.canOffload = clusterSlotVerificationInput.canWait && ThreadPoolHop.Required;
 
                     if (txnManager.txnKeysParseState.Count > 0 &&
                         clusterSession.NetworkMultiKeySlotVerify(ref txnManager.txnKeysParseState, ref clusterSlotVerificationInput, ref dcurr, ref dend, isTxn: true))

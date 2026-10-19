@@ -102,6 +102,39 @@ namespace Garnet.server
         internal bool CanSuspend => unparkableConsumeDepth == 0;
 
         /// <summary>
+        /// <see cref="ThreadPoolHop.Required"/> for the thread running the current consume: 0 until asked during the
+        /// consume, 1 if the thread must not wait, 2 if it may. Cleared as each consume starts, since the next may run on
+        /// another thread.
+        /// </summary>
+        byte consumeThreadHop;
+
+        /// <summary>
+        /// Whether work that may wait on its thread has to leave the thread running the current consume, as
+        /// <see cref="ThreadPoolHop.Required"/> says, asking the thread once per consume.
+        /// </summary>
+        /// <remarks>
+        /// Reading the current thread is a thread-static lookup, which costs more than the checks it guards when asked for
+        /// every command of a batch.
+        /// </remarks>
+        bool HopRequired
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                var hop = consumeThreadHop;
+                return hop != 0 ? hop == 1 : AskHopRequired();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        bool AskHopRequired()
+        {
+            var required = ThreadPoolHop.Required;
+            consumeThreadHop = required ? (byte)1 : (byte)2;
+            return required;
+        }
+
+        /// <summary>
         /// Whether a blocking command must answer at once rather than wait: inside <c>MULTI</c>/<c>EXEC</c>
         /// and inside a script. There, as in Redis, it behaves as though its timeout had already expired.
         /// </summary>

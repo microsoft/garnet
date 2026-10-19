@@ -648,6 +648,8 @@ namespace Garnet.server
         /// <returns>Bytes consumed, or zero if a command suspended and the batch is unfinished.</returns>
         unsafe int ConsumeCore(byte* reqBuffer, int bytesReceived, RespAsyncBox resume)
         {
+            consumeThreadHop = 0;
+
             // The sender closes once the replies already handed to it have drained, so the connection can
             // outlive the batch that ended the session. Input arriving in that interval is discarded
             // rather than run, as its replies could no longer be delivered.

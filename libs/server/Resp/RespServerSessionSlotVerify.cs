@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -58,7 +57,6 @@ namespace Garnet.server
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.XVCREATE or RespCommand.XVIMPORT;
             csvi.canWait = CanSuspend;
-            csvi.canOffload = csvi.canWait && ThreadPoolHop.Required;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
@@ -80,7 +78,6 @@ namespace Garnet.server
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = false;
             csvi.canWait = CanSuspend;
-            csvi.canOffload = csvi.canWait && ThreadPoolHop.Required;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
@@ -112,7 +109,6 @@ namespace Garnet.server
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = false;
             csvi.canWait = CanSuspend;
-            csvi.canOffload = csvi.canWait && ThreadPoolHop.Required;
             return !clusterSession.NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 

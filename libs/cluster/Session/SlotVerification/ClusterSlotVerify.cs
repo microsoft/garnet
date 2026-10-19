@@ -34,7 +34,7 @@ namespace Garnet.cluster
         public void RemoveMigrationWaiter(IMigrationWaiter waiter)
             => clusterProvider.migrationManager.Progress.Remove(waiter);
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, bool canWait, bool canOffload, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, bool canWait, int slot = -1)
         {
             Debug.Assert(!waitForStableSlot || (waitForStableSlot && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
 
@@ -173,8 +173,9 @@ namespace Garnet.cluster
                     }
                 }
 
-                // Whether the key is still here may be learned only from the device
-                if (canOffload && MayReadFromDisk)
+                // Whether the key is still here may be learned only from the device, which a thread that must not wait
+                // leaves to the thread pool. The thread is asked last, as reading it costs more than the checks before it.
+                if (canWait && MayReadFromDisk && ThreadPoolHop.Required)
                     return new(SlotVerifiedState.OFFLOAD, slot);
 
                 return Exists(key) ? new(SlotVerifiedState.OK, slot) : new(SlotVerifiedState.ASK, slot);
@@ -214,7 +215,7 @@ namespace Garnet.cluster
 
             ref var firstKey = ref parseState.GetArgSliceByRef(searchArgs.firstIdx);
             var firstSlot = HashSlotUtils.HashSlot(firstKey);
-            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, csvi.canOffload, firstSlot);
+            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, firstSlot);
 
             // The request is verified again once the migration moves on, or on the thread pool, so the other keys have
             // nothing to be compared against yet
@@ -255,7 +256,7 @@ namespace Garnet.cluster
                 if (slot != firstSlot)
                     return new(SlotVerifiedState.CROSSSLOT, firstSlot);
 
-                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, csvi.canOffload, slot);
+                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, slot);
 
                 if (result.state is SlotVerifiedState.WAIT or SlotVerifiedState.OFFLOAD)
                     return result;
