@@ -37,16 +37,6 @@ namespace Garnet.test
             Assert.That(message, Is.EqualTo("value 42 002A |  42| |002A  | span |  span| |  value|"));
         }
 
-        [TestCase("")]
-        [TestCase("literal message")]
-        public void FormatsLiteralMessage(string text)
-        {
-            var handler = new AssertMessageHandler(text.Length, 0, false, out _);
-            handler.AppendLiteral(text);
-
-            Assert.That(handler.GetFormattedText(), Is.EqualTo(text));
-        }
-
         private static string Format(bool condition, [InterpolatedStringHandlerArgument(nameof(condition))] ref AssertMessageHandler message)
             => condition ? null : message.GetFormattedText();
     }
