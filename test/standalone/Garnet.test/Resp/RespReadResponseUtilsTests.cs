@@ -59,28 +59,43 @@ namespace Garnet.test.Resp
             }
         }
 
-        static bool ReadStrings(string reply, out string[] result, out int consumed)
+        delegate bool ReplyParser(ref byte* ptr, byte* end);
+
+        /// <summary>
+        /// Runs <paramref name="parser"/> over the ASCII encoding of <paramref name="reply"/>.
+        /// </summary>
+        /// <param name="reply">The reply text; each character encodes to exactly one byte.</param>
+        /// <param name="parser">The parser to run over the encoded reply.</param>
+        /// <param name="consumed">The number of bytes the parser consumed.</param>
+        /// <returns>The parser's result.</returns>
+        static bool Parse(string reply, ReplyParser parser, out int consumed)
         {
-            var bytes = Encoding.ASCII.GetBytes(reply);
+            var length = reply.Length;
+            var bytes = new byte[length];
+            _ = Encoding.ASCII.GetBytes(reply, bytes);
             fixed (byte* start = bytes)
             {
                 var ptr = start;
-                var success = RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out result, ref ptr, start + bytes.Length);
+                var success = parser(ref ptr, start + length);
                 consumed = (int)(ptr - start);
                 return success;
             }
         }
 
+        static bool ReadStrings(string reply, out string[] result, out int consumed)
+        {
+            string[] parsed = null;
+            var success = Parse(reply, (ref byte* ptr, byte* end) => RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out parsed, ref ptr, end), out consumed);
+            result = parsed;
+            return success;
+        }
+
         static bool ReadPooled(MemoryPool<byte> pool, string reply, out MemoryResult<byte>[] result, out int consumed)
         {
-            var bytes = Encoding.ASCII.GetBytes(reply);
-            fixed (byte* start = bytes)
-            {
-                var ptr = start;
-                var success = RespReadResponseUtils.TryReadStringArrayWithLengthHeader(pool, out result, ref ptr, start + bytes.Length);
-                consumed = (int)(ptr - start);
-                return success;
-            }
+            MemoryResult<byte>[] parsed = null;
+            var success = Parse(reply, (ref byte* ptr, byte* end) => RespReadResponseUtils.TryReadStringArrayWithLengthHeader(pool, out parsed, ref ptr, end), out consumed);
+            result = parsed;
+            return success;
         }
 
         static string Nested(int depth, string innermost)
@@ -140,16 +155,8 @@ namespace Garnet.test.Resp
             warm[0].Dispose();
 
             var before = GC.GetAllocatedBytesForCurrentThread();
-            var bytes = Encoding.ASCII.GetBytes(header);
-            var stringsReady = true;
-            var pooledReady = true;
-            fixed (byte* start = bytes)
-            {
-                var ptr = start;
-                stringsReady = RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out _, ref ptr, start + bytes.Length);
-                ptr = start;
-                pooledReady = RespReadResponseUtils.TryReadStringArrayWithLengthHeader(MemoryPool<byte>.Shared, out _, ref ptr, start + bytes.Length);
-            }
+            var stringsReady = ReadStrings(header, out _, out _);
+            var pooledReady = ReadPooled(MemoryPool<byte>.Shared, header, out _, out _);
             var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
             ClassicAssert.IsFalse(stringsReady);
@@ -217,15 +224,8 @@ namespace Garnet.test.Resp
         {
             _ = Assert.Throws<RespParsingException>(() => ReadStrings("*1\r\n$536870913\r\n", out _, out _));
 
-            var bytes = Encoding.ASCII.GetBytes("$536870913\r\n");
             _ = Assert.Throws<RespParsingException>(() =>
-            {
-                fixed (byte* start = bytes)
-                {
-                    var ptr = start;
-                    _ = RespReadResponseUtils.TryReadStringWithLengthHeader(out _, ref ptr, start + bytes.Length);
-                }
-            });
+                Parse("$536870913\r\n", (ref byte* ptr, byte* end) => RespReadResponseUtils.TryReadStringWithLengthHeader(out _, ref ptr, end), out _));
         }
     }
 }
