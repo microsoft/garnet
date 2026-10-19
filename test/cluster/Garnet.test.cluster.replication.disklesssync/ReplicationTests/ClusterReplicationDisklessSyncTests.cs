@@ -4,9 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-#if DEBUG
 using Garnet.common;
-#endif
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -176,6 +174,33 @@ namespace Garnet.test.cluster
 
             // Validate replica data
             Validate(primaryIndex, replicaIndex, disableObjects);
+        }
+
+        [Test]
+        [Category("REPLICATION")]
+        public void ClusterDisklessCheckpointDoesNotWriteToAof()
+        {
+            ClusterTestUtils.IgnoreIfExceptionInjectionDisabled();
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            const ExceptionInjectionType pause = ExceptionInjectionType.Replication_Pause_Before_Diskless_Snapshot_Recovery;
+            context.CreateInstances(2, disableObjects: true, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+            context.clusterTestUtils.MeetAndAssignSlots(primaryIndex, 2, context.logger);
+            PopulatePrimary(primaryIndex, disableObjects: true, performRMW: false);
+
+            var initialTail = context.GetAofTailAddress(replicaIndex);
+            using (ExceptionInjectionHelper.EnabledScope(pause))
+            {
+                _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaIndex, primaryNodeIndex: primaryIndex, async: true, logger: context.logger);
+                ExceptionInjectionHelper.WaitOnClearAsync(pause).WaitAsync(TimeSpan.FromSeconds(timeout)).GetAwaiter().GetResult();
+                ClassicAssert.AreEqual(initialTail, context.GetAofTailAddress(replicaIndex), "The entire checkpoint must arrive without appending to the replica AOF");
+
+                // ResetAndWait clears the flag on arrival; re-enabling it releases recovery.
+                ExceptionInjectionHelper.EnableException(pause);
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+                Validate(primaryIndex, replicaIndex, disableObjects: true);
+            }
         }
 
         /// <summary>
