@@ -1320,7 +1320,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy the entire record values: Value and optionals (ETag, Expiration). Key is not copied as it has already been set into 'this'.
         /// </summary>
-        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.
+        /// <para>An overflow value whose length is unchanged shares the source's array, so writes through this record's value span are
+        /// visible through the source. An overflow value whose length changes is copied into this record's own array.</para></remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
@@ -1336,7 +1338,22 @@ namespace Tsavorite.core
                 if (srcLogRecord.DataHeader.ValueIsOverflow)
                 {
                     Debug.Assert(DataHeader.ValueIsOverflow, "Expected this.DataHeader.ValueIsOverflow to be set already");
-                    ValueOverflow = srcLogRecord.ValueOverflow;
+                    var srcOverflow = srcLogRecord.ValueOverflow;
+
+                    // Initialization gave this record its own array, sized for the new value. When the caller changes the value's length
+                    // the source's array cannot hold the result, so copy into this record's array and zero any growth, as
+                    // LogField.ReallocateValueOverflow does. Otherwise share the source's array.
+                    var (_, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
+                    if (objectIdMap.TryGetOverflowByteArray(*(int*)valueAddress, out var dstOverflow) && dstOverflow.Length != srcOverflow.Length)
+                    {
+                        var srcSpan = srcOverflow.ReadOnlySpan;
+                        var dstSpan = dstOverflow.Span;
+                        var copyLength = srcSpan.Length < dstSpan.Length ? srcSpan.Length : dstSpan.Length;
+                        srcSpan[..copyLength].CopyTo(dstSpan);
+                        dstSpan[copyLength..].Clear();
+                    }
+                    else
+                        ValueOverflow = srcOverflow;
                 }
                 else
                 {
