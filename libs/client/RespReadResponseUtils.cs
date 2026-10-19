@@ -120,9 +120,15 @@ namespace Garnet.client
         static bool TryReadPtrWithSignedLengthHeader(ref byte* keyPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!RespReadUtils.TryReadSignedLengthHeader(out length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
+            if (!RespReadUtils.TryReadSignedLengthHeader(out length, ref ptr, end))
             {
                 return false;
+            }
+
+            // A reply that can never be accepted is a protocol error, not a reason to wait for more bytes
+            if (length > RespReadUtils.MaxArgumentLengthBytes)
+            {
+                RespParsingException.ThrowInvalidStringLength(length);
             }
 
             // Allow for null
@@ -156,64 +162,70 @@ namespace Garnet.client
             => RespReadUtils.TryReadErrorAsString(out error, ref ptr, end);
 
         /// <summary>
-        /// Read string array with length header
+        /// Smallest encoding of an array element ("+\r\n" or ":\r\n"); bounds how many elements the bytes
+        /// received so far can hold.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
-        {
-            result = null;
+        const int MinArrayElementBytes = 3;
 
-            // Parse RESP array header
-            if (!RespReadUtils.TryReadSignedArrayLength(out var length, ref ptr, end))
+        /// <summary>
+        /// Reads an array header, accepting its element count only once the bytes received so far could hold
+        /// that many elements. An array is therefore never sized from a count the peer has not backed with data.
+        /// </summary>
+        /// <returns>False if more bytes are needed.</returns>
+        static bool TryReadBoundedArrayLength(out int length, ref byte* ptr, byte* end)
+        {
+            if (!RespReadUtils.TryReadSignedArrayLength(out length, ref ptr, end))
             {
                 return false;
             }
 
-            if (length < 0)
+            if (length > (end - ptr) / MinArrayElementBytes)
             {
-                // NULL value ('*-1\r\n')
-                return true;
-            }
+                // No receive buffer can ever hold this many elements
+                if (length > int.MaxValue / MinArrayElementBytes)
+                {
+                    RespParsingException.ThrowInvalidLength(length);
+                }
 
-            // Parse individual strings in the array
-            result = new string[length];
-            for (var i = 0; i < length; i++)
-            {
-                if (*ptr == '$')
-                {
-                    if (!TryReadStringWithLengthHeader(out result[i], ref ptr, end))
-                        return false;
-                }
-                else if (*ptr == '+')
-                {
-                    if (!TryReadSimpleString(out result[i], ref ptr, end))
-                        return false;
-                }
-                else if (*ptr == '*')
-                {
-                    if (!TryReadStringArrayWithLengthHeader(out var subArray, ref ptr, end))
-                        return false;
-                    result[i] = string.Join(", ", subArray);
-                }
-                else
-                {
-                    if (!TryReadIntegerAsString(out result[i], ref ptr, end))
-                        return false;
-                }
+                return false;
             }
 
             return true;
         }
 
         /// <summary>
-        /// Read string array with length header
+        /// Read string array with length header. Nested arrays are flattened into a comma-separated string.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool TryReadStringArrayWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte>[] result, ref byte* ptr, byte* end)
+        /// <remarks>
+        /// Each array is sized only from an element count the received bytes can hold, so the memory a reply
+        /// can commit is proportional to the bytes the peer has sent rather than to the count it declares.
+        /// <paramref name="ptr"/> is advanced only when the whole reply has been read.
+        /// </remarks>
+        /// <exception cref="RespParsingException">Thrown if the reply is malformed, declares an element count
+        /// that can never be received, or nests deeper than <see cref="RespReadUtils.MaxNestingDepth"/>.</exception>
+        public static bool TryReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
+        {
+            var cur = ptr;
+            if (!TryReadStringArray(out result, ref cur, end, depth: 1))
+            {
+                return false;
+            }
+
+            ptr = cur;
+            return true;
+        }
+
+        static bool TryReadStringArray(out string[] result, ref byte* ptr, byte* end, int depth)
         {
             result = null;
-            // Parse RESP array header
-            if (!RespReadUtils.TryReadSignedArrayLength(out var length, ref ptr, end))
+
+            // Bounding the depth keeps the recursion from exhausting the stack
+            if (depth > RespReadUtils.MaxNestingDepth)
+            {
+                RespParsingException.ThrowExcessiveNestingDepth(RespReadUtils.MaxNestingDepth);
+            }
+
+            if (!TryReadBoundedArrayLength(out var length, ref ptr, end))
             {
                 return false;
             }
@@ -224,27 +236,113 @@ namespace Garnet.client
                 return true;
             }
 
-            // Parse individual strings in the array
-            result = new MemoryResult<byte>[length];
+            var elements = new string[length];
             for (var i = 0; i < length; i++)
             {
+                if (ptr >= end)
+                {
+                    return false;
+                }
+
                 if (*ptr == '$')
                 {
-                    if (!TryReadStringWithLengthHeader(pool, out result[i], ref ptr, end))
+                    if (!TryReadStringWithLengthHeader(out elements[i], ref ptr, end))
                         return false;
                 }
                 else if (*ptr == '+')
                 {
-                    if (!TryReadSimpleString(pool, out result[i], ref ptr, end))
+                    if (!TryReadSimpleString(out elements[i], ref ptr, end))
                         return false;
+                }
+                else if (*ptr == '*')
+                {
+                    if (!TryReadStringArray(out var subArray, ref ptr, end, depth + 1))
+                        return false;
+                    elements[i] = subArray == null ? null : string.Join(", ", subArray);
                 }
                 else
                 {
-                    if (!TryReadIntegerAsString(pool, out result[i], ref ptr, end))
+                    if (!TryReadIntegerAsString(out elements[i], ref ptr, end))
                         return false;
                 }
             }
 
+            result = elements;
+            return true;
+        }
+
+        /// <summary>
+        /// Read string array with length header
+        /// </summary>
+        /// <remarks>
+        /// The array is sized only from an element count the received bytes can hold, so the memory a reply can
+        /// commit is proportional to the bytes the peer has sent rather than to the count it declares. Buffers
+        /// rented for a reply that is not yet complete are returned to the pool, and <paramref name="ptr"/> is
+        /// advanced only when the whole reply has been read.
+        /// </remarks>
+        /// <exception cref="RespParsingException">Thrown if the reply is malformed, contains a nested array, or
+        /// declares an element count that can never be received.</exception>
+        public static bool TryReadStringArrayWithLengthHeader(MemoryPool<byte> pool, out MemoryResult<byte>[] result, ref byte* ptr, byte* end)
+        {
+            result = null;
+
+            var cur = ptr;
+            if (!TryReadBoundedArrayLength(out var length, ref cur, end))
+            {
+                return false;
+            }
+
+            if (length < 0)
+            {
+                // NULL value ('*-1\r\n')
+                ptr = cur;
+                return true;
+            }
+
+            var elements = new MemoryResult<byte>[length];
+            var parsed = 0;
+            try
+            {
+                for (; parsed < length; parsed++)
+                {
+                    if (cur >= end)
+                    {
+                        return false;
+                    }
+
+                    if (*cur == '$')
+                    {
+                        if (!TryReadStringWithLengthHeader(pool, out elements[parsed], ref cur, end))
+                            return false;
+                    }
+                    else if (*cur == '+')
+                    {
+                        if (!TryReadSimpleString(pool, out elements[parsed], ref cur, end))
+                            return false;
+                    }
+                    else if (*cur == '*')
+                    {
+                        RespParsingException.ThrowUnexpectedToken(*cur);
+                    }
+                    else
+                    {
+                        if (!TryReadIntegerAsString(pool, out elements[parsed], ref cur, end))
+                            return false;
+                    }
+                }
+            }
+            finally
+            {
+                // Return the buffers rented so far if the reply could not be read in full
+                if (parsed < length)
+                {
+                    for (var i = 0; i < parsed; i++)
+                        elements[i].Dispose();
+                }
+            }
+
+            result = elements;
+            ptr = cur;
             return true;
         }
 

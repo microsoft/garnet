@@ -24,6 +24,14 @@ namespace Garnet.common
         public const int MaxArgumentLengthBytes = 512 * 1_024 * 1_024;
 
         /// <summary>
+        /// Maximum nesting depth of a structured value: a nested RESP array reply, or a Lua table converted
+        /// to or from JSON.
+        ///
+        /// This matches the Redis maximum JSON nesting depth of 1000.
+        /// </summary>
+        public const int MaxNestingDepth = 1000;
+
+        /// <summary>
         /// Tries to read the leading sign of the given ASCII-encoded number.
         /// </summary>
         /// <param name="ptr">String to try reading sign from.</param>
@@ -1096,6 +1104,17 @@ namespace Garnet.common
             // Parse RESP array header
             if (!TryReadUnsignedArrayLength(out var length, ref ptr, end))
             {
+                return false;
+            }
+
+            // Each element takes at least 3 bytes; don't allocate for elements that have not been received
+            if (length > (end - ptr) / 3)
+            {
+                if (length > int.MaxValue / 3)
+                {
+                    RespParsingException.ThrowInvalidLength(length);
+                }
+
                 return false;
             }
 

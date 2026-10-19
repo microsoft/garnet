@@ -180,10 +180,13 @@ namespace Garnet.client
                 case (byte)'*':
                     if (!RespReadResponseUtils.TryReadStringArrayWithLengthHeader(memoryPool, out var resultArray, ref ptr, end))
                         return false;
-                    // Return first element of array
-                    for (var i = 1; i < resultArray.Length; i++)
-                        resultArray[i].Dispose();
-                    result = resultArray[0];
+                    // Return first element of array; a null or empty array yields no result
+                    if (resultArray is { Length: > 0 })
+                    {
+                        for (var i = 1; i < resultArray.Length; i++)
+                            resultArray[i].Dispose();
+                        result = resultArray[0];
+                    }
                     break;
 
                 default:

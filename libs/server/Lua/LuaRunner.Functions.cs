@@ -1135,7 +1135,7 @@ namespace Garnet.server
             // Encode the unknown type on the top of the stack
             static int Encode(LuaRunner self, int depth)
             {
-                if (depth > 1000)
+                if (depth > RespReadUtils.MaxNestingDepth)
                 {
                     // Match Redis max decoding depth
                     return self.LuaWrappedError(1, self.constStrs.CannotSerializeNesting);
@@ -1483,12 +1483,12 @@ namespace Garnet.server
 
             try
             {
-                var parsed = JsonNode.Parse(buff, documentOptions: new JsonDocumentOptions { MaxDepth = 1000 });
+                var parsed = JsonNode.Parse(buff, documentOptions: new JsonDocumentOptions { MaxDepth = RespReadUtils.MaxNestingDepth });
                 return Decode(this, parsed);
             }
             catch (Exception e)
             {
-                if (e.Message.Contains("maximum configured depth of 1000"))
+                if (e.Message.Contains($"maximum configured depth of {RespReadUtils.MaxNestingDepth}"))
                 {
                     // Maximum depth exceeded, munge to a compatible Redis error
                     return LuaWrappedError(1, constStrs.FoundTooManyNested);
