@@ -150,8 +150,8 @@ namespace Garnet.cluster
             => clusterManager?.gossipStats.Reset();
 
         /// <inheritdoc />
-        public void FlushConfig()
-            => clusterManager?.FlushConfig();
+        public ValueTask FlushConfigAsync()
+            => clusterManager?.FlushConfigAsync() ?? default;
 
         /// <inheritdoc />
         public void FlushDB(bool unsafeTruncateLog = false)

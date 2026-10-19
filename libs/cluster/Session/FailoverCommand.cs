@@ -108,6 +108,7 @@ namespace Garnet.cluster
             {
                 clusterProvider.clusterManager.TrySetLocalNodeRole(NodeRole.PRIMARY);
                 clusterProvider.failoverManager.TryAbortReplicaFailover();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
             else
             {

@@ -197,11 +197,11 @@ namespace Garnet.cluster
             => TryStartGossipTasks();
 
         /// <summary>
-        /// Flush current config to disk
+        /// Requests that the current config be written to disk, without waiting for the write.
         /// </summary>
         /// <remarks>
-        /// Holds the calling thread for the write unless flushes are batched, so is called only from a thread that may wait,
-        /// or at startup; an async caller uses <see cref="FlushConfigAsync"/>.
+        /// With flushes batched, the background flush task writes it within a period; otherwise a write is issued now. A
+        /// command that answers only once its change is written then awaits <see cref="WaitForConfigWriteAsync"/>.
         /// </remarks>
         public void FlushConfig()
         {
@@ -211,7 +211,7 @@ namespace Garnet.cluster
             if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
                 Interlocked.Increment(ref flushCount);
             else
-                configWriter.Write();
+                _ = configWriter.WriteAsync();
         }
 
         /// <summary>
@@ -226,6 +226,28 @@ namespace Garnet.cluster
             }
 
             return new ValueTask(configWriter.WriteAsync());
+        }
+
+        /// <summary>
+        /// Completes once every config write requested so far, through <see cref="FlushConfig"/> or otherwise, has
+        /// completed; at once when flushes are batched or disabled, as <see cref="FlushConfigAsync"/> does.
+        /// </summary>
+        public ValueTask WaitForConfigWriteAsync()
+            => serverOptions.ClusterConfigFlushFrequencyMs == 0 ? new ValueTask(configWriter.WaitForWritesAsync()) : default;
+
+        /// <summary>
+        /// Writes the current config to disk, holding the calling thread for the write; called only at startup, before
+        /// the node serves clients.
+        /// </summary>
+        void FlushConfigAtStartup()
+        {
+            if (serverOptions.ClusterConfigFlushFrequencyMs == -1)
+                return;
+
+            if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
+                Interlocked.Increment(ref flushCount);
+            else
+                configWriter.Write();
         }
 
         /// <summary>

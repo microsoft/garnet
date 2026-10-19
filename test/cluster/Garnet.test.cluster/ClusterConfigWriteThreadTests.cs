@@ -10,16 +10,13 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using ClusterNodeRole = Garnet.cluster.NodeRole;
-using SocketCompletions = Garnet.common.SocketCompletions;
 
 namespace Garnet.test.cluster
 {
     /// <summary>
     /// A node writes its cluster configuration files, <c>nodes.conf</c> and <c>replication.conf</c>, as the
     /// configuration changes. A write that a pool thread waited for would be a thread the node's clients could not use,
-    /// so each test holds the writes of one node until a client has been answered from a single free pool thread. A
-    /// command that writes the configuration on the session that received it may wait for the write on a pool thread, so
-    /// it is tested only for leaving a socket event thread first.
+    /// so each test holds the writes of one node until a client has been answered from a single free pool thread.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -171,41 +168,84 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// <c>FAILOVER ABORT</c> on a primary writes its configuration on the session that received it, so one received on
-        /// a socket event thread moves to the thread pool before it writes.
+        /// A command that changes the configuration on the session that received it answers once the change is written.
+        /// The session waits for the write parked, so another client is answered from the one free pool thread.
+        /// </summary>
+        /// <param name="setup">A command run before writes are held, or empty; <c>{self}</c> stands for the node's id.</param>
+        /// <param name="command">The command tested; <c>{self}</c> stands for the node's id.</param>
+        [Test, CancelAfter(100_000)]
+        [Category("CLUSTER")]
+        [TestCase("", "CLUSTER ADDSLOTS 1")]
+        [TestCase("", "CLUSTER ADDSLOTSRANGE 1 10")]
+        [TestCase("CLUSTER ADDSLOTS 0", "CLUSTER DELSLOTS 0")]
+        [TestCase("CLUSTER ADDSLOTS 0", "CLUSTER DELSLOTSRANGE 0 0")]
+        [TestCase("", "CLUSTER SETSLOT 1 NODE {self}")]
+        [TestCase("", "CLUSTER SETSLOTSRANGE STABLE 0 0")]
+        [TestCase("", "CLUSTER BUMPEPOCH")]
+        [TestCase("", "CLUSTER SET-CONFIG-EPOCH 5")]
+        [TestCase("CLUSTER ADDSLOTS 0", "CLUSTER RESET SOFT")]
+        [TestCase("", "CONFIG REWRITE")]
+        [TestCase("", "FAILOVER ABORT")]
+        public void AConfigurationChangeHoldsNoPoolThread(string setup, string command)
+        {
+            context.CreateInstances(1, enableAOF: true, disableObjects: true, configureNode: HoldWritesOf(0, NodesConf));
+            using var session = new RawRespSession(endpoint: context.endpoints[0]);
+            using var pinger = new RawRespSession(endpoint: context.endpoints[0]);
+            var self = Provider(0).clusterManager.CurrentConfig.LocalNodeId;
+            string[] Args(string line) => line.Replace("{self}", self).Split(' ');
+            if (setup.Length > 0)
+                ClassicAssert.AreEqual(Ok, session.Execute(Args(setup)));
+            ClassicAssert.AreEqual(Pong, pinger.Execute("PING"));
+
+            using (ThreadPoolCap.ApplyFree(1))
+            {
+                held.HoldWrites = true;
+                session.Send(Args(command));
+                DriveHeldWrites(pinger, () => session.WaitForReply(TimeSpan.Zero), command);
+                ClassicAssert.AreEqual(Ok, session.ReadReply());
+            }
+        }
+
+        /// <summary>
+        /// A <c>CLUSTER FORGET</c> keeps config merges suspended until the configuration it changed is written. Another
+        /// that waits for merges to be resumed waits parked, so a third client is answered from the one free pool thread.
         /// </summary>
         [Test, CancelAfter(100_000)]
         [Category("CLUSTER")]
-        public void FailoverAbortLeavesAnEventThread()
+        public void AForgetWaitingForMergesToResumeHoldsNoPoolThread()
         {
-            if (!SocketCompletions.InlineCompletionsSupported)
-                Assert.Ignore("Sockets cannot run their completions inline on this platform.");
-
-            var holdWrites = HoldWritesOf(0, NodesConf);
-            context.CreateInstances(1, enableAOF: true, disableObjects: true, configureNode: (i, options) =>
-            {
-                holdWrites(i, options);
-                options.NetworkInlineCompletions = true;
-            });
+            context.CreateInstances(3, configureNode: HoldWritesOf(0, NodesConf));
             context.CreateConnection();
-            _ = context.clusterTestUtils.SimpleSetupCluster(1, 0, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(3, 0, logger: context.logger);
+            var first = context.clusterTestUtils.GetNodeIdFromNode(1, context.logger);
+            var second = context.clusterTestUtils.GetNodeIdFromNode(2, context.logger);
 
-            using var primary = new RawRespSession(endpoint: context.endpoints[0]);
+            using var forgetFirst = new RawRespSession(endpoint: context.endpoints[0]);
+            using var forgetSecond = new RawRespSession(endpoint: context.endpoints[0]);
             using var pinger = new RawRespSession(endpoint: context.endpoints[0]);
-            ClassicAssert.AreEqual(Pong, primary.Execute("PING"));
+            ClassicAssert.AreEqual(Pong, forgetFirst.Execute("PING"));
+            ClassicAssert.AreEqual(Pong, forgetSecond.Execute("PING"));
             ClassicAssert.AreEqual(Pong, pinger.Execute("PING"));
+            var clusterManager = Provider(0).clusterManager;
 
-            // Lets the server's receive for each connection be outstanding, so the next request reaches it on an event thread
-            Thread.Sleep(50);
-            var storeWrapper = context.nodes[0].Provider.StoreWrapper;
-            var offloads = Interlocked.Read(ref storeWrapper.offloads);
+            using (ThreadPoolCap.ApplyFree(1))
+            {
+                held.HoldWrites = true;
+                forgetFirst.Send("CLUSTER", "FORGET", first);
+                WaitUntil(() => held.WritesHeld > 0 && !clusterManager.CurrentConfig.IsKnown(first), "the first CLUSTER FORGET to be written");
 
-            held.HoldWrites = true;
-            primary.Send("FAILOVER", "ABORT");
-            DriveHeldWrites(pinger, () => primary.WaitForReply(TimeSpan.Zero), "FAILOVER ABORT");
-            ClassicAssert.AreEqual(Ok, primary.ReadReply());
-            ClassicAssert.AreEqual(offloads + 1, Interlocked.Read(ref storeWrapper.offloads),
-                "FAILOVER ABORT wrote its configuration on the event thread that received it.");
+                forgetSecond.Send("CLUSTER", "FORGET", second);
+                Thread.Sleep(100);
+                pinger.Send("PING");
+                ClassicAssert.AreEqual(Pong, ReadReplyWithin(pinger, "PING, with one free pool thread, while a CLUSTER FORGET waits for merges to resume"));
+                ClassicAssert.IsTrue(clusterManager.CurrentConfig.IsKnown(second), "The second CLUSTER FORGET ran while merges were suspended");
+
+                DriveHeldWrites(pinger, () => forgetFirst.WaitForReply(TimeSpan.Zero) && forgetSecond.WaitForReply(TimeSpan.Zero), "both CLUSTER FORGETs");
+                ClassicAssert.AreEqual(Ok, forgetFirst.ReadReply());
+                ClassicAssert.AreEqual(Ok, forgetSecond.ReadReply());
+            }
+
+            ClassicAssert.IsFalse(clusterManager.CurrentConfig.IsKnown(second));
         }
 
         /// <summary>
@@ -340,8 +380,8 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// A command that writes the configuration on the pool thread that received it waits there for a write already
-        /// in flight from an async caller. That write must be followed by the command's own without another pool thread.
+        /// A command whose configuration write follows one already in flight from an async caller answers once its own
+        /// write completes, which must follow the one in flight without another pool thread.
         /// </summary>
         [Test, CancelAfter(100_000)]
         [Category("CLUSTER")]

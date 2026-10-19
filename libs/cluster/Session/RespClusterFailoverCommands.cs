@@ -125,7 +125,7 @@ namespace Garnet.cluster
                 clusterProvider.clusterManager.TryResetReplica();
             }
 
-            return SuspendOn(BumpEpochAsync(), PendingReply.ReplicationOffset);
+            return SuspendOn(BumpEpochOnceConfigWrittenAsync(), PendingReply.ReplicationOffset);
         }
 
 

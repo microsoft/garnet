@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.cluster.Server.Replication;
 using Garnet.common;
@@ -19,6 +20,59 @@ namespace Garnet.cluster
         /// </summary>
         async ValueTask BumpEpochAsync()
             => _ = await UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+
+        /// <summary>
+        /// Waits for the configuration changes the command made to be written, then for the cluster to settle on a new
+        /// config epoch.
+        /// </summary>
+        async ValueTask BumpEpochOnceConfigWrittenAsync()
+        {
+            await clusterProvider.clusterManager.WaitForConfigWriteAsync().ConfigureAwait(false);
+            await BumpEpochAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Removes a node from the configuration, ends any migration to it, and records whether it was removed.
+        /// </summary>
+        /// <param name="nodeId">The node to forget.</param>
+        /// <param name="expirySeconds">How long gossip about the node is ignored for.</param>
+        async ValueTask ForgetAsync(string nodeId, int expirySeconds)
+        {
+            var (success, errorMessage) = await clusterProvider.clusterManager.TryRemoveWorkerAsync(nodeId, expirySeconds).ConfigureAwait(false);
+            if (success)
+                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(nodeId);
+            SetPendingOutcome(success, errorMessage);
+        }
+
+        /// <summary>
+        /// Resets the cluster configuration, and on a hard reset the store, and records whether the reset succeeded.
+        /// </summary>
+        /// <param name="soft">Whether to keep the node id and config epoch.</param>
+        /// <param name="expirySeconds">How long gossip about the nodes this one forgets is ignored for.</param>
+        async ValueTask ResetAsync(bool soft, int expirySeconds)
+        {
+            var (success, errorMessage) = await clusterProvider.clusterManager.TryResetAsync(soft, expirySeconds).ConfigureAwait(false);
+            if (!soft)
+                clusterProvider.FlushDB(true);
+            SetPendingOutcome(success, errorMessage);
+        }
+
+        /// <summary>
+        /// Merges a configuration received by gossip, then checks the connections used for replication. The reply is
+        /// recorded before the merge.
+        /// </summary>
+        /// <param name="other">The configuration received.</param>
+        async ValueTask MergeGossipAsync(ClusterConfig other)
+        {
+            _ = await clusterProvider.clusterManager.TryMergeAsync(other).ConfigureAwait(false);
+
+            // Remember that this connection is being used for another cluster node to talk to us
+            Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
+            RemoteNodeId = other.LocalNodeId;
+
+            if (pendingReply != PendingReply.Error)
+                EnsureReplicationAfterGossip();
+        }
 
         /// <summary>
         /// Starts a migration task and records whether it took.

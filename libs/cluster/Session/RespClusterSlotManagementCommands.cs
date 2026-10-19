@@ -47,8 +47,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
 
             return true;
@@ -89,8 +88,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
 
             return true;
@@ -214,8 +212,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
 
             return true;
@@ -256,8 +253,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
 
             return true;
@@ -487,7 +483,7 @@ namespace Garnet.cluster
 
                 if (setSlotsSucceeded)
                 {
-                    return SuspendOn(BumpEpochAsync(), PendingReply.Ok);
+                    return SuspendOn(BumpEpochOnceConfigWrittenAsync(), PendingReply.Ok);
                 }
                 else
                 {
@@ -583,7 +579,7 @@ namespace Garnet.cluster
 
             if (setSlotsSucceeded)
             {
-                return SuspendOn(BumpEpochAsync(), PendingReply.Ok);
+                return SuspendOn(BumpEpochOnceConfigWrittenAsync(), PendingReply.Ok);
             }
             else
             {

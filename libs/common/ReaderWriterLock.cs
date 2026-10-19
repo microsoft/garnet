@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Garnet.common
 {
@@ -64,6 +65,13 @@ namespace Garnet.common
             => Acquire(LockOperation.Writer, token);
 
         /// <summary>
+        /// Acquires an exclusive write lock, completing once it is granted rather than holding the calling thread.
+        /// </summary>
+        /// <param name="token">A cancellation token that can be used to cancel the lock acquisition process.</param>
+        public ValueTask WriteLockAsync(CancellationToken token = default)
+            => AcquireAsync(LockOperation.Writer, token);
+
+        /// <summary>
         /// Release writer lock and wake either one writer or all waiting readers.
         /// </summary>
         public void WriteUnlock()
@@ -91,6 +99,13 @@ namespace Garnet.common
             => ReadLock(token);
 
         /// <summary>
+        /// Acquires a reader lock, completing once it is granted rather than holding the calling thread.
+        /// </summary>
+        /// <param name="token">The cancellation token used to signal the operation's cancellation.</param>
+        public ValueTask ReadLockAsync(CancellationToken token = default)
+            => AcquireAsync(LockOperation.Reader, token);
+
+        /// <summary>
         /// Release reader lock and wake one writer when this was the last active reader.
         /// </summary>
         public void ReadUnlock()
@@ -98,7 +113,23 @@ namespace Garnet.common
 
         void Acquire(LockOperation operation, CancellationToken cancellationToken)
         {
-            SemaphoreSlim waitSemaphore;
+            var waitSemaphore = TryAcquireOrEnqueue(operation);
+            if (waitSemaphore != null)
+                WaitForGrant(waitSemaphore, operation, cancellationToken);
+        }
+
+        ValueTask AcquireAsync(LockOperation operation, CancellationToken cancellationToken)
+        {
+            var waitSemaphore = TryAcquireOrEnqueue(operation);
+            return waitSemaphore == null ? default : WaitForGrantAsync(waitSemaphore, operation, cancellationToken);
+        }
+
+        /// <summary>
+        /// Takes the lock if it is free for <paramref name="operation"/>, returning null; otherwise records a waiter and
+        /// returns the semaphore that a release granting the lock signals.
+        /// </summary>
+        SemaphoreSlim TryAcquireOrEnqueue(LockOperation operation)
+        {
             lock (mutex)
             {
                 ObjectDisposedException.ThrowIf(disposed, nameof(ReaderWriterLock));
@@ -110,31 +141,27 @@ namespace Garnet.common
                         if (lockHeld >= 0 && waitingWriters == 0)
                         {
                             lockHeld++;
-                            return;
+                            return null;
                         }
 
                         // Prepare to wait because lock was not available for readers
                         waitingReaders++;
-                        waitSemaphore = readerSemaphore;
-                        break;
+                        return readerSemaphore;
                     case LockOperation.Writer:
                         // Acquire writer lock immediately
                         if (lockHeld == 0)
                         {
                             lockHeld = -1;
-                            return;
+                            return null;
                         }
 
                         // Prepare to wait because lock was not available for writers
                         waitingWriters++;
-                        waitSemaphore = writerSemaphore;
-                        break;
+                        return writerSemaphore;
                     default:
                         throw new InvalidOperationException();
                 }
             }
-
-            WaitForGrant(waitSemaphore, operation, cancellationToken);
         }
 
         void WaitForGrant(SemaphoreSlim waitSemaphore, LockOperation operation, CancellationToken cancellationToken)
@@ -145,50 +172,80 @@ namespace Garnet.common
             }
             catch (OperationCanceledException)
             {
-                var shouldRelease = false;
-                lock (mutex)
-                {
-                    ObjectDisposedException.ThrowIf(disposed, nameof(ReaderWriterLock));
-
-                    switch (operation)
-                    {
-                        case LockOperation.Reader:
-                            if (grantedReaders > 0)
-                            {
-                                // lock was granted before cancellation
-                                grantedReaders--;
-                                shouldRelease = true;
-                            }
-                            else
-                            {
-                                // lock was not granted yet
-                                waitingReaders--;
-                            }
-                            break;
-                        case LockOperation.Writer:
-                            if (grantedWriters > 0)
-                            {
-                                // lock was granted before cancellation
-                                grantedWriters--;
-                                shouldRelease = true;
-                            }
-                            else
-                            {
-                                // lock was not granted yet
-                                waitingWriters--;
-                            }
-                            break;
-                        default:
-                            throw new InvalidOperationException();
-                    }
-                }
-
-                if (shouldRelease)
-                    Release();
-
+                AbandonWait(operation);
                 throw;
             }
 
+            ConsumeGrant(operation);
+        }
+
+        async ValueTask WaitForGrantAsync(SemaphoreSlim waitSemaphore, LockOperation operation, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await waitSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                AbandonWait(operation);
+                throw;
+            }
+
+            ConsumeGrant(operation);
+        }
+
+        /// <summary>
+        /// Withdraws a cancelled waiter, releasing the lock if a release granted it before the cancellation.
+        /// </summary>
+        void AbandonWait(LockOperation operation)
+        {
+            var shouldRelease = false;
+            lock (mutex)
+            {
+                ObjectDisposedException.ThrowIf(disposed, nameof(ReaderWriterLock));
+
+                switch (operation)
+                {
+                    case LockOperation.Reader:
+                        if (grantedReaders > 0)
+                        {
+                            // lock was granted before cancellation
+                            grantedReaders--;
+                            shouldRelease = true;
+                        }
+                        else
+                        {
+                            // lock was not granted yet
+                            waitingReaders--;
+                        }
+                        break;
+                    case LockOperation.Writer:
+                        if (grantedWriters > 0)
+                        {
+                            // lock was granted before cancellation
+                            grantedWriters--;
+                            shouldRelease = true;
+                        }
+                        else
+                        {
+                            // lock was not granted yet
+                            waitingWriters--;
+                        }
+                        break;
+                    default:
+                        throw new InvalidOperationException();
+                }
+            }
+
+            if (shouldRelease)
+                Release();
+        }
+
+        /// <summary>
+        /// Accounts for a waiter woken by the release that granted it the lock.
+        /// </summary>
+        void ConsumeGrant(LockOperation operation)
+        {
             lock (mutex)
             {
                 ObjectDisposedException.ThrowIf(disposed, nameof(ReaderWriterLock));

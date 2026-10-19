@@ -44,6 +44,8 @@ namespace Garnet.cluster
             ReplicationOffset,
             /// <summary>The address in <see cref="pendingAofAddress"/>, as a bulk string.</summary>
             AofAddressValue,
+            /// <summary>The bytes in <see cref="pendingBulk"/>, as a bulk string; an empty one when null.</summary>
+            BulkString,
         }
 
         ValueTask pendingCommand;
@@ -51,6 +53,7 @@ namespace Garnet.cluster
         PendingReply pendingReply;
         ReadOnlyMemory<byte> pendingError;
         AofAddress pendingAofAddress;
+        byte[] pendingBulk;
 
         readonly ILogger logger;
         ClusterSlotVerificationInput csvi;
@@ -128,6 +131,7 @@ namespace Garnet.cluster
             pendingReply = default;
             pendingError = default;
             pendingAofAddress = default;
+            pendingBulk = null;
 
             var invalidParameters = false;
 
@@ -231,6 +235,29 @@ namespace Garnet.cluster
             return true;
         }
 
+        /// <summary>
+        /// Hands a wait to <see cref="SuspendOn(ValueTask)"/> unless it has already completed, in which case the reply
+        /// its body recorded is written now.
+        /// </summary>
+        /// <param name="wait">The work the command must wait for, which records its own reply.</param>
+        bool SuspendOnIfPending(ValueTask wait)
+        {
+            if (!wait.IsCompleted)
+                return SuspendOn(wait);
+
+            wait.GetAwaiter().GetResultGuarded();
+            WriteReply(pendingReply);
+            return true;
+        }
+
+        /// <summary>
+        /// Writes <paramref name="reply"/> once the configuration changes the command made are written, suspending the
+        /// session until they are rather than holding the thread.
+        /// </summary>
+        /// <param name="reply">The reply to write.</param>
+        bool ReplyOnceConfigWritten(PendingReply reply)
+            => SuspendOnIfPending(clusterProvider.clusterManager.WaitForConfigWriteAsync(), reply);
+
         public unsafe void CompletePendingCommand(ref byte* dcurr, ref byte* dend)
         {
             this.dcurr = dcurr;
@@ -275,6 +302,16 @@ namespace Garnet.cluster
                 case PendingReply.AofAddressValue:
                     while (!RespWriteUtils.TryWriteAsciiBulkString(pendingAofAddress.ToString(), ref this.dcurr, this.dend))
                         SendAndReset();
+                    break;
+
+                case PendingReply.BulkString:
+                    if (pendingBulk == null)
+                    {
+                        while (!RespWriteUtils.TryWriteBulkString([], ref this.dcurr, this.dend))
+                            SendAndReset();
+                    }
+                    else
+                        WriteLargeBulkString(pendingBulk);
                     break;
 
                 default:

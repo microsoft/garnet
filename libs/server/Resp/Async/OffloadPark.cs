@@ -165,21 +165,15 @@ namespace Garnet.server
                 RespCommand.VADD, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB,
                 RespCommand.VGETATTR, RespCommand.VINFO, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER,
                 RespCommand.VSIM, RespCommand.XVCREATE, RespCommand.XVIMPORT,
-                RespCommand.CONFIG_REWRITE, RespCommand.ACL_LOAD, RespCommand.ACL_SAVE,
+                RespCommand.ACL_LOAD, RespCommand.ACL_SAVE,
                 RespCommand.MODULE_LOADCS, RespCommand.REGISTERCS,
                 RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT, RespCommand.CLUSTER_SEND_CKPT_METADATA,
                 RespCommand.CLUSTER_SNAPSHOT_DATA, RespCommand.CLUSTER_BEGIN_REPLICA_RECOVER, RespCommand.CLUSTER_ATTACH_SYNC,
-                RespCommand.CLUSTER_FLUSHALL, RespCommand.CLUSTER_RESERVE])
+                RespCommand.CLUSTER_FLUSHALL, RespCommand.CLUSTER_RESERVE, RespCommand.CLUSTER_RESET])
                 classes[(int)cmd] = OffloadClass.Always;
 
             foreach (var cmd in (ReadOnlySpan<RespCommand>)[
-                RespCommand.SELECT, RespCommand.INFO, RespCommand.DEBUG, RespCommand.CONFIG_SET, RespCommand.CLUSTER_APPENDLOG,
-                RespCommand.CLUSTER_ADDSLOTS, RespCommand.CLUSTER_ADDSLOTSRANGE, RespCommand.CLUSTER_DELSLOTS,
-                RespCommand.CLUSTER_DELSLOTSRANGE, RespCommand.CLUSTER_SETSLOT, RespCommand.CLUSTER_SETSLOTSRANGE,
-                RespCommand.CLUSTER_MEET, RespCommand.CLUSTER_FORGET, RespCommand.CLUSTER_RESET,
-                RespCommand.CLUSTER_SETCONFIGEPOCH, RespCommand.CLUSTER_BUMPEPOCH, RespCommand.CLUSTER_GOSSIP,
-                RespCommand.CLUSTER_REPLICATE, RespCommand.CLUSTER_FAILOVER, RespCommand.CLUSTER_FAILSTOPWRITES,
-                RespCommand.FAILOVER, RespCommand.REPLICAOF, RespCommand.SECONDARYOF])
+                RespCommand.SELECT, RespCommand.INFO, RespCommand.DEBUG, RespCommand.CONFIG_SET, RespCommand.CLUSTER_APPENDLOG])
                 classes[(int)cmd] = OffloadClass.Conditional;
 
             return classes;
@@ -365,9 +359,7 @@ namespace Garnet.server
                         || (storeWrapper.serverOptions.FastAofTruncate && AppendLogSkipsAhead());
 
                 default:
-                    // The rest change the cluster configuration, which is written to its file as it changes unless
-                    // flushes are batched
-                    return storeWrapper.serverOptions.ClusterConfigFlushFrequencyMs == 0;
+                    return false;
             }
         }
 

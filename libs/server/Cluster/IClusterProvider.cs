@@ -29,9 +29,9 @@ namespace Garnet.server
         bool AllowDataLoss { get; }
 
         /// <summary>
-        /// Flush config
+        /// Flush config, completing when it is written, or at once when writes are batched or disabled
         /// </summary>
-        void FlushConfig();
+        ValueTask FlushConfigAsync();
 
         /// <summary>
         /// Get gossip stats

@@ -103,11 +103,37 @@ namespace Garnet.server
             if (parseState.Count != 0)
                 return AbortWithWrongNumberOfArguments($"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.REWRITE)}");
 
-            storeWrapper.clusterProvider?.FlushConfig();
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var flush = storeWrapper.clusterProvider?.FlushConfigAsync() ?? default;
+            if (!flush.IsCompleted)
+            {
+                ValueTask body;
+                using (BeginAsyncCommand())
+                    body = ConfigRewriteReplyWhenFlushedAsync(flush);
+
+                return CompleteAsyncCommand(body);
+            }
+
+            flush.GetAwaiter().GetResultGuarded();
+            WriteConfigRewriteReply();
 
             return true;
+        }
+
+        /// <summary>
+        /// Body of a <c>CONFIG REWRITE</c> that suspends until the cluster configuration is written.
+        /// </summary>
+        /// <param name="flush">Completes once the cluster configuration is written.</param>
+        [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))]
+        private async ValueTask ConfigRewriteReplyWhenFlushedAsync(ValueTask flush)
+        {
+            await flush.ConfigureAwait(false);
+            WriteConfigRewriteReply();
+        }
+
+        private unsafe void WriteConfigRewriteReply()
+        {
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
         }
 
         private unsafe bool NetworkCONFIG_SET()

@@ -25,6 +25,9 @@ namespace Garnet.cluster
         /// <summary>Completes with the write that follows the one in flight; null when none has been requested.</summary>
         TaskCompletionSource next;
 
+        /// <summary>Completes with the most recently requested write; null until one is requested.</summary>
+        TaskCompletionSource lastRequested;
+
         /// <summary>Whether a write is in flight.</summary>
         bool writing;
 
@@ -44,10 +47,10 @@ namespace Garnet.cluster
         /// Writes the file's current contents, holding the calling thread until a write issued after this call completes.
         /// </summary>
         /// <remarks>
-        /// The thread that completes the write wakes this one itself, rather than through the thread pool, so a pool
-        /// thread waiting here needs no other to be free.
+        /// Called only at startup, before the node serves clients. A device may complete its writes on the thread pool,
+        /// as <see cref="RandomAccessLocalStorageDevice"/> does on Unix, so a pool thread waiting here can wait for another.
         /// </remarks>
-#pragma warning disable VSTHRD002 // The wait is released by the thread completing the write, not by a continuation
+#pragma warning disable VSTHRD002 // Startup only; see remarks
         public void Write() => WriteAsync().GetAwaiter().GetResult();
 #pragma warning restore VSTHRD002
 
@@ -60,14 +63,25 @@ namespace Garnet.cluster
             lock (sync)
             {
                 if (writing)
-                    return (next ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+                    return (lastRequested = next ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
 
                 writing = true;
-                completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                lastRequested = completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             }
 
             Issue(completion);
             return completion.Task;
+        }
+
+        /// <summary>
+        /// Completes once the most recently requested write does, whether or not it has already; at once when no write has
+        /// been requested. A write requested later is issued no earlier, with contents no older, so the task returned
+        /// covers every write requested before this call.
+        /// </summary>
+        public Task WaitForWritesAsync()
+        {
+            lock (sync)
+                return lastRequested?.Task ?? Task.CompletedTask;
         }
 
         unsafe void Issue(TaskCompletionSource completion)
