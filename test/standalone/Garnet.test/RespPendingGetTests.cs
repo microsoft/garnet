@@ -90,8 +90,11 @@ namespace Garnet.test
         /// <summary>Replaces the server started by <see cref="Setup"/> with one started as <see cref="StartServer"/> does.</summary>
         void RestartServer(bool inlineCompletions = false, string memorySize = null)
         {
+            // Cleared as they are disposed, so a restart that StartServer ignores leaves TearDown nothing to dispose twice.
             server.Dispose();
+            server = null;
             deviceFactoryCreator.Dispose();
+            deviceFactoryCreator = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             StartServer(inlineCompletions, memorySize);
         }
@@ -2192,7 +2195,10 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(0, deviceFactoryCreator.ObjectLogReadCount,
                         "The HGET read the object log before its record.");
 
-                    // Release the main log read only: the object log read it leads to is held.
+                    // Release the main log read only: the object log read it leads to is held. A read is held once the device
+                    // completes it, which can be after it is counted, and one released before then would be held in turn.
+                    ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ReadsHeld > 0, stallLimit),
+                        "The HGET's main log read was never held.");
                     deviceFactoryCreator.CompleteHeldReads();
                     ClassicAssert.IsTrue(SpinWait.SpinUntil(() => deviceFactoryCreator.ObjectLogReadCount > 0, stallLimit),
                         "The HGET never read its object from the object log, so the test proves nothing.");

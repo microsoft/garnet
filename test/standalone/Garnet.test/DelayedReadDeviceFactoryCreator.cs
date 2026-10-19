@@ -207,6 +207,20 @@ namespace Garnet.test
         /// </summary>
         internal int ReadsOffThreadPool => Volatile.Read(ref readsOffThreadPool);
 
+        /// <summary>
+        /// Number of reads whose completion is withheld now. A read is counted by <see cref="ReadCount"/> when it is issued,
+        /// but is withheld only once the device completes it, so <see cref="CompleteHeldReads"/> releases a read only after
+        /// this counts it.
+        /// </summary>
+        internal int ReadsHeld
+        {
+            get
+            {
+                lock (gate)
+                    return pending.Count;
+            }
+        }
+
         internal DelayedReadDeviceFactoryCreator()
         {
             scheduler = new Thread(SchedulerLoop)
