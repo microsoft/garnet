@@ -780,6 +780,11 @@ namespace Garnet.server
                     pos += size;
                 }
 
+                if (!state.TryEnsureMinimumStackCapacity(3))
+                {
+                    return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+                }
+
                 // Next position
                 state.PushInteger(pos + 1);
 

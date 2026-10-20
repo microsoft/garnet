@@ -3676,13 +3676,23 @@ return count";
         public async Task EvalCmsgUnpackLargeAsync()
         {
             const string EvalScript = $"return cmsgpack.unpack(ARGV[1])";
-            var arg = Encoding.ASCII.GetBytes(string.Join("", Enumerable.Repeat("\\x91", 10_000)));
+
+            // Which error we get depends on what the configured memory limits are and how memory is managed, as Lua uses a moveable stack
+            const string StackOverflowErrorMessage = "ERR Lua encountered an error: Insufficient Lua stack space";
+            const string OutOfMemoryErrorMessage = "ERR Lua encountered an error: not enough memory";
+
+            if (string.IsNullOrEmpty(limitBytes))
+            {
+                ClassicAssert.Ignore("unpack will succeed unless memory limit is imposed");
+            }
+
+            var arg = Encoding.ASCII.GetBytes(string.Join("", Enumerable.Repeat("\\x91", 100_000)));
 
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
             var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("EVAL", [EvalScript, "0", arg]));
-            ClassicAssert.AreEqual("ERR Lua encountered an error: stack overflow, too many return values", exc0.Message);
+            ClassicAssert.IsTrue(new[] { StackOverflowErrorMessage, OutOfMemoryErrorMessage }.Contains(exc0.Message));
         }
     }
 }
