@@ -21,6 +21,9 @@ namespace Client.benchmark
         public double P999Micros { get; init; }
         public double MaxMicros { get; init; }
 
+        /// <summary>Process CPU time (client and in-process server) per counted operation, in microseconds.</summary>
+        public double CpuMicrosPerOp { get; init; }
+
         public double ThroughputOpsPerSec => Seconds > 0 ? TotalOps / Seconds : 0;
     }
 
@@ -98,6 +101,12 @@ namespace Client.benchmark
             var workers = new Thread[threads];
             var stop = 0;
 
+            // Only batches that complete inside the measured window count. Workers finish the batch in flight
+            // when the window closes, but that drain tail is excluded from both the operation count and the
+            // elapsed time.
+            var windowTicks = (long)(seconds * (double)Stopwatch.Frequency);
+            long deadline = long.MaxValue;
+
             for (var t = 0; t < threads; t++)
             {
                 var id = t;
@@ -108,6 +117,7 @@ namespace Client.benchmark
                     var hist = histograms[id];
                     var inflight = new Task[batch];
                     startGate.Wait();
+                    var end = Volatile.Read(ref deadline);
 
                     long ops = 0;
                     while (Volatile.Read(ref stop) == 0)
@@ -117,9 +127,13 @@ namespace Client.benchmark
                             inflight[j] = driver.IssueAsync();
                         Task.WhenAll(inflight).GetAwaiter().GetResult();
 
+                        var done = Stopwatch.GetTimestamp();
+                        if (done > end)
+                            break;
+
                         if (record)
                         {
-                            var elapsed = Stopwatch.GetTimestamp() - ts;
+                            var elapsed = done - ts;
                             hist.RecordValue(elapsed <= HistogramUpperBound ? elapsed : HistogramUpperBound);
                         }
 
@@ -135,13 +149,19 @@ namespace Client.benchmark
                 workers[id].Start();
             }
 
-            var sw = Stopwatch.StartNew();
+            var process = Process.GetCurrentProcess();
+            var cpuStart = process.TotalProcessorTime;
+            var start = Stopwatch.GetTimestamp();
+            Volatile.Write(ref deadline, start + windowTicks);
             startGate.Set();
             Thread.Sleep(TimeSpan.FromSeconds(seconds));
+            while (Stopwatch.GetTimestamp() < start + windowTicks)
+                Thread.Yield();
+            process.Refresh();
+            var cpuEnd = process.TotalProcessorTime;
             Volatile.Write(ref stop, 1);
             foreach (var w in workers)
                 w.Join();
-            sw.Stop();
 
             long total = 0;
             foreach (var c in counts)
@@ -152,7 +172,8 @@ namespace Client.benchmark
             {
                 TotalOps = total,
                 Batch = batch,
-                Seconds = sw.Elapsed.TotalSeconds,
+                Seconds = (double)windowTicks / Stopwatch.Frequency,
+                CpuMicrosPerOp = total > 0 ? (cpuEnd - cpuStart).TotalMicroseconds / total : 0,
             };
 
             if (!record)

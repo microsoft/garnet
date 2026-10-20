@@ -57,5 +57,8 @@ namespace Client.benchmark
 
         [Option("shared-socket", Default = false, HelpText = "Topology: when false (default) each worker thread owns its own client/connection; when true all workers submit concurrently to ONE shared client/connection, exercising the duplex ring's many-producer send coalescing on a single socket.")]
         public bool SharedSocket { get; set; }
+
+        [Option("min-pool-threads", Default = 0, HelpText = "Thread-pool minimum worker threads. Default 0 provisions max(8192, threads*batch+16) so reply continuations never wait on thread injection.")]
+        public int MinPoolThreads { get; set; }
     }
 }

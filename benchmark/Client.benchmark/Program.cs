@@ -27,7 +27,9 @@ namespace Client.benchmark
             // pool. With the pool's default slow thread injection those continuations can starve under a
             // CPU-contended launcher, corrupting (or appearing to hang) the measurement. Pre-provision enough
             // pool threads that forward progress never waits on thread-pool hill-climbing.
-            var minPoolThreads = Math.Max(8192, Math.Max(Environment.ProcessorCount, (opts.Threads * Math.Max(1, opts.Batch)) + 16));
+            var minPoolThreads = opts.MinPoolThreads > 0
+                ? opts.MinPoolThreads
+                : Math.Max(8192, Math.Max(Environment.ProcessorCount, (opts.Threads * Math.Max(1, opts.Batch)) + 16));
             ThreadPool.GetMinThreads(out _, out var minIo);
             ThreadPool.SetMinThreads(minPoolThreads, minIo);
 
@@ -78,7 +80,10 @@ namespace Client.benchmark
             Console.WriteLine($" Throughput   : {r.ThroughputOpsPerSec:N0} ops/sec");
             Console.WriteLine($" Latency (us) : mean={r.MeanMicros:F2} p50={r.P50Micros:F2} " +
                 $"p99={r.P99Micros:F2} p99.9={r.P999Micros:F2} max={r.MaxMicros:F2}");
+            Console.WriteLine($" CPU (us/op)  : {r.CpuMicrosPerOp:F3} (client and in-process server)");
             Console.WriteLine("=========================================");
+            Console.WriteLine(FormattableString.Invariant(
+                $"RESULT,{opts.Client},{(opts.EnableTLS ? "tls" : "plain")},{(opts.SharedSocket ? "shared" : "per-thread")},{opts.Threads},{r.Batch},{r.ThroughputOpsPerSec:F0},{r.CpuMicrosPerOp:F3},{r.P50Micros:F2},{r.P99Micros:F2}"));
         }
     }
 }

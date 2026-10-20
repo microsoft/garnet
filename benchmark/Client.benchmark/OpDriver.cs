@@ -32,6 +32,15 @@ namespace Client.benchmark
     }
 
     /// <summary>
+    /// Pre-encoded RESP command names shared by both drivers so they put identical bytes on the wire.
+    /// </summary>
+    internal static class RespOps
+    {
+        public static readonly Memory<byte> GET = "$3\r\nGET\r\n"u8.ToArray();
+        public static readonly Memory<byte> SET = "$3\r\nSET\r\n"u8.ToArray();
+    }
+
+    /// <summary>
     /// Creates per-thread <typeparamref name="TDriver"/> instances that share one epoch. The factory
     /// is a <see langword="struct"/> so the runner stays generic over the concrete driver type and keeps
     /// the per-op call devirtualized; <see cref="Create"/> runs once per worker (off the hot path).
@@ -45,13 +54,14 @@ namespace Client.benchmark
 
     /// <summary>
     /// Driver for the original <see cref="GarnetClient"/> (inline send path). The measured
-    /// operation is a GET of the seeded key.
+    /// operation is a GET of the seeded key, issued through the raw RESP execute API with pre-encoded
+    /// arguments, the same call shape and wire format as <see cref="GarnetLightClientDriver"/>.
     /// </summary>
     internal readonly struct GarnetClientDriver : IOpDriver
     {
         readonly GarnetClient client;
-        readonly string key;
-        readonly string value;
+        readonly Memory<byte>[] getArgs;
+        readonly Memory<byte>[] setArgs;
 
         public GarnetClientDriver(EndPoint endpoint, string key, string value, BenchmarkOptions opts, LightEpoch epoch, SslClientAuthenticationOptions tlsOptions)
         {
@@ -61,15 +71,17 @@ namespace Client.benchmark
                 bufferSize: opts.NetworkBufferBytes,
                 networkSendThrottleMax: opts.MaxConcurrentSends,
                 epoch: epoch);
-            this.key = key;
-            this.value = value;
+            var keyBytes = Encoding.UTF8.GetBytes(key);
+            var valueBytes = Encoding.UTF8.GetBytes(value);
+            getArgs = [keyBytes];
+            setArgs = [keyBytes, valueBytes];
         }
 
         public void Connect() => client.Connect();
 
-        public Task SeedAsync() => client.StringSetAsync(key, value);
+        public Task SeedAsync() => client.ExecuteForStringResultAsync(RespOps.SET, setArgs);
 
-        public Task IssueAsync() => client.StringGetAsync(key);
+        public Task IssueAsync() => client.ExecuteForStringResultAsync(RespOps.GET, getArgs);
 
         public void Dispose() => client.Dispose();
     }
@@ -104,9 +116,6 @@ namespace Client.benchmark
     /// </summary>
     internal readonly struct GarnetLightClientDriver : IOpDriver
     {
-        static readonly Memory<byte> GET = "$3\r\nGET\r\n"u8.ToArray();
-        static readonly Memory<byte> SET = "$3\r\nSET\r\n"u8.ToArray();
-
         readonly GarnetLightClient client;
         readonly Memory<byte>[] getArgs;
         readonly Memory<byte>[] setArgs;
@@ -158,9 +167,9 @@ namespace Client.benchmark
 
         public void Connect() => client.Connect();
 
-        public Task SeedAsync() => client.ExecuteForStringResultAsync(SET, setArgs);
+        public Task SeedAsync() => client.ExecuteForStringResultAsync(RespOps.SET, setArgs);
 
-        public Task IssueAsync() => client.ExecuteForStringResultAsync(GET, getArgs);
+        public Task IssueAsync() => client.ExecuteForStringResultAsync(RespOps.GET, getArgs);
 
         public void Dispose() => client.Dispose();
     }
