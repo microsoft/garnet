@@ -3645,5 +3645,54 @@ return count";
             }
         }
 
+        [Test]
+        [TestCase("b")]
+        [TestCase("B")]
+        [TestCase("h")]
+        [TestCase("H")]
+        [TestCase("l")]
+        [TestCase("L")]
+        [TestCase("T")]
+        [TestCase("i")]
+        [TestCase("I")]
+        [TestCase("I4")]
+        [TestCase("c")]
+        [TestCase("c4")]
+        [TestCase("s")]
+        [TestCase("f")]
+        [TestCase("d")]
+        public async Task EvalStructPackFormatUnderflowAsync(string formatString)
+        {
+            var evalScript = $"return struct.pack('{formatString}')";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("EVAL", [evalScript, "0"]));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to pack", exc0.Message);
+        }
+
+        [Test]
+        public async Task EvalCmsgUnpackLargeAsync()
+        {
+            const string EvalScript = $"return cmsgpack.unpack(ARGV[1])";
+
+            // Which error we get depends on what the configured memory limits are and how memory is managed, as Lua uses a moveable stack
+            const string StackOverflowErrorMessage = "ERR Lua encountered an error: Insufficient Lua stack space";
+            const string OutOfMemoryErrorMessage = "ERR Lua encountered an error: not enough memory";
+
+            if (string.IsNullOrEmpty(limitBytes))
+            {
+                ClassicAssert.Ignore("unpack will succeed unless memory limit is imposed");
+            }
+
+            var arg = Encoding.ASCII.GetBytes(string.Join("", Enumerable.Repeat("\\x91", 100_000)));
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("EVAL", [EvalScript, "0", arg]));
+            ClassicAssert.IsTrue(new[] { StackOverflowErrorMessage, OutOfMemoryErrorMessage }.Contains(exc0.Message));
+        }
     }
 }
