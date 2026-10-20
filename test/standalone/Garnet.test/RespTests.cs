@@ -4139,6 +4139,29 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SetExNxOnExpiredRecordWithLargerValueTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const int baseLength = 100;
+            const int maxGrowth = 24;
+
+            for (var growth = 0; growth <= maxGrowth; growth++)
+                ClassicAssert.AreEqual("OK", db.Execute("SET", $"expNx{growth}", new string('a', baseLength), "PX", "100")?.ToString());
+
+            Thread.Sleep(500);
+
+            // The new value may fit the expired record without the expiration but not with it; the write must still be stored
+            for (var growth = 0; growth <= maxGrowth; growth++)
+            {
+                var newValue = new string('b', baseLength + growth);
+                ClassicAssert.AreEqual("OK", db.Execute("SET", $"expNx{growth}", newValue, "EX", "3600", "NX")?.ToString());
+                ClassicAssert.AreEqual(newValue, (string)db.StringGet($"expNx{growth}"), $"Value lost with growth {growth}");
+                ClassicAssert.IsNotNull(db.KeyTimeToLive($"expNx{growth}"));
+            }
+        }
+
+        [Test]
         public void StrlenTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
