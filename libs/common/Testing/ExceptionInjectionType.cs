@@ -160,5 +160,17 @@ namespace Garnet.common
         /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
+        /// <summary>
+        /// One-shot: cleared when background replay reaches an epoch-protected commit-metadata record followed by more records in the same chunk.
+        /// </summary>
+        Replication_Pause_Before_Replay_Commit_Metadata,
+        /// <summary>
+        /// While set, background replay stays parked at <see cref="Replication_Pause_Before_Replay_Commit_Metadata"/>.
+        /// </summary>
+        Replication_Hold_Before_Replay_Commit_Metadata,
+        /// <summary>
+        /// While set, background replay stays parked right after applying the commit-metadata record it paused on.
+        /// </summary>
+        Replication_Hold_After_Replay_Commit_Metadata,
     }
 }

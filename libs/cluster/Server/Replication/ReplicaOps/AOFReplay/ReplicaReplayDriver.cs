@@ -190,7 +190,9 @@ namespace Garnet.cluster
                     {
                         TsavoriteLogRecoveryInfo info = new();
                         info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                        var paused = PauseBeforeReplayCommitMetadata(isProtected && ptr + entryLength + TsavoriteLog.UnsafeAlign(-payloadLength) < record + recordLength);
                         physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);
+                        HoldAfterReplayCommitMetadata(paused);
                         entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                     }
                     ptr += entryLength;
@@ -215,6 +217,27 @@ namespace Garnet.cluster
                 logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.GetReplicationOffset(physicalSublogIdx));
                 throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
             }
+        }
+
+        static bool PauseBeforeReplayCommitMetadata(bool moreRecordsInProtectedChunk)
+        {
+#if DEBUG
+            // Parks while still holding the log epoch, so the test can queue page evictions behind this chunk
+            if (moreRecordsInProtectedChunk && ExceptionInjectionHelper.TriggerCondition(ExceptionInjectionType.Replication_Pause_Before_Replay_Commit_Metadata))
+            {
+                ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Hold_Before_Replay_Commit_Metadata);
+                return true;
+            }
+#endif
+            return false;
+        }
+
+        [System.Diagnostics.Conditional("DEBUG")]
+        static void HoldAfterReplayCommitMetadata(bool paused)
+        {
+            // Lets the flush started by this commit complete, so a later epoch refresh in the same chunk can recycle its buffer page
+            if (paused)
+                ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Hold_After_Replay_Commit_Metadata);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
