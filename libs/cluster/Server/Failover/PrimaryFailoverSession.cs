@@ -92,6 +92,7 @@ namespace Garnet.cluster
         {
             var checkpointsPaused = false;
             var writesPaused = false;
+            var primaryTasksSuspended = false;
             try
             {
                 // Bound only the period holding application writes; omission keeps the pause infinite.
@@ -101,6 +102,8 @@ namespace Garnet.cluster
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 clusterProvider.failoverManager.PauseWrites(true);
                 writesPaused = true;
+                primaryTasksSuspended = true;
+                await clusterProvider.storeWrapper.SuspendPrimaryTasksForFailoverAsync().WaitAsync(cts.Token).ConfigureAwait(false);
                 _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync(cts.Token).ConfigureAwait(false);
                 cts.Token.ThrowIfCancellationRequested();
 
@@ -150,6 +153,9 @@ namespace Garnet.cluster
                 {
                     if (writesPaused)
                         clusterProvider.failoverManager.PauseWrites(false);
+                    // Release writers on cancellation even if a maintenance cycle is still draining.
+                    if (primaryTasksSuspended)
+                        await clusterProvider.storeWrapper.ResumePrimaryTasksAfterFailoverAsync().ConfigureAwait(false);
                     status = FailoverStatus.NO_FAILOVER;
                 }
             }

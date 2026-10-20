@@ -14,6 +14,11 @@ namespace Garnet.common
         None = 0,
 
         /// <summary>
+        /// Pause an in-flight background collection cycle before its storage mutations.
+        /// </summary>
+        Failover_Pause_Background_Object_Collection,
+
+        /// <summary>
         /// Pause between sampling write admission state and loading cluster configuration.
         /// </summary>
         Failover_Pause_Between_Write_Admission_Reads,

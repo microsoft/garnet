@@ -213,6 +213,12 @@ including waits for session epochs. Omitting `TIMEOUT` leaves the pause unlimite
 `FAILOVER ABORT` cancels these waits and releases the operation's pause without restoring primary status after demotion.
 After demotion, cancellation can leave the node redirecting to a replica that has not yet promoted; it does not guarantee successful handoff.
 
+Failover cancels and drains primary maintenance before capturing the AOF synchronization target.
+Background collection and other primary tasks cannot restart during this interval, including through `CONFIG SET`.
+Cancellation releases the write pause without waiting for a stalled maintenance cycle, but the failover worker
+retains ownership until that cycle finishes. Cleanup restarts enabled maintenance only if the node remains primary.
+Replica-initiated failover also drains maintenance on the old primary before returning its final AOF offset.
+
 Paused writes briefly spin, then synchronously block on a shared task so the .NET thread pool can compensate
 by adding workers. Each paused connection still occupies a worker. Configure `--maxthreads`
 with headroom for reads, replication, failover, and cancellation processing; exhausting that limit can stall

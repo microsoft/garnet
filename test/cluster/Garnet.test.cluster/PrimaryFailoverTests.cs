@@ -40,9 +40,9 @@ namespace Garnet.test.cluster
         ClusterProvider Provider(int index)
             => (ClusterProvider)context.nodes[index].Provider.StoreWrapper.clusterProvider;
 
-        void SetupReplica(int sublogCount)
+        void SetupReplica(int sublogCount, bool disableObjects = true)
         {
-            context.CreateInstances(2, disableObjects: true, enableAOF: true, sublogCount: sublogCount);
+            context.CreateInstances(2, disableObjects: disableObjects, enableAOF: true, sublogCount: sublogCount);
             context.CreateConnection();
             context.SimplePrimaryReplicaSetup();
             context.kvPairs = [];
@@ -78,6 +78,120 @@ namespace Garnet.test.cluster
                 "The synchronized replica must be promoted using the final log tail, not the stale replica-tracking offset.");
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1, 1);
         }
+
+#if DEBUG
+        [TestCase("primary")]
+        [TestCase("replica")]
+        [TestCase("abort")]
+        [TestCase("timeout")]
+        [CancelAfter(120_000)]
+        public async Task FailoverDrainsCollectionAndInhibitsRestarts(string operation)
+        {
+            SetupReplica(1, disableObjects: false);
+            var primary = Provider(0);
+            var wrapper = primary.storeWrapper;
+            var db = context.clusterTestUtils.GetDatabase();
+            var hash = "{maintenance}hash";
+            var sortedSet = "{maintenance}zset";
+            db.HashSet(hash, "field", "value");
+            db.SortedSetAdd(sortedSet, "member", 1);
+            db.Execute("HEXPIRE", hash, 3600, "FIELDS", 1, "field");
+            db.Execute("ZEXPIRE", sortedSet, 3600, "MEMBERS", 1, "member");
+            context.clusterTestUtils.GetServer(0).Execute("CONFIG", "SET", "expired-object-collection-freq", 1);
+            const ExceptionInjectionType injection = ExceptionInjectionType.Failover_Pause_Background_Object_Collection;
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var token = deadline.Token;
+            var parkingSuspended = false;
+            ExceptionInjectionHelper.EnableException(injection);
+            try
+            {
+                Assert.That(() => ExceptionInjectionHelper.IsEnabled(injection), Is.False.After(5_000, 10));
+                var tail = wrapper.appendOnlyFile.Log.TailAddress;
+                if (operation == "replica")
+                {
+                    Assert.That(Provider(1).failoverManager.TryStartReplicaFailover(FailoverOption.DEFAULT, TimeSpan.FromSeconds(30)), Is.True);
+                    Assert.That(() => primary.clusterManager.CurrentConfig.LocalNodeRole,
+                        Is.EqualTo(ClusterNodeRole.REPLICA).After(5_000, 10));
+                }
+                else
+                {
+                    var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+                    var args = new List<object> { "TO", endpoint.Address.ToString(), endpoint.Port };
+                    if (operation == "timeout")
+                        args.AddRange(["TIMEOUT", 3_000]);
+                    Assert.That(context.clusterTestUtils.GetServer(0).Execute("FAILOVER", args.ToArray()).ToString(), Is.EqualTo("OK"));
+                    Assert.That(() => primary.failoverManager.IsWritePaused, Is.True.After(5_000, 10));
+                }
+                Assert.That(() => wrapper.TaskManager.IsRegistered(TaskType.ObjectCollectTask), Is.False.After(5_000, 10),
+                    "Cancellation removes the task registration, but failover must still await its in-flight cycle.");
+                context.clusterTestUtils.GetServer(0).Execute("CONFIG", "SET", "expired-object-collection-freq", 2);
+                context.clusterTestUtils.GetServer(0).Execute("CONFIG", "SET", "checkpoint-freq", 60);
+                wrapper.StartPrimaryTasks();
+                Assert.That(wrapper.TaskManager.IsRegistered(TaskType.ObjectCollectTask), Is.False);
+                Assert.That(wrapper.TaskManager.IsRegistered(TaskType.ScheduledCheckpointTask), Is.False);
+                Assert.That(Provider(operation == "replica" ? 1 : 0).storeWrapper.TaskManager.IsRunning(TaskType.FailoverTask), Is.True,
+                    "Primary-task suspension must not cancel or await its own control-plane failover worker.");
+                Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA),
+                    "The replica cannot take over before the final collection appends have drained.");
+
+                if (operation == "abort")
+                    Assert.That(context.clusterTestUtils.GetServer(0).Execute("FAILOVER", "ABORT").ToString(), Is.EqualTo("OK"));
+                if (operation is "abort" or "timeout")
+                {
+                    Assert.That(() => primary.failoverManager.IsWritePaused, Is.False.After(10_000, 10),
+                        "Cancellation releases writers even when collection has not finished.");
+                    Assert.That(wrapper.TaskManager.IsRunning(TaskType.FailoverTask), Is.True,
+                        "The worker retains ownership until draining and restoration are complete.");
+                    Assert.That(wrapper.TaskManager.IsRegistered(TaskType.ObjectCollectTask), Is.False);
+                }
+
+                ExceptionInjectionHelper.SuspendParking();
+                parkingSuspended = true;
+                ExceptionInjectionHelper.DisableException(injection);
+                Assert.That(() => wrapper.appendOnlyFile.Log.TailAddress.EqualsAll(tail), Is.False.After(5_000, 10),
+                    "The in-flight hash and sorted-set collection appends must precede the synchronization boundary.");
+                Assert.That(() => wrapper.TaskManager.IsRegistered(TaskType.FailoverTask), Is.False.After(10_000, 10));
+                Assert.That(() => Provider(1).storeWrapper.TaskManager.IsRegistered(TaskType.FailoverTask), Is.False.After(10_000, 10));
+                if (operation is "abort" or "timeout")
+                {
+                    Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+                    Assert.That(wrapper.TaskManager.IsRunning(TaskType.ObjectCollectTask), Is.True,
+                        "A canceled failover must restart collection using the updated runtime configuration.");
+                    Assert.That(wrapper.TaskManager.IsRunning(TaskType.ScheduledCheckpointTask), Is.True);
+                }
+                else
+                {
+                    Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+                    Assert.That(wrapper.TaskManager.IsRegistered(TaskType.ObjectCollectTask), Is.False);
+                    Assert.That(wrapper.TaskManager.IsRegistered(TaskType.ScheduledCheckpointTask), Is.False);
+                    using var promotedConnection = await ConnectionMultiplexer.ConnectAsync(new ConfigurationOptions
+                    {
+                        EndPoints = { context.clusterTestUtils.GetEndPoint(1) }
+                    });
+                    var promotedDb = promotedConnection.GetDatabase();
+                    Assert.That(promotedDb.HashGet(hash, "field").ToString(), Is.EqualTo("value"));
+                    Assert.That(promotedDb.SortedSetScore(sortedSet, "member"), Is.EqualTo(1));
+                }
+            }
+            finally
+            {
+                if (!parkingSuspended)
+                    ExceptionInjectionHelper.SuspendParking();
+                try
+                {
+                    ExceptionInjectionHelper.DisableException(injection);
+                    primary.failoverManager.TryAbortReplicaFailover();
+                    Provider(1).failoverManager.TryAbortReplicaFailover();
+                    await Task.WhenAll(wrapper.TaskManager.CancelAsync(TaskType.FailoverTask),
+                        Provider(1).storeWrapper.TaskManager.CancelAsync(TaskType.FailoverTask)).WaitAsync(token);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+            }
+        }
+#endif
 
         [TestCase(1)]
         [TestCase(2)]

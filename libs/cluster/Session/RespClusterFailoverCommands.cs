@@ -117,12 +117,22 @@ namespace Garnet.cluster
             var nodeId = parseState.GetString(0);
 
             if (!string.IsNullOrEmpty(nodeId))
-            {// Make this node a primary after receiving a request from a replica that is trying to takeover
+            {// Demote the primary before draining its maintenance and returning the final offset.
                 clusterProvider.clusterManager.TryStopWrites(nodeId);
+                ReleaseCurrentEpoch();
+                try
+                {
+                    AsyncUtils.BlockingWait(clusterProvider.storeWrapper.SuspendPrimaryOnlyTasksAsync());
+                }
+                finally
+                {
+                    AcquireCurrentEpoch();
+                }
             }
             else
             {// Reset this node back to its original state
                 clusterProvider.clusterManager.TryResetReplica();
+                clusterProvider.storeWrapper.StartPrimaryTasks();
             }
 
             // Cannot avoid blocking here we're on the network thread

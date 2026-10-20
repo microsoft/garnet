@@ -788,7 +788,7 @@ namespace Garnet.server
         {
             lock (taskLifecycleLock)
             {
-                if (!(clusterProvider?.IsReplica() ?? false))
+                if (CanStartPrimaryTasks)
                     TryStartScheduledCheckpointTask();
             }
 
@@ -928,6 +928,11 @@ namespace Garnet.server
 
             return RunMaintenanceLoopAsync((_) =>
             {
+#if DEBUG
+#pragma warning disable VSTHRD103 // The rendezvous models an in-flight synchronous collection cycle.
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Failover_Pause_Background_Object_Collection);
+#pragma warning restore VSTHRD103
+#endif
                 databaseManager.ExecuteObjectCollection();
                 return ValueTask.CompletedTask;
             }, TimeSpan.FromSeconds(objectCollectFrequencySecs), "background hash collect task", logger, token);
@@ -1102,7 +1107,58 @@ namespace Garnet.server
         /// <returns></returns>
         public Task SuspendPrimaryOnlyTasksAsync()
         {
-            return taskManager.CancelAsync(TaskPlacementCategory.Primary);
+            lock (taskLifecycleLock)
+                return DrainPrimaryTasksAsync();
+        }
+
+        /// <summary>
+        /// Inhibits primary-task restarts and cancels and drains the current tasks.
+        /// Must be paired with <see cref="ResumePrimaryTasksAfterFailoverAsync"/>, even if the caller cancels its wait.
+        /// </summary>
+        public Task SuspendPrimaryTasksForFailoverAsync()
+        {
+            lock (taskLifecycleLock)
+            {
+                primaryTaskSuspensions++;
+                return DrainPrimaryTasksAsync();
+            }
+        }
+
+        /// <summary>
+        /// Finishes draining before allowing restarts, and restores tasks only if the node remains primary.
+        /// </summary>
+        public async Task ResumePrimaryTasksAfterFailoverAsync()
+        {
+            Task drain;
+            lock (taskLifecycleLock)
+                drain = primaryTaskDrain;
+            await drain.ConfigureAwait(false);
+            lock (taskLifecycleLock)
+            {
+                Debug.Assert(primaryTaskSuspensions > 0);
+                if (--primaryTaskSuspensions == 0 && CanStartPrimaryTasks)
+                    StartPrimaryTasks();
+            }
+        }
+
+        Task DrainPrimaryTasksAsync()
+        {
+            if (!primaryTaskDrain.IsCompleted)
+                return primaryTaskDrain;
+            return primaryTaskDrain = CancelPrimaryTasksAsync();
+
+            async Task CancelPrimaryTasksAsync()
+            {
+                // Cancellation may wait on a cycle that needs taskLifecycleLock to exit.
+                await Task.Yield();
+                foreach (var taskType in TaskTypeExtensions.GetTaskTypes(TaskPlacementCategory.Primary))
+                {
+                    // In-flight mutations can depend on periodic commits to finish their AOF appends.
+                    if (taskType != TaskType.CommitTask)
+                        await taskManager.CancelAsync(taskType).ConfigureAwait(false);
+                }
+                await taskManager.CancelAsync(TaskType.CommitTask).ConfigureAwait(false);
+            }
         }
 
         /// <summary>
@@ -1119,6 +1175,11 @@ namespace Garnet.server
         /// CONFIG SET calls and failover transitions cannot race on the same task.
         /// </summary>
         readonly object taskLifecycleLock = new();
+        int primaryTaskSuspensions;
+        Task primaryTaskDrain = Task.CompletedTask;
+
+        bool CanStartPrimaryTasks => !disposed && primaryTaskSuspensions == 0 && primaryTaskDrain.IsCompleted &&
+            !(clusterProvider?.IsReplica() ?? false);
 
         /// <summary>
         /// Start background maintenance tasks that should only run when this node is a primary
@@ -1128,6 +1189,9 @@ namespace Garnet.server
         {
             lock (taskLifecycleLock)
             {
+                if (!CanStartPrimaryTasks)
+                    return;
+
                 if (serverOptions.AofSizeLimit.Length > 0)
                 {
                     var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
@@ -1192,9 +1256,12 @@ namespace Garnet.server
         {
             lock (taskLifecycleLock)
             {
+                if (primaryTaskSuspensions != 0 || !primaryTaskDrain.IsCompleted)
+                    return;
+
                 AsyncUtils.BlockingWait(taskManager.CancelAsync(taskType));
 
-                if (clusterProvider?.IsReplica() ?? false)
+                if (!CanStartPrimaryTasks)
                     return;
 
                 switch (taskType)
