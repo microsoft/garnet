@@ -3666,11 +3666,23 @@ return count";
             var evalScript = $"return struct.pack('{formatString}')";
 
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
-            //await using var redis = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:6379");
             var db = redis.GetDatabase();
 
             var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("EVAL", [evalScript, "0"]));
             ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to pack", exc0.Message);
+        }
+
+        [Test]
+        public async Task EvalCmsgUnpackLargeAsync()
+        {
+            const string EvalScript = $"return cmsgpack.unpack(ARGV[1])";
+            var arg = Encoding.ASCII.GetBytes(string.Join("", Enumerable.Repeat("\\x91", 10_000)));
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("EVAL", [EvalScript, "0", arg]));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: stack overflow, too many return values", exc0.Message);
         }
     }
 }
