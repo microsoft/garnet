@@ -2,8 +2,11 @@
   <PropertyGroup Condition="'$(EnableGarnetAsserts)' == 'true'">
     <DefineConstants>$(DefineConstants);GARNET_ASSERT</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <DefineConstants>$(DefineConstants);GARNET_TEST_PROJECT</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
-    <Using Include="Garnet.Diagnostics" />
+    <Compile Include="$(MSBuildThisFileDirectory)libs/GlobalUsings.cs" Link="GlobalUsings.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(MSBuildProjectName)' != 'Garnet.Diagnostics'">
     <ProjectReference Include="$(MSBuildThisFileDirectory)libs/diagnostics/Garnet.Diagnostics.csproj" PrivateAssets="all" />

@@ -1,6 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#pragma warning disable IDE0005 // Shared imports may be unused in individual projects.
+
+// Static Assert imports shadow NUnit's Assert type in test projects.
+#if !GARNET_TEST_PROJECT
+global using static Garnet.Diagnostics.GarnetAsserts;
+#endif
+
 #if SERVER_PROJECT || TEST_PROJECT || CLUSTER_PROJECT
 global using BasicGarnetApi = Garnet.server.GarnetApi<
     Tsavorite.core.BasicContext<Garnet.common.FixedSpanByteKey, Garnet.server.StringInput, Garnet.server.StringOutput, long, Garnet.server.MainSessionFunctions,

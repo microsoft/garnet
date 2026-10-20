@@ -45,7 +45,4 @@
     <DefineConstants>$(DefineConstants);TEST_PROJECT</DefineConstants>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Compile Include="$(MSBuildThisFileDirectory)../../../libs/GlobalUsings.cs" Link="GlobalUsings.cs" />
-  </ItemGroup>
 </Project>
