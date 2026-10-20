@@ -20,6 +20,8 @@ namespace Garnet.cluster
         public volatile FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
 
         int writePauseCount;
+        readonly object writePauseLock = new();
+        TaskCompletionSource writesResumed;
 
         /// <summary>
         /// Whether local application-client writes are paused for failover.
@@ -32,8 +34,33 @@ namespace Garnet.cluster
         /// <param name="paused">True to acquire a pause; false to release a matching pause.</param>
         internal void PauseWrites(bool paused)
         {
-            var count = paused ? Interlocked.Increment(ref writePauseCount) : Interlocked.Decrement(ref writePauseCount);
-            Debug.Assert(count >= 0, "Each write pause release must match an acquisition.");
+            TaskCompletionSource resumed = null;
+            lock (writePauseLock)
+            {
+                var count = paused ? Interlocked.Increment(ref writePauseCount) : Interlocked.Decrement(ref writePauseCount);
+                Debug.Assert(count >= 0, "Each write pause release must match an acquisition.");
+                if (count == 0)
+                {
+                    resumed = writesResumed;
+                    writesResumed = null;
+                }
+            }
+            resumed?.SetResult();
+        }
+
+        /// <summary>
+        /// Returns a shared completion task for the current write pause, allocating only when a writer waits.
+        /// Callers must recheck the pause after completion because another owner can acquire a new pause.
+        /// </summary>
+        internal Task WaitForWritesToResumeAsync()
+        {
+            lock (writePauseLock)
+            {
+                if (!IsWritePaused)
+                    return Task.CompletedTask;
+                writesResumed ??= new(TaskCreationOptions.RunContinuationsAsynchronously);
+                return writesResumed.Task;
+            }
         }
 
         /// <summary>

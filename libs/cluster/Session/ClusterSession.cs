@@ -56,12 +56,12 @@ namespace Garnet.cluster
             ReleaseCurrentEpoch();
             try
             {
-                // Spin only briefly; replica synchronization can require network round trips.
+                // Keep short pauses allocation-free; task blocking lets the pool compensate for longer waits.
                 var spinner = ConfiguredSpinWait.CpuLocal();
                 while (IsWritePaused)
                 {
                     if (!spinner.TryWait())
-                        Thread.Sleep(1);
+                        AsyncUtils.BlockingWait(clusterProvider.failoverManager.WaitForWritesToResumeAsync());
                 }
             }
             finally

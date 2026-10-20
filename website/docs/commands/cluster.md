@@ -213,6 +213,12 @@ including waits for session epochs. Omitting `TIMEOUT` leaves the pause unlimite
 `FAILOVER ABORT` cancels these waits and releases the operation's pause without restoring primary status after demotion.
 After demotion, cancellation can leave the node redirecting to a replica that has not yet promoted; it does not guarantee successful handoff.
 
+Paused writes briefly spin, then synchronously block on a shared task so the .NET thread pool can compensate
+by adding workers. Each paused connection still occupies a worker. Configure `--maxthreads`
+with headroom for reads, replication, failover, and cancellation processing; exhausting that limit can stall
+even timeout cleanup and `FAILOVER ABORT`. Increasing the limit mitigates starvation but does not guarantee
+progress for an unlimited number of paused writers.
+
 #### RESP Reply
 Returns +OK on success, otherwise --ERR message if any.
 This does not mean that FAILOVER has succeeded, only that the failover background task has started.

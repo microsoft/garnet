@@ -254,6 +254,118 @@ namespace Garnet.test.cluster
         }
 
         [Test, CancelAfter(120_000)]
+        public void WritePauseCompletionTracksOverlappingOwners()
+        {
+            SetupReplica(1);
+            var manager = Provider(0).failoverManager;
+            Assert.That(manager.WaitForWritesToResumeAsync().IsCompletedSuccessfully, Is.True);
+            manager.PauseWrites(true);
+            var first = manager.WaitForWritesToResumeAsync();
+            try
+            {
+                Assert.That(manager.WaitForWritesToResumeAsync(), Is.SameAs(first),
+                    "Paused writers must share one completion task.");
+                manager.PauseWrites(true);
+                manager.PauseWrites(false);
+                Assert.That(first.IsCompleted, Is.False,
+                    "Releasing one owner must not wake writers while another owner still holds the pause.");
+            }
+            finally
+            {
+                manager.PauseWrites(false);
+            }
+            Assert.That(first.IsCompletedSuccessfully, Is.True);
+
+            manager.PauseWrites(true);
+            try
+            {
+                var second = manager.WaitForWritesToResumeAsync();
+                Assert.That(second, Is.Not.SameAs(first));
+                Assert.That(second.IsCompleted, Is.False,
+                    "A new pause must not reuse the previous owner's completed signal.");
+            }
+            finally
+            {
+                manager.PauseWrites(false);
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        [CancelAfter(120_000)]
+        public void ConcurrentPausedWritersAllowFailoverCancellationWithWorkerHeadroom(bool timeout)
+        {
+            SetupReplica(1);
+            // Run the controller outside the pool so it can restore the limits even if server workers stall.
+            AsyncUtils.BlockingWait(Task.Factory.StartNew(() =>
+            {
+                ThreadPool.GetMinThreads(out var minWorkers, out var minIo);
+                ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+                var connections = new List<TcpClient>();
+                var writers = new List<ClusterSession>();
+                var responses = new List<Task<string>>();
+                var primary = Provider(0);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var token = deadline.Token;
+                using var guardConnection = new TcpClient();
+                using var probe = new TcpClient();
+                var guard = AsyncUtils.BlockingWait(ConnectIdleSessionAsync(guardConnection, token));
+                try
+                {
+                    AsyncUtils.BlockingWait(ConnectIdleSessionAsync(probe, token));
+                    const int writerCount = 24;
+                    for (var i = 0; i < writerCount; i++)
+                    {
+                        var connection = new TcpClient();
+                        connections.Add(connection);
+                        writers.Add(AsyncUtils.BlockingWait(ConnectIdleSessionAsync(connection, token)));
+                    }
+                    Assert.That(ThreadPool.SetMinThreads(32, minIo), Is.True);
+                    Assert.That(ThreadPool.SetMaxThreads(32, maxIo), Is.True);
+
+                    // Hold failover before demotion, leaving writes paused until timeout or client-side ABORT.
+                    guard.AcquireCurrentEpoch();
+                    var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+                    var args = new List<object> { "TO", endpoint.Address.ToString(), endpoint.Port };
+                    if (timeout)
+                        args.AddRange(["TIMEOUT", 10_000]);
+                    Assert.That(context.clusterTestUtils.GetServer(0).Execute("FAILOVER", args.ToArray()).ToString(), Is.EqualTo("OK"));
+                    Assert.That(() => primary.failoverManager.IsWritePaused, Is.True.After(5_000, 10));
+                    var key = context.kvPairs.Keys.First();
+                    var write = Encoding.ASCII.GetBytes($"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n");
+                    for (var i = 0; i < writerCount; i++)
+                    {
+                        writers[i].AcquireCurrentEpoch();
+                        AsyncUtils.BlockingWait(connections[i].GetStream().WriteAsync(write, token));
+                        responses.Add(ReadResponseAsync(connections[i].GetStream(), token));
+                    }
+                    Assert.That(() => writers.All(s => s.LocalCurrentEpoch == 0), Is.True.After(5_000, 10));
+                    Assert.That(responses.All(r => !r.IsCompleted), Is.True);
+                    Assert.That(AsyncUtils.BlockingWait(ExecuteCommandAsync(probe, "*1\r\n$4\r\nPING\r\n", token)), Is.EqualTo("+PONG"));
+                    Assert.That(AsyncUtils.BlockingWait(ExecuteCommandAsync(probe,
+                        $"*2\r\n$6\r\nEXISTS\r\n${key.Length}\r\n{key}\r\n", token)), Is.EqualTo(":1"));
+                    if (!timeout)
+                        Assert.That(AsyncUtils.BlockingWait(ExecuteCommandAsync(probe, "*2\r\n$8\r\nFAILOVER\r\n$5\r\nABORT\r\n", token)), Is.EqualTo("+OK"));
+                    var replies = AsyncUtils.BlockingWait(Task.WhenAll(responses).WaitAsync(token));
+                    Assert.That(replies, Is.All.EqualTo("+OK"));
+                    Assert.That(primary.failoverManager.IsWritePaused, Is.False);
+                    Assert.That(guard.LocalCurrentEpoch, Is.Not.Zero,
+                        "Timeout and ABORT must release writers without waiting for the stalled session.");
+                }
+                finally
+                {
+                    Assert.That(ThreadPool.SetMaxThreads(maxWorkers, maxIo), Is.True);
+                    Assert.That(ThreadPool.SetMinThreads(minWorkers, minIo), Is.True);
+                    guard.ReleaseCurrentEpoch();
+                    primary.failoverManager.TryAbortReplicaFailover();
+                    deadline.Cancel();
+                    foreach (var connection in connections)
+                        connection.Dispose();
+                }
+            }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default));
+        }
+
+        [Test, CancelAfter(120_000)]
         public void WritePauseAcquireAndReleaseAllocateZeroBytes()
         {
             SetupReplica(1);
