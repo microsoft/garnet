@@ -56,15 +56,25 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            Reset();
-            epoch?.Dispose();
+            TryAbortReplicaFailover();
+            AsyncUtils.BlockingWait(clusterProvider.storeWrapper.TaskManager.CancelAsync(TaskType.FailoverTask));
+            // A completing worker unregisters before disposing its connections and releasing ownership.
+            failoverTaskLock.WriteLock();
+            try
+            {
+                epoch?.Dispose();
+            }
+            finally
+            {
+                failoverTaskLock.WriteUnlock();
+            }
         }
 
         /// <summary>
         /// Abort ongoing failover
         /// </summary>
         public void TryAbortReplicaFailover()
-            => Reset();
+            => Volatile.Read(ref currentFailoverSession)?.Cancel();
 
         private void Reset()
         {
@@ -102,7 +112,7 @@ namespace Garnet.cluster
                 return false;
 
             lastFailoverStatus = FailoverStatus.BEGIN_FAILOVER;
-            currentFailoverSession = new FailoverSession(
+            var session = new FailoverSession(
                 clusterProvider,
                 option,
                 clusterTimeout: clusterTimeout,
@@ -110,13 +120,24 @@ namespace Garnet.cluster
                 epoch: epoch,
                 isReplicaSession: true,
                 logger: logger);
-            _ = Task.Run(async () =>
+            currentFailoverSession = session;
+            var registered = clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.FailoverTask, token => Task.Run(async () =>
             {
-                var success = await currentFailoverSession.BeginAsyncReplicaFailoverAsync().ConfigureAwait(false);
-                lastFailoverStatus = success ? FailoverStatus.FAILOVER_COMPLETED : FailoverStatus.FAILOVER_ABORTED;
+                try
+                {
+                    using var cancellation = token.Register(session.Cancel);
+                    var success = await session.BeginAsyncReplicaFailoverAsync().ConfigureAwait(false);
+                    lastFailoverStatus = success ? FailoverStatus.FAILOVER_COMPLETED : FailoverStatus.FAILOVER_ABORTED;
+                }
+                finally
+                {
+                    clusterProvider.storeWrapper.TaskManager.TryUnregister(TaskType.FailoverTask);
+                    Reset();
+                }
+            }));
+            if (!registered)
                 Reset();
-            });
-            return true;
+            return registered;
         }
 
         /// <summary>
@@ -132,7 +153,7 @@ namespace Garnet.cluster
             if (!failoverTaskLock.TryWriteLock())
                 return false;
 
-            currentFailoverSession = new FailoverSession(
+            var session = new FailoverSession(
                 clusterProvider: clusterProvider,
                 option: option,
                 clusterTimeout: clusterTimeout,
@@ -142,12 +163,23 @@ namespace Garnet.cluster
                 hostAddress: replicaAddress,
                 hostPort: replicaPort,
                 logger: logger);
-            _ = Task.Run(async () =>
+            currentFailoverSession = session;
+            var registered = clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.FailoverTask, token => Task.Run(async () =>
             {
-                _ = await currentFailoverSession.BeginAsyncPrimaryFailoverAsync().ConfigureAwait(false);
+                try
+                {
+                    using var cancellation = token.Register(session.Cancel);
+                    _ = await session.BeginAsyncPrimaryFailoverAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    clusterProvider.storeWrapper.TaskManager.TryUnregister(TaskType.FailoverTask);
+                    Reset();
+                }
+            }));
+            if (!registered)
                 Reset();
-            });
-            return true;
+            return registered;
         }
     }
 }

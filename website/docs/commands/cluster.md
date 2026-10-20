@@ -208,6 +208,10 @@ After the pause ends, keyed writes receive `MOVED` to the new primary or proceed
 Writes arriving on a replica redirect immediately (database flushes return a read-only replica error).
 `READONLY` and `READWRITE` only control replica reads, not write admission or failover waiting.
 Internal replication replay remains exempt from the application-write pause.
+An explicit `FAILOVER TO host port TIMEOUT milliseconds` limits how long that operation holds its write pause,
+including waits for session epochs. Omitting `TIMEOUT` leaves the pause unlimited.
+`FAILOVER ABORT` cancels these waits and releases the operation's pause without restoring primary status after demotion.
+After demotion, cancellation can leave the node redirecting to a replica that has not yet promoted; it does not guarantee successful handoff.
 
 #### RESP Reply
 Returns +OK on success, otherwise --ERR message if any.

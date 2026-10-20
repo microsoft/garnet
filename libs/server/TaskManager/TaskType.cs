@@ -58,6 +58,11 @@ namespace Garnet.server
         /// Replays <see cref="RespCommand.VADD"/>s on replicas in parallel.
         /// </summary>
         VectorReplicationReplayTask,
+
+        /// <summary>
+        /// Coordinates a primary- or replica-initiated failover across role changes.
+        /// </summary>
+        FailoverTask,
     }
 
     /// <summary>
@@ -83,6 +88,7 @@ namespace Garnet.server
             TaskPlacementMapping[(int)TaskType.ObjectCollectTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.ExpiredKeyDeletionTask] = TaskPlacementCategory.Primary;
             TaskPlacementMapping[(int)TaskType.IndexAutoGrowTask] = TaskPlacementCategory.All;
+            TaskPlacementMapping[(int)TaskType.FailoverTask] = TaskPlacementCategory.ControlPlane;
         }
 
         /// <summary>

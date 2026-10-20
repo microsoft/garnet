@@ -599,6 +599,161 @@ namespace Garnet.test.cluster
         }
 
         [Test, CancelAfter(120_000)]
+        public async Task FailoverWithoutTimeoutWaitsForCheckpointsThenCompletes()
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            Assert.That(primary.storeWrapper.TryPauseCheckpoints(), Is.True);
+            try
+            {
+                Assert.That(context.clusterTestUtils.GetServer(0).Execute(
+                    "FAILOVER", "TO", endpoint.Address.ToString(), endpoint.Port).ToString(), Is.EqualTo("OK"));
+                Assert.That(() => primary.failoverManager.IsWritePaused, Is.True.After(5_000, 10));
+                Assert.That(() => primary.failoverManager.IsWritePaused, Is.True.After(200));
+                Assert.That(primary.storeWrapper.TaskManager.IsRunning(TaskType.FailoverTask), Is.True);
+                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await primary.storeWrapper.TaskManager.CancelAsync(TaskPlacementCategory.Primary).WaitAsync(deadline.Token);
+                Assert.That(primary.storeWrapper.TaskManager.IsRunning(TaskType.FailoverTask), Is.True,
+                    "Role-specific task cancellation must not cancel or await failover itself.");
+            }
+            finally
+            {
+                primary.storeWrapper.ResumeCheckpoints();
+            }
+            context.clusterTestUtils.WaitForNoFailover(0, context.logger);
+            context.clusterTestUtils.WaitForNoFailover(1, context.logger);
+            Assert.That(primary.failoverManager.IsWritePaused, Is.False);
+            Assert.That(() => primary.storeWrapper.TaskManager.IsRegistered(TaskType.FailoverTask), Is.False.After(5_000, 10));
+            Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+        }
+
+        [TestCase(false, "timeout")]
+        [TestCase(true, "timeout")]
+        [TestCase(false, "abort")]
+        [TestCase(true, "abort")]
+        [TestCase(false, "task-manager")]
+        [TestCase(true, "task-manager")]
+        [CancelAfter(120_000)]
+        public async Task CancelingFailoverReleasesWritersWithoutDrainingStalledEpoch(bool demote, string cancellation)
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            using var firstConnection = new TcpClient();
+            using var incomingConnection = new TcpClient();
+            using var writerConnection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var token = deadline.Token;
+            var first = await ConnectIdleSessionAsync(firstConnection, token);
+            var incoming = await ConnectIdleSessionAsync(incomingConnection, token);
+            var writer = await ConnectIdleSessionAsync(writerConnection, token);
+            var key = context.kvPairs.Keys.First();
+            var config = primary.clusterManager.CurrentConfig;
+            first.AcquireCurrentEpoch();
+            try
+            {
+                var initialEpoch = first.LocalCurrentEpoch;
+                var args = new List<object> { "TO", endpoint.Address.ToString(), endpoint.Port };
+                if (cancellation == "timeout")
+                    args.AddRange(["TIMEOUT", 3_000]);
+                Assert.That(context.clusterTestUtils.GetServer(0).Execute("FAILOVER", args.ToArray()).ToString(), Is.EqualTo("OK"));
+                Assert.That(() => primary.garnetEpoch.GetCurrentEpoch(), Is.GreaterThan(initialEpoch).After(5_000, 10));
+                Assert.That(primary.storeWrapper.TaskManager.IsRunning(TaskType.FailoverTask), Is.True);
+                var response = await StartPausedCommandAsync(writer, writerConnection,
+                    $"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", token);
+                var error = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(0).Execute(
+                    "FAILOVER", "TO", endpoint.Address.ToString(), endpoint.Port, "TIMEOUT", 1_000));
+                Assert.That(error.Message, Does.Contain("failed to start failover"),
+                    "A running worker must keep ownership until cancellation cleanup completes.");
+                if (demote)
+                {
+                    incoming.AcquireCurrentEpoch();
+                    var epoch = incoming.LocalCurrentEpoch;
+                    first.ReleaseCurrentEpoch();
+                    Assert.That(() => primary.clusterManager.CurrentConfig.LocalNodeRole,
+                        Is.EqualTo(ClusterNodeRole.REPLICA).After(5_000, 10));
+                    Assert.That(() => primary.garnetEpoch.GetCurrentEpoch(), Is.GreaterThan(epoch).After(5_000, 10));
+                }
+                if (cancellation == "abort")
+                    Assert.That(context.clusterTestUtils.GetServer(0).Execute("FAILOVER", "ABORT").ToString(), Is.EqualTo("OK"));
+                else if (cancellation == "task-manager")
+                    await primary.storeWrapper.TaskManager.CancelAsync(TaskType.FailoverTask).WaitAsync(token);
+
+                var reply = await response.WaitAsync(token);
+                if (demote)
+                    Assert.That(reply, Does.StartWith($"-MOVED {HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key))} "),
+                        "Without takeover, ownership can still change through gossip, but the demoted node must not accept the write.");
+                else
+                    Assert.That(reply, Is.EqualTo("+OK"));
+                Assert.That(primary.failoverManager.IsWritePaused, Is.False);
+                Assert.That((demote ? incoming : first).LocalCurrentEpoch, Is.Not.Zero,
+                    "Cancellation must release writers without waiting for the stalled epoch.");
+                Assert.That(() => primary.storeWrapper.TaskManager.IsRegistered(TaskType.FailoverTask), Is.False.After(5_000, 10));
+                Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole,
+                    Is.EqualTo(demote ? ClusterNodeRole.REPLICA : ClusterNodeRole.PRIMARY));
+                Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA),
+                    "A canceled post-demotion epoch wait must not issue takeover.");
+
+                if (demote)
+                {
+                    var bytes = Encoding.ASCII.GetBytes(key);
+                    var pin = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+                    try
+                    {
+                        var pinnedKey = MakePinnedKey(pin.AddrOfPinnedObject(), bytes.Length);
+                        var verify = typeof(ClusterSession).GetMethod("SingleKeySlotVerify", BindingFlags.Instance | BindingFlags.NonPublic);
+                        object[] verifyArgs = [config, pinnedKey, false, false, false, (int)HashSlotUtils.HashSlot(pinnedKey)];
+                        var result = (ClusterSlotVerificationResult)verify.Invoke(incoming, verifyArgs);
+                        Assert.That(result.state, Is.EqualTo(SlotVerifiedState.MOVED),
+                            "A retained primary snapshot must not admit writes after cancellation releases the pause.");
+                    }
+                    finally
+                    {
+                        pin.Free();
+                    }
+                }
+            }
+            finally
+            {
+                first.ReleaseCurrentEpoch();
+                incoming.ReleaseCurrentEpoch();
+                primary.failoverManager.TryAbortReplicaFailover();
+                await primary.storeWrapper.TaskManager.CancelAsync(TaskType.FailoverTask).WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+
+        [Test, CancelAfter(120_000)]
+        public async Task FailoverTimeoutReleasesWritersWhileCheckpointsStayPaused()
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var writer = await ConnectIdleSessionAsync(connection, deadline.Token);
+            var key = context.kvPairs.Keys.First();
+            Assert.That(primary.storeWrapper.TryPauseCheckpoints(), Is.True);
+            try
+            {
+                Assert.That(context.clusterTestUtils.GetServer(0).Execute(
+                    "FAILOVER", "TO", endpoint.Address.ToString(), endpoint.Port, "TIMEOUT", 3_000).ToString(), Is.EqualTo("OK"));
+                Assert.That(() => primary.failoverManager.IsWritePaused, Is.True.After(5_000, 10));
+                var response = await StartPausedCommandAsync(writer, connection,
+                    $"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", deadline.Token);
+                Assert.That(await response.WaitAsync(deadline.Token), Is.EqualTo("+OK"));
+                Assert.That(primary.failoverManager.IsWritePaused, Is.False);
+                Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+                Assert.That(primary.storeWrapper.TryPauseCheckpoints(), Is.False,
+                    "Failover cleanup must not release a checkpoint pause owned by another operation.");
+            }
+            finally
+            {
+                primary.storeWrapper.ResumeCheckpoints();
+            }
+        }
+
+        [Test, CancelAfter(120_000)]
         public async Task AbortedFailoverCleanupPreservesAnotherOwnersPause()
         {
             SetupReplica(1);

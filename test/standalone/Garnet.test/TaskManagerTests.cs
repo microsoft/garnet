@@ -113,6 +113,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task ControlPlaneTaskSurvivesRoleChangesButStopsOnDispose()
+        {
+            var taskManager = new TaskManager();
+            var canceled = false;
+            try
+            {
+                ClassicAssert.IsTrue(taskManager.RegisterAndRun(TaskType.FailoverTask, async token =>
+                {
+                    try
+                    {
+                        await Task.Delay(Timeout.Infinite, token);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        canceled = true;
+                    }
+                }));
+                await taskManager.CancelAsync(TaskPlacementCategory.Primary);
+                await taskManager.CancelAsync(TaskPlacementCategory.Replica);
+                ClassicAssert.IsTrue(taskManager.IsRunning(TaskType.FailoverTask));
+            }
+            finally
+            {
+                taskManager.Dispose();
+            }
+            ClassicAssert.IsTrue(canceled);
+            ClassicAssert.IsFalse(taskManager.IsRegistered(TaskType.FailoverTask));
+        }
+
+        [Test]
         public void TestTaskRegisterAfterDispose()
         {
             var taskManager = new TaskManager();

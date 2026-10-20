@@ -43,7 +43,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="taskType"></param>
         /// <returns>True if the task was removed</returns>
-        internal bool TryUnregister(TaskType taskType)
+        public bool TryUnregister(TaskType taskType)
         {
             if (!registry.TryRemove(taskType, out var taskMetadata))
                 return false;

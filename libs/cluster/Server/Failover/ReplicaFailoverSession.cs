@@ -94,6 +94,7 @@ namespace Garnet.cluster
                 status = FailoverStatus.WAITING_FOR_SYNC;
                 while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
                 {
+                    cts.Token.ThrowIfCancellationRequested();
                     // Fail if upper bound time for failover has been reached
                     if (FailoverTimeout)
                     {
@@ -134,7 +135,8 @@ namespace Garnet.cluster
                     return false;
                 }
                 acquiredLock = true;
-                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync(cts.Token).ConfigureAwait(false);
+                cts.Token.ThrowIfCancellationRequested();
 
                 // Take over slots from old primary
                 if (!clusterProvider.clusterManager.TryTakeOverForPrimary())

@@ -81,6 +81,8 @@ namespace Garnet.cluster
                 var _slot = slot == -1 ? HashSlotUtils.HashSlot(keySlice) : (ushort)slot;
 
             tryAgain:
+                // A canceled failover can release its pause before old configuration snapshots drain.
+                config = clusterProvider.clusterManager.CurrentConfig;
                 var IsLocal = config.IsLocal(_slot, enableReplicaReads: internalWriteSession);
                 var state = config.GetState(_slot);
 
