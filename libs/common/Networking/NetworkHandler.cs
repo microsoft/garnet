@@ -831,8 +831,8 @@ namespace Garnet.networking
                 return true;
             }
 
-            if (transportDemand == transportReceiveBuffer.Length)
-                return true;
+            //if (transportDemand == transportReceiveBuffer.Length)
+            //    return true;
 
             TryShrinkTransportReceiveBuffer(transportDemand);
             return false;
