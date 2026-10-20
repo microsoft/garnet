@@ -835,6 +835,77 @@ namespace Garnet.test.cluster
             }
         }
 
+#if DEBUG
+        [TestCase(false)]
+        [TestCase(true)]
+        [CancelAfter(120_000)]
+        public async Task CancelingDemotedFailoverBetweenAdmissionReadsRedirectsWriter(bool timeout)
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            using var guardConnection = new TcpClient();
+            using var writerConnection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var token = deadline.Token;
+            var guard = await ConnectIdleSessionAsync(guardConnection, token);
+            var writer = await ConnectIdleSessionAsync(writerConnection, token);
+            var key = context.kvPairs.Keys.First();
+            var value = context.clusterTestUtils.GetDatabase().StringGet(key);
+            const ExceptionInjectionType injection = ExceptionInjectionType.Failover_Pause_Between_Write_Admission_Reads;
+            Task<string> response = null;
+            guard.AcquireCurrentEpoch();
+            try
+            {
+                var initialEpoch = guard.LocalCurrentEpoch;
+                var args = new List<object> { "TO", endpoint.Address.ToString(), endpoint.Port };
+                if (timeout)
+                    args.AddRange(["TIMEOUT", 10_000]);
+                Assert.That(context.clusterTestUtils.GetServer(0).Execute("FAILOVER", args.ToArray()).ToString(), Is.EqualTo("OK"));
+                Assert.That(() => primary.garnetEpoch.GetCurrentEpoch(), Is.GreaterThan(initialEpoch).After(5_000, 10));
+                Assert.That(primary.failoverManager.IsWritePaused, Is.True);
+
+                ExceptionInjectionHelper.EnableException(injection);
+                await writerConnection.GetStream().WriteAsync(Encoding.ASCII.GetBytes(
+                    $"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n"), token);
+                response = ReadResponseAsync(writerConnection.GetStream(), token);
+                Assert.That(() => ExceptionInjectionHelper.IsEnabled(injection), Is.False.After(5_000, 10));
+                Assert.That(writer.LocalCurrentEpoch, Is.GreaterThan(initialEpoch));
+                guard.ReleaseCurrentEpoch();
+                Assert.That(() => primary.clusterManager.CurrentConfig.LocalNodeRole,
+                    Is.EqualTo(ClusterNodeRole.REPLICA).After(5_000, 10));
+                if (!timeout)
+                    Assert.That(context.clusterTestUtils.GetServer(0).Execute("FAILOVER", "ABORT").ToString(), Is.EqualTo("OK"));
+                Assert.That(() => primary.failoverManager.IsWritePaused, Is.False.After(15_000, 10));
+                Assert.That(response.IsCompleted, Is.False);
+
+                ExceptionInjectionHelper.EnableException(injection);
+                Assert.That(await response.WaitAsync(token),
+                    Does.StartWith($"-MOVED {HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key))} "));
+                Assert.That(context.clusterTestUtils.GetDatabase().StringGet(key), Is.EqualTo(value),
+                    "A demoted node must not execute a write after cancellation releases its pause.");
+            }
+            finally
+            {
+                // Release an arrived writer and prevent a late arrival from parking during cleanup.
+                ExceptionInjectionHelper.SuspendParking();
+                try
+                {
+                    ExceptionInjectionHelper.DisableException(injection);
+                    guard.ReleaseCurrentEpoch();
+                    primary.failoverManager.TryAbortReplicaFailover();
+                    await primary.storeWrapper.TaskManager.CancelAsync(TaskType.FailoverTask).WaitAsync(TimeSpan.FromSeconds(5));
+                    if (response != null)
+                        await response.WaitAsync(token);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+            }
+        }
+#endif
+
         [Test, CancelAfter(120_000)]
         public async Task FailoverTimeoutReleasesWritersWhileCheckpointsStayPaused()
         {

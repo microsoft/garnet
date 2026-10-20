@@ -14,6 +14,11 @@ namespace Garnet.common
         None = 0,
 
         /// <summary>
+        /// Pause between sampling write admission state and loading cluster configuration.
+        /// </summary>
+        Failover_Pause_Between_Write_Admission_Reads,
+
+        /// <summary>
         /// Network failure after GarnetServerTcp handler created
         /// </summary>
         Network_After_GarnetServerTcp_Handler_Created,

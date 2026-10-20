@@ -81,7 +81,11 @@ namespace Garnet.cluster
                 var _slot = slot == -1 ? HashSlotUtils.HashSlot(keySlice) : (ushort)slot;
 
             tryAgain:
-                // A canceled failover can release its pause before old configuration snapshots drain.
+                // Observing pause release must precede the role read because cancellation can skip epoch draining.
+                var writePaused = clusterProvider.failoverManager.IsWritePaused;
+#if DEBUG
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Failover_Pause_Between_Write_Admission_Reads);
+#endif
                 config = clusterProvider.clusterManager.CurrentConfig;
                 var IsLocal = config.IsLocal(_slot, enableReplicaReads: internalWriteSession);
                 var state = config.GetState(_slot);
@@ -90,11 +94,9 @@ namespace Garnet.cluster
                 if (config.LocalNodeRole == NodeRole.REPLICA && !internalWriteSession)
                     return new(SlotVerifiedState.MOVED, _slot);
 
-                if (config.LocalNodeRole == NodeRole.PRIMARY && !internalWriteSession &&
-                    clusterProvider.failoverManager.IsWritePaused)
+                if (config.LocalNodeRole == NodeRole.PRIMARY && !internalWriteSession && writePaused)
                 {
                     WaitForWritesToResume();
-                    config = clusterProvider.clusterManager.CurrentConfig;
                     goto tryAgain;
                 }
 
