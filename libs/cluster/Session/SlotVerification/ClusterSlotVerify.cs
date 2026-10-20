@@ -84,19 +84,23 @@ namespace Garnet.cluster
                 var IsLocal = config.IsLocal(_slot, enableReplicaReads: internalWriteSession);
                 var state = config.GetState(_slot);
 
+                // Replica writes redirect without waiting for a role or session-mode change.
+                if (config.LocalNodeRole == NodeRole.REPLICA && !internalWriteSession)
+                    return new(SlotVerifiedState.MOVED, _slot);
+
                 if (config.LocalNodeRole == NodeRole.PRIMARY && !internalWriteSession &&
                     clusterProvider.failoverManager.IsWritePaused)
-                    return new(SlotVerifiedState.CLUSTERDOWN, _slot);
+                {
+                    WaitForWritesToResume();
+                    config = clusterProvider.clusterManager.CurrentConfig;
+                    goto tryAgain;
+                }
 
                 if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
                 {
                     WaitForSlotToStabalize(_slot, keySlice, ref config);
                     goto tryAgain;
                 }
-
-                // Redirect r/w requests towards primary
-                if (config.LocalNodeRole == NodeRole.REPLICA && !internalWriteSession)
-                    return new(SlotVerifiedState.MOVED, _slot);
 
                 if (IsLocal)
                 {

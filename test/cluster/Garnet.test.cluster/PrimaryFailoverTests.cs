@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
@@ -97,7 +98,7 @@ namespace Garnet.test.cluster
         }
 
         [Test, CancelAfter(120_000)]
-        public void PausedPrimaryRejectsWritesButServesReads()
+        public async Task PausedWritesResumeOrRedirectAfterFailover([Values] bool multiKey, [Values] bool failover, [Values] bool readOnly)
         {
             SetupReplica(1);
             var primary = Provider(0);
@@ -105,33 +106,106 @@ namespace Garnet.test.cluster
             var db = context.clusterTestUtils.GetDatabase();
             var key = context.kvPairs.Keys.First();
             var value = db.StringGet(key);
+            using var connection = new TcpClient();
+            using var lateConnection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var session = await ConnectIdleSessionAsync(connection, deadline.Token);
+            var mode = readOnly ? "READONLY" : "READWRITE";
+            Assert.That(await ExecuteCommandAsync(connection, $"*1\r\n${mode.Length}\r\n{mode}\r\n", deadline.Token), Is.EqualTo("+OK"));
+            Assert.That(session.ReadOnlySession, Is.EqualTo(readOnly));
+            Assert.That(session.IsInternalWriteSession, Is.False);
+            var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            Task<string> response = null;
             primary.failoverManager.PauseWrites(true);
             try
             {
                 Assert.That(primary.clusterManager.CurrentConfig, Is.SameAs(config));
+                var command = multiKey ? "MSET" : "SET";
+                response = await StartPausedCommandAsync(session, connection,
+                    $"*3\r\n${command.Length}\r\n{command}\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", deadline.Token);
                 Assert.That(db.StringGet(key), Is.EqualTo(value));
-                var writeError = Assert.Throws<RedisServerException>(() => db.StringSet(key, "changed"));
-                Assert.That(writeError.Message, Does.StartWith("CLUSTERDOWN"));
-                var multiWriteError = Assert.Throws<RedisServerException>(() => db.StringSet(
-                    [new KeyValuePair<RedisKey, RedisValue>(key, "changed")]));
-                Assert.That(multiWriteError.Message, Does.StartWith("CLUSTERDOWN"));
-                Assert.That(db.StringGet(key), Is.EqualTo(value));
+                Assert.That(await primary.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(deadline.Token), Is.True,
+                    "A paused writer must release its epoch so failover can progress.");
+                if (failover)
+                {
+                    Assert.That(context.clusterTestUtils.GetServer(0).Execute(
+                        "FAILOVER", "TO", endpoint.Address.ToString(), endpoint.Port, "TIMEOUT", 20_000).ToString(), Is.EqualTo("OK"));
+                    context.clusterTestUtils.WaitForNoFailover(0, context.logger);
+                    context.clusterTestUtils.WaitForNoFailover(1, context.logger);
+                    Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+                    Assert.That(response.IsCompleted, Is.False,
+                        "A writer must wait until every pause owner releases its pause, even after demotion.");
+                    var lateSession = await ConnectIdleSessionAsync(lateConnection, deadline.Token);
+                    Assert.That(await ExecuteCommandAsync(lateConnection, $"*1\r\n${mode.Length}\r\n{mode}\r\n", deadline.Token), Is.EqualTo("+OK"));
+                    Assert.That(lateSession.IsInternalWriteSession, Is.False);
+                    Assert.That(await ExecuteCommandAsync(lateConnection,
+                        $"*3\r\n${command.Length}\r\n{command}\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", deadline.Token),
+                        Is.EqualTo($"-MOVED {HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key))} {endpoint.Address}:{endpoint.Port}"));
+                    Assert.That(primary.failoverManager.IsWritePaused, Is.True,
+                        "A write arriving on a replica must redirect before the outstanding pause is released.");
+                    Assert.That(response.IsCompleted, Is.False);
+                }
             }
             finally
             {
                 primary.failoverManager.PauseWrites(false);
             }
-            Assert.That(db.StringSet(key, value), Is.True);
+            Assert.That(await response.WaitAsync(deadline.Token), Is.EqualTo(failover
+                ? $"-MOVED {HashSlotUtils.HashSlot(Encoding.ASCII.GetBytes(key))} {endpoint.Address}:{endpoint.Port}"
+                : "+OK"));
+            Assert.That(db.StringGet(key),
+                Is.EqualTo(failover ? value : (RedisValue)"changed"));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        [CancelAfter(120_000)]
+        public async Task InternalReplayBypassesPauseRegardlessOfSessionReadMode(bool demote)
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            var key = context.kvPairs.Keys.First();
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var session = await ConnectIdleSessionAsync(connection, deadline.Token);
+            session.SetInternalWriteSession();
+            primary.failoverManager.PauseWrites(true);
+            try
+            {
+                if (demote)
+                    primary.clusterManager.TryStopWrites(context.clusterTestUtils.GetNodeIdFromNode(1, context.logger));
+                foreach (var mode in new[] { "READONLY", "READWRITE" })
+                {
+                    Assert.That(await ExecuteCommandAsync(connection, $"*1\r\n${mode.Length}\r\n{mode}\r\n", deadline.Token), Is.EqualTo("+OK"));
+                    Assert.That(session.ReadOnlySession, Is.EqualTo(mode == "READONLY"));
+                    Assert.That(session.IsInternalWriteSession, Is.True,
+                        "Connection read-mode commands must not remove the internal replay exemption.");
+                    Assert.That(await ExecuteCommandAsync(connection,
+                        $"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", deadline.Token), Is.EqualTo("+OK"));
+                    Assert.That(primary.failoverManager.IsWritePaused, Is.True);
+                }
+            }
+            finally
+            {
+                primary.failoverManager.PauseWrites(false);
+            }
         }
 
         [Test, CancelAfter(120_000)]
-        public void ReleasingOneWritePausePreservesAnotherOwnersPause()
+        public async Task ReleasingOneWritePausePreservesAnotherOwnersPause()
         {
             SetupReplica(1);
             var manager = Provider(0).failoverManager;
             var db = context.clusterTestUtils.GetDatabase();
             var key = context.kvPairs.Keys.First();
             var value = db.StringGet(key);
+            using var connection = new TcpClient();
+            using var secondConnection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var session = await ConnectIdleSessionAsync(connection, deadline.Token);
+            var secondSession = await ConnectIdleSessionAsync(secondConnection, deadline.Token);
+            Task<string> response = null;
+            Task<string> secondResponse = null;
             manager.PauseWrites(true);
             try
             {
@@ -139,8 +213,11 @@ namespace Garnet.test.cluster
                 manager.PauseWrites(false);
                 Assert.That(manager.IsWritePaused, Is.True,
                     "Releasing one owner's pause must not release another owner's pause.");
-                var error = Assert.Throws<RedisServerException>(() => db.StringSet(key, "changed"));
-                Assert.That(error.Message, Does.StartWith("CLUSTERDOWN"));
+                response = await StartPausedCommandAsync(session, connection,
+                    $"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", deadline.Token);
+                secondResponse = await StartPausedCommandAsync(secondSession, secondConnection,
+                    $"*3\r\n$4\r\nMSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", deadline.Token);
+                Assert.That(response.IsCompleted, Is.False);
                 Assert.That(db.StringGet(key), Is.EqualTo(value));
             }
             finally
@@ -148,7 +225,9 @@ namespace Garnet.test.cluster
                 manager.PauseWrites(false);
             }
             Assert.That(manager.IsWritePaused, Is.False);
-            Assert.That(db.StringSet(key, value), Is.True);
+            Assert.That(await response.WaitAsync(deadline.Token), Is.EqualTo("+OK"));
+            Assert.That(await secondResponse.WaitAsync(deadline.Token), Is.EqualTo("+OK"));
+            Assert.That(db.StringGet(key), Is.EqualTo((RedisValue)"changed"));
         }
 
         [Test, CancelAfter(120_000)]
@@ -192,31 +271,47 @@ namespace Garnet.test.cluster
             Assert.That(manager.IsWritePaused, Is.False);
         }
 
-        [TestCase(false)]
-        [TestCase(true)]
-        [CancelAfter(120_000)]
-        public void PausedPrimaryRejectsDatabaseFlush(bool allDatabases)
+        [Test, CancelAfter(120_000)]
+        public async Task PausedDatabaseFlushRevalidatesRoleAfterResume([Values] bool allDatabases, [Values] bool demote, [Values] bool readOnly)
         {
             SetupReplica(1);
             var primary = Provider(0);
+            using var connection = new TcpClient();
+            using var lateConnection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var session = await ConnectIdleSessionAsync(connection, deadline.Token);
+            var mode = readOnly ? "READONLY" : "READWRITE";
+            Assert.That(await ExecuteCommandAsync(connection, $"*1\r\n${mode.Length}\r\n{mode}\r\n", deadline.Token), Is.EqualTo("+OK"));
+            Task<string> response = null;
             primary.failoverManager.PauseWrites(true);
             try
             {
-                var server = context.clusterTestUtils.GetServer(0);
-                var error = Assert.Throws<RedisServerException>(() =>
-                {
-                    if (allDatabases)
-                        server.FlushAllDatabases();
-                    else
-                        server.FlushDatabase();
-                });
-                Assert.That(error.Message, Does.StartWith("CLUSTERDOWN"));
+                var command = allDatabases ? "FLUSHALL" : "FLUSHDB";
+                response = await StartPausedCommandAsync(session, connection,
+                    $"*1\r\n${command.Length}\r\n{command}\r\n", deadline.Token);
                 context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 0, 0);
+                if (demote)
+                {
+                    primary.clusterManager.TryStopWrites(context.clusterTestUtils.GetNodeIdFromNode(1, context.logger));
+                    _ = await ConnectIdleSessionAsync(lateConnection, deadline.Token);
+                    Assert.That(await ExecuteCommandAsync(lateConnection, $"*1\r\n${mode.Length}\r\n{mode}\r\n", deadline.Token), Is.EqualTo("+OK"));
+                    Assert.That(await ExecuteCommandAsync(lateConnection,
+                        $"*1\r\n${command.Length}\r\n{command}\r\n", deadline.Token), Is.EqualTo("-ERR You can't write against a read only replica."));
+                    Assert.That(primary.failoverManager.IsWritePaused, Is.True);
+                    Assert.That(response.IsCompleted, Is.False);
+                }
+                Assert.That(await primary.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(deadline.Token), Is.True);
             }
             finally
             {
                 primary.failoverManager.PauseWrites(false);
             }
+            Assert.That(await response.WaitAsync(deadline.Token), Is.EqualTo(demote
+                ? "-ERR You can't write against a read only replica." : "+OK"));
+            if (demote)
+                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 0, 0);
+            else
+                Assert.That(context.clusterTestUtils.GetServer(0).DatabaseSize(), Is.Zero);
         }
 
         [Test, CancelAfter(120_000)]
@@ -269,6 +364,32 @@ namespace Garnet.test.cluster
             return session;
         }
 
+        static async Task<Task<string>> StartPausedCommandAsync(ClusterSession session, TcpClient connection, string command, CancellationToken token)
+        {
+            // Mark the session active so zero proves the command has released its epoch.
+            session.AcquireCurrentEpoch();
+            var stream = connection.GetStream();
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(command), token);
+            var response = ReadResponseAsync(stream, token);
+            Assert.That(() => session.LocalCurrentEpoch, Is.Zero.After(5_000, 10));
+            Assert.That(() => response.IsCompleted, Is.False.After(100),
+                "The command must stay pending while writes are paused.");
+            return response;
+        }
+
+        static async Task<string> ExecuteCommandAsync(TcpClient connection, string command, CancellationToken token)
+        {
+            var stream = connection.GetStream();
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(command), token);
+            return await ReadResponseAsync(stream, token);
+        }
+
+        static async Task<string> ReadResponseAsync(NetworkStream stream, CancellationToken token)
+        {
+            using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+            return await reader.ReadLineAsync(token);
+        }
+
         static unsafe PinnedSpanByte MakePinnedKey(IntPtr pointer, int length)
             => PinnedSpanByte.FromPinnedPointer((byte*)pointer, length);
 
@@ -315,9 +436,11 @@ namespace Garnet.test.cluster
                     var key = MakePinnedKey(pin.AddrOfPinnedObject(), keyBytes.Length);
                     var verify = typeof(ClusterSession).GetMethod("SingleKeySlotVerify", BindingFlags.Instance | BindingFlags.NonPublic);
                     object[] args = [config, key, false, false, false, (int)HashSlotUtils.HashSlot(key)];
-                    var result = (ClusterSlotVerificationResult)verify.Invoke(incoming, args);
-                    Assert.That(result.state, Is.EqualTo(SlotVerifiedState.CLUSTERDOWN),
-                        "A request with a stale primary snapshot must still observe the write pause.");
+                    var pending = Task.Run(() => (ClusterSlotVerificationResult)verify.Invoke(incoming, args));
+                    var result = await pending.WaitAsync(deadline.Token);
+                    Assert.That(result.state, Is.EqualTo(SlotVerifiedState.MOVED),
+                        "A stale primary snapshot must be refreshed after the pause instead of rejecting the write.");
+                    Assert.That(((ClusterConfig)args[0]).LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA));
                 }
                 finally
                 {
@@ -482,8 +605,12 @@ namespace Garnet.test.cluster
             var manager = Provider(0).failoverManager;
             var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
             using var connection = new TcpClient();
+            using var writerConnection = new TcpClient();
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var reader = await ConnectIdleSessionAsync(connection, deadline.Token);
+            var writer = await ConnectIdleSessionAsync(writerConnection, deadline.Token);
+            var key = context.kvPairs.Keys.First();
+            Task<string> response = null;
             var sessionField = typeof(FailoverManager).GetField("currentFailoverSession", BindingFlags.Instance | BindingFlags.NonPublic);
             FailoverSession first = null;
             var ownsPause = false;
@@ -494,6 +621,8 @@ namespace Garnet.test.cluster
                     FailoverOption.DEFAULT, TimeSpan.FromSeconds(30)), Is.True);
                 Assert.That(() => manager.IsWritePaused, Is.True.After(5_000, 10));
                 first = (FailoverSession)sessionField.GetValue(manager);
+                response = await StartPausedCommandAsync(writer, writerConnection,
+                    $"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", deadline.Token);
                 manager.TryAbortReplicaFailover();
                 manager.PauseWrites(true);
                 ownsPause = true;
@@ -501,6 +630,7 @@ namespace Garnet.test.cluster
                 Assert.That(() => first.status, Is.EqualTo(FailoverStatus.NO_FAILOVER).After(10_000, 10));
                 Assert.That(manager.IsWritePaused, Is.True,
                     "The aborted worker's delayed cleanup must release only its own write pause.");
+                Assert.That(response.IsCompleted, Is.False);
             }
             finally
             {
@@ -517,6 +647,8 @@ namespace Garnet.test.cluster
                 }
             }
             Assert.That(manager.IsWritePaused, Is.False);
+            Assert.That(await response.WaitAsync(deadline.Token), Is.EqualTo("+OK"));
+            Assert.That(context.clusterTestUtils.GetDatabase().StringGet(key), Is.EqualTo((RedisValue)"changed"));
         }
     }
 }

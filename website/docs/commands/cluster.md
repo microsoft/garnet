@@ -202,6 +202,13 @@ When a replica receives the above command it executes the following steps
 
 The cluster operator can also use the ABORT option to abort an ongoing failover where appropriate.
 
+For primary-initiated failover (`FAILOVER TO host port`), application writes wait while writes are paused.
+After the pause ends, keyed writes receive `MOVED` to the new primary or proceed locally if the node remains primary.
+`FLUSHDB` and `FLUSHALL` also wait, then recheck the node's role; reads remain available under normal cluster admission rules.
+Writes arriving on a replica redirect immediately (database flushes return a read-only replica error).
+`READONLY` and `READWRITE` only control replica reads, not write admission or failover waiting.
+Internal replication replay remains exempt from the application-write pause.
+
 #### RESP Reply
 Returns +OK on success, otherwise --ERR message if any.
 This does not mean that FAILOVER has succeeded, only that the failover background task has started.

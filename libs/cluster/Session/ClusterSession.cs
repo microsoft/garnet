@@ -44,6 +44,32 @@ namespace Garnet.cluster
         /// <inheritdoc/>
         public bool IsWritePaused => clusterProvider.failoverManager.IsWritePaused;
 
+        /// <inheritdoc/>
+        public void WaitForWritesToResume()
+        {
+            // Internal replay must keep applying replication data so the replica can catch up and complete failover.
+            if (internalWriteSession || !IsWritePaused ||
+                clusterProvider.clusterManager.CurrentConfig.LocalNodeRole != NodeRole.PRIMARY)
+                return;
+
+            // Failover drains session epochs before releasing the pause.
+            ReleaseCurrentEpoch();
+            try
+            {
+                // Spin only briefly; replica synchronization can require network round trips.
+                var spinner = ConfiguredSpinWait.CpuLocal();
+                while (IsWritePaused)
+                {
+                    if (!spinner.TryWait())
+                        Thread.Sleep(1);
+                }
+            }
+            finally
+            {
+                AcquireCurrentEpoch();
+            }
+        }
+
         public void SetReadOnlySession() => readOnlySession = true;
         public void SetReadWriteSession() => readOnlySession = false;
         public void SetInternalWriteSession() => internalWriteSession = true;
