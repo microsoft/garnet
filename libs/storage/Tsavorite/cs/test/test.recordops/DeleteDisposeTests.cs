@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
@@ -89,6 +90,48 @@ namespace Tsavorite.test
                     return true;
                 }
                 return base.InitialUpdater(ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            }
+        }
+
+        internal class ExpiredReinitWithExpirationFunctions : SimpleIntSimpleFunctions
+        {
+            internal const long ExpirationTicks = 123456789L;
+
+            internal int newValueLength;
+            internal int readValueLength;
+            internal long readExpiration;
+
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                return false;
+            }
+
+            public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = newValueLength, HasExpiration = true, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
+
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
+
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
+                => dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
+
+            public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                var value = new byte[sizeInfo.FieldInfo.ValueSize];
+                value[0] = (byte)input;
+                if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(value, in sizeInfo) || !dstLogRecord.TrySetExpiration(ExpirationTicks))
+                    return false;
+                output = input;
+                return true;
+            }
+
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input, ref int output, ref ReadInfo readInfo)
+            {
+                readValueLength = srcLogRecord.ValueSpan.Length;
+                readExpiration = srcLogRecord.Expiration;
+                output = srcLogRecord.ValueSpan[0];
+                return true;
             }
         }
 
@@ -246,6 +289,29 @@ namespace Tsavorite.test
             var k = 1; var input = 50;
             _ = s.BasicContext.RMW(Key(ref k), ref input);
             ClassicAssert.AreEqual(1, tracker.DeletedCount, "Immutable ExpireAndResume: expected exactly 1");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ExpireAndResumeReinitWithExpirationStoresValueTest([Values(1, 4, 5, 8)] int seedLength, [Values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 64)] int valueGrowth)
+        {
+            // The new value may fit the expired record without the expiration but not with it; the write must never be lost.
+            var fn = new ExpiredReinitWithExpirationFunctions { newValueLength = seedLength + valueGrowth };
+            using var s = store.NewSession<TestSpanByteKey, int, int, Empty, ExpiredReinitWithExpirationFunctions>(fn);
+            var key = 1;
+            var seed = new byte[seedLength];
+            _ = s.BasicContext.Upsert(Key(ref key), seed);
+
+            var input = 50;
+            var output = 0;
+            _ = s.BasicContext.RMW(Key(ref key), ref input, ref output);
+
+            output = 0;
+            var status = s.BasicContext.Read(Key(ref key), ref input, ref output);
+            ClassicAssert.IsTrue(status.Found, $"Key not found after RMW (seed {seedLength}, growth {valueGrowth})");
+            ClassicAssert.AreEqual(50, output);
+            ClassicAssert.AreEqual(seedLength + valueGrowth, fn.readValueLength);
+            ClassicAssert.AreEqual(ExpiredReinitWithExpirationFunctions.ExpirationTicks, fn.readExpiration);
         }
 
         #endregion
