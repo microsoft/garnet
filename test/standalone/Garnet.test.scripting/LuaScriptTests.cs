@@ -3645,5 +3645,32 @@ return count";
             }
         }
 
+        [Test]
+        [TestCase("b")]
+        [TestCase("B")]
+        [TestCase("h")]
+        [TestCase("H")]
+        [TestCase("l")]
+        [TestCase("L")]
+        [TestCase("T")]
+        [TestCase("i")]
+        [TestCase("I")]
+        [TestCase("I4")]
+        [TestCase("c")]
+        [TestCase("c4")]
+        [TestCase("s")]
+        [TestCase("f")]
+        [TestCase("d")]
+        public async Task EvalStructPackFormatUnderflowAsync(string formatString)
+        {
+            var evalScript = $"return struct.pack('{formatString}')";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            //await using var redis = await ConnectionMultiplexer.ConnectAsync("127.0.0.1:6379");
+            var db = redis.GetDatabase();
+
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("EVAL", [evalScript, "0"]));
+            ClassicAssert.AreEqual("ERR Lua encountered an error: bad argument to pack", exc0.Message);
+        }
     }
 }
