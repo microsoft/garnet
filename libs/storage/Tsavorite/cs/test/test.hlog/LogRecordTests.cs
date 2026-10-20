@@ -182,7 +182,7 @@ namespace Tsavorite.test.LogRecordTests
         [TestCase(0, 36)]
         [TestCase(0, 40)]
         [Category(LogRecordCategory)]
-        public void DeserializeRejectsMalformedOverflowComponents(int lengthPrefix, int wireLength)
+        public void DeserializeValidatesOverflowBeforeMutatingSlots(int lengthPrefix, int wireLength)
         {
             var record = CreateSerializedRecord(wireLength);
             ref var header = ref *(RecordDataHeader*)(nativePointer + RecordInfo.Size);
@@ -190,11 +190,10 @@ namespace Tsavorite.test.LogRecordTests
             header.SetValueIsOverflow();
             var inlineSize = header.GetAlignedComponentSum();
             BinaryPrimitives.WriteInt32LittleEndian(new Span<byte>((void*)(nativePointer + inlineSize), sizeof(int)), lengthPrefix);
-            var before = new ReadOnlySpan<byte>((void*)(nativePointer + wireLength), 256 - wireLength).ToArray();
+            var before = new ReadOnlySpan<byte>((void*)nativePointer, 256).ToArray();
 
             Assert.Throws<TsavoriteException>(() => DeserializeRecord(record));
-            Assert.That(header.RecordIsInline, Is.True, "Cleanup must clear the transient overflow state");
-            Assert.That(new ReadOnlySpan<byte>((void*)(nativePointer + wireLength), 256 - wireLength).ToArray(), Is.EqualTo(before));
+            Assert.That(new ReadOnlySpan<byte>((void*)nativePointer, 256).ToArray(), Is.EqualTo(before));
         }
 
         [Test]

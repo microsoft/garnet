@@ -116,8 +116,8 @@ chunked path ([§4](#4-chunked-record-chunkedlogrecord-tag-5)).
 Receivers require the complete fixed header, reject null `RecordInfo` and conflicting inline/object value flags, and
 validate that the aligned inline component size fits within the received record before exposing its key, value, or
 optional fields. This size includes extended namespace bytes and object-id slots, but excludes explicit filler.
-Each non-chunked overflow length prefix and its data must also fit in the record before that component is allocated
-and its transient object-id slot is populated. Chunked receivers validate the header before deriving the inline size and validate the completed inline
+All non-chunked overflow length prefixes and their data must also fit in the record before any overflow buffers are
+allocated or transient object-id slots are populated. Chunked receivers validate the header before deriving the inline size and validate the completed inline
 portion before assigning reassembled components.
 
 ### 3.2 `RecordDataHeader` (indicator word) — 8 B

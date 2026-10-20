@@ -503,14 +503,16 @@ namespace Tsavorite.core
             if (serializedLogRecord.DataHeader.RecordIsInline)
                 return new(serializedLogRecord);
 
+            var dataHeader = serializedLogRecord.DataHeader;
+            var keyBytes = dataHeader.KeyIsOverflow ? ReadOverflowComponent(recordSpan.ReadOnlySpan, ref offset) : default;
+            var valueBytes = dataHeader.ValueIsOverflow ? ReadOverflowComponent(recordSpan.ReadOnlySpan, ref offset) : default;
+
             // Note: Similar logic to this is in ObjectLogReader.ReadObjects.
             var keyWasSet = false;
-            var dataHeader = serializedLogRecord.DataHeader;
             try
             {
                 if (dataHeader.KeyIsOverflow)
                 {
-                    var keyBytes = dataHeader.KeyIsOverflow ? ReadOverflowComponent(recordSpan.ReadOnlySpan, ref offset) : default;
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info stays ObjectIdSize.
                     serializedLogRecord.KeyOverflow = new OverflowByteArray(keyBytes.Length, startOffset: 0, endOffset: 0, zeroInit: false);
                     keyBytes.CopyTo(serializedLogRecord.KeyOverflow.Span);
@@ -519,7 +521,6 @@ namespace Tsavorite.core
 
                 if (dataHeader.ValueIsOverflow)
                 {
-                    var valueBytes = dataHeader.ValueIsOverflow ? ReadOverflowComponent(recordSpan.ReadOnlySpan, ref offset) : default;
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info stays ObjectIdSize.
                     serializedLogRecord.ValueOverflow = new OverflowByteArray(valueBytes.Length, startOffset: 0, endOffset: 0, zeroInit: false);
                     valueBytes.CopyTo(serializedLogRecord.ValueOverflow.Span);
