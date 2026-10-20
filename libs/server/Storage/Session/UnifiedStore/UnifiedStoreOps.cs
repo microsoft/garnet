@@ -92,8 +92,14 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = new UnifiedOutput();
 
-            // TODO: The output is unused so optimize ReadMethods to not copy it.
-            return Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            // The value is not needed, so avoid copying it to the log tail (and any backing files) just before it is deleted
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            var status = unifiedContext.Read((FixedSpanByteKey)key, ref input, ref output, ref readOptions);
+
+            if (status.IsPending)
+                CompletePendingForUnifiedStoreSession(ref status, ref output, ref unifiedContext);
+
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         /// <summary>

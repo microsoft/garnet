@@ -99,18 +99,16 @@ namespace Garnet.server
             {
                 var key = parseState.GetArgSliceByRef(c);
 
-                // An expired key is logically absent. DELETE itself is a raw store delete with no expiry
-                // awareness (it is also used, deliberately without an expiry filter, by slot-migration cleanup
-                // and other internal callers), so pre-check with the already expiry-aware EXISTS and skip the
-                // delete entirely when the key doesn't exist or has expired. All keys here are already locked
-                // for the duration of this command, so this check-then-delete sequence is race-free.
-                if (storageApi.EXISTS(key) != GarnetStatus.OK)
-                    continue;
-
+                // An expired key is logically absent and must not be counted. DELETE itself is a raw store delete
+                // with no expiry awareness (it is also used, deliberately without an expiry filter, by slot-migration
+                // cleanup and other internal callers), so probe with the expiry-aware EXISTS to decide whether the
+                // key counts, and always delete so expired records are still physically reclaimed. All keys here are
+                // already locked for the duration of this command, so the probe and delete are race-free.
+                var exists = storageApi.EXISTS(key) == GarnetStatus.OK;
                 var status = storageApi.DELETE(key);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
-                if (status == GarnetStatus.OK)
+                if (exists && status == GarnetStatus.OK)
                     keysDeleted++;
             }
 
