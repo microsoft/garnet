@@ -91,9 +91,16 @@ namespace Garnet.server
             unifiedStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length, matchType);
 
             storeCursor = cursor;
-            long remainingCount = count;
+            var remainingCount = count;
 
-            unifiedBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            if (txnManager?.state == TxnState.Running)
+            {
+                _ = unifiedBasicContext.Session.UnsafeNullLockingScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            }
+            else
+            {
+                _ = unifiedBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            }
 
             lastScanCursor = storeCursor;
             return true;
@@ -160,7 +167,16 @@ namespace Garnet.server
             // Snapshot semantics: emit each unique live key exactly once based on its latest in-range
             // version at scan-start, even if a concurrent RCU moves the key's tail above the captured
             // TailAddress during the scan. Equivalent to the legacy tempKv-backed Iterate(...).
-            _ = unifiedBasicContext.Session.IterateLookupSnapshot(ref unifiedStoreDbKeysFuncs);
+
+            if (txnManager?.state == TxnState.Running)
+            {
+                // If we're in a transaction, we've already locked everything - so skip lock acquisition
+                _ = unifiedBasicContext.Session.UnsafeNullLockingIterateLookupSnapshot(ref unifiedStoreDbKeysFuncs);
+            }
+            else
+            {
+                _ = unifiedBasicContext.Session.IterateLookupSnapshot(ref unifiedStoreDbKeysFuncs);
+            }
 
             return Keys;
         }
@@ -174,7 +190,15 @@ namespace Garnet.server
             unifiedStoreDbSizeFuncs ??= new();
             unifiedStoreDbSizeFuncs.Initialize();
             long cursor = 0;
-            unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
+
+            if (txnManager?.state == TxnState.Running)
+            {
+                _ = unifiedBasicContext.Session.UnsafeNullLockingScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
+            }
+            else
+            {
+                _ = unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
+            }
 
             return unifiedStoreDbSizeFuncs.Count;
         }
@@ -185,12 +209,20 @@ namespace Garnet.server
         /// The key count uses the same non-expired predicate as <see cref="DbSize"/>, so the two are consistent.
         /// </summary>
         /// <returns>A tuple of (total live keys, live keys with an expiration set).</returns>
-        internal (long keyCount, long expireCount) KeyspaceStats()
+        internal (long keyCount, long expireCount) KeyspaceStats(bool inTransaction)
         {
             unifiedStoreKeyspaceStatsFuncs ??= new();
             unifiedStoreKeyspaceStatsFuncs.Initialize();
             long cursor = 0;
-            unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreKeyspaceStatsFuncs);
+
+            if (inTransaction)
+            {
+                _ = unifiedBasicContext.Session.UnsafeNullLockingScanCursor(ref cursor, long.MaxValue, unifiedStoreKeyspaceStatsFuncs);
+            }
+            else
+            {
+                _ = unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreKeyspaceStatsFuncs);
+            }
 
             return (unifiedStoreKeyspaceStatsFuncs.KeyCount, unifiedStoreKeyspaceStatsFuncs.ExpireCount);
         }
@@ -289,6 +321,8 @@ namespace Garnet.server
                 public virtual bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
+                    // It is ILLEGAL to touch the value of any values in here, as we are not necessarily holding locks for them
+
                     if (IsInternalRecord(in logRecord) || CheckExpiry(in logRecord))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;
@@ -394,6 +428,8 @@ namespace Garnet.server
                 public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
                 {
+                    // You CANNOT touch any values safely, as this may be invoked without locks if run in a transaction
+
                     cursorRecordResult = CursorRecordResult.Skip;
                     if (!IsInternalRecord(in logRecord) && !CheckExpiry(in logRecord))
                     {

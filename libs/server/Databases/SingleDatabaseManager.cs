@@ -414,10 +414,10 @@ namespace Garnet.server
             return StoreExpiredKeyDeletionScan(DefaultDatabase);
         }
 
-        public override (long keyCount, long expireCount) GetKeyspaceStats(int dbId)
+        public override (long KeyCount, long ExpireCount) GetKeyspaceStats(int dbId, bool inTransaction)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
-            return GetDatabaseKeyspaceStats(DefaultDatabase);
+            return GetDatabaseKeyspaceStats(DefaultDatabase, inTransaction);
         }
 
         public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];

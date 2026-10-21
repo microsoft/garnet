@@ -1165,8 +1165,8 @@ namespace Garnet.server
         public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
             => StoreExpiredKeyDeletionScan(GetDbById(dbId));
 
-        public override (long keyCount, long expireCount) GetKeyspaceStats(int dbId)
-            => GetDatabaseKeyspaceStats(GetDbById(dbId));
+        public override (long KeyCount, long ExpireCount) GetKeyspaceStats(int dbId, bool inTransaction)
+            => GetDatabaseKeyspaceStats(GetDbById(dbId), inTransaction);
 
         private GarnetDatabase GetDbById(int dbId)
         {

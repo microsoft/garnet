@@ -190,9 +190,21 @@ namespace Garnet.server
             if (cmd is RespCommand.VADD or RespCommand.XVCREATE)
             {
                 txnManager.LockVectorSetContextMetadata();
-            }
 
-            txnManager.LockKeys(commandInfo, isSubCommand);
+                // Still need to lock the outer index key
+                txnManager.LockKeys(commandInfo, isSubCommand);
+            }
+            else if (cmd == RespCommand.KEYS)
+            {
+                // KEYS is a terrible command that requires both consistency and traversing the whole keyspace
+                //
+                // So if we're in a transaction, lock _everything_
+                txnManager.LockEntireKeyspace();
+            }
+            else
+            {
+                txnManager.LockKeys(commandInfo, isSubCommand);
+            }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_QUEUED, ref dcurr, dend))
                 SendAndReset();
