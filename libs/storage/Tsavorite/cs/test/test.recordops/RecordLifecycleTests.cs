@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
@@ -245,6 +246,31 @@ namespace Tsavorite.test
             _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TrackedObjectValue { value = value }, 0);
         }
 
+        /// <summary>Keys for <see cref="FlushPastLastSector"/>, clear of the keys the tests operate on.</summary>
+        const int FillerKeyBase = 1_000_000;
+
+        /// <summary>
+        /// Make every record so far durable, with FlushedUntilAddress past their sector. A flush that ends mid-sector leaves the records
+        /// in that sector frozen for flush until a later flush moves past it, because that flush rewrites the sector from the live page.
+        /// </summary>
+        private void FlushPastLastSector()
+        {
+            var sectorEnd = RoundUp(store.Log.TailAddress, (long)log.SectorSize);
+            for (var key = FillerKeyBase; store.Log.TailAddress <= sectorEnd; ++key)
+                Upsert(key, key);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+        }
+
+        private void RmwAdd(int key, int value)
+        {
+            using var s = NewSession();
+            var input = new TestObjectInput { value = value };
+            var output = new TestObjectOutput();
+            _ = s.BasicContext.RMW(new TestObjectKey { key = key }, ref input, ref output, 0);
+        }
+
+        private bool SourceHoldsObject(long logicalAddress) => store.hlogBase._wrapper.CreateLogRecord(logicalAddress).DataHeader.ValueIsObject;
+
         /// <summary>Writes no bytes, so a record's value component is zero length on the object log.</summary>
         sealed class ZeroByteValueSerializer : BinaryObjectSerializer<IHeapObject>
         {
@@ -378,6 +404,80 @@ namespace Tsavorite.test
             }
         }
 
+        /// <summary>
+        /// A CopyUpdate releases its source's value only when no flush can still read or rewrite the source. Here the flush that made
+        /// the source durable ended mid-sector, so the next flush will rewrite that sector from the live page, replacing the image a
+        /// completed checkpoint would recover. The release must wait until FlushedUntilAddress leaves the sector, and then run once.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void CopyUpdateReleasesASourceInTheRewrittenSectorOnlyAfterItIsPassed()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            Upsert(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            Assert.That(store.hlog.IsFrozenForFlush(sourceAddress), Is.True, "the source must sit in the sector the next flush rewrites");
+
+            RmwAdd(1, 7);
+            Assert.That(SourceHoldsObject(sourceAddress), Is.True, "the source's value was released while its sector could still be rewritten");
+            Assert.That(TrackedObjectValue.Snapshot().total, Is.Zero, "the source's value was disposed while its sector could still be rewritten");
+
+            FlushPastLastSector();
+            Assert.That(() => TrackedObjectValue.Snapshot().total, Is.EqualTo(1).After(30_000, 10),
+                "the deferred release must dispose the source's value once FlushedUntilAddress leaves its sector");
+            Assert.That(TrackedObjectValue.Snapshot().max, Is.EqualTo(1), "no value object may be disposed more than once");
+            Assert.That(SourceHoldsObject(sourceAddress), Is.False, "the deferred release did not clear the source's value");
+        }
+
+        /// <summary>
+        /// A CopyUpdate outside a checkpoint whose source the read-only flush has captured but not yet stamped must leave the source
+        /// intact. Releasing it there converts the value to inline under the flush, which then stamps an object-log position into an
+        /// inline record.
+        /// </summary>
+        [Test, Category("TsavoriteKV")]
+        public void CopyUpdateDuringTheReadOnlyFlushWalkKeepsTheSource()
+        {
+            var sourceAddress = store.Log.TailAddress;
+            Upsert(1, 100);
+
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the flush walk cannot be held open.");
+
+            using var insideFlushWindow = new SemaphoreSlim(0);
+            using var releaseFlush = new SemaphoreSlim(0);
+            var hookFired = false;
+
+            ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+            {
+                if (phase != ObjectFlushPhase.AfterCapture || logicalAddress != sourceAddress || hookFired)
+                    return;
+                hookFired = true;
+                _ = insideFlushWindow.Release();
+                _ = releaseFlush.Wait(TimeSpan.FromSeconds(30));
+            };
+
+            try
+            {
+                var shift = Task.Run(() => store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true));
+                Assert.That(insideFlushWindow.Wait(TimeSpan.FromSeconds(30)), Is.True,
+                    "the flush never reached AfterCapture, so this test proves nothing (note the hook is DEBUG-only)");
+
+                RmwAdd(1, 7);
+                Assert.That(SourceHoldsObject(sourceAddress), Is.True, "the CopyUpdate released a source the flush is walking");
+
+                _ = releaseFlush.Release();
+                Assert.That(shift.Wait(TimeSpan.FromSeconds(30)), Is.True, "the read-only shift did not complete");
+            }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+            }
+
+            FlushPastLastSector();
+            Assert.That(() => TrackedObjectValue.Snapshot().total, Is.EqualTo(1).After(30_000, 10),
+                "the deferred release must dispose the source's value once the flush window closes");
+            Assert.That(TrackedObjectValue.Snapshot().max, Is.EqualTo(1), "no value object may be disposed more than once");
+        }
+
         #endregion Deferred dispose of a record frozen for flush
 
         #region CopyUpdate — value-object slot clearing
@@ -420,7 +520,7 @@ namespace Tsavorite.test
         public void CopyUpdateDisposesSourceValueExactlyOnce()
         {
             Upsert(1, 100);
-            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            FlushPastLastSector();
             tracker.Reset();
 
             using (var s = NewSession())

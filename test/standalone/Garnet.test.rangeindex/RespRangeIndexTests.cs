@@ -898,6 +898,14 @@ namespace Garnet.test
 
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
 
+            // That flush ended mid-sector, and the next flush rewrites the sector from the live page, so the stub stays frozen for
+            // flush - its disposal deferred - until FlushedUntilAddress leaves the sector. Move it past, so the DEL disposes at once.
+            const long MaxSectorSize = 4096;
+            var sectorEnd = (store.Log.TailAddress + MaxSectorSize - 1) & ~(MaxSectorSize - 1);
+            for (var i = 0; store.Log.TailAddress <= sectorEnd; i++)
+                _ = db.StringSet($"filler{i}", "x");
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+
             db.KeyDelete("myindex");
             ClassicAssert.AreEqual(0, rangeIndexManager.LiveIndexCount,
                 "BfTree should be freed immediately after DEL in read-only region");

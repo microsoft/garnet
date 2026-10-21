@@ -627,30 +627,21 @@ namespace Tsavorite.core
                             {
                                 ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
 
-                                // Decrement the value-object's heap contribution from the tracker and dispose
-                                // the object BEFORE clearing the pendingState. This is an internal accounting and
-                                // disposal step — the trigger is NOT involved because CopyUpdated is a
-                                // partial clear (value only, key stays) and expecting trigger implementers
-                                // to know that nuance is error-prone. The remaining key overflow (if any)
-                                // is decremented later by OnEvict when the sealed page is evicted.
-                                //
-                                // Decrement the tracker of the allocator that OWNS the source record
-                                // (recSrc.AllocatorBase): hlog for a main-log source, but the read cache for
-                                // a read-cache source — the value heap was charged there at promotion, so
-                                // crediting hlog would leak the read-cache tracker and under-count hlog.
-                                if (srcMemLogRecord.DataHeader.ValueIsObject)
+                                // A main-log source that is frozen for flush keeps its value until the window closes: the flush may still be
+                                // walking it, or the next flush will rewrite its sector from the live page and so replace the durable image a
+                                // completed checkpoint recovers. Mark it for the drain (or eviction) to release, as Delete does; the bit is safe
+                                // to set on a frozen record and is stripped from disk images.
+                                if (stackCtx.recSrc.HasMainLogSrc && hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress))
                                 {
-                                    var valueObject = srcMemLogRecord.ValueObject;
-                                    if (valueObject is not null)
-                                    {
-                                        var valueHeap = valueObject.HeapMemorySize;
-                                        if (valueHeap != 0)
-                                            stackCtx.recSrc.AllocatorBase.logSizeTracker?.IncrementSize(-valueHeap);
-                                        valueObject.Dispose();
-                                    }
+                                    srcMemLogRecord.InfoRef.DeferredDispose = true;
+                                    hlogBase.NoteDeferredDispose(stackCtx.recSrc.LogicalAddress);
                                 }
-
-                                srcMemLogRecord.ClearValueIfHeap();
+                                else
+                                {
+                                    // Release through the allocator that OWNS the source record (recSrc.AllocatorBase): hlog for a main-log source,
+                                    // but the read cache for a read-cache source, whose value heap was charged there at promotion.
+                                    stackCtx.recSrc.AllocatorBase.ReleaseCopyUpdatedSourceValue(ref srcMemLogRecord);
+                                }
                             }
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)

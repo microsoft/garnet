@@ -90,9 +90,10 @@ namespace Tsavorite.core
         }
 
         // If the record is in a checkpoint range, it must not be modified. If it is in the fuzzy region, it can only be modified
-        // if it is a new record. A record whose flush is committed but not yet durable is frozen for the same reason: an allocator
-        // that flushes from the live page is reading the record image, so releasing its heap or rewriting its layout would persist
-        // a torn or dangling record. Such a record is released at eviction instead.
+        // if it is a new record. A record an allocator is flushing from the live page, or one in the durable part of the sector the
+        // next flush rewrites from the live page, is frozen for the same reason: releasing its heap, rewriting its layout, or
+        // invalidating it would persist a torn record, or replace the image a completed checkpoint recovers. Such a record is
+        // released by the deferred-disposal drain or at eviction instead.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)
@@ -118,9 +119,10 @@ namespace Tsavorite.core
         /// This only ever *narrows* caching within a checkpoint; the caller still requires the destination to be in the new
         /// version before consulting it, so behaviour outside a checkpoint is unchanged.
         /// <para>
-        /// A record an in-flight flush is reading is reported as needed regardless. Answering false releases the source value
-        /// (<see cref="RMWInfo.ClearSourceValueObject"/>), and disposing a value whose record image is mid-flush would persist
-        /// a torn or dangling record - the same hazard <c>OnDisposeSupersededSource</c> defers on the delete path.
+        /// Being frozen for flush does not make the image needed. The release a false answer authorizes
+        /// (<see cref="RMWInfo.ClearSourceValueObject"/>) honors the freeze itself: InternalRMW marks a frozen source for the
+        /// deferred-disposal drain instead of clearing it. With no checkpoint image at stake, a flush still walking the source
+        /// writes the terminal image of a superseded value, exactly as it does outside a checkpoint.
         /// </para>
         /// <para>
         /// The fuzzy-region test mirrors <see cref="IsFrozen{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>:
@@ -137,12 +139,7 @@ namespace Tsavorite.core
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CheckpointNeedsSourceImage(long srcLogicalAddress, RecordInfo srcRecordInfo)
-        {
-            if (hlog.IsFrozenForFlush(srcLogicalAddress))
-                return true;
-
-            return srcLogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress || !srcRecordInfo.IsInNewVersion;
-        }
+            => srcLogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress || !srcRecordInfo.IsInNewVersion;
 
         /// <summary>
         /// Dispose the resources of an in-memory source record that is being deleted. If an ongoing checkpoint or an

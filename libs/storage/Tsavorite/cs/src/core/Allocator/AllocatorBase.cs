@@ -85,8 +85,8 @@ namespace Tsavorite.core
         /// that no range ever revisits. Tracking what has actually been drained carries that remainder forward into the next range.</remarks>
         private protected long deferredDisposeDrainedUntilAddress;
 
-        /// <summary>Record that the deleted source at <paramref name="logicalAddress"/> was marked for deferred disposal
-        /// because it was frozen for flush.</summary>
+        /// <summary>Record that the superseded source at <paramref name="logicalAddress"/> was marked for deferred release because it was
+        /// frozen for flush.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void NoteDeferredDispose(long logicalAddress) => _ = MonotonicUpdate(ref deferredDisposeMaxAddress, logicalAddress, out _);
 
@@ -406,6 +406,31 @@ namespace Tsavorite.core
         /// (e.g. copying to log tail or read cache, which do not call <see cref="ISessionFunctions{TInputOutput, TContext}"/>).
         /// May be the same object as <see cref="onEvictionObserver"/>.</summary>
         internal LogSizeTracker<TStoreFunctions, TAllocator> logSizeTracker;
+
+        /// <summary>
+        /// Release the value of a source record that a CopyUpdate has superseded: credit its object's heap to the tracker, dispose the
+        /// object, and clear the value's heap field. The key, including an overflow key, stays for chain traversal and is accounted
+        /// at eviction.
+        /// </summary>
+        /// <remarks>Run at the CopyUpdate site, or later by the deferred-disposal drain or eviction when the source was frozen for flush.
+        /// The trigger is not involved: a CopyUpdate is a partial clear (value only), which trigger implementers should not have to
+        /// distinguish from a Delete.</remarks>
+        internal void ReleaseCopyUpdatedSourceValue(ref LogRecord logRecord)
+        {
+            if (logRecord.DataHeader.ValueIsObject)
+            {
+                var valueObject = logRecord.ValueObject;
+                if (valueObject is not null)
+                {
+                    var valueHeap = valueObject.HeapMemorySize;
+                    if (valueHeap != 0)
+                        logSizeTracker?.IncrementSize(-valueHeap);
+                    valueObject.Dispose();
+                }
+            }
+
+            logRecord.ClearValueIfHeap();
+        }
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent flushEvent;
@@ -2311,17 +2336,17 @@ namespace Tsavorite.core
                     if ((oldFlushedUntilAddress < notifyFlushedUntilAddress) && (currentFlushedUntilAddress >= notifyFlushedUntilAddress))
                         _ = notifyFlushedUntilAddressTcs?.TrySetResult(true);
 
-                    // A deleted source whose disposal was declined while frozen becomes disposable once the flush that was reading
-                    // it completes. This delta is that range, and it is contiguous by construction because FlushedUntilAddress advances
-                    // only over completed writes -- unlike anything page-scoped, which cannot be sound when a page is flushed in
-                    // fragments that are neither tracked nor coalesced, so a callback cannot tell whether it holds the last one.
-                    // Truncating to the sector boundary removes the need to re-test the freeze: a later partial-sector rewrite reads
-                    // [RoundDown(F, sectorSize), F) for some future F >= this one, and RoundDown is monotonic, so every address below
-                    // the boundary here can never fall in that window. The truncated tail sector is carried into the next range by
-                    // deferredDisposeDrainedUntilAddress, so a record in it waits only for further log progress -- or, failing that,
-                    // for eviction, which is the old behavior and not a regression. Claiming the range with MonotonicUpdate is what
-                    // makes concurrent flush completions take disjoint ranges. The caller performs the drain, so that it does not sit
-                    // in front of the next chained flush.
+                    // A superseded source whose release was declined while frozen - a deleted record's disposal, or a CopyUpdate
+                    // source's value release - becomes releasable once no flush can read or rewrite it. This delta is that range, and it
+                    // is contiguous by construction because FlushedUntilAddress advances only over completed writes -- unlike anything
+                    // page-scoped, which cannot be sound when a page is flushed in fragments that are neither tracked nor coalesced, so
+                    // a callback cannot tell whether it holds the last one. Truncating to the sector boundary matches the freeze: a later
+                    // partial-sector rewrite reads [RoundDown(F, sectorSize), F) for some future F >= this one, and RoundDown is
+                    // monotonic, so every address below the boundary here can never fall in that window. The truncated tail sector is
+                    // carried into the next range by deferredDisposeDrainedUntilAddress, so a record in it waits only for further log
+                    // progress -- or, failing that, for eviction. Claiming the range with MonotonicUpdate is what makes concurrent flush
+                    // completions take disjoint ranges. The caller performs the drain, so that it does not sit in front of the next
+                    // chained flush.
                     var maxDeferredAddress = Interlocked.Read(ref deferredDisposeMaxAddress);
                     if (maxDeferredAddress > 0)
                     {

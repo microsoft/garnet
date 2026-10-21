@@ -49,16 +49,16 @@ namespace Tsavorite.core
             => Volatile.Read(ref LastIssuedFlushedUntilAddress);
 
         /// <summary>
-        /// Whether <paramref name="logicalAddress"/> is in a read-only flush that is committed but not yet durable, and whose
-        /// record image therefore must not be mutated.
+        /// Whether <paramref name="logicalAddress"/> is in a read-only flush that is committed but not yet durable, or in the durable
+        /// part of the sector the next flush rewrites, so that its record image must not be mutated.
         /// </summary>
         /// <remarks>
         /// This allocator resolves objectIds against the live <see cref="ObjectIdMap"/>, stamps ObjectLogPosition and size hints
         /// into the live record, and writes the live page to the device with the epoch suspended. Disposal in that window
         /// corrupts the image two ways: releasing the heap can persist a Valid record whose ObjectLogPosition refers to a freed -
         /// or recycled, hence unrelated - object, and <see cref="LogRecord.ClearOptionals"/> zeroes the ObjectLogPosition field
-        /// this flush just stamped. Such a record keeps its heap and metadata until the flush has captured it, and is released at
-        /// eviction instead.
+        /// this flush just stamped. Such a record keeps its heap and metadata until the window closes; its release is marked
+        /// with <see cref="RecordInfo.DeferredDispose"/> and run by the drain on flush completion, or by eviction.
         /// <para>
         /// The upper bound is <see cref="AllocatorBase{TStoreFunctions, TAllocator}.SafeReadOnlyAddress"/>, not
         /// <see cref="LastIssuedFlushedUntilAddress"/>: <see cref="OnPagesMarkedReadOnly"/> advances SafeReadOnlyAddress first and
@@ -68,27 +68,18 @@ namespace Tsavorite.core
         /// </para>
         /// <para>
         /// A record below <see cref="AllocatorBase{TStoreFunctions, TAllocator}.FlushedUntilAddress"/> is durable, but not yet
-        /// free: a partial flush must begin its device write on a sector boundary, so it rewrites from the live page every record
-        /// between that boundary and its own start address. Those records are below the flush's record walk and are never
-        /// re-serialized, but disposing one while that write is in flight can still persist a torn image of it. That applies only
-        /// while such a flush is actually outstanding, which is exactly <see cref="LastIssuedFlushedUntilAddress"/> leading
-        /// FlushedUntilAddress - the issuing worker publishes LastIssued before issuing the write. Once the flush completes the
-        /// two converge and the sector is released.
+        /// free while it shares a sector with FlushedUntilAddress. The next flush starts there and must begin its device write on
+        /// a sector boundary, so it rewrites from the live page every record between that boundary and its own start address.
+        /// Those records are below its record walk and are never re-serialized, but their durable image may belong to a completed
+        /// checkpoint: a FoldOver recovers them from the main log, as Snapshot does below its recovery boundary. A change made to
+        /// one at any time before that rewrite - while it is in flight or long before it is issued - would replace that image, so
+        /// eliding a record there persists its Invalid bit and releasing its heap persists an inline value. The sector is released
+        /// only when FlushedUntilAddress moves past it, which is also where the deferred-disposal drain stops.
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool IsFrozenForFlush(long logicalAddress)
-        {
-            if (logicalAddress >= SafeReadOnlyAddress)
-                return false;
-
-            var flushedUntilAddress = FlushedUntilAddress;
-            if (logicalAddress >= flushedUntilAddress)
-                return true;
-
-            return GetLastIssuedReadOnlyFlushAddress() > flushedUntilAddress
-                && logicalAddress >= RoundDown(flushedUntilAddress, sectorSize);
-        }
+            => logicalAddress < SafeReadOnlyAddress && logicalAddress >= RoundDown(FlushedUntilAddress, sectorSize);
 
         /// <summary>
         /// Dynamically extended Flush end address, used by <see cref="OnPagesMarkedReadOnlyWorker"/>
@@ -506,8 +497,12 @@ namespace Tsavorite.core
                             // Valid matters as much as Sealed. SealAndInvalidate yields Sealed and not Valid, which is an elided or
                             // free-listed record whose disposal already ran, and a marked record can be elided once the freeze lifts
                             // but before this drain fires. Requiring Valid is what keeps it from being disposed a second time.
+                            // A Delete always seals what it marks; a CopyUpdate source that was frozen for flush is left Valid and
+                            // unsealed, and is not the head of its chain, so it cannot be elided before this runs.
                             if (recordInfo.IsValidAndSealed)
                                 OnDispose(ref logRecord, DisposeReason.Deleted);
+                            else if (recordInfo.Valid)
+                                ReleaseCopyUpdatedSourceValue(ref logRecord);
                         }
 
                         address += allocatedSize;
@@ -572,6 +567,8 @@ namespace Tsavorite.core
                     logRecord.InfoRef.DeferredDispose = false;
                     if (logRecord.Info.IsValidAndSealed)
                         OnDispose(ref logRecord, DisposeReason.Deleted);
+                    else
+                        ReleaseCopyUpdatedSourceValue(ref logRecord);   // A frozen CopyUpdate source; Valid, as Invalid was skipped above
                 }
 
                 // Decrement the record's heap contribution in a single call.
@@ -1107,7 +1104,8 @@ namespace Tsavorite.core
             // before interpreting their payload.
             //
             // A front-partial ReadOnly flush starts after bytes that this flush sequence has already made durable. Rounding its device write
-            // down to a sector boundary is therefore safe: the live prefix already has main-object-log metadata and is simply rewritten.
+            // down to a sector boundary is therefore safe: the live prefix already has main-object-log metadata, and IsFrozenForFlush has
+            // kept it unchanged since it was written, so rewriting it does not alter the image a completed checkpoint recovers.
             // The write likewise rounds UP at the logical end, carrying live bytes above the endpoint to disk verbatim; see the write span
             // comment below for why those bytes are never read back.
             //
@@ -1231,10 +1229,9 @@ namespace Tsavorite.core
                                     else
                                     {
                                         // A still-Valid record must keep its heap. The paths that free an overflow key or value
-                                        // (OnDispose with Elided or RevivificationFreeList) are preceded by SealAndInvalidate, and the Deleted
-                                        // path -- whether in the mutable region or applied to a CopyUpdate-superseded source -- is declined for
-                                        // this flush range by IsFrozenForFlush, which defers the release to eviction. So a lost capture means
-                                        // the live record is Invalid (elided).
+                                        // (OnDispose with Elided or RevivificationFreeList) are preceded by SealAndInvalidate, and both the Deleted
+                                        // path and a CopyUpdate's release of its source value are declined for this flush range by IsFrozenForFlush,
+                                        // which defers the release to the drain or eviction. So a lost capture means the live record is Invalid (elided).
                                         Debug.Assert(!logRecord.Info.Valid,
                                             "A Valid record lost its captured heap during object-log flush; expected the live record to be Invalid (elided).");
                                     }

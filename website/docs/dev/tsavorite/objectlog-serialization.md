@@ -574,7 +574,11 @@ finishes.
 
 A front-partial ReadOnly flush starts after a prefix already written by the same monotonic flush sequence. The physical
 write rounds down to the sector boundary and rewrites that prefix from the live page; those records already carry
-main-object-log positions, so no leading-sector read or page image is needed. Complete sectors are written directly.
+main-object-log positions, so no leading-sector read or page image is needed. That is sound only because the prefix has
+not changed since it was written: a completed FoldOver recovers those records from the main log, so a change would alter
+its image. `IsFrozenForFlush` therefore covers `[RoundDown(FlushedUntilAddress, sector), SafeReadOnlyAddress)` whether
+or not a flush is in flight, and elision, a Delete's disposal, and a CopyUpdate's release of its source value there are
+deferred until `FlushedUntilAddress` leaves the sector. Complete sectors are written directly.
 If the logical endpoint is inside a sector, one pooled sector buffer copies live bytes through that endpoint and zeros
 the remainder. The zero suffix prevents metadata above the main-log durable boundary from looking valid if recovery
 boundaries ever become inconsistent; a later ReadOnly flush overwrites it.
