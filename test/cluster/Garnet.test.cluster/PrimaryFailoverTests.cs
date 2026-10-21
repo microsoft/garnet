@@ -13,7 +13,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.cluster;
+#if DEBUG
 using Garnet.cluster.Server.Replication;
+#endif
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
