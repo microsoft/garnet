@@ -73,11 +73,50 @@ namespace Garnet.test.cluster
 
             Assert.That(primary.failoverManager.IsWritePaused, Is.False);
             Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA));
-            Assert.That(primary.replicationManager.ReplicationOffset.EqualsAll(tail), Is.False,
-                "The demoted primary's replica-tracking offset must differ from its final log tail.");
+            Assert.That(primary.replicationManager.ReplicationOffset.EqualsAll(tail), Is.True,
+                "The reattached old primary must synchronize to the handoff offset.");
             Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY),
                 "The synchronized replica must be promoted using the final log tail, not the stale replica-tracking offset.");
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1, 1);
+        }
+
+        [TestCase(1)]
+        [TestCase(2)]
+        [CancelAfter(120_000)]
+        public async Task PrimaryFailoverExplicitlyAttachesOldPrimary(int sublogCount)
+        {
+            SetupReplica(sublogCount);
+            for (var i = 0; i < 2; i++)
+                Assert.That(context.clusterTestUtils.GetServer(i).Execute(
+                    "CONFIG", "SET", "cluster-replication-reestablishment-timeout", "0").ToString(), Is.EqualTo("OK"));
+
+            var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+            Assert.That(context.clusterTestUtils.GetServer(0).Execute(
+                "FAILOVER", "TO", endpoint.Address.ToString(), endpoint.Port, "TIMEOUT", 30_000).ToString(), Is.EqualTo("OK"));
+            Assert.That(() => Provider(1).clusterManager.CurrentConfig.LocalNodeRole,
+                Is.EqualTo(ClusterNodeRole.PRIMARY).After(10_000, 10));
+            Assert.That(() => Provider(1).storeWrapper.TaskManager.IsRegistered(TaskType.FailoverTask),
+                Is.False.After(10_000, 10));
+            Assert.That(() => Provider(0).storeWrapper.TaskManager.IsRegistered(TaskType.FailoverTask),
+                Is.False.After(10_000, 10));
+            Assert.That(Provider(0).clusterManager.CurrentConfig.LocalNodePrimaryId,
+                Is.EqualTo(context.clusterTestUtils.GetNodeIdFromNode(1, context.logger)));
+
+            using var connection = await ConnectionMultiplexer.ConnectAsync(new ConfigurationOptions
+            {
+                EndPoints = { endpoint }
+            });
+            Assert.That(await connection.GetDatabase().StringSetAsync("{handoff}after-promotion", "replicated"), Is.True);
+            using var syncDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            context.clusterTestUtils.WaitForReplicaAofSync(1, 0, context.logger, syncDeadline.Token);
+            using var replicaConnection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            await replicaConnection.ConnectAsync((IPEndPoint)context.clusterTestUtils.GetEndPoint(0), deadline.Token);
+            Assert.That(await ExecuteCommandAsync(replicaConnection, "*1\r\n$8\r\nREADONLY\r\n", deadline.Token), Is.EqualTo("+OK"));
+            await replicaConnection.GetStream().WriteAsync(
+                "*2\r\n$3\r\nGET\r\n$24\r\n{handoff}after-promotion\r\n"u8.ToArray(), deadline.Token);
+            Assert.That(await ReadFixedResponseAsync(replicaConnection, "$10\r\nreplicated\r\n".Length, deadline.Token),
+                Is.EqualTo("$10\r\nreplicated\r\n"));
         }
 
 #if DEBUG

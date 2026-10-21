@@ -57,6 +57,12 @@ namespace Garnet.cluster
                     await gclient.ConnectAsync(cts.Token).WaitAsync(cts.Token).ConfigureAwait(false);
 
                 cts.Token.ThrowIfCancellationRequested();
+                // Publish demotion before takeover so the new primary explicitly attaches this node.
+                var config = clusterProvider.clusterManager.CurrentConfig;
+                var replicaId = config.LocalNodePrimaryId;
+                GossipVersionNegotiation negotiation = new(gclient, clusterProvider.clusterManager);
+                _ = await negotiation.ExchangeAsync(config, withMeet: false, replicaId, cts.Token)
+                    .WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
                 return await gclient.Failover(FailoverOption.TAKEOVER, cts.Token).WaitAsync(clusterTimeout, cts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cts.IsCancellationRequested)

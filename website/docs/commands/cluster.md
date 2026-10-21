@@ -221,6 +221,8 @@ Background collection and other primary tasks cannot restart during this interva
 Cancellation releases the write pause without waiting for a stalled maintenance cycle, but the failover worker
 retains ownership until that cycle finishes. Cleanup restarts enabled maintenance only if the node remains primary.
 Replica-initiated failover also drains maintenance on the old primary before returning its final AOF offset.
+Primary-initiated failover publishes its demotion before requesting takeover. The promoted node explicitly
+reattaches the old primary with `REPLICAOF`, without relying on automatic replication reestablishment.
 
 Paused writes briefly spin, then synchronously block on a shared task so the .NET thread pool can compensate
 by adding workers. Each paused connection still occupies a worker. Configure `--maxthreads`
