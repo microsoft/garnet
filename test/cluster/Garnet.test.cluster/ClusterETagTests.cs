@@ -190,6 +190,52 @@ namespace Garnet.test.cluster
 
         [Test]
         [Category("CLUSTER")]
+        public void SynchronizedFailoverPreservesEtagAndConditionalUpdates()
+        {
+            CreateCluster(1, 1);
+            const string Key = "etag-failover";
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "first", "EX", 300), 1);
+            AssertPair(Execute(0, "SETIFMATCH", Key, "second", 1), 2, null);
+            AssertPair(Execute(0, "SETIFMATCH", Key, "before-failover", 2), 3, null);
+            long expiration = (long)Execute(0, "PEXPIRETIME", Key);
+            Assert.That(expiration, Is.GreaterThan(0));
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger, context.cts.Token);
+            AssertPair(Execute(1, "GETWITHETAG", Key), 3, "before-failover");
+
+            Assert.That(context.clusterTestUtils.ClusterFailover(1, logger: context.logger), Is.EqualTo("OK"));
+            context.clusterTestUtils.WaitForNoFailover(1, context.logger);
+            context.clusterTestUtils.WaitForFailoverCompleted(1, context.logger);
+            context.clusterTestUtils.WaitForReplicaRecovery(0, context.logger);
+            context.clusterTestUtils.WaitForPrimaryRole(1, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(1, 0, context.logger, context.cts.Token);
+            string newPrimaryId = context.clusterTestUtils.GetNodeIdFromNode(1, context.logger);
+            context.clusterTestUtils.WaitForSlotOwnership(0, newPrimaryId, [0, 16383], context.logger);
+
+            AssertPair(Execute(1, "GETWITHETAG", Key), 3, "before-failover");
+            Assert.That((long)Execute(1, "PEXPIRETIME", Key), Is.EqualTo(expiration));
+            AssertPair(Execute(1, "SETIFMATCH", Key, "stale", 2), 3, "before-failover");
+            AssertPair(Execute(1, "SETIFMATCH", Key, "stale", 2, "NOGET"), 3, null);
+            AssertPair(Execute(1, "GETWITHETAG", Key), 3, "before-failover");
+            AssertPair(Execute(1, "SETIFMATCH", Key, "after-failover", 3), 4, null);
+            AssertPair(Execute(1, "GETWITHETAG", Key), 4, "after-failover");
+            Assert.That((long)Execute(1, "PEXPIRETIME", Key), Is.EqualTo(expiration));
+            AssertInteger(Execute(1, "SETWITHETAG", Key, "unconditional"), 5);
+            AssertPair(Execute(1, "SETIFMATCH", Key, "final", 5, "NOGET"), 6, null);
+            AssertPair(Execute(1, "GETWITHETAG", Key), 6, "final");
+            AssertInteger(Execute(1, "PTTL", Key), -1);
+
+            int slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(Key));
+            string redirect = $"MOVED {slot} {context.clusterTestUtils.GetEndPoint(1)}";
+            AssertRedirect(0, "SETWITHETAG", [Key, "rejected"], redirect);
+            AssertRedirect(0, "SETIFMATCH", [Key, "rejected", 6], redirect);
+            context.clusterTestUtils.WaitForReplicaAofSync(1, 0, context.logger, context.cts.Token);
+            Assert.That(Execute(0, "READONLY").ToString(), Is.EqualTo("OK"));
+            AssertPair(Execute(0, "GETWITHETAG", Key), 6, "final");
+            AssertInteger(Execute(0, "PTTL", Key), -1);
+        }
+
+        [Test]
+        [Category("CLUSTER")]
         public async Task ConcurrentConditionalUpdatesHaveExactlyOneWinner()
         {
             CreateCluster();
