@@ -100,6 +100,8 @@ namespace Tsavorite.test
             internal int newValueLength;
             internal int readValueLength;
             internal long readExpiration;
+            internal byte seedRecordType;
+            internal byte readRecordType;
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
@@ -111,7 +113,7 @@ namespace Tsavorite.test
                 => new() { KeySize = key.KeyBytes.Length, ValueSize = newValueLength, HasExpiration = true, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 
             public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref int input)
-                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, RecordType = seedRecordType, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
 
             public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
                 => dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
@@ -130,6 +132,7 @@ namespace Tsavorite.test
             {
                 readValueLength = srcLogRecord.ValueSpan.Length;
                 readExpiration = srcLogRecord.Expiration;
+                readRecordType = srcLogRecord.RecordType;
                 output = srcLogRecord.ValueSpan[0];
                 return true;
             }
@@ -211,6 +214,28 @@ namespace Tsavorite.test
             using var s = store.NewSession<TestSpanByteKey, int, int, Empty, SimpleIntSimpleFunctions>(new SimpleIntSimpleFunctions());
             for (int i = 0; i < n; i++) { var k = i; _ = s.BasicContext.Delete(Key(ref k)); }
             ClassicAssert.AreEqual(n, tracker.DeletedCount, $"Immutable delete multiple: expected exactly {n}");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ExpireAndResumeReinitDoesNotKeepStaleRecordTypeTest([Values(1, 2)] byte seedRecordType)
+        {
+            // The seed record is large enough that the new value would fit it in place; a differing RecordType must still force a new record
+            var fn = new ExpiredReinitWithExpirationFunctions { newValueLength = sizeof(int), seedRecordType = seedRecordType };
+            using var s = store.NewSession<TestSpanByteKey, int, int, Empty, ExpiredReinitWithExpirationFunctions>(fn);
+            var key = 1;
+            _ = s.BasicContext.Upsert(Key(ref key), new byte[64]);
+
+            var input = 50;
+            var output = 0;
+            _ = s.BasicContext.RMW(Key(ref key), ref input, ref output);
+
+            output = 0;
+            var status = s.BasicContext.Read(Key(ref key), ref input, ref output);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(50, output);
+            ClassicAssert.AreEqual(0, fn.readRecordType, "Reinitialized record must not retain the expired record's RecordType");
+            ClassicAssert.AreEqual(ExpiredReinitWithExpirationFunctions.ExpirationTicks, fn.readExpiration);
         }
 
         [Test]
