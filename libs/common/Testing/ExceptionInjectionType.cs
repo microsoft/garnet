@@ -14,6 +14,11 @@ namespace Garnet.common
         None = 0,
 
         /// <summary>
+        /// Fail replica attachment after primary maintenance has drained.
+        /// </summary>
+        Replication_Fail_After_Primary_Task_Drain,
+
+        /// <summary>
         /// Pause an in-flight background collection cycle before its storage mutations.
         /// </summary>
         Failover_Pause_Background_Object_Collection,

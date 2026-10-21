@@ -220,6 +220,7 @@ Failover cancels and drains primary maintenance before capturing the AOF synchro
 Background collection and other primary tasks cannot restart during this interval, including through `CONFIG SET`.
 Cancellation releases the write pause without waiting for a stalled maintenance cycle, but the failover worker
 retains ownership until that cycle finishes. Cleanup restarts enabled maintenance only if the node remains primary.
+Role-independent tasks, including automatic index growth, remain active during role-specific task suspension.
 Replica-initiated failover also drains maintenance on the old primary before returning its final AOF offset.
 Primary-initiated failover publishes its demotion before requesting takeover. The promoted node explicitly
 reattaches the old primary with `REPLICAOF`, without relying on automatic replication reestablishment.
@@ -448,6 +449,8 @@ Upon receipt of the command, the instance will immediately try to attach to the 
 After receiving it, it will initiate aof sync from primary and start responding to read requests.
 The request to replicate is executed async, so the response to the client will be immediate.
 This does not mean replica has attached succesfully, only that replicate request was initiated succesfully.
+If attachment fails and the node resets to primary, configured primary maintenance is restarted after recovery
+cleanup. Automatic index growth remains active across attachment and rollback.
 
 #### RESP Reply
 Returns +OK on success, otherwise --ERR message if any.

@@ -48,13 +48,13 @@ namespace Garnet.cluster
                     AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
 
                     AsyncUtils.BlockingWait(clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync());
-                    clusterProvider.storeWrapper.StartPrimaryTasks();
                 }
                 finally
                 {
                     if (acquiredLock)
                         clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
                 }
+                clusterProvider.storeWrapper.StartPrimaryTasks();
             }
             else
             {

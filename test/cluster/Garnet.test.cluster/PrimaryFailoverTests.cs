@@ -13,6 +13,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.cluster;
+using Garnet.cluster.Server.Replication;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;
@@ -41,9 +42,11 @@ namespace Garnet.test.cluster
         ClusterProvider Provider(int index)
             => (ClusterProvider)context.nodes[index].Provider.StoreWrapper.clusterProvider;
 
-        void SetupReplica(int sublogCount, bool disableObjects = true)
+        void SetupReplica(int sublogCount, bool disableObjects = true, bool enableIndexGrowth = false)
         {
             context.CreateInstances(2, disableObjects: disableObjects, enableAOF: true, sublogCount: sublogCount);
+            if (enableIndexGrowth)
+                EnableIndexGrowth(0);
             context.CreateConnection();
             context.SimplePrimaryReplicaSetup();
             context.kvPairs = [];
@@ -55,6 +58,114 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForSlotOwnership(1, primaryId, [0, 16383], context.logger);
             context.clusterTestUtils.WaitForConfigPropagation(1, [0], context.logger);
         }
+
+        void EnableIndexGrowth(int index)
+        {
+            context.ShutdownNode(index);
+            context.nodeOptions[index].IndexMaxMemorySize = "1g";
+            context.nodeOptions[index].IndexResizeFrequencySecs = 3600;
+            context.RestartNode(index);
+            Assert.That(Provider(index).storeWrapper.TaskManager.IsRunning(TaskType.IndexAutoGrowTask), Is.True);
+        }
+
+        [Test, CancelAfter(120_000)]
+        public async Task CancelingFailoverPreservesIndexGrowth([Values] bool timeout)
+        {
+            SetupReplica(1, enableIndexGrowth: true);
+            var primary = Provider(0);
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var guard = await ConnectIdleSessionAsync(connection, deadline.Token);
+            guard.AcquireCurrentEpoch();
+            try
+            {
+                var epoch = guard.LocalCurrentEpoch;
+                var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+                Assert.That(context.clusterTestUtils.GetServer(0).Execute(
+                    "FAILOVER", "TO", endpoint.Address.ToString(), endpoint.Port, "TIMEOUT", timeout ? 1000 : 10_000).ToString(),
+                    Is.EqualTo("OK"));
+                Assert.That(() => primary.garnetEpoch.GetCurrentEpoch(), Is.GreaterThan(epoch).After(5_000, 10));
+                Assert.That(primary.storeWrapper.TaskManager.IsRunning(TaskType.IndexAutoGrowTask), Is.True,
+                    "Draining primary tasks must not stop role-independent index growth.");
+                if (!timeout)
+                    Assert.That(context.clusterTestUtils.GetServer(0).Execute("FAILOVER", "ABORT").ToString(), Is.EqualTo("OK"));
+                Assert.That(() => primary.storeWrapper.TaskManager.IsRegistered(TaskType.FailoverTask), Is.False.After(5_000, 10));
+                Assert.That(primary.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+                Assert.That(primary.storeWrapper.TaskManager.IsRunning(TaskType.IndexAutoGrowTask), Is.True);
+            }
+            finally
+            {
+                guard.ReleaseCurrentEpoch();
+                primary.failoverManager.TryAbortReplicaFailover();
+                await primary.storeWrapper.TaskManager.CancelAsync(TaskType.FailoverTask).WaitAsync(deadline.Token);
+            }
+        }
+
+        [Test, CancelAfter(120_000)]
+        public void ReplicationAndPromotionPreserveIndexGrowth([Values] bool diskless)
+        {
+            context.CreateInstances(2, enableAOF: true, CommitFrequencyMs: 100, enableDisklessSync: diskless);
+            EnableIndexGrowth(1);
+            context.CreateConnection();
+            context.SimplePrimaryReplicaSetup();
+            var candidate = Provider(1);
+            var primaryId = context.clusterTestUtils.GetNodeIdFromNode(0, context.logger);
+            Assert.That(context.clusterTestUtils.ClusterReplicate(1, primaryId, async: false, logger: context.logger),
+                Is.EqualTo("OK"));
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+            Assert.That(() => candidate.replicationManager.IsRecovering, Is.False.After(5_000, 10));
+            Assert.That(candidate.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.REPLICA));
+            Assert.That(candidate.storeWrapper.TaskManager.IsRunning(TaskType.CommitTask), Is.False);
+            Assert.That(candidate.storeWrapper.TaskManager.IsRunning(TaskType.IndexAutoGrowTask), Is.True);
+
+            Assert.That(context.clusterTestUtils.GetServer(1).Execute("REPLICAOF", "NO", "ONE").ToString(), Is.EqualTo("OK"));
+            Assert.That(candidate.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+            Assert.That(() => candidate.storeWrapper.TaskManager.IsRunning(TaskType.CommitTask), Is.True.After(5_000, 10));
+            Assert.That(candidate.storeWrapper.TaskManager.IsRunning(TaskType.IndexAutoGrowTask), Is.True);
+        }
+
+#if DEBUG
+        [Test, CancelAfter(120_000)]
+        public async Task FailedReplicationRestoresPrimaryMaintenance(
+            [Values] bool diskless, [Values] bool background, [Values] bool resetOnFailure)
+        {
+            context.CreateInstances(2, enableAOF: true, CommitFrequencyMs: 100, enableDisklessSync: diskless);
+            EnableIndexGrowth(1);
+            context.CreateConnection();
+            context.SimplePrimaryReplicaSetup();
+            var candidate = Provider(1);
+            Assert.That(candidate.storeWrapper.TaskManager.IsRunning(TaskType.CommitTask), Is.True);
+            var primaryId = context.clusterTestUtils.GetNodeIdFromNode(0, context.logger);
+            var initialEpoch = candidate.clusterManager.CurrentConfig.LocalNodeConfigEpoch;
+            const ExceptionInjectionType injection = ExceptionInjectionType.Replication_Fail_After_Primary_Task_Drain;
+            ExceptionInjectionHelper.EnableException(injection);
+            try
+            {
+                ReplicateSyncOptions options = new(primaryId, Background: background, Force: false,
+                    TryAddReplica: true, AllowReplicaResetOnFailure: resetOnFailure, UpgradeLock: false);
+                var (success, error) = await (diskless
+                    ? candidate.replicationManager.TryReplicateDisklessSyncAsync(null, options)
+                    : candidate.replicationManager.TryReplicateDiskbasedSyncAsync(null, options));
+                Assert.That(success, Is.EqualTo(background));
+                if (!background)
+                    Assert.That(Encoding.ASCII.GetString(error.Span), Does.Contain(injection.ToString()));
+                Assert.That(() => candidate.clusterManager.CurrentConfig.LocalNodeConfigEpoch,
+                    Is.GreaterThan(initialEpoch + (resetOnFailure ? 1 : 0)).After(5_000, 10));
+                Assert.That(() => candidate.replicationManager.IsRecovering, Is.False.After(5_000, 10));
+                Assert.That(candidate.clusterManager.CurrentConfig.LocalNodeRole,
+                    Is.EqualTo(resetOnFailure ? ClusterNodeRole.PRIMARY : ClusterNodeRole.REPLICA));
+                Assert.That(() => candidate.storeWrapper.TaskManager.IsRunning(TaskType.CommitTask),
+                    Is.EqualTo(resetOnFailure).After(5_000, 10));
+                Assert.That(candidate.storeWrapper.TaskManager.IsRunning(TaskType.IndexAutoGrowTask), Is.True);
+                if (resetOnFailure)
+                    Assert.That(candidate.storeWrapper.TaskManager.IsRegistered(TaskType.VectorReplicationReplayTask), Is.False);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(injection);
+            }
+        }
+#endif
 
         [TestCase(1)]
         [TestCase(2)]

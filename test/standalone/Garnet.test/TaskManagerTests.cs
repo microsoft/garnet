@@ -62,6 +62,7 @@ namespace Garnet.test
         [TestCase(TaskPlacementCategory.Primary)]
         [TestCase(TaskPlacementCategory.All)]
         [TestCase(TaskPlacementCategory.Replica)]
+        [TestCase(TaskPlacementCategory.ControlPlane)]
         public async Task TestTaskPlacementCategoryCancellation(TaskPlacementCategory cancelTaskPlacementCategory)
         {
             using var taskManager = new TaskManager();
@@ -73,29 +74,25 @@ namespace Garnet.test
 
             taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, primaryCategoryTaskFactory);
             taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, allCategoryTaskFactory);
+            taskManager.RegisterAndRun(TaskType.VectorReplicationReplayTask, token => Task.Delay(Timeout.Infinite, token));
+            taskManager.RegisterAndRun(TaskType.FailoverTask, token => Task.Delay(Timeout.Infinite, token));
 
 
             ClassicAssert.IsTrue(primaryTaskStarted.Wait(TimeSpan.FromSeconds(5)), "Primary task should start");
             ClassicAssert.IsTrue(allTaskStarted.Wait(TimeSpan.FromSeconds(5)), "All task should start");
 
-            if (cancelTaskPlacementCategory == TaskPlacementCategory.Replica)
-            {
-                // Cancel tasks based on replica placement category
-                await taskManager.CancelAsync(cancelTaskPlacementCategory).ConfigureAwait(false);
+            await taskManager.CancelAsync(cancelTaskPlacementCategory).ConfigureAwait(false);
+            ClassicAssert.AreEqual(cancelTaskPlacementCategory is TaskPlacementCategory.Replica or TaskPlacementCategory.ControlPlane,
+                taskManager.IsRunning(TaskType.AofSizeLimitTask));
+            ClassicAssert.AreEqual(cancelTaskPlacementCategory != TaskPlacementCategory.All,
+                taskManager.IsRunning(TaskType.IndexAutoGrowTask));
+            ClassicAssert.AreEqual(cancelTaskPlacementCategory is TaskPlacementCategory.Primary or TaskPlacementCategory.ControlPlane,
+                taskManager.IsRunning(TaskType.VectorReplicationReplayTask));
+            ClassicAssert.AreEqual(cancelTaskPlacementCategory is TaskPlacementCategory.Primary or TaskPlacementCategory.Replica,
+                taskManager.IsRunning(TaskType.FailoverTask));
+            await taskManager.CancelAsync(TaskPlacementCategory.All).ConfigureAwait(false);
 
-                // Tasks not of replica category so they should keep running
-                ClassicAssert.IsTrue(taskManager.IsRunning(TaskType.AofSizeLimitTask));
-
-                // Cancel all tasks
-                await taskManager.CancelAsync(TaskPlacementCategory.All).ConfigureAwait(false);
-            }
-            else
-            {
-                // Cancel tasks based on placement category
-                await taskManager.CancelAsync(cancelTaskPlacementCategory).ConfigureAwait(false);
-            }
-
-            // Both tasks should complete and be removed since they are in primary category
+            // Shutdown cancels both role-specific and role-independent tasks.
             ClassicAssert.IsFalse(await taskManager.WaitAsync(TaskType.AofSizeLimitTask));
             ClassicAssert.IsFalse(await taskManager.WaitAsync(TaskType.IndexAutoGrowTask));
 
