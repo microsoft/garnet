@@ -5606,6 +5606,38 @@ namespace Garnet.test
         }
 #endif
 
+        [Test]
+        public async Task VeryLargeVectorSetOptionsAsync()
+        {
+            const int DataLength = VectorManager.MaxVectorDimensions;
+            const int EF = VectorManager.MaxExplorationFactor;
+            const int M = VectorManager.MaxNumLinks;
+            const string Member = nameof(Member);
+
+            var key = $"vs:d{DataLength}-ef{EF}-m{M}";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var dataFloat = new float[DataLength];
+            for (var i = 0; i < dataFloat.Length; i++)
+            {
+                dataFloat[i] = Random.Shared.NextSingle();
+            }
+
+            var data = MemoryMarshal.AsBytes(dataFloat).ToArray();
+            ClassicAssert.AreEqual(1, (int)await db.ExecuteAsync("VADD", [key, "FP32", data, Member, "NOQUANT", "EF", EF, "M", M]).ConfigureAwait(false));
+
+            var res = (string[])await db.ExecuteAsync("VSIM", [key, "FP32", data]).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(1, res.Length);
+            ClassicAssert.AreEqual(Member, res[0]);
+
+            var info = await db.VectorSetInfoAsync(key).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, info.Value.Length);
+            ClassicAssert.AreEqual(DataLength, info.Value.Dimension);
+        }
+
         /// <summary>
         /// Wait for a `XVIMPORT ... FINISH` to complete on the given key.
         /// </summary>
