@@ -1,0 +1,246 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Garnet.client;
+using NUnit.Framework;
+using StackExchange.Redis;
+
+namespace Garnet.test.cluster
+{
+    [TestFixture, NonParallelizable]
+    public class ClusterETagTests : TestBase
+    {
+        private ClusterTestContext context;
+
+        [SetUp]
+        public void Setup()
+        {
+            context = new ClusterTestContext();
+            context.Setup([]);
+        }
+
+        [TearDown]
+        public void TearDown() => context?.TearDown();
+
+        [TestCase("a")]
+        [TestCase("b")]
+        [Category("CLUSTER")]
+        public void StableSlotCommandsExecuteOnlyOnOwner(string key)
+        {
+            CreateCluster(2);
+            int slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(key));
+            int owner = slot < 8192 ? 0 : 1;
+            int other = 1 - owner;
+            string redirect = $"MOVED {slot} {context.clusterTestUtils.GetEndPoint(owner)}";
+
+            Assert.That(Execute(owner, "GETWITHETAG", key).IsNull, Is.True);
+            AssertRedirect(other, "GETWITHETAG", [key], redirect);
+            AssertRedirect(other, "SETWITHETAG", [key, "rejected"], redirect);
+            AssertRedirect(other, "SETIFMATCH", [key, "rejected", 0], redirect);
+            Assert.That(Execute(owner, "GETWITHETAG", key).IsNull, Is.True);
+
+            AssertInteger(Execute(owner, "SETWITHETAG", key, "first"), 1);
+            AssertPair(Execute(owner, "GETWITHETAG", key), 1, "first");
+            AssertRedirect(other, "GETWITHETAG", [key], redirect);
+            AssertRedirect(other, "SETWITHETAG", [key, "rejected"], redirect);
+            AssertRedirect(other, "SETIFMATCH", [key, "rejected", 1], redirect);
+            AssertPair(Execute(owner, "GETWITHETAG", key), 1, "first");
+
+            AssertPair(Execute(owner, "SETIFMATCH", key, "second", 1), 2, null);
+            AssertPair(Execute(owner, "GETWITHETAG", key), 2, "second");
+            AssertInteger(Execute(owner, "SETWITHETAG", key, "third"), 3);
+            AssertPair(Execute(owner, "GETWITHETAG", key), 3, "third");
+        }
+
+        [Test]
+        [Category("CLUSTER")]
+        public void ConditionalResponsesDistinguishSuccessMismatchAndNoGet()
+        {
+            CreateCluster();
+            const string Key = "etag-responses";
+
+            AssertPair(Execute(0, "SETIFMATCH", Key, "first", 91), 1, null);
+            AssertPair(Execute(0, "SETIFMATCH", Key, "rejected", 0), 1, "first");
+            AssertPair(Execute(0, "GETWITHETAG", Key), 1, "first");
+            AssertPair(Execute(0, "SETIFMATCH", Key, "second", 1), 2, null);
+            AssertPair(Execute(0, "SETIFMATCH", Key, "rejected", 1, "NOGET"), 2, null);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 2, "second");
+            AssertPair(Execute(0, "SETIFMATCH", Key, "third", 2, "NOGET"), 3, null);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 3, "third");
+        }
+
+        [Test]
+        [Category("CLUSTER")]
+        public async Task ReplicaReadsRequireReadOnlyAndWritesAlwaysRedirect()
+        {
+            CreateCluster(1, 1);
+            const string Key = "etag-replica";
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "first"), 1);
+            AssertPair(Execute(0, "SETIFMATCH", Key, "second", 1), 2, null);
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger, context.cts.Token);
+
+            using GarnetClientSession replica = context.clusterTestUtils.CreateGarnetClientSession(1);
+            replica.Connect();
+            int slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(Key));
+            string redirect = $"MOVED {slot} {context.clusterTestUtils.GetEndPoint(0)}";
+
+            AssertReplicaRedirect("GETWITHETAG", Key);
+            AssertReplicaRedirect("SETWITHETAG", Key, "rejected");
+            AssertReplicaRedirect("SETIFMATCH", Key, "rejected", "2");
+
+            Assert.That(await replica.ExecuteAsync("READONLY"), Is.EqualTo("OK"));
+            Assert.That(await replica.ExecuteForArrayAsync("GETWITHETAG", Key), Is.EqualTo(new[] { "2", "second" }));
+            AssertReplicaRedirect("SETWITHETAG", Key, "rejected");
+            AssertReplicaRedirect("SETIFMATCH", Key, "rejected", "2");
+            Assert.That(await replica.ExecuteForArrayAsync("GETWITHETAG", Key), Is.EqualTo(new[] { "2", "second" }));
+            AssertPair(Execute(0, "GETWITHETAG", Key), 2, "second");
+
+            Assert.That(await replica.ExecuteAsync("READWRITE"), Is.EqualTo("OK"));
+            AssertReplicaRedirect("GETWITHETAG", Key);
+
+            void AssertReplicaRedirect(params string[] command)
+            {
+                Exception exception = Assert.ThrowsAsync<Exception>(async () =>
+                    await replica.ExecuteAsync(command).WaitAsync(context.cts.Token));
+                Assert.That(exception.Message, Is.EqualTo(redirect));
+            }
+        }
+
+        [Test]
+        [Category("CLUSTER")]
+        public async Task ConcurrentConditionalUpdatesHaveExactlyOneWinner()
+        {
+            CreateCluster();
+            using GarnetClientSession first = context.clusterTestUtils.CreateGarnetClientSession(0);
+            using GarnetClientSession second = context.clusterTestUtils.CreateGarnetClientSession(0);
+            first.Connect();
+            second.Connect();
+
+            for (int iteration = 0; iteration < 32; iteration++)
+            {
+                string key = $"etag-race-{iteration}";
+                AssertInteger(Execute(0, "SETWITHETAG", key, "initial"), 1);
+                using Barrier start = new(2);
+
+                Task<string[]> firstUpdate = Update(first, "first");
+                Task<string[]> secondUpdate = Update(second, "second");
+                string[][] responses = await Task.WhenAll(firstUpdate, secondUpdate).WaitAsync(context.cts.Token);
+
+                Assert.That(responses[0], Has.Length.EqualTo(2));
+                Assert.That(responses[1], Has.Length.EqualTo(2));
+                Assert.That(responses[0][0], Is.EqualTo("2"));
+                Assert.That(responses[1][0], Is.EqualTo("2"));
+                int winner = responses[0][1] == null ? 0 : 1;
+                int loser = 1 - winner;
+                string winningValue = winner == 0 ? "first" : "second";
+                Assert.That(responses[winner][1], Is.Null);
+                Assert.That(responses[loser][1], Is.EqualTo(winningValue));
+                AssertPair(Execute(0, "GETWITHETAG", key), 2, winningValue);
+
+                Task<string[]> Update(GarnetClientSession client, string value) => Task.Run(async () =>
+                {
+                    start.SignalAndWait(context.cts.Token);
+                    return await client.ExecuteForArrayAsync("SETIFMATCH", key, value, "1");
+                });
+            }
+        }
+
+        [TestCase("EX", 60)]
+        [TestCase("PX", 60000)]
+        [Category("CLUSTER")]
+        public void ConditionalUpdatesPreserveExpiryAndUnconditionalUpdatesClearIt(string expiryOption, int expiry)
+        {
+            CreateCluster();
+            const string Key = "etag-expiry";
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "first", expiryOption, expiry), 1);
+            long originalExpiry = (long)Execute(0, "PEXPIRETIME", Key);
+            Assert.That(originalExpiry, Is.GreaterThan(0));
+
+            AssertPair(Execute(0, "SETIFMATCH", Key, "rejected", 0, "PX", 120000), 1, "first");
+            Assert.That((long)Execute(0, "PEXPIRETIME", Key), Is.EqualTo(originalExpiry));
+            AssertPair(Execute(0, "SETIFMATCH", Key, "second", 1), 2, null);
+            Assert.That((long)Execute(0, "PEXPIRETIME", Key), Is.EqualTo(originalExpiry));
+
+            AssertPair(Execute(0, "SETIFMATCH", Key, "third", 2, expiryOption, expiry * 2), 3, null);
+            Assert.That((long)Execute(0, "PEXPIRETIME", Key), Is.GreaterThanOrEqualTo(originalExpiry + 60000));
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "fourth"), 4);
+            AssertInteger(Execute(0, "PTTL", Key), -1);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 4, "fourth");
+        }
+
+        [TestCase("SETWITHETAG", "EX", 1)]
+        [TestCase("SETWITHETAG", "PX", 50)]
+        [TestCase("SETIFMATCH", "EX", 1)]
+        [TestCase("SETIFMATCH", "PX", 50)]
+        [Category("CLUSTER")]
+        public void ExpiredKeysAreMissingAndRecreationRestartsEtag(string command, string expiryOption, int expiry)
+        {
+            CreateCluster();
+            const string Key = "etag-expired";
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "first"), 1);
+            if (command == "SETWITHETAG")
+                AssertInteger(Execute(0, command, Key, "expires", expiryOption, expiry), 2);
+            else
+                AssertPair(Execute(0, command, Key, "expires", 1, expiryOption, expiry), 2, null);
+
+            Assert.That(() => Execute(0, "GETWITHETAG", Key).IsNull, Is.True.After(5000, 25));
+            AssertPair(Execute(0, "SETIFMATCH", Key, "recreated", 2), 1, null);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 1, "recreated");
+        }
+
+        [Test]
+        [Category("CLUSTER")]
+        public void DeletedKeysRestartEtagOnRecreation()
+        {
+            CreateCluster();
+            const string Key = "etag-deleted";
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "first"), 1);
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "second"), 2);
+            AssertInteger(Execute(0, "DEL", Key), 1);
+            Assert.That(Execute(0, "GETWITHETAG", Key).IsNull, Is.True);
+            AssertPair(Execute(0, "SETIFMATCH", Key, "recreated", 2), 1, null);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 1, "recreated");
+        }
+
+        private void CreateCluster(int primaryCount = 1, int replicaCount = 0)
+        {
+            context.CreateInstances(primaryCount * (replicaCount + 1), enableAOF: true);
+            context.CreateConnection();
+            _ = context.clusterTestUtils.SimpleSetupCluster(primaryCount, replicaCount, logger: context.logger);
+        }
+
+        private RedisResult Execute(int nodeIndex, string command, params object[] arguments)
+            => context.clusterTestUtils.GetServer(nodeIndex).Execute(0, command, arguments, CommandFlags.NoRedirect);
+
+        private void AssertRedirect(int nodeIndex, string command, object[] arguments, string redirect)
+        {
+            RedisServerException exception = Assert.Throws<RedisServerException>(() => Execute(nodeIndex, command, arguments));
+            Assert.That(exception.Message, Is.EqualTo(redirect));
+        }
+
+        private static void AssertInteger(RedisResult result, long expected)
+        {
+            Assert.That(result.Resp2Type, Is.EqualTo(ResultType.Integer));
+            Assert.That((long)result, Is.EqualTo(expected));
+        }
+
+        private static void AssertPair(RedisResult result, long etag, string value)
+        {
+            Assert.That(result.Resp2Type, Is.EqualTo(ResultType.Array));
+            RedisResult[] pair = (RedisResult[])result;
+            Assert.That(pair, Has.Length.EqualTo(2));
+            AssertInteger(pair[0], etag);
+            if (value == null)
+                Assert.That(pair[1].IsNull, Is.True);
+            else
+            {
+                Assert.That(pair[1].Resp2Type, Is.EqualTo(ResultType.BulkString));
+                Assert.That(pair[1].ToString(), Is.EqualTo(value));
+            }
+        }
+    }
+}
