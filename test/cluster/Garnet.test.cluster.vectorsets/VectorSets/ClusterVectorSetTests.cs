@@ -2865,10 +2865,10 @@ namespace Garnet.test.cluster
 
             // Preconstructed DiskLogRecord with the above key
             var disklogPayload = Convert.FromHexString("0100000000000A0003000410000000003031323334353637383961626364656669794D53744576657159746D4E6F7A33");
-            
+
             // Corrupt the RecordTypeIndex
             disklogPayload[RecordTypeIndex] = 255;
-            
+
             var forgingClient = context.clusterTestUtils.GetGarnetClientSession(targetNodeIndex);
             forgingClient.SetClusterMigrateHeader(importingFromId, false, false);
             ClassicAssert.True(forgingClient.TryWriteRecordSpan(disklogPayload, MigrationRecordSpanType.LogRecord, out var task));
