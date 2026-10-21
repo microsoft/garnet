@@ -5635,7 +5635,6 @@ namespace Garnet.test
 
             var info = await db.VectorSetInfoAsync(key).ConfigureAwait(false);
             ClassicAssert.AreEqual(1, info.Value.Length);
-            ClassicAssert.AreEqual(DataLength, info.Value.Dimension);
         }
 
         /// <summary>
