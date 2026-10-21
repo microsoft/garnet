@@ -56,6 +56,84 @@ namespace Garnet.test.cluster
             AssertPair(Execute(owner, "GETWITHETAG", key), 3, "third");
         }
 
+        [TestCase("GETWITHETAG")]
+        [TestCase("SETWITHETAG")]
+        [TestCase("SETIFMATCH")]
+        [Category("CLUSTER")]
+        public async Task MigratingSlotsServeExistingKeysAndRequireAskingOnImporter(string command)
+        {
+            CreateCluster(2);
+            const string ExistingKey = "{b}existing";
+            const string MissingKey = "{b}missing";
+            int slot = ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(ExistingKey));
+            Assert.That(slot, Is.LessThan(8192));
+            Assert.That(ClusterTestUtils.HashSlot(Encoding.ASCII.GetBytes(MissingKey)), Is.EqualTo(slot));
+            AssertInteger(Execute(0, "SETWITHETAG", ExistingKey, "original"), 1);
+
+            string sourceId = context.clusterTestUtils.GetNodeIdFromNode(0, context.logger);
+            string targetId = context.clusterTestUtils.GetNodeIdFromNode(1, context.logger);
+            Assert.That(context.clusterTestUtils.SetSlot(1, slot, "IMPORTING", sourceId), Is.EqualTo("OK"));
+            Assert.That(context.clusterTestUtils.SetSlot(0, slot, "MIGRATING", targetId), Is.EqualTo("OK"));
+
+            object[] existingArguments = command switch
+            {
+                "GETWITHETAG" => [ExistingKey],
+                "SETWITHETAG" => [ExistingKey, "updated"],
+                _ => [ExistingKey, "updated", 1]
+            };
+            RedisResult existingResult = Execute(0, command, existingArguments);
+            if (command == "GETWITHETAG")
+                AssertPair(existingResult, 1, "original");
+            else if (command == "SETWITHETAG")
+                AssertInteger(existingResult, 2);
+            else
+                AssertPair(existingResult, 2, null);
+
+            object[] missingArguments = command switch
+            {
+                "GETWITHETAG" => [MissingKey],
+                "SETWITHETAG" => [MissingKey, "created"],
+                _ => [MissingKey, "created", 0]
+            };
+            string ask = $"ASK {slot} {context.clusterTestUtils.GetEndPoint(1)}";
+            string moved = $"MOVED {slot} {context.clusterTestUtils.GetEndPoint(0)}";
+            AssertRedirect(0, command, missingArguments, ask);
+            AssertRedirect(1, command, missingArguments, moved);
+
+            using GarnetClientSession importer = context.clusterTestUtils.CreateGarnetClientSession(1);
+            importer.Connect();
+            if (command == "GETWITHETAG")
+            {
+                Assert.That(await importer.ExecuteAsync("ASKING").WaitAsync(context.cts.Token), Is.EqualTo("OK"));
+                Assert.That(await importer.ExecuteAsync("GETWITHETAG", MissingKey).WaitAsync(context.cts.Token), Is.Null);
+                Assert.That(await importer.ExecuteAsync("ASKING").WaitAsync(context.cts.Token), Is.EqualTo("OK"));
+                Assert.That(await importer.ExecuteAsync("SETWITHETAG", MissingKey, "created").WaitAsync(context.cts.Token), Is.EqualTo("1"));
+            }
+
+            Assert.That(await importer.ExecuteAsync("ASKING").WaitAsync(context.cts.Token), Is.EqualTo("OK"));
+            // ASKING belongs to this connection and permits only its next command.
+            AssertRedirect(1, command, missingArguments, moved);
+            if (command == "GETWITHETAG")
+                Assert.That(await importer.ExecuteForArrayAsync(command, MissingKey).WaitAsync(context.cts.Token), Is.EqualTo(new[] { "1", "created" }));
+            else if (command == "SETWITHETAG")
+                Assert.That(await importer.ExecuteAsync(command, MissingKey, "created").WaitAsync(context.cts.Token), Is.EqualTo("1"));
+            else
+                Assert.That(await importer.ExecuteForArrayAsync(command, MissingKey, "created", "0").WaitAsync(context.cts.Token), Is.EqualTo(new string[] { "1", null }));
+
+            string[] request = command switch
+            {
+                "GETWITHETAG" => [command, MissingKey],
+                "SETWITHETAG" => [command, MissingKey, "rejected"],
+                _ => [command, MissingKey, "rejected", "1"]
+            };
+            Exception exception = Assert.ThrowsAsync<Exception>(async () =>
+                await importer.ExecuteAsync(request).WaitAsync(context.cts.Token));
+            Assert.That(exception.Message, Is.EqualTo(moved));
+            AssertRedirect(0, command, missingArguments, ask);
+            AssertPair(Execute(0, "GETWITHETAG", ExistingKey), command == "GETWITHETAG" ? 1 : 2,
+                command == "GETWITHETAG" ? "original" : "updated");
+        }
+
         [Test]
         [Category("CLUSTER")]
         public void ConditionalResponsesDistinguishSuccessMismatchAndNoGet()
