@@ -24,6 +24,11 @@ namespace Garnet.common
         Failover_Pause_Between_Write_Admission_Reads,
 
         /// <summary>
+        /// Pause an admitted transaction before executing a database flush.
+        /// </summary>
+        Failover_Pause_Before_Transactional_Flush,
+
+        /// <summary>
         /// Network failure after GarnetServerTcp handler created
         /// </summary>
         Network_After_GarnetServerTcp_Handler_Created,

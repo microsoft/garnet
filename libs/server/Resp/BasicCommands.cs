@@ -1047,9 +1047,16 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHDB));
             }
 
-            clusterSession?.WaitForWritesToResume();
+#if DEBUG
+            if (txnManager.state == TxnState.Running)
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Failover_Pause_Before_Transactional_Flush);
+#endif
+            // An admitted transaction retains its cluster epoch through commit.
+            if (txnManager.state != TxnState.Running)
+                clusterSession?.WaitForWritesToResume();
 
-            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
+            if (txnManager.state != TxnState.Running && storeWrapper.serverOptions.EnableCluster &&
+                storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA, ref dcurr, dend))
                     SendAndReset();
@@ -1071,9 +1078,15 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.FLUSHALL));
             }
 
-            clusterSession?.WaitForWritesToResume();
+#if DEBUG
+            if (txnManager.state == TxnState.Running)
+                ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Failover_Pause_Before_Transactional_Flush);
+#endif
+            if (txnManager.state != TxnState.Running)
+                clusterSession?.WaitForWritesToResume();
 
-            if (storeWrapper.serverOptions.EnableCluster && storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
+            if (txnManager.state != TxnState.Running && storeWrapper.serverOptions.EnableCluster &&
+                storeWrapper.clusterProvider.IsReplica() && !clusterSession.IsInternalWriteSession)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_FLUSHALL_READONLY_REPLICA);
             }

@@ -14,6 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.cluster;
 using Garnet.common;
+using Garnet.networking;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -541,6 +542,196 @@ namespace Garnet.test.cluster
         }
 
         [Test, CancelAfter(120_000)]
+        public async Task PausedFlushTransactionRevalidatesBeforeRunning(
+            [Values] bool allDatabases, [Values] bool demote, [Values("none", "GET", "SET")] string keyedCommand)
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var token = deadline.Token;
+            var session = await ConnectIdleSessionAsync(connection, token);
+            Assert.That(await ExecuteCommandAsync(connection, "*1\r\n$5\r\nMULTI\r\n", token), Is.EqualTo("+OK"));
+            var command = allDatabases ? "FLUSHALL" : "FLUSHDB";
+            Assert.That(await ExecuteCommandAsync(connection, $"*1\r\n${command.Length}\r\n{command}\r\n", token),
+                Is.EqualTo("+QUEUED"));
+            var key = context.kvPairs.Keys.First();
+            if (keyedCommand != "none")
+                Assert.That(await ExecuteCommandAsync(connection,
+                    keyedCommand == "SET"
+                        ? $"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n"
+                        : $"*2\r\n$3\r\nGET\r\n${key.Length}\r\n{key}\r\n", token), Is.EqualTo("+QUEUED"));
+
+            var expected = demote ? "-ERR You can't write against a read only replica.\r\n" :
+                keyedCommand switch
+                {
+                    "SET" => "*2\r\n+OK\r\n+OK\r\n",
+                    "GET" => "*2\r\n+OK\r\n$-1\r\n",
+                    _ => "*1\r\n+OK\r\n"
+                };
+            Task<string> response = null;
+            primary.failoverManager.PauseWrites(true);
+            try
+            {
+                session.AcquireCurrentEpoch();
+                await connection.GetStream().WriteAsync("*1\r\n$4\r\nEXEC\r\n"u8.ToArray(), token);
+                response = ReadFixedResponseAsync(connection, expected.Length, token);
+                Assert.That(() => session.LocalCurrentEpoch, Is.Zero.After(5_000, 10));
+                Assert.That(() => response.IsCompleted, Is.False.After(100));
+                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 0, 0);
+                Assert.That(await primary.BumpAndWaitForEpochTransitionAsync().AsTask().WaitAsync(token), Is.True);
+                if (demote)
+                    primary.clusterManager.TryStopWrites(context.clusterTestUtils.GetNodeIdFromNode(1, context.logger));
+            }
+            finally
+            {
+                primary.failoverManager.PauseWrites(false);
+            }
+            Assert.That(await response.WaitAsync(token), Is.EqualTo(expected));
+            if (demote)
+                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 0, 0);
+            else
+                Assert.That(context.clusterTestUtils.GetServer(0).DatabaseSize(), Is.EqualTo(keyedCommand == "SET" ? 1 : 0));
+            Assert.That(await ExecuteCommandAsync(connection, "*1\r\n$4\r\nPING\r\n", token), Is.EqualTo("+PONG"));
+        }
+
+        [Test, CancelAfter(120_000)]
+        public async Task InternalFlushTransactionBypassesPause([Values] bool allDatabases, [Values] bool demote)
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var token = deadline.Token;
+            var session = await ConnectIdleSessionAsync(connection, token);
+            session.SetInternalWriteSession();
+            primary.failoverManager.PauseWrites(true);
+            try
+            {
+                if (demote)
+                    primary.clusterManager.TryStopWrites(context.clusterTestUtils.GetNodeIdFromNode(1, context.logger));
+                Assert.That(await ExecuteCommandAsync(connection, "*1\r\n$5\r\nMULTI\r\n", token), Is.EqualTo("+OK"));
+                var command = allDatabases ? "FLUSHALL" : "FLUSHDB";
+                Assert.That(await ExecuteCommandAsync(connection, $"*1\r\n${command.Length}\r\n{command}\r\n", token),
+                    Is.EqualTo("+QUEUED"));
+                await connection.GetStream().WriteAsync("*1\r\n$4\r\nEXEC\r\n"u8.ToArray(), token);
+                Assert.That(await ReadFixedResponseAsync(connection, "*1\r\n+OK\r\n".Length, token),
+                    Is.EqualTo("*1\r\n+OK\r\n"));
+                Assert.That(primary.failoverManager.IsWritePaused, Is.True);
+                Assert.That(context.clusterTestUtils.GetServer(0).DatabaseSize(), Is.Zero);
+            }
+            finally
+            {
+                primary.failoverManager.PauseWrites(false);
+            }
+        }
+
+        [Test, CancelAfter(120_000)]
+        public async Task ReplicationReplaysTransactionWhileWritesArePaused()
+        {
+            SetupReplica(1);
+            var replica = Provider(1);
+            var db = context.clusterTestUtils.GetDatabase();
+            replica.failoverManager.PauseWrites(true);
+            try
+            {
+                var transaction = db.CreateTransaction();
+                var flush = transaction.ExecuteAsync("FLUSHDB");
+                var first = transaction.StringSetAsync("{replay}first", "one");
+                var second = transaction.StringIncrementAsync("{replay}second");
+                Assert.That(await transaction.ExecuteAsync(), Is.True);
+                Assert.That((await flush).ToString(), Is.EqualTo("OK"));
+                Assert.That(await first, Is.True);
+                Assert.That(await second, Is.EqualTo(1));
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+                using var connection = await ConnectionMultiplexer.ConnectAsync(new ConfigurationOptions
+                {
+                    EndPoints = { context.clusterTestUtils.GetEndPoint(1) },
+                    CommandMap = CommandMap.Create(new HashSet<string> { "CLUSTER" }, available: false)
+                });
+                var replicaDb = connection.GetDatabase();
+                Assert.That(await replicaDb.StringGetAsync("{replay}first", CommandFlags.PreferReplica), Is.EqualTo((RedisValue)"one"));
+                Assert.That(await replicaDb.StringGetAsync("{replay}second", CommandFlags.PreferReplica), Is.EqualTo((RedisValue)"1"));
+                Assert.That(replica.failoverManager.IsWritePaused, Is.True);
+            }
+            finally
+            {
+                replica.failoverManager.PauseWrites(false);
+            }
+        }
+
+#if DEBUG
+        [Test, CancelAfter(120_000)]
+        public async Task AdmittedFlushTransactionRetainsEpochUntilCommit([Values] bool allDatabases)
+        {
+            SetupReplica(1);
+            var primary = Provider(0);
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var token = deadline.Token;
+            var session = await ConnectIdleSessionAsync(connection, token);
+            Assert.That(await ExecuteCommandAsync(connection, "*1\r\n$5\r\nMULTI\r\n", token), Is.EqualTo("+OK"));
+            var command = allDatabases ? "FLUSHALL" : "FLUSHDB";
+            Assert.That(await ExecuteCommandAsync(connection, $"*1\r\n${command.Length}\r\n{command}\r\n", token),
+                Is.EqualTo("+QUEUED"));
+            var key = context.kvPairs.Keys.First();
+            Assert.That(await ExecuteCommandAsync(connection,
+                $"*3\r\n$3\r\nSET\r\n${key.Length}\r\n{key}\r\n$7\r\nchanged\r\n", token), Is.EqualTo("+QUEUED"));
+            const ExceptionInjectionType injection = ExceptionInjectionType.Failover_Pause_Before_Transactional_Flush;
+            Task<string> response = null;
+            Task<bool> barrier = null;
+            var writesPaused = false;
+            try
+            {
+                ExceptionInjectionHelper.EnableException(injection);
+                await connection.GetStream().WriteAsync("*1\r\n$4\r\nEXEC\r\n"u8.ToArray(), token);
+                response = ReadFixedResponseAsync(connection, "*2\r\n+OK\r\n+OK\r\n".Length, token);
+                Assert.That(() => ExceptionInjectionHelper.IsEnabled(injection), Is.False.After(5_000, 10));
+                var epoch = session.LocalCurrentEpoch;
+                Assert.That(epoch, Is.Not.Zero);
+                primary.failoverManager.PauseWrites(true);
+                writesPaused = true;
+                barrier = primary.BumpAndWaitForEpochTransitionAsync(token).AsTask();
+                Assert.That(() => primary.garnetEpoch.GetCurrentEpoch(), Is.GreaterThan(epoch).After(5_000, 10));
+                Assert.That(barrier.IsCompleted, Is.False);
+                Assert.That(session.LocalCurrentEpoch, Is.EqualTo(epoch));
+                ExceptionInjectionHelper.EnableException(injection);
+                Assert.That(await response.WaitAsync(token), Is.EqualTo("*2\r\n+OK\r\n+OK\r\n"));
+                Assert.That(await barrier.WaitAsync(token), Is.True);
+                Assert.That(primary.failoverManager.IsWritePaused, Is.True,
+                    "An admitted transaction must commit without waiting for the write pause to end.");
+                Assert.That(context.clusterTestUtils.GetDatabase().StringGet(key), Is.EqualTo((RedisValue)"changed"));
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.SuspendParking();
+                ExceptionInjectionHelper.DisableException(injection);
+                if (writesPaused)
+                    primary.failoverManager.PauseWrites(false);
+                try
+                {
+                    if (response != null)
+                        await response.WaitAsync(token);
+                    if (barrier != null)
+                        await barrier.WaitAsync(token);
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+            }
+        }
+#endif
+
+        static async Task<string> ReadFixedResponseAsync(TcpClient connection, int length, CancellationToken token)
+        {
+            var bytes = new byte[length];
+            await connection.GetStream().ReadExactlyAsync(bytes, token);
+            return Encoding.ASCII.GetString(bytes);
+        }
+
+        [Test, CancelAfter(120_000)]
         public async Task PrimaryFailoverWaitsForEpochBeforeChangingRole()
         {
             SetupReplica(1);
@@ -580,12 +771,17 @@ namespace Garnet.test.cluster
         async Task<ClusterSession> ConnectIdleSessionAsync(TcpClient connection, CancellationToken token)
         {
             var server = (GarnetServerTcp)Provider(0).storeWrapper.Servers[0];
-            var existing = server.ActiveClusterSessions().ToHashSet();
             await connection.ConnectAsync((IPEndPoint)context.clusterTestUtils.GetEndPoint(0), token);
             var stream = connection.GetStream();
             await stream.WriteAsync("*1\r\n$4\r\nPING\r\n"u8.ToArray(), token);
             await stream.ReadExactlyAsync(new byte[7], token);
-            var session = server.ActiveClusterSessions().OfType<ClusterSession>().Single(s => !existing.Contains(s));
+            var senderField = typeof(ClusterSession).GetField("networkSender", BindingFlags.Instance | BindingFlags.NonPublic);
+            var endpoint = (IPEndPoint)connection.Client.LocalEndPoint;
+            var session = server.ActiveClusterSessions().OfType<ClusterSession>().Single(s =>
+            {
+                var remote = IPEndPoint.Parse(((INetworkSender)senderField.GetValue(s)).RemoteEndpointName);
+                return remote.Port == endpoint.Port && remote.Address.MapToIPv6().Equals(endpoint.Address.MapToIPv6());
+            });
             Assert.That(() => session.LocalCurrentEpoch, Is.Zero.After(5_000, 10));
             return session;
         }

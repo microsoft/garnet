@@ -208,6 +208,9 @@ After the pause ends, keyed writes receive `MOVED` to the new primary or proceed
 Writes arriving on a replica redirect immediately (database flushes return a read-only replica error).
 `READONLY` and `READWRITE` only control replica reads, not write admission or failover waiting.
 Internal replication replay remains exempt from the application-write pause.
+Transactions containing `FLUSHDB` or `FLUSHALL` wait and recheck the node's role before EXEC starts,
+including transactions with no keys. Once admitted, they retain their cluster-session epoch through
+commit instead of waiting between transaction commands.
 An explicit `FAILOVER TO host port TIMEOUT milliseconds` limits how long that operation holds its write pause,
 including waits for session epochs. Omitting `TIMEOUT` leaves the pause unlimited.
 `FAILOVER ABORT` cancels these waits and releases the operation's pause without restoring primary status after demotion.
