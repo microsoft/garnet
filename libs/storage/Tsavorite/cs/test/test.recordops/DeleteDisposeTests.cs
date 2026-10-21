@@ -213,6 +213,31 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(n, tracker.DeletedCount, $"Immutable delete multiple: expected exactly {n}");
         }
 
+        [Test]
+        [Category("TsavoriteKV")]
+        public void DeleteReportsExpiredRecordTest([Values] bool immutable, [Values] bool expiring)
+        {
+            // InitialUpdater of ExpiredReinitWithExpirationFunctions stores a (long past) expiration
+            var fn = new ExpiredReinitWithExpirationFunctions { newValueLength = sizeof(int) };
+            using var s = store.NewSession<TestSpanByteKey, int, int, Empty, ExpiredReinitWithExpirationFunctions>(fn);
+            var key = 1;
+            if (expiring)
+            {
+                var input = 50;
+                _ = s.BasicContext.RMW(Key(ref key), ref input);
+            }
+            else
+                UpsertKey(key, 50);
+
+            if (immutable)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            tracker.Reset();
+
+            var status = s.BasicContext.Delete(Key(ref key));
+            ClassicAssert.AreEqual(expiring, status.IsExpired, $"Delete expired status (immutable {immutable}, expiring {expiring})");
+            ClassicAssert.AreEqual(1, tracker.DeletedCount, "Expected the record to be disposed even if expired");
+        }
+
         #endregion
 
         #region ExpireAndStop

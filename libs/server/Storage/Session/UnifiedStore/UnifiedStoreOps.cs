@@ -114,7 +114,9 @@ namespace Garnet.server
             var status = unifiedContext.Delete((FixedSpanByteKey)key);
 
             Debug.Assert(!status.IsPending);
-            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+
+            // An expired record is physically deleted but is logically absent, so it is reported as not found
+            return status.Found && !status.IsExpired ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         /// <summary>
