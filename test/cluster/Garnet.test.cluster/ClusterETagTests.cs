@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Globalization;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -141,7 +142,9 @@ namespace Garnet.test.cluster
             CreateCluster();
             const string Key = "etag-responses";
 
-            AssertPair(Execute(0, "SETIFMATCH", Key, "first", 91), 1, null);
+            AssertPair(Execute(0, "SETIFMATCH", "etag-missing", "created", 91), 92, null);
+            AssertPair(Execute(0, "GETWITHETAG", "etag-missing"), 92, "created");
+            AssertPair(Execute(0, "SETIFMATCH", Key, "first", 0), 1, null);
             AssertPair(Execute(0, "SETIFMATCH", Key, "rejected", 0), 1, "first");
             AssertPair(Execute(0, "GETWITHETAG", Key), 1, "first");
             AssertPair(Execute(0, "SETIFMATCH", Key, "second", 1), 2, null);
@@ -301,7 +304,7 @@ namespace Garnet.test.cluster
         [TestCase("SETIFMATCH", "EX", 1)]
         [TestCase("SETIFMATCH", "PX", 50)]
         [Category("CLUSTER")]
-        public void ExpiredKeysAreMissingAndRecreationRestartsEtag(string command, string expiryOption, int expiry)
+        public void ExpiredKeysAreMissingAndRecreationUsesCommandEtag(string command, string expiryOption, int expiry)
         {
             CreateCluster();
             const string Key = "etag-expired";
@@ -312,13 +315,16 @@ namespace Garnet.test.cluster
                 AssertPair(Execute(0, command, Key, "expires", 1, expiryOption, expiry), 2, null);
 
             Assert.That(() => Execute(0, "GETWITHETAG", Key).IsNull, Is.True.After(5000, 25));
-            AssertPair(Execute(0, "SETIFMATCH", Key, "recreated", 2), 1, null);
-            AssertPair(Execute(0, "GETWITHETAG", Key), 1, "recreated");
+            AssertPair(Execute(0, "SETIFMATCH", Key, "recreated", 2), 3, null);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 3, "recreated");
+            AssertInteger(Execute(0, "DEL", Key), 1);
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "reset"), 1);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 1, "reset");
         }
 
         [Test]
         [Category("CLUSTER")]
-        public void DeletedKeysRestartEtagOnRecreation()
+        public void DeletedKeysUseCommandEtagOnRecreation()
         {
             CreateCluster();
             const string Key = "etag-deleted";
@@ -326,8 +332,11 @@ namespace Garnet.test.cluster
             AssertInteger(Execute(0, "SETWITHETAG", Key, "second"), 2);
             AssertInteger(Execute(0, "DEL", Key), 1);
             Assert.That(Execute(0, "GETWITHETAG", Key).IsNull, Is.True);
-            AssertPair(Execute(0, "SETIFMATCH", Key, "recreated", 2), 1, null);
-            AssertPair(Execute(0, "GETWITHETAG", Key), 1, "recreated");
+            AssertPair(Execute(0, "SETIFMATCH", Key, "recreated", 2), 3, null);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 3, "recreated");
+            AssertInteger(Execute(0, "DEL", Key), 1);
+            AssertInteger(Execute(0, "SETWITHETAG", Key, "reset"), 1);
+            AssertPair(Execute(0, "GETWITHETAG", Key), 1, "reset");
         }
 
         private void CreateCluster(int primaryCount = 1, int replicaCount = 0)
@@ -342,7 +351,14 @@ namespace Garnet.test.cluster
 
         private void AssertRedirect(int nodeIndex, string command, object[] arguments, string redirect)
         {
-            RedisServerException exception = Assert.Throws<RedisServerException>(() => Execute(nodeIndex, command, arguments));
+            using GarnetClientSession client = context.clusterTestUtils.CreateGarnetClientSession(nodeIndex);
+            client.Connect();
+            string[] request = new string[arguments.Length + 1];
+            request[0] = command;
+            for (int index = 0; index < arguments.Length; index++)
+                request[index + 1] = Convert.ToString(arguments[index], CultureInfo.InvariantCulture);
+            Exception exception = Assert.ThrowsAsync<Exception>(async () =>
+                await client.ExecuteAsync(request).WaitAsync(context.cts.Token));
             Assert.That(exception.Message, Is.EqualTo(redirect));
         }
 
