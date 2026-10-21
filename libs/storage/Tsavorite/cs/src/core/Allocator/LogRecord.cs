@@ -947,7 +947,7 @@ namespace Tsavorite.core
             var (_ /*oldValueLength*/, valueAddress) = localDataHeader.GetValueFieldInfo(physicalAddress);
             var recordLength = localDataHeader.GetRecordLength();
             var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
-            if (fillerLength < 0)
+            if (fillerLength < sizeInfo.OptionalSize || localDataHeader.RecordType != sizeInfo.FieldInfo.RecordType)
                 return false;
 
             // Clear optional flags + update ValueLength on the local; SetFiller computes FillerWords from the local's new

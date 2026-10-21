@@ -24,6 +24,8 @@ namespace Garnet.server
         readonly Socket listenSocket;
         readonly IGarnetTlsOptions tlsOptions;
         readonly int networkSendThrottleMax;
+        readonly TimeSpan networkSendTimeout;
+        readonly TimeSpan tlsHandshakeTimeout;
         readonly NetworkBufferSettings networkBufferSettings;
 
         /// <summary>
@@ -81,6 +83,8 @@ namespace Garnet.server
         /// <param name="networkBufferPoolSize">Ceiling on idle bytes retained by the shared buffer pool. Zero uses the pool default.</param>
         /// <param name="networkBufferBudget">Process-wide budget for live connection buffers, shared across listeners. Null disables adaptation.</param>
         /// <param name="logger"></param>
+        /// <param name="networkSendTimeout">Longest a response send waits for the client to accept earlier responses before the connection is closed. Zero or negative waits indefinitely.</param>
+        /// <param name="tlsHandshakeTimeout">Longest an accepted connection may take to complete its TLS handshake before it is closed. Zero or negative waits indefinitely.</param>
         public GarnetServerTcp(
             EndPoint endpoint,
             int networkBufferSize = default,
@@ -92,7 +96,9 @@ namespace Garnet.server
             NetworkBufferSettings networkBufferSettings = null,
             long networkBufferPoolSize = 0,
             NetworkBufferBudget networkBufferBudget = null,
-            ILogger logger = null)
+            ILogger logger = null,
+            TimeSpan networkSendTimeout = default,
+            TimeSpan tlsHandshakeTimeout = default)
             : base(endpoint, networkBufferSize, logger)
         {
             // A listener given no shared limit gets its own, so it still honours CONFIG SET and so
@@ -102,6 +108,8 @@ namespace Garnet.server
 
             this.tlsOptions = tlsOptions;
             this.networkSendThrottleMax = networkSendThrottleMax;
+            this.networkSendTimeout = networkSendTimeout;
+            this.tlsHandshakeTimeout = tlsHandshakeTimeout;
             if (networkBufferSettings == null)
             {
                 var serverBufferSize = BufferSizeUtils.ServerBufferSize(new MaxSizeSettings());
@@ -348,7 +356,8 @@ namespace Garnet.server
                         remoteEndpointName = e.AcceptSocket.RemoteEndPoint?.ToString();
                         logger?.LogDebug("Accepted TCP connection from {remoteEndpoint}", remoteEndpointName);
 
-                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null, networkSendThrottleMax: networkSendThrottleMax, logger: logger);
+                        handler = new ServerTcpNetworkHandler(this, e.AcceptSocket, networkBufferSettings, networkPool, tlsOptions != null,
+                            networkSendThrottleMax: networkSendThrottleMax, networkSendTimeout: networkSendTimeout, tlsHandshakeTimeout: tlsHandshakeTimeout, logger: logger);
                         ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Network_After_GarnetServerTcp_Handler_Created);
                         if (!activeHandlers.TryAdd(handler, default))
                             throw new Exception("Unable to add handler to dictionary");
@@ -425,6 +434,11 @@ namespace Garnet.server
             try
             {
                 await startTask.ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // The handler has logged the expired handshake deadline and closed the connection
+                handler.Dispose();
             }
             catch (Exception ex)
             {
