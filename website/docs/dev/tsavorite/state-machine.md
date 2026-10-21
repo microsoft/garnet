@@ -582,6 +582,19 @@ RoundDown(FlushedUntilAddress, sector) <= A < SafeReadOnlyAddress   → IsFrozen
 Every release of a superseded source honors it: elision is declined, a Delete
 defers its disposal, and a CopyUpdate defers releasing its source's value.
 
+The freeze protects a superseded source's record *image*. Outside a checkpoint,
+nothing needs the source's pre-update *content*. The CopyUpdate's new record is
+in the source's version, so every later checkpoint that contains the source also
+contains the new record, which supersedes it. And no completed checkpoint
+recovers a source that a flush is still writing: a FoldOver's image ends at its
+`FlushedUntilAddress`, and Snapshot recovers the main log only below the
+`FlushedUntilAddress` sampled at `PERSISTENCE_CALLBACK`. So the flush may write
+either the pre-update image, if it serialized the value first (the CopyUpdate
+waits for that), or a null value, the terminal image of a superseded value.
+That is why `CacheSerializedObjectData` preserves nothing when the new record is
+not in a new version. Only an active checkpoint that recovers the source as part
+of its `(v)` image needs the pre-update content.
+
 The two freezes are released by different signals, and that difference matters:
 
 | Freeze | Released by | Deferred disposal |

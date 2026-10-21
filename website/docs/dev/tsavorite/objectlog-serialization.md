@@ -629,6 +629,12 @@ completed it, but before that sample, is recovered from ReadOnly's image. A `(v)
 must therefore keep its `(v)` content for ReadOnly too, until the checkpoint completes - not only until Snapshot has
 written its page.
 
+Outside a checkpoint the superseded content is discardable. A CopyUpdate's new record is then in the source's version, so
+it supersedes the source in every later checkpoint, and no completed checkpoint recovers a source at or above
+`FlushedUntilAddress` from the main log. ReadOnly therefore writes either the pre-update image, if it serialized the value
+before the CopyUpdate, or a null value. Only the record image itself must stay intact while the source is frozen for flush
+(see [The same shape, without a checkpoint](state-machine.md#the-same-shape-without-a-checkpoint)).
+
 Snapshot leaves fuzzy v+1 records unchanged. Recovery uses the exact persisted `fuzzyRegionStartAddress` as the fuzzy lower
 boundary and invalidates such records before hashing overflow keys or reading payloads. RDH must still describe the record's
 stable allocation so recovery can advance to the next record.

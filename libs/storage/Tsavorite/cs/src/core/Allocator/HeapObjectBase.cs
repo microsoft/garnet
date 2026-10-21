@@ -127,9 +127,10 @@ namespace Tsavorite.core
             if (!srcIsOnMemoryLog)
                 return false;
 
-            // No (v) image is at stake: either this is not a checkpoint's new-version record, or the checkpoint does not
-            // capture this source (it was written after the transaction start). Release the old version rather than
-            // serializing it; the new version of the object already exists.
+            // No (v) image is at stake. Outside a checkpoint the new record is in the source's version, so it supersedes the source in
+            // every later checkpoint, and no completed checkpoint recovers a source that a flush is still writing: a flush that has not
+            // serialized the source writes a null value for it. Within a checkpoint, the checkpoint does not capture this source (it was
+            // written after the transaction start). Release the old version rather than serializing it; the new version already exists.
             if (!dstLogRecord.Info.IsInNewVersion || !checkpointNeedsSourceImage)
             {
                 // Wait for any concurrent ongoing serialization of oldValue to complete
