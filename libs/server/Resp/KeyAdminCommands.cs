@@ -417,14 +417,20 @@ namespace Garnet.server
                 }
             }
 
-            // Convert to expiration time in ticks
-            var expirationTimeInTicks = command switch
+            // Convert to expiration time in ticks, rejecting values that would overflow the representable date range
+            long expirationTimeInTicks;
+            var isValidExpiration = command switch
             {
-                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
-                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
-                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
-                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+                RespCommand.EXPIRE => ConvertUtils.TryRelativeSecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.PEXPIRE => ConvertUtils.TryRelativeMillisecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.EXPIREAT => ConvertUtils.TryUnixTimestampInSecondsToTicks(expiration, out expirationTimeInTicks),
+                _ => ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expiration, out expirationTimeInTicks)
             };
+
+            if (!isValidExpiration)
+            {
+                return AbortWithErrorMessage(CmdStrings.GenericErrInvalidExpireTime, command.ToString().ToLowerInvariant());
+            }
 
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
