@@ -493,6 +493,43 @@ namespace Garnet.test.cluster
 
         [Test, Order(6)]
         [Category("CLUSTER")]
+        public void ClusterMigratePreservesEtag([Values] bool expiry, [Values(32, 8192)] int valueLength)
+        {
+            context.CreateInstances(defaultShards, useTLS: UseTLS);
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+            const string key = "{etag-import}key";
+            int slot = ClusterTestUtils.HashSlot(Encoding.UTF8.GetBytes(key));
+            int sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
+            int targetIndex = (sourceIndex + 1) % defaultShards;
+            IServer source = context.clusterTestUtils.GetServer(sourceIndex);
+            IServer target = context.clusterTestUtils.GetServer(targetIndex);
+            string value = new('v', valueLength);
+            source.Execute(0, "SETWITHETAG", [key, "first"]);
+            source.Execute(0, "SETWITHETAG", [key, "second"]);
+            source.Execute(0, "SETWITHETAG", expiry ? [key, value, "EX", 300] : [key, value]);
+            long expiration = (long)source.Execute(0, "PEXPIRETIME", [key]);
+
+            context.clusterTestUtils.MigrateSlots(context.clusterTestUtils.GetEndPoint(sourceIndex),
+                context.clusterTestUtils.GetEndPoint(targetIndex), [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForSlotOwnership(targetIndex,
+                context.clusterTestUtils.GetLocalNodeId(targetIndex), [slot, slot], logger: context.logger);
+
+            RedisResult[] imported = (RedisResult[])target.Execute(0, "GETWITHETAG", [key]);
+            Assert.That((long)imported[0], Is.EqualTo(3));
+            Assert.That((string)imported[1], Is.EqualTo(value));
+            Assert.That((long)target.Execute(0, "PEXPIRETIME", [key]), Is.EqualTo(expiration));
+            RedisResult[] stale = (RedisResult[])target.Execute(0, "SETIFMATCH", [key, "stale", 2]);
+            Assert.That((long)stale[0], Is.EqualTo(3));
+            Assert.That((string)stale[1], Is.EqualTo(value));
+            RedisResult[] matching = (RedisResult[])target.Execute(0, "SETIFMATCH", [key, "updated", 3]);
+            Assert.That((long)matching[0], Is.EqualTo(4));
+            Assert.That(matching[1].IsNull, Is.True);
+        }
+
+        [Test, Order(6)]
+        [Category("CLUSTER")]
         public void ClusterSimpleMigrateSlots()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsTest started");
