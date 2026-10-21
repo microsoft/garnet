@@ -32,7 +32,7 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
-        unsafe void ImportRecord(string source, string destination)
+        unsafe void ImportRecord(string source, string destination, bool renameInput = false)
         {
             StoreWrapper storeWrapper = server.Provider.StoreWrapper;
             FunctionsState state = storeWrapper.CreateFunctionsState();
@@ -48,6 +48,11 @@ namespace Garnet.test
                 {
                     LogRecord record = new(recordPtr, state.transientObjectIdMap);
                     UnifiedInput input = new();
+                    if (renameInput)
+                    {
+                        input.header.cmd = RespCommand.RENAME;
+                        input.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedPointer(recordPtr, 0));
+                    }
                     Status status = context.Upsert((FixedSpanByteKey)Encoding.UTF8.GetBytes(destination), ref input, in record);
                     Assert.That(status.IsCompletedSuccessfully, Is.True);
                 }
@@ -163,6 +168,75 @@ namespace Garnet.test
         {
             fixed (byte* pointer = entry)
                 processor.ProcessAofRecordInternal(0, pointer, length, asReplica: false, out _);
+        }
+
+        static unsafe void ReplayReplicaEntry(AofProcessor processor, byte[] entry)
+        {
+            fixed (byte* pointer = entry)
+                processor.ProcessAofRecordInternal(0, pointer, entry.Length, asReplica: true, out _);
+        }
+
+        static unsafe byte[] TransactionMarker(AofHeader header, AofEntryType operation, long sequenceNumber)
+        {
+            header.opType = operation;
+            header.HeaderType = AofHeaderType.ShardedLogTransactionHeader;
+            AofShardedLogTransactionHeader marker = new()
+            {
+                shardedHeader = new AofShardedHeader { basicHeader = header, sequenceNumber = sequenceNumber },
+                participantCount = 1,
+            };
+            marker.replayTaskAccessVector[0] = 1;
+            return new ReadOnlySpan<byte>(&marker, AofShardedLogTransactionHeader.TotalSize).ToArray();
+        }
+
+        [Test]
+        public unsafe void ReplicaTransactionRejectsMalformedRecordBeforeApplying([Values] bool chunked,
+            [Values("header", "count", "argument")] string corruption, [Values(-1, int.MaxValue)] int invalidLength)
+        {
+            server.Dispose();
+            server = CreateAofServer(2, recover: false);
+            server.Start();
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase database = redis.GetDatabase();
+            database.Execute("SETWITHETAG", "source", new string('v', chunked ? 2 * TsavoriteLog.MinPartialAllocSize : 32));
+            ImportRecord("source", "destination", renameInput: true);
+            database.Execute("COMMITAOF");
+            List<byte[]> entries = ReadImportedEntries(2);
+            Assert.That(entries, Is.Not.Empty);
+            Assert.That(ReadHeader(entries[0]).IsChunked, Is.EqualTo(chunked));
+            List<byte[]> malformedEntries = entries.ConvertAll(entry => (byte[])entry.Clone());
+            byte[] finalEntry = malformedEntries[^1];
+            int headerSize = default(UnifiedInput).header.SpanByte.TotalSize;
+            int inputLength = default(UnifiedInput).SerializedLength + sizeof(int) + 2 * sizeof(long);
+            int prefixOffset = corruption switch
+            {
+                "header" => 0,
+                "count" => headerSize + sizeof(long),
+                _ => headerSize + sizeof(long) + sizeof(int),
+            };
+            fixed (byte* pointer = finalEntry)
+                *(int*)(pointer + finalEntry.Length - inputLength + prefixOffset) = invalidLength;
+
+            database.KeyDelete("destination");
+            database.StringSet("destination", "unchanged");
+            AofProcessor processor = new(server.Provider.StoreWrapper);
+            try
+            {
+                AofHeader header = ReadHeader(entries[0]);
+                ReplayReplicaEntry(processor, TransactionMarker(header, AofEntryType.TxnStart, 100));
+                foreach (byte[] entry in entries)
+                    ReplayReplicaEntry(processor, entry);
+                foreach (byte[] entry in malformedEntries)
+                    ReplayReplicaEntry(processor, entry);
+                byte[] commit = TransactionMarker(header, AofEntryType.TxnCommit, 200);
+                GarnetException exception = Assert.Throws<GarnetException>(() => ReplayReplicaEntry(processor, commit));
+                Assert.That(exception.StackTrace, Does.Contain("RequiresOrderedReplay"));
+            }
+            finally
+            {
+                processor.Dispose();
+            }
+            AssertTaggedValue(database, "destination", 0, "unchanged");
         }
 
         [Test]
