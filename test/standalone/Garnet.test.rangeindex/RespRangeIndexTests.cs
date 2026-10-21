@@ -1793,14 +1793,14 @@ namespace Garnet.test
             // Should be 6 elements (3 field-value pairs)
             ClassicAssert.AreEqual(6, arr.Length);
 
-            ClassicAssert.AreEqual("is_live", (string)arr[2]);
-            ClassicAssert.AreEqual("true", (string)arr[3]);
+            ClassicAssert.AreEqual("is_live", (string)arr[0]);
+            ClassicAssert.AreEqual("true", (string)arr[1]);
 
-            ClassicAssert.AreEqual("is_flushed", (string)arr[4]);
+            ClassicAssert.AreEqual("is_flushed", (string)arr[2]);
+            ClassicAssert.AreEqual("false", (string)arr[3]);
+
+            ClassicAssert.AreEqual("is_recovered", (string)arr[4]);
             ClassicAssert.AreEqual("false", (string)arr[5]);
-
-            ClassicAssert.AreEqual("is_recovered", (string)arr[6]);
-            ClassicAssert.AreEqual("false", (string)arr[7]);
         }
 
         /// <summary>
