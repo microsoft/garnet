@@ -1892,6 +1892,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task VSIMBadAttributeFiltersAsync()
+        {
+            const string Key = nameof(VSIMBadAttributeFiltersAsync);
+            const string Element0 = nameof(Element0);
+            const string Element1 = nameof(Element1);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+#pragma warning disable JSON001 // Invalid JSON pattern - which is the point of this test
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element0, new float[] { 1, 2, 3 }, "{\"a\\")).ConfigureAwait(false));
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element1, new float[] { 1, 2, 3 }, "{\"a\": [\"\\")).ConfigureAwait(false));
+#pragma warning restore JSON001
+
+            var searchReq = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+            searchReq.FilterExpression = ".a == 1";
+            using var res = await db.VectorSetSimilaritySearchAsync(Key, searchReq).ConfigureAwait(false);
+            ClassicAssert.AreEqual(0, res.Length);
+        }
+
+        [Test]
         public void VSIMBadFilters()
         {
             const string VectorSet = "vs";
