@@ -293,9 +293,21 @@ Deletes a key only if the provided Etag is strictly greater than the existing Et
 
 ---
 
-### Compatibility and Behavior with Non-ETag Commands
+### Cluster support
 
-ETags are currently not supported for servers running in Cluster mode. This will be supported soon.
+`GETWITHETAG`, `SETWITHETAG` and `SETIFMATCH` support cluster slot routing, migration and replication. Commands sent to the wrong owner return `MOVED`; during migration, missing keys on the source return `ASK`. The importing node requires `ASKING` on the same connection before each redirected command.
+
+Replicas serve `GETWITHETAG` only after `READONLY` enables replica reads on the connection. Writes redirect to the primary. For an existing key on a primary, concurrent `SETIFMATCH` requests with the same current ETag allow exactly one update.
+
+Migration, diskless snapshots, replica replay and recovery preserve stored ETags and expiration. Recovery coverage includes recovered destination contents and subsequent local conditional writes; it does not establish replica stream resumption after restart. See the [append-only file compatibility and upgrade guidance](../dev/aof-record-layout.md#imported-string-record-optionals) before upgrading a cluster.
+
+Replication is asynchronous. Failover can lose acknowledged writes and revert an ETag to an earlier value. Applications must not use ETags as a durability guarantee.
+
+### Deletion, expiration and recreation
+
+Deletion and expiration remove the stored ETag with the value. `SETWITHETAG` recreates a missing key with ETag 1. `SETIFMATCH` creates a missing key regardless of the supplied ETag and initializes its ETag to the supplied value plus one. ETags are not unique across a key's lifetime, and an old ETag can match a recreated key.
+
+### Compatibility and Behavior with Non-ETag Commands
 
 :::warning Important: Key Partitioning Required
 All non-ETag commands (SET, GET, APPEND, INCR, MSET, BITOP, RENAME, etc.) are completely **ETag-blind**. They do not read, check, update, or preserve ETags.
