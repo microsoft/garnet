@@ -47,6 +47,8 @@ namespace Garnet.server
         public VectorBasicContext vectorBasicContext;
         public VectorTransactionalContext vectorTransactionalContext;
 
+        public UnsafeVectorNullLockingContext unsafeVectorNullLockingBasicContext;
+
         /// <summary>
         /// Session Contexts for unified store
         /// </summary>
@@ -144,6 +146,7 @@ namespace Garnet.server
 
             vectorBasicContext = vectorSession.BasicContext;
             vectorTransactionalContext = vectorSession.TransactionalContext;
+            unsafeVectorNullLockingBasicContext = vectorSession.UnsafeBasicNullLockingContext;
         }
 
         public void UpdateRespProtocolVersion(byte respProtocolVersion)

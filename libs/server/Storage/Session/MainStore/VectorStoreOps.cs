@@ -364,7 +364,7 @@ namespace Garnet.server
                 if (result is VectorManagerResult.OK or VectorManagerResult.Duplicate)
                 {
                     // On successful addition, we need to manually replicate the write
-                    vectorManager.ReplicateVectorSetAdd(key, ref input, ref stringBasicContext);
+                    vectorManager.ReplicateVectorSetAdd(this, key, ref input);
                 }
 
                 return GarnetStatus.OK;
@@ -396,7 +396,7 @@ namespace Garnet.server
                 if (res == VectorManagerResult.OK)
                 {
                     // On successful removal, we need to manually replicate the write
-                    vectorManager.ReplicateVectorSetRemove(key, element, ref input, ref stringBasicContext);
+                    vectorManager.ReplicateVectorSetRemove(this, key, element, ref input);
 
                     return GarnetStatus.OK;
                 }
@@ -429,7 +429,7 @@ namespace Garnet.server
                 if (vectorManager.TrySetAttribute(indexSpan, element, attribute))
                 {
                     // On successful update, we need to manually replicate the write
-                    vectorManager.ReplicateVectorSetSetAttribute(key, element, attribute, ref input, ref stringBasicContext);
+                    vectorManager.ReplicateVectorSetSetAttribute(this, key, element, attribute, ref input);
 
                     return GarnetStatus.OK;
                 }

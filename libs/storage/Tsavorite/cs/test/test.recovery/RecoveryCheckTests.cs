@@ -910,7 +910,7 @@ namespace Tsavorite.test.recovery
             readonly long expectedCount;
 
             ClientSession<TestSpanByteKey, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> session2;
-            BasicContext<TestSpanByteKey, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> bc2;
+            BasicContext<TestSpanByteKey, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator, BasicSessionLocker<LongStoreFunctions, LongAllocator>> bc2;
 
             public SnapshotIterator(TsavoriteKV<LongStoreFunctions, LongAllocator> store2, long expectedCount)
             {
