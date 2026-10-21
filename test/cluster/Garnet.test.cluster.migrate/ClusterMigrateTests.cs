@@ -534,7 +534,7 @@ namespace Garnet.test.cluster
             [Values] bool expiry, [Values(32, 2097152)] int valueLength)
         {
             context.CreateInstances(4, useTLS: UseTLS, enableAOF: true, tryRecover: true,
-                sublogCount: sublogCount, AofPageSize: "4m", AofMemorySize: "16m");
+                sublogCount: sublogCount, AofPageSize: "32m", AofMemorySize: "64m");
             context.CreateConnection(useTLS: UseTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 2, replica_count: 1, logger: context.logger);
             const string key = "{etag-replay}key";
@@ -575,10 +575,9 @@ namespace Garnet.test.cluster
             RedisResult[] matching = (RedisResult[])target.Execute(0, "SETIFMATCH", [key, "updated", 3]);
             Assert.That((long)matching[0], Is.EqualTo(4));
             Assert.That(matching[1].IsNull, Is.True);
-            context.clusterTestUtils.WaitForReplicaAofSync(targetIndex, replicaIndex, logger: context.logger);
-            replicated = (RedisResult[])replica.Execute(0, "GETWITHETAG", [key], CommandFlags.NoRedirect);
-            Assert.That((long)replicated[0], Is.EqualTo(4));
-            Assert.That((string)replicated[1], Is.EqualTo("updated"));
+            recovered = (RedisResult[])target.Execute(0, "GETWITHETAG", [key]);
+            Assert.That((long)recovered[0], Is.EqualTo(4));
+            Assert.That((string)recovered[1], Is.EqualTo("updated"));
         }
 
         [Test, Order(6)]

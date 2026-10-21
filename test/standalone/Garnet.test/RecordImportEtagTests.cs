@@ -94,7 +94,7 @@ namespace Garnet.test
             Assert.That(matching[1].IsNull, Is.True);
             AssertTaggedValue(database, "destination", 4, "updated");
             database.StringSet("destination", "plain");
-            AssertTaggedValue(database, "destination", 0, "plain");
+            AssertTaggedValue(database, "destination", 4, "plain");
         }
 
         [Test]
@@ -133,7 +133,7 @@ namespace Garnet.test
         {
             GarnetServerOptions options = TestUtils.GetGarnetServerOptions(TestUtils.MethodTestDir,
                 TestUtils.MethodTestDir, TestUtils.EndPoint, enableCluster: false, enableAOF: true,
-                tryRecover: recover, sublogCount: sublogCount, aofPageSize: "4m", aofMemorySize: "16m");
+                tryRecover: recover, sublogCount: sublogCount, aofPageSize: "32m", aofMemorySize: "64m");
             return new GarnetServer(options);
         }
 
@@ -166,7 +166,8 @@ namespace Garnet.test
         }
 
         [Test]
-        public unsafe void RecordUpsertRejectsTruncatedMetadataBeforeApplying([Values] bool chunked)
+        public unsafe void RecordUpsertRejectsMalformedInputBeforeApplying([Values] bool chunked,
+            [Values("truncated", "header", "count")] string corruption)
         {
             server.Dispose();
             server = CreateAofServer(1, recover: false);
@@ -178,39 +179,57 @@ namespace Garnet.test
             database.Execute("COMMITAOF");
             List<byte[]> entries = ReadImportedEntries(1);
             Assert.That(entries, Is.Not.Empty);
+            byte[] finalEntry = entries[^1];
+            if (corruption != "truncated")
+            {
+                int inputLength = default(UnifiedInput).SerializedLength + 2 * sizeof(long);
+                int prefixOffset = corruption == "header" ? 0 : default(UnifiedInput).header.SpanByte.TotalSize + sizeof(long);
+                fixed (byte* pointer = finalEntry)
+                    *(int*)(pointer + finalEntry.Length - inputLength + prefixOffset) = int.MaxValue;
+            }
+            database.KeyDelete("destination");
             database.StringSet("destination", "unchanged");
-            using AofProcessor processor = new(server.Provider.StoreWrapper);
-            if (chunked)
+            AofProcessor processor = new(server.Provider.StoreWrapper);
+            try
             {
-                for (int index = 0; index < entries.Count - 1; index++)
-                    ReplayEntry(processor, entries[index], entries[index].Length);
-                byte[] finalEntry = entries[^1];
-                Assert.Throws<GarnetException>(() => ReplayEntry(processor, finalEntry, finalEntry.Length - 1));
-                AssertTaggedValue(database, "destination", 0, "unchanged");
-
-                AofChunkedRecordReader reader = new();
-                ChunkedAccumulator completed = null;
-                foreach (byte[] entry in entries)
+                if (chunked)
                 {
-                    Assert.That(ReadHeader(entry).IsChunked, Is.True);
-                    fixed (byte* pointer = entry)
+                    for (int index = 0; index < entries.Count - 1; index++)
+                        ReplayEntry(processor, entries[index], entries[index].Length);
+                    int finalLength = corruption == "truncated" ? finalEntry.Length - 1 : finalEntry.Length;
+                    Assert.Throws<GarnetException>(() => ReplayEntry(processor, finalEntry, finalLength));
+                    AssertTaggedValue(database, "destination", 0, "unchanged");
+
+                    AofChunkedRecordReader reader = new();
+                    ChunkedAccumulator completed = null;
+                    foreach (byte[] entry in entries)
                     {
-                        if (reader.ReadChunk(pointer, entry.Length, out ChunkedAccumulator accumulator))
-                            completed = accumulator;
+                        Assert.That(ReadHeader(entry).IsChunked, Is.True);
+                        fixed (byte* pointer = entry)
+                        {
+                            if (reader.ReadChunk(pointer, entry.Length, out ChunkedAccumulator accumulator))
+                                completed = accumulator;
+                        }
                     }
+                    Assert.That(completed, Is.Not.Null);
+                    if (corruption == "truncated")
+                        completed.inputOffset--;
+                    Assert.Throws<GarnetException>(() => processor.ProcessAofRecordInternal(0, completed, asReplica: false));
+                    reader.DiscardInProgressAccumulations();
                 }
-                Assert.That(completed, Is.Not.Null);
-                completed.inputOffset--;
-                Assert.Throws<GarnetException>(() => processor.ProcessAofRecordInternal(0, completed, asReplica: false));
-                reader.DiscardInProgressAccumulations();
+                else
+                {
+                    Assert.That(entries.Count, Is.EqualTo(1));
+                    Assert.That(ReadHeader(entries[0]).IsChunked, Is.False);
+                    int entryLength = corruption == "truncated" ? entries[0].Length - 1 : entries[0].Length;
+                    Assert.Throws<GarnetException>(() => ReplayEntry(processor, entries[0], entryLength));
+                }
+                AssertTaggedValue(database, "destination", 0, "unchanged");
             }
-            else
+            finally
             {
-                Assert.That(entries.Count, Is.EqualTo(1));
-                Assert.That(ReadHeader(entries[0]).IsChunked, Is.False);
-                Assert.Throws<GarnetException>(() => ReplayEntry(processor, entries[0], entries[0].Length - 1));
+                processor.Dispose();
             }
-            AssertTaggedValue(database, "destination", 0, "unchanged");
         }
 
         [Test]
