@@ -27,6 +27,21 @@ namespace Garnet.server
         internal const byte InternalIdMap = 5;
         internal const byte ExternalIdMap = 6;
 
+        /// <summary>
+        /// Redis allows a gigantic EF, but we map this to DiskANN's l_build where such huge values are counter-production.
+        /// 
+        /// We still accept the large EF values for Redis compatibility, but we cap them at an "excessively high" 8K to avoid
+        /// degenerate behavior around allocations and insert performance.
+        /// </summary>
+        private const uint MaxEffectiveBuildExplorationFactor = 8_192;
+
+        /// <summary>
+        /// Similar to <see cref="MaxEffectiveBuildExplorationFactor"/>, Redis allows a quite large M that we map to DiskANN's num_links where such large values are counter-productive.
+        /// 
+        /// We still accept the large M values for compatibility, but we cap to 512 to avoid degenerate behavior.
+        /// </summary>
+        private const uint MaxEffectiveNumLinks = 512;
+
 #if DEBUG
         /// <summary>
         /// For testing purposes, in DEBUG builds the count of calls to <see cref="CreateIndex"/> or <see cref="RecreateIndex"/> on this instance.
@@ -67,6 +82,9 @@ namespace Garnet.server
 #endif
             unsafe
             {
+                buildExplorationFactor = Math.Min(buildExplorationFactor, MaxEffectiveBuildExplorationFactor);
+                numLinks = Math.Min(numLinks, MaxEffectiveNumLinks);
+
                 var ret = NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, distanceMetric, buildExplorationFactor, numLinks, startPointId, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback, (nint)filterCallback, (nint)logCallback, out quantizationRequested);
 
                 Debug.Assert(ret != 0, "create_index failed, returning a null pointer - this shouldn't be possible");
