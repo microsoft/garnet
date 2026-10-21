@@ -122,6 +122,8 @@ Its body is a length-prefixed key, a length-prefixed value, the existing seriali
 then the original entity tag and absolute expiration as two little-endian 64-bit integers.
 Zero means the corresponding optional field is absent. `RecordUpsertInput` writes and reads this input
 suffix. Chunked entries include the same suffix in their input component.
+Replay checks the input header and every argument length against the input boundary before
+allocating argument storage or decoding the input.
 
 Migration imports and string renames use this entry to preserve both optionals during replica replay
 and recovery. Diskless snapshot imports preserve them directly without appending snapshot records to
