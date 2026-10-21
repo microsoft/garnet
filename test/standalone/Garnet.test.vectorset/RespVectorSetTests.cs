@@ -1369,6 +1369,32 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task VSIMDoesNotRequireExclusiveIndexLockAsync()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "NOQUANT"]));
+
+            // Holding a shared lock on the Vector Set stands in for a concurrent reader; another reader must not wait for it.
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            var locks = (ReadOptimizedLock)typeof(VectorManager).GetField("vectorSetLocks", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(vectorManager);
+            var keyHash = server.Provider.StoreWrapper.DefaultDatabase.Store.GetKeyHash((FixedSpanByteKey)"foo"u8);
+            locks.AcquireSharedLock(keyHash, out var sharedLock);
+            try
+            {
+                var search = Task.Run(() => (byte[][])db.Execute("VSIM", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", "1"]));
+                var completed = await Task.WhenAny(search, Task.Delay(TimeSpan.FromSeconds(30)));
+                ClassicAssert.AreSame(search, completed, "VSIM blocked behind a shared Vector Set lock");
+                ClassicAssert.AreEqual(1, (await search).Length);
+            }
+            finally
+            {
+                locks.ReleaseLock(sharedLock);
+            }
+        }
+
+        [Test]
         public void VSIM()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
