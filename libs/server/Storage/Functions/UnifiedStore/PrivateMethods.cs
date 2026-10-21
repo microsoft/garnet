@@ -31,6 +31,21 @@ namespace Garnet.server
             if (input.SerializedLength > 0)
                 input.header.flags |= RespInputFlags.Deterministic;
 
+            if (input.isRecordImport)
+            {
+                RecordUpsertInput recordInput = new() { input = input };
+                functionsState.appendOnlyFile.Log.Enqueue(
+                    AofEntryType.UnifiedStoreStringRecordUpsert,
+                    version,
+                    sessionID,
+                    key,
+                    value,
+                    ref recordInput,
+                    epochAccessor,
+                    out _);
+                return;
+            }
+
             functionsState.appendOnlyFile.Log.Enqueue(
                 AofEntryType.UnifiedStoreStringUpsert,
                 version,

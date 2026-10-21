@@ -434,6 +434,11 @@ namespace Garnet.server
     /// </summary>
     public struct UnifiedInput : IStoreInput
     {
+        // Record optionals are serialized only by RecordUpsertInput, preserving the legacy input format.
+        internal bool isRecordImport;
+        internal long importedETag;
+        internal long importedExpiration;
+
         /// <summary>
         /// Common input header for Garnet
         /// </summary>
