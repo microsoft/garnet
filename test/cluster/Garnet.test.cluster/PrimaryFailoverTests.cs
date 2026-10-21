@@ -126,6 +126,44 @@ namespace Garnet.test.cluster
 
 #if DEBUG
         [Test, CancelAfter(120_000)]
+        public async Task FailedReplicaOfDoesNotRestartReplicaTasks([Values] bool diskless)
+        {
+            context.CreateInstances(2, enableAOF: true, CommitFrequencyMs: 100, enableDisklessSync: diskless);
+            context.nodeOptions[1].EnableVectorSetPreview = true;
+            context.nodeOptions[1].VectorSetReplayTaskCount = 1;
+            EnableIndexGrowth(1);
+            context.CreateConnection();
+            context.SimplePrimaryReplicaSetup();
+            var candidate = Provider(1);
+            Assert.That(candidate.storeWrapper.TaskManager.IsRunning(TaskType.CommitTask), Is.True);
+            Assert.That(candidate.storeWrapper.TaskManager.IsRegistered(TaskType.VectorReplicationReplayTask), Is.False);
+            var primaryEndpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+            var address = primaryEndpoint.Address.ToString();
+            var port = primaryEndpoint.Port.ToString();
+            using var connection = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await connection.ConnectAsync((IPEndPoint)context.clusterTestUtils.GetEndPoint(1), deadline.Token);
+            const ExceptionInjectionType injection = ExceptionInjectionType.Replication_Fail_After_Primary_Task_Drain;
+            ExceptionInjectionHelper.EnableException(injection);
+            try
+            {
+                var response = await ExecuteCommandAsync(connection,
+                    $"*3\r\n$9\r\nREPLICAOF\r\n${address.Length}\r\n{address}\r\n${port.Length}\r\n{port}\r\n", deadline.Token);
+                Assert.That(response, Does.StartWith("-").And.Contain(injection.ToString()));
+                Assert.That(candidate.clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
+                Assert.That(candidate.replicationManager.IsRecovering, Is.False);
+                Assert.That(candidate.storeWrapper.TaskManager.IsRunning(TaskType.CommitTask), Is.True);
+                Assert.That(candidate.storeWrapper.TaskManager.IsRunning(TaskType.IndexAutoGrowTask), Is.True);
+                Assert.That(candidate.storeWrapper.TaskManager.IsRegistered(TaskType.VectorReplicationReplayTask), Is.False,
+                    "The REPLICAOF handler must not restart replica tasks after attachment rolls back to primary.");
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(injection);
+            }
+        }
+
+        [Test, CancelAfter(120_000)]
         public async Task FailedReplicationRestoresPrimaryMaintenance(
             [Values] bool diskless, [Values] bool background, [Values] bool resetOnFailure)
         {

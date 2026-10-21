@@ -94,7 +94,8 @@ namespace Garnet.cluster
                             clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
                     );
 
-                clusterProvider.storeWrapper.StartReplicaTasks();
+                if (clusterProvider.clusterManager.CurrentConfig.IsReplica)
+                    clusterProvider.storeWrapper.StartReplicaTasks();
 
                 if (!success)
                 {
