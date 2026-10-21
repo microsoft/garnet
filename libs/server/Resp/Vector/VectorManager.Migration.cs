@@ -148,6 +148,21 @@ namespace Garnet.server
             ReadIndex(value, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var flags, out var indexPtr);
             var startPointId = ReadStartPointId(value);
 
+            var invalidMigrationRecord =
+                dimensions > MaxVectorDimensions ||
+                reduceDims > MaxVectorDimensions ||
+                (quantType == VectorQuantType.Invalid || !Enum.IsDefined(quantType)) ||
+                buildExplorationFactor > MaxExplorationFactor ||
+                numLinks > MaxNumLinks ||
+                (distanceMetric == VectorDistanceMetricType.Invalid || !Enum.IsDefined(distanceMetric)) ||
+                (flags & ~VectorSetFlags.All) != 0;
+
+            if (invalidMigrationRecord)
+            {
+                logger?.LogWarning("Received invalid Vector Set migration record for {key}: {context}, {dimensions}, {reduceDims}, {quantyType}, {buildExplorationFactor}, {numLinks}, {distanceMetric}, {flags}", SpanByte.ToShortString(key), context, dimensions, reduceDims, quantizationAndImportTaskCount, buildExplorationFactor, numLinks, distanceMetric, flags);
+                throw new GarnetException("Invalid or corrupt Vector Set index record");
+            }
+
             Debug.Assert(indexPtr == 0, "Shouldn't receive an index pointer during a migration");
 
             // Extra validation in DEBUG
