@@ -146,6 +146,7 @@ namespace Garnet.test.Resp
         }
 
         [TestCase("*268435456\r\n")]
+        [TestCase("*357913941\r\n")]
         [TestCase("*1000000\r\n$1\r\na\r\n")]
         public void ADeclaredCountDoesNotAllocateBeforeItsElementsArrive(string header)
         {
@@ -167,10 +168,88 @@ namespace Garnet.test.Resp
         [TestCase("*2147483647\r\n")]
         [TestCase("*2147483591\r\n")]
         [TestCase("*715827883\r\n")]
+        [TestCase("*357913942\r\n")]
+        [TestCase("*1\r\n*357913942\r\n")]
         public void ACountNoBufferCanHoldIsAProtocolError(string header)
         {
             _ = Assert.Throws<RespParsingException>(() => ReadStrings(header, out _, out _));
             _ = Assert.Throws<RespParsingException>(() => ReadPooled(MemoryPool<byte>.Shared, header, out _, out _));
+        }
+
+        [Test]
+        public void AReplyStillArrivingAllocatesNothing()
+        {
+            // A large reply that the parser sees grow one receive at a time
+            var sb = new StringBuilder("*4000\r\n");
+            for (var i = 0; i < 4000; i++)
+                _ = sb.Append(i % 2 == 0 ? "$5\r\nvalue\r\n" : ":12345\r\n");
+            var nested = new StringBuilder("*3\r\n*2\r\n+a\r\n:1\r\n").Append(sb).Append("+tail\r\n").ToString();
+            var flat = sb.ToString();
+
+            foreach (var (reply, pooled) in new[] { (nested, false), (flat, false), (flat, true) })
+            {
+                var bytes = Encoding.ASCII.GetBytes(reply);
+                MemoryResult<byte>[] warmPooled = null;
+                fixed (byte* start = bytes)
+                {
+                    // Warm up so that the measurement covers only the parses themselves
+                    var warm = start;
+                    _ = pooled
+                        ? RespReadResponseUtils.TryReadStringArrayWithLengthHeader(MemoryPool<byte>.Shared, out warmPooled, ref warm, start + bytes.Length)
+                        : RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out _, ref warm, start + bytes.Length);
+
+                    var before = GC.GetAllocatedBytesForCurrentThread();
+                    var completed = 0;
+                    for (var length = 1; length < bytes.Length; length += 7)
+                    {
+                        var ptr = start;
+                        if (pooled
+                            ? RespReadResponseUtils.TryReadStringArrayWithLengthHeader(MemoryPool<byte>.Shared, out _, ref ptr, start + length)
+                            : RespReadResponseUtils.TryReadStringArrayWithLengthHeader(out _, ref ptr, start + length))
+                        {
+                            completed++;
+                        }
+                    }
+                    var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+                    ClassicAssert.AreEqual(0, completed, "An incomplete reply was read as complete");
+                    ClassicAssert.AreEqual(0, allocated, "Parsing an incomplete reply allocated");
+                }
+
+                if (warmPooled != null)
+                {
+                    foreach (var element in warmPooled)
+                        element.Dispose();
+                }
+            }
+        }
+
+        [Test]
+        public void TheCommonStringArrayReaderWaitsForTheWholeReply()
+        {
+            const string reply = "*3\r\n$3\r\nabc\r\n:7\r\n$0\r\n\r\n";
+            for (var length = 1; length < reply.Length; length++)
+            {
+                string[] partial = null;
+                ClassicAssert.IsFalse(Parse(reply[..length], (ref byte* ptr, byte* end) => RespReadUtils.TryReadStringArrayWithLengthHeader(out partial, ref ptr, end), out var consumed), $"prefix {length}");
+                ClassicAssert.IsNull(partial);
+                ClassicAssert.AreEqual(0, consumed);
+            }
+
+            string[] result = null;
+            ClassicAssert.IsTrue(Parse(reply, (ref byte* ptr, byte* end) => RespReadUtils.TryReadStringArrayWithLengthHeader(out result, ref ptr, end), out var fullConsumed));
+            CollectionAssert.AreEqual(new[] { "abc", "7", "" }, result);
+            ClassicAssert.AreEqual(reply.Length, fullConsumed);
+
+            _ = Assert.Throws<RespParsingException>(() => Parse("*357913942\r\n", (ref byte* ptr, byte* end) => RespReadUtils.TryReadStringArrayWithLengthHeader(out _, ref ptr, end), out _));
+        }
+
+        [Test]
+        public void AFullReceiveBufferAtOrAboveTheLimitIsRejected()
+        {
+            Assert.DoesNotThrow(() => RespParsingException.ThrowIfReceiveBufferLimitExceeded(RespReadUtils.MaxReceiveBufferBytes - 1));
+            _ = Assert.Throws<RespParsingException>(() => RespParsingException.ThrowIfReceiveBufferLimitExceeded(RespReadUtils.MaxReceiveBufferBytes));
+            _ = Assert.Throws<RespParsingException>(() => RespParsingException.ThrowIfReceiveBufferLimitExceeded(int.MaxValue));
         }
 
         [Test]
@@ -184,6 +263,16 @@ namespace Garnet.test.Resp
 
             // Rejected from the headers alone, before the rest of a deep reply arrives
             _ = Assert.Throws<RespParsingException>(() => ReadStrings(Nested(100_000, "*1\r\n"), out _, out _));
+        }
+
+        [Test]
+        public void DeepArraysResumeTheirParentsAndStopAtTheReplyBoundary()
+        {
+            var reply = "*2\r\n" + Nested(RespReadUtils.MaxNestingDepth - 2, "*3\r\n*-1\r\n*0\r\n+tail\r\n") + "+after\r\n";
+
+            ClassicAssert.IsTrue(ReadStrings(reply + "+next\r\n", out var result, out var consumed));
+            CollectionAssert.AreEqual(new[] { ", , tail", "after" }, result);
+            ClassicAssert.AreEqual(reply.Length, consumed);
         }
 
         [Test]

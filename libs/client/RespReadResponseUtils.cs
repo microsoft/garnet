@@ -3,6 +3,8 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -162,70 +164,44 @@ namespace Garnet.client
             => RespReadUtils.TryReadErrorAsString(out error, ref ptr, end);
 
         /// <summary>
-        /// Smallest encoding of an array element ("+\r\n" or ":\r\n"); bounds how many elements the bytes
-        /// received so far can hold.
-        /// </summary>
-        const int MinArrayElementBytes = 3;
-
-        /// <summary>
-        /// Reads an array header, accepting its element count only once the bytes received so far could hold
-        /// that many elements. An array is therefore never sized from a count the peer has not backed with data.
-        /// </summary>
-        /// <returns>False if more bytes are needed.</returns>
-        static bool TryReadBoundedArrayLength(out int length, ref byte* ptr, byte* end)
-        {
-            if (!RespReadUtils.TryReadSignedArrayLength(out length, ref ptr, end))
-            {
-                return false;
-            }
-
-            if (length > (end - ptr) / MinArrayElementBytes)
-            {
-                // No receive buffer can ever hold this many elements
-                if (length > int.MaxValue / MinArrayElementBytes)
-                {
-                    RespParsingException.ThrowInvalidLength(length);
-                }
-
-                return false;
-            }
-
-            return true;
-        }
-
-        /// <summary>
         /// Read string array with length header. Nested arrays are flattened into a comma-separated string.
         /// </summary>
         /// <remarks>
-        /// Each array is sized only from an element count the received bytes can hold, so the memory a reply
-        /// can commit is proportional to the bytes the peer has sent rather than to the count it declares.
-        /// <paramref name="ptr"/> is advanced only when the whole reply has been read.
+        /// Nothing is allocated until <see cref="RespReadUtils.TrySkipArrayReply"/> has confirmed that the whole
+        /// reply has been received, so a reply still arriving costs no allocation however many receives it
+        /// spans, and arrays are sized only from counts the received bytes back. <paramref name="ptr"/> is
+        /// advanced only when the whole reply has been read.
         /// </remarks>
         /// <exception cref="RespParsingException">Thrown if the reply is malformed, declares an element count
         /// that can never be received, or nests deeper than <see cref="RespReadUtils.MaxNestingDepth"/>.</exception>
         public static bool TryReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
         {
+            result = null;
+
             var cur = ptr;
-            if (!TryReadStringArray(out result, ref cur, end, depth: 1))
+            if (!RespReadUtils.TrySkipArrayReply(ref cur, end, allowNestedArrays: true))
             {
                 return false;
             }
 
+            var replyEnd = cur;
+            cur = ptr;
+            if (!TryReadStringArray(out result, ref cur, replyEnd))
+            {
+                Debug.Fail("A validated reply must read in full");
+                return false;
+            }
+
+            Debug.Assert(cur == replyEnd, "A validated reply must read in full");
             ptr = cur;
             return true;
         }
 
-        static bool TryReadStringArray(out string[] result, ref byte* ptr, byte* end, int depth)
+        static bool TryReadStringArray(out string[] result, ref byte* ptr, byte* end)
         {
             result = null;
 
-            // Bounding the depth keeps the recursion from exhausting the stack
-            if (depth > RespReadUtils.MaxNestingDepth)
-            {
-                RespParsingException.ThrowExcessiveNestingDepth(RespReadUtils.MaxNestingDepth);
-            }
-
-            if (!TryReadBoundedArrayLength(out var length, ref ptr, end))
+            if (!RespReadUtils.TryReadSignedArrayLength(out var length, ref ptr, end))
             {
                 return false;
             }
@@ -237,8 +213,24 @@ namespace Garnet.client
             }
 
             var elements = new string[length];
-            for (var i = 0; i < length; i++)
+            Stack<(string[] Elements, int Index)> parents = null;
+            var i = 0;
+            while (true)
             {
+                if (i == elements.Length)
+                {
+                    if (parents == null || parents.Count == 0)
+                    {
+                        result = elements;
+                        return true;
+                    }
+
+                    var flattened = string.Join(", ", elements);
+                    (elements, i) = parents.Pop();
+                    elements[i++] = flattened;
+                    continue;
+                }
+
                 if (ptr >= end)
                 {
                     return false;
@@ -256,28 +248,36 @@ namespace Garnet.client
                 }
                 else if (*ptr == '*')
                 {
-                    if (!TryReadStringArray(out var subArray, ref ptr, end, depth + 1))
+                    if (!RespReadUtils.TryReadSignedArrayLength(out var nestedLength, ref ptr, end))
                         return false;
-                    elements[i] = subArray == null ? null : string.Join(", ", subArray);
+                    if (nestedLength < 0)
+                    {
+                        elements[i++] = null;
+                        continue;
+                    }
+
+                    parents ??= new Stack<(string[] Elements, int Index)>();
+                    parents.Push((elements, i));
+                    elements = new string[nestedLength];
+                    i = 0;
+                    continue;
                 }
                 else
                 {
                     if (!TryReadIntegerAsString(out elements[i], ref ptr, end))
                         return false;
                 }
+                i++;
             }
-
-            result = elements;
-            return true;
         }
 
         /// <summary>
         /// Read string array with length header
         /// </summary>
         /// <remarks>
-        /// The array is sized only from an element count the received bytes can hold, so the memory a reply can
-        /// commit is proportional to the bytes the peer has sent rather than to the count it declares. Buffers
-        /// rented for a reply that is not yet complete are returned to the pool, and <paramref name="ptr"/> is
+        /// Nothing is rented or allocated until <see cref="RespReadUtils.TrySkipArrayReply"/> has confirmed that
+        /// the whole reply has been received, so a reply still arriving costs no allocation however many receives
+        /// it spans, and the array is sized only from a count the received bytes back. <paramref name="ptr"/> is
         /// advanced only when the whole reply has been read.
         /// </remarks>
         /// <exception cref="RespParsingException">Thrown if the reply is malformed, contains a nested array, or
@@ -287,7 +287,14 @@ namespace Garnet.client
             result = null;
 
             var cur = ptr;
-            if (!TryReadBoundedArrayLength(out var length, ref cur, end))
+            if (!RespReadUtils.TrySkipArrayReply(ref cur, end, allowNestedArrays: false))
+            {
+                return false;
+            }
+
+            var replyEnd = cur;
+            cur = ptr;
+            if (!RespReadUtils.TryReadSignedArrayLength(out var length, ref cur, replyEnd))
             {
                 return false;
             }
@@ -305,28 +312,24 @@ namespace Garnet.client
             {
                 for (; parsed < length; parsed++)
                 {
-                    if (cur >= end)
+                    if (cur >= replyEnd)
                     {
                         return false;
                     }
 
                     if (*cur == '$')
                     {
-                        if (!TryReadStringWithLengthHeader(pool, out elements[parsed], ref cur, end))
+                        if (!TryReadStringWithLengthHeader(pool, out elements[parsed], ref cur, replyEnd))
                             return false;
                     }
                     else if (*cur == '+')
                     {
-                        if (!TryReadSimpleString(pool, out elements[parsed], ref cur, end))
+                        if (!TryReadSimpleString(pool, out elements[parsed], ref cur, replyEnd))
                             return false;
-                    }
-                    else if (*cur == '*')
-                    {
-                        RespParsingException.ThrowUnexpectedToken(*cur);
                     }
                     else
                     {
-                        if (!TryReadIntegerAsString(pool, out elements[parsed], ref cur, end))
+                        if (!TryReadIntegerAsString(pool, out elements[parsed], ref cur, replyEnd))
                             return false;
                     }
                 }
@@ -341,6 +344,7 @@ namespace Garnet.client
                 }
             }
 
+            Debug.Assert(cur == replyEnd, "A validated reply must read in full");
             result = elements;
             ptr = cur;
             return true;

@@ -9,6 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.networking
@@ -744,7 +745,8 @@ namespace Garnet.networking
 
         unsafe void DoubleNetworkReceiveBuffer()
         {
-            var tmp = networkPool.Get(networkReceiveBuffer.Length * 2, PoolEntryBufferType.DoubleNetworkReceiveBuffer);
+            RespParsingException.ThrowIfReceiveBufferLimitExceeded(networkReceiveBuffer.Length);
+            var tmp = networkPool.Get(Math.Min(networkReceiveBuffer.Length * 2, RespReadUtils.MaxReceiveBufferBytes), PoolEntryBufferType.DoubleNetworkReceiveBuffer);
             Array.Copy(networkReceiveBuffer, tmp.entry, networkReceiveBuffer.Length);
             networkReceiveBufferEntry.Dispose();
             networkReceiveBufferEntry = tmp;
@@ -804,7 +806,8 @@ namespace Garnet.networking
         {
             if (sslStream != null)
             {
-                var tmp = networkPool.Get(transportReceiveBuffer.Length * 2, PoolEntryBufferType.DoubleTransportReceiveBuffer);
+                RespParsingException.ThrowIfReceiveBufferLimitExceeded(transportReceiveBuffer.Length);
+                var tmp = networkPool.Get(Math.Min(transportReceiveBuffer.Length * 2, RespReadUtils.MaxReceiveBufferBytes), PoolEntryBufferType.DoubleTransportReceiveBuffer);
                 Array.Copy(transportReceiveBuffer, tmp.entry, transportReceiveBuffer.Length);
                 transportReceiveBufferEntry.Dispose();
                 transportReceiveBufferEntry = tmp;
