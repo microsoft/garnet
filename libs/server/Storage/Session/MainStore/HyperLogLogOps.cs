@@ -158,20 +158,20 @@ namespace Garnet.server
                     if (!isFirst)
                     {
                         isFirst = true;
-                        if (i == input.parseState.Count - 1)
-                            count = HyperLogLog.DefaultHLL.Count(srcMergeBuffer.SpanByteAndMemory.SpanByte.ToPointer());
-                        else
-                            Buffer.MemoryCopy(srcHLL, dstHLL, sbSrcHLL.Length, sbSrcHLL.Length);
+                        if (input.parseState.Count == 1)
+                        {
+                            count = HyperLogLog.DefaultHLL.Count(srcHLL);
+                            continue;
+                        }
+                        Buffer.MemoryCopy(srcHLL, dstHLL, sbSrcHLL.Length, sbSrcHLL.Length);
                         continue;
                     }
 
                     _ = HyperLogLog.DefaultHLL.TryMerge(srcHLL, dstHLL, sbDstHLL.Length);
-
-                    if (i == input.parseState.Count - 1)
-                    {
-                        count = HyperLogLog.DefaultHLL.Count(dstHLL);
-                    }
                 }
+
+                if (isFirst && input.parseState.Count > 1)
+                    count = HyperLogLog.DefaultHLL.Count(dstMergeBuffer.SpanByteAndMemory.SpanByte.ToPointer());
             }
             finally
             {
