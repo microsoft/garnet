@@ -542,7 +542,7 @@ namespace Garnet.server
                 {
                     if (operation.IsChunked)
                     {
-                        if (operation.Chunk.opType != AofEntryType.UnifiedStoreStringUpsert)
+                        if (operation.Chunk.opType is not (AofEntryType.UnifiedStoreStringUpsert or AofEntryType.UnifiedStoreStringRecordUpsert))
                             return false;
                         fixed (byte* inputPtr = operation.Chunk.input)
                             return IsVectorRename(inputPtr);
@@ -550,7 +550,7 @@ namespace Garnet.server
 
                     fixed (byte* recordPtr = operation.Record)
                     {
-                        if (((AofHeader*)recordPtr)->opType != AofEntryType.UnifiedStoreStringUpsert)
+                        if (((AofHeader*)recordPtr)->opType is not (AofEntryType.UnifiedStoreStringUpsert or AofEntryType.UnifiedStoreStringRecordUpsert))
                             return false;
                         var inputPtr = AofHeader.SkipHeader(recordPtr);
                         inputPtr += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPtr).TotalSize;

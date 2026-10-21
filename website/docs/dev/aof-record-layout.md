@@ -115,6 +115,23 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 - Which components are present depends on the op shape: e.g. DELETE is key-only (the value slot is unused on replay);
   a plain upsert is key + value; an RMW / upsert-with-input carries the input.
 
+### Imported string record optionals
+
+Append-only file header version 6 adds `UnifiedStoreStringRecordUpsert`, operation type `0x74`.
+Its body is a length-prefixed key, a length-prefixed value, the existing serialized `UnifiedInput`,
+then the original entity tag and absolute expiration as two little-endian 64-bit integers.
+Zero means the corresponding optional field is absent. `RecordUpsertInput` writes and reads this input
+suffix. Chunked entries include the same suffix in their input component.
+
+Migration imports and string renames use this entry to preserve both optionals during replica replay
+and recovery. Diskless snapshot imports preserve them directly without appending snapshot records to
+the log. Ordinary string commands retain their existing operation formats.
+
+Existing operation bodies and `UnifiedInput` serialization are unchanged. Version-4 and version-5
+logs remain readable. Older builds reject version-6 headers before interpreting entries. Upgrade
+replicas before allowing a primary to emit version-6 entries. Cluster gossip does not negotiate
+append-only file versions. A version-6 primary cannot replicate to a version-5 replica.
+
 ---
 
 ## 5. Chunk management at a glance

@@ -530,6 +530,59 @@ namespace Garnet.test.cluster
 
         [Test, Order(6)]
         [Category("CLUSTER")]
+        public void MigratedEtagSurvivesReplicaReplayAndRecovery([Values(1, 2)] int sublogCount,
+            [Values] bool expiry, [Values(32, 2097152)] int valueLength)
+        {
+            context.CreateInstances(4, useTLS: UseTLS, enableAOF: true, tryRecover: true,
+                sublogCount: sublogCount, AofPageSize: "4m", AofMemorySize: "16m");
+            context.CreateConnection(useTLS: UseTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 2, replica_count: 1, logger: context.logger);
+            const string key = "{etag-replay}key";
+            int slot = ClusterTestUtils.HashSlot(Encoding.UTF8.GetBytes(key));
+            int sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
+            int targetIndex = 1 - sourceIndex;
+            int replicaIndex = targetIndex + 2;
+            IServer source = context.clusterTestUtils.GetServer(sourceIndex);
+            IServer target = context.clusterTestUtils.GetServer(targetIndex);
+            IServer replica = context.clusterTestUtils.GetServer(replicaIndex);
+            string value = new('v', valueLength);
+            source.Execute(0, "SETWITHETAG", [key, "first"]);
+            source.Execute(0, "SETWITHETAG", [key, "second"]);
+            source.Execute(0, "SETWITHETAG", expiry ? [key, value, "EX", 300] : [key, value]);
+            long expiration = (long)source.Execute(0, "PEXPIRETIME", [key]);
+
+            context.clusterTestUtils.MigrateSlots(context.clusterTestUtils.GetEndPoint(sourceIndex),
+                context.clusterTestUtils.GetEndPoint(targetIndex), [slot], logger: context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(sourceIndex, logger: context.logger);
+            string targetId = context.clusterTestUtils.GetLocalNodeId(targetIndex);
+            context.clusterTestUtils.WaitForSlotOwnership(targetIndex, targetId, [slot, slot], logger: context.logger);
+            context.clusterTestUtils.WaitForSlotOwnership(replicaIndex, targetId, [slot, slot], logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(targetIndex, replicaIndex, logger: context.logger);
+            RedisResult[] replicated = (RedisResult[])replica.Execute(0, "GETWITHETAG", [key], CommandFlags.NoRedirect);
+            Assert.That((long)replicated[0], Is.EqualTo(3));
+            Assert.That((string)replicated[1], Is.EqualTo(value));
+            Assert.That((long)replica.Execute(0, "PEXPIRETIME", [key], CommandFlags.NoRedirect), Is.EqualTo(expiration));
+
+            context.RestartNode(targetIndex, ensureAofFlush: true);
+            context.clusterTestUtils.WaitForSlotOwnership(targetIndex, targetId, [slot, slot], logger: context.logger);
+            RedisResult[] recovered = (RedisResult[])target.Execute(0, "GETWITHETAG", [key]);
+            Assert.That((long)recovered[0], Is.EqualTo(3));
+            Assert.That((string)recovered[1], Is.EqualTo(value));
+            Assert.That((long)target.Execute(0, "PEXPIRETIME", [key]), Is.EqualTo(expiration));
+            RedisResult[] stale = (RedisResult[])target.Execute(0, "SETIFMATCH", [key, "stale", 2]);
+            Assert.That((long)stale[0], Is.EqualTo(3));
+            Assert.That((string)stale[1], Is.EqualTo(value));
+            RedisResult[] matching = (RedisResult[])target.Execute(0, "SETIFMATCH", [key, "updated", 3]);
+            Assert.That((long)matching[0], Is.EqualTo(4));
+            Assert.That(matching[1].IsNull, Is.True);
+            context.clusterTestUtils.WaitForReplicaAofSync(targetIndex, replicaIndex, logger: context.logger);
+            replicated = (RedisResult[])replica.Execute(0, "GETWITHETAG", [key], CommandFlags.NoRedirect);
+            Assert.That((long)replicated[0], Is.EqualTo(4));
+            Assert.That((string)replicated[1], Is.EqualTo("updated"));
+        }
+
+        [Test, Order(6)]
+        [Category("CLUSTER")]
         public void ClusterSimpleMigrateSlots()
         {
             context.logger.LogDebug("0. ClusterSimpleMigrateSlotsTest started");

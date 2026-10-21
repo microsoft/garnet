@@ -15,19 +15,9 @@ namespace Garnet.test
     /// <summary>
     /// Verifies that a down-level (previous release) AOF can be recovered by the current build.
     ///
-    /// This PR bumped <see cref="AofHeader.AofHeaderVersion"/> from 4 to 5. The bump only repurposed a
-    /// previously-reserved flags bit (0b0100) as the high bit of the header-type mask and added new
-    /// <em>chunked</em> header types for large values split across multiple entries. For every
-    /// NON-chunked record the on-disk bytes are identical between v4 and v5: the 0b0100 bit is 0, so v5's
-    /// 3-bit type mask reads the same header type as v4's 2-bit mask, and no other byte of the entry
-    /// changed. A v5 build must therefore transparently recover a v4 AOF.
-    ///
-    /// There is no v4 build available in-process and the non-chunked writer is byte-for-byte unchanged,
-    /// so the faithful way to produce a "v4 AOF" is to write real records with this build (which emits the
-    /// exact production non-chunked serialization) and then rewrite each entry's version byte 5 -> 4 on
-    /// disk. Recovery then exercises the real v4 -> v5 replay path. If a future version alters the
-    /// non-chunked format relative to v4, this test would fail and correctly signal that a dedicated
-    /// test-side v4 writer is required.
+    /// The legacy operation bodies used here retain their version-4 and version-5 layouts.
+    /// Rewriting only their version byte exercises legacy replay without changing payload bytes.
+    /// Record upserts with optional metadata use a distinct version-6 operation and are excluded here.
     /// </summary>
     [TestFixture]
     public class RespAofDownlevelVersionTests : TestBase
@@ -47,8 +37,9 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
-        [Test]
-        public async Task DownlevelV4AofRecoversOnCurrentBuild()
+        [TestCase(4)]
+        [TestCase(5)]
+        public async Task DownlevelAofRecoversOnCurrentBuild(byte legacyVersion)
         {
             var zentries = new[]
             {
@@ -89,15 +80,12 @@ namespace Garnet.test
             server.Dispose(false);
             server = null;
 
-            // 2. Downgrade every AOF entry's version byte from the current version to 4, simulating an AOF
-            //    written by the previous (v4) release. Non-chunked v4 and v5 records are otherwise
-            //    byte-identical, so the result is a faithful v4 AOF.
-            var downgraded = RewriteAofHeaderVersion(TestUtils.MethodTestDir, from: AofHeader.AofHeaderVersion, to: 4);
-            ClassicAssert.Greater(downgraded, 0, "expected to downgrade at least one AOF entry to version 4");
+            // Legacy operation bodies retain their layout when only the header version changes.
+            var downgraded = RewriteAofHeaderVersion(TestUtils.MethodTestDir, from: AofHeader.AofHeaderVersion, to: legacyVersion);
+            ClassicAssert.Greater(downgraded, 0, $"expected to downgrade at least one AOF entry to version {legacyVersion}");
 
-            // 3. Recover with the current build. failOnRecoveryError makes any mishandled v4 entry a crash.
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, failOnRecoveryError: true);
-            Assert.DoesNotThrow(() => server.Start(), "current build must recover a down-level (v4) AOF");
+            Assert.DoesNotThrow(() => server.Start(), $"current build must recover a version-{legacyVersion} AOF");
 
             // 4. Every committed operation must be replayed correctly.
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
