@@ -94,7 +94,12 @@ namespace Tsavorite.test.recovery
         {
             public override void Deserialize(out IHeapObject obj)
             {
-                _ = reader.ReadBoolean();   // the isNull type byte written by WriteType
+                // A null image (the isNull type byte written by WriteType) carries no data.
+                if (reader.ReadBoolean())
+                {
+                    obj = null;
+                    return;
+                }
                 var count = reader.ReadInt32();
                 var items = new List<int>(count);
                 for (var i = 0; i < count; i++)
@@ -573,6 +578,161 @@ namespace Tsavorite.test.recovery
             {
                 recoverStore.Dispose();
             }
+        }
+
+        /// <summary>
+        /// A ReadOnly flush issued before a checkpoint starts can still be walking its page when the checkpoint is in
+        /// <see cref="Phase.IN_PROGRESS"/>, so a (v+1) RMW can supersede a record on that page before or after the flush reaches it.
+        /// Snapshot coordination does not prevent this: it orders the ReadOnly flush against Snapshot's own page writes, and becomes
+        /// restrictive only on entry to <see cref="Phase.WAIT_FLUSH"/>, where Snapshot first waits for this flush to finish. FoldOver
+        /// has no coordination. The flush walks with the epoch suspended, so the state machine advances meanwhile.
+        /// </summary>
+        /// <remarks>
+        /// The page is recovered from this flush's image, so the image must carry the record's (v) content either way. The
+        /// serialization claim orders the two: if the flush serializes the record first, it writes the unedited value and the RMW's
+        /// preserved image is redundant; if the RMW goes first, the flush writes the preserved image instead of the live value.
+        /// </remarks>
+        [Test]
+        [Category("TsavoriteKV")]
+        [Category("CheckpointRestore")]
+        public async Task RecordSupersededDuringAPreCheckpointReadOnlyFlushKeepsItsImage(
+            [Values(CheckpointType.FoldOver, CheckpointType.Snapshot)] CheckpointType checkpointType,
+            [Values] bool rmwBeforeTheFlushReachesTheRecord)
+        {
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("ObjectFlushInjection is compiled out in Release, so the ReadOnly flush cannot be held mid-page.");
+
+            const int InitialCount = 8;
+            const int RmwValue = 99;
+
+            var dir = Path.Join(MethodTestDir, $"{checkpointType}-{rmwBeforeTheFlushReachesTheRecord}");
+            _ = Directory.CreateDirectory(dir);
+            var earlierKey = new TestObjectKey { key = 1 };
+            var key = new TestObjectKey { key = 2 };
+
+            using var ckptLog = Devices.CreateLogDevice(Path.Join(dir, "Ckpt.log"), deleteOnClose: false);
+            using var ckptObjLog = Devices.CreateLogDevice(Path.Join(dir, "Ckpt.obj.log"), deleteOnClose: false);
+
+            static TsavoriteKV<ClassStoreFunctions, ClassAllocator> CreateStore(IDevice log, IDevice objlog, string dir)
+                => new(new()
+                {
+                    IndexSize = 1L << 13,
+                    LogDevice = log,
+                    ObjectLogDevice = objlog,
+                    MutableFraction = 0.9,
+                    LogMemorySize = 1L << 16,
+                    PageSize = 1L << 13,
+                    CheckpointDir = dir
+                }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new SharedListSerializer())
+                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+
+            var shared = new List<int>();
+            for (var ii = 1; ii <= InitialCount; ++ii)
+                shared.Add(ii);
+
+            using var flushHeld = new ManualResetEventSlim(false);
+            using var releaseFlush = new ManualResetEventSlim(false);
+            var pause = new PauseAtPhase(Phase.WAIT_INDEX_CHECKPOINT);
+
+            long sourceTail;
+            int[] serializedCounts;
+            var sourceObject = new SharedListHeapObject(shared);
+            var writeStore = CreateStore(ckptLog, ckptObjLog, dir);
+            try
+            {
+                long earlierAddress, sourceAddress;
+                using (var session = writeStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    earlierAddress = writeStore.Log.TailAddress;
+                    _ = session.BasicContext.Upsert(earlierKey, new SharedListHeapObject([0]), Empty.Default);
+                    sourceAddress = writeStore.Log.TailAddress;
+                    _ = session.BasicContext.Upsert(key, sourceObject, Empty.Default);
+                    sourceTail = writeStore.Log.TailAddress;
+                }
+                Assert.That(writeStore.hlogBase.GetPage(earlierAddress), Is.EqualTo(writeStore.hlogBase.GetPage(sourceAddress)),
+                    "Both records must be on one page");
+
+                // Hold the ReadOnly flush before it reaches the source, or just after it has serialized the source.
+                var (holdPhase, holdAddress) = rmwBeforeTheFlushReachesTheRecord
+                    ? (ObjectFlushPhase.AfterCapture, earlierAddress)
+                    : (ObjectFlushPhase.AfterRecordWritten, sourceAddress);
+                ObjectFlushInjection.Hook = (phase, logicalAddress) =>
+                {
+                    if (phase != holdPhase || logicalAddress != holdAddress || flushHeld.IsSet)
+                        return;
+                    flushHeld.Set();
+                    _ = releaseFlush.Wait(TimeSpan.FromSeconds(30));
+                };
+
+                // No checkpoint is active when this flush is issued.
+                var readOnlyShift = Task.Run(() => writeStore.Log.ShiftReadOnlyAddress(sourceTail, wait: true));
+                Assert.That(flushHeld.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly flush never reached the hold point");
+
+                // The pause runs after IN_PROGRESS is published, so (v+1) operations are running.
+                writeStore.stateMachineDriver.UnsafeRegisterCallback(pause);
+                Assert.That(writeStore.TryInitiateFullCheckpoint(out _, checkpointType), Is.True);
+                Assert.That(pause.Reached.Wait(TimeSpan.FromSeconds(30)), Is.True,
+                    "The checkpoint did not reach IN_PROGRESS while the ReadOnly flush was walking the source's page");
+                Assert.That(writeStore.hlog.IsFrozenForFlush(sourceAddress), Is.True, "The source's ReadOnly flush must still be in flight");
+
+                long newRecordAddress;
+                using (var session = writeStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(new SharedListFunctions()))
+                {
+                    newRecordAddress = writeStore.Log.TailAddress;
+                    TestObjectInput input = new() { value = RmwValue };
+                    TestObjectOutput output = new();
+                    var status = session.BasicContext.RMW(key, ref input, ref output);
+                    if (status.IsPending)
+                        _ = session.BasicContext.CompletePending(wait: true);
+                }
+                Assert.That(shared, Has.Count.EqualTo(InitialCount + 1), "The RMW did not take the CopyUpdate path");
+                Assert.That(writeStore.hlogBase._wrapper.CreateLogRecord(newRecordAddress).Info.IsInNewVersion, Is.True,
+                    "The RMW was not a (v+1) operation");
+
+                releaseFlush.Set();
+                pause.Release.Set();
+                await writeStore.CompleteCheckpointAsync().ConfigureAwait(false);
+                Assert.That(readOnlyShift.Wait(TimeSpan.FromSeconds(30)), Is.True, "The ReadOnly shift did not complete");
+
+                lock (sourceObject.SerializedItemCounts)
+                    serializedCounts = [.. sourceObject.SerializedItemCounts];
+            }
+            finally
+            {
+                releaseFlush.Set();
+                pause.Release.Set();
+                ObjectFlushInjection.Reset();
+                writeStore.Dispose();
+            }
+
+            var recoverStore = CreateStore(ckptLog, ckptObjLog, dir);
+            try
+            {
+                _ = await recoverStore.RecoverAsync().ConfigureAwait(false);
+
+                var functions = new SharedListFunctions();
+                using var session = recoverStore.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, Empty, SharedListFunctions>(functions);
+                TestObjectInput input = new();
+                TestObjectOutput output = new();
+                var status = session.BasicContext.Read(key, ref input, ref output);
+                if (status.IsPending)
+                    _ = session.BasicContext.CompletePending(wait: true);
+
+                Assert.That(functions.LastRead, Is.Not.Null, $"{checkpointType} recovery lost the (v) record's object");
+                Assert.That(functions.LastReadAddress, Is.LessThan(sourceTail), "Recovery should resolve the key to the (v) record");
+                Assert.That(functions.LastRead.Items, Is.EqualTo(shared.GetRange(0, InitialCount)),
+                    $"{checkpointType} recovered the (v) record with content other than its own");
+            }
+            finally
+            {
+                recoverStore.Dispose();
+            }
+
+            // Which serializations run depends on the order: if the flush serialized the (v) object first, the RMW's preserved
+            // image is redundant; if the RMW went first, the flush wrote that image rather than serializing the live object.
+            Assert.That(serializedCounts, Is.Not.Empty, "The (v) object was never serialized");
+            Assert.That(serializedCounts, Has.All.EqualTo(InitialCount),
+                $"A serialization of the (v) object saw edited content; item counts: [{string.Join(", ", serializedCounts)}]");
         }
 
         /// <summary>
