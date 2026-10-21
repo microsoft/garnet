@@ -590,7 +590,10 @@ recovers a source that a flush is still writing: a FoldOver's image ends at its
 `FlushedUntilAddress`, and Snapshot recovers the main log only below the
 `FlushedUntilAddress` sampled at `PERSISTENCE_CALLBACK`. So the flush may write
 either the pre-update image, if it serialized the value first (the CopyUpdate
-waits for that), or a null value, the terminal image of a superseded value.
+waits for that), or a null value: the superseded object stays in its final
+serialization phase, `SERIALIZED`, with no cached bytes, so `Serialize` writes
+only its type byte marked null. Staying in that phase also keeps any later flush
+from enumerating collections the new record still shares and mutates.
 That is why `CacheSerializedObjectData` preserves nothing when the new record is
 not in a new version. Only an active checkpoint that recovers the source as part
 of its `(v)` image needs the pre-update content.

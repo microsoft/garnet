@@ -122,7 +122,7 @@ namespace Tsavorite.core
         /// Being frozen for flush does not make the image needed. The release a false answer authorizes
         /// (<see cref="RMWInfo.ClearSourceValueObject"/>) honors the freeze itself: InternalRMW marks a frozen source for the
         /// deferred-disposal drain instead of clearing it. With no checkpoint image at stake, a flush still walking the source
-        /// writes the terminal image of a superseded value, exactly as it does outside a checkpoint.
+        /// writes a null value for it (the object's type byte marked null, with no data), exactly as it does outside a checkpoint.
         /// </para>
         /// <para>
         /// The fuzzy-region test mirrors <see cref="IsFrozen{TInput, TOutput, TContext, TSessionFunctionsWrapper}"/>:
