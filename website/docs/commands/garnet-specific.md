@@ -299,7 +299,7 @@ Deletes a key only if the provided Etag is strictly greater than the existing Et
 
 Replicas serve `GETWITHETAG` only after `READONLY` enables replica reads on the connection. Writes redirect to the primary. For an existing key on a primary, concurrent `SETIFMATCH` requests with the same current ETag allow exactly one update.
 
-Migration, diskless snapshots, replica replay and recovery preserve stored ETags and expiration. Recovery coverage includes recovered destination contents and subsequent local conditional writes; it does not establish replica stream resumption after restart. See the [append-only file compatibility and upgrade guidance](../dev/aof-record-layout.md#imported-string-record-optionals) before upgrading a cluster.
+Migration, diskless snapshots, replica replay and recovery preserve stored ETags and expiration. These guarantees do not cover replica stream resumption after restart. See the [append-only file compatibility and upgrade guidance](../dev/aof-record-layout.md#imported-string-record-optionals) before upgrading a cluster.
 
 Replication is asynchronous. Failover can lose acknowledged writes and revert an ETag to an earlier value. Applications must not use ETags as a durability guarantee.
 
@@ -310,7 +310,7 @@ Deletion and expiration remove the stored ETag with the value. `SETWITHETAG` rec
 ### Compatibility and Behavior with Non-ETag Commands
 
 :::warning Important: Key Partitioning Required
-All non-ETag commands (SET, GET, APPEND, INCR, MSET, BITOP, RENAME, etc.) are completely **ETag-blind**. They do not read, check, update, or preserve ETags.
+Non-ETag commands do not provide ETag-based conditional updates. Do not rely on them to maintain ETag semantics.
 
 **Users MUST partition their keys**: use ONLY ETag commands (`SETWITHETAG`, `GETWITHETAG`, `SETIFMATCH`, `SETIFGREATER`, `GETIFNOTMATCH`, `DELIFGREATER`) on ETag-managed keys.
 
