@@ -3,10 +3,7 @@
 
 #pragma warning disable IDE0005 // Shared imports may be unused in individual projects.
 
-// Static Assert imports shadow NUnit's Assert type in test projects.
-#if !GARNET_TEST_PROJECT
-global using static Garnet.Diagnostics.GarnetAsserts;
-#endif
+global using Garnet.Diagnostics;
 
 #if SERVER_PROJECT || TEST_PROJECT || CLUSTER_PROJECT
 global using BasicGarnetApi = Garnet.server.GarnetApi<

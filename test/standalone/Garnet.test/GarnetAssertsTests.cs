@@ -3,7 +3,6 @@
 
 using System;
 using System.Runtime.CompilerServices;
-using Garnet.Diagnostics;
 using NUnit.Framework;
 
 namespace Garnet.test

@@ -2,9 +2,6 @@
   <PropertyGroup Condition="'$(EnableGarnetAsserts)' == 'true'">
     <DefineConstants>$(DefineConstants);GARNET_ASSERT</DefineConstants>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
-    <DefineConstants>$(DefineConstants);GARNET_TEST_PROJECT</DefineConstants>
-  </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)libs/GlobalUsings.cs" Exclude="@(Compile)" Link="GlobalUsings.cs" />
   </ItemGroup>
