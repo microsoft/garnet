@@ -1238,8 +1238,10 @@ namespace Tsavorite.core
             // Ensure we have finished all object reads
             logReader.OnEndReadRecords();
 
-            // If readBuffer.Read returned false it was due to an Overflow key mismatch or an Invalid record, so get the previous record.
-            prevAddressToRead = (*(RecordInfo*)ctx.record.GetValidPointer()).PreviousAddress;
+            // ReadRecordObjects returned false because the Overflow key did not match. The base call transferred ctx.record to diskLogRecord,
+            // so get the previous record's address from it, then release it so it is not taken as the result if the chain ends here.
+            prevAddressToRead = diskLogRecord.Info.PreviousAddress;
+            diskLogRecord.Dispose();
             return false;
         }
 
