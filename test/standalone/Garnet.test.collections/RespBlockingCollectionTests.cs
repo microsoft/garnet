@@ -1550,5 +1550,299 @@ namespace Garnet.test
             CollectionAssert.AreEqual(initial, db.ListRange(srcKey, 0, -1).Select(x => x.ToString()).ToArray());
             ClassicAssert.AreEqual("not-a-list", db.StringGet(dstKey).ToString());
         }
+
+        private static readonly TimeSpan NonBlockingReplyTimeout = TimeSpan.FromSeconds(10);
+
+        private static readonly string[] BlockingCommands =
+            ["BLPOP", "BRPOP", "BLMOVE", "BRPOPLPUSH", "BLMPOP", "BZPOPMIN", "BZPOPMAX", "BZMPOP"];
+
+        private static bool IsSortedSetCommand(string command) => command.StartsWith("BZ", StringComparison.Ordinal);
+
+        private static object[] BlockingCommandArgs(string command, string key, string destination, string timeout)
+            => command switch
+            {
+                "BLPOP" or "BRPOP" or "BZPOPMIN" or "BZPOPMAX" => [key, timeout],
+                "BLMOVE" => [key, destination, "LEFT", "RIGHT", timeout],
+                "BRPOPLPUSH" => [key, destination, timeout],
+                "BLMPOP" => [timeout, "1", key, "LEFT"],
+                "BZMPOP" => [timeout, "1", key, "MIN"],
+                _ => throw new ArgumentOutOfRangeException(nameof(command), command, null),
+            };
+
+        /// <summary>
+        /// Writes an item to <paramref name="key"/> from a fresh connection, failing if the write never replies.
+        /// </summary>
+        private static async Task AssertKeyIsWritableAsync(string command, string key)
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var written = IsSortedSetCommand(command)
+                ? await db.ExecuteAsync("ZADD", key, "1", "written").WaitAsync(NonBlockingReplyTimeout)
+                : await db.ExecuteAsync("LPUSH", key, "written").WaitAsync(NonBlockingReplyTimeout);
+
+            ClassicAssert.AreEqual(1, (long)written, $"Unexpected reply to a write to {key} after {command}.");
+        }
+
+        /// <summary>
+        /// A blocking command run by EXEC behaves as if its timeout had already expired: the transaction holds the
+        /// locks of its keys, so no other client could deliver an item while it waited. On an empty key it must reply
+        /// nil at once, even with a zero (infinite) timeout, and leave both its connection and its key usable.
+        /// </summary>
+        [Test]
+        [TestCase("BLPOP", "0")]
+        [TestCase("BLPOP", "30")]
+        [TestCase("BRPOP", "0")]
+        [TestCase("BRPOP", "30")]
+        [TestCase("BLMOVE", "0")]
+        [TestCase("BLMOVE", "30")]
+        [TestCase("BRPOPLPUSH", "0")]
+        [TestCase("BRPOPLPUSH", "30")]
+        [TestCase("BLMPOP", "0")]
+        [TestCase("BLMPOP", "30")]
+        [TestCase("BZPOPMIN", "0")]
+        [TestCase("BZPOPMIN", "30")]
+        [TestCase("BZPOPMAX", "0")]
+        [TestCase("BZPOPMAX", "30")]
+        [TestCase("BZMPOP", "0")]
+        [TestCase("BZMPOP", "30")]
+        public async Task BlockingCommandInTransactionOnEmptyKeyDoesNotBlock(string command, string timeout)
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = $"txn:empty:{command}";
+            var destination = $"{key}:dst";
+
+            var tran = db.CreateTransaction();
+            var reply = tran.ExecuteAsync(command, BlockingCommandArgs(command, key, destination, timeout));
+
+            ClassicAssert.IsTrue(await tran.ExecuteAsync().WaitAsync(NonBlockingReplyTimeout));
+            var result = await reply;
+            ClassicAssert.IsTrue(result.IsNull, $"{command} in EXEC on an empty key returned {result}.");
+
+            _ = await db.PingAsync().WaitAsync(NonBlockingReplyTimeout);
+
+            await AssertKeyIsWritableAsync(command, key);
+            ClassicAssert.IsFalse(await db.KeyExistsAsync(destination));
+        }
+
+        /// <summary>
+        /// A blocking command run by EXEC still serves an item that is already available, and persists the update.
+        /// </summary>
+        [Test]
+        [TestCase("BLPOP", "a")]
+        [TestCase("BRPOP", "b")]
+        [TestCase("BLMOVE", "a")]
+        [TestCase("BRPOPLPUSH", "b")]
+        [TestCase("BLMPOP", "a")]
+        [TestCase("BZPOPMIN", "a")]
+        [TestCase("BZPOPMAX", "b")]
+        [TestCase("BZMPOP", "a")]
+        public async Task BlockingCommandInTransactionServesAvailableItem(string command, string expectedItem)
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = $"txn:available:{command}";
+            var destination = $"{key}:dst";
+
+            if (IsSortedSetCommand(command))
+                _ = await db.SortedSetAddAsync(key, [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2)]);
+            else
+                _ = await db.ListRightPushAsync(key, ["a", "b"]);
+
+            var tran = db.CreateTransaction();
+            var reply = tran.ExecuteAsync(command, BlockingCommandArgs(command, key, destination, "0"));
+
+            ClassicAssert.IsTrue(await tran.ExecuteAsync().WaitAsync(NonBlockingReplyTimeout));
+            var result = await reply;
+            ClassicAssert.IsFalse(result.IsNull, $"{command} in EXEC did not serve the available item.");
+            CollectionAssert.Contains(Flatten(result).ToArray(), expectedItem);
+
+            var remaining = IsSortedSetCommand(command) ? await db.SortedSetLengthAsync(key) : await db.ListLengthAsync(key);
+            ClassicAssert.AreEqual(1, remaining, $"{command} in EXEC did not persist the pop.");
+
+            if (command is "BLMOVE" or "BRPOPLPUSH")
+                CollectionAssert.AreEqual(new[] { expectedItem }, (await db.ListRangeAsync(destination)).Select(x => x.ToString()).ToArray());
+        }
+
+        /// <summary>
+        /// A blocking command run by EXEC on a key of the wrong type fails with WRONGTYPE rather than waiting.
+        /// </summary>
+        [Test]
+        public async Task BlockingCommandInTransactionOnWrongTypeFails()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            foreach (var command in BlockingCommands)
+            {
+                var key = $"txn:wrongtype:{command}";
+                _ = await db.StringSetAsync(key, "not-a-collection");
+
+                var tran = db.CreateTransaction();
+                var reply = tran.ExecuteAsync(command, BlockingCommandArgs(command, key, $"{key}:dst", "0"));
+
+                ClassicAssert.IsTrue(await tran.ExecuteAsync().WaitAsync(NonBlockingReplyTimeout));
+
+                var ex = Assert.ThrowsAsync<RedisServerException>(async () => await reply);
+                ClassicAssert.IsTrue(ex.Message.StartsWith("WRONGTYPE", StringComparison.Ordinal), $"{command}: unexpected error {ex.Message}");
+                ClassicAssert.AreEqual("not-a-collection", (await db.StringGetAsync(key)).ToString());
+            }
+        }
+
+        /// <summary>
+        /// A BLMOVE run by EXEC that moves an item must wake a client blocked on the destination key.
+        /// </summary>
+        [Test]
+        public async Task BlockingMoveInTransactionWakesDestinationWaiter()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string srcKey = "txn:blmove:src";
+            const string dstKey = "txn:blmove:dst";
+            _ = await db.ListRightPushAsync(srcKey, "moved");
+
+            var waiter = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                return (byte[])lcr.SendCommand($"BLPOP {dstKey} 30", 3).Clone();
+            });
+
+            await Task.Delay(500);
+
+            var tran = db.CreateTransaction();
+            var reply = tran.ExecuteAsync("BLMOVE", srcKey, dstKey, "LEFT", "RIGHT", "0");
+
+            ClassicAssert.IsTrue(await tran.ExecuteAsync().WaitAsync(NonBlockingReplyTimeout));
+            ClassicAssert.AreEqual("moved", (await reply).ToString());
+
+            var waiterResponse = await waiter.WaitAsync(NonBlockingReplyTimeout);
+            TestUtils.AssertEqualUpToExpectedLength($"*2\r\n${dstKey.Length}\r\n{dstKey}\r\n$5\r\nmoved\r\n", waiterResponse);
+            ClassicAssert.IsFalse(await db.KeyExistsAsync(srcKey));
+            ClassicAssert.IsFalse(await db.KeyExistsAsync(dstKey));
+        }
+
+        /// <summary>
+        /// A BLMOVE run by EXEC before any client has waited on a key leaves the broker able to serve later waiters.
+        /// </summary>
+        [Test]
+        public async Task BlockingMoveInTransactionBeforeAnyWaiterKeepsBrokerServing()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string srcKey = "txn:first:src";
+            const string dstKey = "txn:first:dst";
+            const string laterKey = "txn:first:later";
+            _ = await db.ListRightPushAsync(srcKey, "moved");
+
+            var tran = db.CreateTransaction();
+            var reply = tran.ExecuteAsync("BLMOVE", srcKey, dstKey, "LEFT", "RIGHT", "0");
+            ClassicAssert.IsTrue(await tran.ExecuteAsync().WaitAsync(NonBlockingReplyTimeout));
+            ClassicAssert.AreEqual("moved", (await reply).ToString());
+
+            var served = await db.ExecuteAsync("BLPOP", dstKey, "0").WaitAsync(NonBlockingReplyTimeout);
+            CollectionAssert.AreEqual(new[] { dstKey, "moved" }, Flatten(served).ToArray());
+
+            var waiter = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                return (byte[])lcr.SendCommand($"BLPOP {laterKey} 30", 3).Clone();
+            });
+
+            await Task.Delay(500);
+            _ = await db.ListRightPushAsync(laterKey, "pushed");
+
+            var waiterResponse = await waiter.WaitAsync(NonBlockingReplyTimeout);
+            TestUtils.AssertEqualUpToExpectedLength($"*2\r\n${laterKey.Length}\r\n{laterKey}\r\n$6\r\npushed\r\n", waiterResponse);
+        }
+
+        /// <summary>
+        /// A push run by EXEC notifies the broker while the transaction holds the key's lock. That must not wait for
+        /// the broker, which may itself be waiting for the key's lock to serve a client that started waiting on the
+        /// key during the transaction.
+        /// </summary>
+        [Test]
+        public async Task PushInTransactionWhileBrokerWaitsOnKeyCompletes([Values] bool blockingMove)
+        {
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableLua: true);
+            server.Start();
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string srcKey = "txn:push:src";
+            const string dstKey = "txn:push:dst";
+            _ = await db.ListRightPushAsync(srcKey, "pushed");
+
+            // Busy-waits for one second, holding the transaction's lock on dstKey while the waiter below starts.
+            const string busyWaitScript = """
+                local function now()
+                    local t = redis.call('TIME')
+                    return tonumber(t[1]) * 1000000 + tonumber(t[2])
+                end
+                local deadline = now() + 1000000
+                while now() < deadline do end
+                return 1
+                """;
+
+            var tran = db.CreateTransaction();
+            _ = tran.ExecuteAsync("EVAL", busyWaitScript, "0");
+            var push = blockingMove
+                ? tran.ExecuteAsync("BLMOVE", srcKey, dstKey, "LEFT", "LEFT", "0")
+                : tran.ExecuteAsync("LMOVE", srcKey, dstKey, "LEFT", "LEFT");
+            var exec = tran.ExecuteAsync();
+
+            await Task.Delay(200);
+
+            var waiter = Task.Run(() =>
+            {
+                using var lcr = TestUtils.CreateRequest();
+                return (byte[])lcr.SendCommand($"BLPOP {dstKey} 30", 3).Clone();
+            });
+
+            ClassicAssert.IsTrue(await exec.WaitAsync(NonBlockingReplyTimeout));
+            ClassicAssert.AreEqual("pushed", (await push).ToString());
+
+            var waiterResponse = await waiter.WaitAsync(NonBlockingReplyTimeout);
+            TestUtils.AssertEqualUpToExpectedLength($"*2\r\n${dstKey.Length}\r\n{dstKey}\r\n$6\r\npushed\r\n", waiterResponse);
+            ClassicAssert.IsFalse(await db.KeyExistsAsync(srcKey));
+            ClassicAssert.IsFalse(await db.KeyExistsAsync(dstKey));
+        }
+
+        /// <summary>
+        /// A blocking command called from a script behaves as if its timeout had already expired, whether or not the
+        /// script runs as a transaction: a script must run to completion without waiting on other clients.
+        /// </summary>
+        [Test]
+        public async Task BlockingCommandInScriptOnEmptyKeyDoesNotBlock([Values] bool luaTransactionMode)
+        {
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, enableLua: true, luaTransactionMode: luaTransactionMode);
+            server.Start();
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            foreach (var command in BlockingCommands)
+            {
+                var key = $"script:empty:{command}";
+                var destination = $"{key}:dst";
+
+                var args = BlockingCommandArgs(command, "KEYS[1]", "KEYS[2]", "ARGV[1]")
+                    .Cast<string>()
+                    .Select(a => a.StartsWith("KEYS[", StringComparison.Ordinal) || a.StartsWith("ARGV[", StringComparison.Ordinal) ? a : $"'{a}'");
+                var script = $"return redis.call('{command}', {string.Join(", ", args)})";
+
+                var result = await db.ScriptEvaluateAsync(script, [key, destination], ["0"]).WaitAsync(NonBlockingReplyTimeout);
+                ClassicAssert.IsTrue(result.IsNull, $"{command} in a script on an empty key returned {result}.");
+
+                await AssertKeyIsWritableAsync(command, key);
+            }
+        }
     }
 }
