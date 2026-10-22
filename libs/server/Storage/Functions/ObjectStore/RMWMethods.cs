@@ -78,6 +78,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
+            // Tsavorite reports an expired record that was recreated and one that was tombstoned alike, so the output records the creation.
+            output.OutputFlags |= ObjectOutputFlags.CreatedKey;
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
