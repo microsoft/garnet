@@ -925,13 +925,6 @@ namespace Garnet.server
             => UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint);
 
         /// <summary>
-        /// If true, enable Vector Set commands.
-        /// 
-        /// This is a preview feature, subject to substantial change, and should not be relied upon.
-        /// </summary>
-        public bool EnableVectorSetPreview = false;
-
-        /// <summary>
         /// Configure how many replay tasks are used to replay VectorSet operations at the replica (default: 0 uses the machine CPU count).
         /// </summary>
         public int VectorSetReplayTaskCount = 0;

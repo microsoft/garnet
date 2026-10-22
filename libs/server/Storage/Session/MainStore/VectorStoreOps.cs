@@ -240,13 +240,6 @@ namespace Garnet.server
         {
             Debug.Assert(Enum.IsDefined(termType) && termType != VectorImportTermType.Invalid, "Should have validate termType before calling");
 
-            if (!vectorManager.IsEnabled)
-            {
-                errorMsg = "ERR Vector Set (preview) commands are not enabled"u8;
-                result = VectorManagerResult.BadParams;
-                return GarnetStatus.OK;
-            }
-
             if (id.ReadOnlySpan.IsEmpty || value.ReadOnlySpan.IsEmpty)
             {
                 errorMsg = "ERR vector set import ID and value must not be empty"u8;
@@ -287,11 +280,6 @@ namespace Garnet.server
         {
             result = VectorManagerResult.BadParams;
             errorMsg = default;
-            if (!vectorManager.IsEnabled)
-            {
-                errorMsg = "ERR Vector Set (preview) commands are not enabled"u8;
-                return GarnetStatus.OK;
-            }
 
             result = VectorManagerResult.Invalid;
             parseState.InitializeWithArgument(key);

@@ -35,7 +35,6 @@ namespace Garnet.test
                     TestUtils.MethodTestDir,
                     enableAOF: true,
                     tryRecover: false,
-                    enableVectorSetPreview: true,
                     enableRangeIndexPreview: true,
                     compactionType: EvictToDisk ? LogCompactionType.Lookup : LogCompactionType.None,
                     lowMemory: EvictToDisk,
