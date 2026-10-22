@@ -67,6 +67,9 @@ namespace Garnet.client
         readonly DuplexOperationChannel<LightRequestContext, TcsWrapper, RingTransport> channel;
         readonly NetworkBufferSettings networkBufferSettings;
         readonly LimitedFixedBufferPool networkPool;
+        LimitedFixedBufferPool requestPool;
+        readonly int maxPooledRequests;
+        readonly long maxPooledRequestBytes;
         readonly MemoryThrottle outOfLineRentedBytesThrottle;
         // Created on the first out-of-line admission, so writers that only send inline requests never allocate it.
         WaiterQueue<MemoryThrottle, int> memoryThrottle;
@@ -124,6 +127,9 @@ namespace Garnet.client
             this.networkBufferSettings = new NetworkBufferSettings(options.NetworkBufferSizeBytes, options.NetworkBufferSizeBytes);
             this.networkPool = networkBufferSettings.CreateBufferPool(ownerType: ownerType, logger: logger);
             this.outOfLineRentedBytesThrottle = new MemoryThrottle(options.MaxOutOfLineRentedBytes);
+            maxPooledRequests = Math.Max(16, options.MaxOutstandingRequests);
+            maxPooledRequestBytes = Math.Min(64L << 20,
+                options.MaxOutOfLineRentedBytes > 0 ? options.MaxOutOfLineRentedBytes : long.MaxValue);
             this.minMemoryFootprintBytes = options.MinMemoryFootprint();
             this.maxMemoryFootprintBytes = options.MaxMemoryFootprint();
 
@@ -165,6 +171,7 @@ namespace Garnet.client
             Close();
             networkHandler.Dispose();
             networkPool?.Dispose();
+            Volatile.Read(ref requestPool)?.Dispose();
         }
 
         /// <summary>
@@ -202,6 +209,34 @@ namespace Garnet.client
             get => Volatile.Read(ref memoryThrottle) ?? CreateMemoryThrottleQueue();
         }
 
+        LimitedFixedBufferPool RequestPool
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => Volatile.Read(ref requestPool) ?? CreateRequestPool();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        LimitedFixedBufferPool CreateRequestPool()
+        {
+            // Payload size classes are independent of transport buffers; the byte cap bounds idle retention.
+            var created = new LimitedFixedBufferPool(
+                minAllocationSize: 64,
+                maxEntriesPerLevel: maxPooledRequests,
+                numLevels: 25,
+                ownerType: PoolOwnerType.GarnetClient,
+                maxPooledBytes: maxPooledRequestBytes,
+                logger: logger);
+            var existing = Interlocked.CompareExchange(ref requestPool, created, null);
+            if (existing != null)
+            {
+                created.Dispose();
+                return existing;
+            }
+            if (Volatile.Read(ref disposed) != 0)
+                created.Dispose();
+            return created;
+        }
+
         [MethodImpl(MethodImplOptions.NoInlining)]
         WaiterQueue<MemoryThrottle, int> CreateMemoryThrottleQueue()
         {
@@ -230,13 +265,13 @@ namespace Garnet.client
         /// <param name="length"></param>
         /// <returns></returns>
         internal LightRequestContext RentRequestBuffer(int length)
-            => LightRequestContext.RentRequestBuffer(networkPool, length);
+            => LightRequestContext.RentRequestBuffer(RequestPool, length);
 
         /// <summary>
         /// Gets the actual pooled allocation size that an out-of-line request will reserve.
         /// </summary>
         internal int GetRequestBufferAllocationSize(int length)
-            => LightRequestContext.GetRequestBufferAllocationSize(networkPool, length);
+            => LightRequestContext.GetRequestBufferAllocationSize(RequestPool, length);
 
         internal ValueTask<bool> RentMemoryThrottle(int allocationSize, CancellationToken token)
             => MemoryThrottleQueue.AdmitAsync(allocationSize, token);
@@ -249,7 +284,7 @@ namespace Garnet.client
             => Volatile.Read(ref memoryThrottle).Release(allocationSize);
 
         internal LightRequestContext RentAdmittedOutOfLineBuffer(int length, int reservedBytes)
-            => LightRequestContext.RentRequestBuffer(networkPool, length, Volatile.Read(ref memoryThrottle), reservedBytes);
+            => LightRequestContext.RentRequestBuffer(RequestPool, length, Volatile.Read(ref memoryThrottle), reservedBytes);
 
         /// <summary>
         /// Attempts to reserve the paired request address and optional completion ticket for one send operation.

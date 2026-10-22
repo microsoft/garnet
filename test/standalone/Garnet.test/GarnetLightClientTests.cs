@@ -45,6 +45,46 @@ namespace Garnet.test
         }
 
         [Test]
+        public unsafe void CommandSerializationPreservesCollectionWireFormat(
+            [Values(0, 8, 40960)] int payloadLength, [Values(0, 1, 2)] int collectionKind)
+        {
+            var payload = new string('v', payloadLength);
+            Memory<byte>[] arguments = [Encoding.ASCII.GetBytes(payload), Memory<byte>.Empty];
+            ICollection<Memory<byte>> collection = collectionKind switch
+            {
+                0 => arguments,
+                1 => new List<Memory<byte>>(arguments),
+                _ => new LinkedList<Memory<byte>>(arguments),
+            };
+            var expected = Encoding.ASCII.GetBytes($"*3\r\n$4\r\nECHO\r\n${payloadLength}\r\n{payload}\r\n$0\r\n\r\n");
+            var length = GarnetLightClient.GetCommandLength(ECHO, collection);
+            ClassicAssert.AreEqual(expected.Length, length);
+            var actual = new byte[length];
+            fixed (byte* destination = actual)
+                GarnetLightClient.WriteCommand(destination, length, ECHO, collection);
+            CollectionAssert.AreEqual(expected, actual);
+        }
+
+        [Test]
+        public unsafe void ArrayAndListSerializationDoesNotAllocate([Values] bool useList)
+        {
+            Memory<byte>[] arguments = [Encoding.ASCII.GetBytes("hello"), Memory<byte>.Empty];
+            ICollection<Memory<byte>> collection = useList ? new List<Memory<byte>>(arguments) : arguments;
+            var length = GarnetLightClient.GetCommandLength(ECHO, collection);
+            var buffer = new byte[length];
+            fixed (byte* destination = buffer)
+            {
+                for (var i = 0; i < 100; i++)
+                    GarnetLightClient.WriteCommand(destination, GarnetLightClient.GetCommandLength(ECHO, collection), ECHO, collection);
+                var before = GC.GetAllocatedBytesForCurrentThread();
+                for (var i = 0; i < 1000; i++)
+                    GarnetLightClient.WriteCommand(destination, GarnetLightClient.GetCommandLength(ECHO, collection), ECHO, collection);
+                var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                ClassicAssert.AreEqual(0, allocated);
+            }
+        }
+
+        [Test]
         public async Task SimplePingTest([Values] bool useTLS)
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTLS);
@@ -256,6 +296,64 @@ namespace Garnet.test
             var queue = GetMemoryThrottle(writer);
             ClassicAssert.IsNotNull(queue, "An out-of-line request must create the admission queue.");
             ClassicAssert.AreSame(queue, GetMemoryThrottle(writer));
+        }
+
+        [Test]
+        public async Task OutOfLineRentalsUsePayloadSizeAndReuseBurst()
+        {
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+            var options = new LightNetworkWriterOptions(
+                networkBufferSizeBytes: 131072,
+                requestPageSizeBytes: 8192,
+                requestPageCount: 4,
+                maxOutstandingRequests: 64,
+                maxOutstandingCompletions: 64,
+                maxConcurrentNetworkSends: 64,
+                maxOutOfLineRentedBytes: 0,
+                flushResultAllocationMode: FlushResultAllocationMode.Buffered);
+            using var client = TestUtils.GetGarnetLightClient(networkWriterOptions: options);
+            await client.ConnectAsync().ConfigureAwait(false);
+            var writer = GetNetworkWriter(client);
+            ClassicAssert.IsNull(typeof(LightNetworkWriter).GetField("requestPool", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(writer));
+            ClassicAssert.AreEqual(65536, writer.GetRequestBufferAllocationSize(40960));
+            var rented = new LightRequestContext[32];
+            var entries = new HashSet<PoolEntry>();
+            for (var i = 0; i < rented.Length; i++)
+            {
+                rented[i] = writer.RentRequestBuffer(40960);
+                ClassicAssert.AreEqual(65536, rented[i].Buffer.Length);
+                entries.Add(rented[i].poolEntry);
+            }
+            for (var i = 0; i < rented.Length; i++)
+                rented[i].Dispose();
+            for (var i = 0; i < rented.Length; i++)
+            {
+                rented[i] = writer.RentRequestBuffer(40960);
+                ClassicAssert.IsTrue(entries.Contains(rented[i].poolEntry), "The warmed burst must reuse every payload buffer.");
+            }
+            for (var i = 0; i < rented.Length; i++)
+                rented[i].Dispose();
+
+            for (var i = 0; i < 10; i++)
+                RentAndReturn();
+#if !DEBUG
+            var before = GC.GetAllocatedBytesForCurrentThread();
+#endif
+            for (var i = 0; i < 100; i++)
+                RentAndReturn();
+#if !DEBUG
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            ClassicAssert.AreEqual(0, allocated);
+#endif
+
+            void RentAndReturn()
+            {
+                for (var i = 0; i < rented.Length; i++)
+                    rented[i] = writer.RentRequestBuffer(40960);
+                for (var i = 0; i < rented.Length; i++)
+                    rented[i].Dispose();
+            }
         }
 
         [Test]

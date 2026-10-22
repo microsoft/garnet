@@ -38,12 +38,12 @@ namespace Garnet.client
     /// A producer reserves its (inline address, completion ticket, request id) with a compare-and-swap that
     /// commits only when every limit holds, so a request id exists only once its producer may write it. The
     /// producer holds the epoch from that reservation until it publishes the schedule entry, and drains only
-    /// after publishing. The flusher snapshots the tail and flushes <c>[readOnlyRequestId, tail)</c> from an
+    /// after publishing. The flusher snapshots the tail and flushes <c>[readOnlyUntilRequestId, tail)</c> from an
     /// epoch-bump callback, which cannot run until every producer that reserved an id in that range has
     /// published it and released or refreshed the epoch.
     /// </para>
     /// </summary>
-    internal sealed class DuplexAdmissionController : IDisposable
+    internal sealed class DuplexAdmissionController : IDisposable, IThreadPoolWorkItem
     {
         // Bounded progressive backoff budget for inline-buffer backpressure before parking on a flush. Kept small
         // because the backpressure window is short (a flush completion) and the slow path is a cheap event wait;
@@ -56,10 +56,13 @@ namespace Garnet.client
         readonly int scheduleCapacity;
         readonly LightEpoch epoch;
         readonly Action<int, int> onPagesMarkedReadOnly;
+        readonly Action flushReadOnlyRequests;
+        readonly Action<Exception> onFlushError;
 
         LightPageAndOffset tail;
         long flushedInlineAddress;
-        int readOnlyRequestId;
+        int readOnlyUntilRequestId;
+        int readOnlyFromRequestId;
         long readOnlyInlineAddress;
         long activeFlushUntilAddress;
         int completionReservations;
@@ -98,7 +101,8 @@ namespace Garnet.client
             int completionCapacity,
             int scheduleCapacity,
             LightEpoch epoch,
-            Action<int, int> onPagesMarkedReadOnly)
+            Action<int, int> onPagesMarkedReadOnly,
+            Action<Exception> onFlushError)
         {
             Debug.Assert(System.Numerics.BitOperations.IsPow2(inlineBufferCapacity));
             this.inlineBufferCapacity = inlineBufferCapacity;
@@ -106,6 +110,8 @@ namespace Garnet.client
             this.scheduleCapacity = scheduleCapacity;
             this.epoch = epoch;
             this.onPagesMarkedReadOnly = onPagesMarkedReadOnly;
+            flushReadOnlyRequests = FlushReadOnlyRequests;
+            this.onFlushError = onFlushError;
 
             requestFreed.Initialize();
             completionFreed.Initialize();
@@ -120,6 +126,31 @@ namespace Garnet.client
             requestFreed.Dispose();
             completionFreed.Dispose();
             idleStateChanged.Dispose();
+        }
+
+        void IThreadPoolWorkItem.Execute()
+        {
+            if (Volatile.Read(ref disposed) != 0)
+                return;
+            var protectedEpoch = false;
+            try
+            {
+                epoch.Resume();
+                protectedEpoch = true;
+                AggressiveShiftReadOnlyRunner(false);
+            }
+            catch (ObjectDisposedException) when (Volatile.Read(ref disposed) != 0)
+            {
+            }
+            catch (Exception ex)
+            {
+                onFlushError(ex);
+            }
+            finally
+            {
+                if (protectedEpoch)
+                    epoch.Suspend();
+            }
         }
 
         internal async ValueTask WaitForIdleAsync(CancellationToken token)
@@ -432,7 +463,9 @@ namespace Garnet.client
                 {
                     if (recurse)
                     {
-                        _ = Task.Run(EpochProtectAggressiveShiftReadOnlyRunner);
+                        // The flusher role admits only one queued continuation. The controller itself
+                        // is reusable work, without a Task, delegate, or producer execution context.
+                        ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: true);
                         return;
                     }
 
@@ -455,7 +488,7 @@ namespace Garnet.client
                 // is the unambiguous count of reserved-but-unflushed requests.
                 LightPageAndOffset snapshot = default;
                 snapshot.Value = Volatile.Read(ref tail.Value);
-                return ((snapshot.RequestCount - readOnlyRequestId) & (int)LightPageAndOffset.kRequestMask) != 0;
+                return ((snapshot.RequestCount - readOnlyUntilRequestId) & (int)LightPageAndOffset.kRequestMask) != 0;
             }
 
             bool AggressiveFlushShiftReadOnlyBump()
@@ -466,29 +499,23 @@ namespace Garnet.client
                 // before all of it is published.
                 LightPageAndOffset snapshot = default;
                 snapshot.Value = Volatile.Read(ref tail.Value);
-                var oldRequestId = readOnlyRequestId;
+                var oldRequestId = readOnlyUntilRequestId;
                 var newRequestId = snapshot.RequestCount;
                 if (newRequestId == oldRequestId)
                     return false;
 
-                readOnlyRequestId = newRequestId;
+                readOnlyFromRequestId = oldRequestId;
+                readOnlyUntilRequestId = newRequestId;
                 readOnlyInlineAddress = snapshot.InlineAddress;
-                epoch.BumpCurrentEpoch(() => onPagesMarkedReadOnly(oldRequestId, newRequestId));
+                // The flusher role remains held until this range completes, so the callback's
+                // snapshot cannot be overwritten while it is waiting for the epoch barrier.
+                epoch.BumpCurrentEpoch(flushReadOnlyRequests);
                 return true;
             }
 
-            void EpochProtectAggressiveShiftReadOnlyRunner()
-            {
-                try
-                {
-                    epoch.Resume();
-                    AggressiveShiftReadOnlyRunner(false);
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
-            }
         }
+
+        void FlushReadOnlyRequests()
+            => onPagesMarkedReadOnly(readOnlyFromRequestId, readOnlyUntilRequestId);
     }
 }

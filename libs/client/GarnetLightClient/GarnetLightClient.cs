@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -88,7 +89,7 @@ namespace Garnet.client
         /// <remarks>
         /// Uses the ring's minimum allocated footprint plus current out-of-line byte reservations. As with
         /// <see cref="LightNetworkWriterOptions.MinMemoryFootprint"/>, this estimate excludes array headers and
-        /// network buffers.
+        /// network buffers, pool bookkeeping, and idle pooled request buffers.
         /// </remarks>
         public long ActiveMemoryUsageBytes
             => Volatile.Read(ref networkWriter)?.ActiveMemoryUsageBytes ?? 0;
@@ -98,8 +99,8 @@ namespace Garnet.client
         /// out-of-line request-byte capacity.
         /// </summary>
         /// <remarks>
-        /// Uses the same exclusions as <see cref="LightNetworkWriterOptions.MaxMemoryFootprint"/>: array headers
-        /// and network buffers are not included.
+        /// Uses the same exclusions as <see cref="LightNetworkWriterOptions.MaxMemoryFootprint"/>: array headers,
+        /// network buffers, pool bookkeeping, and idle pooled request buffers are not included.
         /// <para>
         /// Returns <see cref="long.MaxValue"/> when out-of-line memory admission is disabled (configured capacity
         /// is zero), because that portion of the footprint is unbounded.
@@ -504,12 +505,24 @@ namespace Garnet.client
         }
 
         /// <summary>
-        /// Issue a command whose response completes the provided <paramref name="tcs"/>.
+        /// Whether a new request can be submitted: the client is live and its writer is connected and not retiring.
         /// </summary>
-        ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool CanSubmit()
         {
             var writer = Volatile.Read(ref networkWriter);
-            if (Disposed || writer == null || writer.Retiring)
+            return !Disposed && writer != null && !writer.Retiring;
+        }
+
+        /// <summary>
+        /// Issue a command whose response completes the provided <paramref name="tcs"/>.
+        /// </summary>
+        /// <remarks>
+        /// Callers discard the returned task, so failures complete <paramref name="tcs"/> instead of throwing.
+        /// </remarks>
+        ValueTask InternalExecuteAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args = null, CancellationToken token = default)
+        {
+            if (!CanSubmit())
             {
                 CompleteOnFailure(tcs, disposeException);
                 return ValueTask.CompletedTask;
@@ -518,21 +531,75 @@ namespace Garnet.client
             return InternalExecuteCoreAsync(tcs, respOp, args, token);
         }
 
+        internal static int GetCommandLength(ReadOnlyMemory<byte> operation, ICollection<Memory<byte>> args)
+        {
+            var count = checked(1 + (args?.Count ?? 0));
+            var length = checked(1 + NumUtils.CountDigits(count) + 2 + operation.Length);
+            if (args == null)
+                return length;
+
+            if (TryGetArgumentSpan(args, out var span))
+            {
+                foreach (var arg in span)
+                    length = checked(length + GetBulkStringLength(arg.Length));
+            }
+            else
+            {
+                foreach (var arg in args)
+                    length = checked(length + GetBulkStringLength(arg.Length));
+            }
+            return length;
+
+            static int GetBulkStringLength(int length)
+                => checked(1 + NumUtils.CountDigits(length) + 2 + length + 2);
+        }
+
+        internal static unsafe void WriteCommand(byte* destination, int length, ReadOnlyMemory<byte> operation, ICollection<Memory<byte>> args)
+        {
+            var end = destination + length;
+            if (!RespWriteUtils.TryWriteArrayLength(checked(1 + (args?.Count ?? 0)), ref destination, end) ||
+                !RespWriteUtils.TryWriteDirect(operation.Span, ref destination, end))
+                throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
+
+            if (args != null)
+            {
+                if (TryGetArgumentSpan(args, out var span))
+                {
+                    foreach (var arg in span)
+                        if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref destination, end))
+                            throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
+                }
+                else
+                {
+                    foreach (var arg in args)
+                        if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref destination, end))
+                            throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
+                }
+            }
+            if (destination != end)
+                throw new InvalidOperationException("The serialized command did not fill its reserved slot.");
+        }
+
+        static bool TryGetArgumentSpan(ICollection<Memory<byte>> args, out ReadOnlySpan<Memory<byte>> span)
+        {
+            switch (args)
+            {
+                case Memory<byte>[] array:
+                    span = array;
+                    return true;
+                case List<Memory<byte>> list:
+                    span = CollectionsMarshal.AsSpan(list);
+                    return true;
+                default:
+                    span = default;
+                    return false;
+            }
+        }
+
         async ValueTask InternalExecuteCoreAsync(TcsWrapper tcs, ReadOnlyMemory<byte> respOp, ICollection<Memory<byte>> args, CancellationToken token)
         {
             var writer = networkWriter;
-            var isArray = args != null;
-            var arraySize = checked(1 + (isArray ? args.Count : 0));
-            var totalLength = checked(1 + NumUtils.CountDigits(arraySize) + 2 + respOp.Length);
-
-            if (isArray)
-            {
-                foreach (var arg in args)
-                {
-                    var length = arg.Length;
-                    totalLength = checked(totalLength + 1 + NumUtils.CountDigits(length) + 2 + length + 2);
-                }
-            }
+            var totalLength = GetCommandLength(respOp, args);
 
             // The choice between an inline record (serialized straight into the inline buffer, no pooled buffer) and
             // an out-of-line record (a separately rented payload buffer) is automatic and driven solely by whether
@@ -546,29 +613,6 @@ namespace Garnet.client
 
             LightRequestContext payload = default;
             var payloadRegistered = false;
-
-            // Serialize the command's RESP bytes into the span [curr, end). Shared by both paths so the wire
-            // format lives in one place; the caller supplies either inline-buffer memory (inline) or the rented buffer.
-            unsafe void SerializeCommand(byte* curr, byte* end)
-            {
-                if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end) ||
-                    !RespWriteUtils.TryWriteDirect(respOp.Span, ref curr, end))
-                {
-                    throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
-                }
-
-                if (isArray)
-                {
-                    foreach (var arg in args)
-                    {
-                        if (!RespWriteUtils.TryWriteBulkString(arg.Span, ref curr, end))
-                            throw new InvalidOperationException("Unable to serialize the command into its reserved slot.");
-                    }
-                }
-
-                if (curr != end)
-                    throw new InvalidOperationException("The serialized command did not fill its reserved slot.");
-            }
 
             try
             {
@@ -590,7 +634,7 @@ namespace Garnet.client
                         unsafe
                         {
                             fixed (byte* payloadPtr = payload.Buffer)
-                                SerializeCommand(payloadPtr, payloadPtr + payload.Length);
+                                WriteCommand(payloadPtr, payload.Length, respOp, args);
                         }
                     }
                     catch (Exception ex)
@@ -663,7 +707,7 @@ namespace Garnet.client
                             unsafe
                             {
                                 var curr = writer.RegisterInlineRecord(address);
-                                SerializeCommand(curr, curr + totalLength);
+                                WriteCommand(curr, totalLength, respOp, args);
                             }
                             writer.PublishInlineRecord(requestId, address, totalLength);
                         }
@@ -718,8 +762,7 @@ namespace Garnet.client
         /// </summary>
         void InternalExecuteNoResponse(ReadOnlyMemory<byte> respOp, ReadOnlySpan<byte> subop, Span<byte> param1, Span<byte> param2, CancellationToken token = default)
         {
-            var writer = Volatile.Read(ref networkWriter);
-            if (Disposed || writer == null || writer.Retiring)
+            if (!CanSubmit())
                 ThrowException(disposeException);
 
             InternalExecuteNoResponseCore(respOp, subop, param1, param2, token);

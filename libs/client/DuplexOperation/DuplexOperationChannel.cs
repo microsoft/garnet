@@ -164,7 +164,8 @@ namespace Garnet.client
                 store.CompletionCapacity,
                 store.MaxOutstandingRequests,
                 epoch,
-                OnPagesMarkedReadOnly);
+                OnPagesMarkedReadOnly,
+                OnFlushError);
         }
 
         /// <inheritdoc />
@@ -301,6 +302,12 @@ namespace Garnet.client
 
         void OnPagesMarkedReadOnly(int oldRequestId, int newRequestId)
             => AsyncFlushRequestContext(oldRequestId, newRequestId);
+
+        void OnFlushError(Exception exception)
+        {
+            logger?.LogError(exception, "Exception continuing a request flush");
+            transport.OnFlushError(exception);
+        }
 
         /// <summary>
         /// Flush a dense request-id range of scheduled requests to the network. The flusher walks requests in
