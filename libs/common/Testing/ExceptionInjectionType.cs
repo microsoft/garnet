@@ -184,5 +184,10 @@ namespace Garnet.common
         /// Pause a periodic commit before checking the node role and committing the AOF.
         /// </summary>
         Aof_Pause_Before_Periodic_Commit,
+        /// <summary>
+        /// Server network sender: pause a send completion that frees a slot for a waiting send, after it has
+        /// decremented the send count and before it releases the waiter.
+        /// </summary>
+        Sender_Pause_Before_Slot_Release,
     }
 }

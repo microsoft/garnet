@@ -1213,7 +1213,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(-2, ttl);
 
             // px .. nx, non-existing key
-            ClassicAssert.IsTrue(db.KeyDelete(key));
+            // Key already expired from the "ex .. xx" block above, so DEL is a no-op (see issue #2244).
+            ClassicAssert.IsFalse(db.KeyDelete(key));
             resp = (string)db.Execute($"{setCommand}", key, value, "px", "1000", "nx");
             ClassicAssert.AreEqual(okResponse, resp);
             Thread.Sleep(TimeSpan.FromSeconds(1.1));
@@ -1496,6 +1497,41 @@ namespace Garnet.test
             ClassicAssert.IsTrue(exception);
         }
 
+        /// <summary>
+        /// A command argument whose magnitude is >= 2^64 (20+ digits) used to throw an uncaught
+        /// RespParsingException out of the shared digit-parsing helper, which closed the connection
+        /// and reported "ERR Protocol Error" instead of the ordinary out-of-range command error.
+        /// A trailing PING on the same connection confirms the session survives.
+        /// </summary>
+        [Test]
+        [TestCase("18446744073709551616")]     // 2^64
+        [TestCase("-18446744073709551616")]    // -2^64
+        [TestCase("99999999999999999999999")]  // much larger than 2^64
+        public void HugeIntegerArgumentDoesNotCloseConnection(string hugeValue)
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+
+            var notIntegerResponse = "-ERR value is not an integer or out of range.\r\n+PONG\r\n";
+
+            lightClientRequest.SendCommand("SET incrkey 1");
+            var response = lightClientRequest.SendCommands($"INCRBY incrkey {hugeValue}", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(notIntegerResponse, response);
+
+            response = lightClientRequest.SendCommands($"PEXPIRE incrkey {hugeValue}", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(notIntegerResponse, response);
+
+            lightClientRequest.SendCommand("RPUSH listkey a b c");
+            response = lightClientRequest.SendCommands($"LRANGE listkey {hugeValue} 100", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(notIntegerResponse, response);
+
+            response = lightClientRequest.SendCommands($"LINDEX listkey {hugeValue}", "PING", 1, 1);
+            TestUtils.AssertEqualUpToExpectedLength(notIntegerResponse, response);
+
+            // The key must not have been mutated by the rejected INCRBY.
+            response = lightClientRequest.SendCommand("GET incrkey");
+            TestUtils.AssertEqualUpToExpectedLength("$1\r\n1\r\n", response);
+        }
+
         [Test]
         public void SimpleIncrementByFloatWithNoKey()
         {
@@ -1758,6 +1794,77 @@ namespace Garnet.test
 
             var keysDel = db.KeyDelete(redisKeys);
             ClassicAssert.AreEqual(keysDel, 0);
+        }
+
+        [Test]
+        public void DeleteExpiredObjectKeyReturnsZero()
+        {
+            // https://github.com/microsoft/garnet/issues/2244
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            db.ListRightPush(key, "listItem");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var deleted = db.KeyDelete(key);
+            ClassicAssert.IsFalse(deleted);
+        }
+
+        [Test]
+        public void LlenOnExpiredStringKeyReturnsZero()
+        {
+            // https://github.com/microsoft/garnet/issues/2244: LLEN (object-store read) on an expired
+            // string-typed key must report the key as missing (0), not WRONGTYPE.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            db.StringSet(key, "v", TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var listLength = db.ListLength(key);
+            ClassicAssert.AreEqual(0, listLength);
+        }
+
+        [Test]
+        public void GetOnExpiredObjectKeyReturnsNil()
+        {
+            // Same root cause as the LLEN/DEL/SETNX bugs in #2244: a string-store read on an
+            // expired object-typed key must report the key as missing, not WRONGTYPE.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            db.ListRightPush(key, "listItem");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            string result = db.StringGet(key);
+            ClassicAssert.IsNull(result);
+        }
+
+        [Test]
+        public void RPushOnExpiredStringKeyCreatesNewList()
+        {
+            // Same root cause as the LLEN/DEL/SETNX bugs in #2244: an object-store write on an
+            // expired string-typed key must treat the key as missing and create a fresh value,
+            // not report WRONGTYPE.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            db.StringSet(key, "oldStringValue");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var newLength = db.ListRightPush(key, "listItem");
+            ClassicAssert.AreEqual(1, newLength);
+
+            var values = db.ListRange(key);
+            ClassicAssert.AreEqual(1, values.Length);
+            ClassicAssert.AreEqual("listItem", (string)values[0]);
         }
 
         [Test]
@@ -3562,6 +3669,45 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => db.Execute(command, key, expireTimeUnix, optionA, optionA));
         }
 
+        [Test]
+        public void KeyExpireOutOfRangeIsRejectedWithoutKillingSession()
+        {
+            const string Key = nameof(KeyExpireOutOfRangeIsRejectedWithoutKillingSession);
+
+            var faulted = false;
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                redis.ConnectionFailed += delegate { faulted = true; };
+
+                var db = redis.GetDatabase();
+
+                // Matches the exact repro from the reported issue: a large PEXPIRE on a key that does not exist
+                ClassicAssert.IsFalse(db.KeyExists(Key));
+
+                // milliseconds too far in the future
+                var exc0 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("PEXPIRE", Key, "300000000000000"));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'pexpire' command", exc0.Message);
+
+                // seconds too far in the future
+                var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EXPIRE", Key, "300000000000"));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'expire' command", exc1.Message);
+
+                // unix time (seconds) too far in the future
+                var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("EXPIREAT", Key, long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'expireat' command", exc2.Message);
+
+                // unix time (ms) too far in the future
+                var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("PEXPIREAT", Key, long.MaxValue.ToString()));
+                ClassicAssert.AreEqual("ERR invalid expire time in 'pexpireat' command", exc3.Message);
+
+                ClassicAssert.IsFalse(db.KeyExists(Key));
+            }
+
+            // Connection never faulted during operation - previously these all closed the connection with no reply
+            ClassicAssert.IsFalse(faulted);
+        }
+
         #endregion
 
         [Test]
@@ -3972,6 +4118,47 @@ namespace Garnet.test
 
             value = db.StringGet(keyB);
             ClassicAssert.AreEqual(keyB, value);
+        }
+
+        [Test]
+        public void SetKeepTtlLargerValueCopyUpdateTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "keepTtlKey";
+            var newValue = new string('x', 300);
+
+            ClassicAssert.AreEqual("OK", db.Execute("SET", key, "value1", "EX", "100")?.ToString());
+            ClassicAssert.AreEqual("OK", db.Execute("SET", key, newValue, "KEEPTTL")?.ToString());
+
+            ClassicAssert.IsTrue(db.KeyExists(key));
+            var ttl = db.KeyTimeToLive(key);
+            ClassicAssert.IsNotNull(ttl);
+            ClassicAssert.IsTrue(ttl.Value.TotalSeconds > 90 && ttl.Value.TotalSeconds <= 100, $"Unexpected TTL {ttl}");
+            ClassicAssert.AreEqual(newValue, (string)db.StringGet(key));
+        }
+
+        [Test]
+        public void SetExNxOnExpiredRecordWithLargerValueTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const int baseLength = 100;
+            const int maxGrowth = 24;
+
+            for (var growth = 0; growth <= maxGrowth; growth++)
+                ClassicAssert.AreEqual("OK", db.Execute("SET", $"expNx{growth}", new string('a', baseLength), "PX", "100")?.ToString());
+
+            Thread.Sleep(500);
+
+            // The new value may fit the expired record without the expiration but not with it; the write must still be stored
+            for (var growth = 0; growth <= maxGrowth; growth++)
+            {
+                var newValue = new string('b', baseLength + growth);
+                ClassicAssert.AreEqual("OK", db.Execute("SET", $"expNx{growth}", newValue, "EX", "3600", "NX")?.ToString());
+                ClassicAssert.AreEqual(newValue, (string)db.StringGet($"expNx{growth}"), $"Value lost with growth {growth}");
+                ClassicAssert.IsNotNull(db.KeyTimeToLive($"expNx{growth}"));
+            }
         }
 
         [Test]
@@ -5207,6 +5394,28 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("GET key1");
             expectedResponse = "$1\r\n2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
+        [Test]
+        public void SetNXOnExpiredObjectKeySucceeds()
+        {
+            // https://github.com/microsoft/garnet/issues/2244: an expired key must be treated as
+            // non-existent, even when its stored type differs from the command being issued.
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            var newValue = "myNewValue";
+
+            db.ListRightPush(key, "listItem");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var setNxResult = (long)db.Execute("SETNX", key, newValue);
+            ClassicAssert.AreEqual(1, setNxResult);
+
+            string result = db.StringGet(key);
+            ClassicAssert.AreEqual(newValue, result);
         }
         #endregion
 

@@ -50,25 +50,72 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Converts a Unix timestamp in seconds to ticks.
+        /// Attempts to convert a Unix timestamp in seconds to ticks, failing instead of throwing or
+        /// silently overflowing if the result would not be representable as a DateTime/DateTimeOffset.
         /// </summary>
         /// <param name="unixTimestamp">The Unix timestamp in seconds.</param>
-        /// <returns>The equivalent number of ticks.</returns>
+        /// <param name="ticks">The equivalent number of ticks, when conversion succeeds.</param>
+        /// <returns>True if the conversion succeeded; false if it would overflow the representable date range.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static long UnixTimestampInSecondsToTicks(long unixTimestamp)
-        {
-            return unixTimestamp * TimeSpan.TicksPerSecond + _unixEpochTicks;
-        }
+        public static bool TryUnixTimestampInSecondsToTicks(long unixTimestamp, out long ticks)
+            => TryScaleAndAddTicks(_unixEpochTicks, unixTimestamp, TimeSpan.TicksPerSecond, out ticks);
 
         /// <summary>
-        /// Converts a Unix timestamp in milliseconds to ticks.
+        /// Attempts to convert a Unix timestamp in milliseconds to ticks, failing instead of throwing or
+        /// silently overflowing if the result would not be representable as a DateTime/DateTimeOffset.
         /// </summary>
         /// <param name="unixTimestamp">The Unix timestamp in milliseconds.</param>
-        /// <returns>The equivalent number of ticks.</returns>
+        /// <param name="ticks">The equivalent number of ticks, when conversion succeeds.</param>
+        /// <returns>True if the conversion succeeded; false if it would overflow the representable date range.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static long UnixTimestampInMillisecondsToTicks(long unixTimestamp)
+        public static bool TryUnixTimestampInMillisecondsToTicks(long unixTimestamp, out long ticks)
+            => TryScaleAndAddTicks(_unixEpochTicks, unixTimestamp, TimeSpan.TicksPerMillisecond, out ticks);
+
+        /// <summary>
+        /// Attempts to add a relative number of seconds, from the current UTC time, to an absolute number of
+        /// ticks, failing instead of throwing or silently overflowing if the result would not be representable
+        /// as a DateTime/DateTimeOffset.
+        /// </summary>
+        /// <param name="seconds">The number of seconds from now.</param>
+        /// <param name="ticks">The resulting absolute number of ticks, when conversion succeeds.</param>
+        /// <returns>True if the conversion succeeded; false if it would overflow the representable date range.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryRelativeSecondsToTicks(long seconds, out long ticks)
+            => TryScaleAndAddTicks(DateTimeOffset.UtcNow.Ticks, seconds, TimeSpan.TicksPerSecond, out ticks);
+
+        /// <summary>
+        /// Attempts to add a relative number of milliseconds, from the current UTC time, to an absolute number
+        /// of ticks, failing instead of throwing or silently overflowing if the result would not be
+        /// representable as a DateTime/DateTimeOffset.
+        /// </summary>
+        /// <param name="milliseconds">The number of milliseconds from now.</param>
+        /// <param name="ticks">The resulting absolute number of ticks, when conversion succeeds.</param>
+        /// <returns>True if the conversion succeeded; false if it would overflow the representable date range.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryRelativeMillisecondsToTicks(long milliseconds, out long ticks)
+            => TryScaleAndAddTicks(DateTimeOffset.UtcNow.Ticks, milliseconds, TimeSpan.TicksPerMillisecond, out ticks);
+
+        /// <summary>
+        /// Scales <paramref name="value"/> by <paramref name="ticksPerUnit"/> and adds it to
+        /// <paramref name="baseTicks"/>, failing instead of throwing or silently wrapping if the result would
+        /// not be representable as a DateTime/DateTimeOffset tick count.
+        /// </summary>
+        private static bool TryScaleAndAddTicks(long baseTicks, long value, long ticksPerUnit, out long ticks)
         {
-            return unixTimestamp * TimeSpan.TicksPerMillisecond + _unixEpochTicks;
+            try
+            {
+                checked
+                {
+                    ticks = baseTicks + (value * ticksPerUnit);
+                }
+            }
+            catch (OverflowException)
+            {
+                ticks = default;
+                return false;
+            }
+
+            return ticks >= 0 && ticks <= DateTime.MaxValue.Ticks;
         }
 
         /// <summary>

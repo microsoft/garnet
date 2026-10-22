@@ -1368,6 +1368,30 @@ namespace Garnet.test
             }
         }
 
+        [Test, CancelAfter(10_000)]
+        public async Task VSIMDoesNotRequireExclusiveIndexLockAsync(CancellationToken cancellationToken)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "NOQUANT"]));
+
+            // Holding a shared lock on the Vector Set stands in for a concurrent reader; another reader must not wait for it.
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            var locks = (ReadOptimizedLock)typeof(VectorManager).GetField("vectorSetLocks", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(vectorManager);
+            var keyHash = server.Provider.StoreWrapper.DefaultDatabase.Store.GetKeyHash((FixedSpanByteKey)"foo"u8);
+            locks.AcquireSharedLock(keyHash, out var sharedLock);
+            try
+            {
+                var search = (byte[][])await db.ExecuteAsync("VSIM", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", "1"]).WaitAsync(cancellationToken);
+                ClassicAssert.AreEqual(1, search.Length);
+            }
+            finally
+            {
+                locks.ReleaseLock(sharedLock);
+            }
+        }
+
         [Test]
         public void VSIM()
         {
@@ -1889,6 +1913,27 @@ namespace Garnet.test
             var res3 = (byte[][])db.Execute("VSIM", ["movies", "ELE", queryElementId,
                 "FILTER", ".rating / 2 > 2 and .year >= 1980", "COUNT", "3"]);
             ClassicAssert.AreEqual(2, res3.Length, "ELE + FILTER without WITHATTRIBS: arithmetic and comparison");
+        }
+
+        [Test]
+        public async Task VSIMBadAttributeFiltersAsync()
+        {
+            const string Key = nameof(VSIMBadAttributeFiltersAsync);
+            const string Element0 = nameof(Element0);
+            const string Element1 = nameof(Element1);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+#pragma warning disable JSON001 // Invalid JSON pattern - which is the point of this test
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element0, new float[] { 1, 2, 3 }, "{\"a\\")).ConfigureAwait(false));
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element1, new float[] { 1, 2, 3 }, "{\"a\": [\"\\")).ConfigureAwait(false));
+#pragma warning restore JSON001
+
+            var searchReq = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+            searchReq.FilterExpression = ".a == 1";
+            using var res = await db.VectorSetSimilaritySearchAsync(Key, searchReq).ConfigureAwait(false);
+            ClassicAssert.AreEqual(0, res.Length);
         }
 
         [Test]
@@ -5605,6 +5650,37 @@ namespace Garnet.test
             }
         }
 #endif
+
+        [Test]
+        public async Task VeryLargeVectorSetOptionsAsync()
+        {
+            const int DataLength = VectorManager.MaxVectorDimensions;
+            const int EF = VectorManager.MaxExplorationFactor;
+            const int M = VectorManager.MaxNumLinks;
+            const string Member = nameof(Member);
+
+            var key = $"vs:d{DataLength}-ef{EF}-m{M}";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var dataFloat = new float[DataLength];
+            for (var i = 0; i < dataFloat.Length; i++)
+            {
+                dataFloat[i] = Random.Shared.NextSingle();
+            }
+
+            var data = MemoryMarshal.AsBytes(dataFloat).ToArray();
+            ClassicAssert.AreEqual(1, (int)await db.ExecuteAsync("VADD", [key, "FP32", data, Member, "NOQUANT", "EF", EF, "M", M]).ConfigureAwait(false));
+
+            var res = (string[])await db.ExecuteAsync("VSIM", [key, "FP32", data]).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(1, res.Length);
+            ClassicAssert.AreEqual(Member, res[0]);
+
+            var info = await db.VectorSetInfoAsync(key).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, info.Value.Length);
+        }
 
         /// <summary>
         /// Wait for a `XVIMPORT ... FINISH` to complete on the given key.

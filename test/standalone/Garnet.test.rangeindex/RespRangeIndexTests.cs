@@ -696,6 +696,25 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// Verifies that SET NX over an expired RangeIndex key yields a plain string and not a record that retains the RangeIndex type.
+        /// </summary>
+        [Test]
+        public void SetNxOverExpiredRangeIndexYieldsStringTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ClassicAssert.AreEqual("OK", (string)db.Execute("RI.CREATE", "myindex", "MEMORY", "CACHESIZE", "65536"));
+            ClassicAssert.IsTrue(db.KeyExpire("myindex", TimeSpan.FromMilliseconds(100)));
+            Thread.Sleep(300);
+
+            ClassicAssert.IsTrue(db.StringSet("myindex", "v", when: When.NotExists));
+            ClassicAssert.AreEqual("string", (string)db.Execute("TYPE", "myindex"));
+            ClassicAssert.AreEqual("v", (string)db.StringGet("myindex"));
+            ClassicAssert.IsNull(db.KeyTimeToLive("myindex"));
+        }
+
+        /// <summary>
         /// Verifies RI.SET returns an error when the field exceeds MAXKEYLEN.
         /// </summary>
         [Test]
