@@ -32,7 +32,7 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
-        unsafe void ImportRecord(string source, string destination, bool renameInput = false)
+        unsafe void ImportRecord(string source, string destination)
         {
             StoreWrapper storeWrapper = server.Provider.StoreWrapper;
             FunctionsState state = storeWrapper.CreateFunctionsState();
@@ -48,11 +48,6 @@ namespace Garnet.test
                 {
                     LogRecord record = new(recordPtr, state.transientObjectIdMap);
                     UnifiedInput input = new();
-                    if (renameInput)
-                    {
-                        input.header.cmd = RespCommand.RENAME;
-                        input.parseState.InitializeWithArgument(PinnedSpanByte.FromPinnedPointer(recordPtr, 0));
-                    }
                     Status status = context.Upsert((FixedSpanByteKey)Encoding.UTF8.GetBytes(destination), ref input, in record);
                     Assert.That(status.IsCompletedSuccessfully, Is.True);
                 }

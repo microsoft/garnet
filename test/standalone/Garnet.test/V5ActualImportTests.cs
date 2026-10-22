@@ -149,22 +149,6 @@ namespace Garnet.test
             AssertTaggedValue(db, "destination", 3, "new");
             List<(int Sublog, byte[] Entry)> entries = Capture(begin);
             InitializeOldDestination(db, oldObject);
-            foreach ((int _, byte[] record) in entries)
-            {
-                fixed (byte* pointer = record)
-                {
-                    AofHeader header = *(AofHeader*)pointer;
-                    TestContext.WriteLine($"{header.opType} session={header.sessionID}");
-                    if (header.opType == AofEntryType.StoreRMW)
-                    {
-                        byte* cursor = AofHeader.SkipHeader(pointer);
-                        cursor += PinnedSpanByte.FromLengthPrefixedPinnedPointer(cursor).TotalSize;
-                        StringInput input = default;
-                        input.DeserializeFrom(cursor);
-                        TestContext.WriteLine($"command={input.header.cmd} flags={input.header.flags} args={input.parseState.Count}");
-                    }
-                }
-            }
             AofProcessor processor = new(server.Provider.StoreWrapper);
             try
             {

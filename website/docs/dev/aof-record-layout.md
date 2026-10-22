@@ -115,7 +115,7 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 - Which components are present depends on the op shape: e.g. DELETE is key-only (the value slot is unused on replay);
   a plain upsert is key + value; an RMW / upsert-with-input carries the input.
 
-### Imported string record optionals
+### Imported strings
 
 Imported ordinary strings retain append-only file version 5 and existing operation layouts.
 A committed transaction contains a destination delete followed by `StoreRMW` with `SETIFGREATER`,
@@ -128,13 +128,8 @@ Ordinary and chunked entries use the same operation layouts, which older version
 parse. Use upgraded readers for recovery when checkpoint truncation leaves a transaction commit
 or abort without its start. Older single-log readers can stop replay at that boundary.
 
-Conditional writes remain atomic on the primary. Asynchronous replica reads have ordinary
-`GET` visibility and can observe the delete before recreation; replay does not provide a
-stronger transaction-isolation guarantee. Every returned value and entity tag must form a
-consistent pair. Upgrade readers and replicas before enabling the fix to receive its import
-metadata corrections. Post-restart replication stream resumption is not established by
-startup recovery compatibility. Diskless snapshot imports preserve metadata directly without
-appending snapshot records.
+Parseable layouts alone do not establish safe mixed-version replication or replication
+stream resumption after restart.
 
 ---
 
