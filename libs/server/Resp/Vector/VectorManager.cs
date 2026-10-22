@@ -240,9 +240,9 @@ namespace Garnet.server
             vectorSetLocks = new(vectorSetReplayCount);
 
             this.getTempSession = getTempSession;
-            cleanupTaskChannel = new();
-            requestCleanupTaskChannel = new();
-            requestDropTaskChannel = new();
+            cleanupTaskChannel = VectorSetCleanupWorkChannel<object>.CreateSingleReaderMultiWriter();
+            requestCleanupTaskChannel = VectorSetCleanupWorkChannel<ulong>.CreateSingleReaderMultiWriter();
+            requestDropTaskChannel = VectorSetCleanupWorkChannel<object>.CreateSingleReaderMultiWriter();
 
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
@@ -255,7 +255,7 @@ namespace Garnet.server
             recoveredIndexes = new();
             recoveredMetadata = new();
 
-            quantizationOrImportChannel = Channel.CreateUnbounded<QuantizationOrImportState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
+            quantizationOrImportChannel = VectorSetCleanupWorkChannel<QuantizationOrImportState>.CreateMultiReaderMultiWriter();
 
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
@@ -649,15 +649,8 @@ namespace Garnet.server
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
 
-            // drain quantization work and stop the worker tasks
-            if (!quantizationOrImportChannel.Writer.TryComplete())
-            {
-                logger?.LogWarning("VectorManager quantization channel was already completed during disposal");
-                Debug.Fail("VectorManager quantization channel was already completed");
-            }
-
-            while (quantizationOrImportChannel.Reader.TryRead(out _)) { }
-            AsyncUtils.BlockingWait(Task.WhenAll(quantizationAndImportTasks));
+            // Complete all quantization or import tasks
+            quantizationOrImportChannel.CompleteAndWaitForConsumerTask(Task.WhenAll(quantizationAndImportTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -793,7 +786,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
+                    EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, 0, 0, null));
                 }
 
                 return VectorManagerResult.OK;
@@ -833,7 +826,7 @@ namespace Garnet.server
         /// <summary>
         /// Request deletion of a Vector Set given the VALUE of the index key.
         /// </summary>
-        internal void RequestDeletion(ReadOnlySpan<byte> value)
+        internal void RequestDeletion(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {
@@ -843,13 +836,22 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
 
             // Ignore any deletion requested for an index that has the SuppressCleanup flag
             //
             // This typically indicates a rename is in progress
             if (flags.HasFlag(VectorSetFlags.SuppressCleanup))
             {
+                return;
+            }
+
+            // If an import is in progress, we need to coordinate delete so we don't drop the index out from under a finalize step
+            if (flags.HasFlag(VectorSetFlags.ImportPending) && !(flags.HasFlag(VectorSetFlags.ImportCompleted) || flags.HasFlag(VectorSetFlags.ImportFailed)))
+            {
+                // If we fail to enqueue, that implies we are shutting down - so we'll pick it up on recovery
+                _ = quantizationOrImportChannel.TryPublish(new(key.ToArray(), QuantizationOrImportStep.DeleteDuringImport, 0, context, indexPtr, null));
+
                 return;
             }
 

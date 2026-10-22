@@ -215,6 +215,7 @@ namespace Garnet.server
                     ref var delCtx = ref cleanupSession.storageSession.vectorBasicContext;
 
                     var needsUpdate = false;
+
                     lock (this)
                     {
                         // Read all pending requests so we can do one update
@@ -243,7 +244,7 @@ namespace Garnet.server
                     if (!cleanupTaskChannel.TryPublish())
                     {
                         logger?.LogCritical("VectorManager cleanup channel rejected a cleanup request");
-                        Debug.Assert(false, "VectorManager cleanup channel should never drop a request");
+                        Debug.Fail("VectorManager cleanup channel should never drop a request");
                     }
                 }
                 catch (Exception e)
