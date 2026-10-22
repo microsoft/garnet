@@ -13,7 +13,7 @@ using Tsavorite.core;
 namespace Garnet.test
 {
     [TestFixture]
-    public class RecordImportEtagTests : TestBase
+    public partial class RecordImportEtagTests : TestBase
     {
         GarnetServer server;
 
@@ -154,156 +154,47 @@ namespace Garnet.test
             List<byte[]> entries = new();
             for (int sublog = 0; sublog < sublogCount; sublog++)
             {
+                AofChunkedRecordReader reader = new();
+                List<byte[]> chunks = new();
                 using TsavoriteLogScanIterator scan = log.Scan(sublog, log.BeginAddress[sublog], log.TailAddress[sublog]);
                 while (scan.GetNext(out byte[] entry, out int length, out _))
                 {
-                    if (ReadHeader(entry).opType == AofEntryType.UnifiedStoreStringRecordUpsert)
-                        entries.Add(entry.AsSpan(0, length).ToArray());
-                }
-            }
-            return entries;
-        }
-
-        static unsafe void ReplayEntry(AofProcessor processor, byte[] entry, int length)
-        {
-            fixed (byte* pointer = entry)
-                processor.ProcessAofRecordInternal(0, pointer, length, asReplica: false, out _);
-        }
-
-        static unsafe void ReplayReplicaEntry(AofProcessor processor, byte[] entry)
-        {
-            fixed (byte* pointer = entry)
-                processor.ProcessAofRecordInternal(0, pointer, entry.Length, asReplica: true, out _);
-        }
-
-        static unsafe byte[] TransactionMarker(AofHeader header, AofEntryType operation, long sequenceNumber)
-        {
-            header.opType = operation;
-            header.HeaderType = AofHeaderType.ShardedLogTransactionHeader;
-            AofShardedLogTransactionHeader marker = new()
-            {
-                shardedHeader = new AofShardedHeader { basicHeader = header, sequenceNumber = sequenceNumber },
-                participantCount = 1,
-            };
-            marker.replayTaskAccessVector[0] = 1;
-            return new ReadOnlySpan<byte>(&marker, AofShardedLogTransactionHeader.TotalSize).ToArray();
-        }
-
-        [Test]
-        public unsafe void ReplicaTransactionRejectsMalformedRecordBeforeApplying([Values] bool chunked,
-            [Values("header", "count", "argument")] string corruption, [Values(-1, int.MaxValue)] int invalidLength)
-        {
-            server.Dispose();
-            server = CreateAofServer(2, recover: false);
-            server.Start();
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            IDatabase database = redis.GetDatabase();
-            database.Execute("SETWITHETAG", "source", new string('v', chunked ? 2 * TsavoriteLog.MinPartialAllocSize : 32));
-            ImportRecord("source", "destination", renameInput: true);
-            database.Execute("COMMITAOF");
-            List<byte[]> entries = ReadImportedEntries(2);
-            Assert.That(entries, Is.Not.Empty);
-            Assert.That(ReadHeader(entries[0]).IsChunked, Is.EqualTo(chunked));
-            List<byte[]> malformedEntries = entries.ConvertAll(entry => (byte[])entry.Clone());
-            byte[] finalEntry = malformedEntries[^1];
-            int headerSize = default(UnifiedInput).header.SpanByte.TotalSize;
-            int inputLength = default(UnifiedInput).SerializedLength + sizeof(int) + 2 * sizeof(long);
-            int prefixOffset = corruption switch
-            {
-                "header" => 0,
-                "count" => headerSize + sizeof(long),
-                _ => headerSize + sizeof(long) + sizeof(int),
-            };
-            fixed (byte* pointer = finalEntry)
-                *(int*)(pointer + finalEntry.Length - inputLength + prefixOffset) = invalidLength;
-
-            database.KeyDelete("destination");
-            database.StringSet("destination", "unchanged");
-            AofProcessor processor = new(server.Provider.StoreWrapper);
-            try
-            {
-                AofHeader header = ReadHeader(entries[0]);
-                ReplayReplicaEntry(processor, TransactionMarker(header, AofEntryType.TxnStart, 100));
-                foreach (byte[] entry in entries)
-                    ReplayReplicaEntry(processor, entry);
-                foreach (byte[] entry in malformedEntries)
-                    ReplayReplicaEntry(processor, entry);
-                byte[] commit = TransactionMarker(header, AofEntryType.TxnCommit, 200);
-                GarnetException exception = Assert.Throws<GarnetException>(() => ReplayReplicaEntry(processor, commit));
-                Assert.That(exception.StackTrace, Does.Contain("RequiresOrderedReplay"));
-            }
-            finally
-            {
-                processor.Dispose();
-            }
-            AssertTaggedValue(database, "destination", 0, "unchanged");
-        }
-
-        [Test]
-        public unsafe void RecordUpsertRejectsMalformedInputBeforeApplying([Values] bool chunked,
-            [Values("truncated", "header", "count")] string corruption)
-        {
-            server.Dispose();
-            server = CreateAofServer(1, recover: false);
-            server.Start();
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            IDatabase database = redis.GetDatabase();
-            database.Execute("SETWITHETAG", "source", new string('v', chunked ? 2 * TsavoriteLog.MinPartialAllocSize : 32));
-            ImportRecord("source", "destination");
-            database.Execute("COMMITAOF");
-            List<byte[]> entries = ReadImportedEntries(1);
-            Assert.That(entries, Is.Not.Empty);
-            byte[] finalEntry = entries[^1];
-            if (corruption != "truncated")
-            {
-                int inputLength = default(UnifiedInput).SerializedLength + 2 * sizeof(long);
-                int prefixOffset = corruption == "header" ? 0 : default(UnifiedInput).header.SpanByte.TotalSize + sizeof(long);
-                fixed (byte* pointer = finalEntry)
-                    *(int*)(pointer + finalEntry.Length - inputLength + prefixOffset) = int.MaxValue;
-            }
-            database.KeyDelete("destination");
-            database.StringSet("destination", "unchanged");
-            AofProcessor processor = new(server.Provider.StoreWrapper);
-            try
-            {
-                if (chunked)
-                {
-                    for (int index = 0; index < entries.Count - 1; index++)
-                        ReplayEntry(processor, entries[index], entries[index].Length);
-                    int finalLength = corruption == "truncated" ? finalEntry.Length - 1 : finalEntry.Length;
-                    Assert.Throws<GarnetException>(() => ReplayEntry(processor, finalEntry, finalLength));
-                    AssertTaggedValue(database, "destination", 0, "unchanged");
-
-                    AofChunkedRecordReader reader = new();
-                    ChunkedAccumulator completed = null;
-                    foreach (byte[] entry in entries)
+                    AofHeader header = ReadHeader(entry);
+                    if (header.opType != AofEntryType.StoreRMW)
+                        continue;
+                    unsafe
                     {
-                        Assert.That(ReadHeader(entry).IsChunked, Is.True);
                         fixed (byte* pointer = entry)
                         {
-                            if (reader.ReadChunk(pointer, entry.Length, out ChunkedAccumulator accumulator))
-                                completed = accumulator;
+                            if (header.IsChunked)
+                            {
+                                chunks.Add(entry.AsSpan(0, length).ToArray());
+                                if (!reader.ReadChunk(pointer, length, out ChunkedAccumulator completed))
+                                    continue;
+                                fixed (byte* inputPointer = completed.input)
+                                {
+                                    StringInput input = default;
+                                    input.DeserializeFrom(inputPointer);
+                                    if (input.header.cmd == RespCommand.SETIFGREATER)
+                                        entries.AddRange(chunks);
+                                }
+                                chunks.Clear();
+                                completed.ReturnValueChunks();
+                                continue;
+                            }
+                            byte* inputPtr = AofHeader.SkipHeader(pointer);
+                            inputPtr += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPtr).TotalSize;
+                            StringInput ordinaryInput = default;
+                            ordinaryInput.DeserializeFrom(inputPtr);
+                            if (ordinaryInput.header.cmd != RespCommand.SETIFGREATER)
+                                continue;
                         }
                     }
-                    Assert.That(completed, Is.Not.Null);
-                    if (corruption == "truncated")
-                        completed.inputOffset--;
-                    Assert.Throws<GarnetException>(() => processor.ProcessAofRecordInternal(0, completed, asReplica: false));
-                    reader.DiscardInProgressAccumulations();
+                    entries.Add(entry.AsSpan(0, length).ToArray());
                 }
-                else
-                {
-                    Assert.That(entries.Count, Is.EqualTo(1));
-                    Assert.That(ReadHeader(entries[0]).IsChunked, Is.False);
-                    int entryLength = corruption == "truncated" ? entries[0].Length - 1 : entries[0].Length;
-                    Assert.Throws<GarnetException>(() => ReplayEntry(processor, entries[0], entryLength));
-                }
-                AssertTaggedValue(database, "destination", 0, "unchanged");
+                reader.DiscardInProgressAccumulations();
             }
-            finally
-            {
-                processor.Dispose();
-            }
+            return entries;
         }
 
         [Test]

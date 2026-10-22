@@ -146,7 +146,7 @@ namespace Garnet.server
         static void CaptureImportedOptionals<TSourceLogRecord>(in TSourceLogRecord record, ref UnifiedInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
-            input.isRecordImport = !record.DataHeader.ValueIsObject;
+            input.isRecordImport = !record.DataHeader.ValueIsObject && record.RecordType == 0;
             input.importedETag = record.ETag;
             input.importedExpiration = record.Expiration;
         }

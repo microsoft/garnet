@@ -533,8 +533,7 @@ namespace Garnet.server
                     ObjectStoreDelete(preparedParameters, objectContext);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
-                case AofEntryType.UnifiedStoreStringRecordUpsert:
-                    UnifiedStoreStringUpsert(preparedParameters, unifiedContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession.storageSession, bufferPtr, bufferLength, legacyCmdFormat, header.opType == AofEntryType.UnifiedStoreStringRecordUpsert, (int)(entryPtr + length - preparedParameters.PayloadPtr));
+                    UnifiedStoreStringUpsert(preparedParameters, unifiedContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession.storageSession, bufferPtr, bufferLength, legacyCmdFormat);
                     break;
                 case AofEntryType.UnifiedStoreRMW:
                     UnifiedStoreRMW(preparedParameters, unifiedContext, ref replayContext.parseState, bufferPtr, bufferLength, legacyCmdFormat);
@@ -733,7 +732,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => objectContext.Delete((FixedSpanByteKey)preparedParameters.Key);
 
-        static void UnifiedStoreStringUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, VectorManager activeVectorManager, StorageSession storageSession, byte* outputPtr, int outputLength, bool legacyCmdFormat, bool recordImport, int payloadLength)
+        static void UnifiedStoreStringUpsert<TUnifiedContext>(PreparedParameters preparedParameters, TUnifiedContext unifiedContext, ref SessionParseState parseState, VectorManager activeVectorManager, StorageSession storageSession, byte* outputPtr, int outputLength, bool legacyCmdFormat)
             where TUnifiedContext : ITsavoriteContext<FixedSpanByteKey, UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var curr = preparedParameters.PayloadPtr;
@@ -742,14 +741,7 @@ namespace Garnet.server
             curr += value.TotalSize;
 
             var unifiedInput = new UnifiedInput { parseState = parseState };
-            if (recordImport)
-            {
-                RecordUpsertInput recordInput = new() { input = unifiedInput };
-                _ = recordInput.DeserializeFrom(curr, payloadLength - value.TotalSize);
-                unifiedInput = recordInput.input;
-            }
-            else
-                _ = unifiedInput.DeserializeFrom(curr);
+            _ = unifiedInput.DeserializeFrom(curr);
             if (legacyCmdFormat)
                 unifiedInput.header.cmd = LegacyRespCommand.FromV3(unifiedInput.header.cmd);
 

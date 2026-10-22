@@ -97,11 +97,6 @@ namespace Garnet.server
         UnifiedStoreDelete = 0x73,
 
         /// <summary>
-        /// String record upsert with the original entity tag and expiration after the unified input.
-        /// </summary>
-        UnifiedStoreStringRecordUpsert = 0x74,
-
-        /// <summary>
         /// One chunk of a migrated Range Index's serialized BF-Tree file — an internal AOF-only
         /// transport entry, replayed via <c>RangeIndexManager.HandleRangeIndexStreamReplay</c>.
         /// </summary>
@@ -133,7 +128,6 @@ namespace Garnet.server
             AofEntryType.ObjectStoreRMW or
             AofEntryType.ObjectStoreDelete or
             AofEntryType.UnifiedStoreStringUpsert or
-            AofEntryType.UnifiedStoreStringRecordUpsert or
             AofEntryType.UnifiedStoreObjectUpsert or
             AofEntryType.UnifiedStoreRMW or
             AofEntryType.UnifiedStoreDelete or
@@ -151,7 +145,6 @@ namespace Garnet.server
             AofEntryType.StoreUpsert or
             AofEntryType.ObjectStoreUpsert or
             AofEntryType.UnifiedStoreStringUpsert or
-            AofEntryType.UnifiedStoreStringRecordUpsert or
             AofEntryType.UnifiedStoreObjectUpsert => true,
             _ => false,
         };
@@ -166,7 +159,6 @@ namespace Garnet.server
             AofEntryType.StoreRMW or
             AofEntryType.ObjectStoreRMW or
             AofEntryType.UnifiedStoreStringUpsert or
-            AofEntryType.UnifiedStoreStringRecordUpsert or
             AofEntryType.UnifiedStoreRMW => true,
             _ => false,
         };

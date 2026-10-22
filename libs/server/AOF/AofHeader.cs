@@ -184,8 +184,7 @@ namespace Garnet.server
         // ShardedChunkHeader for large values split across multiple entries. A version-4 reader masks the
         // type with 0b0011 and would misparse a chunk header as its non-chunked base type, so this bump
         // makes down-level recovery fail safe (a v4 build rejects v5 entries as an unsupported newer version).
-        // Version 6 adds record upserts with entity tag and expiration metadata; older readers must reject them.
-        internal const byte AofHeaderVersion = 6;
+        internal const byte AofHeaderVersion = 5;
 
         /// <summary>
         /// Highest AOF header version this build can read/replay. Entries with a higher version were

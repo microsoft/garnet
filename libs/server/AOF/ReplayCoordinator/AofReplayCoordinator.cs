@@ -542,36 +542,26 @@ namespace Garnet.server
                 {
                     if (operation.IsChunked)
                     {
-                        if (operation.Chunk.opType is not (AofEntryType.UnifiedStoreStringUpsert or AofEntryType.UnifiedStoreStringRecordUpsert))
+                        if (operation.Chunk.opType != AofEntryType.UnifiedStoreStringUpsert)
                             return false;
                         fixed (byte* inputPtr = operation.Chunk.input)
-                            return IsVectorRename(inputPtr, operation.Chunk.inputOffset,
-                                operation.Chunk.opType == AofEntryType.UnifiedStoreStringRecordUpsert);
+                            return IsVectorRename(inputPtr);
                     }
 
                     fixed (byte* recordPtr = operation.Record)
                     {
-                        if (((AofHeader*)recordPtr)->opType is not (AofEntryType.UnifiedStoreStringUpsert or AofEntryType.UnifiedStoreStringRecordUpsert))
+                        if (((AofHeader*)recordPtr)->opType != AofEntryType.UnifiedStoreStringUpsert)
                             return false;
                         var inputPtr = AofHeader.SkipHeader(recordPtr);
                         inputPtr += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPtr).TotalSize;
                         inputPtr += PinnedSpanByte.FromLengthPrefixedPinnedPointer(inputPtr).TotalSize;
-                        return IsVectorRename(inputPtr, operation.Record.Length - (int)(inputPtr - recordPtr),
-                            ((AofHeader*)recordPtr)->opType == AofEntryType.UnifiedStoreStringRecordUpsert,
-                            ((AofHeader*)recordPtr)->aofHeaderVersion < 4);
+                        return IsVectorRename(inputPtr, ((AofHeader*)recordPtr)->aofHeaderVersion < 4);
                     }
 
-                    static bool IsVectorRename(byte* inputPtr, int inputLength, bool recordImport, bool legacyCmdFormat = false)
+                    static bool IsVectorRename(byte* inputPtr, bool legacyCmdFormat = false)
                     {
                         UnifiedInput input = default;
-                        if (recordImport)
-                        {
-                            RecordUpsertInput recordInput = default;
-                            _ = recordInput.DeserializeFrom(inputPtr, inputLength);
-                            input = recordInput.input;
-                        }
-                        else
-                            _ = input.DeserializeFrom(inputPtr);
+                        _ = input.DeserializeFrom(inputPtr);
                         if (legacyCmdFormat)
                             input.header.cmd = LegacyRespCommand.FromV3(input.header.cmd);
                         return input.header.cmd == RespCommand.RENAME && input.arg1 == VectorManager.RecordType;

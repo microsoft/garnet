@@ -99,7 +99,6 @@ namespace Garnet.server
                         ObjectStoreDelete(acc, objectContext);
                         break;
                     case AofEntryType.UnifiedStoreStringUpsert:
-                    case AofEntryType.UnifiedStoreStringRecordUpsert:
                         UnifiedStoreStringUpsert(acc, unifiedContext, ref replayContext.parseState, activeVectorManager, replayContext.respServerSession.storageSession, bufferPtr, bufferLength);
                         break;
                     case AofEntryType.UnifiedStoreRMW:
@@ -275,14 +274,7 @@ namespace Garnet.server
                 var key = (FixedSpanByteKey)new Span<byte>(keyPtr, acc.keyOffset);
                 var value = PinnedSpanByte.FromPinnedPointer(valuePtr, acc.valueOffset);
                 var unifiedInput = new UnifiedInput { parseState = parseState };
-                if (acc.opType == AofEntryType.UnifiedStoreStringRecordUpsert)
-                {
-                    RecordUpsertInput recordInput = new() { input = unifiedInput };
-                    _ = recordInput.DeserializeFrom(inputPtr, acc.inputOffset);
-                    unifiedInput = recordInput.input;
-                }
-                else
-                    _ = unifiedInput.DeserializeFrom(inputPtr);
+                _ = unifiedInput.DeserializeFrom(inputPtr);
 
                 if (unifiedInput.header.cmd == RespCommand.RENAME && unifiedInput.arg1 == VectorManager.RecordType)
                 {
