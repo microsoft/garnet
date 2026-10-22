@@ -3694,5 +3694,303 @@ return count";
             var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("EVAL", [EvalScript, "0", arg]));
             ClassicAssert.IsTrue(new[] { StackOverflowErrorMessage, OutOfMemoryErrorMessage }.Contains(exc0.Message));
         }
+
+        /// <summary>
+        /// <c>redis.call('GET', ...)</c> is served by a fast path that bypasses RESP dispatch. It must still
+        /// surface a type mismatch as an error, like the RESP path every other command takes does, rather
+        /// than reporting the key as missing.
+        /// </summary>
+        [Test]
+        public void LuaGetOnWrongTypeRaisesError()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string HashKey = "wrongtype-hash";
+            const string StringKey = "wrongtype-string";
+
+            _ = db.KeyDelete(HashKey);
+            _ = db.HashSet(HashKey, "field", "value");
+            _ = db.StringSet(StringKey, "value");
+
+            // GET on a hash reports the type mismatch rather than nil
+            var fastPathExc = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate("return redis.call('GET', KEYS[1])", [new RedisKey(HashKey)]));
+            ClassicAssert.IsTrue(fastPathExc.Message.Contains("WRONGTYPE"),
+                $"GET on a hash should report WRONGTYPE, got: {fastPathExc.Message}");
+
+            // HGET on a string reports the same error
+            var respPathExc = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate("return redis.call('HGET', KEYS[1], 'field')", [new RedisKey(StringKey)]));
+            ClassicAssert.IsTrue(respPathExc.Message.Contains("WRONGTYPE"),
+                $"HGET on a string should report WRONGTYPE, got: {respPathExc.Message}");
+
+            // The fast path must still distinguish a genuinely missing key from a type mismatch.
+            _ = db.KeyDelete("wrongtype-missing");
+            var missing = db.ScriptEvaluate("return redis.call('GET', KEYS[1])", [new RedisKey("wrongtype-missing")]);
+            ClassicAssert.IsTrue(missing.IsNull, "GET on a missing key should still report nil");
+
+            // ... and must keep returning values for the type it does handle.
+            var hit = db.ScriptEvaluate("return redis.call('GET', KEYS[1])", [new RedisKey(StringKey)]);
+            ClassicAssert.AreEqual("value", (string)hit);
+        }
+
+        /// <summary>
+        /// <c>redis.call('HGET', ...)</c> is served by a fast path that bypasses RESP dispatch. A hash
+        /// replies nil both for a missing key and for a missing field, but an existing field holding an
+        /// empty string is a value, so the three cases must stay distinct.
+        /// </summary>
+        [Test]
+        public void LuaHashGetDistinguishesEmptyValueFromMissingField()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string HashKey = "hget-fastpath";
+            const string Probe = @"
+                local v = redis.call('HGET', KEYS[1], ARGV[1])
+                if v == false then return 'MISSING' end
+                return 'LEN:' .. string.len(v)";
+
+            _ = db.KeyDelete(HashKey);
+            _ = db.HashSet(HashKey, "empty", "");
+            _ = db.HashSet(HashKey, "full", "value");
+
+            // An empty field value is a value, not an absence.
+            ClassicAssert.AreEqual("LEN:0",
+                (string)db.ScriptEvaluate(Probe, [new RedisKey(HashKey)], [(RedisValue)"empty"]));
+            ClassicAssert.AreEqual("LEN:5",
+                (string)db.ScriptEvaluate(Probe, [new RedisKey(HashKey)], [(RedisValue)"full"]));
+
+            // Missing field, and missing key, are both nil.
+            ClassicAssert.AreEqual("MISSING",
+                (string)db.ScriptEvaluate(Probe, [new RedisKey(HashKey)], [(RedisValue)"nosuchfield"]));
+            _ = db.KeyDelete("hget-fastpath-missing");
+            ClassicAssert.AreEqual("MISSING",
+                (string)db.ScriptEvaluate(Probe, [new RedisKey("hget-fastpath-missing")], [(RedisValue)"any"]));
+
+            // A type mismatch must still raise, not report the field as missing.
+            _ = db.StringSet("hget-fastpath-string", "value");
+            var exc = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate(Probe, [new RedisKey("hget-fastpath-string")], [(RedisValue)"any"]));
+            ClassicAssert.IsTrue(exc.Message.Contains("WRONGTYPE"),
+                $"HGET on a string should report WRONGTYPE, got: {exc.Message}");
+
+            // Numeric keys and fields are coerced to strings, as on the RESP path.
+            _ = db.KeyDelete("123");
+            _ = db.HashSet("123", "456", "numeric");
+            ClassicAssert.AreEqual("numeric",
+                (string)db.ScriptEvaluate("return redis.call('HGET', 123, 456)"));
+        }
+
+        /// <summary>
+        /// <c>redis.call('HGET'/'HSET', ...)</c> are served by fast paths that bypass RESP dispatch. A hash
+        /// stored under an empty key is an ordinary hash, so both must agree with the RESP path on it.
+        /// </summary>
+        [Test]
+        public void LuaHashFastPathsAcceptAnEmptyKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.ScriptEvaluate("return redis.call('DEL', '')");
+
+            // Four arguments are not served by the fast path, so this stores through the RESP path.
+            ClassicAssert.AreEqual(2, (long)db.ScriptEvaluate("return redis.call('HSET', '', 'f', 'v', 'g', 'w')"));
+
+            ClassicAssert.AreEqual("v", (string)db.ScriptEvaluate("return redis.call('HGET', '', 'f')"));
+            ClassicAssert.AreEqual("boolean", (string)db.ScriptEvaluate("return type(redis.call('HGET', '', 'nosuchfield'))"));
+
+            ClassicAssert.AreEqual(1, (long)db.ScriptEvaluate("return redis.call('HSET', '', 'h', 'x')"));
+            ClassicAssert.AreEqual(0, (long)db.ScriptEvaluate("return redis.call('HSET', '', 'h', 'y')"));
+            ClassicAssert.AreEqual("y", (string)db.ScriptEvaluate("return redis.call('HGET', '', 'h')"));
+            ClassicAssert.AreEqual(3, (long)db.ScriptEvaluate("return redis.call('HLEN', '')"));
+
+            _ = db.ScriptEvaluate("return redis.call('DEL', '')");
+
+            // The string and expiry fast paths serve an empty key too.
+            _ = db.ScriptEvaluate("return redis.call('SET', '', 'sv')");
+            ClassicAssert.AreEqual("sv", (string)db.ScriptEvaluate("return redis.call('GET', '')"));
+            ClassicAssert.AreEqual(1, (long)db.ScriptEvaluate("return redis.call('EXPIRE', '', 100)"));
+
+            _ = db.ScriptEvaluate("return redis.call('DEL', '')");
+        }
+
+        [Test]
+        public void LuaNullRepliesFollowTheScriptRespVersion()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            _ = db.KeyDelete("nullresp-missing");
+            _ = db.KeyDelete("nullresp-hash");
+            _ = db.HashSet("nullresp-hash", "present", "v");
+
+            // Under RESP2 a null reply reaches the script as false; under RESP3 it reaches it as nil.
+            // This holds for the commands redis.call dispatches directly as well as the rest.
+            foreach (var call in new[]
+            {
+                "redis.call('GET', 'nullresp-missing')",
+                "redis.call('HGET', 'nullresp-hash', 'nosuchfield')",
+                "redis.call('HGET', 'nullresp-missing', 'any')",
+                "redis.call('LPOP', 'nullresp-missing')",
+            })
+            {
+                ClassicAssert.AreEqual("boolean", (string)db.ScriptEvaluate($"return type({call})"),
+                    $"RESP2: {call}");
+                ClassicAssert.AreEqual("nil", (string)db.ScriptEvaluate($"redis.setresp(3); return type({call})"),
+                    $"RESP3: {call}");
+            }
+        }
+
+        /// <summary>
+        /// <c>redis.call('HSET', key, field, value)</c> is served by a fast path that bypasses RESP
+        /// dispatch. It must report the count of fields actually added, mutate the hash, and still
+        /// surface a type mismatch as an error.
+        /// </summary>
+        [Test]
+        public void LuaHashSetFastPathMatchesTheRespPath()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string HashKey = "hset-fastpath";
+            const string Script = "return redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])";
+
+            _ = db.KeyDelete(HashKey);
+
+            // A brand new field counts as one added...
+            var added = db.ScriptEvaluate(Script, [new RedisKey(HashKey)], [(RedisValue)"f", (RedisValue)"v1"]);
+            ClassicAssert.AreEqual(1, (long)added, "HSET of a new field should report 1");
+            ClassicAssert.AreEqual("v1", (string)db.HashGet(HashKey, "f"));
+
+            // ... and overwriting it counts as none, while still storing the new value.
+            var updated = db.ScriptEvaluate(Script, [new RedisKey(HashKey)], [(RedisValue)"f", (RedisValue)"v2"]);
+            ClassicAssert.AreEqual(0, (long)updated, "HSET of an existing field should report 0");
+            ClassicAssert.AreEqual("v2", (string)db.HashGet(HashKey, "f"));
+
+            // Numeric arguments are converted to their string form, as the RESP path does.
+            var numeric = db.ScriptEvaluate("return redis.call('HSET', KEYS[1], 7, 8)", [new RedisKey(HashKey)]);
+            ClassicAssert.AreEqual(1, (long)numeric);
+            ClassicAssert.AreEqual("8", (string)db.HashGet(HashKey, "7"));
+
+            // An empty value is a value, not a missing field.
+            _ = db.ScriptEvaluate(Script, [new RedisKey(HashKey)], [(RedisValue)"empty", (RedisValue)""]);
+            ClassicAssert.AreEqual("", (string)db.HashGet(HashKey, "empty"));
+
+            // A type mismatch must fall through to the RESP path, which reports it.
+            const string StringKey = "hset-fastpath-string";
+            _ = db.StringSet(StringKey, "value");
+            var exc = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate(Script, [new RedisKey(StringKey)], [(RedisValue)"f", (RedisValue)"v"]));
+            ClassicAssert.IsTrue(exc.Message.Contains("WRONGTYPE"),
+                $"HSET on a string should report WRONGTYPE, got: {exc.Message}");
+        }
+
+        /// <summary>
+        /// <c>redis.call('EXPIRE', key, seconds)</c> is served by a fast path that bypasses RESP
+        /// dispatch. It handles only a plainly in-range TTL; a malformed, negative or extreme value
+        /// must fall through to the RESP path and keep that path's reply exactly.
+        /// </summary>
+        [Test]
+        public void LuaExpireFastPathMatchesTheRespPath()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const string Key = "expire-fastpath";
+            const string Script = "return redis.call('EXPIRE', KEYS[1], ARGV[1])";
+
+            // Setting a TTL on an existing key reports 1 and actually sets it.
+            _ = db.StringSet(Key, "v");
+            var set = db.ScriptEvaluate(Script, [new RedisKey(Key)], [(RedisValue)"100"]);
+            ClassicAssert.AreEqual(1, (long)set, "EXPIRE on an existing key should report 1");
+
+            var ttl = db.KeyTimeToLive(Key);
+            ClassicAssert.IsNotNull(ttl, "EXPIRE should have set a TTL");
+            ClassicAssert.IsTrue(ttl.Value.TotalSeconds is > 90 and <= 100,
+                $"TTL should be close to 100s, was {ttl.Value.TotalSeconds}");
+
+            // A missing key reports 0 and remains missing.
+            _ = db.KeyDelete("expire-fastpath-missing");
+            var missing = db.ScriptEvaluate(Script, [new RedisKey("expire-fastpath-missing")], [(RedisValue)"100"]);
+            ClassicAssert.AreEqual(0, (long)missing, "EXPIRE on a missing key should report 0");
+            ClassicAssert.IsFalse(db.KeyExists("expire-fastpath-missing"));
+
+            // A numeric argument works the same as its string form.
+            _ = db.StringSet(Key, "v");
+            var numeric = db.ScriptEvaluate("return redis.call('EXPIRE', KEYS[1], 50)", [new RedisKey(Key)]);
+            ClassicAssert.AreEqual(1, (long)numeric);
+
+            // Values the fast path declines must still produce the RESP path's errors.
+            _ = db.StringSet(Key, "v");
+            var negative = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate(Script, [new RedisKey(Key)], [(RedisValue)"-1"]));
+            ClassicAssert.IsTrue(negative.Message.Contains("invalid expire time", StringComparison.OrdinalIgnoreCase),
+                $"A negative TTL should report an invalid expire time, got: {negative.Message}");
+
+            var notInteger = ClassicAssert.Throws<RedisServerException>(() =>
+                db.ScriptEvaluate(Script, [new RedisKey(Key)], [(RedisValue)"abc"]));
+            ClassicAssert.IsTrue(notInteger.Message.Contains("not an integer", StringComparison.OrdinalIgnoreCase),
+                $"A non-integer TTL should report a parse error, got: {notInteger.Message}");
+
+            // A doubled sign is not an integer, and must neither delete the key nor set a TTL
+            foreach (var doubledSign in new[] { "--0", "--100" })
+            {
+                var malformed = ClassicAssert.Throws<RedisServerException>(() =>
+                    db.ScriptEvaluate(Script, [new RedisKey(Key)], [(RedisValue)doubledSign]));
+                ClassicAssert.IsTrue(malformed.Message.Contains("not an integer", StringComparison.OrdinalIgnoreCase),
+                    $"EXPIRE {doubledSign} should report a parse error, got: {malformed.Message}");
+            }
+
+            // The key must be untouched by any of the declined calls.
+            ClassicAssert.AreEqual("v", (string)db.StringGet(Key));
+            ClassicAssert.IsNull(db.KeyTimeToLive(Key), "a declined EXPIRE must not set a TTL");
+
+            // EXPIRE with options has more than two arguments, so it is not fast-pathed at all.
+            _ = db.StringSet(Key, "v");
+            _ = db.ScriptEvaluate("return redis.call('EXPIRE', KEYS[1], 100)", [new RedisKey(Key)]);
+            var xx = db.ScriptEvaluate("return redis.call('EXPIRE', KEYS[1], 200, 'XX')", [new RedisKey(Key)]);
+            ClassicAssert.AreEqual(1, (long)xx, "EXPIRE ... XX on a key with a TTL should report 1");
+
+            var nx = db.ScriptEvaluate("return redis.call('EXPIRE', KEYS[1], 300, 'NX')", [new RedisKey(Key)]);
+            ClassicAssert.AreEqual(0, (long)nx, "EXPIRE ... NX on a key that already has a TTL should report 0");
+        }
+
+        /// <summary>
+        /// Repeated <c>redis.call('EXPIRE', ...)</c> calls on a live key must not allocate per call.
+        /// </summary>
+        [Test]
+        public void LuaExpireFastPathDoesNotAllocatePerCall()
+        {
+#if DEBUG
+            Assert.Ignore("Debug builds allocate on this path, so the per-call bound only holds in Release.");
+#endif
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            const int Calls = 20_000;
+            const string Script = "for i = 1, tonumber(ARGV[1]) do redis.call('EXPIRE', KEYS[1], 1000000) end return 1";
+
+            db.StringSet("expire-alloc-string", "v");
+            db.HashSet("expire-alloc-hash", "f", "v");
+
+            Assert.Multiple(() =>
+            {
+                foreach (var key in new[] { "expire-alloc-string", "expire-alloc-hash" })
+                {
+                    // Warm up, so that one-time allocations are not charged to the measured run.
+                    _ = db.ScriptEvaluate(Script, [new RedisKey(key)], [(RedisValue)Calls]);
+
+                    var before = GC.GetTotalAllocatedBytes(precise: true);
+                    _ = db.ScriptEvaluate(Script, [new RedisKey(key)], [(RedisValue)Calls]);
+                    var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+
+                    ClassicAssert.Less(allocated, Calls * 8L,
+                        $"EXPIRE on {key} allocated {allocated} bytes over {Calls} calls. It should write its reply " +
+                        "into a stack buffer that the reply fits in.");
+                }
+            });
+        }
     }
 }

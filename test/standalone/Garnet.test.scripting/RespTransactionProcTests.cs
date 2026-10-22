@@ -362,6 +362,66 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HashReadsDoNotRentAPooledBufferPerCall()
+        {
+            server.Register.NewTransactionProc("HASHRENTALS", () => new TestProcedureHashGetRentals(),
+                new RespCommandsInfo { Arity = 5 });
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.HashSet("myHash", "field1", "foo");
+
+            foreach (var op in new[] { "HGET", "HLEN", "HEXISTS", "HRANDFIELD" })
+            {
+                // Warm up, so that any one-time rental is not charged to the measured run.
+                _ = db.Execute("HASHRENTALS", op, "myHash", "field1", 1);
+
+                var rentals = (long)db.Execute("HASHRENTALS", op, "myHash", "field1", 100);
+
+                ClassicAssert.AreEqual(0, rentals,
+                    $"IGarnetApi {op} rented {rentals} pooled output buffers over 100 calls. It should write " +
+                    "the reply into a caller-supplied stack buffer that a typical reply fits in.");
+            }
+        }
+
+        [Test]
+        public void HashReadsStayIntactAcrossFurtherReads()
+        {
+            server.Register.NewTransactionProc("HASHRETAINED", () => new TestProcedureHashRetainedReads(),
+                new RespCommandsInfo { Arity = 6 });
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.HashSet("myHash", [new HashEntry("field1", "value1"), new HashEntry("field2", "value2")]);
+            db.HashSet("otherHash", "otherField", new string('z', 64));
+
+            var result = (string)db.Execute("HASHRETAINED", "myHash", "otherHash", "otherField", "field1", "field2");
+
+            ClassicAssert.AreEqual("OK", result);
+        }
+
+        [Test]
+        public void HashReadsStillReturnRepliesLargerThanTheStackBuffer()
+        {
+            server.Register.NewTransactionProc("HASHGETVALUE", () => new TestProcedureHashGetValue(),
+                new RespCommandsInfo { Arity = 3 });
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Comfortably larger than the stack buffer HashGet supplies, so the reply has to spill
+            // over to a pooled buffer.
+            var large = new string('x', 4096);
+            db.HashSet("myHash", "field1", large);
+
+            var value = (string)db.Execute("HASHGETVALUE", "myHash", "field1");
+
+            ClassicAssert.AreEqual(large, value);
+        }
+
+        [Test]
         public void TransactionProcFinalizeTest()
         {
             server.Register.NewTransactionProc("GETTWOKEYSNOTXN", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });

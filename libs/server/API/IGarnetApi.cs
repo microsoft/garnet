@@ -1845,10 +1845,20 @@ namespace Garnet.server
         /// <summary>
         /// Returns the value associated to the field in the hash stored at key.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="field"></param>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <remarks>
+        /// A field that is absent from an existing hash reports <see cref="GarnetStatus.NOTFOUND"/>, the same
+        /// status an absent key reports, so it can be told apart from a field that holds an empty value
+        /// (<see cref="GarnetStatus.OK"/> with a zero-length <paramref name="value"/>). Callers that detect a
+        /// missing field by testing for an empty value must check the status instead.
+        /// <para>
+        /// A non-empty <paramref name="value"/> lives in the session's scratch allocator, so it stays valid until
+        /// that allocator is reset: after the current batch of commands, or by <c>ResetScratchBuffer</c>.
+        /// </para>
+        /// </remarks>
+        /// <param name="key">The hash key</param>
+        /// <param name="field">The field to read</param>
+        /// <param name="value">The field's value, empty unless the status is <see cref="GarnetStatus.OK"/></param>
+        /// <returns><see cref="GarnetStatus.OK"/> if the field exists, <see cref="GarnetStatus.NOTFOUND"/> if the key or field does not</returns>
         GarnetStatus HashGet(PinnedSpanByte key, PinnedSpanByte field, out PinnedSpanByte value);
 
         /// <summary>
