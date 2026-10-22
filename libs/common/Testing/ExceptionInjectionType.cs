@@ -161,6 +161,11 @@ namespace Garnet.common
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
         /// <summary>
+        /// Server network sender: pause a send completion that frees a slot for a waiting send, after it has
+        /// decremented the send count and before it releases the waiter.
+        /// </summary>
+        Sender_Pause_Before_Slot_Release,
+        /// <summary>
         /// RangeIndex: pause a data operation after it takes the shared RangeIndex lock, before it reads the stub.
         /// </summary>
         RangeIndex_Pause_After_Shared_Lock,
