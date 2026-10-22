@@ -38,20 +38,36 @@ namespace Garnet.networking
         void Enter();
 
         /// <summary>
+        /// Enter exclusive use of network sender if it is free, without waiting for its holder.
+        /// </summary>
+        /// <returns>True if entered, in which case the caller exits as it would after <see cref="Enter"/></returns>
+        bool TryEnter();
+
+        /// <summary>
         /// Enter exclusive use of network sender. Allocate and get response object pointers.
         /// </summary>
         /// <param name="head"></param>
         /// <param name="tail"></param>
+        /// <remarks>
+        /// A full fence: a read the caller makes after entering is not reordered before a write it made before.
+        /// A session relies on this to see a teardown that ran while it was not yet in its batch.
+        /// </remarks>
         unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail);
 
         /// <summary>
         /// Exit exclusive use of network sender.
         /// </summary>
+        /// <remarks>
+        /// A full fence: a read the caller makes after exiting is not reordered before the exit. A writer that
+        /// records that it is waiting and then tries <see cref="TryEnter"/> relies on this to be seen by the holder
+        /// that exits and then looks for waiters.
+        /// </remarks>
         void Exit();
 
         /// <summary>
         /// Exit exclusive use of network sender. Free response object.
         /// </summary>
+        /// <remarks>A full fence, as <see cref="Exit"/> is.</remarks>
         void ExitAndReturnResponseObject();
 
         /// <summary>
@@ -83,6 +99,64 @@ namespace Garnet.networking
         /// <param name="size">Number of bytes to send, starting from offset</param>
         /// <returns>Whether the send succeeded</returns>
         bool SendResponse(int offset, int size);
+
+        /// <summary>
+        /// Send payload stored at response object, from offset to offset + size, without ever waiting for send
+        /// capacity. A caller that sends this way bounds what it has outstanding by checking the result and
+        /// parking on <see cref="TryRegisterSendCapacityWaiter"/> before producing more output, which keeps a
+        /// slow reader from holding the thread the send was issued from.
+        /// </summary>
+        /// <param name="offset">Offset of response from which to start sending</param>
+        /// <param name="size">Number of bytes to send, starting from offset</param>
+        /// <returns>Whether the sends outstanding have reached the throttle limit, so the caller should wait for capacity</returns>
+        bool SendResponseNoWait(int offset, int size);
+
+        /// <summary>
+        /// Whether the sends issued with <see cref="SendResponseNoWait"/> that are still outstanding have reached the throttle limit
+        /// </summary>
+        bool IsSendSaturated { get; }
+
+        /// <summary>
+        /// Arranges for <paramref name="waiter"/> to be notified when the sends outstanding next drop below the
+        /// throttle limit. A sender holds any number of waiters, because the session that owns the connection
+        /// is not the only one that waits for it: a publisher waits for the subscribers it delivers to. Each
+        /// waiter is notified once, and every waiter registered when capacity returns is notified, so a waiter
+        /// that does not use the capacity cannot strand another.
+        /// </summary>
+        /// <param name="waiter">The waiter to notify</param>
+        /// <returns>
+        /// True if the waiter is registered and will be notified, false if capacity is already available, in
+        /// which case the waiter will not be called
+        /// </returns>
+        bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter);
+
+        /// <summary>
+        /// Takes back a registration made with <see cref="TryRegisterSendCapacityWaiter"/> whose wait ended some
+        /// other way, so a connection that never regains capacity does not keep the waiters of sessions that
+        /// have gone.
+        /// </summary>
+        /// <param name="waiter">The waiter to take back</param>
+        /// <returns>
+        /// True if the waiter was still registered and will not be called, false if it had already been taken
+        /// for notification or was not registered
+        /// </returns>
+        bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter);
+
+        /// <summary>
+        /// Registers <paramref name="waiter"/> to be notified as <see cref="TryRegisterSendCapacityWaiter"/> does,
+        /// whatever the sends outstanding, for a waiter held back by something other than the throttle limit. The
+        /// registration is published with a full fence, so a waiter that reads why it waits after this call, and
+        /// whoever ends that reason and then calls <see cref="NotifySendCapacityWaiters"/>, cannot both miss the
+        /// other. The waiter takes back a registration it finds it did not need with
+        /// <see cref="WithdrawSendCapacityWaiter"/>.
+        /// </summary>
+        /// <param name="waiter">The waiter to notify</param>
+        void AddSendCapacityWaiter(ISendCapacityWaiter waiter);
+
+        /// <summary>
+        /// Notifies every registered waiter, as the completion of a send that frees capacity does
+        /// </summary>
+        void NotifySendCapacityWaiters();
 
         /// <summary>
         /// Send response (caller owns buffer space)

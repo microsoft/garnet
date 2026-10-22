@@ -115,7 +115,12 @@ namespace Tsavorite.core
                     logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     _ = Read(logRecord.KeyOverflow.Span);
                     if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
+                    {
+                        // The value field still holds part of its on-disk length rather than an ObjectId, so clear both fields
+                        // to keep the record's disposal from freeing that length as an ObjectId.
+                        logRecord.OnDeserializationError(keyWasSet: true);
                         return false;
+                    }
                     keyWasSet = true;
                 }
 

@@ -20,38 +20,96 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
+            => _ = TryPublishCore(parkIfSuspended: false, isPattern: false, default, key.ReadOnlySpan, value.ReadOnlySpan);
+
+        /// <inheritdoc />
+        public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
+            => _ = TryPublishCore(parkIfSuspended: false, isPattern: true, pattern.ReadOnlySpan, key.ReadOnlySpan, value.ReadOnlySpan);
+
+        /// <inheritdoc />
+        internal override unsafe bool TryPublish(PinnedSpanByte key, PinnedSpanByte value)
+            => !MustWaitToPublish && TryPublishCore(parkIfSuspended: true, isPattern: false, default, key.ReadOnlySpan, value.ReadOnlySpan);
+
+        /// <inheritdoc />
+        internal override unsafe bool TryPatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
+            => !MustWaitToPublish && TryPublishCore(parkIfSuspended: true, isPattern: true, pattern.ReadOnlySpan, key.ReadOnlySpan, value.ReadOnlySpan);
+
+        /// <summary>
+        /// Whether a publisher has to hold its message back until this session's connection has room. A session
+        /// publishing to itself writes into the batch it is already building, so it never waits.
+        /// </summary>
+        bool MustWaitToPublish => publishingThreadId != Environment.CurrentManagedThreadId && networkSender.IsSendSaturated;
+
+        /// <summary>
+        /// Writes a message to this subscriber, handing it to the sender without waiting for the connection to
+        /// have room. A publisher that should not add to a full connection checks <see cref="MustWaitToPublish"/>
+        /// first. A message that finds the response object taken is left for its holder to write out (see
+        /// <see cref="heldPushes"/>).
+        /// </summary>
+        /// <param name="parkIfSuspended">
+        /// Whether the publisher can park instead, for a session suspended holding its response object.
+        /// </param>
+        /// <returns>
+        /// False, with nothing written, if <paramref name="parkIfSuspended"/> and the session is suspended holding
+        /// its response object. A message to a connection that is gone counts as delivered.
+        /// </returns>
+        bool TryPublishCore(bool parkIfSuspended, bool isPattern, ReadOnlySpan<byte> pattern, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             // A session that publishes to a channel it is subscribed to re-enters this callback on the
             // thread already holding the network sender lock (from the outer command's response path). In
             // that reentrant case, write into the current output buffer and let the outer call own the lock
             // and flush; the sender lock is not reentrant.
-            var reentrant = publishingThreadId == Environment.CurrentManagedThreadId;
-            if (reentrant && reentrantPublishFailure != null)
-                return;
+            if (publishingThreadId == Environment.CurrentManagedThreadId)
+            {
+                if (reentrantPublishFailure != null)
+                    return true;
+
+                try
+                {
+                    WritePublishMessage(isPattern, pattern, key, value);
+                }
+                catch (Exception ex)
+                {
+                    // A failed send may have released the outer command's response buffer, so nothing more can be
+                    // written to it. The outer command rethrows once the broadcast to other subscribers completes.
+                    reentrantPublishFailure = ExceptionDispatchInfo.Capture(ex);
+                }
+
+                return true;
+            }
+
+            if (!TryEnterSenderForPush())
+            {
+                if (parkIfSuspended && pushesHeldBack)
+                    return false;
+
+                LeavePush(isPattern, pattern, key, value);
+                return true;
+            }
 
             try
             {
-                if (!reentrant)
-                    networkSender.EnterAndGetResponseObject(out dcurr, out dend);
+                networkSender.GetResponseObject();
+            }
+            catch
+            {
+                // The connection is gone, and the message with it
+                networkSender.Exit();
+                ServeSenderWaiters();
+                return true;
+            }
 
-                WritePushLength(3);
-
-                while (!RespWriteUtils.TryWriteBulkString("message"u8, ref dcurr, dend))
-                    SendAndReset();
-
-                // Write key and value to the network
-                WriteDirectLargeRespString(key.ReadOnlySpan);
-                WriteDirectLargeRespString(value.ReadOnlySpan);
+            dcurr = networkSender.GetResponseObjectHead();
+            dend = networkSender.GetResponseObjectTail();
+            try
+            {
+                writingOutOfBand = true;
+                WriteHeldPushes();
+                WritePublishMessage(isPattern, pattern, key, value);
 
                 // Flush the publish message for this subscriber
-                if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
-                    Send(networkSender.GetResponseObjectHead());
-            }
-            catch (Exception ex) when (reentrant)
-            {
-                // A failed send may have released the outer command's response buffer, so nothing more can be
-                // written to it. The outer command rethrows once the broadcast to other subscribers completes.
-                reentrantPublishFailure = ExceptionDispatchInfo.Capture(ex);
+                if (dcurr > networkSender.GetResponseObjectHead())
+                    SendNow(networkSender.GetResponseObjectHead());
             }
             catch
             {
@@ -59,53 +117,35 @@ namespace Garnet.server
             }
             finally
             {
-                if (!reentrant)
-                    networkSender.ExitAndReturnResponseObject();
+                writingOutOfBand = false;
+                networkSender.ExitAndReturnResponseObject();
             }
+
+            ServeSenderWaiters();
+            return true;
         }
 
-        /// <inheritdoc />
-        public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
+        /// <summary>
+        /// Writes a message to a channel, or to a pattern it matched, into the response buffer.
+        /// </summary>
+        void WritePublishMessage(bool isPattern, ReadOnlySpan<byte> pattern, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
-            // See Publish(): in the reentrant self-publish case, write into the existing buffer rather than
-            // re-acquiring the non-reentrant network sender lock.
-            var reentrant = publishingThreadId == Environment.CurrentManagedThreadId;
-            if (reentrant && reentrantPublishFailure != null)
-                return;
-
-            try
+            if (isPattern)
             {
-                if (!reentrant)
-                    networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-
                 WritePushLength(4);
-
                 while (!RespWriteUtils.TryWriteBulkString("pmessage"u8, ref dcurr, dend))
                     SendAndReset();
+                WriteDirectLargeRespString(pattern);
+            }
+            else
+            {
+                WritePushLength(3);
+                while (!RespWriteUtils.TryWriteBulkString("message"u8, ref dcurr, dend))
+                    SendAndReset();
+            }
 
-                // Write pattern, key, and value to the network
-                WriteDirectLargeRespString(pattern.ReadOnlySpan);
-                WriteDirectLargeRespString(key.ReadOnlySpan);
-                WriteDirectLargeRespString(value.ReadOnlySpan);
-
-                if (!reentrant && dcurr > networkSender.GetResponseObjectHead())
-                    Send(networkSender.GetResponseObjectHead());
-            }
-            catch (Exception ex) when (reentrant)
-            {
-                // A failed send may have released the outer command's response buffer, so nothing more can be
-                // written to it. The outer command rethrows once the broadcast to other subscribers completes.
-                reentrantPublishFailure = ExceptionDispatchInfo.Capture(ex);
-            }
-            catch
-            {
-                // Ignore exceptions
-            }
-            finally
-            {
-                if (!reentrant)
-                    networkSender.ExitAndReturnResponseObject();
-            }
+            WriteDirectLargeRespString(key);
+            WriteDirectLargeRespString(value);
         }
 
         /// <summary>
@@ -146,37 +186,56 @@ namespace Garnet.server
             // Set the publishing thread id only for the duration of the synchronous broadcast, so a
             // reentrant self-delivery (publishing to a self-subscribed channel) can be detected in
             // Publish()/PatternPublish() without paying this cost on the general command path.
+            //
+            // The publisher does not wait inside the broadcast for a subscriber whose connection is full: it
+            // delivers to everyone else first, and then parks for the ones it held back. One that may not wait at
+            // all, inside a transaction or a script, sends those past the connection's limit instead.
             int numClients;
             publishingThreadId = Environment.CurrentManagedThreadId;
             try
             {
-                numClients = subscribeBroker.PublishNow(key, value);
+                numClients = subscribeBroker.PublishNoWait(key, value, ref deferredDeliveries);
             }
             finally
             {
                 publishingThreadId = 0;
             }
 
-            var selfDeliveryFailure = reentrantPublishFailure;
-            reentrantPublishFailure = null;
+            if (DenyBlocking && deferredDeliveries is { Count: > 0 })
+                DeliverDeferredWithoutWaiting();
 
+            var holdingDeliveries = deferredDeliveries is { Count: > 0 };
             if (storeWrapper.serverOptions.EnableCluster)
             {
-                var _key = parseState.GetArgSliceByRef(0).Span;
-                var _val = parseState.GetArgSliceByRef(1).Span;
-
-                // No choice but to block here as we're on the network thread
-                AsyncUtils.BlockingWait(storeWrapper.clusterProvider.ClusterPublishAsync(cmd, _key, _val));
+                // Started here, where the spans are still addressable: the forward copies them itself if it
+                // has to go async. The session then suspends on it rather than blocking the network thread.
+                var forward = storeWrapper.clusterProvider.ClusterPublishAsync(cmd, key.Span, value.Span);
+                return holdingDeliveries
+                    ? CompleteDeferredPublish(forward, numClients)
+                    : CompleteClusterPublish(forward, numClients);
             }
 
-            // A failed delivery to this session ends it, after the message is forwarded to the other nodes and
-            // before the reply is written into the response buffer the failed send released
-            selfDeliveryFailure?.Throw();
+            if (holdingDeliveries)
+                return CompleteDeferredPublish(default, numClients);
 
-            while (!RespWriteUtils.TryWriteInt32(numClients, ref dcurr, dend))
-                SendAndReset();
-
+            WritePublishReply(numClients);
             return true;
+        }
+
+        /// <summary>
+        /// Writes the reply to a PUBLISH, once the message has been delivered. A failed delivery of the message to
+        /// this session instead ends the session: the failed send may have released the response buffer the reply
+        /// would be written into.
+        /// </summary>
+        void WritePublishReply(int numClients)
+        {
+            if (reentrantPublishFailure is { } selfDeliveryFailure)
+            {
+                reentrantPublishFailure = null;
+                selfDeliveryFailure.Throw();
+            }
+
+            WriteInt32(numClients);
         }
 
         private bool NetworkSUBSCRIBE(RespCommand cmd)

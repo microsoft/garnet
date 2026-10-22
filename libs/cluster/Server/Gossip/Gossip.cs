@@ -83,11 +83,10 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Pause merge config ops by setting numActiveMerge to MinValue.
-        /// Called when FORGET op executes and waits until ongoing merge operations complete before executing FORGET
-        /// Multiple FORGET ops can execute at the same time.
+        /// Pauses config merges, completing once the merges in progress have finished. Taken by FORGET, RESET and a
+        /// migration handing over its slots, which then hold it across their own configuration changes.
         /// </summary>
-        public void SuspendConfigMerge() => activeMergeLock.WriteLock();
+        public ValueTask SuspendConfigMergeAsync() => activeMergeLock.WriteLockAsync();
 
         /// <summary>
         /// Resume config merge
@@ -112,34 +111,50 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Merge incoming config to evolve local version
+        /// Merge incoming config to evolve local version, completing when the merged configuration has been written.
         /// </summary>
-        public bool TryMerge(ClusterConfig senderConfig, bool acquireLock = true)
+        /// <param name="senderConfig">The configuration to merge.</param>
+        /// <param name="acquireLock">Whether to wait for merges to be allowed; false when the caller has suspended them.</param>
+        public async ValueTask<bool> TryMergeAsync(ClusterConfig senderConfig, bool acquireLock = true)
         {
+            bool merged;
+            if (acquireLock)
+                await activeMergeLock.ReadLockAsync().ConfigureAwait(false);
             try
             {
-                if (acquireLock) activeMergeLock.ReadLock();
-                if (workerBanList.ContainsKey(senderConfig.LocalNodeId))
-                {
-                    logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", senderConfig.LocalNodeId);
-                    return false;
-                }
-
-                while (true)
-                {
-                    var current = currentConfig;
-                    var currentCopy = current.Copy();
-                    var next = currentCopy.Merge(senderConfig, workerBanList, logger).HandleConfigEpochCollision(senderConfig, logger);
-                    if (currentCopy == next) return false;
-                    if (Interlocked.CompareExchange(ref currentConfig, next, current) == current)
-                        break;
-                }
-                FlushConfig();
-                return true;
+                merged = TryPublishMerge(senderConfig);
             }
             finally
             {
                 if (acquireLock) activeMergeLock.ReadUnlock();
+            }
+
+            if (!merged)
+                return false;
+            await FlushConfigAsync().ConfigureAwait(false);
+            return true;
+        }
+
+        /// <summary>
+        /// Publishes the merge of <paramref name="senderConfig"/> into the local configuration.
+        /// </summary>
+        /// <returns>False if the merge changed nothing, or the sender is banned.</returns>
+        bool TryPublishMerge(ClusterConfig senderConfig)
+        {
+            if (workerBanList.ContainsKey(senderConfig.LocalNodeId))
+            {
+                logger?.LogTrace("Cannot merge node <{nodeid}> because still in ban list", senderConfig.LocalNodeId);
+                return false;
+            }
+
+            while (true)
+            {
+                var current = currentConfig;
+                var currentCopy = current.Copy();
+                var next = currentCopy.Merge(senderConfig, workerBanList, logger).HandleConfigEpochCollision(senderConfig, logger);
+                if (currentCopy == next) return false;
+                if (TryPublishConfig(current, next))
+                    return true;
             }
         }
 
@@ -197,7 +212,7 @@ namespace Garnet.cluster
 
                 logger?.LogInformation("MEET {nodeId} {address} {port}", nodeId, address, port);
                 // Merge without a check because node is trusted as meet was issued by admin
-                _ = TryMerge(other, acquireLock);
+                _ = await TryMergeAsync(other, acquireLock).ConfigureAwait(false);
 
                 gossipStats.UpdateMeetRequestsSucceed();
                 gsn.RecordConnectionSuccess();
@@ -244,8 +259,7 @@ namespace Garnet.cluster
                 GarnetServerNode gsn;
                 if (getOrAddTask.IsCompletedSuccessfully)
                 {
-                    // Cannot remove .GetResult here, but it's gated by IsCompletedSuccessfully so safe
-                    (_, gsn) = AsyncUtils.BlockingWait(getOrAddTask);
+                    (_, gsn) = getOrAddTask.GetAwaiter().GetResultGuarded();
                 }
                 else
                 {
@@ -262,7 +276,7 @@ namespace Garnet.cluster
                 {
                     // Initialization is best-effort for publish forwarding. A live connection may still be
                     // available while gossip initialization is held back by reconnect backoff.
-                    _ = AsyncUtils.BlockingWait(initTask);
+                    _ = initTask.GetAwaiter().GetResultGuarded();
                     gsn.TryClusterPublish(cmd, channel, message);
                 }
                 else

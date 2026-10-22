@@ -38,6 +38,15 @@ namespace Garnet.common
         /// </summary>
         Migration_Slot_End_Scan_Range_Acquisition,
         /// <summary>
+        /// Wait at migration slot driver right after the keys of a scanned batch become inaccessible to writers
+        /// </summary>
+        Migration_Slot_Keys_Transmitting,
+        /// <summary>
+        /// Hold the migration slot driver, until cleared, once it has suspended config merges to hand the slots over.
+        /// A node shutting down does not release the hold.
+        /// </summary>
+        Migration_Hold_Ownership_Transfer,
+        /// <summary>
         /// AOF on replica has diverged from stream coming from primary.
         /// </summary>
         Divergent_AOF_Stream,
@@ -148,6 +157,23 @@ namespace Garnet.common
         /// </summary>
         Tls_Pause_With_Partial_Frame,
         /// <summary>
+        /// TLS network reader: hold a synchronous pass whose batch has just suspended, on the thread running it, until
+        /// the condition is cleared. The session is parked by then, so a test can tear it down before the pass unwinds.
+        /// </summary>
+        Tls_Hold_Pass_After_Batch_Suspends,
+        /// <summary>
+        /// Receive loop or TLS reader: hold a pass whose suspended batch has just finished, on the thread running it,
+        /// until the condition is cleared. The pass has not yet compacted or resized its buffers, so a test can tear
+        /// the connection down and see whether the buffers are still the pass's to use.
+        /// </summary>
+        Receive_Hold_Resumed_Pass,
+        /// <summary>
+        /// Connection closed on request while its session was parked: hold the disposal the request queues, before it
+        /// starts, until the condition is cleared. The parked command can then finish, and the receive loop meet the
+        /// close request on its own.
+        /// </summary>
+        Close_Hold_Parked_Session_Dispose,
+        /// <summary>
         /// Replica full sync: fail recovery of the checkpoint received from the primary, before any of it is applied.
         /// </summary>
         Replication_Fail_Replica_Checkpoint_Recovery,
@@ -161,9 +187,61 @@ namespace Garnet.common
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
         /// <summary>
-        /// Server network sender: pause a send completion that frees a slot for a waiting send, after it has
-        /// decremented the send count and before it releases the waiter.
+        /// Server network sender: pause a send completion before it records progress or releases its slot.
         /// </summary>
         Sender_Pause_Before_Slot_Release,
+        /// <summary>
+        /// Accept loop: report the next accepted connection as failed by resource pressure, to exercise the
+        /// backoff and the restart of the loop that follows it.
+        /// </summary>
+        Accept_Resource_Pressure,
+        /// <summary>
+        /// Replica full sync: hold the recovery of the checkpoint received from the primary, on the thread that runs it,
+        /// until the condition is cleared. Stands in for the long synchronous stretches of a real recovery.
+        /// </summary>
+        Replication_Pause_Replica_Recovery,
+        /// <summary>
+        /// Replica replay: hold each page that a replay task, or the background replay of a sublog, replays on the thread
+        /// replaying it, until the condition is cleared. Stands in for replaying a record that waits.
+        /// </summary>
+        Replication_Hold_Replay_Thread,
+        /// <summary>
+        /// Session teardown: after cancelling the waits of a suspended command, hold the resume gate open until the
+        /// resume those cancellations queued has entered it. Pins the outcome of the race in which the resume is
+        /// admitted rather than refused, which is otherwise decided by how quickly a pool thread picks it up.
+        /// </summary>
+        Session_Teardown_Admits_Queued_Resume,
+        /// <summary>
+        /// Cluster transaction: hold an EXEC or a custom transaction, on the thread that runs it, just before it verifies
+        /// the slots of the keys it will lock, until the condition is set again. Lets a test change the store between the
+        /// transaction being dispatched and its keys being verified.
+        /// </summary>
+        Cluster_Txn_Pause_Before_Slot_Verify,
+        /// <summary>
+        /// Vector Sets: pause the first partition step of an import finalization to reach a worker, before it runs,
+        /// without holding the worker's thread. The finalization stays registered until the step is released.
+        /// </summary>
+        VectorSet_Pause_Before_Import_Finalize_Step,
+        /// <summary>
+        /// Background expired key deletion: hold each scan cycle, without holding a thread, until the condition is
+        /// cleared. The cycle does not observe cancellation while held, so it stands in for a scan that is slow to stop.
+        /// </summary>
+        ExpiredKeyDeletion_Hold_Scan,
+        /// <summary>
+        /// Vector Sets: hold each pass of the task that drops DiskANN indexes, before it drops any, without holding a
+        /// thread, until the condition is cleared. Keeps the drops it would make pending.
+        /// </summary>
+        VectorSet_Hold_Index_Drop,
+        /// <summary>
+        /// Vector Sets: hold each batch of the replication replay tasks, before they apply any of the adds queued for
+        /// them, without holding a thread, until the condition is cleared. Keeps the adds queued.
+        /// </summary>
+        VectorSet_Hold_Replication_Replay,
+        /// <summary>
+        /// AOF recovery: hold each record that the replay of a single log replays, and each page that the replay of a
+        /// sublog or one of its replay tasks replays, on the thread replaying it, until the condition is cleared. Stands in
+        /// for replaying a record that waits.
+        /// </summary>
+        AofRecovery_Hold_Replay_Thread,
     }
 }

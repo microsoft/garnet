@@ -1,7 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.CompilerServices;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -20,6 +20,41 @@ namespace Garnet.cluster
         readonly GarnetSessionMetrics sessionMetrics;
         BasicGarnetApi basicGarnetApi;
         readonly INetworkSender networkSender;
+
+        /// <summary>
+        /// Flushes replies through the RESP session that owns this one, so both write into a single ordered
+        /// stream and a reply held back for an AOF commit holds the cluster session's replies back with it.
+        /// </summary>
+        readonly ResponseFlusher responseFlusher;
+
+        /// <summary>
+        /// Shape of the reply a suspended command writes once its wait completes.
+        /// </summary>
+        enum PendingReply : byte
+        {
+            /// <summary>No reply recorded; reaching <see cref="CompletePendingCommand"/> with it is a bug.</summary>
+            Unset,
+            /// <summary>The command answers nothing, as with the replication stream.</summary>
+            None,
+            /// <summary>Simple OK.</summary>
+            Ok,
+            /// <summary>The error in <see cref="pendingError"/>.</summary>
+            Error,
+            /// <summary>The replication offset as it stands when the wait completes.</summary>
+            ReplicationOffset,
+            /// <summary>The address in <see cref="pendingAofAddress"/>, as a bulk string.</summary>
+            AofAddressValue,
+            /// <summary>The bytes in <see cref="pendingBulk"/>, as a bulk string; an empty one when null.</summary>
+            BulkString,
+        }
+
+        ValueTask pendingCommand;
+        bool hasPendingCommand;
+        PendingReply pendingReply;
+        ReadOnlyMemory<byte> pendingError;
+        AofAddress pendingAofAddress;
+        byte[] pendingBulk;
+
         readonly ILogger logger;
         ClusterSlotVerificationInput csvi;
 
@@ -65,7 +100,7 @@ namespace Garnet.cluster
         /// </summary>
         private readonly RangeIndexMigrationReceiveState rangeIndexMigrationState;
 
-        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ILogger logger = null)
+        public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext stringBasicContext, VectorBasicContext vectorBasicContext, INetworkSender networkSender, ResponseFlusher responseFlusher, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.authenticator = authenticator;
@@ -76,17 +111,28 @@ namespace Garnet.cluster
             this.stringBasicContext = stringBasicContext;
             this.vectorBasicContext = vectorBasicContext;
             this.networkSender = networkSender;
+            this.responseFlusher = responseFlusher;
             this.logger = logger;
 
             if (clusterProvider.serverOptions.EnableRangeIndexPreview)
                 rangeIndexMigrationState = new RangeIndexMigrationReceiveState(clusterProvider.storeWrapper.DefaultDatabase.RangeIndexManager, clusterProvider.storeWrapper.appendOnlyFile, logger);
         }
 
-        public unsafe void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
+        public unsafe bool ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend, out ValueTask pending)
         {
             this.dcurr = dcurr;
             this.dend = dend;
             this.parseState = parseState;
+
+            // Cleared per command rather than on completion, so a body that faults -- whose reply the session
+            // writes as an error instead of calling CompletePendingCommand -- cannot leave state behind.
+            pendingCommand = default;
+            hasPendingCommand = false;
+            pendingReply = default;
+            pendingError = default;
+            pendingAofAddress = default;
+            pendingBulk = null;
+
             var invalidParameters = false;
 
             try
@@ -99,7 +145,10 @@ namespace Garnet.cluster
                         csvi.isSubCommand = cmdInfo.IsSubCommand;
                         csvi.readOnly = command.IsReadOnly();
                         if (NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref this.dcurr, ref this.dend))
-                            return;
+                        {
+                            pending = default;
+                            return true;
+                        }
                     }
 
                     ProcessClusterCommands(command, vectorManager, out invalidParameters);
@@ -133,63 +182,174 @@ namespace Garnet.cluster
                 // keeps whatever the widest cluster command ever saw alive for the life of the connection.
                 this.parseState = default;
             }
+
+            pending = pendingCommand;
+            return !hasPendingCommand;
         }
 
-        unsafe void SendAndReset()
+        /// <summary>
+        /// Hands a wait to the RESP session that owns this one, which suspends on it instead of blocking the
+        /// network thread and calls <see cref="CompletePendingCommand"/> once it completes.
+        /// </summary>
+        /// <param name="wait">The work the command must wait for.</param>
+        /// <param name="reply">The reply to write when the wait completes.</param>
+        bool SuspendOn(ValueTask wait, PendingReply reply)
         {
-            byte* d = networkSender.GetResponseObjectHead();
-            if ((int)(dcurr - d) > 0)
-            {
-                Send(d);
-                networkSender.GetResponseObject();
-                dcurr = networkSender.GetResponseObjectHead();
-                dend = networkSender.GetResponseObjectTail();
-            }
-            else
-            {
-                // The buffer is already empty, so retrying the write cannot make progress and the
-                // caller's retry loop would spin forever. The message does not fit the response buffer.
-                GarnetException.Throw("Failed to write to response buffer", LogLevel.Critical);
-            }
+            pendingCommand = wait;
+            hasPendingCommand = true;
+            pendingReply = reply;
+            return true;
         }
 
-        unsafe void SendAndReset(ref byte* dcurr, ref byte* dend)
+        /// <summary>
+        /// Hands over a wait whose body records its own reply through <see cref="SetPendingOutcome"/>.
+        /// </summary>
+        /// <remarks>
+        /// The body of an <c>async</c> method runs up to its first incomplete await before the call
+        /// returns, so one that finishes without suspending has already recorded its outcome by the time
+        /// this is reached. Naming a reply here would overwrite it, and a failed command would answer with
+        /// whatever its success reply was.
+        /// </remarks>
+        /// <param name="wait">The work the command must wait for.</param>
+        bool SuspendOn(ValueTask wait)
         {
-            byte* d = networkSender.GetResponseObjectHead();
-            if ((int)(dcurr - d) > 0)
-            {
-                Send(d);
-                networkSender.GetResponseObject();
-                dcurr = networkSender.GetResponseObjectHead();
-                dend = networkSender.GetResponseObjectTail();
-            }
-            else
-            {
-                // See SendAndReset() above: an empty buffer means the retry loop cannot progress.
-                GarnetException.Throw("Failed to write to response buffer", LogLevel.Critical);
-            }
+            pendingCommand = wait;
+            hasPendingCommand = true;
+            return true;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        unsafe void Send(byte* d)
+        /// <summary>
+        /// Hands a wait to <see cref="SuspendOn(ValueTask, PendingReply)"/> unless it has already completed, in which case
+        /// the reply is written now. One that has already failed raises here, as one that fails while the session is
+        /// suspended raises when it resumes.
+        /// </summary>
+        /// <param name="wait">The work the command must wait for.</param>
+        /// <param name="reply">The reply to write when the wait completes.</param>
+        bool SuspendOnIfPending(ValueTask wait, PendingReply reply)
         {
-            // #if DEBUG
-            // logger?.LogTrace("SEND: [{send}]", Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", ""));
-            // #endif
+            if (!wait.IsCompleted)
+                return SuspendOn(wait, reply);
 
-            if ((int)(dcurr - d) > 0)
+            wait.GetAwaiter().GetResultGuarded();
+            WriteReply(reply);
+            return true;
+        }
+
+        /// <summary>
+        /// Hands a wait to <see cref="SuspendOn(ValueTask)"/> unless it has already completed, in which case the reply
+        /// its body recorded is written now.
+        /// </summary>
+        /// <param name="wait">The work the command must wait for, which records its own reply.</param>
+        bool SuspendOnIfPending(ValueTask wait)
+        {
+            if (!wait.IsCompleted)
+                return SuspendOn(wait);
+
+            wait.GetAwaiter().GetResultGuarded();
+            WriteReply(pendingReply);
+            return true;
+        }
+
+        /// <summary>
+        /// Writes <paramref name="reply"/> once the configuration changes the command made are written, suspending the
+        /// session until they are rather than holding the thread.
+        /// </summary>
+        /// <param name="reply">The reply to write.</param>
+        bool ReplyOnceConfigWritten(PendingReply reply)
+            => SuspendOnIfPending(clusterProvider.clusterManager.WaitForConfigWriteAsync(), reply);
+
+        public unsafe void CompletePendingCommand(ref byte* dcurr, ref byte* dend)
+        {
+            this.dcurr = dcurr;
+            this.dend = dend;
+            try
             {
-                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
-                if (clusterProvider.storeWrapper.appendOnlyFile != null && clusterProvider.storeWrapper.serverOptions.WaitForCommit)
-                {
-                    var task = clusterProvider.storeWrapper.appendOnlyFile.Log.WaitForCommitAsync();
-                    if (!task.IsCompletedSuccessfully) AsyncUtils.BlockingWait(task);
-                }
-                int sendBytes = (int)(dcurr - d);
-                networkSender.SendResponse((int)(d - networkSender.GetResponseObjectHead()), sendBytes);
-                sessionMetrics?.incr_total_net_output_bytes((ulong)sendBytes);
+                WriteReply(pendingReply);
+            }
+            finally
+            {
+                dcurr = this.dcurr;
+                dend = this.dend;
             }
         }
+
+        /// <summary>
+        /// Writes the reply of a command that waited.
+        /// </summary>
+        /// <param name="reply">The reply to write.</param>
+        unsafe void WriteReply(PendingReply reply)
+        {
+            switch (reply)
+            {
+                case PendingReply.None:
+                    break;
+
+                case PendingReply.Ok:
+                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref this.dcurr, this.dend))
+                        SendAndReset();
+                    break;
+
+                case PendingReply.Error:
+                    while (!RespWriteUtils.TryWriteError(pendingError.Span, ref this.dcurr, this.dend))
+                        SendAndReset();
+                    break;
+
+                case PendingReply.ReplicationOffset:
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(clusterProvider.replicationManager.ReplicationOffset.ToString(), ref this.dcurr, this.dend))
+                        SendAndReset();
+                    break;
+
+                case PendingReply.AofAddressValue:
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(pendingAofAddress.ToString(), ref this.dcurr, this.dend))
+                        SendAndReset();
+                    break;
+
+                case PendingReply.BulkString:
+                    if (pendingBulk == null)
+                    {
+                        while (!RespWriteUtils.TryWriteBulkString([], ref this.dcurr, this.dend))
+                            SendAndReset();
+                    }
+                    else
+                        WriteLargeBulkString(pendingBulk);
+                    break;
+
+                default:
+                    throw new InvalidOperationException($"Unexpected {nameof(PendingReply)}: {reply}");
+            }
+        }
+
+        /// <summary>
+        /// Records the outcome of a wait that produces either a success or an error message.
+        /// </summary>
+        void SetPendingOutcome(bool success, ReadOnlyMemory<byte> errorMessage)
+        {
+            pendingReply = success ? PendingReply.Ok : PendingReply.Error;
+            pendingError = success ? default : errorMessage;
+        }
+
+        /// <summary>
+        /// Records the outcome of a wait that answers with an address rather than a status, reporting the
+        /// error instead when the wait produced one.
+        /// </summary>
+        /// <param name="address">Address to answer with when <paramref name="errorMessage"/> is empty.</param>
+        /// <param name="errorMessage">The error the wait produced, or empty when it succeeded.</param>
+        void SetPendingAofAddress(AofAddress address, ReadOnlyMemory<byte> errorMessage = default)
+        {
+            if (!errorMessage.IsEmpty)
+            {
+                pendingReply = PendingReply.Error;
+                pendingError = errorMessage;
+                return;
+            }
+
+            pendingReply = PendingReply.AofAddressValue;
+            pendingAofAddress = address;
+        }
+
+        unsafe void SendAndReset() => responseFlusher(ref dcurr, ref dend);
+
+        unsafe void SendAndReset(ref byte* dcurr, ref byte* dend) => responseFlusher(ref dcurr, ref dend);
 
         /// <summary>
         /// Updates the user currently authenticated in the session.
@@ -240,7 +400,7 @@ namespace Garnet.cluster
             clusterProvider.clusterManager.UnsafeSetConfig(config);
 
             if (replicaOf != null)
-                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
+                AsyncUtils.BlockingWait(clusterProvider.replicationManager.ResetReplicaReplayDriverStoreAsync().AsTask());
         }
 
         public void Dispose()

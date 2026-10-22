@@ -151,8 +151,11 @@ namespace Tsavorite.core
             // fires. No-op for the managed hash index.
             BeginNativeIndexCheckpointIo();
 
+            // Throttled issuance waits for each chunk's write to complete before issuing the next, so it gets a thread
+            // of its own: a device may complete its writes on pool workers, which a pool worker waiting for them
+            // keeps from running when the pool is capped.
             if (throttleCheckpointFlushDelayMs >= 0)
-                Task.Run(FlushRunner);
+                new Thread(FlushRunner) { IsBackground = true, Name = "IndexCheckpointFlush" }.Start();
             else
                 FlushRunner();
 
@@ -240,8 +243,9 @@ namespace Tsavorite.core
                             }
                             finally
                             {
-                                // Staging can throw, and with throttling enabled this is a pooled thread. Leaving it
-                                // epoch-protected would pin the safe-to-reclaim boundary for the life of the process.
+                                // Staging can throw, and with throttling enabled this thread is not the caller's.
+                                // Leaving it epoch-protected would pin the safe-to-reclaim boundary for the life of
+                                // the process.
                                 if (prot)
                                     epoch.Suspend();
                             }

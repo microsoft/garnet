@@ -116,8 +116,7 @@ namespace Garnet.server
             UpdateExpiration(ref logRecord, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
 
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            functionsState.OnKeyChanged(upsertInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
             return true;
         }
 
@@ -136,8 +135,7 @@ namespace Garnet.server
             UpdateExpiration(ref logRecord, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
 
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            functionsState.OnKeyChanged(upsertInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
             return true;
         }
 
@@ -156,8 +154,7 @@ namespace Garnet.server
             UpdateExpiration(ref logRecord, expiration);
             sizeInfo.AssertOptionalsIfSet(logRecord.DataHeader);
 
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            functionsState.OnKeyChanged(upsertInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
             return true;
         }
 

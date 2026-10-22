@@ -24,41 +24,28 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Note: pads the bytes with zeros to achieve sector alignment
+        /// Copies <paramref name="buffer"/>, after its length, into a buffer rented from <paramref name="pool"/>,
+        /// zero-padded to a whole number of sectors.
         /// </summary>
-        /// <param name="device"></param>
-        /// <param name="pool"></param>
-        /// <param name="address"></param>
-        /// <param name="buffer"></param>
-        /// <param name="size"></param>
-        /// <param name="logger"></param>
-        public static unsafe void WriteInto(IDevice device, SectorAlignedBufferPool pool, ulong address, byte[] buffer, int size = 0, ILogger logger = null)
+        internal static unsafe SectorAlignedMemory PrepareWrite(IDevice device, SectorAlignedBufferPool pool, byte[] buffer, out uint numBytesToWrite)
         {
-            if (size == 0) size = buffer.Length;
+            var size = buffer.Length;
             var _buffer = new byte[size + sizeof(int)];
             var len = BitConverter.GetBytes(size);
             Array.Copy(len, _buffer, len.Length);
             Array.Copy(buffer, 0, _buffer, len.Length, size);
             size += len.Length;
 
-            long numBytesToWrite = size;
-            numBytesToWrite = ((numBytesToWrite + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+            long alignedSize = size;
+            alignedSize = ((alignedSize + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
-            var pbuffer = pool.Get((int)numBytesToWrite);
+            var pbuffer = pool.Get((int)alignedSize);
             fixed (byte* bufferRaw = _buffer)
             {
                 Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
             }
-            using var semaphore = new SemaphoreSlim(0);
-            try
-            {
-                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
-                semaphore.Wait();
-            }
-            finally
-            {
-                pbuffer.Return();
-            }
+            numBytesToWrite = (uint)alignedSize;
+            return pbuffer;
         }
 
         /// <summary>
@@ -104,13 +91,17 @@ namespace Garnet.cluster
     {
         public static void IOCallback(this ILogger logger, uint errorCode, uint numBytes, object context, Exception ioException)
         {
+            logger.LogIOError(errorCode, numBytes, context);
+            ((SemaphoreSlim)context).Release();
+        }
+
+        internal static void LogIOError(this ILogger logger, uint errorCode, uint numBytes, object context)
+        {
             if (errorCode != 0)
             {
                 var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[ClusterUtils] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
-
-            ((SemaphoreSlim)context).Release();
         }
 
         [DllImport("libc")]

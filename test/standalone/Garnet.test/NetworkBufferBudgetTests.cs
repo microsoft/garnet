@@ -288,6 +288,29 @@ namespace Garnet.test
         }
 
         /// <summary>
+        /// A pool disposed with entries still out returns at once, refuses further Gets, and gives up its idle
+        /// entries when the last entry out comes back.
+        /// </summary>
+        [Test]
+        public void APoolDisposedOnLastReturnIsReclaimedByTheLastReturn()
+        {
+            var settings = new NetworkBufferSettings(Ceiling, Ceiling, 1 << 20);
+            var pool = settings.CreateBufferPool(ownerType: PoolOwnerType.GarnetClientSession);
+
+            var first = pool.Get(Ceiling);
+            var last = pool.Get(Ceiling);
+            pool.DisposeOnLastReturn();
+            ClassicAssert.IsNull(pool.Get(Ceiling), "a Get succeeded on a disposed pool");
+
+            first.Dispose();
+            ClassicAssert.AreEqual(Ceiling, pool.PooledBytes, "the pool was reclaimed while an entry was still out");
+
+            last.Dispose();
+            ClassicAssert.AreEqual(0, pool.LiveBytes);
+            ClassicAssert.AreEqual(0, pool.PooledBytes, "the last return did not reclaim the pool's idle entries");
+        }
+
+        /// <summary>
         /// Pools that are not connection-scaled must not touch the budget at all, or replication and
         /// migration traffic would drive live client connections toward the floor.
         /// </summary>
@@ -1584,7 +1607,7 @@ namespace Garnet.test
 
         static long SocketStatBytes(string name, GarnetClient client) => SocketStatBytes(name, BpStats(client));
 
-        static long SocketStatBytes(string name, string stats)
+        internal static long SocketStatBytes(string name, string stats)
         {
             var section = stats.IndexOf("server_socket_0", StringComparison.Ordinal);
             ClassicAssert.GreaterOrEqual(section, 0, $"socket section not found in BPSTATS: {stats}");

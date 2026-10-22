@@ -11,6 +11,13 @@ namespace Garnet.server
     /// <summary>
     /// Garnet API implementation for watch purposes
     /// </summary>
+    /// <remarks>
+    /// This is the API a transaction's prepare phase reads through, so it forwards to the per-command
+    /// methods on <see cref="IGarnetReadApi"/> and inherits their contract: a read of a record that is not
+    /// in memory waits on the device. Prepare runs on the network completion thread, so a custom
+    /// transaction procedure that reads a key in prepare can still hold that thread for a device round
+    /// trip. Converting the custom procedure phases to suspend is tracked as follow-up work.
+    /// </remarks>
     struct GarnetWatchApi<TGarnetApi> : IGarnetReadApi
         where TGarnetApi : IGarnetReadApi, IGarnetWatchApi
     {

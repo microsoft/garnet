@@ -171,7 +171,7 @@ namespace Garnet.server
         /// <returns></returns>
         /// <remarks>An RESP3 array in array will be flattened into the return array. RESP3 map/set types will be returned as arrays.</remarks>
         /// <example>"*2\r\n*2\r\n$1\r\na\r\n,0\r\n*2\r\n$1\r\nb\r\n,1\r\n" will return [a, 0, b, 1]</example>
-        unsafe PinnedSpanByte[] ProcessRespArrayOutput(ObjectOutput output, out string error, bool isScanOutput = false)
+        internal unsafe PinnedSpanByte[] ProcessRespArrayOutput(ObjectOutput output, out string error, bool isScanOutput = false)
         {
             if (functionsState.respProtocolVersion >= 3)
                 return ProcessResp3ArrayOutput(output, out error, isScanOutput);
@@ -611,7 +611,7 @@ namespace Garnet.server
         /// <summary>
         /// Processes RESP output as pairs of score and member.
         /// </summary>
-        unsafe (PinnedSpanByte member, PinnedSpanByte score)[] ProcessRespArrayOutputAsPairs(ObjectOutput output, out string error)
+        internal unsafe (PinnedSpanByte member, PinnedSpanByte score)[] ProcessRespArrayOutputAsPairs(ObjectOutput output, out string error)
         {
             (PinnedSpanByte member, PinnedSpanByte score)[] result = default;
             error = default;
@@ -785,7 +785,9 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
-            if (status.NotFound && !status.Record.Created)
+            // An expired record answers as a missing one whichever way it was updated. Updated in place it reports no new
+            // record, while copied it reports the record appended in its place, which may be only a tombstone.
+            if (status.NotFound && (!status.Record.Created || status.IsExpired))
                 return GarnetStatus.NOTFOUND;
 
             if (status.Found && output.HasWrongType)

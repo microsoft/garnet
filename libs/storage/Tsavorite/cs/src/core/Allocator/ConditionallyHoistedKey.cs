@@ -17,7 +17,8 @@ namespace Tsavorite.core
     ///   <item><b>Pinned</b> — caller guarantees the key bytes are pinned for the
     ///     lifetime of this struct (used by pre-pinned RESP buffers). Stored as a raw
     ///     pointer; copy of this struct is safe because the pointer is to externally
-    ///     pinned memory.</item>
+    ///     pinned memory. A caller that cannot make that guarantee through the completion
+    ///     of a pending operation requests a copy instead (see <see cref="ReadOptions.HoistKey"/>).</item>
     ///   <item><b>Inline</b> — key (and optional namespace) bytes fit in a fixed
     ///     <see cref="InlineCapacity"/>-byte buffer carried by the struct itself. No
     ///     heap allocation. Span accessors point into the receiver's own storage —
@@ -206,17 +207,21 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a new <see cref="ConditionallyHoistedKey"/>, copying bytes if needed.
         /// </summary>
+        /// <param name="key">The key to carry.</param>
+        /// <param name="bufferPool">Pool from which a key too large for the inline buffer is rented.</param>
+        /// <param name="copyPinnedKey">Copy the key even if it is pinned, for a caller whose key bytes may be reused
+        /// before the operation that carries this key completes.</param>
         /// <remarks>
         /// Storage mode selection:
         /// <list type="bullet">
-        ///   <item><see cref="IKey.IsPinned"/> → raw pointer (no copy, no alloc).</item>
+        ///   <item><see cref="IKey.IsPinned"/> and not <paramref name="copyPinnedKey"/> → raw pointer (no copy, no alloc).</item>
         ///   <item>Else key (+ optional namespace) total bytes ≤ <see cref="InlineCapacity"/>
         ///     → inline buffer carried by this struct (no alloc).</item>
         ///   <item>Else → <see cref="SectorAlignedMemory"/> rented from <paramref name="bufferPool"/>
         ///     and freed by <see cref="Dispose"/>.</item>
         /// </list>
         /// </remarks>
-        public static ConditionallyHoistedKey Create<TKey>(TKey key, SectorAlignedBufferPool bufferPool)
+        public static ConditionallyHoistedKey Create<TKey>(TKey key, SectorAlignedBufferPool bufferPool, bool copyPinnedKey = false)
             where TKey : IKey, allows ref struct
         {
 
@@ -228,7 +233,7 @@ namespace Tsavorite.core
 
             var keyBytes = key.KeyBytes;
 
-            if (key.IsPinned)
+            if (key.IsPinned && !copyPinnedKey)
             {
                 var keyPtr = (byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(keyBytes));
 

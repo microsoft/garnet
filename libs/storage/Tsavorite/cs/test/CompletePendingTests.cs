@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -363,6 +365,121 @@ namespace Tsavorite.test
             (status, var outputStruct) = bContext.GetSinglePendingResult();
             ClassicAssert.IsTrue(status.Found, $"Expected status.Found: {status}");
             ClassicAssert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
+        }
+        /// <summary>
+        /// Session functions that report any overlap between two threads inside the pending-completion
+        /// drain. The completion callbacks run from <c>InternalCompletePendingRequests</c>, so a second
+        /// thread draining the same execution context is visible here and nowhere else.
+        /// </summary>
+        class DrainWatcher : SessionFunctionsBase<InputStruct, OutputStruct, ContextStruct>
+        {
+            int inside;
+
+            /// <summary>Set once the drain has started, so a test can tear down in the middle of one.</summary>
+            internal readonly ManualResetEventSlim Draining = new(false);
+
+            internal int Overlaps;
+
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref InputStruct input, ref OutputStruct output,
+                    ContextStruct ctx, Status status, RecordMetadata recordMetadata)
+            {
+                if (Interlocked.Increment(ref inside) > 1)
+                    _ = Interlocked.Increment(ref Overlaps);
+
+                Draining.Set();
+
+                // Widen the window: without the wait the two drains interleave between callbacks instead of
+                // inside one, and the overlap is there without being observable.
+                Thread.Sleep(1);
+
+                _ = Interlocked.Decrement(ref inside);
+            }
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void DisposingASessionWaitsForTheDriverDrainingIt()
+        {
+            const int NumPending = 128;
+
+            var watcher = new DrainWatcher();
+            var session = store.NewSession<KeyStruct, InputStruct, OutputStruct, ContextStruct, DrainWatcher>(watcher);
+            var bContext = session.BasicContext;
+
+            var valueStructs = GC.AllocateArray<ValueStruct>(1, pinned: true);
+            for (var key = 0; key < NumPending; ++key)
+            {
+                valueStructs[0] = NewValueStruct(key);
+                _ = bContext.Upsert(NewKeyStruct(key), SpanByte.FromPinnedVariable(ref valueStructs[0]));
+            }
+
+            // Flush so every read below has to come from the device and goes pending.
+            store.Log.FlushAndEvict(wait: true);
+
+            for (var key = 0; key < NumPending; ++key)
+            {
+                var inputStruct = NewInputStruct(key);
+                OutputStruct outputStruct = default;
+                var status = bContext.Read(NewKeyStruct(key), ref inputStruct, ref outputStruct, NewContextStruct(key));
+                ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
+            }
+
+            // A driver owns the drain from here, exactly as a parked session's does.
+            var driven = Task.Run(async () => await bContext.CompletePendingAsync().ConfigureAwait(false));
+            ClassicAssert.IsTrue(watcher.Draining.Wait(TimeSpan.FromSeconds(30)), "The driver never started draining");
+
+            // Tear the session down in the middle of that drain. Dispose completes the session's pending
+            // requests itself, which is the second drain of the same execution context.
+            session.Dispose();
+
+            ClassicAssert.IsTrue(driven.Wait(TimeSpan.FromSeconds(30)), "The driver never finished");
+            ClassicAssert.AreEqual(0, watcher.Overlaps, "Dispose drained the session while a driver was draining it");
+        }
+
+        /// <summary>
+        /// A driver returns itself to its pool on the thread that completed it, after that thread has resumed the session, so the
+        /// session's next read can rent from the same pool on another thread at the same moment.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ConcurrentRentsAndReturnsNeverHandOutADriverInUse()
+        {
+            const int NumThreads = 4;
+            const int RoundsPerThread = 100_000;
+
+            var pool = new PendingCompletionDriverPool<InputStruct, OutputStruct, ContextStruct, StructStoreFunctions, StructAllocator,
+                SessionFunctionsWrapper<KeyStruct, InputStruct, OutputStruct, ContextStruct, DrainWatcher,
+                    BasicSessionLocker<StructStoreFunctions, StructAllocator>, StructStoreFunctions, StructAllocator>>(store);
+            var rented = new ConcurrentDictionary<object, byte>();
+            var violations = 0;
+
+            using var start = new Barrier(NumThreads);
+            var threads = new Thread[NumThreads];
+            for (var i = 0; i < NumThreads; i++)
+            {
+                threads[i] = new Thread(() =>
+                {
+                    start.SignalAndWait();
+                    for (var round = 0; round < RoundsPerThread; round++)
+                    {
+                        var driver = pool.Rent();
+
+                        // Another thread still holds this driver
+                        if (!rented.TryAdd(driver, 0))
+                            _ = Interlocked.Increment(ref violations);
+                        else
+                            _ = rented.TryRemove(driver, out _);
+
+                        pool.Return(driver);
+                    }
+                });
+                threads[i].Start();
+            }
+
+            foreach (var thread in threads)
+                thread.Join();
+
+            ClassicAssert.AreEqual(0, violations, "A driver was rented while another thread held it");
         }
     }
 }

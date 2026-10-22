@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 
 namespace Garnet.server
@@ -377,10 +378,13 @@ namespace Garnet.server
         /// <param name="type">Configuration parameter to update.</param>
         /// <param name="value">Value as supplied on the CONFIG SET wire.</param>
         /// <param name="error">Error message prefixed with "ERR " when the value is rejected.</param>
+        /// <param name="enacted">Completes once the change has taken effect, such as when a task the change
+        /// restarts has stopped its old instance.</param>
         /// <returns><see langword="true"/> if the slot was updated.</returns>
-        public bool TrySet(ServerConfigType type, string value, out string error)
+        public bool TrySet(ServerConfigType type, string value, out string error, out Task enacted)
         {
             error = null;
+            enacted = Task.CompletedTask;
             ref readonly var meta = ref Meta[(int)type];
             if (meta.ReadOnly)
             {
@@ -461,7 +465,7 @@ namespace Garnet.server
             var oldValue = Volatile.Read(ref values[(int)type]);
             Volatile.Write(ref values[(int)type], parsed);
 
-            if (meta.UpdateAction != null && !meta.UpdateAction(this, oldValue, parsed, out error))
+            if (meta.UpdateAction != null && !meta.UpdateAction(this, oldValue, parsed, out error, out enacted))
             {
                 Volatile.Write(ref values[(int)type], oldValue);
                 return false;
@@ -474,9 +478,10 @@ namespace Garnet.server
         // auto-commit) is fixed into the AOF log at construction and cannot be toggled on a live log, so a
         // move to 0 — or any change when the server started at 0 — is rejected. For the safe {-1, >0}
         // transitions the commit task is restarted (or killed) to pick up the new interval.
-        static bool ApplyCommitFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        static bool ApplyCommitFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error, out Task enacted)
         {
             error = null;
+            enacted = Task.CompletedTask;
             if (newValue == 0)
             {
                 error = "ERR 'aof-commit-freq' cannot be set to 0 at runtime; per-operation auto-commit is fixed at startup.";
@@ -487,7 +492,7 @@ namespace Garnet.server
                 error = "ERR 'aof-commit-freq' cannot be changed at runtime because the server started with per-operation auto-commit (0).";
                 return false;
             }
-            config.owner?.ReconcilePrimaryTask(TaskType.CommitTask);
+            enacted = config.owner?.ReconcilePrimaryTaskAsync(TaskType.CommitTask) ?? Task.CompletedTask;
             return true;
         }
 
@@ -495,9 +500,10 @@ namespace Garnet.server
         // always-constructed primary-side AofBackpressure of every database. The gate reads plain
         // fields, so retuning the budget — or enabling from a disabled start — takes effect without a
         // restart and with no lifecycle task involved.
-        static bool ApplyAofSyncMaxLagUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        static bool ApplyAofSyncMaxLagUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error, out Task enacted)
         {
             error = null;
+            enacted = Task.CompletedTask;
             config.owner?.ApplyAofSyncMaxLagBytes(newValue);
             return true;
         }
@@ -509,9 +515,10 @@ namespace Garnet.server
         //
         // Lowering below the live population disconnects nobody: the accept path only refuses new
         // connections, which is also how Redis treats a lowered maxclients.
-        static bool ApplyMaxClientsUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        static bool ApplyMaxClientsUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error, out Task enacted)
         {
             error = null;
+            enacted = Task.CompletedTask;
 
             var servers = config.owner?.Servers;
             if (servers == null)
@@ -528,29 +535,30 @@ namespace Garnet.server
 
         // Enacts an expired-object-collection-freq change by restarting / killing the collection task so it
         // picks up the new interval (or stops when disabled).
-        static bool ApplyExpiredObjectCollectionUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        static bool ApplyExpiredObjectCollectionUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error, out Task enacted)
         {
             error = null;
-            config.owner?.ReconcilePrimaryTask(TaskType.ObjectCollectTask);
+            enacted = config.owner?.ReconcilePrimaryTaskAsync(TaskType.ObjectCollectTask) ?? Task.CompletedTask;
             return true;
         }
 
         // Enacts a checkpoint-freq change by starting or waking the scheduler so it observes the new interval.
         // Disabling lets the task unregister itself after any running checkpoint finishes, so a CONFIG SET
         // never waits for that checkpoint. Setting the current value again leaves the pending interval untouched.
-        static bool ApplyCheckpointFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        static bool ApplyCheckpointFrequencyUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error, out Task enacted)
         {
             error = null;
+            enacted = Task.CompletedTask;
             config.owner?.NotifyCheckpointFrequencyChanged(intervalChanged: oldValue != newValue);
             return true;
         }
 
         // Enacts an expired-key-deletion-scan-freq change by restarting / killing the scan task so it picks
         // up the new interval (or stops, re-enabling on-demand EXPDELSCAN, when disabled).
-        static bool ApplyExpiredKeyDeletionUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error)
+        static bool ApplyExpiredKeyDeletionUpdate(RuntimeServerConfig config, long oldValue, long newValue, out string error, out Task enacted)
         {
             error = null;
-            config.owner?.ReconcilePrimaryTask(TaskType.ExpiredKeyDeletionTask);
+            enacted = config.owner?.ReconcilePrimaryTaskAsync(TaskType.ExpiredKeyDeletionTask) ?? Task.CompletedTask;
             return true;
         }
 

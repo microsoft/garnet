@@ -142,6 +142,53 @@ namespace Garnet.test
         }
 
         [Test]
+        public void AFailedStartLeavesTheRegistrationThatReplacedItAlone()
+        {
+            using var taskManager = new TaskManager();
+
+            // Runs until released, whether or not it is cancelled, as a task may until its next check
+            var replacement = new TaskCompletionSource();
+
+            Task ReplacedTaskFactory(CancellationToken token)
+            {
+                // Another caller cancels this registration and registers its own before this start fails
+                ClassicAssert.IsTrue(taskManager.CancelAsync(TaskType.IndexAutoGrowTask).IsCompleted);
+                ClassicAssert.IsTrue(taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, _ => replacement.Task));
+                throw new InvalidOperationException("Test exception from task factory");
+            }
+
+            var start = Task.Run(() => taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, ReplacedTaskFactory));
+            var returned = start.Wait(TimeSpan.FromSeconds(5));
+            var replacementRegistered = taskManager.IsRegistered(TaskType.IndexAutoGrowTask);
+            replacement.SetResult();
+
+            ClassicAssert.IsTrue(returned, "The failed start waited for the task that replaced it.");
+            ClassicAssert.IsFalse(start.Result);
+            ClassicAssert.IsTrue(replacementRegistered, "The failed start removed the registration that replaced it.");
+        }
+
+        [Test]
+        public void AFailedStartCancelsWhatItBegan()
+        {
+            using var taskManager = new TaskManager();
+            var cancelled = false;
+
+            Task BeginThenFail(CancellationToken token)
+            {
+                _ = token.Register(() =>
+                {
+                    cancelled = true;
+                    throw new InvalidOperationException("Test exception from a cancellation callback");
+                });
+                throw new InvalidOperationException("Test exception from task factory");
+            }
+
+            ClassicAssert.IsFalse(taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, BeginThenFail));
+            ClassicAssert.IsTrue(cancelled, "The failed start left the token it handed out uncancelled.");
+            ClassicAssert.IsFalse(taskManager.IsRegistered(TaskType.IndexAutoGrowTask));
+        }
+
+        [Test]
         public void TestCleanupOnCompletion()
         {
             using var taskManager = new TaskManager();

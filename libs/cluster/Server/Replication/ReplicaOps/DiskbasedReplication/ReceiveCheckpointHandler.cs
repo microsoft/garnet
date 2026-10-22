@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -48,7 +49,8 @@ namespace Garnet.cluster
         /// <param name="type">The checkpoint file type.</param>
         /// <param name="startAddress">The start address for this chunk.</param>
         /// <param name="data">The data to write. Empty signals end-of-stream.</param>
-        public void ProcessFileSegment(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
+        /// <returns>A task that completes when the segment has been written.</returns>
+        public ValueTask ProcessFileSegmentAsync(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
         {
             clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
 
@@ -56,7 +58,7 @@ namespace Garnet.cluster
             {
                 activeSink?.Complete();
                 activeSink = null;
-                return;
+                return default;
             }
 
             if (activeSink == null)
@@ -68,11 +70,7 @@ namespace Garnet.cluster
                 activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
             }
 
-            activeSink.WriteChunk(startAddress, data);
-
-#if DEBUG
-            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
-#endif
+            return WriteChunkAsync(startAddress, data);
         }
 
         /// <summary>
@@ -85,7 +83,7 @@ namespace Garnet.cluster
         {
             clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
             using var sink = new MetadataDataSink(type, token, clusterProvider);
-            sink.WriteChunk(0, checkpointMetadata);
+            sink.Commit(checkpointMetadata);
             sink.Complete();
         }
 
@@ -102,7 +100,8 @@ namespace Garnet.cluster
         /// <param name="type">The checkpoint file type.</param>
         /// <param name="startAddress">The start address for this chunk, or -1 for single-message payloads.</param>
         /// <param name="data">The data to write. Empty signals end-of-stream for streamed file segments.</param>
-        public void ProcessSnapshotData(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
+        /// <returns>A task that completes when the data has been written.</returns>
+        public ValueTask ProcessSnapshotDataAsync(Guid token, CheckpointFileType type, long startAddress, ReadOnlySpan<byte> data)
         {
             clusterProvider.replicationManager.UpdateLastPrimarySyncTime();
 
@@ -120,23 +119,23 @@ namespace Garnet.cluster
                         if (activeSink != null)
                             ExceptionUtils.ThrowException(new GarnetException("ActiveSink already initialized!"));
                         activeSink = RangeIndexFileDataSink.FromMetadata(type, token, data, clusterProvider.rangeIndexManager, logger);
-                        return;
+                        return default;
                     case CheckpointFileType.STORE_INDEX:
                     case CheckpointFileType.STORE_SNAPSHOT:
                         var sink = new MetadataDataSink(type, token, clusterProvider);
                         try
                         {
-                            sink.WriteChunk(0, data);
+                            sink.Commit(data);
                             sink.Complete();
-                            return;
+                            return default;
                         }
                         finally
                         {
                             sink.Dispose();
                         }
                     default:
-                        ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotData)} invalid startAddress for checkpoint type: {type}!"));
-                        return;
+                        ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotDataAsync)} invalid startAddress for checkpoint type: {type}!"));
+                        return default;
                 }
             }
 
@@ -145,7 +144,7 @@ namespace Garnet.cluster
             {
                 activeSink?.Complete();
                 activeSink = null;
-                return;
+                return default;
             }
 
             // Initialize sink for multi-segment file transmission
@@ -165,16 +164,33 @@ namespace Garnet.cluster
                         activeSink = new FileDataSink(type, token, device, bufferPool, writeSemaphore, clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token, logger);
                         break;
                     default:
-                        ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotData)} invalid startAddress for checkpoint type: {type}!"));
-                        return;
+                        ExceptionUtils.ThrowException(new GarnetException($"{nameof(ProcessSnapshotDataAsync)} invalid startAddress for checkpoint type: {type}!"));
+                        return default;
                 }
             }
 
-            activeSink.WriteChunk(startAddress, data);
+            return WriteChunkAsync(startAddress, data);
+        }
 
+        /// <summary>
+        /// Writes a chunk to the active sink.
+        /// </summary>
+        ValueTask WriteChunkAsync(long startAddress, ReadOnlySpan<byte> data)
+        {
+            var write = activeSink.WriteChunkAsync(startAddress, data);
 #if DEBUG
-            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint);
+            return WaitOnClearAfterAsync(write);
+#else
+            return write;
 #endif
         }
+
+#if DEBUG
+        static async ValueTask WaitOnClearAfterAsync(ValueTask write)
+        {
+            await write.ConfigureAwait(false);
+            await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Replication_Timeout_On_Receive_Checkpoint).ConfigureAwait(false);
+        }
+#endif
     }
 }

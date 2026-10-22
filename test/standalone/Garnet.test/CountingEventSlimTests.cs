@@ -36,7 +36,54 @@ namespace Garnet.test
         }
 
         [Test]
-        public void Concurrent()
+        public async Task WaitAsyncCompletesOnceTheCountReachesZero()
+        {
+            var evt = CountingEventSlim.Create();
+            try
+            {
+                ClassicAssert.IsTrue(evt.WaitAsync().IsCompletedSuccessfully, "A wait on a count of 0 did not complete at once.");
+
+                evt.Increment();
+                evt.Increment();
+                var wait = evt.WaitAsync().AsTask();
+                evt.Decrement();
+                ClassicAssert.IsFalse(wait.IsCompleted, "A wait completed while the count was above 0.");
+
+                evt.Decrement();
+                await wait.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            }
+            finally
+            {
+                evt.Dispose();
+            }
+        }
+
+        [Test]
+        public void WaitAsyncIsNotCompletedByAZeroBeforeIt()
+        {
+            var evt = CountingEventSlim.Create();
+            try
+            {
+                evt.Increment();
+                var first = evt.WaitAsync().AsTask();
+                evt.Decrement();
+                ClassicAssert.IsTrue(first.Wait(TimeSpan.FromSeconds(10)), "The first wait was not completed when the count reached 0.");
+
+                evt.Increment();
+                var second = evt.WaitAsync().AsTask();
+                ClassicAssert.IsFalse(second.IsCompleted, "A wait was completed by the count reaching 0 before it.");
+
+                evt.Decrement();
+                ClassicAssert.IsTrue(second.Wait(TimeSpan.FromSeconds(10)), "The second wait was not completed when the count reached 0.");
+            }
+            finally
+            {
+                evt.Dispose();
+            }
+        }
+
+        [Test]
+        public async Task Concurrent([Values] bool waitAsync)
         {
             // Spawn a number of tasks and fill them with work from a channel
             //
@@ -85,7 +132,10 @@ namespace Garnet.test
                         ix++;
                     }
 
-                    _ = evt.Wait();
+                    if (waitAsync)
+                        await evt.WaitAsync().ConfigureAwait(false);
+                    else
+                        _ = evt.Wait();
                     ClassicAssert.IsTrue(working.IsEmpty);
                 }
 

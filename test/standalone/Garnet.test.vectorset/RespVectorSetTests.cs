@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -425,6 +426,84 @@ namespace Garnet.test
         }
 
         [Test]
+        [CancelAfter(60_000)]
+        public async Task ReplayWaitsForAnImportFinalizationWithoutSpinningAsync([Values] bool deleteDuringFinalization, CancellationToken cancellationToken)
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+            const ExceptionInjectionType Pause = ExceptionInjectionType.VectorSet_Pause_Before_Import_Finalize_Step;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            var startPointKey = BitConverter.GetBytes(VectorManager.DefaultStartPointId);
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVCREATE", "imported", "DIM", 3, "NOQUANT", "M", 4));
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "VECTOR", startPointKey, new byte[12]));
+            ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "NEIGHBORS", startPointKey, new byte[5 * sizeof(uint)]));
+
+            ExceptionInjectionHelper.EnableException(Pause);
+            try
+            {
+                ClassicAssert.AreEqual("OK", (string)db.Execute("XVIMPORT", "imported", "FINISH"));
+                await ExceptionInjectionHelper.WaitOnClearAsync(Pause).WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+
+                // Stands in for a replica's replay thread, about to apply a later write to the set
+                var waitEnded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var waiter = new Thread(() =>
+                {
+                    vectorManager.WaitForImportFinalization("imported"u8);
+                    waitEnded.SetResult();
+                })
+                { IsBackground = true };
+
+                waiter.Start();
+
+                // Measured once the work FINISH started on the other partitions has settled
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                var cpuBefore = Process.GetCurrentProcess().TotalProcessorTime;
+                var elapsed = Stopwatch.StartNew();
+                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+                var cpu = Process.GetCurrentProcess().TotalProcessorTime - cpuBefore;
+
+                ClassicAssert.IsFalse(waitEnded.Task.IsCompleted, "the wait ended while the finalization was still running");
+                ClassicAssert.Less(cpu, elapsed.Elapsed / 2, $"the process used {cpu} of CPU in {elapsed.Elapsed} while the replay thread waited");
+
+                if (deleteDuringFinalization)
+                    ClassicAssert.IsTrue(db.KeyDelete("imported"));
+
+                ExceptionInjectionHelper.EnableException(Pause);
+                await waitEnded.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(Pause);
+            }
+
+            if (!deleteDuringFinalization)
+            {
+                var info = ((string[])db.Execute("VINFO", "imported")).Chunk(2).ToDictionary(static pair => pair[0], static pair => pair[1]);
+                ClassicAssert.AreEqual("0", info["import-pending"]);
+            }
+        }
+
+        [Test]
+        [CancelAfter(60_000)]
+        public async Task XVIMPORTFinishThatCannotStartLeavesNothingToWaitForAsync(CancellationToken cancellationToken)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", "added", "VALUES", 3, 1, 2, 3, "member"));
+
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                ClassicAssert.AreEqual("ERR vector set import verification failed",
+                    ClassicAssert.Throws<RedisServerException>(() => db.Execute("XVIMPORT", "added", "FINISH")).Message);
+            }
+
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            await Task.Run(() => vectorManager.WaitForImportFinalization("added"u8), cancellationToken).WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+        }
+
+        [Test]
         public async Task XVIMPORTFinishParsingAsync()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -561,6 +640,45 @@ namespace Garnet.test
                 {
                     client.Dispose();
                 }
+            }
+        }
+
+        /// <summary>
+        /// On a server that processes client input on the socket event threads, <c>XVCREATE</c> and <c>XVIMPORT</c>, which
+        /// wait on their thread, move to the thread pool.
+        /// </summary>
+        [Test]
+        public void XVCREATEAndXVIMPORTLeaveAnEventThread()
+        {
+            if (!SocketCompletions.InlineCompletionsSupported)
+                Assert.Ignore("Sockets cannot run their completions inline on this platform.");
+
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, aofMemorySize: DefaultAOFMemorySize,
+                enableVectorSetPreview: true, networkInlineCompletions: true);
+            server.Start();
+            server.Provider.StoreWrapper.DefaultDatabase.VectorManager.AllocateTestContexts(preAllocatedContexts);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+            var id = BitConverter.GetBytes(1u);
+            var vector = MemoryMarshal.AsBytes(new float[] { 1, 2, 3 }.AsSpan()).ToArray();
+
+            foreach (var args in new object[][]
+            {
+                ["XVCREATE", "target", "DIM", 3, "NOQUANT", "M", 4],
+                ["XVIMPORT", "target", "VECTOR", id, vector],
+            })
+            {
+                // The connection's receive loop stays on the thread a moved command ran on until the server waits for more
+                // input, so the command reaches the server through an event thread once it does
+                Thread.Sleep(50);
+
+                var offloads = Interlocked.Read(ref server.Provider.StoreWrapper.offloads);
+                ClassicAssert.AreEqual("OK", (string)db.Execute((string)args[0], args[1..]));
+                ClassicAssert.Greater(Interlocked.Read(ref server.Provider.StoreWrapper.offloads), offloads,
+                    $"{args[0]} ran on the event thread that received it.");
             }
         }
 

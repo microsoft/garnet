@@ -3,7 +3,9 @@
 
 using System;
 using System.Threading;
-using System.Threading.Tasks;
+#if DEBUG
+using Garnet.common;
+#endif
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -27,11 +29,33 @@ namespace Garnet.cluster
         readonly ILogger logger = logger;
 
         /// <summary>
-        /// Asynchronously replays log entries using a shared rendezvous barrier for coordination, processing and applying
-        /// them for replication and consistency across sublogs.
+        /// Starts replaying on a thread of its own. Replaying a record can wait, for instance on the other sublogs or on
+        /// a Vector Set operation, and a thread-pool thread that waits can be starved by the very work it waits for.
         /// </summary>
-        /// <returns>A task representing the asynchronous replay operation.</returns>
-        internal async Task FullPageBasedBackgroundReplayAsync()
+        /// <remarks>
+        /// The caller has entered the driver's worker monitor on behalf of the thread, which exits it once it is done,
+        /// so that disposing the driver waits for the thread and the cancellation source outlives it.
+        /// </remarks>
+        internal void Start()
+            => new Thread(FullPageBasedBackgroundReplay) { IsBackground = true, Name = $"AofReplay-{replayDriver.physicalSublogIdx}.{replayTaskIdx}" }.Start();
+
+        /// <summary>
+        /// Replays log entries using a shared rendezvous barrier for coordination, processing and applying them for
+        /// replication and consistency across sublogs.
+        /// </summary>
+        void FullPageBasedBackgroundReplay()
+        {
+            try
+            {
+                ReplayPages();
+            }
+            finally
+            {
+                replayDriver.SuspendReplay();
+            }
+        }
+
+        void ReplayPages()
         {
             var physicalSublogIdx = replayDriver.physicalSublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
@@ -41,7 +65,7 @@ namespace Garnet.cluster
                 try
                 {
                     // Rendezvous 1 (ready): meet the leader and peers at the barrier before scanning the page.
-                    await replayDriver.barrier.SignalWorkReadyWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                    replayDriver.barrier.SignalWorkReadyWait(cancellationToken: cts.Token);
                 }
                 catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
                 {
@@ -50,8 +74,8 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at ready barrier", nameof(FullPageBasedBackgroundReplayAsync));
-                    await cts.CancelAsync().ConfigureAwait(false);
+                    logger?.LogError(ex, "{method} failed at ready barrier", nameof(FullPageBasedBackgroundReplay));
+                    cts.Cancel();
                     break;
                 }
 
@@ -59,6 +83,11 @@ namespace Garnet.cluster
                 // without falling through to the processing block (which would issue a spurious completion)
                 if (cts.Token.IsCancellationRequested)
                     break;
+
+#if DEBUG
+                // Holds the page on this thread, as replaying a record that waits would
+                ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Hold_Replay_Thread);
+#endif
 
                 try
                 {
@@ -121,8 +150,8 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at replaying", nameof(FullPageBasedBackgroundReplayAsync));
-                    await cts.CancelAsync().ConfigureAwait(false);
+                    logger?.LogError(ex, "{method} failed at replaying", nameof(FullPageBasedBackgroundReplay));
+                    cts.Cancel();
                     break;
                 }
 
@@ -132,7 +161,7 @@ namespace Garnet.cluster
                     // On cancellation or fault we break above WITHOUT arriving here, so the leader's
                     // completion barrier observes cancellation / times out and tears down instead of
                     // advancing the replication offset past a page that was not fully applied.
-                    await replayDriver.barrier.SignalWorkCompletedWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                    replayDriver.barrier.SignalWorkCompletedWait(cancellationToken: cts.Token);
                 }
                 catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
                 {
@@ -141,8 +170,8 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at completion barrier", nameof(FullPageBasedBackgroundReplayAsync));
-                    await cts.CancelAsync().ConfigureAwait(false);
+                    logger?.LogError(ex, "{method} failed at completion barrier", nameof(FullPageBasedBackgroundReplay));
+                    cts.Cancel();
                     break;
                 }
             }

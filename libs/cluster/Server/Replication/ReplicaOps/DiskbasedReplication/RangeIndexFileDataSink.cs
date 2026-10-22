@@ -5,6 +5,7 @@ using System;
 using System.Buffers.Binary;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -84,11 +85,13 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc/>
-        public void WriteChunk(long startAddress, ReadOnlySpan<byte> data)
+        /// <remarks>Writes synchronously, into the stream's buffer and from there to the file.</remarks>
+        public ValueTask WriteChunkAsync(long startAddress, ReadOnlySpan<byte> data)
         {
             if (stream.Position != startAddress)
                 ExceptionUtils.ThrowException(new GarnetException($"RangeIndexFileDataSink: expected stream position {startAddress} but found {stream.Position} for {filePath}"));
             stream.Write(data);
+            return default;
         }
 
         /// <inheritdoc/>

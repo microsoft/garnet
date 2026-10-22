@@ -357,25 +357,12 @@ namespace Garnet.cluster
             }
             else
             {
-                //Start migration task
-                var startMigrationTask = mSession.TryStartMigrationTaskAsync();
-
-                // No choice but to block as we're on the network thread
-                var (success, errorMessage) = AsyncUtils.BlockingWait(startMigrationTask);
-                if (!success)
-                {
-                    while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
+                return SuspendOn(StartMigrationAsync(mSession));
             }
 
             return true;
             #endregion
         }
+
     }
 }

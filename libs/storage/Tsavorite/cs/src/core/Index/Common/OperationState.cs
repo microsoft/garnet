@@ -53,6 +53,7 @@ namespace Tsavorite.core
             internal const ushort kNoOpFlags = 0;
             internal const ushort kIsNoKey = 0x0001;
             internal const ushort kIsReadAtAddress = 0x0002;
+            internal const ushort kHoistKey = 0x0004;
 #pragma warning restore IDE1006 // Naming Styles
 
             internal ReadCopyOptions readCopyOptions;   // Two byte enums
@@ -88,9 +89,11 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal OperationState(ReadCopyOptions sessionReadCopyOptions, ref ReadOptions readOptions)
             {
-                // operationFlags defaults to 0 (== kNoOpFlags); skip the redundant write.
+                // operationFlags defaults to 0 (== kNoOpFlags); write it only to request a flag.
                 readCopyOptions = ReadCopyOptions.Merge(sessionReadCopyOptions, readOptions.CopyOptions);
                 initialIORecordSize = readOptions.InitialIORecordSize;
+                if (readOptions.HoistKey)
+                    operationFlags = kHoistKey;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -106,6 +109,9 @@ namespace Tsavorite.core
 
             internal readonly bool IsReadAtAddress => (operationFlags & kIsReadAtAddress) != 0;
             internal void SetIsReadAtAddress() => operationFlags |= kIsReadAtAddress;
+
+            /// <summary>Whether a pending operation copies a pinned key rather than borrowing it; see <see cref="ReadOptions.HoistKey"/>.</summary>
+            internal readonly bool HoistKey => (operationFlags & kHoistKey) != 0;
         }
     }
 }

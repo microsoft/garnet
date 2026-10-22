@@ -134,6 +134,49 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Issues the pop of <see cref="ListPop{TObjectContext}(PinnedSpanByte, int, ListOperation, ref TObjectContext, out PinnedSpanByte[])"/>,
+        /// reporting rather than waiting when the list is not in memory. The popped elements are read from
+        /// <paramref name="output"/> with <see cref="ProcessRespArrayOutput"/>.
+        /// </summary>
+        /// <param name="key">Key of the list.</param>
+        /// <param name="count">Maximum number of elements to pop.</param>
+        /// <param name="lop">Which end to pop from.</param>
+        /// <param name="output">Output of a pop served from memory.</param>
+        /// <param name="pending">True if the pop went to the device, leaving the status meaningless.</param>
+        /// <param name="objectContext">Context to update through.</param>
+        /// <returns>The status, meaningless when <paramref name="pending"/> is set.</returns>
+        internal GarnetStatus ListPop_WithPending<TObjectContext>(PinnedSpanByte key, int count, ListOperation lop, ref ObjectOutput output, out bool pending, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, count);
+
+            return RMW_ObjectStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref objectContext);
+        }
+
+        /// <summary>
+        /// Issues the push of one element, as <see cref="ListPush{TObjectContext}(PinnedSpanByte, PinnedSpanByte, ListOperation, out int, ref TObjectContext, bool)"/>
+        /// does without notifying the item broker, reporting rather than waiting when the list is not in memory.
+        /// </summary>
+        /// <param name="key">Key of the list.</param>
+        /// <param name="element">Element to push, which must stay addressable until a pending push completes.</param>
+        /// <param name="lop">Which end to push to.</param>
+        /// <param name="output">Output of a push served from memory.</param>
+        /// <param name="pending">True if the push went to the device, leaving the status meaningless.</param>
+        /// <param name="objectContext">Context to update through.</param>
+        /// <returns>The status, meaningless when <paramref name="pending"/> is set.</returns>
+        internal GarnetStatus ListPush_WithPending<TObjectContext>(PinnedSpanByte key, PinnedSpanByte element, ListOperation lop, ref ObjectOutput output, out bool pending, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            parseState.InitializeWithArgument(element);
+
+            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
+            var input = new ObjectInput(header, ref parseState);
+
+            return RMW_ObjectStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref objectContext);
+        }
+
+        /// <summary>
         /// Removes the count elements from the head(left) or tail(right) of the first non-empty list key from the list of provided key names.
         /// If the list contains less than count elements, removes and returns the number of elements in the list.
         /// </summary>

@@ -329,6 +329,46 @@ namespace Tsavorite.test.Revivification
         [Test]
         [Category(RevivificationCategory)]
         [Category(SmokeTestCategory)]
+        public void PauseWaitsForProtectedThreadsUntilItsTimeout()
+        {
+            using var protectedBeforePause = new ManualResetEventSlim();
+            using var refresh = new ManualResetEventSlim();
+            var holder = new Thread(() =>
+            {
+                store.epoch.Resume();
+                protectedBeforePause.Set();
+                refresh.Wait();
+                store.epoch.Suspend();
+            });
+            holder.Start();
+            protectedBeforePause.Wait();
+
+            try
+            {
+                ClassicAssert.IsTrue(store.PauseRevivificationAsync(TimeSpan.FromMilliseconds(50), CancellationToken.None).Wait(TimeSpan.FromSeconds(10)),
+                    "A pause whose timeout elapses proceeds");
+                store.ResumeRevivification();
+
+                var pause = store.PauseRevivificationAsync(Timeout.InfiniteTimeSpan, CancellationToken.None);
+                ClassicAssert.IsFalse(store.RevivificationManager.IsEnabled);
+                ClassicAssert.IsFalse(pause.Wait(TimeSpan.FromMilliseconds(200)), "The pause completed before a thread protected before it refreshed");
+
+                refresh.Set();
+                holder.Join();
+                ClassicAssert.IsTrue(pause.Wait(TimeSpan.FromSeconds(10)), "The pause did not complete once the protected thread refreshed");
+                store.ResumeRevivification();
+                ClassicAssert.IsTrue(store.RevivificationManager.IsEnabled);
+            }
+            finally
+            {
+                refresh.Set();
+                holder.Join();
+            }
+        }
+
+        [Test]
+        [Category(RevivificationCategory)]
+        [Category(SmokeTestCategory)]
         [Explicit("Revivifiable boundary has changed")]
         public void SimpleFixedLenTest([Values] DeleteDest deleteDest, [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
         {

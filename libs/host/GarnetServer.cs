@@ -167,6 +167,49 @@ namespace Garnet
             }
         }
 
+        /// <summary>
+        /// Applies <see cref="GarnetServerOptions.NetworkEventThreads"/> and reports how client connections will run
+        /// their socket completions under <see cref="GarnetServerOptions.NetworkInlineCompletions"/>. Runs before any
+        /// listener or peer connection of this server exists, the latest point at which the number of socket event
+        /// threads can still be chosen.
+        /// </summary>
+        private void ConfigureSocketCompletions()
+        {
+            if (!opts.NetworkInlineCompletions && opts.NetworkEventThreads == 0)
+                return;
+
+            if (OperatingSystem.IsWindows())
+            {
+                logger?.LogWarning("Ignoring --network-inline-completions and --network-event-threads: Windows has no socket event threads.");
+                return;
+            }
+
+            var inline = opts.NetworkInlineCompletions;
+            if (inline && !SocketCompletions.InlineCompletionsSupported)
+            {
+                logger?.LogWarning("Ignoring --network-inline-completions: this .NET runtime does not let a socket run its completions inline.");
+                inline = false;
+            }
+
+            // Inline completions are paired with one event thread per processor unless told otherwise, as .NET pairs them
+            var requested = opts.NetworkEventThreads > 0 ? opts.NetworkEventThreads
+                : inline && !SocketCompletions.EventThreadCountSetInEnvironment ? Environment.ProcessorCount : 0;
+            var eventThreads = requested > 0 ? SocketCompletions.ConfigureEventThreads(requested) : SocketCompletions.EventThreadCount;
+
+            if (requested > 0 && eventThreads > 0 && eventThreads != requested)
+                logger?.LogWarning("Asked for {requested} socket event threads, but the process already runs {eventThreads}: .NET fixes the number at the first asynchronous socket operation in the process. Set DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT to choose it before then.",
+                    requested, eventThreads);
+
+            if (inline)
+            {
+                logger?.LogInformation("Client connections run their socket completions inline, on {eventThreads} socket event threads", eventThreads);
+                if (eventThreads == 1 && Environment.ProcessorCount > 1)
+                    logger?.LogWarning("One socket event thread runs every client connection with --network-inline-completions, so requests from different connections never run in parallel.");
+            }
+            else
+                logger?.LogInformation("Socket completions run on the thread pool, observed by {eventThreads} socket event threads", eventThreads);
+        }
+
         private void InitializeServer()
         {
             Debug.Assert(opts != null);
@@ -269,6 +312,8 @@ namespace Garnet
             if (!setMax && !ThreadPool.SetMaxThreads(maxThreads, maxCPThreads))
                 throw new Exception($"Unable to call ThreadPool.SetMaxThreads with {maxThreads}, {maxCPThreads}");
 
+            ConfigureSocketCompletions();
+
             opts.Initialize(loggerFactory);
             StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate = (int dbId) =>
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
@@ -297,7 +342,7 @@ namespace Garnet
                         File.Delete(opts.UnixSocketPath);
                     }
                     servers[i] = new GarnetServerTcp(opts.EndPoints[i], 0, opts.TlsOptions, opts.NetworkSendThrottleMax, connectionLimit, opts.UnixSocketPath, opts.UnixSocketPermission,
-                        networkBufferSettings, opts.GetNetworkBufferPoolSize(), networkBufferBudget, logger,
+                        networkBufferSettings, opts.GetNetworkBufferPoolSize(), networkBufferBudget, opts.NetworkInlineCompletions, logger,
                         networkSendTimeout: opts.NetworkSendTimeout, tlsHandshakeTimeout: opts.TlsHandshakeTimeout);
                 }
             }

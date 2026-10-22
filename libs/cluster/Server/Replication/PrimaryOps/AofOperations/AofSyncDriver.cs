@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed partial class AofSyncDriver : IDisposable
+    internal sealed partial class AofSyncDriver : IDisposable, IAsyncDisposable
     {
         readonly ClusterProvider clusterProvider;
         readonly AofSyncDriverStore aofSyncDriverStore;
@@ -118,6 +118,26 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
+            Close();
+
+            // Wait for tasks to exit; each disposes its own client before leaving the monitor
+            activeWorkerMonitor.Dispose();
+
+            Release();
+        }
+
+        /// <summary>
+        /// Dispose AofSyncDriver, awaiting its tasks' exit instead of blocking a thread until they leave
+        /// </summary>
+        public async ValueTask DisposeAsync()
+        {
+            Close();
+            await activeWorkerMonitor.DisposeAsync().ConfigureAwait(false);
+            Release();
+        }
+
+        void Close()
+        {
             // Cancel cts
             cts?.Cancel();
 
@@ -128,10 +148,10 @@ namespace Garnet.cluster
             // spinning forever and the whole server stuck in shutdown holding its port.
             foreach (var aofSyncTask in aofSyncTasks)
                 aofSyncTask?.CloseConnection();
+        }
 
-            // Wait for tasks to exit; each disposes its own client before leaving the monitor
-            activeWorkerMonitor.Dispose();
-
+        void Release()
+        {
             // Dispose sync tasks, now that no task is running
             foreach (var aofSyncTask in aofSyncTasks)
                 aofSyncTask?.Dispose();

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading.Tasks;
 
 namespace Garnet.cluster
 {
@@ -24,9 +25,14 @@ namespace Garnet.cluster
         /// <summary>
         /// Writes a chunk of data to the sink.
         /// </summary>
+        /// <remarks>
+        /// The sink takes what it needs of <paramref name="data"/> before it returns. A sink that writes synchronously
+        /// returns a completed task.
+        /// </remarks>
         /// <param name="startAddress">The start address for this chunk.</param>
         /// <param name="data">The data to write.</param>
-        void WriteChunk(long startAddress, ReadOnlySpan<byte> data);
+        /// <returns>A task that completes when the chunk has been written.</returns>
+        ValueTask WriteChunkAsync(long startAddress, ReadOnlySpan<byte> data);
 
         /// <summary>
         /// Signals that all data has been written and the sink should finalize.

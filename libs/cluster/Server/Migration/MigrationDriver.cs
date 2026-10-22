@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -80,7 +81,7 @@ namespace Garnet.cluster
 
             // Set slots at source node to their original state when migrate fails
             // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task
-            ResetLocalSlot();
+            await ResetLocalSlotAsync().ConfigureAwait(false);
 
             // TODO: Need to relinquish any migrating Vector Set contexts from target node
 
@@ -90,7 +91,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Begin migration task
+        /// Begin migration task, which owns the reference the task store took for it when the session was added
         /// </summary>
         /// <returns></returns>
         public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryStartMigrationTaskAsync()
@@ -114,11 +115,12 @@ namespace Garnet.cluster
                 {
                     if (!clusterProvider.migrationManager.TryRemoveMigrationTask(this))
                         logger?.LogError("Could not remove MIGRATE KEYS session");
+                    ReleaseReference();
                 }
             }
             else
             {
-                // This will execute as a background task for the slots or slotsrange variant
+                // This will execute as a background task for the slots or slotsrange variant, which takes over the reference
                 _ = BeginAsyncMigrationTaskAsync();
             }
 
@@ -126,7 +128,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Migrate slots session background task
+        /// Migrate slots session background task, which owns a reference to the session
         /// </summary>
         private async Task BeginAsyncMigrationTaskAsync()
         {
@@ -136,7 +138,7 @@ namespace Garnet.cluster
             var configResumed = true;
             try
             {
-                clusterProvider.storeWrapper.store.PauseRevivification(_timeout, _cts.Token);
+                await clusterProvider.storeWrapper.store.PauseRevivificationAsync(_timeout, _cts.Token).ConfigureAwait(false);
 
                 // Set target node to import state
                 if (!await TrySetSlotRangesAsync(GetSourceNodeId, MigrateState.IMPORT).ConfigureAwait(false))
@@ -149,7 +151,7 @@ namespace Garnet.cluster
 
                 #region transitionLocalSlotToMigratingState
                 // Set source node to migrating state and wait for local threads to see changed state.
-                if (!TryPrepareLocalForMigration())
+                if (!await TryPrepareLocalForMigrationAsync().ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to set local slots {slots} to migrate state", string.Join(',', GetSlots));
                     await TryRecoverFromFailureAsync().ConfigureAwait(false);
@@ -186,8 +188,9 @@ namespace Garnet.cluster
 
                 #region transferSlotOwnnershipToTargetNode
                 // Lock config merge to avoid a background epoch bump
-                clusterProvider.clusterManager.SuspendConfigMerge();
+                await clusterProvider.clusterManager.SuspendConfigMergeAsync().ConfigureAwait(false);
                 configResumed = false;
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Migration_Hold_Ownership_Transfer).ConfigureAwait(false);
                 await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false).ConfigureAwait(false);
 
                 // Change ownership of slots to target node.
@@ -200,7 +203,7 @@ namespace Garnet.cluster
                 }
 
                 // Clear local migration set.
-                if (!RelinquishOwnership())
+                if (!await RelinquishOwnershipAsync().ConfigureAwait(false))
                 {
                     logger?.LogError("Failed to relinquish ownership from source node:({srcNode}) to target node: ({tgtNode})", GetSourceNodeId, GetTargetNodeId);
                     await TryRecoverFromFailureAsync().ConfigureAwait(false);
@@ -221,9 +224,18 @@ namespace Garnet.cluster
             }
             finally
             {
-                if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
-                clusterProvider.storeWrapper.store.ResumeRevivification();
-                _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                try
+                {
+                    // Throws if the node has disposed its cluster manager while shutting down
+                    if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
+                    clusterProvider.storeWrapper.store.ResumeRevivification();
+                }
+                finally
+                {
+                    // Shutdown waits for the migration operations, which this reference keeps alive
+                    _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
+                    ReleaseReference();
+                }
             }
         }
     }

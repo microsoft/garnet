@@ -21,6 +21,58 @@ namespace Tsavorite.core
                 && HandleRetryStatus(internalStatus, sessionFunctions, ref operationState);
 
         /// <summary>
+        /// Retry handling for a top-level operation on a key, which hands a wait on a latched bucket to the session's
+        /// <see cref="ILockContentionHandler"/>, if it has one.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool HandleImmediateRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            OperationStatus internalStatus,
+            TSessionFunctionsWrapper sessionFunctions,
+            ref OperationState<TInput, TOutput, TContext> operationState,
+            long keyHash,
+            bool exclusive)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
+                && HandleRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive);
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool HandleRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+            OperationStatus internalStatus,
+            TSessionFunctionsWrapper sessionFunctions,
+            ref OperationState<TInput, TOutput, TContext> operationState,
+            long keyHash,
+            bool exclusive)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            // A retry for any other reason, or by a session whose locks are its own to take, is retried in place
+            if (internalStatus != OperationStatus.RETRY_LATER
+                    || sessionFunctions.Ctx.lockContentionHandler is not { } handler
+                    || sessionFunctions.IsTransactionalLocking
+                    || !HasConflictingLatch(keyHash, exclusive))
+                return HandleRetryStatus(internalStatus, sessionFunctions, ref operationState);
+
+            // The operation is retried from the start, as it is after any RETRY_LATER, so it carries nothing across
+            // the epoch release below but a saved allocation, which it re-validates against HeadAddress
+            operationState.logicalAddress = LogAddress.kInvalidAddress;
+            var contention = new LockContention(this, keyHash, exclusive);
+
+            // Resumed in the finally, so a handler that throws leaves the epoch held once, for the context call to
+            // release on its way out
+            epoch.Suspend();
+            try
+            {
+                handler.OnLockContended(in contention);
+            }
+            finally
+            {
+                epoch.Resume();
+            }
+
+            InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
+            return true;
+        }
+
+        /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

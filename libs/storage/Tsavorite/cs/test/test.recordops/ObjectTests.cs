@@ -16,6 +16,9 @@ namespace Tsavorite.test.Objects
 
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordTriggers>;
+    using CollidingAllocator = ObjectAllocator<StoreFunctions<CollidingKeyComparer, DefaultRecordTriggers>>;
+    using CollidingStoreFunctions = StoreFunctions<CollidingKeyComparer, DefaultRecordTriggers>;
+
     [TestFixture]
     internal class ObjectTests : TestBase
     {
@@ -630,6 +633,103 @@ namespace Tsavorite.test.Objects
                     if (badIndex != -1)
                         Assert.Fail($"len {len}, onDisk {onDisk}: unexpected byte {output.valueArray[badIndex]} at index {badIndex}");
                 }
+            }
+        }
+    }
+
+    /// <summary>Hashes every key alike, so all keys share one tag in one bucket and only a full key comparison tells them apart.</summary>
+    internal struct CollidingKeyComparer : IKeyComparer
+    {
+        public readonly long GetHashCode64<TKey>(TKey key)
+            where TKey : IKey, allows ref struct
+            => 42;
+
+        public readonly bool Equals<TFirstKey, TSecondKey>(TFirstKey k1, TSecondKey k2)
+            where TFirstKey : IKey, allows ref struct
+            where TSecondKey : IKey, allows ref struct
+            => SpanByteComparer.StaticEquals(k1.KeyBytes, k2.KeyBytes);
+    }
+
+    [TestFixture]
+    internal class ObjectOverflowKeyChainTests : TestBase
+    {
+        const int MaxInlineKeyBytes = 16;
+        const int NumRecords = 3;
+
+        private TsavoriteKV<CollidingStoreFunctions, CollidingAllocator> store;
+        private IDevice log, objlog;
+
+        [SetUp]
+        public void Setup()
+        {
+            DeleteDirectory(MethodTestDir, wait: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectOverflowKeyChainTests.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectOverflowKeyChainTests.obj.log"), deleteOnClose: true);
+
+            store = new(new()
+            {
+                IndexSize = 1L << 13,
+                LogDevice = log,
+                ObjectLogDevice = objlog,
+                MutableFraction = 0.1,
+                LogMemorySize = 1L << 20,
+                PageSize = MinKvLogPageSize,
+                MaxInlineKeySize = MaxInlineKeyBytes,
+            }, StoreFunctions.Create(new CollidingKeyComparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance)
+                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            store?.Dispose();
+            store = null;
+            log?.Dispose();
+            log = null;
+            objlog?.Dispose();
+            objlog = null;
+            OnTearDown();
+        }
+
+        /// <summary>
+        /// An Overflow key on disk is only compared once the object log is read, so reading any but the newest of several colliding keys
+        /// reads, and rejects, each newer key's record before following its previous address.
+        /// </summary>
+        [Test, Category(TsavoriteKVTestCategory), Category(ReadTestCategory)]
+        public void ReadingAnOverflowKeyFromDiskSkipsNewerCollidingKeys()
+        {
+            using var session = store.NewSession<TestSpanByteKey, TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
+            var bContext = session.BasicContext;
+
+            Span<byte> keyBuf = stackalloc byte[MaxInlineKeyBytes * 2];
+
+            for (var k = 0; k < NumRecords; k++)
+            {
+                MakeKey(keyBuf, k);
+                // The value equals the key, which TestObjectFunctions.ReadCompletionCallback checks.
+                ClassicAssert.IsFalse(bContext.Upsert(TestSpanByteKey.FromPinnedSpan(keyBuf), new TestObjectValue { value = k }).IsPending);
+            }
+
+            store.Log.FlushAndEvict(wait: true);
+
+            for (var k = 0; k < NumRecords; k++)
+            {
+                MakeKey(keyBuf, k);
+                TestObjectInput input = default;
+                TestObjectOutput output = default;
+
+                var status = bContext.Read(TestSpanByteKey.FromPinnedSpan(keyBuf), ref input, ref output, Empty.Default);
+                ClassicAssert.IsTrue(status.IsPending, $"key {k}: {status}");
+                (status, output) = bContext.GetSinglePendingResult();
+                ClassicAssert.IsTrue(status.Found, $"key {k}: {status}");
+                ClassicAssert.AreEqual(k, output.value.value, $"key {k}");
+            }
+
+            static void MakeKey(Span<byte> dst, int key)
+            {
+                dst.Clear();
+                _ = BitConverter.TryWriteBytes(dst, key);
             }
         }
     }

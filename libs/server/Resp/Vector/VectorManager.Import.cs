@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -12,10 +11,8 @@ namespace Garnet.server
 {
     public partial class VectorManager
     {
-        private readonly ConcurrentDictionary<byte[], int> activeImportFinalizations;
-#if NET9_0_OR_GREATER
-        private readonly ConcurrentDictionary<byte[], int>.AlternateLookup<ReadOnlySpan<byte>> activeImportFinalizationsLookup;
-#endif
+        private readonly ConcurrentDictionary<byte[], ImportFinalization> activeImportFinalizations;
+        private readonly ConcurrentDictionary<byte[], ImportFinalization>.AlternateLookup<ReadOnlySpan<byte>> activeImportFinalizationsLookup;
 
         /// <summary>
         /// Creates an empty Vector Set.
@@ -116,26 +113,20 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// During replication replay, we need to be able to wait for in progress finalization (if any) to complete.
-        /// 
-        /// This does that.
+        /// During replication replay, waits until no finalization of <paramref name="key"/> is in progress. Every attempt
+        /// ends, at the latest when <see cref="Dispose"/> ends those still registered. Blocks the calling thread, so it
+        /// throws <see cref="ReplayMustWaitException"/> instead when <paramref name="mustNotWait"/> is set.
         /// </summary>
-        internal void WaitForImportFinalization(ReadOnlySpan<byte> key)
+        /// <param name="key">The key of the Vector Set.</param>
+        /// <param name="mustNotWait">Whether the record is replayed on a thread that must not wait, as
+        /// <see cref="StorageSession.replayMustNotWait"/> reports.</param>
+        internal void WaitForImportFinalization(ReadOnlySpan<byte> key, bool mustNotWait = false)
         {
-#if !NET9_0_OR_GREATER
-            byte[] keyCopy = null;
-#endif
-
-            while (
-                !quantizationOrImportChannel.Reader.Completion.IsCompleted &&
-#if NET9_0_OR_GREATER
-                activeImportFinalizationsLookup.ContainsKey(key)
-#else
-                activeImportFinalizations.ContainsKey(keyCopy ??= key.ToArray())
-#endif
-            )
+            while (activeImportFinalizationsLookup.TryGetValue(key, out var finalization))
             {
-                _ = Thread.Yield();
+                if (mustNotWait)
+                    ReplayMustWaitException.ThrowForThread();
+                finalization.Wait();
             }
         }
 
@@ -156,8 +147,8 @@ namespace Garnet.server
             }
 
             // If there's already an active finalization, don't do anything else
-            var keyCopy = key.ToArray();
-            if (!activeImportFinalizations.TryAdd(keyCopy, 0))
+            var finalization = new ImportFinalization(key.ToArray(), quantizationAndImportTasks.Length);
+            if (!activeImportFinalizations.TryAdd(finalization.Key, finalization))
             {
                 return NativeDiskANNMethods.DiskANNImportResult.Success;
             }
@@ -168,21 +159,19 @@ namespace Garnet.server
             {
                 if (!Service.CanImport(context, indexPtr))
                 {
+                    finalization.End(this);
                     return NativeDiskANNMethods.DiskANNImportResult.TaskFailed;
                 }
 
                 SetFlags(key, VectorSetFlags.ImportPending, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
             }
 
-            var countdown = new CountdownHolder(quantizationAndImportTasks.Length);
-
             // Queue up finalization tasks
             for (var taskIx = 0; taskIx < quantizationAndImportTasks.Length; taskIx++)
             {
-                if (!quantizationOrImportChannel.Writer.TryWrite(new(keyCopy, QuantizationOrImportStep.FinalizeImport, taskIx, countdown)))
+                if (!quantizationOrImportChannel.Writer.TryWrite(new(finalization.Key, QuantizationOrImportStep.FinalizeImport, taskIx, finalization)))
                 {
-                    _ = activeImportFinalizations.TryRemove(keyCopy, out _);
-
+                    finalization.End(this);
                     return NativeDiskANNMethods.DiskANNImportResult.TaskFailed;
                 }
             }

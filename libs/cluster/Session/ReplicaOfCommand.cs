@@ -29,32 +29,15 @@ namespace Garnet.cluster
             if (addressSpan.EqualsUpperCaseSpanIgnoringCase("NO"u8) &&
                 portSpan.EqualsUpperCaseSpanIgnoringCase("ONE"u8))
             {
-                var acquiredLock = false;
-                try
+                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne, upgradeLock: false))
                 {
-                    if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ReplicaOfNoOne, upgradeLock: false))
-                    {
-                        logger?.LogError($"{nameof(NetworkTryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
-                            SendAndReset();
-                        return true;
-                    }
-                    acquiredLock = true;
-
-                    clusterProvider.clusterManager.TryResetReplica();
-                    clusterProvider.replicationManager.TryUpdateForFailover();
-
-                    clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
-                    AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
-
-                    AsyncUtils.BlockingWait(clusterProvider.storeWrapper.SuspendReplicaOnlyTasksAsync());
-                    clusterProvider.storeWrapper.StartPrimaryTasks();
+                    logger?.LogError($"{nameof(NetworkTryREPLICAOF)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK, ref dcurr, dend))
+                        SendAndReset();
+                    return true;
                 }
-                finally
-                {
-                    if (acquiredLock)
-                        clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
-                }
+
+                return SuspendOn(ReplicaOfNoOneAsync(), PendingReply.Ok);
             }
             else
             {
@@ -86,33 +69,8 @@ namespace Garnet.cluster
                     UpgradeLock: false
                 );
 
-                // Cannot avoid blocking here we're on the network thread
-                var (success, errorMessage) =
-                    AsyncUtils.BlockingWait(
-                        clusterProvider.serverOptions.ReplicaDisklessSync ?
-                            clusterProvider.replicationManager.TryReplicateDisklessSyncAsync(this, syncOpts) :
-                            clusterProvider.replicationManager.TryReplicateDiskbasedSyncAsync(this, syncOpts)
-                    );
-
-                clusterProvider.storeWrapper.StartReplicaTasks();
-
-                if (!success)
-                {
-                    while (!RespWriteUtils.TryWriteError(errorMessage.Span, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-                return true;
+                return SuspendOn(ReplicateAsync(syncOpts));
             }
-
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
         }
     }
 }

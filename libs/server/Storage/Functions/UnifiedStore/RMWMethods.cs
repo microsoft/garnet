@@ -48,7 +48,7 @@ namespace Garnet.server
         public void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            functionsState.OnKeyChanged(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
@@ -113,7 +113,7 @@ namespace Garnet.server
             in RecordSizeInfo sizeInfo, ref UnifiedInput input, ref UnifiedOutput output,
             ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
         {
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            functionsState.OnKeyChanged(rmwInfo.KeyHash);
 
             if (srcLogRecord.DataHeader.ValueIsObject)
             {
@@ -159,8 +159,7 @@ namespace Garnet.server
                 case IPUResult.Failed:
                     return false;
                 case IPUResult.Succeeded:
-                    if (!logRecord.Info.Modified)
-                        functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                    functionsState.OnKeyChanged(rmwInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                     return true;

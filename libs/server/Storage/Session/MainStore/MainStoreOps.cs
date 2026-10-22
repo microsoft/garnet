@@ -22,23 +22,10 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
-            if (status.Found)
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-            else if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-            else
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
+            return CountedStringReadStatus(status);
         }
 
         public unsafe GarnetStatus ReadWithUnsafeContext<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long localHeadAddress, long localReadCacheHeadAddress, out bool epochChanged, ref TStringContext context)
@@ -52,7 +39,7 @@ namespace Garnet.server
                 context.EndUnsafe();
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
                 context.BeginUnsafe();
                 // If either the main-log head or the read-cache head advanced while we waited on
                 // pending I/O, any log/read-cache pointers captured by previous reads in this loop
@@ -133,7 +120,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForObjectStoreSession(ref status, ref output, ref objectContext);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.Found)
@@ -161,23 +148,10 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
-            if (status.Found)
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-            else if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-            else
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
+            return CountedStringReadStatus(status);
         }
 
         /// <summary>
@@ -197,18 +171,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
 
-            if (status.Found)
-            {
-                return GarnetStatus.OK;
-            }
-            else if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-            else
-            {
-                return GarnetStatus.NOTFOUND;
-            }
+            return StringReadStatus(status);
         }
 
         public unsafe GarnetStatus GETRANGE<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
@@ -220,23 +183,10 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
-            if (status.Found)
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-            else if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-            else
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
+            return CountedStringReadStatus(status);
         }
 
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, ref TStringContext context)
@@ -266,23 +216,10 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref o, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
-            if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-            else if (status.NotFound)
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
-            else
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
+            return ConditionalSetStatus(status);
         }
 
 
@@ -299,22 +236,10 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
-            // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
-            if (status.IsExpired)
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-            else
-            {
-                if (status.NotFound)
-                    incr_session_notfound();
-
-                return GarnetStatus.NOTFOUND;
-            }
+            return ConditionalDeleteStatus(status);
         }
 
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
@@ -326,23 +251,10 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
-            if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-            else if (status.NotFound)
-            {
-                incr_session_notfound();
-                return GarnetStatus.NOTFOUND;
-            }
-            else
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
+            return ConditionalSetStatus(status);
         }
 
         internal GarnetStatus MSET_Conditional<TStringContext>(ref StringInput input, ref TStringContext ctx)
@@ -463,17 +375,11 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
-            if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
-
-            return GarnetStatus.OK;
+            Debug.Assert(status.IsWrongType || output.SpanByteAndMemory.IsSpanByte);
+            return StringTypedStatus(status);
         }
 
         /// <summary>
@@ -527,12 +433,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForSession(ref status, ref output, ref context);
 
-            if (status.IsWrongType)
-            {
-                return GarnetStatus.WRONGTYPE;
-            }
-
-            return GarnetStatus.OK;
+            return StringTypedStatus(status);
         }
 
         public GarnetStatus Increment<TStringContext>(PinnedSpanByte key, out long output, long increment, ref TStringContext context)

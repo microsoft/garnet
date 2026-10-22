@@ -80,6 +80,9 @@ namespace Tsavorite.core
             internal RevivificationStats RevivificationStats = new();
             public bool isAcquiredTransactional;
 
+            /// <summary>Decides how this session's operations wait on a latched bucket; null to retry in place.</summary>
+            internal ILockContentionHandler lockContentionHandler;
+
             public TsavoriteExecutionContext(int sessionID)
             {
                 SessionState = SystemState.Make(Phase.REST, 1);
@@ -147,6 +150,44 @@ namespace Tsavorite.core
 
             public bool HasNoPendingRequests => SyncIoPendingCount == 0;
 
+            /// <summary>Drivers that currently own this context's drain loop.</summary>
+            int activeDrivers;
+
+            /// <summary>
+            /// Takes the drain lease for one driver run, held until <see cref="EndDrive"/>.
+            /// </summary>
+            /// <remarks>
+            /// A pending-completion driver runs the whole drain - resume the epoch, complete the requests,
+            /// suspend - before the continuation that hands the session back to its caller, so the caller's
+            /// own synchronization cannot cover it. The lease spans the driver's lifetime rather than one
+            /// pass of the loop, because the loop parks and resumes between passes.
+            /// </remarks>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void BeginDrive() => Interlocked.Increment(ref activeDrivers);
+
+            /// <summary>Releases the lease taken by <see cref="BeginDrive"/>.</summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            internal void EndDrive() => Interlocked.Decrement(ref activeDrivers);
+
+            /// <summary>
+            /// Waits until no driver owns the drain loop, so the caller can drain this context itself.
+            /// </summary>
+            /// <remarks>
+            /// A driver holding the lease is either running the drain or parked until a device read completes, and
+            /// it gives the lease up from a thread pool work item once it does. The caller therefore holds its
+            /// thread for the device read and needs a free pool thread besides: callers that are themselves
+            /// pool threads can all be waiting here with none left to run the drivers they wait for. Cold by
+            /// construction - reached only when a session is torn down while a read it issued is still in flight -
+            /// and a caller on a thread that must not block has to make sure that is not the case.
+            /// </remarks>
+            [MethodImpl(MethodImplOptions.NoInlining)]
+            internal void WaitForDriversToFinish()
+            {
+                var spinner = new SpinWait();
+                while (Volatile.Read(ref activeDrivers) > 0)
+                    spinner.SpinOnce();
+            }
+
             public void WaitPending(LightEpoch epoch)
             {
                 if (SyncIoPendingCount > 0)
@@ -163,11 +204,25 @@ namespace Tsavorite.core
                 }
             }
 
-            public async ValueTask WaitPendingAsync(CancellationToken token = default)
-            {
-                if (SyncIoPendingCount > 0)
-                    await readyResponses.WaitForEntryAsync(token).ConfigureAwait(false);
-            }
+            /// <summary>
+            /// Waits until at least one pending I/O for this session has a response ready to drain.
+            /// </summary>
+            /// <remarks>
+            /// Forwards the inner <see cref="ValueTask"/> rather than awaiting it, so the per-miss park
+            /// on a disk-bound workload costs no state machine here. Every caller awaits the result with
+            /// <c>ConfigureAwait(false)</c>, which is what awaiting it here would have done.
+            /// </remarks>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public ValueTask WaitPendingAsync(CancellationToken token = default)
+                => SyncIoPendingCount > 0 ? readyResponses.WaitForEntryAsync(token) : default;
+
+            /// <summary>
+            /// As <see cref="WaitPendingAsync"/>, but resumes by queueing <paramref name="resume"/> to the
+            /// thread pool. Returns false when there is nothing to wait for, leaving the caller running.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool TryWaitPending(IThreadPoolWorkItem resume)
+                => SyncIoPendingCount > 0 && readyResponses.TryWaitForEntry(resume);
 
             public bool InNewVersion => phase < Phase.REST;
         }

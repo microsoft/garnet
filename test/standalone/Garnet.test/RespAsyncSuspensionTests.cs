@@ -1,0 +1,1338 @@
+﻿// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Garnet.common;
+using Garnet.server;
+using Microsoft.Extensions.Logging;
+using NUnit.Framework;
+using NUnit.Framework.Legacy;
+using StackExchange.Redis;
+using Tsavorite.core;
+
+namespace Garnet.test
+{
+    /// <summary>
+    /// Exercises the asynchronous command suspension path, in which a RESP command awaits an incomplete
+    /// operation, the network receive stack unwinds, and the session resumes where it left off once the
+    /// operation completes. <c>DEBUG BLOCK</c> is the probe: its body is an ordinary <c>async</c> method.
+    /// </summary>
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class RespAsyncSuspensionTests : TestBase
+    {
+        const string Ok = "+OK\r\n";
+        const string Pong = "+PONG\r\n";
+        const string Queued = "+QUEUED\r\n";
+        const string NullArray = "*-1\r\n";
+
+        /// <summary>
+        /// Whether the server under test terminates TLS. The two transports take entirely separate paths
+        /// through the receive stack -- a plain socket loop versus the <c>SslStream</c> reader -- and each has
+        /// to unwind and resume correctly, so every test here runs against both.
+        /// </summary>
+        readonly bool useTls;
+
+        GarnetServer server;
+
+        public RespAsyncSuspensionTests(bool useTls) => this.useTls = useTls;
+
+        [SetUp]
+        public void Setup()
+        {
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTls);
+            server.Start();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            server?.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
+        }
+
+        static int CurrentThreadCount()
+        {
+            using var p = Process.GetCurrentProcess();
+            p.Refresh();
+            return p.Threads.Count;
+        }
+
+        [Test]
+        public void DebugBlockRepliesAfterTheDelayElapses()
+        {
+            using var client = new RawRespSession(useTls);
+
+            var sw = Stopwatch.StartNew();
+            ClassicAssert.AreEqual(Ok, client.Execute("DEBUG", "BLOCK", "0.4"));
+            sw.Stop();
+
+            ClassicAssert.GreaterOrEqual(sw.Elapsed.TotalMilliseconds, 350,
+                "DEBUG BLOCK replied before its delay elapsed, so the body never actually suspended.");
+        }
+
+        [Test]
+        public void ZeroDelayCompletesWithoutSuspending()
+        {
+            using var client = new RawRespSession(useTls);
+
+            // Task.Delay(0) completes synchronously, so the builder never boxes a state machine. The session
+            // must handle a command whose async body finishes inline exactly like any other command.
+            for (var i = 0; i < 50; i++)
+                ClassicAssert.AreEqual(Ok, client.Execute("DEBUG", "BLOCK", "0"));
+
+            ClassicAssert.AreEqual(Pong, client.Execute("PING"));
+        }
+
+        [Test]
+        public void MalformedDelayIsRejectedWithoutSuspending()
+        {
+            using var client = new RawRespSession(useTls);
+
+            StringAssert.StartsWith("-ERR", client.Execute("DEBUG", "BLOCK", "not-a-number"));
+            StringAssert.StartsWith("-ERR", client.Execute("DEBUG", "BLOCK", "-1"));
+            StringAssert.StartsWith("-ERR", client.Execute("DEBUG", "BLOCK", "100000"));
+
+            // The session stays usable after each rejection.
+            ClassicAssert.AreEqual(Pong, client.Execute("PING"));
+        }
+
+        [Test]
+        public void ParseStateSurvivesTheSuspension()
+        {
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(useTLS: useTls)))
+                redis.GetDatabase(0).StringSet("survives", "value-after-park");
+
+            using var client = new RawRespSession(useTls);
+
+            // The key argument points into the receive buffer. Because the suspension happens before the
+            // network stack unwinds past TryConsumeMessagesAsync, that buffer cannot be shifted or returned
+            // while the command is parked, so the slice is still valid when the body resumes.
+            ClassicAssert.AreEqual("$16\r\nvalue-after-park\r\n",
+                client.Execute("DEBUG", "BLOCK", "0.3", "survives"));
+        }
+
+        [Test]
+        public void PipelinedCommandsAroundABlockKeepTheirOrder()
+        {
+            using var client = new RawRespSession(useTls);
+
+            // One write, three commands. The reply to the first must be flushed when the second suspends,
+            // otherwise a client that waits for it before sending more would deadlock.
+            client.SendPipeline(["PING"], ["DEBUG", "BLOCK", "0.5"], ["ECHO", "after"]);
+
+            var sw = Stopwatch.StartNew();
+            ClassicAssert.AreEqual(Pong, client.ReadReply());
+            var firstReplyAt = sw.Elapsed;
+
+            ClassicAssert.AreEqual(Ok, client.ReadReply());
+            ClassicAssert.AreEqual("$5\r\nafter\r\n", client.ReadReply());
+            sw.Stop();
+
+            ClassicAssert.Less(firstReplyAt.TotalMilliseconds, 250,
+                "The reply preceding a suspending command was not flushed at suspension time.");
+            ClassicAssert.GreaterOrEqual(sw.Elapsed.TotalMilliseconds, 450,
+                "The pipeline completed before the block elapsed, so the block did not take effect.");
+        }
+
+        [Test]
+        public void CommandsArrivingDuringTheBlockAreServedAfterIt()
+        {
+            using var client = new RawRespSession(useTls);
+
+            client.Send("DEBUG", "BLOCK", "0.6");
+
+            // Arrives while the session is parked with no receive outstanding. It must not be processed
+            // out of order, and it must not be lost.
+            Thread.Sleep(150);
+            client.Send("ECHO", "queued");
+
+            var sw = Stopwatch.StartNew();
+            ClassicAssert.AreEqual(Ok, client.ReadReply());
+            ClassicAssert.AreEqual("$6\r\nqueued\r\n", client.ReadReply());
+            sw.Stop();
+
+            ClassicAssert.GreaterOrEqual(sw.Elapsed.TotalMilliseconds, 350,
+                "The parked command replied too early to have been parked.");
+        }
+
+        [Test]
+        public void ASuspendedSessionDoesNotStallOtherSessions()
+        {
+            using var blocked = new RawRespSession(useTls);
+            using var other = new RawRespSession(useTls);
+
+            blocked.Send("DEBUG", "BLOCK", "2");
+            Thread.Sleep(100);
+
+            var sw = Stopwatch.StartNew();
+            for (var i = 0; i < 20; i++)
+                ClassicAssert.AreEqual(Pong, other.Execute("PING"));
+            sw.Stop();
+
+            ClassicAssert.Less(sw.Elapsed.TotalMilliseconds, 1500,
+                "A parked session delayed an unrelated session, so the receive thread was not released.");
+            ClassicAssert.AreEqual(Ok, blocked.ReadReply());
+        }
+
+        /// <summary>
+        /// A suspension releases the session's per-batch resources -- response object, cluster epoch, scratch
+        /// buffers -- but deliberately not its transaction. This pins that: while a command parks inside
+        /// <c>MULTI</c>/<c>EXEC</c> the keys the transaction locked stay locked, so another session touching
+        /// them waits for the park to finish. This is the pattern's behaviour and not a property of
+        /// <c>DEBUG BLOCK</c>, so a blocking command built on it must bound its wait, or decline to wait while
+        /// <c>RespServerSession.DenyBlocking</c> holds, as the blocking collection commands do (see
+        /// <see cref="BlockingCommandsInsideATransactionAnswerAtOnce"/>).
+        /// </summary>
+        [Test]
+        public void ASuspensionInsideATransactionHoldsItsLocks()
+        {
+            using var txn = new RawRespSession(useTls);
+            using var other = new RawRespSession(useTls);
+
+            ClassicAssert.AreEqual(Ok, txn.Execute("SET", "txnkey", "before"));
+            ClassicAssert.AreEqual(Ok, txn.Execute("MULTI"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("SET", "txnkey", "after"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("DEBUG", "BLOCK", "1"));
+
+            txn.Send("EXEC");
+
+            // Long enough that EXEC is certainly inside the park, short enough to leave most of it to wait on.
+            Thread.Sleep(250);
+
+            var sw = Stopwatch.StartNew();
+            var read = other.Execute("GET", "txnkey");
+            sw.Stop();
+
+            ClassicAssert.AreEqual("*2\r\n+OK\r\n+OK\r\n", txn.ReadReply(),
+                "The transaction did not complete after its parked command resumed.");
+
+            ClassicAssert.GreaterOrEqual(sw.Elapsed.TotalMilliseconds, 300,
+                "A reader of a key locked by the parked transaction was not made to wait, so the suspension " +
+                "released the transaction's locks.");
+
+            ClassicAssert.AreEqual("$5\r\nafter\r\n", read,
+                "The reader observed a value from inside the transaction.");
+        }
+
+        /// <summary>
+        /// Inside <c>MULTI</c>/<c>EXEC</c> a blocking collection command answers at once, as though its timeout
+        /// had already expired, as in Redis. The transaction holds the locks on the keys it would wait on, so the
+        /// push that could end the wait would be held off by the waiter. Every timeout here is 0, to wait forever.
+        /// </summary>
+        [Test]
+        public void BlockingCommandsInsideATransactionAnswerAtOnce()
+        {
+            using var txn = new RawRespSession(useTls);
+            using var other = new RawRespSession(useTls);
+            txn.ReceiveTimeout = TimeSpan.FromSeconds(15);
+            other.ReceiveTimeout = TimeSpan.FromSeconds(15);
+
+            ClassicAssert.AreEqual(":2\r\n", txn.Execute("RPUSH", "l1", "a", "b"));
+            ClassicAssert.AreEqual(":1\r\n", txn.Execute("ZADD", "z", "1", "m"));
+            ClassicAssert.AreEqual(Ok, txn.Execute("SET", "str", "v"));
+
+            ClassicAssert.AreEqual(Ok, txn.Execute("MULTI"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLPOP", "empty", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLPOP", "l1", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLMOVE", "l1", "l2", "LEFT", "RIGHT", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BRPOPLPUSH", "empty", "l2", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BZPOPMIN", "z", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BZPOPMAX", "z", "0"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLMPOP", "0", "1", "l2", "LEFT", "COUNT", "5"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BZMPOP", "0", "1", "z", "MIN"));
+            ClassicAssert.AreEqual(Queued, txn.Execute("BLPOP", "str", "0"));
+
+            ClassicAssert.AreEqual(
+                "*9\r\n" +
+                NullArray +
+                "*2\r\n$2\r\nl1\r\n$1\r\na\r\n" +
+                "$1\r\nb\r\n" +
+                "$-1\r\n" +
+                "*3\r\n$1\r\nz\r\n$1\r\nm\r\n$1\r\n1\r\n" +
+                "$-1\r\n" +
+                "*2\r\n$2\r\nl2\r\n*1\r\n$1\r\nb\r\n" +
+                "$-1\r\n" +
+                "-WRONGTYPE Operation against a key holding the wrong kind of value.\r\n",
+                txn.Execute("EXEC"));
+
+            // Nothing was left waiting on the keys: a push lands in the list and is served to the next pop, which is
+            // the first to start the broker, after the moves above
+            ClassicAssert.AreEqual(":1\r\n", other.Execute("LPUSH", "empty", "x"));
+            ClassicAssert.AreEqual(":1\r\n", other.Execute("LLEN", "empty"));
+            ClassicAssert.AreEqual("*2\r\n$5\r\nempty\r\n$1\r\nx\r\n", txn.Execute("BLPOP", "empty", "0"));
+        }
+
+        [Test]
+        public void RepeatedSuspensionsOnOneSessionReuseTheirState()
+        {
+            using var client = new RawRespSession(useTls);
+
+            for (var i = 0; i < 20; i++)
+            {
+                ClassicAssert.AreEqual(Ok, client.Execute("DEBUG", "BLOCK", "0.01"));
+                ClassicAssert.AreEqual(Pong, client.Execute("PING"));
+            }
+        }
+
+        /// <summary>
+        /// Hammers the handshake between the thread that suspends a command and the thread that completes it.
+        /// Delays this short routinely elapse while the suspending thread is still unwinding out of the
+        /// session's resource scope, which is the interleaving the suspension state machine exists to order:
+        /// the completion must wait for the scope to be released rather than re-entering it concurrently.
+        /// </summary>
+        [Test]
+        public void ShortBlocksFromManySessionsStayOrdered()
+        {
+            const int SessionCount = 16;
+            const int Iterations = 150;
+
+            using (var setup = new RawRespSession(useTls))
+                setup.ExecuteExpect(Encoding.ASCII.GetBytes(Ok), "SET", "stress-key", "stress-value");
+
+            var failures = new List<string>();
+            var threads = new Thread[SessionCount];
+
+            for (var t = 0; t < SessionCount; t++)
+            {
+                threads[t] = new Thread(() =>
+                {
+                    try
+                    {
+                        using var client = new RawRespSession(useTls);
+                        for (var i = 0; i < Iterations; i++)
+                        {
+                            // Suspends, resumes, and reads a key on the way out, so a resume that re-entered
+                            // the scope early would corrupt either the reply framing or the parsed arguments.
+                            var blocked = client.Execute("DEBUG", "BLOCK", "0.001", "stress-key");
+                            if (blocked != "$12\r\nstress-value\r\n")
+                            {
+                                lock (failures) failures.Add($"block reply was {Escape(blocked)}");
+                                return;
+                            }
+
+                            var pong = client.Execute("PING");
+                            if (pong != Pong)
+                            {
+                                lock (failures) failures.Add($"ping reply was {Escape(pong)}");
+                                return;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        lock (failures) failures.Add(ex.ToString());
+                    }
+                });
+                threads[t].Start();
+            }
+
+            foreach (var thread in threads)
+                ClassicAssert.IsTrue(thread.Join(TimeSpan.FromMinutes(2)), "A stress session did not finish");
+
+            ClassicAssert.IsEmpty(failures, string.Join("\n", failures.Take(3)));
+        }
+
+        static string Escape(string reply) => reply?.Replace("\r", "\\r").Replace("\n", "\\n") ?? "<null>";
+
+        /// <summary>
+        /// A session parked on a name is released by a different connection, which is how every real blocking
+        /// command is woken. Unlike a timed park, the wakeup is produced by another session's command.
+        /// </summary>
+        [Test]
+        public void AParkedSessionIsWokenByAnotherSession()
+        {
+            using var waiter = new RawRespSession(useTls);
+            using var signaller = new RawRespSession(useTls);
+
+            waiter.Send("DEBUG", "BLOCKON", "gate");
+
+            // Retried because the waiter's park and this signal are not ordered with each other.
+            SignalUntilWoken(signaller, "gate", 1);
+
+            ClassicAssert.AreEqual(Ok, waiter.ReadReply());
+            ClassicAssert.AreEqual(":0\r\n", signaller.Execute("DEBUG", "SIGNAL", "gate"),
+                "The waiter should no longer be registered once it has been woken");
+        }
+
+        /// <summary>
+        /// One signal releases every session parked on the name, and each resumes independently.
+        /// </summary>
+        [Test]
+        public void SignallingReleasesEveryParkedSession()
+        {
+            const int WaiterCount = 32;
+            var waiters = new RawRespSession[WaiterCount];
+            try
+            {
+                for (var i = 0; i < WaiterCount; i++)
+                {
+                    waiters[i] = new RawRespSession(useTls);
+                    waiters[i].Send("DEBUG", "BLOCKON", "fanout");
+                }
+
+                using var signaller = new RawRespSession(useTls);
+                var woken = 0;
+                var deadline = Stopwatch.StartNew();
+                while (woken < WaiterCount && deadline.Elapsed < TimeSpan.FromSeconds(30))
+                {
+                    var reply = signaller.Execute("DEBUG", "SIGNAL", "fanout");
+                    woken += int.Parse(reply.AsSpan(1, reply.Length - 3), CultureInfo.InvariantCulture);
+                }
+
+                ClassicAssert.AreEqual(WaiterCount, woken);
+                foreach (var waiter in waiters)
+                    ClassicAssert.AreEqual(Ok, waiter.ReadReply());
+            }
+            finally
+            {
+                foreach (var waiter in waiters)
+                    waiter?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Races a cross-session wakeup against the park it releases, thousands of times. The signal is
+        /// produced by a command on another connection and so lands at an arbitrary point of the parking
+        /// session's own unwind, including before the park has been published. That interleaving is the one
+        /// the session's suspension state machine exists to order, and a resume that ran too early would
+        /// re-enter the session scope while the parking thread was still inside it.
+        /// </summary>
+        [Test]
+        public void CrossSessionWakeupsRaceTheParkTheyRelease()
+        {
+            const int WaiterCount = 8;
+            const int Rounds = 200;
+
+            var failures = new List<string>();
+            using var stopping = new ManualResetEventSlim(false);
+
+            var signaller = new Thread(() =>
+            {
+                try
+                {
+                    using var session = new RawRespSession(useTls);
+                    while (!stopping.IsSet)
+                    {
+                        for (var w = 0; w < WaiterCount; w++)
+                            _ = session.Execute("DEBUG", "SIGNAL", "race-" + w);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lock (failures) failures.Add(ex.ToString());
+                }
+            });
+            signaller.Start();
+
+            var waiters = new Thread[WaiterCount];
+            for (var w = 0; w < WaiterCount; w++)
+            {
+                var name = "race-" + w;
+                waiters[w] = new Thread(() =>
+                {
+                    try
+                    {
+                        using var session = new RawRespSession(useTls);
+                        for (var i = 0; i < Rounds; i++)
+                        {
+                            var reply = session.Execute("DEBUG", "BLOCKON", name);
+                            if (reply != Ok)
+                            {
+                                lock (failures) failures.Add($"park reply was {Escape(reply)}");
+                                return;
+                            }
+
+                            var pong = session.Execute("PING");
+                            if (pong != Pong)
+                            {
+                                lock (failures) failures.Add($"ping after park was {Escape(pong)}");
+                                return;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        lock (failures) failures.Add(ex.ToString());
+                    }
+                });
+                waiters[w].Start();
+            }
+
+            try
+            {
+                foreach (var waiter in waiters)
+                    ClassicAssert.IsTrue(waiter.Join(TimeSpan.FromMinutes(2)), "A racing session did not finish");
+            }
+            finally
+            {
+                stopping.Set();
+                signaller.Join(TimeSpan.FromSeconds(30));
+            }
+
+            ClassicAssert.IsEmpty(failures, string.Join("\n", failures.Take(3)));
+        }
+
+        static void SignalUntilWoken(RawRespSession signaller, string name, int expected)
+        {
+            var woken = 0;
+            var deadline = Stopwatch.StartNew();
+            while (woken < expected && deadline.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                var reply = signaller.Execute("DEBUG", "SIGNAL", name);
+                woken += int.Parse(reply.AsSpan(1, reply.Length - 3), CultureInfo.InvariantCulture);
+            }
+
+            ClassicAssert.AreEqual(expected, woken, "No session was parked on the name");
+        }
+
+        /// <summary>
+        /// Tears sessions down while a wakeup for them is already in flight, which is the race between a
+        /// resume re-entering the session scope and the teardown that reclaims the receive buffer and
+        /// response object that resume would touch. The server has to survive it and keep serving.
+        /// </summary>
+        [Test]
+        public void SessionsTornDownWhileBeingWokenLeaveTheServerUsable()
+        {
+            const int Rounds = 20;
+            const int WaiterCount = 16;
+
+            using var signaller = new RawRespSession(useTls);
+
+            for (var round = 0; round < Rounds; round++)
+            {
+                var waiters = new RawRespSession[WaiterCount];
+                for (var i = 0; i < WaiterCount; i++)
+                {
+                    waiters[i] = new RawRespSession(useTls);
+                    waiters[i].Send("DEBUG", "BLOCKON", "teardown-race");
+                }
+
+                // Give the parks time to reach the server, then signal and abort concurrently so some
+                // sessions are disposed with a resume already dispatched against them.
+                Thread.Sleep(5);
+                var aborter = new Thread(() =>
+                {
+                    foreach (var waiter in waiters)
+                        waiter.AbortAndDispose();
+                });
+
+                aborter.Start();
+                _ = signaller.Execute("DEBUG", "SIGNAL", "teardown-race");
+                ClassicAssert.IsTrue(aborter.Join(TimeSpan.FromSeconds(30)), "Aborting the parked sessions hung");
+            }
+
+            // The signalling connection shares the server with every session torn down above; a resume that
+            // ran against a reclaimed buffer would have corrupted it or taken the server down.
+            ClassicAssert.AreEqual(Pong, signaller.Execute("PING"));
+            using var fresh = new RawRespSession(useTls);
+            ClassicAssert.AreEqual(Ok, fresh.Execute("DEBUG", "BLOCK", "0.01"));
+        }
+
+        /// <summary>
+        /// Shutting the server down while sessions are parked on a name takes them off it. A command that is
+        /// torn down is never resumed, so what it registered with the rest of the server has to be released by
+        /// the teardown rather than by anything the command would have run once its await returned.
+        /// </summary>
+        [Test]
+        public void SessionsParkedOnANameWhenTheServerShutsDownLeaveNothingListedOnIt()
+        {
+            const int WaiterCount = 8;
+            const string Name = "shutdown";
+
+            var registry = server.Provider.StoreWrapper.sessionSignalRegistry;
+            var waiters = new RawRespSession[WaiterCount];
+            try
+            {
+                for (var i = 0; i < WaiterCount; i++)
+                {
+                    waiters[i] = new RawRespSession(useTls);
+                    waiters[i].Send("DEBUG", "BLOCKON", Name);
+                }
+
+                var clock = Stopwatch.StartNew();
+                while (registry.WaiterCount(Name) < WaiterCount && clock.Elapsed < TimeSpan.FromSeconds(30))
+                    Thread.Sleep(1);
+                ClassicAssert.AreEqual(WaiterCount, registry.WaiterCount(Name), "The sessions did not all park");
+
+                server.Dispose();
+                server = null;
+
+                ClassicAssert.AreEqual(0, registry.WaiterCount(Name), "A session torn down while parked is still listed");
+            }
+            finally
+            {
+                foreach (var waiter in waiters)
+                    waiter?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// How the command that parks reaches the server. The TLS reader has a separate path for each: a
+        /// connection's first read, a read that completes without waiting, and a read the loop issues for the
+        /// rest of a frame it has already begun. A session parked on any of them can be torn down.
+        /// </summary>
+        public enum Arrival
+        {
+            /// <summary>The first thing a new connection sends.</summary>
+            FirstOnTheConnection,
+
+            /// <summary>Sent after an earlier command has been answered, so the data is waiting when the read starts.</summary>
+            AfterAnAnsweredCommand,
+
+            /// <summary>
+            /// Sent as two writes, the first ending part-way through the frame and the server having answered the
+            /// command before it, so the reader's loop is the one that receives the rest of the frame.
+            /// </summary>
+            SplitAcrossTwoWrites,
+        }
+
+        /// <summary>
+        /// Shutting the server down while sessions are parked ends their receive loops. The connections were
+        /// closing anyway, so that is an ordinary end and not a failure: each loop says why it ended, and none
+        /// reports the teardown as an error.
+        /// </summary>
+        [Test]
+        public void SessionsParkedWhenTheServerShutsDownEndTheirLoopsWithoutReportingAFailure([Values] Arrival arrival)
+        {
+            var log = ShutDownWithParkedSessions(arrival, admitTheQueuedResume: false);
+
+            AssertTeardownWasNotReportedAsAFailure(log);
+        }
+
+        /// <summary>
+        /// A teardown cancels the wait a suspended command is parked on, which resumes the command with a
+        /// cancellation, and that resume can reach the session before the teardown closes it. The command then
+        /// unwinds with the cancellation, which is not a fault of the session. Which side of that race a session
+        /// lands on depends on how quickly the pool runs the resume, so the teardown here holds the session open
+        /// until the resume has started and every session lands on the same side.
+        /// </summary>
+        [Test]
+        public void ACommandResumedByTheTeardownOfItsSessionUnwindsWithoutReportingAFailure([Values] Arrival arrival)
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var log = ShutDownWithParkedSessions(arrival, admitTheQueuedResume: true);
+
+            var unwound = log.Count(entry => entry.Message.Contains(Garnet.common.SessionTornDownException.ResumeLogMessage, StringComparison.Ordinal));
+            if (unwound != ParkedSessionCount)
+                Assert.Fail($"{unwound} of {ParkedSessionCount} suspended commands unwound with the teardown of their session:{Describe(log)}");
+
+            AssertTeardownWasNotReportedAsAFailure(log);
+        }
+
+        /// <summary>
+        /// A TLS receive pass whose batch suspends returns from the session with the session already parked, and
+        /// only then hands the rest of the pass to the asynchronous reader and waits for it. A shutdown can tear
+        /// the connection down in between, so the pass goes on against a handler that has been disposed. It
+        /// observes the cancellation that ends it like any other, and does not report the teardown as a failure.
+        /// </summary>
+        [Test]
+        public void ATlsPassStillUnwindingWhenItsParkedSessionIsTornDownEndsWithoutReportingAFailure()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+            if (!useTls)
+                Assert.Ignore("The pass held here is the TLS reader's");
+
+            // Each held pass holds the thread running it, which with inline completions is a socket event thread
+            if (TestUtils.InlineCompletionsForcedByEnvironment && SocketCompletions.EventThreadCount < ParkedSessionCount)
+                Assert.Ignore($"Holds {ParkedSessionCount} receive passes at once, more than the socket event threads running them");
+
+            var log = ShutDownWithParkedSessions(Arrival.AfterAnAnsweredCommand, admitTheQueuedResume: false, holdThePassThatParked: true);
+
+            AssertTeardownWasNotReportedAsAFailure(log);
+        }
+
+        /// <summary>
+        /// A receive pass owns its connection's buffers until it ends, even once the connection is disposed. The resume
+        /// a teardown admits finishes the parked batch after that, and the pass then compacts and resizes the buffers,
+        /// so the server does not take them back, and does not finish disposing, before the pass has ended.
+        /// </summary>
+        [Test]
+        public void ADisposedConnectionKeepsItsBuffersUntilItsResumedPassEnds()
+        {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
+            var log = ShutDownWithParkedSessions(Arrival.AfterAnAnsweredCommand, admitTheQueuedResume: true, holdTheResumedPass: true);
+
+            AssertTeardownWasNotReportedAsAFailure(log);
+        }
+
+        const int ParkedSessionCount = 8;
+
+        static int SuspendedSessionCount(GarnetServerBase listener)
+            => listener.ActiveConsumers().OfType<RespServerSession>().Count(session => session.HasSuspendedCommand);
+
+        static bool ReportsTeardown(CapturingLogger.Entry entry)
+            => entry.Message.Contains(Garnet.common.SessionTornDownException.LogMessage, StringComparison.Ordinal)
+                || entry.Message.Contains(Garnet.common.SessionTornDownException.ResumeLogMessage, StringComparison.Ordinal);
+
+        static string Describe(IEnumerable<CapturingLogger.Entry> log)
+            => Environment.NewLine + string.Join(Environment.NewLine, log.Take(300).Select(entry => $"{entry.Level}: {entry.Message} ({entry.Exception})"));
+
+        static void AssertTeardownWasNotReportedAsAFailure(IReadOnlyList<CapturingLogger.Entry> log)
+        {
+            var failures = log.Where(entry => entry.Level >= LogLevel.Warning).ToList();
+            if (failures.Count > 0)
+                Assert.Fail($"The teardown of a parked session was reported as a failure:{Describe(failures)}");
+
+            var reports = log.Count(ReportsTeardown);
+            if (reports < ParkedSessionCount)
+                Assert.Fail($"{reports} of {ParkedSessionCount} sessions reported that their teardown ended them:{Describe(log)}");
+        }
+
+        /// <summary>
+        /// Replaces the fixture's server with one whose log is captured, parks sessions on a name, and shuts
+        /// the server down. Returns the log once every session has said how its teardown ended and the log has
+        /// gone quiet.
+        /// </summary>
+        /// <param name="arrival">How the command that parks reaches the server.</param>
+        /// <param name="admitTheQueuedResume">Whether each session's teardown waits for the resume its cancellations queue.</param>
+        /// <param name="holdThePassThatParked">
+        /// Whether each TLS receive pass whose batch suspends is held, once its session has parked, until every
+        /// connection has been disposed.
+        /// </param>
+        /// <param name="holdTheResumedPass">
+        /// Whether each receive pass is held, once the resume its teardown admits has finished the batch, while the
+        /// server disposes. Requires <paramref name="admitTheQueuedResume"/>.
+        /// </param>
+        IReadOnlyList<CapturingLogger.Entry> ShutDownWithParkedSessions(Arrival arrival, bool admitTheQueuedResume, bool holdThePassThatParked = false, bool holdTheResumedPass = false)
+        {
+            const string Name = "quiet-shutdown";
+
+            // The fixture's server has no logger to inspect, so it is replaced with one that has
+            server.Dispose();
+            var capture = new CapturingLogger();
+            using var loggers = LoggerFactory.Create(builder =>
+                builder.SetMinimumLevel(LogLevel.Trace).AddProvider(new CapturingLoggerProvider(capture)));
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableTLS: useTls, loggerFactory: loggers);
+            server.Start();
+
+            var registry = server.Provider.StoreWrapper.sessionSignalRegistry;
+            var waiters = new RawRespSession[ParkedSessionCount];
+            if (holdThePassThatParked)
+                Garnet.common.ExceptionInjectionHelper.EnableException(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
+            try
+            {
+                for (var i = 0; i < ParkedSessionCount; i++)
+                {
+                    waiters[i] = new RawRespSession(useTls);
+                    if (arrival == Arrival.SplitAcrossTwoWrites)
+                    {
+                        ClassicAssert.AreEqual(Pong, waiters[i].SendSplitAfterReply(["PING"], ["DEBUG", "BLOCKON", Name]));
+                        continue;
+                    }
+
+                    if (arrival == Arrival.AfterAnAnsweredCommand)
+                        ClassicAssert.AreEqual(Pong, waiters[i].Execute("PING"));
+                    waiters[i].Send("DEBUG", "BLOCKON", Name);
+                }
+
+                var clock = Stopwatch.StartNew();
+                while (registry.WaiterCount(Name) < ParkedSessionCount && clock.Elapsed < TimeSpan.FromSeconds(30))
+                    Thread.Sleep(1);
+                ClassicAssert.AreEqual(ParkedSessionCount, registry.WaiterCount(Name), "The sessions did not all park");
+
+                // A session joins the waiters before its command suspends, and only the resume of a command that has
+                // suspended can be admitted by the teardown
+                var listener = (GarnetServerBase)server.Provider.StoreWrapper.Servers[0];
+                clock.Restart();
+                while (SuspendedSessionCount(listener) < ParkedSessionCount && clock.Elapsed < TimeSpan.FromSeconds(30))
+                    Thread.Sleep(1);
+                ClassicAssert.AreEqual(ParkedSessionCount, SuspendedSessionCount(listener), "The sessions' commands did not all suspend");
+
+                if (holdThePassThatParked)
+                {
+                    clock.Restart();
+                    while (Garnet.common.ExceptionInjectionHelper.WaitingOnClear(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends) < ParkedSessionCount
+                        && clock.Elapsed < TimeSpan.FromSeconds(30))
+                        Thread.Sleep(1);
+                    ClassicAssert.AreEqual(ParkedSessionCount,
+                        Garnet.common.ExceptionInjectionHelper.WaitingOnClear(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends),
+                        "The passes whose batches suspended were not all held");
+                }
+
+                if (admitTheQueuedResume)
+                    Garnet.common.ExceptionInjectionHelper.EnableException(Garnet.common.ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume);
+
+                var disposing = server;
+                server = null;
+                if (holdTheResumedPass)
+                {
+                    Garnet.common.ExceptionInjectionHelper.EnableException(Garnet.common.ExceptionInjectionType.Receive_Hold_Resumed_Pass);
+                    DisposeWhilePassesAreHeld(disposing, listener, Garnet.common.ExceptionInjectionType.Receive_Hold_Resumed_Pass);
+                }
+                else if (holdThePassThatParked)
+                    DisposeWhilePassesAreHeld(disposing, listener, Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
+                else
+                    disposing.Dispose();
+
+                Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
+
+                // The loops end on pool threads once the teardown has released them, whether or not they say so
+                // quietly, so wait for every one of them to have reported before judging what they reported
+                clock.Restart();
+                while (capture.Entries.Count(ReportsTeardown) < ParkedSessionCount && clock.Elapsed < TimeSpan.FromSeconds(30))
+                    Thread.Sleep(1);
+
+                // A loop may report its end before or after the entry that would show it was a failure
+                var logged = -1;
+                clock.Restart();
+                while (logged != capture.Entries.Count && clock.Elapsed < TimeSpan.FromSeconds(10))
+                {
+                    logged = capture.Entries.Count;
+                    Thread.Sleep(100);
+                }
+
+                return capture.Entries;
+            }
+            finally
+            {
+                Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Tls_Hold_Pass_After_Batch_Suspends);
+                Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Session_Teardown_Admits_Queued_Resume);
+                Garnet.common.ExceptionInjectionHelper.DisableException(Garnet.common.ExceptionInjectionType.Receive_Hold_Resumed_Pass);
+                foreach (var waiter in waiters)
+                    waiter?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Disposes <paramref name="disposing"/> while a receive pass of every parked session is held at
+        /// <paramref name="hold"/>, which must be enabled, and releases the passes once every connection has been
+        /// disposed. Checks the server does not finish disposing, which returns the connections' buffers to its pool,
+        /// before the passes have ended.
+        /// </summary>
+        static void DisposeWhilePassesAreHeld(GarnetServer disposing, GarnetServerBase listener, Garnet.common.ExceptionInjectionType hold)
+        {
+            var disposal = Task.Run(disposing.Dispose);
+
+            var clock = Stopwatch.StartNew();
+            while ((Garnet.common.ExceptionInjectionHelper.WaitingOnClear(hold) < ParkedSessionCount || listener.get_conn_active() > 0)
+                && clock.Elapsed < TimeSpan.FromSeconds(30))
+                Thread.Sleep(1);
+            ClassicAssert.AreEqual(ParkedSessionCount, Garnet.common.ExceptionInjectionHelper.WaitingOnClear(hold), "The passes were not all held");
+            ClassicAssert.AreEqual(0, listener.get_conn_active(), "The connections were not all disposed");
+
+            ClassicAssert.IsFalse(disposal.Wait(TimeSpan.FromSeconds(1)),
+                "The server finished disposing while receive passes were still using their connections' buffers");
+
+            Garnet.common.ExceptionInjectionHelper.DisableException(hold);
+            ClassicAssert.IsTrue(disposal.Wait(TimeSpan.FromSeconds(30)), "The server did not finish disposing once the passes were released");
+        }
+
+        /// <summary>
+        /// The point of the whole design: a parked command holds no thread. Far more sessions block
+        /// concurrently than the thread pool could ever supply threads for, and they all finish together.
+        /// </summary>
+        [Test]
+        public void MoreSessionsBlockConcurrentlyThanTheThreadPoolHasThreads()
+        {
+            ThreadPool.GetMinThreads(out var minWorkers, out _);
+            var sessionCount = Math.Max(256, minWorkers * 8);
+            const double BlockSeconds = 2.0;
+
+            var clients = new RawRespSession[sessionCount];
+            try
+            {
+                for (var i = 0; i < sessionCount; i++)
+                    clients[i] = new RawRespSession(useTls);
+
+                var threadsBefore = CurrentThreadCount();
+
+                var sw = Stopwatch.StartNew();
+                foreach (var c in clients)
+                    c.Send("DEBUG", "BLOCK", BlockSeconds.ToString(CultureInfo.InvariantCulture));
+
+                // Sampled while every session is parked. A suspension that occupied a thread would show up
+                // here one-for-one, because the thread pool must grow to keep serving.
+                Thread.Sleep((int)(BlockSeconds * 1000 / 2));
+                var threadGrowth = CurrentThreadCount() - threadsBefore;
+
+                foreach (var c in clients)
+                    ClassicAssert.AreEqual(Ok, c.ReadReply());
+                sw.Stop();
+
+                ClassicAssert.Less(threadGrowth, sessionCount / 4,
+                    $"The process grew by {threadGrowth} threads while {sessionCount} sessions were parked, " +
+                    "so the suspensions are holding threads rather than releasing them.");
+
+                // Serving these synchronously would need one thread each. The pool injects roughly one or two
+                // additional threads per second past its minimum, so a synchronous implementation would take
+                // minutes. Finishing inside a small multiple of a single block proves they overlapped.
+                ClassicAssert.Less(sw.Elapsed.TotalSeconds, BlockSeconds * 4,
+                    $"{sessionCount} concurrent blocks took {sw.Elapsed.TotalSeconds:F1}s, which indicates " +
+                    "they were serialized on thread-pool threads rather than parked.");
+                ClassicAssert.GreaterOrEqual(sw.Elapsed.TotalSeconds, BlockSeconds * 0.8,
+                    "The blocks finished faster than a single block, so they did not take effect.");
+            }
+            finally
+            {
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// The same claim as <see cref="MoreSessionsBlockConcurrentlyThanTheThreadPoolHasThreads"/>, made for
+        /// a real blocking command rather than the debug probe. <c>BLPOP</c> waits on the collection item
+        /// broker, and the number of clients that can wait at once is unrelated to the size of the thread pool.
+        /// </summary>
+        [Test]
+        public void MoreSessionsBlockOnBlpopThanTheThreadPoolHasThreads()
+        {
+            const int SessionCount = 256;
+            const int CappedWorkers = 32;
+            const double TimeoutSeconds = 2.0;
+
+            static string KeyOf(int i) => $"blpop-park-{i}";
+
+            // The pool is capped well below the session count for the duration of the test. Without the cap
+            // the claim is unfalsifiable on a large host: the pool happily injects a thread per blocked wait,
+            // in well under a second, and a thread-per-wait implementation passes on thread count and on time.
+            ThreadPool.GetMinThreads(out var minWorkers, out var minIo);
+            ThreadPool.GetMaxThreads(out var maxWorkers, out var maxIo);
+
+            var clients = new RawRespSession[SessionCount];
+            try
+            {
+                if (!ThreadPool.SetMinThreads(Math.Min(minWorkers, CappedWorkers), minIo) ||
+                    !ThreadPool.SetMaxThreads(CappedWorkers, maxIo))
+                    Assert.Ignore("Could not cap the thread pool, so the session count cannot be made to exceed it.");
+
+                for (var i = 0; i < SessionCount; i++)
+                    clients[i] = new RawRespSession(useTls);
+
+                // Each session waits on its own key that nobody ever pushes to, so each one blocks for its
+                // whole timeout and then reports no item. The elapsed time is therefore a direct measure of
+                // how many of the waits overlapped.
+                var sw = Stopwatch.StartNew();
+                var timeout = TimeoutSeconds.ToString(CultureInfo.InvariantCulture);
+                for (var i = 0; i < SessionCount; i++)
+                    clients[i].Send("BLPOP", KeyOf(i), timeout);
+
+                for (var i = 0; i < SessionCount; i++)
+                    ClassicAssert.AreEqual(NullArray, clients[i].ReadReply(), $"Session {i} did not time out cleanly.");
+                sw.Stop();
+
+                // Holding a thread per wait admits at most CappedWorkers of them at a time, so the waits would
+                // run in roughly SessionCount / CappedWorkers sequential rounds of a full timeout each.
+                ClassicAssert.Less(sw.Elapsed.TotalSeconds, TimeoutSeconds * 4,
+                    $"{SessionCount} concurrent BLPOPs took {sw.Elapsed.TotalSeconds:F1}s against a pool of " +
+                    $"{CappedWorkers} threads, which indicates they were serialized on those threads rather than parked.");
+                ClassicAssert.GreaterOrEqual(sw.Elapsed.TotalSeconds, TimeoutSeconds * 0.8,
+                    "The waits finished faster than a single timeout, so they did not take effect.");
+            }
+            finally
+            {
+                foreach (var c in clients)
+                    c?.Dispose();
+
+                _ = ThreadPool.SetMaxThreads(maxWorkers, maxIo);
+                _ = ThreadPool.SetMinThreads(minWorkers, minIo);
+            }
+        }
+
+        /// <summary>
+        /// Every session parked on its own key is woken by a push to that key, and receives the item pushed to
+        /// it rather than another session's. The pushes come from one connection while all of them are parked.
+        /// </summary>
+        [Test]
+        public void EveryParkedBlpopIsWokenByItsOwnPush()
+        {
+            const int SessionCount = 256;
+
+            static string KeyOf(int i) => $"blpop-wake-{i}";
+            static string ValueOf(int i) => $"item-{i}";
+
+            var clients = new RawRespSession[SessionCount];
+            try
+            {
+                for (var i = 0; i < SessionCount; i++)
+                {
+                    clients[i] = new RawRespSession(useTls);
+                    clients[i].Send("BLPOP", KeyOf(i), "30");
+                }
+
+                // Long enough for every one of them to have been parked before the first push lands, so the
+                // pushes exercise the broker's wake path rather than its first-attempt path.
+                Thread.Sleep(1000);
+
+                using (var pusher = new RawRespSession(useTls))
+                {
+                    for (var i = 0; i < SessionCount; i++)
+                        ClassicAssert.AreEqual(":1\r\n", pusher.Execute("RPUSH", KeyOf(i), ValueOf(i)));
+                }
+
+                for (var i = 0; i < SessionCount; i++)
+                {
+                    var key = KeyOf(i);
+                    var value = ValueOf(i);
+                    ClassicAssert.AreEqual($"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n",
+                        clients[i].ReadReply(), $"Session {i} did not receive its own pushed item.");
+                }
+            }
+            finally
+            {
+                foreach (var c in clients)
+                    c?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A blocked <c>BLPOP</c> is resolved on the broker's thread, using the waiting session's storage
+        /// session, so a client that vanishes mid-wait races that thread against its own teardown. The broker
+        /// has a single main loop and does not catch exceptions out of it, so losing that race stops every
+        /// blocking collection command on the server for good -- which is what the final pop here detects.
+        /// </summary>
+        [Test]
+        public void DisconnectingWhileBlockedOnBlpopLeavesTheBrokerRunning()
+        {
+            const int Rounds = 100;
+            using var pusher = new RawRespSession(useTls);
+
+            for (var round = 0; round < Rounds; round++)
+            {
+                var key = $"blpop-abort-{round}";
+                var waiter = new RawRespSession(useTls);
+                waiter.Send("BLPOP", key, "30");
+
+                // Let the session reach the parked state, then abort it at the moment the push that would
+                // wake it arrives.
+                Thread.Sleep(1);
+                var abort = new Thread(waiter.AbortAndDispose) { IsBackground = true };
+                abort.Start();
+                _ = pusher.Execute("RPUSH", key, "v");
+                abort.Join();
+            }
+
+            // A pop that blocks and is then served proves the broker's loop survived every one of those races.
+            const string FinalKey = "blpop-abort-final";
+            using var survivor = new RawRespSession(useTls);
+            ClassicAssert.AreEqual(Pong, survivor.Execute("PING"));
+
+            survivor.Send("BLPOP", FinalKey, "30");
+            Thread.Sleep(200);
+            ClassicAssert.AreEqual(":1\r\n", pusher.Execute("RPUSH", FinalKey, "done"));
+            ClassicAssert.AreEqual($"*2\r\n${FinalKey.Length}\r\n{FinalKey}\r\n$4\r\ndone\r\n", survivor.ReadReply());
+        }
+
+        [Test]
+        public void DisconnectDuringASuspensionIsCleanedUp()
+        {
+            var client = new RawRespSession(useTls);
+            client.Send("DEBUG", "BLOCK", "3");
+            Thread.Sleep(150);
+
+            // Abortive close while the session is parked: no receive is outstanding, so the server does not
+            // observe this until the park completes and the next receive is posted.
+            client.AbortAndDispose();
+
+            // The server must stay healthy and must not leak the session's buffers.
+            using var survivor = new RawRespSession(useTls);
+            ClassicAssert.AreEqual(Pong, survivor.Execute("PING"));
+
+            Thread.Sleep(3200);
+            ClassicAssert.AreEqual(Pong, survivor.Execute("PING"));
+        }
+
+        [Test]
+        public void ServerDisposeWhileSessionsAreParkedCompletesPromptly()
+        {
+            var clients = new List<RawRespSession>();
+            try
+            {
+                for (var i = 0; i < 32; i++)
+                {
+                    var c = new RawRespSession(useTls);
+                    c.Send("DEBUG", "BLOCK", "60");
+                    clients.Add(c);
+                }
+
+                // Let every session reach the parked state.
+                Thread.Sleep(300);
+
+                var sw = Stopwatch.StartNew();
+                server.Dispose();
+                server = null;
+                sw.Stop();
+
+                // Teardown cancels each parked operation rather than waiting for it. Waiting out even one of
+                // these 60-second blocks would mean the gate was held across the park.
+                ClassicAssert.Less(sw.Elapsed.TotalSeconds, 15,
+                    "Disposing the server waited on parked commands instead of cancelling them.");
+            }
+            finally
+            {
+                foreach (var c in clients)
+                    c.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Runs a write and a read once the test lets it go, having first told the test it is running.
+        /// </summary>
+        sealed class HeldProcedure : CustomProcedure
+        {
+            internal readonly ManualResetEventSlim Entered = new();
+            internal readonly ManualResetEventSlim Release = new();
+
+            public override bool Execute<TGarnetApi>(TGarnetApi garnetApi, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+            {
+                Entered.Set();
+                _ = Release.Wait(TimeSpan.FromSeconds(30));
+
+                var offset = 0;
+                var key = GetNextArg(ref procInput, ref offset);
+                var value = GetNextArg(ref procInput, ref offset);
+                _ = garnetApi.SET(key, value);
+                var found = garnetApi.GET(key, out PinnedSpanByte read) == GarnetStatus.OK && read.ReadOnlySpan.SequenceEqual(value.ReadOnlySpan);
+                WriteSimpleString(ref output, found ? "OK" : "LOST");
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Shutdown disposes every session from its own thread, so it can reach a session whose batch is still
+        /// running on a network thread. The storage sessions are then left for the batch to release.
+        /// </summary>
+        [Test]
+        public void ShutdownLeavesTheStorageSessionsToABatchStillRunning()
+        {
+            var procedure = new HeldProcedure();
+            server.Register.NewProcedure("HELD", () => procedure);
+            var storeWrapper = server.Provider.StoreWrapper;
+
+            using var client = new RawRespSession(useTls);
+            client.Send("HELD", "key", "value");
+            ClassicAssert.IsTrue(procedure.Entered.Wait(TimeSpan.FromSeconds(30)), "The procedure never ran.");
+
+            var toDispose = server;
+            server = null;
+            var shutdown = Task.Run(toDispose.Dispose);
+            try
+            {
+                if (!SpinWait.SpinUntil(() => storeWrapper.StorageTeardowns == 1, TimeSpan.FromSeconds(10)))
+                    Assert.Fail("Shutdown released the storage sessions of a session whose batch was still running.");
+            }
+            finally
+            {
+                procedure.Release.Set();
+            }
+
+            ClassicAssert.IsTrue(shutdown.Wait(TimeSpan.FromSeconds(30)), "Shutdown did not finish once the batch was let go.");
+            ClassicAssert.AreEqual(0, storeWrapper.StorageTeardowns);
+        }
+
+        /// <summary>
+        /// A suspension must not allocate once the pools are warm.
+        /// </summary>
+        /// <remarks>
+        /// Measured as the gap between a command that parks and the same command when it does not, so the
+        /// client, the parser and the reply path all cancel out and what is left is the cost of suspending
+        /// and resuming. That gap is only meaningful because <c>DEBUG BLOCK</c> waits on a pooled
+        /// <c>SessionDelay</c> rather than <c>Task.Delay</c>, which would otherwise put its own timer and
+        /// promise -- a couple of hundred bytes -- into the measurement and swamp it.
+        /// </remarks>
+        [Test]
+        public void SteadyStateSuspensionsDoNotAllocate()
+        {
+#if DEBUG
+            // Roslyn emits an async state machine as a class in Debug and as a struct in Release, so in Debug
+            // every park heap-allocates its state machine at the call site, before the pooled builder runs.
+            // That cost is the compiler's, not the suspension path's, and it cannot be pooled away; the
+            // Release leg of CI is what holds this invariant.
+            Assert.Ignore("Async state machines are classes in DEBUG builds, so a park always allocates one.");
+#endif
+
+            // SslStream allocates a buffer and a read state per pass regardless of what the session does, so
+            // under TLS this measures the TLS stack rather than the suspension machinery.
+            Assume.That(!useTls, "Allocation on the TLS receive path is dominated by SslStream.");
+
+            using var client = new RawRespSession(useTls);
+
+            // Long enough that one-off costs -- thread-pool growth, buffer growth, the JIT -- amortise away.
+            // At a few hundred iterations they dominate the per-park figure entirely.
+            const int Iterations = 20_000;
+
+            // Warm every pool: the state-machine boxes, the completion source, the timer, the buffers.
+            for (var i = 0; i < 1024; i++)
+            {
+                client.ExecuteExpect("+OK\r\n"u8, "DEBUG", "BLOCK", "0");
+                client.ExecuteExpect("+OK\r\n"u8, "DEBUG", "BLOCK", "0.001");
+            }
+
+            var withoutPark = MeasurePerOp(Iterations, () => client.ExecuteExpect("+OK\r\n"u8, "DEBUG", "BLOCK", "0"));
+            var withPark = MeasurePerOp(Iterations, () => client.ExecuteExpect("+OK\r\n"u8, "DEBUG", "BLOCK", "0.001"));
+
+            var perPark = withPark - withoutPark;
+            TestContext.Out.WriteLine($"park={withPark:F0} B  no-park={withoutPark:F0} B  per park={perPark:F0} B");
+
+            // Calibrated by removing [AsyncMethodBuilder(typeof(RespAsyncMethodBuilder))] from the command
+            // bodies and re-measuring: pooled costs under 20 B per park, unpooled costs 195 B. The bound sits
+            // between the two so it still catches a lost pool without tracking the runtime's own box churn.
+            ClassicAssert.Less(perPark, 128,
+                "Parking allocates per command: a pool on the suspension path is being missed.");
+        }
+
+        static double MeasurePerOp(int iterations, Action op)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            var before = GC.GetTotalAllocatedBytes(precise: true);
+            for (var i = 0; i < iterations; i++)
+                op();
+
+            return (GC.GetTotalAllocatedBytes(precise: true) - before) / (double)iterations;
+        }
+
+        /// <summary>
+        /// Teardown may not reclaim the receive buffer while a resume is running on it, so
+        /// <c>ResumeGate.Close</c> must not return while the gate is occupied -- including when the resume it
+        /// found inside leaves and another takes its place while the close is still deciding what to do.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The occupants here are the shape <c>DrainResumes</c> takes: it leaves the gate and re-enters on the
+        /// next instruction, which is what turns the window between a close's two attempts into a reachable
+        /// one rather than a theoretical one. Several threads stand in for that, because the window is a few
+        /// instructions wide and one thread alone lands in it too rarely to be a test.
+        /// </para>
+        /// <para>
+        /// The violation is observed from inside the gate rather than from the closing thread: an occupant
+        /// that finds the round already closed is running exactly where teardown has been told nothing is
+        /// running. Reading it the other way round -- the closer looking for an occupant -- would miss one
+        /// that had already left.
+        /// </para>
+        /// </remarks>
+        [Test]
+        public void ClosingAGateNeverReturnsWhileAResumeIsInside()
+        {
+            Assume.That(Environment.ProcessorCount > 2, "The race needs the occupants and the close on separate cores.");
+
+            // Each round is one gate, closed once. The window is only reachable on a fraction of rounds, so
+            // the count is what makes it a certainty rather than a coin toss.
+            const int Rounds = 100_000;
+
+            var rounds = new GateRound[Rounds];
+            for (var i = 0; i < Rounds; i++)
+                rounds[i] = new GateRound();
+
+            GateRound current = null;
+            var stop = false;
+            var violations = 0;
+
+            var occupants = new Thread[Math.Min(4, Environment.ProcessorCount - 1)];
+            for (var t = 0; t < occupants.Length; t++)
+            {
+                occupants[t] = new Thread(() =>
+                {
+                    while (!Volatile.Read(ref stop))
+                    {
+                        var round = Volatile.Read(ref current);
+                        if (round is null || !round.Gate.TryEnter())
+                            continue;
+
+                        // Held on both sides of the dwell, so a close that returns at either moment is caught.
+                        if (Volatile.Read(ref round.Closed) != 0)
+                            _ = Interlocked.Increment(ref violations);
+
+                        Thread.SpinWait(8);
+
+                        if (Volatile.Read(ref round.Closed) != 0)
+                            _ = Interlocked.Increment(ref violations);
+
+                        round.Gate.Exit();
+                    }
+                })
+                { IsBackground = true, Name = $"{nameof(ClosingAGateNeverReturnsWhileAResumeIsInside)}-{t}" };
+                occupants[t].Start();
+            }
+
+            try
+            {
+                for (var i = 0; i < Rounds; i++)
+                {
+                    var round = rounds[i];
+                    Volatile.Write(ref current, round);
+
+                    // Let an occupant reach this gate, so the close has something to find inside.
+                    Thread.SpinWait(64);
+
+                    round.Gate.Close();
+                    Volatile.Write(ref round.Closed, 1);
+
+                    ClassicAssert.IsFalse(round.Gate.TryEnter(), "A closed gate admitted a resume.");
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref stop, true);
+                foreach (var occupant in occupants)
+                    _ = occupant.Join(TimeSpan.FromSeconds(30));
+            }
+
+            ClassicAssert.Zero(violations,
+                "Close returned while a resume was inside the gate, so teardown would reclaim the receive buffer under it.");
+        }
+
+        /// <summary>
+        /// Teardown can be reached from inside the scope: a fault in a resumed batch disposes the network
+        /// sender, which for a TLS connection is the network handler, which disposes the session. The close
+        /// that follows must not wait for the resume inside the gate, because that resume is the thread
+        /// calling it.
+        /// </summary>
+        /// <remarks>
+        /// The close runs on its own thread so that the wait this guards against fails the test on a
+        /// deadline rather than wedging the test run. The gate still has to end up closed: the resume
+        /// publishes that as it unwinds through <c>Exit</c>.
+        /// </remarks>
+        [Test]
+        public void ClosingAGateFromInsideItDoesNotWaitOnItself()
+        {
+            var round = new GateRound();
+            var entered = new ManualResetEventSlim();
+            var returned = false;
+
+            var holder = new Thread(() =>
+            {
+                if (!round.Gate.TryEnter())
+                    return;
+
+                entered.Set();
+
+                // Teardown reached from within the scope, as a faulting resumed batch reaches it.
+                round.Gate.Close();
+                Volatile.Write(ref returned, true);
+
+                // The resume unwinding out of the scope it still holds.
+                round.Gate.Exit();
+            })
+            { IsBackground = true, Name = nameof(ClosingAGateFromInsideItDoesNotWaitOnItself) };
+            holder.Start();
+
+            ClassicAssert.IsTrue(entered.Wait(TimeSpan.FromSeconds(30)), "The gate was never entered.");
+            ClassicAssert.IsTrue(holder.Join(TimeSpan.FromSeconds(30)),
+                "Close waited for the resume that was calling it, so a session faulting mid-resume hangs its thread.");
+            ClassicAssert.IsTrue(Volatile.Read(ref returned), "Close did not return.");
+            ClassicAssert.IsFalse(round.Gate.TryEnter(), "A closed gate admitted a resume.");
+        }
+
+        /// <summary>One gate and whether its close has returned, as seen by the threads contending for it.</summary>
+        sealed class GateRound
+        {
+            internal Garnet.server.ResumeGate Gate;
+            internal int Closed;
+        }
+    }
+}

@@ -26,22 +26,11 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var input = new StringInput(RespCommand.GETWITHETAG);
             var output = GetStringOutput();
-            var status = storageApi.GET(key, ref input, ref output);
+            var status = storageApi.Read_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.Value, ref storageApi);
 
-            switch (status)
-            {
-                case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
-                    WriteNull();
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-                    break;
-                default:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-            }
-
+            WriteStringValueReply(storageSession.CountedStringReadStatus(status), ref output);
             return true;
         }
 
@@ -58,22 +47,11 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var input = new StringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
             var output = GetStringOutput();
-            var status = storageApi.GET(key, ref input, ref output);
+            var status = storageApi.Read_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.Value, ref storageApi);
 
-            switch (status)
-            {
-                case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
-                    WriteNull();
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
-                    break;
-                default:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-            }
-
+            WriteStringValueReply(storageSession.CountedStringReadStatus(status), ref output);
             return true;
         }
 
@@ -98,15 +76,13 @@ namespace Garnet.server
             // Conditional delete is not natively supported for records in the stable region.
             // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
 
-            StringInput input = new StringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
+            var output = GetSmallStringOutput(sizeof(long));
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.DelIfGreater, ref storageApi);
 
-            GarnetStatus status = storageApi.DEL_ETagConditional(key, ref input);
-
-            int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
-
-            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
-                SendAndReset();
-
+            WriteDelIfGreaterReply(storageSession.ConditionalDeleteStatus(status));
             return true;
         }
 
@@ -294,19 +270,11 @@ namespace Garnet.server
                 input.header.SetSetGetFlag();
 
             var output = GetStringOutput();
-            var res = storageApi.SET_ETagConditional(key, ref input, ref output);
+            var status = storageApi.RMW_MainStore_WithPending(key, ref input, ref output);
+            if (status.IsPending)
+                return CompleteStringOp(StringReply.ETagSet, ref storageApi);
 
-            // Type already stored in key which requires an explicit delete
-            if (res == GarnetStatus.WRONGTYPE)
-            {
-                using (txnManager.PromoteToTransaction(TransactionStoreTypes.Main | TransactionStoreTypes.Object, key, LockType.Exclusive))
-                {
-                    _ = storageSession.DELETE(key, ref storageSession.unifiedTransactionalContext);
-                    _ = storageSession.SET_Conditional(key, ref input, ref output, ref storageSession.stringTransactionalContext);
-                }
-            }
-
-            ProcessOutput(output.SpanByteAndMemory);
+            WriteETagSetReply(storageSession.ConditionalSetStatus(status), key, ref input, ref output);
             return true;
         }
     }

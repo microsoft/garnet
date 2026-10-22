@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,6 +34,95 @@ namespace Garnet.test
         {
             server.Dispose();
             TestUtils.OnTearDown();
+        }
+
+        /// <summary>
+        /// Drives many concurrent blocking pops whose items are already present, so every one of them is
+        /// served by the broker's main loop rather than by a later push. This covers the loop's own storage
+        /// sessions: a loop session that is missing a piece of its setup answers nothing and every blocking
+        /// command hangs.
+        /// </summary>
+        [Test]
+        public void ConcurrentBlockingPopsServedByTheBrokerLoopReturnTheRightItem()
+        {
+            const int Sessions = 8;
+            const int Rounds = 150;
+
+            var failures = new List<string>();
+            var barrier = new Barrier(Sessions);
+
+            var workers = new Task[Sessions];
+            for (var s = 0; s < Sessions; ++s)
+            {
+                var id = s;
+                workers[s] = Task.Run(() =>
+                {
+                    using var client = TestUtils.CreateRequest();
+                    var key = $"blockkey-{id}";
+
+                    barrier.SignalAndWait();
+
+                    for (var round = 0; round < Rounds; ++round)
+                    {
+                        var value = $"v-{id}-{round}";
+
+                        var pushed = Encoding.ASCII.GetString(client.SendCommand($"LPUSH {key} {value}"));
+                        if (!pushed.StartsWith(":1\r\n", StringComparison.Ordinal))
+                        {
+                            lock (failures)
+                                failures.Add($"session {id} round {round}: LPUSH answered {Printable(pushed)}");
+                            return;
+                        }
+
+                        // The item is already in the list, so this is answered from the broker's main loop
+                        // rather than by a later push.
+                        var popped = Encoding.ASCII.GetString(client.SendCommand($"BLPOP {key} 10", 3));
+                        var expected = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
+                        if (!popped.StartsWith(expected, StringComparison.Ordinal))
+                        {
+                            lock (failures)
+                                failures.Add($"session {id} round {round}: BLPOP answered {Printable(popped)}, expected {Printable(expected)}");
+                            return;
+                        }
+                    }
+                });
+            }
+
+            ClassicAssert.IsTrue(Task.WaitAll(workers, TimeSpan.FromMinutes(2)), "A blocking pop never came back");
+            ClassicAssert.IsEmpty(failures, string.Join(Environment.NewLine, failures));
+        }
+
+        static string Printable(string resp) => resp.Replace("\r", "\\r").Replace("\n", "\\n");
+
+        /// <summary>
+        /// The broker's main loop releases what each attempt reads into its scratch space once the attempt is
+        /// over, so the memory its storage session holds does not grow with the items it hands over.
+        /// </summary>
+        [Test]
+        public void TheBrokerLoopDoesNotAccumulateScratchSpaceAcrossItems()
+        {
+            const int Rounds = 200;
+            const string key = "blockkey";
+            var value = new string('v', 1024);
+            var expected = $"*2\r\n${key.Length}\r\n{key}\r\n${value.Length}\r\n{value}\r\n";
+
+            using var client = TestUtils.CreateRequest();
+            for (var round = 0; round < Rounds; ++round)
+            {
+                var pushed = Encoding.ASCII.GetString(client.SendCommand($"LPUSH {key} {value}"));
+                ClassicAssert.IsTrue(pushed.StartsWith(":1\r\n", StringComparison.Ordinal), $"round {round}: LPUSH answered {Printable(pushed)}");
+
+                // The item is already in the list, so the broker's main loop hands it over
+                var popped = Encoding.ASCII.GetString(client.SendCommand($"BLPOP {key} 10", 3));
+                ClassicAssert.IsTrue(popped.StartsWith(expected, StringComparison.Ordinal), $"round {round}: BLPOP answered {Printable(popped)}");
+            }
+
+            var loopSessions = (Dictionary<int, StorageSession>)typeof(CollectionItemBroker)
+                .GetField("loopStorageSessions", BindingFlags.NonPublic | BindingFlags.Instance)
+                .GetValue(server.Provider.StoreWrapper.itemBroker);
+            var held = loopSessions[0].scratchBufferAllocator.TotalLength;
+            ClassicAssert.Less(held, 16 * value.Length,
+                $"The broker loop's scratch space holds {held} bytes after handing over {Rounds} items of {value.Length} bytes.");
         }
 
         [Test]
@@ -1549,6 +1639,62 @@ namespace Garnet.test
             ClassicAssert.AreEqual(3, db.ListLength(srcKey));
             CollectionAssert.AreEqual(initial, db.ListRange(srcKey, 0, -1).Select(x => x.ToString()).ToArray());
             ClassicAssert.AreEqual("not-a-list", db.StringGet(dstKey).ToString());
+        }
+
+        /// <summary>
+        /// A blocking pop is completed by whichever of the broker and its timeout gets there first. Both run
+        /// concurrently, on different threads, against the same observer, so the losing one has to be a no-op:
+        /// a second completion would both lose the item it was handed and take down the broker's main loop,
+        /// leaving every later blocking command to time out instead of being served.
+        /// </summary>
+        [Test]
+        public void ATimeoutExpiringAsAnItemArrivesNeitherLosesTheItemNorStopsTheBroker()
+        {
+            const string key = "blpop:timeout:race";
+            const int rounds = 300;
+
+            // Separate connections: a blocking pop holds up every other command on its own connection.
+            using var popperConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var pusherConnection = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var popper = popperConnection.GetDatabase(0);
+            var pusher = pusherConnection.GetDatabase(0);
+
+            // Push roughly as often as the pop times out, so that a good share of the rounds have the push and
+            // the timeout landing together rather than milliseconds apart.
+            var pushed = 0;
+            var stop = false;
+            var pushTask = Task.Run(() =>
+            {
+                while (!Volatile.Read(ref stop))
+                {
+                    _ = pusher.ListRightPush(key, "v");
+                    _ = Interlocked.Increment(ref pushed);
+                    Thread.Sleep(random.Next(1, 10));
+                }
+            });
+
+            var popped = 0;
+            for (var i = 0; i < rounds; i++)
+            {
+                if (!popper.Execute("BLPOP", key, "0.005").IsNull)
+                    popped++;
+            }
+
+            Volatile.Write(ref stop, true);
+            pushTask.Wait(TimeSpan.FromSeconds(30));
+
+            var remaining = (int)popper.ListLength(key);
+            ClassicAssert.AreEqual(Volatile.Read(ref pushed), popped + remaining,
+                $"Items were lost: pushed {pushed}, popped {popped}, {remaining} left in the list");
+
+            // The broker is only observably alive if it still hands over an item that is already there. A dead
+            // main loop is invisible to the rounds above, which can all be satisfied by their own timeouts.
+            _ = popper.KeyDelete(key);
+            _ = pusher.ListRightPush(key, "sentinel");
+            var served = popper.Execute("BLPOP", key, "10");
+            ClassicAssert.IsFalse(served.IsNull,
+                "BLPOP timed out on a key that already held an item, so the broker's main loop is no longer running");
+            ClassicAssert.AreEqual("sentinel", ((RedisResult[])served)[1].ToString());
         }
     }
 }

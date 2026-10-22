@@ -33,6 +33,15 @@ namespace Tsavorite.core
         /// <summary>Track the remaining length to be read for one or more records for Object values, and we can also read some or all of Overflow values into the buffer.</summary>
         ulong unreadLengthRemaining;
 
+        /// <summary>Called once every read issued by <see cref="BeginReadAll"/> has completed, if they did not all complete before it returned.</summary>
+        Action<AsyncIOContext, CircularDiskReadBuffer> onAllRead;
+
+        /// <summary>The pending read passed to <see cref="onAllRead"/>.</summary>
+        AsyncIOContext onAllReadContext;
+
+        /// <summary>Reads issued by <see cref="BeginReadAll"/> and not yet completed, plus one held by its caller until it has issued them all.</summary>
+        int readsOutstanding;
+
         internal CircularDiskReadBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice objectLogDevice, ILogger logger)
         {
             this.bufferPool = bufferPool;
@@ -154,6 +163,58 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Reads the whole of <paramref name="totalLength"/> bytes from <paramref name="startFilePosition"/>, adding buffers as needed, so that
+        /// deserializing from them afterwards never waits for the device. The buffers then hold the entire serialized length at once rather
+        /// than a window of it.
+        /// </summary>
+        /// <param name="startFilePosition">The initial file position to read</param>
+        /// <param name="totalLength">The cumulative length of the object-log entries to read</param>
+        /// <param name="onAllRead">Called with <paramref name="context"/> and this buffer, on the thread of the last read to complete, once
+        ///     every read has completed; not called if they all complete before this returns</param>
+        /// <param name="context">The pending read to pass to <paramref name="onAllRead"/></param>
+        /// <returns>True if every read completed before this returned, so the data can be deserialized now; false if <paramref name="onAllRead"/>
+        ///     will be called, in which case the caller must not touch this buffer or <paramref name="context"/> again, as the call may already
+        ///     be running.</returns>
+        internal bool BeginReadAll(ObjectLogFilePositionInfo startFilePosition, ulong totalLength, Action<AsyncIOContext, CircularDiskReadBuffer> onAllRead,
+            AsyncIOContext context)
+        {
+            if (disposed)
+                throw new ObjectDisposedException(nameof(CircularDiskReadBuffer));
+
+            Debug.Assert(totalLength > 0, "TotalLength cannot be 0");
+            nextFileReadPosition = startFilePosition;
+            unreadLengthRemaining = totalLength;
+            currentIndex = 0;
+
+            // Align the initial read as OnBeginReadRecords does.
+            var alignedReadPosition = RoundDown(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize);
+            var recordStartPosition = (int)(nextFileReadPosition.Offset - alignedReadPosition);
+            unreadLengthRemaining += (uint)recordStartPosition;
+            nextFileReadPosition.Offset -= (uint)recordStartPosition;
+
+            this.onAllRead = onAllRead;
+            onAllReadContext = context;
+
+            // Held until every read is issued, so that a read completing meanwhile cannot take the count to zero.
+            readsOutstanding = 1;
+            for (var ii = 0; unreadLengthRemaining > 0; ii++)
+            {
+                if (ii == buffers.Length)
+                    Array.Resize(ref buffers, buffers.Length * 2);
+                _ = Interlocked.Increment(ref readsOutstanding);
+                DoReadBuffer(ii, recordStartPosition);
+                recordStartPosition = 0;  // After the first read, subsequent reads start on an aligned address
+            }
+
+            if (Interlocked.Decrement(ref readsOutstanding) > 0)
+                return false;
+
+            this.onAllRead = null;
+            onAllReadContext = null;
+            return true;
+        }
+
+        /// <summary>
         /// Called when one or more records with Objects have been read and via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback,
         /// and we have completed reading and deserializing those objects.
         /// </summary>
@@ -250,6 +311,16 @@ namespace Tsavorite.core
 
             // Signal the buffer's event to indicate the data is available.
             _ = buffer.countdownEvent.Signal();
+
+            // The last read of a BeginReadAll to complete hands the buffers on. Its caller may dispose them, so nothing here may touch them after.
+            if (onAllRead is not null && Interlocked.Decrement(ref readsOutstanding) == 0)
+            {
+                var callback = onAllRead;
+                var callbackContext = onAllReadContext;
+                onAllRead = null;
+                onAllReadContext = null;
+                callback(callbackContext, this);
+            }
         }
 
         public void Dispose()

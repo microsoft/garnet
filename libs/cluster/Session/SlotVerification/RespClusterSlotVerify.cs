@@ -89,6 +89,14 @@ namespace Garnet.cluster
         /// <summary>
         /// Verify multi-key slot ownership
         /// </summary>
+        /// <remarks>
+        /// With <see cref="ClusterSlotVerificationInput.canWait"/> set, a key being migrated is neither served nor
+        /// answered: <see cref="ClusterSlotVerificationInput.mustWait"/> is set, nothing is written, and the call returns
+        /// true so the caller stops processing the request, waits and verifies it again. On a calling thread that must not
+        /// wait, a key being migrated that may have to be looked up
+        /// on the device is likewise neither served nor answered: <see cref="ClusterSlotVerificationInput.mustOffload"/>
+        /// is set instead, and the caller verifies the request again on the thread pool.
+        /// </remarks>
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>
         /// <param name="dcurr"></param>
@@ -104,6 +112,11 @@ namespace Garnet.cluster
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;
+
+            if (vres.state == SlotVerifiedState.WAIT)
+                csvi.mustWait = true;
+            else if (vres.state == SlotVerifiedState.OFFLOAD)
+                csvi.mustOffload = true;
             else
                 WriteClusterSlotVerificationMessage(config, vres, ref dcurr, ref dend);
             return true;

@@ -25,7 +25,7 @@ namespace Tsavorite.core
         /// <param name="deleteOnClose">Delete files on close</param>
         /// <param name="capacity">The maximal number of bytes this storage device can accommodate, or CAPACITY_UNSPECIFIED if there is no such limit. For <see cref="DeviceType.LocalMemory"/> a value &lt;= 0 (or CAPACITY_UNSPECIFIED) defaults to a large bounded capacity (segments are allocated lazily).</param>
         /// <param name="recoverDevice">Whether to recover device metadata from existing files</param>
-        /// <param name="useIoCompletionPort">Whether we use IO completion port with polling</param>
+        /// <param name="useIoCompletionPort">For DeviceType.Native on Windows: whether the device completes IO on its own completion port and threads, as NativeStorageDevice does on Linux, rather than on .NET thread-pool workers. A synchronous wait for IO on a pool thread then depends on no other pool thread, so it cannot starve when the pool is capped.</param>
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="readOnly">Open file in readOnly mode</param>
         /// <param name="numCompletionThreads">Number of background IO completion drain threads. For DeviceType.Native on Linux: a small pool of drainers that range-drain the device's kernel io_contexts (libaio) / io_uring rings; submitters distribute across rings via per-thread affinity. For DeviceType.LocalMemory: each drainer owns one SPSC ring fed by one submitter via per-thread routing; pass 0 for inline completion (copy + callback run on the submitting thread, no rings/threads) or a negative value to default to <see cref="System.Environment.ProcessorCount"/>. In both cases, raise this value when submitter concurrency exceeds the single-ring drain rate. Ignored otherwise.</param>
@@ -33,7 +33,7 @@ namespace Tsavorite.core
         /// <param name="nativeDeviceOptions">For DeviceType.Native on Linux: libaio / io_uring backend tuning (IO backend, ring count, per-ring queue depth, SQPOLL). Null (default) uses the backend-specific defaults. Ignored otherwise. See <see cref="NativeDeviceOptions"/>.</param>
         /// <param name="localMemoryDeviceOptions">For DeviceType.LocalMemory: segment size and per-ring capacity. Null (default) uses the defaults. Ignored otherwise. See <see cref="LocalMemoryDeviceOptions"/>.</param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath = null, DeviceType deviceType = DeviceType.Default, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool readOnly = false, int numCompletionThreads = 1, ILogger logger = null, NativeDeviceOptions nativeDeviceOptions = null, LocalMemoryDeviceOptions localMemoryDeviceOptions = null)
+        public static IDevice CreateLogDevice(string logPath = null, DeviceType deviceType = DeviceType.Default, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = true, bool disableFileBuffering = true, bool readOnly = false, int numCompletionThreads = 1, ILogger logger = null, NativeDeviceOptions nativeDeviceOptions = null, LocalMemoryDeviceOptions localMemoryDeviceOptions = null)
         {
             if (deviceType == DeviceType.Default)
             {

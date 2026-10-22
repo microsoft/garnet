@@ -156,7 +156,7 @@ namespace Tsavorite.core
                 DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
             => device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, callback, asyncResult);
 
-        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+        private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead, out bool readIssued)
             => throw new TsavoriteException("TsavoriteLogAllocator does not support VerifyRecordFromDiskCallback");
 
         /// <summary>

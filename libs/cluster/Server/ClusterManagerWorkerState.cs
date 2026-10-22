@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -22,6 +21,7 @@ namespace Garnet.cluster
         /// Add worker with specified slots
         /// Update existing only if new config epoch is larger or current config epoch is zero
         /// </summary>
+        /// <remarks>Called only at startup, so holds the calling thread until the configuration is written.</remarks>
         public bool TryInitializeLocalWorker(
             string nodeId,
             string address,
@@ -37,55 +37,29 @@ namespace Garnet.cluster
                 var current = currentConfig;
                 var newConfig = current.InitializeLocalWorker(nodeId, address, port, configEpoch, role, replicaOfNodeId, hostname,
                     peerEndpoint.Address.ToString(), peerEndpoint.Port);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
-            FlushConfig();
+            FlushConfigAtStartup();
             return true;
         }
 
         /// <summary>
-        /// Try remove worker through the forget command.
+        /// Try remove worker through the forget command, completing once config merges are suspended, the worker is
+        /// removed, and the configuration is written.
         /// </summary>
-        /// <param name="nodeid"></param>
-        /// <param name="expirySeconds"></param>
-        /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
-        public bool TryRemoveWorker(string nodeid, int expirySeconds, out ReadOnlySpan<byte> errorMessage)
+        /// <param name="nodeid">The id of the node to forget.</param>
+        /// <param name="expirySeconds">How long the node is banned from rejoining through gossip.</param>
+        /// <returns>Whether it succeeded, and the ASCII encoded error message if it did not.</returns>
+        public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryRemoveWorkerAsync(string nodeid, int expirySeconds)
         {
+            await SuspendConfigMergeAsync().ConfigureAwait(false);
             try
             {
-                SuspendConfigMerge();
-                errorMessage = default;
-                while (true)
-                {
-                    var current = currentConfig;
-
-                    if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MYSELF;
-                        return false;
-                    }
-
-                    if (current.GetNodeRoleFromNodeId(nodeid) == NodeRole.UNASSIGNED)
-                    {
-                        errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}.");
-                        return false;
-                    }
-
-                    if (current.LocalNodeRole == NodeRole.REPLICA && current.LocalNodePrimaryId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
-                    {
-                        errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MY_PRIMARY;
-                        return false;
-                    }
-
-                    var newConfig = current.RemoveWorker(nodeid);
-                    var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
-                    _ = workerBanList.AddOrUpdate(nodeid, expiry, (key, oldValue) => expiry);
-                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
-                        break;
-                }
-                FlushConfig();
-                return true;
+                if (!TryPublishRemoveWorker(nodeid, expirySeconds, out var errorMessage))
+                    return (false, errorMessage.ToArray());
+                await FlushConfigAsync().ConfigureAwait(false);
+                return (true, default);
             }
             finally
             {
@@ -93,30 +67,62 @@ namespace Garnet.cluster
             }
         }
 
-        /// <summary>
-        /// Reset cluster config and generated new node id if HARD reset specified
-        /// </summary>
-        /// <param name="soft"></param>
-        /// <param name="expirySeconds"></param>
-        /// <returns></returns>
-        public ReadOnlySpan<byte> TryReset(bool soft, int expirySeconds = 60)
+        bool TryPublishRemoveWorker(string nodeid, int expirySeconds, out ReadOnlySpan<byte> errorMessage)
         {
+            errorMessage = default;
+            while (true)
+            {
+                var current = currentConfig;
+
+                if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MYSELF;
+                    return false;
+                }
+
+                if (current.GetNodeRoleFromNodeId(nodeid) == NodeRole.UNASSIGNED)
+                {
+                    errorMessage = Encoding.ASCII.GetBytes($"ERR I don't know about node {nodeid}.");
+                    return false;
+                }
+
+                if (current.LocalNodeRole == NodeRole.REPLICA && current.LocalNodePrimaryId.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
+                {
+                    errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_FORGET_MY_PRIMARY;
+                    return false;
+                }
+
+                var newConfig = current.RemoveWorker(nodeid);
+                var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
+                _ = workerBanList.AddOrUpdate(nodeid, expiry, (key, oldValue) => expiry);
+                if (TryPublishConfig(current, newConfig))
+                    return true;
+            }
+        }
+
+        /// <summary>
+        /// Reset cluster config and generated new node id if HARD reset specified, completing once config merges are
+        /// suspended, the configuration is reset, and it is written.
+        /// </summary>
+        /// <param name="soft">Whether to keep the node id and config epoch.</param>
+        /// <param name="expirySeconds"></param>
+        /// <returns>Whether it succeeded, and the ASCII encoded error message if it did not.</returns>
+        public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryResetAsync(bool soft, int expirySeconds = 60)
+        {
+            await SuspendConfigMergeAsync().ConfigureAwait(false);
             try
             {
-                SuspendConfigMerge();
-
                 // Reset recovery operations before proceeding with reset
                 clusterProvider.replicationManager.ResetRecovery();
 
                 IPEndPoint peerEndpoint = clusterProvider.storeWrapper.GetClusterPeerEndpoint();
-                var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
                     var current = currentConfig;
                     var localSlots = current.GetSlotList(1);
                     if (clusterProvider.storeWrapper.HasKeysInSlots(localSlots))
                     {
-                        return CmdStrings.RESP_ERR_RESET_WITH_KEYS_ASSIGNED;
+                        return (false, CmdStrings.RESP_ERR_GENERIC_RESET_WITH_KEYS_ASSIGNED.ToArray());
                     }
 
                     this.clusterConnectionStore.CloseAll();
@@ -139,11 +145,11 @@ namespace Garnet.cluster
                         hostname: string.IsNullOrEmpty(hostname) ? "" : hostname,
                         clusterAddress: peerEndpoint.Address.ToString(),
                         clusterPort: peerEndpoint.Port);
-                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    if (TryPublishConfig(current, newConfig))
                         break;
                 }
-                FlushConfig();
-                return resp;
+                await FlushConfigAsync().ConfigureAwait(false);
+                return (true, default);
             }
             finally
             {
@@ -215,7 +221,7 @@ namespace Garnet.cluster
                 }
 
                 var newConfig = currentConfig.MakeReplicaOf(nodeid).BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
 
                 // If we reach here then we failed to update config so we need to suspend recovery and retry to update the config
@@ -232,7 +238,7 @@ namespace Garnet.cluster
             await clusterProvider.storeWrapper.SuspendPrimaryOnlyTasksAsync().ConfigureAwait(false);
             clusterProvider.storeWrapper.StartReplicaTasks();
 
-            FlushConfig();
+            await FlushConfigAsync().ConfigureAwait(false);
             return (true, default);
         }
 

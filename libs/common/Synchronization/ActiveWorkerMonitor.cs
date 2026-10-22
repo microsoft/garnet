@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Garnet.common
 {
@@ -26,6 +27,11 @@ namespace Garnet.common
         /// Starts unsignaled.
         /// </summary>
         readonly ManualResetEventSlim drainEvent = new(false);
+
+        /// <summary>
+        /// Completed when the last worker exits after <see cref="DisposeAsync"/> closed the monitor; null until then.
+        /// </summary>
+        TaskCompletionSource asyncDrain;
 
         /// <summary>
         /// Gets the current active worker count (0 if closed).
@@ -52,6 +58,22 @@ namespace Garnet.common
 
             // Atomically flip the count negative; if no workers were active, skip wait
             TryClose();
+            drainEvent.Dispose();
+        }
+
+        /// <summary>
+        /// Closes the monitor and completes once all active workers have exited, holding no thread while they finish.
+        /// </summary>
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+                return;
+
+            // Published before the close, so the worker that leaves last after the close sees it
+            var drain = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref asyncDrain, drain);
+            if (Interlocked.Add(ref workerCount, int.MinValue) != int.MinValue)
+                await drain.Task.ConfigureAwait(false);
             drainEvent.Dispose();
         }
 
@@ -100,7 +122,7 @@ namespace Garnet.common
             {
                 // Closed — undo the increment; if we happen to be the last, signal drain.
                 if (Interlocked.Add(ref workerCount, -add) == int.MinValue)
-                    drainEvent.Set();
+                    SignalDrained();
                 count = 0;
                 return false;
             }
@@ -120,9 +142,16 @@ namespace Garnet.common
 
             // Signal drain when closed and all workers have exited
             if (cnt == int.MinValue)
-                drainEvent.Set();
+                SignalDrained();
 
             return cnt;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void SignalDrained()
+        {
+            drainEvent.Set();
+            Volatile.Read(ref asyncDrain)?.TrySetResult();
         }
     }
 }

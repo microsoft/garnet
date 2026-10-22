@@ -160,11 +160,30 @@ namespace Garnet.server
         SingleWriterMultiReaderLock databaseManagerLock;
 
         internal readonly CollectionItemBroker itemBroker;
+
+        /// <summary>
+        /// Number of commands moved to the thread pool because they would wait on a thread that must not wait.
+        /// </summary>
+        internal long offloads;
+
         internal readonly CustomCommandManager customCommandManager;
         internal readonly GarnetServerMonitor monitor;
         internal readonly IClusterProvider clusterProvider;
         internal readonly SlowLogContainer slowLogContainer;
         internal readonly ILogger sessionLogger;
+
+        /// <summary>
+        /// Rendezvous used by <c>DEBUG BLOCKON</c> and <c>DEBUG SIGNAL</c> to park and release sessions
+        /// across connections.
+        /// </summary>
+        internal readonly SessionSignalRegistry sessionSignalRegistry = new();
+
+        /// <summary>
+        /// Sessions parked until another session lets go of the key locks they wait on. Shared with the copy that replays
+        /// the AOF, whose transactions lock the same store.
+        /// </summary>
+        internal readonly LockReleaseSignal lockReleaseSignal = new();
+
         internal long safeAofAddress = -1;
 
         private readonly bool enforceConsistentRead;
@@ -245,7 +264,7 @@ namespace Garnet.server
             this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
             if (!serverOptions.DisableObjects)
-                this.itemBroker = new CollectionItemBroker();
+                this.itemBroker = new CollectionItemBroker(this);
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
@@ -325,6 +344,7 @@ namespace Garnet.server
             loggerFactory: storeWrapper.loggerFactory,
             runtimeConfig: storeWrapper.runtimeConfig)
         {
+            lockReleaseSignal = storeWrapper.lockReleaseSignal;
         }
 
         /// <summary>
@@ -414,7 +434,7 @@ namespace Garnet.server
 
                     await RecoverAOFAsync().ConfigureAwait(false);
                     databaseManager.VerifyRecoveryIsComplete();
-                    _ = ReplayAOF(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1));
+                    _ = await ReplayAOFAsync(AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1)).ConfigureAwait(false);
                 }
                 else
                 {
@@ -466,7 +486,7 @@ namespace Garnet.server
             // concurrently with recovery, which owns the log: recovery does its own budget-aware eviction and directly resets
             // log addresses (RecoveryReset). Racing the resizer against that can lose a page read/flush completion and hang the
             // main recovery thread in WaitRead/WaitFlush. The size tracker object still tracks size during recovery. The resizer
-            // is started once checkpoint recovery is done: in ReplayAOF, which is ordinary store traffic and must be budget-managed,
+            // is started once checkpoint recovery is done: in ReplayAOFAsync, which is ordinary store traffic and must be budget-managed,
             // and otherwise in StoreWrapper.Start().
             await databaseManager.RecoverCheckpointAsync(replicaRecover, recoverFromToken, metadata).ConfigureAwait(false);
         }
@@ -515,26 +535,33 @@ namespace Garnet.server
         /// Main-log heap size sampled at the end of AOF replay, or -1 if no replay has run.
         /// </summary>
         /// <remarks>
-        /// Replay is memory-budget-managed (see <see cref="ReplayAOF"/>), and this records how much heap it actually held.
+        /// Replay is memory-budget-managed (see <see cref="ReplayAOFAsync"/>), and this records how much heap it actually held.
         /// Sampling after startup cannot show that: the resizer keeps trimming once the server is up, so an unmanaged replay
         /// and a managed one converge to the same floor despite very different peaks.
         /// </remarks>
         public long AofReplayEndHeapSizeBytes { get; private set; } = -1;
 
         /// <summary>
-        /// When replaying AOF we do not want to write AOF records again.
+        /// Replays the AOF until <paramref name="untilAddress"/>, without writing the replayed records to it again.
         /// </summary>
-        public AofAddress ReplayAOF(AofAddress untilAddress)
-        {
-            // AOF replay is ordinary store traffic, so it must be memory-budget-managed like normal operation. Checkpoint
-            // recovery runs before this and cannot tolerate a concurrent resizer, so this is the earliest point at which the
-            // size trackers can be started. Starting is idempotent; Start() calls this again for the non-recovery path.
-            StartSizeTrackers();
+        /// <remarks>
+        /// Replay runs on a thread of its own: it holds its thread for as long as the AOF is long, and replaying a record
+        /// can wait there on work the thread pool runs.
+        /// </remarks>
+        /// <param name="untilAddress">Address to replay until, or -1 for each sublog to replay until its tail</param>
+        /// <returns>The address replay reached</returns>
+        public Task<AofAddress> ReplayAOFAsync(AofAddress untilAddress)
+            => DedicatedThread.RunAsync("AofRecover", () =>
+            {
+                // AOF replay is ordinary store traffic, so it must be memory-budget-managed like normal operation. Checkpoint
+                // recovery runs before this and cannot tolerate a concurrent resizer, so this is the earliest point at which the
+                // size trackers can be started. Starting is idempotent; Start() calls this again for the non-recovery path.
+                StartSizeTrackers();
 
-            var replayedUntil = databaseManager.ReplayAOF(untilAddress);
-            AofReplayEndHeapSizeBytes = store.Log.HeapSizeBytes;
-            return replayedUntil;
-        }
+                var replayedUntil = databaseManager.ReplayAOF(untilAddress);
+                AofReplayEndHeapSizeBytes = store.Log.HeapSizeBytes;
+                return replayedUntil;
+            });
 
         /// <summary>
         /// Append a checkpoint commit to the AOF
@@ -937,11 +964,22 @@ namespace Garnet.server
         {
             Debug.Assert(expiredKeyDeletionScanFrequencySecs > 0);
 
-            return RunMaintenanceLoopAsync((_) =>
+            return RunMaintenanceLoopAsync(ScanAsync, TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs),
+                "background expired key deletion scan task", logger, token);
+
+#if DEBUG
+            async ValueTask ScanAsync(CancellationToken _)
+            {
+                await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.ExpiredKeyDeletion_Hold_Scan).ConfigureAwait(false);
+                databaseManager.ExpiredKeyDeletionScan();
+            }
+#else
+            ValueTask ScanAsync(CancellationToken _)
             {
                 databaseManager.ExpiredKeyDeletionScan();
                 return ValueTask.CompletedTask;
-            }, TimeSpan.FromSeconds(expiredKeyDeletionScanFrequencySecs), "background expired key deletion scan task", logger, token);
+            }
+#endif
         }
 
         /// <summary>
@@ -998,7 +1036,8 @@ namespace Garnet.server
             // Start background maintenance tasks that should run only on the primary
             if (clusterProvider == null || clusterProvider.IsPrimary())
             {
-                StartPrimaryTasks();
+                // No lifecycle change is pending at startup, so the tasks start before this returns
+                _ = StartPrimaryTasksAsync();
             }
             else if (clusterProvider?.IsReplica() ?? false)
             {
@@ -1075,6 +1114,27 @@ namespace Garnet.server
             => enforceConsistentRead && clusterProvider.IsReplica();
 
         /// <summary>
+        /// Sessions that have been disposed but are still using their storage sessions, because an async GET
+        /// processor is finishing the reads the session started.
+        /// </summary>
+        int sessionStorageTeardowns;
+
+        /// <summary>
+        /// Counts a session whose storage sessions are released after it is disposed.
+        /// </summary>
+        internal void BeginStorageTeardown() => _ = Interlocked.Increment(ref sessionStorageTeardowns);
+
+        /// <summary>
+        /// Uncounts a session once its storage sessions have been released.
+        /// </summary>
+        internal void EndStorageTeardown() => _ = Interlocked.Decrement(ref sessionStorageTeardowns);
+
+        /// <summary>
+        /// Number of sessions that are disposed but have not yet released their storage sessions.
+        /// </summary>
+        internal int StorageTeardowns => Volatile.Read(ref sessionStorageTeardowns);
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
@@ -1082,6 +1142,11 @@ namespace Garnet.server
             if (disposed)
                 return;
             disposed = true;
+
+            // The stores are torn down below, under sessions that are still releasing theirs. The reads they are
+            // waiting for are on devices that stay open until then, so this ends once those complete.
+            for (var spinner = new SpinWait(); StorageTeardowns != 0;)
+                spinner.SpinOnce();
 
             clusterProvider?.Dispose();
             itemBroker?.Dispose();
@@ -1121,30 +1186,55 @@ namespace Garnet.server
         readonly object taskLifecycleLock = new();
 
         /// <summary>
-        /// Start background maintenance tasks that should only run when this node is a primary
+        /// The latest primary-task lifecycle change that may still be waiting for a task to stop. These changes run one
+        /// at a time, in the order requested, so no task is started while an instance of it is still stopping. Guarded
+        /// by <see cref="taskLifecycleLock"/>, which is never held while waiting.
         /// </summary>
-        /// <returns></returns>
-        public void StartPrimaryTasks()
+        Task pendingPrimaryTaskChange = Task.CompletedTask;
+
+        /// <summary>
+        /// Start background maintenance tasks that should only run when this node is a primary. Starts them at once
+        /// unless a lifecycle change is still waiting for a task to stop, in which case they start after it.
+        /// </summary>
+        /// <returns>A task that completes once the tasks have been started.</returns>
+        public Task StartPrimaryTasksAsync()
         {
             lock (taskLifecycleLock)
             {
-                if (serverOptions.AofSizeLimit.Length > 0)
-                {
-                    var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                    taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimitAsync(aofSizeLimitBytes, token, logger));
-                }
+                if (!pendingPrimaryTaskChange.IsCompleted)
+                    return pendingPrimaryTaskChange = StartPrimaryTasksAfterAsync(pendingPrimaryTaskChange);
 
-                TryStartCommitTask();
-                TryStartScheduledCheckpointTask();
-
-                if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
-                {
-                    taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTaskAsync(serverOptions.CompactionFrequencySecs, token));
-                }
-
-                TryStartObjectCollectTask();
-                TryStartExpiredKeyDeletionTask();
+                StartPrimaryTasksCore();
+                return Task.CompletedTask;
             }
+        }
+
+        async Task StartPrimaryTasksAfterAsync(Task predecessor)
+        {
+            await predecessor.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+            lock (taskLifecycleLock)
+                StartPrimaryTasksCore();
+        }
+
+        void StartPrimaryTasksCore()
+        {
+            if (serverOptions.AofSizeLimit.Length > 0)
+            {
+                var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
+                taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimitAsync(aofSizeLimitBytes, token, logger));
+            }
+
+            TryStartCommitTask();
+            TryStartScheduledCheckpointTask();
+
+            if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
+            {
+                taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTaskAsync(serverOptions.CompactionFrequencySecs, token));
+            }
+
+            TryStartObjectCollectTask();
+            TryStartExpiredKeyDeletionTask();
         }
 
         // Start the periodic AOF commit task if enabled by the current runtime config. Reads the interval
@@ -1182,18 +1272,27 @@ namespace Garnet.server
         /// <summary>
         /// Reconcile a background primary task with the current runtime configuration after a CONFIG SET:
         /// stop the running instance (so a killed or retuned task does not keep its old interval) and, when
-        /// this node is not a replica, restart it if the new value re-enables it. Runs synchronously on the
-        /// CONFIG SET thread under <see cref="taskLifecycleLock"/> so concurrent updates are serialized.
+        /// this node is not a replica, restart it once that instance has stopped, if the new value re-enables it.
+        /// Runs after any earlier lifecycle change still pending (see <see cref="pendingPrimaryTaskChange"/>),
+        /// without holding a thread while it waits.
         /// Primary tasks are intentionally not started on a replica; a later failover starts them from the
-        /// (now updated) runtime configuration through <see cref="StartPrimaryTasks"/>.
+        /// (now updated) runtime configuration through <see cref="StartPrimaryTasksAsync"/>.
         /// </summary>
         /// <param name="taskType">Primary task to reconcile.</param>
-        internal void ReconcilePrimaryTask(TaskType taskType)
+        /// <returns>A task that completes once the task has been stopped and, if enabled, restarted.</returns>
+        internal Task ReconcilePrimaryTaskAsync(TaskType taskType)
         {
             lock (taskLifecycleLock)
-            {
-                AsyncUtils.BlockingWait(taskManager.CancelAsync(taskType));
+                return pendingPrimaryTaskChange = ReconcilePrimaryTaskAfterAsync(pendingPrimaryTaskChange, taskType);
+        }
 
+        async Task ReconcilePrimaryTaskAfterAsync(Task predecessor, TaskType taskType)
+        {
+            await predecessor.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await taskManager.CancelAsync(taskType).ConfigureAwait(false);
+
+            lock (taskLifecycleLock)
+            {
                 if (clusterProvider?.IsReplica() ?? false)
                     return;
 

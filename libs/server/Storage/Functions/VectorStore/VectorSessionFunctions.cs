@@ -437,7 +437,7 @@ namespace Garnet.server
         {
             //Debug.Assert(key.MetadataSize == 1, "Should never delete a non-namespaced value with VectorSessionFunctions");
 
-            functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            functionsState.OnKeyChanged(deleteInfo.KeyHash);
             return true;
         }
 

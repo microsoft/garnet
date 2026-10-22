@@ -22,6 +22,12 @@ namespace Garnet.common
         public readonly PoolEntry buffer;
 
         /// <summary>
+        /// Whether the send in flight was issued without waiting for send capacity, which decides the count its
+        /// completion is charged to. Set before each send.
+        /// </summary>
+        internal bool nonBlockingSend;
+
+        /// <summary>
         /// Construct new instance
         /// </summary>
         /// <param name="eventHandler">Event handler</param>

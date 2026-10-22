@@ -1,6 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Threading;
+using System.Threading.Tasks;
+using System.Threading.Tasks.Sources;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -38,6 +42,15 @@ namespace Tsavorite.core
         /// Throttle the iteration if needed, outside epoch protection - blocking here is fine.
         /// </summary>
         void Throttle();
+
+        /// <summary>
+        /// Waits, outside epoch protection and after <see cref="Throttle"/>, until the consumer can take more entries.
+        /// Only <see cref="TsavoriteLogScanIterator.BulkConsumeAllAsync"/> calls it: the scan stops to await a wait that does
+        /// not complete synchronously, so a consumer that has to wait holds no thread. A wait that completes synchronously
+        /// is not awaited, so return <c>default</c> rather than a completed wait backed by an <see cref="IValueTaskSource"/>.
+        /// </summary>
+        /// <param name="token">Cancellation token of the scan</param>
+        ValueTask ThrottleAsync(CancellationToken token) => default;
     }
 
 }

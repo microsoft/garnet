@@ -31,12 +31,16 @@ namespace Garnet.server
         /// (AofReplayDriftCheckFreq &gt; 0), the barrier itself is enabled (AofReplayDriftThreshold
         /// &gt;= 0), and there is more than one virtual sublog (so cross-sublog drift can exist).
         /// When false, each sublog's next-scan boundary is seeded to long.MaxValue, which disables
-        /// the proactive scan branch in <see cref="UpdateVirtualSublogKeySequenceNumber(int, long, long)"/>.
+        /// the proactive scan branch in <see cref="UpdateVirtualSublogKeySequenceNumber(int, long, long, bool)"/>.
         /// </summary>
         readonly bool proactiveReplayDriftCheckEnabled = serverOptions.ProactiveReplayDriftCheckEnabled;
 
         readonly VirtualSublogReplayState[] vsrs = BuildVirtualSublogReplayStates(serverOptions);
 
+        /// <summary>
+        /// Whether another manager has replaced this one, after which replay no longer feeds it.
+        /// </summary>
+        volatile bool retired;
         /// <summary>
         /// Builds the per-virtual-sublog replay state, seeding each sublog's first drift-scan boundary.
         /// When the proactive scan is enabled, drift-check responsibility is rotated across sublogs by
@@ -219,7 +223,10 @@ namespace Garnet.server
         /// <param name="virtualSublogIdx"></param>
         /// <param name="keyHash"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateVirtualSublogKeySequenceNumber(int virtualSublogIdx, long keyHash, long sequenceNumber)
+        /// <param name="mustNotWait">Whether the caller replays on a thread that must not wait at the replay barrier; see
+        /// <see cref="ReplayAlignBarrier.SignalArrivalAndWait(int, long, bool)"/>. Everything done before the barrier
+        /// only advances monotonically, so replaying the record again repeats none of it.</param>
+        public void UpdateVirtualSublogKeySequenceNumber(int virtualSublogIdx, long keyHash, long sequenceNumber, bool mustNotWait = false)
         {
             // Eagerly publish this sublog's max frontier BEFORE parking and writing the key sketch entry.
             //
@@ -252,7 +259,7 @@ namespace Garnet.server
             // Pause this replay thread when it has run ahead of an active round's target, bounding
             // drift from the lagging sublogs. Fast path is a single Volatile.Read + compare when no
             // round is active.
-            replayBarrier.SignalArrivalAndWait(virtualSublogIdx, vsrs[virtualSublogIdx].Max);
+            replayBarrier.SignalArrivalAndWait(virtualSublogIdx, vsrs[virtualSublogIdx].Max, mustNotWait);
 
             // Publish the key's sketch entry AFTER the park (deferred-KRT order): while parked, a
             // reader touching this key still sees its previous value and advances its session
@@ -288,6 +295,38 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Decides whether reading a key would make the session wait for replay, and refreshes the session's cached view
+        /// of the sublog the key belongs to. The blocking read path and the non-blocking probe both decide through this,
+        /// so they cannot disagree about when a wait is needed.
+        /// </summary>
+        /// <param name="keyHash">Hash of the key about to be read.</param>
+        /// <param name="replicaReadSessionContext">The read context of the session.</param>
+        /// <param name="virtualSublogIdx">The virtual sublog the key belongs to.</param>
+        /// <returns>True if replay of that sublog has not moved past the session's maximum sequence number.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        bool MustWaitForReplay(long keyHash, ref ReplicaReadSessionContext replicaReadSessionContext, out int virtualSublogIdx)
+        {
+            virtualSublogIdx = appendOnlyFile.Log.GetVirtualSublogIdx(keyHash);
+            var initOrSameSublog = replicaReadSessionContext.lastVirtualSublogIdx == -1 || replicaReadSessionContext.lastVirtualSublogIdx == virtualSublogIdx;
+            var mssn = replicaReadSessionContext.maximumSessionSequenceNumber;
+
+            // Prefetch the key's sketch slot for later post-read update (AfterConsistentReadKey)
+            vsrs[virtualSublogIdx].PrefetchKeySequenceNumber(keyHash);
+
+            // Here we have to wait for replay to catch up
+            // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
+            if (initOrSameSublog || mssn < replicaReadSessionContext.cachedSublogMax[virtualSublogIdx])
+                return false;
+
+            // Refresh cached view
+            var sketchMaxValue = vsrs[virtualSublogIdx].Max;
+            replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = sketchMaxValue;
+
+            // Optimistic check without lock
+            return mssn >= sketchMaxValue;
+        }
+
+        /// <summary>
         /// Verify key freshness before allowing reads.
         /// </summary>
         /// <param name="keyHash"></param>
@@ -297,36 +336,114 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         void VerifyKeyFreshness(long keyHash, ref ReplicaReadSessionContext replicaReadSessionContext, TimeSpan timeout, CancellationToken ct)
         {
-            var virtualSublogIdx = appendOnlyFile.Log.GetVirtualSublogIdx(keyHash);
-            var initOrSameSublog = replicaReadSessionContext.lastVirtualSublogIdx == -1 || replicaReadSessionContext.lastVirtualSublogIdx == virtualSublogIdx;
-            var mssn = replicaReadSessionContext.maximumSessionSequenceNumber;
-
-            // Prefetch the key's sketch slot for later post-read update (AfterConsistentReadKey)
-            vsrs[virtualSublogIdx].PrefetchKeySequenceNumber(keyHash);
-
-            // Here we have to wait for replay to catch up
-            // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-            if (!initOrSameSublog && mssn >= replicaReadSessionContext.cachedSublogMax[virtualSublogIdx])
+            if (MustWaitForReplay(keyHash, ref replicaReadSessionContext, out var virtualSublogIdx))
             {
-                // Refresh cached view
-                var sketchMaxValue = vsrs[virtualSublogIdx].Max;
-                replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = sketchMaxValue;
+                // About to wait. If the replay-side drift is large enough to be worth bounding, install a barrier round
+                BoundReplayDrift();
 
-                // Optimistic check without lock
-                if (mssn >= sketchMaxValue)
-                {
-                    // About to wait. If the replay-side drift is large enough to be worth bounding, install a barrier round
-                    BoundReplayDrift();
-
-                    vsrs[virtualSublogIdx].WaitForSequenceNumber(mssn, replicaReadSessionContext.waiter, timeout, ct);
-                    // Refresh after wait
-                    replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = vsrs[virtualSublogIdx].Max;
-                }
+                vsrs[virtualSublogIdx].WaitForSequenceNumber(replicaReadSessionContext.maximumSessionSequenceNumber, replicaReadSessionContext.waiter, timeout, ct);
+                // Refresh after wait
+                replicaReadSessionContext.cachedSublogMax[virtualSublogIdx] = vsrs[virtualSublogIdx].Max;
             }
 
             // Store for future update
             replicaReadSessionContext.lastVirtualSublogIdx = (short)virtualSublogIdx;
             replicaReadSessionContext.lastHash = keyHash;
+        }
+
+        /// <summary>
+        /// Probes whether reading a key would make the session wait for replay, without waiting. Probe the keys of a
+        /// command in the order the command reads them, on a copy of the session's read context.
+        /// </summary>
+        /// <remarks>
+        /// When the key would not wait, the copy advances the way a read of it leaves the session (the same step
+        /// <see cref="PreBatchKeyConsistentRead"/> takes), so the next key is probed against the state the session would
+        /// have by then. Replay may move a key's sequence number between the probe and the read; the read then waits
+        /// where the probe did not.
+        /// </remarks>
+        /// <param name="keyHash">Hash of the key.</param>
+        /// <param name="probe">A copy of the session's read context, advanced by each probe that does not wait.</param>
+        /// <param name="virtualSublogIdx">The virtual sublog the key belongs to.</param>
+        /// <param name="sequenceNumber">When the read would wait, the sequence number replay of that sublog has to pass.</param>
+        /// <returns>True if reading the key would wait for replay.</returns>
+        internal bool ProbeKeyFreshness(long keyHash, ref ReplicaReadSessionContext probe, out int virtualSublogIdx, out long sequenceNumber)
+        {
+            if (MustWaitForReplay(keyHash, ref probe, out virtualSublogIdx))
+            {
+                sequenceNumber = probe.maximumSessionSequenceNumber;
+                return true;
+            }
+
+            probe.lastVirtualSublogIdx = (short)virtualSublogIdx;
+            probe.lastHash = keyHash;
+            probe.maximumSessionSequenceNumber = Math.Max(probe.maximumSessionSequenceNumber, GetKeySequenceNumber(keyHash));
+            sequenceNumber = 0;
+            return false;
+        }
+
+        /// <summary>
+        /// Lists the waiter of a parked session to be woken once replay of the virtual sublog passes the sequence number.
+        /// </summary>
+        /// <param name="virtualSublogIdx">The virtual sublog to wait on.</param>
+        /// <param name="sequenceNumber">The sequence number replay of that sublog has to pass.</param>
+        /// <param name="waiter">The session's waiter.</param>
+        /// <returns>
+        /// False if there is nothing to wait for: replay is already past the sequence number, or this manager has been
+        /// replaced and is no longer fed by replay.
+        /// </returns>
+        internal bool TryRegisterFreshnessWaiter(int virtualSublogIdx, long sequenceNumber, ReadSessionWaiter waiter)
+        {
+            // About to wait. If the replay-side drift is large enough to be worth bounding, install a barrier round
+            BoundReplayDrift();
+            if (!vsrs[virtualSublogIdx].TryRegisterWaiter(sequenceNumber, waiter))
+                return false;
+
+            // Retirement wakes what is listed when it sweeps. A waiter listed after the sweep finds the manager retired
+            // here instead: the flag was set before the sweep took the sublog's lock, which listing took after it.
+            if (!retired)
+                return true;
+
+            _ = vsrs[virtualSublogIdx].TryRemoveWaiter(waiter);
+            return false;
+        }
+
+        /// <summary>
+        /// Takes the waiter of a parked session off the virtual sublog it was listed on.
+        /// </summary>
+        /// <param name="virtualSublogIdx">The virtual sublog the waiter was listed on.</param>
+        /// <param name="waiter">The session's waiter.</param>
+        /// <returns>True if this call took it off; false if it had already left, which means it has been woken.</returns>
+        internal bool TryRemoveFreshnessWaiter(int virtualSublogIdx, ReadSessionWaiter waiter)
+            => vsrs[virtualSublogIdx].TryRemoveWaiter(waiter);
+
+        /// <summary>
+        /// Counts the sessions parked, rather than blocking a thread, until replay catches up. For diagnostics and tests.
+        /// </summary>
+        internal int ParkedFreshnessWaiterCount() => WaiterCount(parked: true);
+
+        /// <summary>
+        /// Counts the reads blocking a thread until replay catches up. For diagnostics and tests.
+        /// </summary>
+        internal int BlockedFreshnessWaiterCount() => WaiterCount(parked: false);
+
+        int WaiterCount(bool parked)
+        {
+            var count = 0;
+            for (var i = 0; i < vsrs.Length; i++)
+                count += vsrs[i].WaiterCount(parked);
+            return count;
+        }
+
+        /// <summary>
+        /// Retires this manager once another replaces it. Replay no longer feeds it, so a parked session waiting on it
+        /// would never be woken: wakes every one, and makes later attempts to list a waiter fail. Each woken session
+        /// decides again, against the manager that replaced this one, whether it still has to wait.
+        /// </summary>
+        internal void RetireFreshnessWaiters()
+        {
+            retired = true;
+            for (var i = 0; i < vsrs.Length; i++)
+                vsrs[i].WakeParkedWaiters();
         }
 
         /// <summary>

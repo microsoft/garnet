@@ -648,6 +648,7 @@ namespace Garnet.test
             public void Dispose() { }
             public void DisposeNetworkSender(bool waitForSendCompletion) { }
             public void Enter() { }
+            public bool TryEnter() => true;
             public void EnterAndGetResponseObject(out byte* head, out byte* tail) => throw new NotSupportedException();
             public void Exit() { }
             public void ExitAndReturnResponseObject() { }
@@ -657,6 +658,12 @@ namespace Garnet.test
             public void ReturnResponseObject() { }
             public void SendCallback(object context) { }
             public bool SendResponse(int offset, int size) => throw new NotSupportedException();
+            public bool SendResponseNoWait(int offset, int size) => throw new NotSupportedException();
+            public bool IsSendSaturated => false;
+            public bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+            public bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+            public void AddSendCapacityWaiter(ISendCapacityWaiter waiter) { }
+            public void NotifySendCapacityWaiters() { }
             public void SendResponse(byte[] buffer, int offset, int count, object context)
                 => throw new Exception("Simulated send failure (connection disposed)");
             public void Throttle() { }

@@ -8,6 +8,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Callback functions for streaming snapshot iteration
     /// </summary>
+    /// <remarks>
+    /// The callbacks run on a dedicated thread, so they may block, for example to wait for the consumer of the stream.
+    /// </remarks>
     public interface IStreamingSnapshotIteratorFunctions
     {
         /// <summary>Iteration is starting.</summary>

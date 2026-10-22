@@ -86,16 +86,20 @@ namespace Garnet.networking
 
             public override unsafe void Write(ReadOnlySpan<byte> buffer)
             {
+                var networkSender = garnetNetworkHandler.networkSender;
                 while (true)
                 {
-                    garnetNetworkHandler.networkSender.GetResponseObject();
-                    var head = garnetNetworkHandler.networkSender.GetResponseObjectHead();
-                    var tail = garnetNetworkHandler.networkSender.GetResponseObjectTail();
+                    networkSender.GetResponseObject();
+                    var head = networkSender.GetResponseObjectHead();
+                    var tail = networkSender.GetResponseObjectTail();
 
                     int copyBytes = Math.Min(buffer.Length, (int)(tail - head));
 
                     buffer.Slice(0, copyBytes).CopyTo(new Span<byte>(head, copyBytes));
-                    garnetNetworkHandler.networkSender.SendResponse(0, copyBytes);
+                    if (garnetNetworkHandler.sendNoWait)
+                        _ = networkSender.SendResponseNoWait(0, copyBytes);
+                    else
+                        _ = networkSender.SendResponse(0, copyBytes);
 
                     if (copyBytes == buffer.Length) break;
                     buffer = buffer.Slice(copyBytes);
@@ -105,6 +109,10 @@ namespace Garnet.networking
             public override void Flush()
             {
             }
+
+            // Completes in place, as Flush does nothing: the base implementation would run Flush as a thread-pool task,
+            // and SslStream, which flushes after each handshake flight, would continue the handshake on the thread pool.
+            public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
             public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
             {
@@ -134,7 +142,15 @@ namespace Garnet.networking
                     // Set readerStatus to indicate we are waiting for the semaphore
                     garnetNetworkHandler.readerStatus = TlsReaderStatus.Waiting;
                     if (garnetNetworkHandler.expectingData.CurrentCount == 0) garnetNetworkHandler.expectingData.Release();
+
+                    // SemaphoreSlim resumes its waiters on the thread pool, never on the releasing thread, so a handshake
+                    // continues there rather than on a socket event thread that runs completions inline. SslStream
+                    // validates a client certificate synchronously, which may download issuer certificates and
+                    // revocation lists, and it does so on the pool.
                     await garnetNetworkHandler.receivedData.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    // A handshake waits with its caller's token, which disposing the handler does not cancel. The
+                    // wait still holds the buffers, so it must end when the handler is disposed.
+                    garnetNetworkHandler.cancellationTokenSource.Token.ThrowIfCancellationRequested();
                     // Releaser of semaphore should have updated readerStatus
                     Debug.Assert(garnetNetworkHandler.readerStatus == TlsReaderStatus.Active || garnetNetworkHandler.disposeCount > 0);
                 }

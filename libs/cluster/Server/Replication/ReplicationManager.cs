@@ -154,6 +154,7 @@ namespace Garnet.cluster
             var deviceFactory = opts.GetInitializedDeviceFactory(opts.CheckpointDir ?? string.Empty);
             replicationConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "cluster", fileName: "replication.conf"));
             replicationConfigDevicePool = new(1, (int)replicationConfigDevice.SectorSize);
+            replicationConfigWriter = new ConfigFileWriter(replicationConfigDevice, replicationConfigDevicePool, () => currentReplicationConfig.ToByteArray(), logger);
 
             var canRecoverReplicationHistory = replicationConfigDevice.GetFileSize(0) > 0;
             if (clusterProvider.serverOptions.Recover && canRecoverReplicationHistory)
@@ -556,10 +557,11 @@ namespace Garnet.cluster
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
                 storeWrapper.appendOnlyFile.Log.InitializeIf(ref recoveredSafeAofAddress);
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
-                var replayedUntil = storeWrapper.ReplayAOF(AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1));
+                var replayedUntil = await storeWrapper.ReplayAOFAsync(AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1)).ConfigureAwait(false);
 
                 // Before advertising new replication offset, wait for any queued Vector Set ops to complete
-                storeWrapper.DefaultDatabase.VectorManager?.WaitForVectorOperationsToComplete();
+                if (storeWrapper.DefaultDatabase.VectorManager is { } vectorManager)
+                    await vectorManager.WaitForVectorOperationsToCompleteAsync().ConfigureAwait(false);
 
                 replicationOffset.SetValue(ref replayedUntil);
             }

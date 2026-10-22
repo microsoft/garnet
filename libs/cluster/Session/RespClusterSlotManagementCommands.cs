@@ -47,8 +47,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
 
             return true;
@@ -89,8 +88,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
 
             return true;
@@ -214,8 +212,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
 
             return true;
@@ -256,8 +253,7 @@ namespace Garnet.cluster
             }
             else
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
 
             return true;
@@ -487,11 +483,7 @@ namespace Garnet.cluster
 
                 if (setSlotsSucceeded)
                 {
-                    // Cannot avoid blocking here we're on the network thread
-                    AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
-
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    return SuspendOn(BumpEpochOnceConfigWrittenAsync(), PendingReply.Ok);
                 }
                 else
                 {
@@ -587,11 +579,7 @@ namespace Garnet.cluster
 
             if (setSlotsSucceeded)
             {
-                // Cannot avoid blocking here we're on the network thread
-                AsyncUtils.BlockingWait(UnsafeBumpAndWaitForEpochTransitionAsync());
-
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return SuspendOn(BumpEpochOnceConfigWrittenAsync(), PendingReply.Ok);
             }
             else
             {

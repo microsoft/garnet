@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -110,6 +111,11 @@ namespace Garnet.cluster
         readonly IDevice replicationConfigDevice;
         readonly SectorAlignedBufferPool replicationConfigDevicePool;
 
+        /// <summary>
+        /// Writes the replication history file.
+        /// </summary>
+        readonly ConfigFileWriter replicationConfigWriter;
+
         private void InitializeReplicationHistory(int aofPhysicalSublogCount)
         {
             currentReplicationConfig = new ReplicationHistory(aofPhysicalSublogCount);
@@ -130,7 +136,13 @@ namespace Garnet.cluster
             }
         }
 
-        private void TryUpdateMyPrimaryReplId(string primaryReplicationId)
+        private ValueTask TryUpdateMyPrimaryReplIdAsync(string primaryReplicationId)
+        {
+            PublishPrimaryReplId(primaryReplicationId);
+            return FlushConfigAsync();
+        }
+
+        private void PublishPrimaryReplId(string primaryReplicationId)
         {
             while (true)
             {
@@ -139,13 +151,12 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentReplicationConfig, newConfig, current) == current)
                     break;
             }
-            FlushConfig();
         }
 
         /// <summary>
         /// Called during failover so replica can generate new replication id and keep track of valid replicationOffset before switching over.
         /// </summary>
-        public void TryUpdateForFailover()
+        public async ValueTask TryUpdateForFailoverAsync()
         {
             while (true)
             {
@@ -155,18 +166,19 @@ namespace Garnet.cluster
                 if (Interlocked.CompareExchange(ref currentReplicationConfig, newConfig, current) == current)
                     break;
             }
-            FlushConfig();
+            await FlushConfigAsync().ConfigureAwait(false);
             SetPrimaryReplicationId();
         }
 
-        private void FlushConfig()
-        {
-            lock (this)
-            {
-                logger?.LogTrace("Flushing replication history {path}", replicationConfigDevice.FileName);
-                ClusterUtils.WriteInto(replicationConfigDevice, replicationConfigDevicePool, 0, currentReplicationConfig.ToByteArray(), logger: logger);
-                logger?.LogTrace("Replication history flush completed {path}", replicationConfigDevice.FileName);
-            }
-        }
+        /// <summary>
+        /// Writes the replication history, holding the calling thread for the write: called only from a thread that may
+        /// wait, or at startup.
+        /// </summary>
+        private void FlushConfig() => replicationConfigWriter.Write();
+
+        /// <summary>
+        /// Writes the replication history, completing when the write does rather than holding the calling thread for it.
+        /// </summary>
+        private ValueTask FlushConfigAsync() => new(replicationConfigWriter.WriteAsync());
     }
 }

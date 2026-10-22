@@ -814,20 +814,20 @@ namespace Garnet.test
             var runtimeConfig = new RuntimeServerConfig(new GarnetServerOptions());
 
             // Member name, matched without regard to case.
-            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "lookup", out var error));
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "lookup", out var error, out _));
             ClassicAssert.IsNull(error);
             ClassicAssert.AreEqual(LogCompactionType.Lookup, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
             ClassicAssert.AreEqual(nameof(LogCompactionType.Lookup), runtimeConfig.RespFormat(ServerConfigType.COMPACTION_TYPE));
 
             // Underlying numeric value, reported back as the member name.
             ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE,
-                ((int)LogCompactionType.Shift).ToString(), out error));
+                ((int)LogCompactionType.Shift).ToString(), out error, out _));
             ClassicAssert.IsNull(error);
             ClassicAssert.AreEqual(LogCompactionType.Shift, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
             ClassicAssert.AreEqual(nameof(LogCompactionType.Shift), runtimeConfig.RespFormat(ServerConfigType.COMPACTION_TYPE));
 
             // A numeric value naming no declared member leaves the option untouched.
-            ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "999", out error));
+            ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.COMPACTION_TYPE, "999", out error, out _));
             ClassicAssert.AreEqual("ERR Invalid value for 'compaction-type': '999'.", error);
             ClassicAssert.AreEqual(LogCompactionType.Shift, runtimeConfig.GetEnum<LogCompactionType>(ServerConfigType.COMPACTION_TYPE));
         }
@@ -847,12 +847,12 @@ namespace Garnet.test
             ClassicAssert.AreEqual(TimeSpan.FromSeconds(5), runtimeConfig.GetTimeSpan(ServerConfigType.REPLICA_SYNC_DELAY));
 
             // A zero value is surfaced as an infinite timeout (the "non-positive means infinite" convention).
-            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "0", out var error));
+            ClassicAssert.IsTrue(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "0", out var error, out _));
             ClassicAssert.IsNull(error);
             ClassicAssert.AreEqual(Timeout.InfiniteTimeSpan, runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT));
 
             // A negative value is out of range (0 is the canonical way to request an infinite timeout).
-            ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "-3", out error));
+            ClassicAssert.IsFalse(runtimeConfig.TrySet(ServerConfigType.CLUSTER_NODE_TIMEOUT, "-3", out error, out _));
             ClassicAssert.AreEqual("ERR Value for 'cluster-node-timeout' is out of range (0..2147483647).", error);
             ClassicAssert.AreEqual("0", runtimeConfig.RespFormat(ServerConfigType.CLUSTER_NODE_TIMEOUT));
         }

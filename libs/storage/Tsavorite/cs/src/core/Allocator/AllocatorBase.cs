@@ -1097,8 +1097,19 @@ namespace Tsavorite.core
         public long GetTailAddress()
         {
             var local = TailPageOffset;
+            if (local.Offset >= PageSize)
+                local = GetStableTailPageOffset(local);
+            return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
+        }
 
-            // Handle corner cases during page overflow.
+        /// <summary>Resolves a tail page offset observed during page overflow.</summary>
+        /// <remarks>
+        /// Kept out of line because <see cref="Thread.Yield"/> is a P/Invoke: a method that inlines it sets up a P/Invoke
+        /// frame, a thread-static lookup, on every call, whether or not it yields.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        PageOffset GetStableTailPageOffset(PageOffset local)
+        {
             // The while loop is guaranteed to terminate because HandlePageOverflow ensures that it fixes the unstable TailPageOffset immediately.
             while (local.Offset >= PageSize)
             {
@@ -1112,7 +1123,7 @@ namespace Tsavorite.core
                 _ = Thread.Yield();
                 local = TailPageOffset;
             }
-            return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
+            return local;
         }
 
         /// <summary>Get tail address without considering whether it is unstable; this is called during HandlePageOverflow as part of determining
@@ -1375,6 +1386,33 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool NeedToWaitForFlush(int page)
             => page >= BufferSize + GetPage(FlushedUntilAddress);   // wraps around the BufferSize
+
+        /// <summary>
+        /// Whether an allocation that moves the tail onto a new page would wait for a flush to complete: the log holds as many
+        /// pages in memory as it may, or is over its memory budget with pages its size tracker could evict, and none of them
+        /// has been flushed past the head page, so none can be evicted to make room until a flush does.
+        /// </summary>
+        /// <remarks>
+        /// This is <see cref="HandlePageOverflow"/>'s wait, decided without allocating: <see cref="NeedToWaitForFlush"/>, or
+        /// <see cref="NeedToShiftAddress"/> and <see cref="NeedToWaitForClose"/> retrying until a head shift capped at
+        /// <see cref="FlushedUntilAddress"/> can close a page. It reads the addresses without stabilizing them, so it can be
+        /// stale by the time the caller acts on it, and it does not say whether an allocation will move the tail onto a new page.
+        /// </remarks>
+        public bool AllocationMayWaitForFlush
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get
+            {
+                var headPage = GetPage(HeadAddress);
+                if (GetPage(FlushedUntilAddress) > headPage)
+                    return false;
+
+                // The tail page is read without waiting for an overflowing allocation to stabilize it; such an allocation
+                // leaves the page number unchanged until it has moved the tail onto the next page
+                return GetPage(UnstableGetTailAddress(out _)) + 1 - headPage >= MaxAllocatedPageCount
+                    || (logSizeTracker is { IsRunning: true } tracker && tracker.IsBeyondSizeLimitAndCanEvict());
+            }
+        }
 
         /// <summary>
         /// If the page we are trying to allocate is past the last page with an unclosed address region, then we can retry immediately
@@ -2387,9 +2425,11 @@ namespace Tsavorite.core
             // FlushRunner releases it when issuance ends, and each issued write's callback releases its own unit.
             BeginNativeSnapshotFlush();
 
-            // If throttled, convert rest of the method into a truly async task run because issuing IO can take up synchronous time
+            // Throttled issuance waits for each page's write to complete before issuing the next, so it gets a thread of
+            // its own: a device may complete its writes on pool workers, which a pool worker waiting for them keeps from
+            // running when the pool is capped.
             if (throttleCheckpointFlushDelayMs >= 0)
-                _ = Task.Run(FlushRunner);
+                new Thread(FlushRunner) { IsBackground = true, Name = "SnapshotCheckpointFlush" }.Start();
             else
                 FlushRunner();
 
@@ -2636,6 +2676,8 @@ namespace Tsavorite.core
         /// <param name="ctx">The context from the IO operation</param>
         /// <param name="prevAddressToRead">If we return false, the address to issue the next IO for</param>
         /// <param name="prevLengthToRead">If we return false, the number of bytes to issue the next IO for</param>
+        /// <param name="readIssued">If we return false, whether we issued the reads of the record's objects. Their completion then owns
+        ///     <paramref name="ctx"/> and calls this again, and the caller must not touch <paramref name="ctx"/>.</param>
         /// <returns>True if we have the full record and the key was the requested key; if the record is fully inline, then the ctx.diskLogRecord is set and the ctx.record is transferred to it.
         /// Otherwise it is false, and:
         /// <list type="bullet">
@@ -2652,8 +2694,10 @@ namespace Tsavorite.core
         /// </returns>
         /// <remarks>If we have a complete record and the key passes the comparison and we have overflow or objects, then this will be overridden by a derived class (see 
         ///     <see cref="ObjectAllocatorImpl{TStoreFunctions}"/>) which will issue additional reads to retrieve those objects.</remarks>
-        private protected virtual bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
+        private protected virtual bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead, out bool readIssued)
         {
+            readIssued = false;
+
             // TODO: Optimize for non-ReadAtAddress tombstoned records to not have to retrieve the full record or, if we have it, not deserialize objects.
 
             // Initialize to "key is not present (data too small) or does not match so get previous record" length to read
@@ -2726,13 +2770,17 @@ namespace Tsavorite.core
         /// Verify a pending read's record and, on an incomplete record or key mismatch, re-issue the next disk
         /// read on the SAME op (walking the disk hash chain). Returns true if the op is resolved and ready for
         /// completion (full record with a key match, or walked below the resolvable range); false if a new IO was
-        /// issued and the op is therefore still pending. Shared by the synchronous iterator/scan path (called on
+        /// issued, for the next record or for the record's objects, and the op is therefore still pending. On false
+        /// the op belongs to that IO's completion, which may already be running, so the caller must not touch it. Shared by the synchronous iterator/scan path (called on
         /// the device completion thread) and the asynchronous run-thread drain (<see cref="TsavoriteKV{TStoreFunctions,TAllocator}.InternalCompletePendingRequest{TInput,TOutput,TContext,TSessionFunctionsWrapper}"/>).
         /// </summary>
         internal bool TryVerifyOrReissuePendingRead(ref AsyncIOContext ctx)
         {
-            if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
+            if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead, out var readIssued))
             {
+                if (readIssued)
+                    return false;
+
                 // Either we had an incomplete record (re-read the current record) or the key didn't match (read the
                 // previous record in the chain). If that address is in range, issue the read; else fall through to
                 // "IO complete" and let ContinuePending* detect the below-range case.
@@ -2778,6 +2826,14 @@ namespace Tsavorite.core
                     $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}, recordInfo {recordInfo}");
             }
 
+            OnPendingReadIOComplete(ctx);
+        }
+
+        /// <summary>
+        /// Hands on a pending read whose IO has completed, whether that IO read a record from the main log or the record's objects from the object log.
+        /// </summary>
+        private protected void OnPendingReadIOComplete(AsyncIOContext ctx)
+        {
             if (ctx.completionEvent is null)
             {
                 // Asynchronous path: keep the completion thread minimal — record the device result and hand the op
@@ -2797,7 +2853,7 @@ namespace Tsavorite.core
             }
             catch (Exception e)
             {
-                logger?.LogError(e, "AsyncGetFromDiskCallback error");
+                logger?.LogError(e, "OnPendingReadIOComplete error");
                 _wrapper.OnDisposeDiskRecord(ref ctx.diskLogRecord, DisposeReason.DeserializedFromDisk);
                 ctx.DisposeRecord();
                 ctx.completionEvent.SetException(e);

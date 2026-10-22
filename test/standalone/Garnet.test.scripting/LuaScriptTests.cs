@@ -1844,6 +1844,32 @@ return retArray";
             ClassicAssert.AreEqual("false", nullMultiBulk[1]);
         }
 
+        /// <summary>
+        /// A script runs to completion on the thread that called it, so a blocking collection command in one answers
+        /// at once, as though its timeout had already expired, as in Redis. Every timeout here is 0, to wait forever.
+        /// </summary>
+        [Test]
+        public void BlockingCommandsInAScriptAnswerAtOnce()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            _ = db.ListRightPush("full", "a");
+
+            var res = (string[])db.ScriptEvaluate(
+                "local empty = redis.call('BLPOP', KEYS[1], '0'); " +
+                "local moved = redis.call('BRPOPLPUSH', KEYS[1], KEYS[2], '0'); " +
+                "local popped = redis.call('BLPOP', KEYS[2], '0'); " +
+                "return { tostring(empty), tostring(moved), popped[1], popped[2] }",
+                [(RedisKey)"empty", (RedisKey)"full"]);
+
+            ClassicAssert.AreEqual(new[] { "false", "false", "full", "a" }, res);
+
+            // Nothing was left waiting on the key: a push lands in the list
+            ClassicAssert.AreEqual(1, db.ListLeftPush("empty", "x"));
+            ClassicAssert.AreEqual(1, db.ListLength("empty"));
+        }
+
         [Test]
         public void NoScriptCommandsForbidden()
         {

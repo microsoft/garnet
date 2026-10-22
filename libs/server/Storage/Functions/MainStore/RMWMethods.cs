@@ -164,8 +164,10 @@ namespace Garnet.server
                         return false;
                     }
 
-                    // Always return 0 at initial updater because previous value was 0
+                    // A revivified record or one reinitialized from an expired record keeps its old bytes, so clear the value before setting the bit.
+                    // Always return 0 at initial updater because previous value was 0.
                     value = logRecord.ValueSpan;
+                    value.Clear();
 
                     if (logRecord.IsPinnedValue)
                         _ = BitmapManager.UpdateBitmap(logRecord.PinnedValuePointer, bOffset, bSetVal);
@@ -389,12 +391,30 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            functionsState.OnKeyChanged(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
                 rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
+        }
+
+        /// <summary>
+        /// Whether <paramref name="cmd"/> must answer WRONGTYPE instead of updating <paramref name="srcLogRecord"/>: an object value,
+        /// a RangeIndex record updated by a command not legal on one, a RangeIndex command on any other record, or a Vector Set
+        /// updated by a command not legal on one.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool IsWrongTypeForUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RespCommand cmd)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (srcLogRecord.DataHeader.ValueIsObject)
+                return true;
+
+            var recordType = srcLogRecord.RecordType;
+            if (recordType == RangeIndexManager.RangeIndexRecordType)
+                return !cmd.IsLegalOnRangeIndex();
+            return cmd.IsRangeIndexCommand() || (recordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet());
         }
 
         /// <inheritdoc />
@@ -410,31 +430,7 @@ namespace Garnet.server
                 return false;
             }
 
-            if (logRecord.DataHeader.ValueIsObject)
-            {
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
-            }
-
-            // RangeIndex type safety – normal string records have RecordType 0; skip all checks in that common case.
-            if (logRecord.RecordType == RangeIndexManager.RangeIndexRecordType)
-            {
-                // Reject non-RI commands on RI keys
-                if (!input.header.cmd.IsLegalOnRangeIndex())
-                {
-                    rmwInfo.Action = RMWAction.WrongType;
-                    return false;
-                }
-            }
-            else if (input.header.cmd.IsRangeIndexCommand())
-            {
-                // Reject RI-specific commands on non-RI keys
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
-            }
-
-            // WRONGTYPE all updates on Vector Sets from non-Vector Set commands
-            if (logRecord.RecordType == VectorManager.RecordType && !input.header.cmd.IsLegalOnVectorSet())
+            if (IsWrongTypeForUpdate(in logRecord, input.header.cmd))
             {
                 rmwInfo.Action = RMWAction.WrongType;
                 return false;
@@ -446,8 +442,7 @@ namespace Garnet.server
                 case IPUResult.Failed:
                     return false;
                 case IPUResult.Succeeded:
-                    if (!logRecord.Info.Modified)
-                        functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                    functionsState.OnKeyChanged(rmwInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                     return true;
@@ -990,6 +985,20 @@ namespace Garnet.server
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            // An expired source is logically absent whatever its type, so it is created anew, as InPlaceUpdater does in place.
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                return false;
+            }
+
+            // Checked here rather than in CopyUpdater, because sizing the new record reads the source value first.
+            if (IsWrongTypeForUpdate(in srcLogRecord, input.header.cmd))
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
             switch (input.header.cmd)
             {
                 case RespCommand.DELIFGREATER:
@@ -998,14 +1007,6 @@ namespace Garnet.server
                 case RespCommand.SETWITHETAG:
                     return HandleEtagNeedCopyUpdate(input.header.cmd, in srcLogRecord, ref input, ref output, ref rmwInfo);
                 case RespCommand.SETEXNX:
-                    // Expired data, return false immediately
-                    // ExpireAndResume ensures that we set as new value, since it does not exist
-                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndResume;
-                        return false;
-                    }
-
                     // since this case is only hit when this an update, the NX is violated and so we can return early from it without setting the value
 
                     if (input.header.CheckSetGetFlag())
@@ -1015,15 +1016,6 @@ namespace Garnet.server
                     }
 
                     return false;
-                case RespCommand.SETEXXX:
-                    // Expired data, return false immediately so we do not set, since it does not exist
-                    // ExpireAndStop ensures that caller sees a NOTFOUND status
-                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
-                    }
-                    return true;
                 case RespCommand.RICREATE:
                     // Index already exists — never copy-update, reject in caller
                     return false;
@@ -1080,13 +1072,6 @@ namespace Garnet.server
             // Do not pre-get newValue = dstLogRecord.ValueSpan here, because it may change, e.g. moving between inline and overflow
 
             RespCommand cmd = input.header.cmd;
-
-            // WRONGTYPE all updates on Vector Sets from non-Vector Set commands
-            if (srcLogRecord.RecordType == VectorManager.RecordType && !cmd.IsLegalOnVectorSet())
-            {
-                rmwInfo.Action = RMWAction.WrongType;
-                return false;
-            }
 
             switch (cmd)
             {
@@ -1556,7 +1541,7 @@ namespace Garnet.server
         public readonly bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            functionsState.OnKeyChanged(rmwInfo.KeyHash);
 
             var cmd = input.header.cmd;
 

@@ -12,16 +12,14 @@ namespace Garnet.server
     {
         public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            if (!logRecord.DataHeader.ValueIsObject)
-                functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            functionsState.OnKeyChanged(deleteInfo.KeyHash, bumpWatchVersion: !logRecord.DataHeader.ValueIsObject);
 
             return true;
         }
 
         public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            if (logRecord.DataHeader.ValueIsObject && !logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            functionsState.OnKeyChanged(deleteInfo.KeyHash, bumpWatchVersion: logRecord.DataHeader.ValueIsObject && !logRecord.Info.Modified);
 
             if (functionsState.appendOnlyFile != null)
                 deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -32,8 +30,7 @@ namespace Garnet.server
             if (!logRecord.DataHeader.ValueIsObject)
                 logRecord.ClearOptionals();
 
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            functionsState.OnKeyChanged(deleteInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
 
             if (functionsState.appendOnlyFile != null)
                 deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF

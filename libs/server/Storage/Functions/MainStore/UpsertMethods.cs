@@ -42,7 +42,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ReadOnlySpan<byte> srcValue, ref StringOutput output, ref UpsertInfo upsertInfo)
         {
-            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            functionsState.OnKeyChanged(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
         }
@@ -55,7 +55,7 @@ namespace Garnet.server
         public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, in TSourceLogRecord inputLogRecord, ref StringOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            functionsState.OnKeyChanged(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
                 Debug.Assert(!inputLogRecord.DataHeader.ValueIsObject, "String store should not be called with IHeapObject");

@@ -1,9 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Tasks.Sources;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -224,6 +228,116 @@ namespace Tsavorite.test
 
             // Make sure expected length is same as current - also makes sure that data verification was not skipped
             ClassicAssert.AreEqual(entryLength, consumer.currentEntry);
+        }
+
+        /// <summary>
+        /// Records the chunks a bulk scan hands it. When <c>waitAfterEachChunk</c>, the wait that follows each chunk and the
+        /// one after it, which the scan takes before it reads further, do not complete until the test resumes them. Cancels
+        /// the scan once a chunk reaches <c>endAddress</c>.
+        /// </summary>
+        internal sealed class PausingBulkConsumer(bool waitAfterEachChunk, long endAddress, CancellationTokenSource reachedEnd) : IBulkLogEntryConsumer, IValueTaskSource
+        {
+            ManualResetValueTaskSourceCore<bool> wait = new() { RunContinuationsAsynchronously = true };
+            bool consumed, waitAgain, waiting;
+
+            internal readonly List<(long address, int length)> chunks = [];
+            internal readonly SemaphoreSlim awaited = new(0);
+            internal int consumedWhileWaiting, inFrame, inMemory;
+
+            public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
+            {
+                if (waiting)
+                    consumedWhileWaiting++;
+                if (isProtected)
+                    inMemory++;
+                else
+                    inFrame++;
+                chunks.Add((currentAddress, payloadLength));
+                consumed = true;
+                if (nextAddress >= endAddress)
+                    reachedEnd.Cancel();
+            }
+
+            public void Throttle() { }
+
+            public ValueTask ThrottleAsync(CancellationToken token)
+            {
+                if (!waitAfterEachChunk || !(consumed || waitAgain))
+                    return default;
+                waitAgain = consumed;
+                consumed = false;
+                waiting = true;
+                wait.Reset();
+                return new ValueTask(this, wait.Version);
+            }
+
+            /// <summary>
+            /// Ends the wait the scan is awaiting
+            /// </summary>
+            internal void Resume() => wait.SetResult(true);
+
+            public void GetResult(short token)
+            {
+                _ = wait.GetResult(token);
+                waiting = false;
+            }
+
+            public ValueTaskSourceStatus GetStatus(short token) => wait.GetStatus(token);
+
+            public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+            {
+                wait.OnCompleted(continuation, state, token, flags);
+                _ = awaited.Release();
+            }
+        }
+
+        PausingBulkConsumer BulkConsumeToTail(bool waitAfterEachChunk, bool async, out int waits)
+        {
+            using var reachedEnd = new CancellationTokenSource();
+            var consumer = new PausingBulkConsumer(waitAfterEachChunk, log.TailAddress, reachedEnd);
+            using var iter = log.Scan(0, LogAddress.MaxValidAddress);
+            var scan = async
+                ? Task.Run(() => iter.BulkConsumeAllAsync(consumer, maxChunkSize: 512, token: reachedEnd.Token))
+                : Task.Run(() => iter.BulkConsumeAll(consumer, maxChunkSize: 512, token: reachedEnd.Token));
+
+            // Resume each wait only once the scan awaits it
+            waits = 0;
+            var bound = Stopwatch.StartNew();
+            while (!scan.IsCompleted)
+            {
+                if (consumer.awaited.Wait(10))
+                {
+                    waits++;
+                    consumer.Resume();
+                }
+                else if (bound.Elapsed > TimeSpan.FromSeconds(30))
+                {
+                    reachedEnd.Cancel();
+                    Assert.Fail("The scan did not reach the tail within 30s");
+                }
+            }
+
+            Assert.That(() => scan.GetAwaiter().GetResult(), Throws.InstanceOf<OperationCanceledException>());
+            return consumer;
+        }
+
+        [Test]
+        [Category("TsavoriteLog")]
+        public void BulkScanStopsWhileTheConsumerWaits()
+        {
+            // Small pages and memory, so the scan reads the first chunks from disk frames and the last ones from memory
+            device = TestUtils.CreateTestDevice(TestUtils.TestDeviceType.MLSD, Path.Join(TestUtils.MethodTestDir, "BulkScanWait.log"));
+            log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, PageSizeBits = 12, MemorySizeBits = 14, SegmentSizeBits = 20, LogCommitDir = TestUtils.MethodTestDir });
+            PopulateLog(log);
+
+            var expected = BulkConsumeToTail(waitAfterEachChunk: false, async: false, out _);
+            ClassicAssert.Greater(expected.inFrame, 1, "Too few chunks were read from disk frames");
+            ClassicAssert.Greater(expected.inMemory, 1, "Too few chunks were read from memory");
+
+            var actual = BulkConsumeToTail(waitAfterEachChunk: true, async: true, out var waits);
+            ClassicAssert.AreEqual(0, actual.consumedWhileWaiting, "The scan consumed more while the consumer was waiting");
+            ClassicAssert.AreEqual(2 * expected.chunks.Count, waits, "The scan did not await every wait");
+            CollectionAssert.AreEqual(expected.chunks, actual.chunks, "Waiting changed the chunks the scan consumed");
         }
 
         [Test]

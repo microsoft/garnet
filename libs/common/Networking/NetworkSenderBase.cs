@@ -56,6 +56,9 @@ namespace Garnet.networking
         public abstract void Enter();
 
         /// <inheritdoc />
+        public abstract bool TryEnter();
+
+        /// <inheritdoc />
         public abstract unsafe void EnterAndGetResponseObject(out byte* head, out byte* tail);
 
         /// <inheritdoc />
@@ -78,6 +81,28 @@ namespace Garnet.networking
 
         /// <inheritdoc />
         public abstract bool SendResponse(int offset, int size);
+
+        /// <inheritdoc />
+        public virtual bool SendResponseNoWait(int offset, int size)
+        {
+            _ = SendResponse(offset, size);
+            return false;
+        }
+
+        /// <inheritdoc />
+        public virtual bool IsSendSaturated => false;
+
+        /// <inheritdoc />
+        public virtual bool TryRegisterSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+
+        /// <inheritdoc />
+        public virtual bool WithdrawSendCapacityWaiter(ISendCapacityWaiter waiter) => false;
+
+        /// <inheritdoc />
+        public virtual void AddSendCapacityWaiter(ISendCapacityWaiter waiter) { }
+
+        /// <inheritdoc />
+        public virtual void NotifySendCapacityWaiters() { }
 
         /// <inheritdoc />
         public abstract void SendResponse(byte[] buffer, int offset, int count, object context);

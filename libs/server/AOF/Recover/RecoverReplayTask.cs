@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -11,7 +10,10 @@ namespace Garnet.server
 {
     internal sealed partial class RecoverLogDriver
     {
-        internal async Task RecoverReplayTaskAsync(int replayTaskIdx, TsavoriteLog replaySublog)
+        /// <summary>
+        /// Replays this task's share of each page the leader hands out, on the calling thread, until replay is cancelled.
+        /// </summary>
+        internal void RecoverReplayTask(int replayTaskIdx, TsavoriteLog replaySublog)
         {
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
             while (!cts.Token.IsCancellationRequested)
@@ -19,7 +21,7 @@ namespace Garnet.server
                 try
                 {
                     // Rendezvous 1 (ready): meet the leader and peers at the barrier before scanning the page.
-                    await barrier.SignalWorkReadyWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                    barrier.SignalWorkReadyWait(cancellationToken: cts.Token);
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
@@ -27,14 +29,17 @@ namespace Garnet.server
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at ready barrier", nameof(RecoverReplayTaskAsync));
-                    await cts.CancelAsync().ConfigureAwait(false);
+                    logger?.LogError(ex, "{method} failed at ready barrier", nameof(RecoverReplayTask));
+                    cts.Cancel();
                     break;
                 }
 
                 if (cts.Token.IsCancellationRequested)
                     break;
 
+#if DEBUG
+                Garnet.common.ExceptionInjectionHelper.WaitOnClear(Garnet.common.ExceptionInjectionType.AofRecovery_Hold_Replay_Thread);
+#endif
                 try
                 {
                     unsafe
@@ -56,8 +61,8 @@ namespace Garnet.server
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at replaying", nameof(RecoverReplayTaskAsync));
-                    await cts.CancelAsync().ConfigureAwait(false);
+                    logger?.LogError(ex, "{method} failed at replaying", nameof(RecoverReplayTask));
+                    cts.Cancel();
                     break;
                 }
 
@@ -66,7 +71,7 @@ namespace Garnet.server
                     // Rendezvous 2 (completed): signal completion ONLY after the page was fully applied. On
                     // cancellation or fault we break above WITHOUT arriving here, so the leader observes
                     // cancellation instead of a completion for a page that was not fully applied.
-                    await barrier.SignalWorkCompletedWaitAsync(cancellationToken: cts.Token).ConfigureAwait(false);
+                    barrier.SignalWorkCompletedWait(cancellationToken: cts.Token);
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
@@ -74,8 +79,8 @@ namespace Garnet.server
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} failed at completion barrier", nameof(RecoverReplayTaskAsync));
-                    await cts.CancelAsync().ConfigureAwait(false);
+                    logger?.LogError(ex, "{method} failed at completion barrier", nameof(RecoverReplayTask));
+                    cts.Cancel();
                     break;
                 }
             }
@@ -84,7 +89,7 @@ namespace Garnet.server
         /// <summary>
         /// Scans a single consumed page for the given replay task, applying every entry that this task
         /// owns (per <see cref="AofProcessor.CanReplay"/>) exactly once. Invoked by each parallel replay
-        /// task (<see cref="RecoverReplayTaskAsync"/>).
+        /// task (<see cref="RecoverReplayTask"/>).
         /// </summary>
         private unsafe void ReplayPage(
             int replayTaskIdx,

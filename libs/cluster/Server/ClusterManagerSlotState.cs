@@ -4,7 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -33,7 +33,7 @@ namespace Garnet.cluster
                     slotAssigned = slot;
                     return false;
                 }
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -63,7 +63,7 @@ namespace Garnet.cluster
                     return false;
                 }
                 newConfig = newConfig.BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -128,7 +128,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -144,6 +144,30 @@ namespace Garnet.cluster
         /// <param name="errorMessage">Error message</param>
         /// <returns>True on success, false otherwise</returns>
         public bool TryPrepareSlotsForMigration(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> errorMessage)
+        {
+            if (!TryPublishSlotsForMigration(slots, nodeid, out errorMessage))
+                return false;
+            FlushConfig();
+            logger?.LogTrace("[Processed] SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
+            return true;
+        }
+
+        /// <summary>
+        /// Try to change list of slots to migrating state, completing when the configuration has been written.
+        /// </summary>
+        /// <param name="slots">Slot list</param>
+        /// <param name="nodeid">Migration target node-id</param>
+        /// <returns>Whether it succeeded, and the error message if it did not.</returns>
+        public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryPrepareSlotsForMigrationAsync(HashSet<int> slots, string nodeid)
+        {
+            if (!TryPublishSlotsForMigration(slots, nodeid, out var errorMessage))
+                return (false, errorMessage.ToArray());
+            await FlushConfigAsync().ConfigureAwait(false);
+            logger?.LogTrace("[Processed] SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
+            return (true, default);
+        }
+
+        bool TryPublishSlotsForMigration(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
             while (true)
@@ -195,12 +219,9 @@ namespace Garnet.cluster
                 // Cluster status queries should also be aware of this implicit assignment and return this node as the current owner
                 // The above is only true for the primary that owns this slot and this configuration change is not propagated through gossip.
                 var newConfig = current.UpdateMultiSlotState(slots, migratingWorkerId, SlotState.MIGRATING);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
-                    break;
+                if (TryPublishConfig(current, newConfig))
+                    return true;
             }
-            FlushConfig();
-            logger?.LogTrace("[Processed] SetSlotsRange MIGRATING {slot} TO {nodeId}", GetRange([.. slots]), nodeid);
-            return true;
         }
 
         /// <summary>
@@ -249,7 +270,7 @@ namespace Garnet.cluster
                 }
 
                 var newConfig = current.UpdateSlotState(slot, importingWorkerId, SlotState.IMPORTING);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -312,7 +333,7 @@ namespace Garnet.cluster
                 }
 
                 var newConfig = current.UpdateMultiSlotState(slots, importingWorkerId, SlotState.IMPORTING);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -346,7 +367,7 @@ namespace Garnet.cluster
                     workerId = current.GetWorkerIdFromNodeId(nodeid);
                     var newConfig = current.UpdateSlotState(slot, workerId, SlotState.STABLE);
 
-                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    if (TryPublishConfig(current, newConfig))
                         break;
                 }
                 FlushConfig();
@@ -366,7 +387,7 @@ namespace Garnet.cluster
                     current = currentConfig;
                     var newConfig = current.UpdateSlotState(slot, 1, SlotState.STABLE).BumpLocalNodeConfigEpoch();
 
-                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    if (TryPublishConfig(current, newConfig))
                         break;
                 }
                 logger?.LogDebug("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
@@ -381,7 +402,7 @@ namespace Garnet.cluster
                     workerId = current.GetWorkerIdFromNodeId(nodeid);
                     var newConfig = current.UpdateSlotState(slot, workerId, SlotState.STABLE);
 
-                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    if (TryPublishConfig(current, newConfig))
                         break;
                 }
                 FlushConfig();
@@ -399,6 +420,28 @@ namespace Garnet.cluster
         /// <returns>True on success, false otherwise</returns>
         public bool TryPrepareSlotsForOwnershipChange(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> errorMessage)
         {
+            if (!TryPublishSlotsForOwnershipChange(slots, nodeid, out errorMessage))
+                return false;
+            FlushConfig();
+            return true;
+        }
+
+        /// <summary>
+        /// Try to change ownership of slots to node, completing when the configuration has been written.
+        /// </summary>
+        /// <param name="slots">SLot list</param>
+        /// <param name="nodeid">The id of the new owner node.</param>
+        /// <returns>Whether it succeeded, and the error message if it did not.</returns>
+        public async ValueTask<(bool Success, ReadOnlyMemory<byte> ErrorMessage)> TryPrepareSlotsForOwnershipChangeAsync(HashSet<int> slots, string nodeid)
+        {
+            if (!TryPublishSlotsForOwnershipChange(slots, nodeid, out var errorMessage))
+                return (false, errorMessage.ToArray());
+            await FlushConfigAsync().ConfigureAwait(false);
+            return (true, default);
+        }
+
+        bool TryPublishSlotsForOwnershipChange(HashSet<int> slots, string nodeid, out ReadOnlySpan<byte> errorMessage)
+        {
             errorMessage = default;
             while (true)
             {
@@ -412,11 +455,10 @@ namespace Garnet.cluster
 
                 var newConfig = current.UpdateMultiSlotState(slots, workerId, SlotState.STABLE);
                 if (current.LocalNodeId.Equals(nodeid, StringComparison.OrdinalIgnoreCase)) newConfig = newConfig.BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             logger?.LogDebug("Bumped Epoch ({LocalNodeConfigEpoch}) [{LocalIp}:{LocalPort},{LocalNodeId}]", currentConfig.LocalNodeConfigEpoch, currentConfig.LocalNodeIp, currentConfig.LocalNodePort, currentConfig.LocalNodeIdShort);
-            FlushConfig();
             return true;
         }
 
@@ -436,7 +478,7 @@ namespace Garnet.cluster
                     slotState = current.GetState((ushort)slot);
                     var workerId = slotState == SlotState.MIGRATING ? 1 : current.GetWorkerIdFromSlot((ushort)slot);
                     var newConfig = current.UpdateSlotState(slot, workerId, SlotState.STABLE);
-                    if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                    if (TryPublishConfig(current, newConfig))
                         break;
                 }
                 FlushConfig();
@@ -449,14 +491,29 @@ namespace Garnet.cluster
         /// <param name="slots">Slot list</param>
         public void TryResetSlotState(HashSet<int> slots)
         {
+            PublishResetSlotState(slots);
+            FlushConfig();
+        }
+
+        /// <summary>
+        /// Reset local slot state to <see cref="SlotState.STABLE"/>, completing when the configuration has been written.
+        /// </summary>
+        /// <param name="slots">Slot list</param>
+        public ValueTask TryResetSlotStateAsync(HashSet<int> slots)
+        {
+            PublishResetSlotState(slots);
+            return FlushConfigAsync();
+        }
+
+        void PublishResetSlotState(HashSet<int> slots)
+        {
             while (true)
             {
                 var current = currentConfig;
                 var newConfig = current.ResetMultiSlotState(slots);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
-            FlushConfig();
         }
 
         /// <summary>

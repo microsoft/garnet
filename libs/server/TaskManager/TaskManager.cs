@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -90,6 +91,7 @@ namespace Garnet.server
         /// <exception cref="Exception"></exception>
         public bool RegisterAndRun(TaskType taskType, Func<CancellationToken, Task> taskFactory, bool cleanupOnCompletion = false)
         {
+            TaskMetadata taskMetadata = null;
             try
             {
                 // Acquire lock
@@ -99,7 +101,7 @@ namespace Garnet.server
                     return false;
 
                 // Try to add new task entry for provided taskType
-                var taskMetadata = new TaskMetadata() { Cts = null, Task = null };
+                taskMetadata = new TaskMetadata() { Cts = null, Task = null };
                 if (!registry.TryAdd(taskType, taskMetadata))
                 {
                     logger?.LogWarning("{taskType} already registered!", taskType);
@@ -118,8 +120,24 @@ namespace Garnet.server
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Failed starting task {taskType} with {method}", taskType, nameof(RegisterAndRun));
-                // Remove and cleanup registered entry when exception gets triggered
-                AsyncUtils.BlockingWait(CancelAsync(taskType));
+
+                // The task never started, so there is nothing to wait for. Only this entry is removed: one that has
+                // replaced it belongs to another registration.
+                if (taskMetadata != null && registry.TryRemove(KeyValuePair.Create(taskType, taskMetadata)))
+                {
+                    try
+                    {
+                        taskMetadata.Cts?.Cancel();
+                    }
+                    catch (Exception cancelEx)
+                    {
+                        logger?.LogError(cancelEx, "Failed cancelling task {taskType} with {method}", taskType, nameof(RegisterAndRun));
+                    }
+                    finally
+                    {
+                        taskMetadata.Cts?.Dispose();
+                    }
+                }
                 return false;
             }
             finally

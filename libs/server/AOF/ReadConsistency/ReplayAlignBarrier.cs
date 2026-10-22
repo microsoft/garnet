@@ -122,12 +122,20 @@ namespace Garnet.server
         /// </summary>
         /// <param name="virtualSublogIdx">The arriving virtual sublog.</param>
         /// <param name="frontier">The virtual sublog's current frontier.</param>
+        /// <param name="mustNotWait">Whether the caller replays on a thread that must not wait. When another participant
+        /// is still to arrive, throws <see cref="ReplayMustWaitException"/> without arriving, so that the record is
+        /// replayed again on a thread that may wait.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SignalArrivalAndWait(int virtualSublogIdx, long frontier)
+        public void SignalArrivalAndWait(int virtualSublogIdx, long frontier, bool mustNotWait = false)
         {
             var r = Volatile.Read(ref currentRound);
             if (r == null || frontier < r.target) return;
             if (lastArrivedRound[virtualSublogIdx] == r) return;
+
+            // Each participant arrives once per round, so with one arrival left this one releases the round
+            if (mustNotWait && Volatile.Read(ref r.remaining) > 1)
+                ReplayMustWaitException.ThrowForThread();
+
             lastArrivedRound[virtualSublogIdx] = r;
             WaitForAllArrivals(r, virtualSublogIdx);
         }

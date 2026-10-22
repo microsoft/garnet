@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -83,6 +84,40 @@ namespace Garnet.server
         /// </summary>
         public readonly VectorManager vectorManager;
 
+        /// <summary>
+        /// Log of the store this session operates on, or null when the store has no storage tier to evict to.
+        /// </summary>
+        readonly LogAccessor<StoreFunctions, StoreAllocator> evictingLog;
+
+        /// <summary>
+        /// Whether an operation of this session may find its record on disk, and so may wait on the device: the store
+        /// has evicted part of its log to its storage tier.
+        /// </summary>
+        /// <remarks>
+        /// This is the state of the store when it is asked. A store that starts to evict just after can still send an
+        /// operation the caller decided on here to the device.
+        /// </remarks>
+        internal bool MayReadFromDisk
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => evictingLog is { } log && log.HeadAddress > log.BeginAddress;
+        }
+
+        /// <summary>
+        /// Whether an operation of this session that adds a record may wait for a flush to the device before it can allocate
+        /// the record: the store's log, or the AOF the operation appends to, has no page in memory it can evict without one.
+        /// </summary>
+        /// <remarks>
+        /// As with <see cref="MayReadFromDisk"/>, this is the state of the logs when it is asked. Other sessions can fill the
+        /// page the caller decided on here, so an operation can still wait for a flush that was not in sight.
+        /// </remarks>
+        internal bool MayWaitToAllocate
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => (evictingLog is { } log && log.AllocationMayWaitForFlush)
+                || (functionsState.appendOnlyFile is { } aof && aof.Log.AllocationMayWaitForFlush);
+        }
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
             ScratchBufferAllocator scratchBufferAllocator,
@@ -114,6 +149,8 @@ namespace Garnet.server
             Debug.Assert(dbFound);
 
             this.stateMachineDriver = db.StateMachineDriver;
+            if (storeWrapper.serverOptions.EnableStorageTier)
+                evictingLog = db.Store.Log;
             var session = db.Store.NewSession<FixedSpanByteKey, StringInput, StringOutput, long, MainSessionFunctions>(functions, IsConsistentReadSession);
 
             if (!storeWrapper.serverOptions.DisableObjects)
@@ -149,6 +186,46 @@ namespace Garnet.server
         public void UpdateRespProtocolVersion(byte respProtocolVersion)
         {
             functionsState.respProtocolVersion = respProtocolVersion;
+        }
+
+        /// <summary>
+        /// Operations of this session's string, object and unified contexts that have gone to the device and not yet been
+        /// completed.
+        /// </summary>
+        internal int PendingOperationCount
+            => stringBasicContext.Session.PendingOperationCount
+                + (objectBasicContext.Session?.PendingOperationCount ?? 0)
+                + unifiedBasicContext.Session.PendingOperationCount;
+
+        /// <summary>
+        /// The network session this session runs the commands of, which can park while a command waits, or null.
+        /// </summary>
+        internal RespServerSession parkingSession;
+
+        /// <summary>
+        /// Set while this session replays a record on a thread that must not wait. A wait the record reaches before it
+        /// has changed anything throws <see cref="ReplayMustWaitException"/> instead, so the record is replayed again once
+        /// the wait is over.
+        /// </summary>
+        internal bool replayMustNotWait;
+
+        /// <summary>
+        /// Hands waits on a latched key by this session's string, object and unified operations to <paramref name="session"/>,
+        /// and has the store callbacks that change a record disarm its restart point.
+        /// </summary>
+        /// <param name="session">Decides how an operation waits on a latched key, and parks for other waits.</param>
+        /// <remarks>
+        /// The vector session is left without a handler: vector commands run in place (see
+        /// <see cref="RespServerSession.LockWaitClass"/>).
+        /// </remarks>
+        internal void SetLockContentionHandler(RespServerSession session)
+        {
+            parkingSession = session;
+            functionsState.restartPoint = session.restartPoint;
+            stringBasicContext.Session.LockContentionHandler = session;
+            if (objectBasicContext.Session is { } objectSession)
+                objectSession.LockContentionHandler = session;
+            unifiedBasicContext.Session.LockContentionHandler = session;
         }
 
         public void Dispose()

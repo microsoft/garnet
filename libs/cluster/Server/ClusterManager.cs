@@ -34,6 +34,23 @@ namespace Garnet.cluster
         public ClusterConfig CurrentConfig => currentConfig;
 
         /// <summary>
+        /// Publishes <paramref name="newConfig"/> if the configuration is still <paramref name="current"/>, and wakes the
+        /// requests parked until a slot's state changes.
+        /// </summary>
+        /// <param name="current">The configuration <paramref name="newConfig"/> was derived from.</param>
+        /// <param name="newConfig">The configuration to publish.</param>
+        /// <returns>False if the configuration changed since <paramref name="current"/> was read, and nothing was published.</returns>
+        bool TryPublishConfig(ClusterConfig current, ClusterConfig newConfig)
+        {
+            if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) != current)
+                return false;
+
+            // Null only while the provider is being constructed, when nothing can be parked
+            clusterProvider.migrationManager?.Progress.Signal();
+            return true;
+        }
+
+        /// <summary>
         /// Tls Client options
         /// </summary>
         readonly IGarnetTlsOptions tlsOptions;
@@ -52,6 +69,11 @@ namespace Garnet.cluster
         /// Flush count used to indicate a pending flush operation.
         /// </summary>
         int flushCount = 0;
+
+        /// <summary>
+        /// Writes the configuration file.
+        /// </summary>
+        readonly ConfigFileWriter configWriter;
 
         /// <summary>
         /// Shared epoch instance for connection store
@@ -74,6 +96,7 @@ namespace Garnet.cluster
 
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "cluster", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
+            configWriter = new ConfigFileWriter(clusterConfigDevice, pool, () => currentConfig.ToByteArray(), logger);
 
             var clusterEndpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
 
@@ -132,7 +155,7 @@ namespace Garnet.cluster
                             return;
 
                         if (Interlocked.CompareExchange(ref flushCount, 0, 0) > 0)
-                            ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
+                            await configWriter.WriteAsync().ConfigureAwait(false);
 
                         await Task.Delay(flushConfigFrequency, ctsGossip.Token).ConfigureAwait(false);
                     }
@@ -174,8 +197,12 @@ namespace Garnet.cluster
             => TryStartGossipTasks();
 
         /// <summary>
-        /// Flush current config to disk
+        /// Requests that the current config be written to disk, without waiting for the write.
         /// </summary>
+        /// <remarks>
+        /// With flushes batched, the background flush task writes it within a period; otherwise a write is issued now. A
+        /// command that answers only once its change is written then awaits <see cref="WaitForConfigWriteAsync"/>.
+        /// </remarks>
         public void FlushConfig()
         {
             if (serverOptions.ClusterConfigFlushFrequencyMs == -1)
@@ -184,12 +211,43 @@ namespace Garnet.cluster
             if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
                 Interlocked.Increment(ref flushCount);
             else
+                _ = configWriter.WriteAsync();
+        }
+
+        /// <summary>
+        /// Flush current config to disk, completing when the write does rather than holding the calling thread for it.
+        /// </summary>
+        public ValueTask FlushConfigAsync()
+        {
+            if (serverOptions.ClusterConfigFlushFrequencyMs != 0)
             {
-                lock (this)
-                {
-                    ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
-                }
+                FlushConfig();
+                return default;
             }
+
+            return new ValueTask(configWriter.WriteAsync());
+        }
+
+        /// <summary>
+        /// Completes once every config write requested so far, through <see cref="FlushConfig"/> or otherwise, has
+        /// completed; at once when flushes are batched or disabled, as <see cref="FlushConfigAsync"/> does.
+        /// </summary>
+        public ValueTask WaitForConfigWriteAsync()
+            => serverOptions.ClusterConfigFlushFrequencyMs == 0 ? new ValueTask(configWriter.WaitForWritesAsync()) : default;
+
+        /// <summary>
+        /// Writes the current config to disk, holding the calling thread for the write; called only at startup, before
+        /// the node serves clients.
+        /// </summary>
+        void FlushConfigAtStartup()
+        {
+            if (serverOptions.ClusterConfigFlushFrequencyMs == -1)
+                return;
+
+            if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
+                Interlocked.Increment(ref flushCount);
+            else
+                configWriter.Write();
         }
 
         /// <summary>
@@ -300,7 +358,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -317,7 +375,7 @@ namespace Garnet.cluster
             {
                 var current = currentConfig;
                 var newConfig = current.BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -334,7 +392,7 @@ namespace Garnet.cluster
             {
                 var current = currentConfig;
                 var newConfig = current.SetLocalWorkerRole(role).BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
             FlushConfig();
@@ -345,14 +403,28 @@ namespace Garnet.cluster
         /// </summary>
         public void TryResetReplica()
         {
+            PublishResetReplica();
+            FlushConfig();
+        }
+
+        /// <summary>
+        /// Reset node to primary, completing when the configuration has been written.
+        /// </summary>
+        public ValueTask TryResetReplicaAsync()
+        {
+            PublishResetReplica();
+            return FlushConfigAsync();
+        }
+
+        void PublishResetReplica()
+        {
             while (true)
             {
                 var current = currentConfig;
                 var newConfig = current.MakeReplicaOf(null).SetLocalWorkerRole(NodeRole.PRIMARY).BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
-            FlushConfig();
         }
 
         /// <summary>
@@ -361,22 +433,38 @@ namespace Garnet.cluster
         /// <param name="replicaId">Node-id to replicate</param>
         public void TryStopWrites(string replicaId)
         {
+            PublishStopWrites(replicaId);
+            FlushConfig();
+        }
+
+        /// <summary>
+        /// Force this node to be a replica of given node-id, completing when the configuration has been written.
+        /// </summary>
+        /// <param name="replicaId">Node-id to replicate</param>
+        public ValueTask TryStopWritesAsync(string replicaId)
+        {
+            PublishStopWrites(replicaId);
+            return FlushConfigAsync();
+        }
+
+        void PublishStopWrites(string replicaId)
+        {
             while (true)
             {
                 var current = currentConfig;
                 var slotMap = current.GetSlotList(1);
                 var workerId = current.GetWorkerIdFromNodeId(replicaId);
                 var newConfig = current.MakeReplicaOf(replicaId).AssignSlots(slotMap, workerId, SlotState.STABLE);
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
-            FlushConfig();
         }
 
         /// <summary>
-        /// Takeover as new primary but forcefully claim ownership of old primary's slots.
+        /// Takeover as new primary but forcefully claim ownership of old primary's slots, completing when the configuration
+        /// has been written.
         /// </summary>
-        public bool TryTakeOverForPrimary()
+        public async ValueTask<bool> TryTakeOverForPrimaryAsync()
         {
             while (true)
             {
@@ -386,10 +474,10 @@ namespace Garnet.cluster
                     return false;
 
                 var newConfig = current.TakeOverFromPrimary().BumpLocalNodeConfigEpoch();
-                if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
+                if (TryPublishConfig(current, newConfig))
                     break;
             }
-            FlushConfig();
+            await FlushConfigAsync().ConfigureAwait(false);
             return true;
         }
     }

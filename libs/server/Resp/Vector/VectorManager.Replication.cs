@@ -223,7 +223,7 @@ namespace Garnet.server
 
             Debug.Assert(input.header.cmd is RespCommand.XVCREATE or RespCommand.XVIMPORT, "Only XVCREATE and XVIMPORT should be redirected here");
 
-            WaitForImportFinalization(key);
+            WaitForImportFinalization(key, session.replayMustNotWait);
 
             GarnetStatus status;
             VectorManagerResult result;
@@ -392,7 +392,7 @@ namespace Garnet.server
         {
             Debug.Assert(Volatile.Read(ref replicationReplayStarted) != -1, "VectorManager replication channels were disposed and HandleVectorSetAddReplication was called");
 
-            WaitForImportFinalization(key);
+            WaitForImportFinalization(key, currentSession.replayMustNotWait);
 
             if (input.arg1 == MigrateElementKeyLogArg)
             {
@@ -567,8 +567,14 @@ namespace Garnet.server
                         SessionParseState reusableParseState = default;
                         reusableParseState.Initialize(11);
 
+                        // Created on the first add that finds the index of its key still being dropped
+                        IndexDropWait indexDropWait = null;
+
                         while (await reader.WaitToReadAsync(self.replicationReplayCancellation))
                         {
+                            // Lets a test keep adds queued without holding a thread
+                            await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.VectorSet_Hold_Replication_Replay).ConfigureAwait(false);
+
                             // Allocate session for current batch, now so we stay on same managed thread
                             using var allocatedSession = obtainServerSession();
                             if (allocatedSession.activeDbId != self.dbId && !allocatedSession.TrySwitchActiveDatabaseSession(self.dbId))
@@ -576,11 +582,16 @@ namespace Garnet.server
                                 throw new GarnetException($"Could not switch replication replay session to {self.dbId}, replication will fail");
                             }
 
+                            // This task runs on the thread pool, so an add that has to wait for the drop of an index
+                            // awaits it instead, and is then applied again
+                            allocatedSession.storageSession.replayMustNotWait = true;
+
                             while (reader.TryRead(out var entry))
                             {
                                 try
                                 {
-                                    ApplyVectorSetReplay(self, allocatedSession.storageSession, entry, ref reusableParseState);
+                                    while (!TryApplyVectorSetReplay(self, allocatedSession.storageSession, entry, ref reusableParseState, out var droppingKeyHash))
+                                        await self.WaitForIndexDropAsync(indexDropWait ??= new IndexDropWait(), entry.Key, droppingKeyHash).ConfigureAwait(false);
                                 }
                                 catch (Exception e)
                                 {
@@ -618,6 +629,21 @@ namespace Garnet.server
                         self.logger?.LogCritical(e, "Unexpected abort of replication replay task");
                         throw;
                     }
+                }
+            }
+
+            static bool TryApplyVectorSetReplay(VectorManager self, StorageSession storageSession, VectorSetReplicationState state, ref SessionParseState reusableParseState, out long droppingKeyHash)
+            {
+                try
+                {
+                    ApplyVectorSetReplay(self, storageSession, state, ref reusableParseState);
+                    droppingKeyHash = 0;
+                    return true;
+                }
+                catch (ReplayMustWaitException e) when (e.IsIndexDrop)
+                {
+                    droppingKeyHash = e.IndexDropKeyHash;
+                    return false;
                 }
             }
 
@@ -765,7 +791,7 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
-            WaitForImportFinalization(key);
+            WaitForImportFinalization(key, storageSession.replayMustNotWait);
 
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
@@ -795,7 +821,7 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetSetAttributeReplication(StorageSession storageSession, ReadOnlySpan<byte> key, ref StringInput input)
         {
-            WaitForImportFinalization(key);
+            WaitForImportFinalization(key, storageSession.replayMustNotWait);
 
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
             var element = input.parseState.GetArgSliceByRef(0);
@@ -833,6 +859,28 @@ namespace Garnet.server
                 // Dispose already takes pains to drain everything before disposing, so this is safe to ignore
             }
         }
+
+        /// <summary>
+        /// Wait until queued vector replays complete, as <see cref="WaitForVectorOperationsToComplete()"/> does, unless
+        /// <paramref name="storageSession"/> replays on a thread that must not wait and some are still queued: then
+        /// throws <see cref="ReplayMustWaitException"/>, so that the record is replayed again once they have completed.
+        /// </summary>
+        /// <param name="storageSession">The session replaying the record.</param>
+        internal void WaitForVectorOperationsToComplete(StorageSession storageSession)
+        {
+            if (storageSession.replayMustNotWait && !replicationBlockEvent.IsSet)
+                ReplayMustWaitException.ThrowForVectorOperations();
+
+            WaitForVectorOperationsToComplete();
+        }
+
+        /// <summary>
+        /// Completes once queued vector replays have completed, as <see cref="WaitForVectorOperationsToComplete()"/>
+        /// returns, without blocking a thread meanwhile.
+        /// </summary>
+        /// <param name="cancellationToken">Token observed while waiting.</param>
+        public ValueTask WaitForVectorOperationsToCompleteAsync(CancellationToken cancellationToken = default)
+            => replicationBlockEvent.WaitAsync(cancellationToken);
 
         /// <summary>
         /// During AOF replay we need to copy one Vector Set index into another, but we can't use the bytes stored in the log since

@@ -353,6 +353,28 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Issues the pop of <see cref="SortedSetPop{TObjectContext}(PinnedSpanByte, int, bool, out ValueTuple{PinnedSpanByte, PinnedSpanByte}[], ref TObjectContext)"/>,
+        /// reporting rather than waiting when the sorted set is not in memory. The popped pairs are read from
+        /// <paramref name="output"/> with <see cref="ProcessRespArrayOutputAsPairs"/>.
+        /// </summary>
+        /// <param name="key">Key of the sorted set.</param>
+        /// <param name="count">Maximum number of members to pop.</param>
+        /// <param name="lowScoresFirst">True to pop the lowest scores, false the highest.</param>
+        /// <param name="output">Output of a pop served from memory.</param>
+        /// <param name="pending">True if the pop went to the device, leaving the status meaningless.</param>
+        /// <param name="objectContext">Context to update through.</param>
+        /// <returns>The status, meaningless when <paramref name="pending"/> is set.</returns>
+        internal GarnetStatus SortedSetPop_WithPending<TObjectContext>(PinnedSpanByte key, int count, bool lowScoresFirst, ref ObjectOutput output, out bool pending, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var op = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
+            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
+            var input = new ObjectInput(header, count, 2);
+
+            return RMW_ObjectStore_WithPending(key.ReadOnlySpan, ref input, ref output, out pending, ref objectContext);
+        }
+
+        /// <summary>
         /// Increments the score of member in the sorted set stored at key by increment.
         /// Returns the new score of member.
         /// If member does not exist in the sorted set, it is added with increment as its score (as if its previous score was 0.0).

@@ -209,8 +209,9 @@ namespace Garnet.common
                     }
                 }
             }
-            Debug.Assert(totalReferences > 0, $"Return with {totalReferences}");
-            Interlocked.Decrement(ref totalReferences);
+            Debug.Assert(totalReferences is > 0 or (< 0 and > int.MinValue), $"Return with {totalReferences}");
+            if (Interlocked.Decrement(ref totalReferences) == int.MinValue)
+                ReclaimIdleEntries();
         }
 
         /// <summary>
@@ -346,14 +347,49 @@ namespace Garnet.common
                 Thread.Yield();
             }
 
+            ReclaimIdleEntries();
+        }
+
+        /// <summary>
+        /// Disposes the pool once every entry still out has been returned, without waiting for that: further Gets
+        /// fail at once, and the <see cref="Return"/> of the last entry out reclaims the pool's entries.
+        /// </summary>
+        /// <remarks>
+        /// For a pool whose entries can be returned by work queued behind the caller, such as a connection's
+        /// receive loop ending on a socket completion, where waiting as <see cref="Dispose"/> does could hold the
+        /// thread that work needs.
+        /// </remarks>
+        public void DisposeOnLastReturn()
+        {
+            var references = totalReferences;
+            while (references >= 0)
+            {
+                var seen = Interlocked.CompareExchange(ref totalReferences, references + int.MinValue, references);
+                if (seen == references)
+                {
+                    if (references == 0)
+                        ReclaimIdleEntries();
+                    return;
+                }
+                references = seen;
+            }
+        }
+
+        /// <summary>
+        /// Drops the idle entries of a pool that no entry is out of and no Get can succeed on.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void ReclaimIdleEntries()
+        {
             for (var i = 0; i < numLevels; i++)
             {
-                if (pool[i] == null) continue;
-                while (pool[i].size > 0)
+                var level = pool[i];
+                if (level == null) continue;
+                while (level.size > 0)
                 {
-                    while (pool[i].items.TryDequeue(out var result))
+                    while (level.items.TryDequeue(out var result))
                     {
-                        Interlocked.Decrement(ref pool[i].size);
+                        Interlocked.Decrement(ref level.size);
                         _ = Interlocked.Add(ref pooledBytes, -result.entry.Length);
                     }
                     Thread.Yield();

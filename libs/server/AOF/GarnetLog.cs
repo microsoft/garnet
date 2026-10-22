@@ -243,6 +243,26 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Whether an enqueue may wait for a flush to complete before it can allocate: one of the physical sublogs has no page
+        /// in memory it can evict without one. See <see cref="TsavoriteLog.AllocationMayWaitForFlush"/>.
+        /// </summary>
+        public bool AllocationMayWaitForFlush
+        {
+            get
+            {
+                if (singleLog != null)
+                    return singleLog.log.AllocationMayWaitForFlush;
+
+                for (var i = 0; i < shardedLog.Length; i++)
+                {
+                    if (shardedLog.sublog[i].AllocationMayWaitForFlush)
+                        return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Get sublog instance indicated by the provided index
         /// </summary>
         /// <param name="sublogIdx"></param>
@@ -421,13 +441,11 @@ namespace Garnet.server
         /// <param name="beginAddress"></param>
         /// <param name="committedUntilAddress"></param>
         /// <param name="lastCommitNum"></param>
-        public void SafeInitialize(int sublogIdx, long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
-        {
-            if (singleLog != null)
-                singleLog.log.SafeInitialize(beginAddress, committedUntilAddress, lastCommitNum);
-            else
-                shardedLog.sublog[sublogIdx].SafeInitialize(beginAddress, committedUntilAddress, lastCommitNum);
-        }
+        /// <returns>A task that completes once the sublog is initialized, as <see cref="TsavoriteLog.SafeInitializeAsync"/> does.</returns>
+        public Task SafeInitializeAsync(int sublogIdx, long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
+            => singleLog != null
+                ? singleLog.log.SafeInitializeAsync(beginAddress, committedUntilAddress, lastCommitNum)
+                : shardedLog.sublog[sublogIdx].SafeInitializeAsync(beginAddress, committedUntilAddress, lastCommitNum);
 
         /// <summary>
         /// Conditional initialize

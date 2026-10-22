@@ -19,7 +19,7 @@ namespace Tsavorite.test.recovery.objects
     /// is not running. The tracker is wired up by <c>SetLogSizeTracker</c> at store construction, but running its resizer is
     /// separate: Garnet runs checkpoint recovery without it, because recovery owns the log and does its own budget-aware
     /// eviction, stops it again at shutdown, and even once started it does not count as running until the thread pool dispatches
-    /// its body. (AOF replay itself is budget-managed: <c>StoreWrapper.ReplayAOF</c> starts the size trackers before replaying.)
+    /// its body. (AOF replay itself is budget-managed: <c>StoreWrapper.ReplayAOFAsync</c> starts the size trackers before replaying.)
     /// While the resizer is not running nothing will act on <see cref="LogSizeTracker{TStoreFunctions, TAllocator}.Signal"/>, so
     /// the page-turn path must neither wait on the tracker (which livelocks the allocation retry loop) nor defer the
     /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.MaxAllocatedPageCount"/> head shift to it (which lets the log grow

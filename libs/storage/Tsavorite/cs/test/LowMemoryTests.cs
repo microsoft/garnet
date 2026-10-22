@@ -140,5 +140,39 @@ namespace Tsavorite.test.LowMemory
             }
             ClassicAssert.AreEqual(NumOps, numCompleted, "numCompleted");
         }
+
+        /// <summary>
+        /// A pinned key is read in place, so a read that goes to the device is only sound while the caller leaves
+        /// the key's bytes alone until it completes. <see cref="ReadOptions.HoistKey"/> makes the pending read keep
+        /// its own copy, for a caller that reuses the bytes while the read is on the device.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV")]
+        public void HoistedKeyOfPendingReadSurvivesCallerReusingItsKeyBytes()
+        {
+            using var s1 = store1.NewSession<TestSpanByteKey, long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions((a, b) => a + b));
+            var bContext1 = s1.BasicContext;
+
+            Populate(s1);
+
+            // The earliest key is long out of the 16KB memory log.
+            long key = 7;
+            long output = default;
+            var readOptions = new ReadOptions { HoistKey = true };
+            var status = bContext1.Read(TestSpanByteKey.FromPinnedSpan(SpanByte.FromPinnedVariable(ref key)), ref output, ref readOptions);
+            ClassicAssert.IsTrue(status.IsPending, $"{status}");
+
+            // The completion verifies the record read from the device against the request key, after this.
+            key = -1;
+
+            _ = bContext1.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            using (completedOutputs)
+            {
+                ClassicAssert.IsTrue(completedOutputs.Next());
+                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found, $"{completedOutputs.Current.Status}");
+                ClassicAssert.AreEqual(7, completedOutputs.Current.Output);
+                ClassicAssert.IsFalse(completedOutputs.Next());
+            }
+        }
     }
 }

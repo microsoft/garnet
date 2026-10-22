@@ -170,11 +170,12 @@ namespace Garnet.test.cluster
         }
 
         /// <summary>
-        /// A session subscribed to the channel it publishes to, and that stops reading, fails the delivery of its
-        /// own message once the send times out. The message must still be forwarded to subscribers on other nodes.
+        /// A session subscribed to the channel it publishes to, and that stops reading, takes its own message past
+        /// its connection's limit and is then disconnected once no send completes for the send timeout. The message
+        /// must still be forwarded to subscribers on other nodes.
         /// </summary>
         [Test, Order(2), CancelAfter(120_000)]
-        public void APublishWhoseDeliveryToItsPublisherFailsIsForwardedToOtherNodes()
+        public void APublishFromASessionThatStopsReadingItsOwnMessageIsForwardedToOtherNodes()
         {
             const int publisherIndex = 0;
             const int peerIndex = 1;
@@ -182,7 +183,7 @@ namespace Garnet.test.cluster
             const string ready = "ready";
 
             // The message fits the page a node forwards it in, while the publisher's subscriptions receive it often
-            // enough to exceed what the socket buffers can absorb, so delivering it to the publisher times out
+            // enough to exceed what the socket buffers can absorb, so the publisher's connection stalls
             var message = new byte[64 * 1024];
             const int patternCount = 511;
 
@@ -241,7 +242,7 @@ namespace Garnet.test.cluster
             stalled.Send(Command("PUBLISH"u8.ToArray(), Encoding.ASCII.GetBytes(channelName), message));
 
             ClassicAssert.IsTrue(delivered.Wait(TimeSpan.FromSeconds(30)),
-                "a message whose delivery to its publisher failed was not forwarded to the other node");
+                "a message whose publisher stopped reading was not forwarded to the other node");
         }
 
         static void ReadUntil(Socket socket, string terminator)

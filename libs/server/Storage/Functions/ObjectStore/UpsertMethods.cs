@@ -45,7 +45,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            functionsState.OnKeyChanged(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
@@ -55,7 +55,7 @@ namespace Garnet.server
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, IHeapObject srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
         {
             var garnetObject = (IGarnetObject)srcValue;
-            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            functionsState.OnKeyChanged(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
@@ -65,7 +65,7 @@ namespace Garnet.server
         public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, in TSourceLogRecord inputLogRecord, ref ObjectOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            functionsState.OnKeyChanged(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF

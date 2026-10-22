@@ -119,8 +119,9 @@ namespace Tsavorite.core
         {
             while (!disposed)
             {
-                // TryConsumeNext returns false if we have to wait for the next record.
-                while (!TryBulkConsumeNext(consumer, maxChunkSize))
+                // TryConsumeNext returns false if we have to wait for the next record, and true if the consumer has to wait
+                ValueTask throttle;
+                while (!TryBulkConsumeNext(consumer, maxChunkSize, awaitThrottle: true, token, out throttle))
                 {
                     if (throttleMs == 0)
                     {
@@ -131,6 +132,37 @@ namespace Tsavorite.core
                     {
                         await Task.Delay(throttleMs, token).ConfigureAwait(false);
                     }
+                }
+                await throttle.ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Consume the log with given consumer on the calling thread until end of iteration or cancelled, polling for
+        /// new entries as <see cref="BulkConsumeAllAsync"/> does. The calling thread is held throughout, so this is for a
+        /// thread dedicated to the iteration.
+        /// </summary>
+        /// <remarks>
+        /// With no new entries, this sleeps <paramref name="throttleMs"/> between polls, or yields the thread between
+        /// polls when it is 0: a throttle of 0 asks for the lowest replay latency, at the cost of a core.
+        /// </remarks>
+        /// <param name="consumer"> consumer </param>
+        /// <param name="throttleMs">throttle the iteration speed</param>
+        /// <param name="maxChunkSize">max size of returned chunk</param>
+        /// <param name="token"> cancellation token </param>
+        /// <typeparam name="T"> consumer type </typeparam>
+        public void BulkConsumeAll<T>(T consumer, int throttleMs = 0, int maxChunkSize = 0, CancellationToken token = default) where T : IBulkLogEntryConsumer
+        {
+            while (!disposed)
+            {
+                // TryConsumeNext returns false if we have to wait for the next record.
+                while (!TryBulkConsumeNext(consumer, maxChunkSize, awaitThrottle: false, token, out _))
+                {
+                    if (throttleMs == 0)
+                        _ = Thread.Yield();
+                    else
+                        _ = token.WaitHandle.WaitOne(throttleMs);
+                    token.ThrowIfCancellationRequested();
                 }
             }
         }
@@ -460,16 +492,23 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Consume the next entry in the log with the given consumer
+        /// Consume the entries in the log with the given consumer, until there is no next entry or the consumer has to wait
         /// </summary>
         /// <param name="consumer">consumer</param>
         /// <param name="maxChunkSize"></param>
+        /// <param name="awaitThrottle">Whether to stop when <see cref="IBulkLogEntryConsumer.ThrottleAsync"/> has to wait</param>
+        /// <param name="token">Cancellation token passed to <see cref="IBulkLogEntryConsumer.ThrottleAsync"/></param>
+        /// <param name="throttle">The wait to await before consuming more, when this returns true</param>
         /// <typeparam name="T">concrete type of consumer</typeparam>
-        /// <returns>whether a next entry is present</returns>
-        private unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize = 0) where T : IBulkLogEntryConsumer
+        /// <returns>False if there is no next entry, true if the consumer has to wait for <paramref name="throttle"/></returns>
+        private unsafe bool TryBulkConsumeNext<T>(T consumer, int maxChunkSize, bool awaitThrottle, CancellationToken token, out ValueTask throttle) where T : IBulkLogEntryConsumer
         {
+            throttle = default;
+
             // Throttle and implicitly check for consumer liveness
             consumer.Throttle();
+            if (MustWait(consumer, awaitThrottle, token, ref throttle))
+                return true;
 
             if (maxChunkSize == 0) maxChunkSize = allocator.PageSize;
 
@@ -523,6 +562,11 @@ namespace Tsavorite.core
                         {
                             consumer.Consume((byte*)startPhysicalAddress, totalLength, startLogicalAddress, endLogicalAddress, isProtected: false);
                             consumer.Throttle();
+                            if (MustWait(consumer, awaitThrottle, token, ref throttle))
+                            {
+                                retVal = true;
+                                break;
+                            }
                         }
                         finally
                         {
@@ -539,6 +583,11 @@ namespace Tsavorite.core
                         {
                             // Throttle the iteration if needed (outside epoch protection)
                             consumer.Throttle();
+                            if (MustWait(consumer, awaitThrottle, token, ref throttle))
+                            {
+                                retVal = true;
+                                break;
+                            }
                         }
                         finally
                         {
@@ -552,6 +601,18 @@ namespace Tsavorite.core
                 epoch.Suspend();
             }
             return retVal;
+        }
+
+        /// <summary>
+        /// Whether the scan has to stop for the consumer to wait, outside epoch protection
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool MustWait<T>(T consumer, bool awaitThrottle, CancellationToken token, ref ValueTask throttle) where T : IBulkLogEntryConsumer
+        {
+            if (!awaitThrottle)
+                return false;
+            throttle = consumer.ThrottleAsync(token);
+            return !throttle.IsCompletedSuccessfully;
         }
 
         /// <summary>

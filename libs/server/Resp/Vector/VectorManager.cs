@@ -267,9 +267,7 @@ namespace Garnet.server
 
             // Tracking information for active XVIMPORT ... FINISH during replication
             activeImportFinalizations = new(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
             activeImportFinalizationsLookup = activeImportFinalizations.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
 
             // Exclusive locks for potential updates to Vector Set data
             var unroundedElementSetSize = Math.Min(Environment.ProcessorCount, 192) * 2; // 192 cores is a reasonable maximum number of cores to expect - so impose as an upper bound for now
@@ -658,6 +656,11 @@ namespace Garnet.server
 
             while (quantizationOrImportChannel.Reader.TryRead(out _)) { }
             AsyncUtils.BlockingWait(Task.WhenAll(quantizationAndImportTasks));
+
+            // Release replay waiters on finalizations whose partitions were drained above. A FinishImport racing this
+            // finds the channel completed and ends its own attempt.
+            foreach (var finalization in activeImportFinalizations.Values)
+                finalization.End(this);
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)

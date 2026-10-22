@@ -3,9 +3,7 @@
 
 using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -52,7 +50,7 @@ namespace Garnet.server
         readonly long untilSequenceNumber = untilSequenceNumber;
         readonly int dbId = dbId;
         readonly ReplayBatchContext replayBatchContext = new(serverOptions.AofReplayTaskCount);
-        Task[] replayTasks = null;
+        Thread[] replayThreads = null;
 
         /// <summary>
         /// Centralized rendezvous barrier coordinating the recover leader (this driver) and its parallel
@@ -94,6 +92,9 @@ namespace Garnet.server
         {
             if (serverOptions.AofReplayTaskCount == 1)
             {
+#if DEBUG
+                ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.AofRecovery_Hold_Replay_Thread);
+#endif
                 // Recover/Replay on this consume thread
                 var ptr = record;
                 while (ptr < record + recordLength)
@@ -168,52 +169,84 @@ namespace Garnet.server
                     return;
                 }
 
-                // After the last batch, cancel to exit BulkConsumeAllAsync.
+                // After the last batch, cancel to exit BulkConsumeAll.
                 if (nextAddress == untilAddress)
                     cts.Cancel();
             }
         }
 
+        /// <summary>
+        /// Starts the replay tasks, each on a thread of its own: a replay task holds its thread while it replays a page,
+        /// and replaying a record can wait there on work the thread pool runs.
+        /// </summary>
         private void CreateAndRunIntraPageParallelReplayTasks()
         {
-            if (replayTasks != null)
+            if (replayThreads != null)
                 return;
 
             // Leader participates in the barrier alongside every replay task, hence + 1.
             barrier = new DoubleTurnstileBarrier(serverOptions.AofReplayTaskCount + 1);
-            replayTasks = [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(() => RecoverReplayTaskAsync(i, physicalSublog)))];
+            replayThreads = new Thread[serverOptions.AofReplayTaskCount];
+            for (var i = 0; i < replayThreads.Length; i++)
+            {
+                var replayTaskIdx = i;
+                replayThreads[i] = new Thread(() => RecoverReplayTask(replayTaskIdx, physicalSublog))
+                {
+                    IsBackground = true,
+                    Name = $"AofRecover-{physicalSublogIdx}.{replayTaskIdx}"
+                };
+                replayThreads[i].Start();
+            }
+        }
+
+        /// <summary>
+        /// Stops the replay tasks, if they were started, and waits for their threads to exit, so that none uses what
+        /// <see cref="Dispose"/> releases.
+        /// </summary>
+        private void StopReplayTasks()
+        {
+            if (replayThreads == null)
+                return;
+
+            cts.Cancel();
+            foreach (var replayThread in replayThreads)
+                replayThread?.Join();
         }
 
         public void Throttle() { }
 
         /// <summary>
-        /// Starts a background task to replay and recover data until a specified address or when cancellation is requested.
+        /// Replays the sublog on the calling thread, until the address to recover until or until replay is cancelled.
         /// </summary>
-        /// <returns>A Task representing the asynchronous recovery operation.</returns>
-        public Task RunAsync()
+        /// <remarks>
+        /// Replay holds the calling thread throughout, and replaying a record can wait there on work the thread pool
+        /// runs, so the caller is a thread of its own.
+        /// </remarks>
+        public void Run()
         {
-            return Task.Run(async () =>
+            try
             {
-                try
+                if (startAddress == untilAddress) return;
+                logger?.LogInformation("Recover sublog [{physicalSublogIdx}] for addres range ({startAddress},{untilAddress})", physicalSublogIdx, startAddress, untilAddress);
+                while (!cts.IsCancellationRequested)
                 {
-                    if (startAddress == untilAddress) return;
-                    logger?.LogInformation("Recover sublog [{physicalSublogIdx}] for addres range ({startAddress},{untilAddress})", physicalSublogIdx, startAddress, untilAddress);
-                    while (!cts.IsCancellationRequested)
-                    {
-                        await replayIterator.BulkConsumeAllAsync(
-                            this,
-                            runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
-                            maxChunkSize: 1 << 20,
-                            cts.Token).ConfigureAwait(false);
+                    replayIterator.BulkConsumeAll(
+                        this,
+                        runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
+                        maxChunkSize: 1 << 20,
+                        cts.Token);
 
-                        // Replay completed
-                        if (replayIterator.NextAddress == untilAddress)
-                            break;
-                    }
+                    // Replay completed
+                    if (replayIterator.NextAddress == untilAddress)
+                        break;
                 }
-                catch (OperationCanceledException) when (cts.IsCancellationRequested)
-                { }
-            });
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            { }
+            finally
+            {
+                StopReplayTasks();
+            }
         }
     }
 }

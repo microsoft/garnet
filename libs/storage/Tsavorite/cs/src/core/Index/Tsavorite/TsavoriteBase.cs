@@ -282,6 +282,41 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Whether the hash bucket of <paramref name="keyHash"/> is latched in a mode that conflicts with an operation
+        /// that needs it exclusively, if <paramref name="exclusive"/>, or shared otherwise.
+        /// </summary>
+        /// <remarks>
+        /// A snapshot: the latch may be taken or released as soon as this returns. Callable with or without the epoch
+        /// held; without it, the epoch is held for the read, which keeps a concurrent index resize from freeing the
+        /// table being read.
+        /// </remarks>
+        public bool HasConflictingLatch(long keyHash, bool exclusive)
+        {
+            var acquired = epoch.ResumeIfNotProtected();
+            try
+            {
+                var version = resizeInfo.version;
+                var bucket = state[version].tableAligned + (keyHash & state[version].size_mask);
+                return exclusive ? HashBucket.IsLatched(bucket) : HashBucket.IsLatchedExclusive(bucket);
+            }
+            finally
+            {
+                if (acquired)
+                    epoch.Suspend();
+            }
+        }
+
+        /// <summary>
+        /// Whether two key hashes fall in the same hash bucket, and so share its latch.
+        /// </summary>
+        /// <remarks>
+        /// A snapshot of the current table size: an index resize can separate the two, or bring them together, as soon
+        /// as this returns.
+        /// </remarks>
+        public bool InSameBucket(long keyHash1, long keyHash2)
+            => ((keyHash1 ^ keyHash2) & state[resizeInfo.version].size_mask) == 0;
+
+        /// <summary>
         /// A helper function that is used to find the slot corresponding to a
         /// key in the specified version of the hash table
         /// </summary>

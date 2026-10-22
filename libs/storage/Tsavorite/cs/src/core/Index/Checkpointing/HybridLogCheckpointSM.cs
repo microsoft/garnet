@@ -15,6 +15,11 @@ namespace Tsavorite.core
         public HybridLogCheckpointSM(params IStateMachineTask[] tasks)
             : base(tasks) { }
 
+        /// <summary>
+        /// The steps write the checkpoint metadata and wait for the device to complete the write.
+        /// </summary>
+        public override bool StepsMayBlock => true;
+
         /// <inheritdoc />
         public override SystemState NextState(SystemState start)
         {

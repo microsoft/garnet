@@ -36,8 +36,7 @@ namespace Garnet.cluster
             // Process BUMPEPOCH
             if (clusterProvider.clusterManager.TryBumpClusterEpoch())
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                    SendAndReset();
+                return ReplyOnceConfigWritten(PendingReply.Ok);
             }
             else
             {
@@ -79,29 +78,10 @@ namespace Garnet.cluster
             }
 
             logger?.LogTrace("CLUSTER FORGET {nodeid} {seconds}", nodeId, expirySeconds);
-            // NOTE: Release epoch to prevent deadlock when acquiring SuspendConfigMerge exclusive lock within TryRemoveWorker.
-            ReleaseCurrentEpoch();
-            try
-            {
-                if (!clusterProvider.clusterManager.TryRemoveWorker(nodeId, expirySeconds, out var errorMessage))
-                {
-                    while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
-                        SendAndReset();
-                }
-                else
-                {
-                    // Terminate any outstanding migration tasks
-                    _ = clusterProvider.migrationManager.TryRemoveMigrationTask(nodeId);
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
-                }
-            }
-            finally
-            {
-                AcquireCurrentEpoch();
-            }
 
-            return true;
+            // A FORGET that waits for config merges to be suspended parks the session, which leaves the cluster epoch, so
+            // a migration holding merges suspended can complete the epoch transition it waits for.
+            return SuspendOnIfPending(ForgetAsync(nodeId, expirySeconds));
         }
 
         /// <summary>
@@ -322,8 +302,7 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    return ReplyOnceConfigWritten(PendingReply.Ok);
                 }
             }
 
@@ -387,6 +366,7 @@ namespace Garnet.cluster
             clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
             var current = clusterProvider.clusterManager.CurrentConfig;
             bool unsupportedVersion = false;
+            ClusterConfig toMerge = null;
 
             // Try merge if not just a ping message
             if (gossipMessage.Length > 0)
@@ -416,56 +396,53 @@ namespace Garnet.cluster
                             gossipVersion = version;
                             lastSentConfig = null;
                         }
-                        // NOTE: release the epoch to avoid deadlock with MIGRATE config suspension
-                        ReleaseCurrentEpoch();
-                        try
-                        {
-                            _ = clusterProvider.clusterManager.TryMerge(other);
-                        }
-                        finally
-                        {
-                            AcquireCurrentEpoch();
-                        }
-
-                        // Remember that this connection is being used for another cluster node to talk to us
-                        Debug.Assert(RemoteNodeId is null || RemoteNodeId == other.LocalNodeId, "Node Id shouldn't change once set for a connection");
-                        RemoteNodeId = other.LocalNodeId;
+                        toMerge = other;
                     }
                     else
                         logger?.LogWarning("Received gossip from unknown node: {node-id}", other.LocalNodeId);
                 }
             }
 
+            // The reply carries the configuration as it was before the merge
             byte replyVersion = unsupportedVersion ? ClusterConfig.MaximumSupportedClusterConfigVersion : gossipVersion;
+            pendingReply = PendingReply.BulkString;
             if (lastSentConfig != current || gossipWithMeet || unsupportedVersion)
             {
                 if (!current.CanUseGossipVersion(replyVersion))
                 {
                     logger?.LogWarning("Rejecting gossip reply version {version}: separate client and peer endpoints require version two", replyVersion);
-                    while (!RespWriteUtils.TryWriteError("ERR Separate client and peer endpoints require gossip version two", ref dcurr, dend))
-                        SendAndReset();
-                    return true;
+                    pendingReply = PendingReply.Error;
+                    pendingError = "ERR Separate client and peer endpoints require gossip version two"u8.ToArray();
                 }
-                var configByteArray = current.ToGossipByteArray(replyVersion);
-                clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(configByteArray.Length);
-                WriteLargeBulkString(configByteArray);
-                // A version offer does not update the configuration cache for the selected format.
-                if (!unsupportedVersion)
-                    lastSentConfig = current;
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteBulkString([], ref dcurr, dend))
-                    SendAndReset();
+                else
+                {
+                    pendingBulk = current.ToGossipByteArray(replyVersion);
+                    clusterProvider.clusterManager.gossipStats.UpdateGossipBytesSend(pendingBulk.Length);
+                    // A version offer does not update the configuration cache for the selected format.
+                    if (!unsupportedVersion)
+                        lastSentConfig = current;
+                }
             }
 
-            // After each GOSSIP, ensure cluster connections for replication are in a good state
-            if (Server is GarnetServerBase garnetServer)
-            {
-                clusterProvider.replicationManager.EnsureReplication(this, garnetServer.ActiveClusterSessions());
-            }
+            // A merge that waits for config merges to be resumed, or for the merged configuration to be written, parks
+            // the session, which leaves the cluster epoch, so a migration holding merges suspended can complete the epoch
+            // transition it waits for.
+            if (toMerge != null)
+                return SuspendOnIfPending(MergeGossipAsync(toMerge));
 
+            WriteReply(pendingReply);
+            if (pendingReply != PendingReply.Error)
+                EnsureReplicationAfterGossip();
             return true;
+        }
+
+        /// <summary>
+        /// After each GOSSIP, ensures cluster connections for replication are in a good state.
+        /// </summary>
+        void EnsureReplicationAfterGossip()
+        {
+            if (Server is GarnetServerBase garnetServer)
+                clusterProvider.replicationManager.EnsureReplication(this, garnetServer.ActiveClusterSessions());
         }
 
         /// <summary>
@@ -503,23 +480,9 @@ namespace Garnet.cluster
                 }
             }
 
-            // NOTE: Release epoch to prevent deadlock when acquiring SuspendConfigMerge exclusive lock within TryReset.
-            ReleaseCurrentEpoch();
-            ReadOnlySpan<byte> resp = default;
-            try
-            {
-                resp = clusterProvider.clusterManager.TryReset(soft, expirySeconds);
-            }
-            finally
-            {
-                AcquireCurrentEpoch();
-            }
-            if (!soft) clusterProvider.FlushDB(true);
-
-            while (!RespWriteUtils.TryWriteDirect(resp, ref dcurr, dend))
-                SendAndReset();
-
-            return true;
+            // A RESET that waits for config merges to be suspended parks the session, which leaves the cluster epoch, so
+            // a migration holding merges suspended can complete the epoch transition it waits for.
+            return SuspendOnIfPending(ResetAsync(soft, expirySeconds));
         }
 
         /// <summary>
@@ -546,8 +509,11 @@ namespace Garnet.cluster
                 return true;
             }
 
-            clusterProvider.storeWrapper.subscribeBroker.Publish(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1));
-            return true;
+            // The broker copies the message before it waits for room in its log, so the session parks on the wait
+            // with nothing of the command's to keep
+            return SuspendOnIfPending(
+                clusterProvider.storeWrapper.subscribeBroker.PublishAsync(parseState.GetArgSliceByRef(0), parseState.GetArgSliceByRef(1)),
+                PendingReply.None);
         }
 
 

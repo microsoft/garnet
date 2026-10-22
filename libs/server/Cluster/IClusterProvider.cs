@@ -20,7 +20,7 @@ namespace Garnet.server
         /// <summary>
         /// Create cluster session
         /// </summary>
-        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext basicContext, VectorBasicContext vectorContext, INetworkSender networkSender, ILogger logger = null);
+        IClusterSession CreateClusterSession(TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics garnetSessionMetrics, BasicGarnetApi basicGarnetApi, StringBasicContext basicContext, VectorBasicContext vectorContext, INetworkSender networkSender, ResponseFlusher responseFlusher, ILogger logger = null);
 
 
         /// <summary>
@@ -29,9 +29,9 @@ namespace Garnet.server
         bool AllowDataLoss { get; }
 
         /// <summary>
-        /// Flush config
+        /// Flush config, completing when it is written, or at once when writes are batched or disabled
         /// </summary>
-        void FlushConfig();
+        ValueTask FlushConfigAsync();
 
         /// <summary>
         /// Get gossip stats

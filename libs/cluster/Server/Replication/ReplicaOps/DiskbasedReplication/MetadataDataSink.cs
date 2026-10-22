@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading.Tasks;
 
 namespace Garnet.cluster
 {
@@ -30,7 +31,19 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc/>
-        public void WriteChunk(long startAddress, ReadOnlySpan<byte> data)
+        /// <remarks>Commits synchronously, as <see cref="Commit"/> does.</remarks>
+        public ValueTask WriteChunkAsync(long startAddress, ReadOnlySpan<byte> data)
+        {
+            Commit(data);
+            return default;
+        }
+
+        /// <summary>
+        /// Commits <paramref name="data"/> as the checkpoint's metadata, through the checkpoint manager, which writes it to
+        /// its file and waits for the write.
+        /// </summary>
+        /// <param name="data">The checkpoint metadata.</param>
+        public void Commit(ReadOnlySpan<byte> data)
         {
             var checkpointMetadata = data.ToArray();
             var ckptManager = Type switch

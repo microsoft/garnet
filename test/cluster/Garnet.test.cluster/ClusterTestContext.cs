@@ -137,7 +137,7 @@ namespace Garnet.test.cluster
             {
                 // Dispose doesn't ensure that inflight AOF commits to disk are completed, so for graceful shutdown in
                 // some tests, we need to manually ensure AOF flush before disposing the node.
-                AsyncUtils.BlockingWait(nodes[nodeIndex].Store.CommitAOFAsync(CancellationToken.None));
+                AsyncUtils.BlockingWait(nodes[nodeIndex].Store.CommitAOFAsync(CancellationToken.None).AsTask());
             }
 
             nodes[nodeIndex].Dispose();
@@ -363,7 +363,10 @@ namespace Garnet.test.cluster
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            int clusterConfigFlushFrequencyMs = 0,
+            bool enableVectorSetPreview = true,
+            Action<int, GarnetServerOptions> configureNode = null)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, Port);
@@ -425,7 +428,10 @@ namespace Garnet.test.cluster
                 vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                 threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                 enableRangeIndexPreview: enableRangeIndexPreview,
-                networkSendTimeout: networkSendTimeout);
+                networkSendTimeout: networkSendTimeout,
+                clusterConfigFlushFrequencyMs: clusterConfigFlushFrequencyMs,
+                enableVectorSetPreview: enableVectorSetPreview,
+                configureNode: configureNode);
 
             foreach (var node in nodes)
                 node.Start();

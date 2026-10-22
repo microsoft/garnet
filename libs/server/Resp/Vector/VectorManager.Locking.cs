@@ -291,6 +291,10 @@ namespace Garnet.server
                                 return default;
                             }
 
+                            // Parks the session, unwinding the command, when it can; otherwise waits here
+                            storageSession.parkingSession?.ParkUntilIndexDropped(this, storageSession, key, keyHash);
+                            if (storageSession.replayMustNotWait)
+                                ReplayMustWaitException.ThrowForIndexDrop(keyHash);
                             WaitForDiskANNIndexDrop(key);
                             continue;
                         }
@@ -545,6 +549,10 @@ namespace Garnet.server
                                 vectorSetLocks.ReleaseLock(lockToken);
                                 takeExclusiveLock = false;
 
+                                // Parks the session, unwinding the command, when it can; otherwise waits here
+                                storageSession.parkingSession?.ParkUntilIndexDropped(this, storageSession, key, keyHash);
+                                if (storageSession.replayMustNotWait)
+                                    ReplayMustWaitException.ThrowForIndexDrop(keyHash);
                                 WaitForDiskANNIndexDrop(key);
                                 continue;
                             }

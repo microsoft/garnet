@@ -16,7 +16,25 @@ namespace Garnet.cluster
         private bool Exists(PinnedSpanByte keySlice)
             => basicGarnetApi.EXISTS(keySlice) == GarnetStatus.OK;
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, int slot = -1)
+        /// <summary>
+        /// Whether looking a key up may read the device: the store has evicted records to its storage tier.
+        /// </summary>
+        private bool MayReadFromDisk
+            => clusterProvider.serverOptions.EnableStorageTier
+                && clusterProvider.storeWrapper.store.Log is var log && log.HeadAddress > log.BeginAddress;
+
+        // Version of the migration progress read before the key that last made a verification wait was checked
+        long migrationWaitVersion;
+
+        /// <inheritdoc/>
+        public bool TryRegisterMigrationWaiter(IMigrationWaiter waiter)
+            => clusterProvider.migrationManager.Progress.TryRegister(waiter, migrationWaitVersion);
+
+        /// <inheritdoc/>
+        public void RemoveMigrationWaiter(IMigrationWaiter waiter)
+            => clusterProvider.migrationManager.Progress.Remove(waiter);
+
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref PinnedSpanByte keySlice, bool readOnly, bool SessionAsking, bool waitForStableSlot, bool canWait, int slot = -1)
         {
             Debug.Assert(!waitForStableSlot || (waitForStableSlot && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
 
@@ -48,7 +66,7 @@ namespace Garnet.cluster
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: true) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                        SlotState.MIGRATING => MigratingKeySlotVerify(ref keySlice, _slot, readOnly: true), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -74,7 +92,22 @@ namespace Garnet.cluster
 
                 if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
                 {
-                    WaitForSlotToStabalize(_slot, keySlice, ref config);
+                    if (canWait)
+                    {
+                        // Read before the slot is checked again, so that a change the check misses is one the version
+                        // does not yet show. The configuration passed in may predate the version.
+                        var version = clusterProvider.migrationManager.Progress.Version;
+                        config = clusterProvider.clusterManager.CurrentConfig;
+                        if (config.GetState(_slot) is SlotState.IMPORTING or SlotState.MIGRATING)
+                        {
+                            migrationWaitVersion = version;
+                            return new(SlotVerifiedState.WAIT, _slot);
+                        }
+                    }
+                    else
+                    {
+                        WaitForSlotToStabalize(_slot, ref config);
+                    }
                     goto tryAgain;
                 }
 
@@ -98,7 +131,7 @@ namespace Garnet.cluster
                     return state switch
                     {
                         SlotState.STABLE => new(SlotVerifiedState.OK, _slot), // If slot in stable state then serve request
-                        SlotState.MIGRATING => CanOperateOnKey(ref keySlice, _slot, readOnly: false) ? new(SlotVerifiedState.OK, _slot) : new(SlotVerifiedState.ASK, _slot), // Can serve request only if key exists
+                        SlotState.MIGRATING => MigratingKeySlotVerify(ref keySlice, _slot, readOnly: false), // Can serve request only if key exists
                         _ => new(SlotVerifiedState.CLUSTERDOWN, _slot)
                     };
                 }
@@ -113,26 +146,47 @@ namespace Garnet.cluster
                 }
             }
 
-            bool CanOperateOnKey(ref PinnedSpanByte key, int slot, bool readOnly)
+            ClusterSlotVerificationResult MigratingKeySlotVerify(ref PinnedSpanByte key, ushort slot, bool readOnly)
             {
                 // For both read and read/write ops we need to ensure that key will not be removed
                 // while we try to operate on it so we will delay the corresponding operation
                 // as long as the key is being actively migrated
-                while (!clusterProvider.migrationManager.CanAccessKey(key, slot, readOnly))
+                if (canWait)
                 {
-                    ReleaseCurrentEpoch();
-                    Thread.Yield();
-                    AcquireCurrentEpoch();
+                    // Read before the key is checked, so that a migration step the check misses is one the version does not yet show
+                    var version = clusterProvider.migrationManager.Progress.Version;
+                    if (!clusterProvider.migrationManager.CanAccessKey(key, slot, readOnly))
+                    {
+                        migrationWaitVersion = version;
+                        return new(SlotVerifiedState.WAIT, slot);
+                    }
                 }
-                return Exists(key);
+                else
+                {
+                    // The caller cannot park, so this holds its thread. The epoch is released on each round
+                    // because the migration needs every session to leave it before it can move on.
+                    while (!clusterProvider.migrationManager.CanAccessKey(key, slot, readOnly))
+                    {
+                        ReleaseCurrentEpoch();
+                        Thread.Yield();
+                        AcquireCurrentEpoch();
+                    }
+                }
+
+                // Whether the key is still here may be learned only from the device, which a thread that must not wait
+                // leaves to the thread pool. The thread is asked last, as reading it costs more than the checks before it.
+                if (canWait && MayReadFromDisk && ThreadPoolHop.Required)
+                    return new(SlotVerifiedState.OFFLOAD, slot);
+
+                return Exists(key) ? new(SlotVerifiedState.OK, slot) : new(SlotVerifiedState.ASK, slot);
             }
 
-
-            void WaitForSlotToStabalize(ushort slot, PinnedSpanByte keySlice, ref ClusterConfig config)
+            void WaitForSlotToStabalize(ushort slot, ref ClusterConfig config)
             {
                 // For Vector Set ops specifically, we need a slot to be stable (or faulted, but not migrating) before writes can proceed
                 //
-                // This isn't key specific because we can't know the Vector Sets being migrated in advance, only that the slot is moving
+                // This isn't key specific because we can't know the Vector Sets being migrated in advance, only that the slot is moving.
+                // The caller cannot park, so this holds its thread, releasing the epoch on each round as MigratingKeySlotVerify does.
 
                 do
                 {
@@ -161,7 +215,12 @@ namespace Garnet.cluster
 
             ref var firstKey = ref parseState.GetArgSliceByRef(searchArgs.firstIdx);
             var firstSlot = HashSlotUtils.HashSlot(firstKey);
-            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, firstSlot);
+            var firstSlotVerifyResult = SingleKeySlotVerify(ref config, ref firstKey, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, firstSlot);
+
+            // The request is verified again once the migration moves on, or on the thread pool, so the other keys have
+            // nothing to be compared against yet
+            if (firstSlotVerifyResult.state is SlotVerifiedState.WAIT or SlotVerifiedState.OFFLOAD)
+                return firstSlotVerifyResult;
 
             // Verify remaining keys from the first spec (starting from second key)
             var verifyResult = VerifyKeysInRange(ref config, ref parseState, ref csvi, searchArgs.firstIdx + searchArgs.step,
@@ -192,10 +251,15 @@ namespace Garnet.cluster
             {
                 ref var key = ref parseState.GetArgSliceByRef(i);
                 var slot = HashSlotUtils.HashSlot(key);
-                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, slot);
 
+                // The slot alone decides this, whatever a migration is doing, so there is nothing to wait for
                 if (slot != firstSlot)
                     return new(SlotVerifiedState.CROSSSLOT, firstSlot);
+
+                var result = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking > 0, waitForStableSlot, csvi.canWait, slot);
+
+                if (result.state is SlotVerifiedState.WAIT or SlotVerifiedState.OFFLOAD)
+                    return result;
                 if (result.state != verifyResult.state)
                     return new(SlotVerifiedState.TRYAGAIN, firstSlot);
             }

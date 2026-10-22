@@ -95,6 +95,10 @@ namespace Garnet.server
 
             unifiedBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
 
+            // A scan that stopped to wait for replay produced nothing, and is run again from the same cursor
+            if (IsConsistentReadSession && readSessionState.ScanMustWait)
+                return true;
+
             lastScanCursor = storeCursor;
             return true;
         }
@@ -270,6 +274,20 @@ namespace Garnet.server
 
                 public override bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
+                    if (readSessionState.ScanProbing)
+                    {
+                        // A record that would wait ends the scan, and every record after it is left alone
+                        if (readSessionState.ScanMustWait || readSessionState.ProbeScanKey(GarnetLog.HASH(logRecord.Key)))
+                        {
+                            cursorRecordResult = CursorRecordResult.Skip;
+                            return false;
+                        }
+
+                        var probed = base.Reader(in logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
+                        readSessionState.PostScanKey();
+                        return probed;
+                    }
+
                     readSessionState.PreSingleKeyConsistentRead(GarnetLog.HASH(logRecord.Key));
                     var status = base.Reader(in logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
                     readSessionState.PostSingleKeyConsistentReadCallback();

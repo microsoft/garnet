@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Channels;
@@ -38,20 +39,45 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// For <see cref="QuantizationOrImportState"/>, keeps a count of pending related tasks.
+        /// One attempt to finalize an import, registered in <see cref="activeImportFinalizations"/> under its key for as
+        /// long as it runs. Counts the partitions still to finish, and is signaled once the attempt is over, so a replica
+        /// replaying a later write to the set can wait for it without spinning.
         /// </summary>
-        private sealed class CountdownHolder(int initialCount)
+        private sealed class ImportFinalization(byte[] key, int partitionCount)
         {
-            private int count = initialCount;
+            private int remaining = partitionCount;
+
+            // Finalizing an index takes far longer than a spin could usefully cover
+            private readonly ManualResetEventSlim ended = new(initialState: false, spinCount: 0);
 
             /// <summary>
-            /// Tick down 1, returns true if the result count was 0.
+            /// The key this attempt is registered under, which also backs the key of each of its partition steps.
+            /// </summary>
+            internal byte[] Key { get; } = key;
+
+            /// <summary>
+            /// Blocks the calling thread until the attempt has been unregistered.
+            /// </summary>
+            internal void Wait() => ended.Wait();
+
+            /// <summary>
+            /// Counts one partition as finished, and returns true if it was the last.
             /// </summary>
             internal bool TickDown()
-            => Interlocked.Decrement(ref count) == 0;
+            => Interlocked.Decrement(ref remaining) == 0;
+
+            /// <summary>
+            /// Unregisters this attempt and releases its waiters. Only this attempt's own entry is removed, so a partition
+            /// failing after the attempt has ended cannot unregister a later attempt for the same key. Idempotent.
+            /// </summary>
+            internal void End(VectorManager owner)
+            {
+                _ = owner.activeImportFinalizations.TryRemove(KeyValuePair.Create(Key, this));
+                ended.Set();
+            }
         }
 
-        private readonly record struct QuantizationOrImportState(ReadOnlyMemory<byte> Key, QuantizationOrImportStep Step, int StepIndex, CountdownHolder Countdown);
+        private readonly record struct QuantizationOrImportState(ReadOnlyMemory<byte> Key, QuantizationOrImportStep Step, int StepIndex, ImportFinalization Finalization);
 
         private readonly Channel<QuantizationOrImportState> quantizationOrImportChannel;
 
@@ -122,6 +148,11 @@ namespace Garnet.server
 
                     while (reader.TryRead(out var state))
                     {
+#if DEBUG
+                        if (state.Step == QuantizationOrImportStep.FinalizeImport)
+                            await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.VectorSet_Pause_Before_Import_Finalize_Step).ConfigureAwait(false);
+#endif
+
                         // Cooperative acquisition. TryProcessQuantizationRequest returns false only when the vector
                         // set lock is currently held by another thread - typically a network VADD that is recreating
                         // a disk-tiered index and is blocked on a pending disk read while holding the lock exclusively.
@@ -180,6 +211,7 @@ namespace Garnet.server
                                 if (res != GarnetStatus.OK && !importPending)
                                 {
                                     // Index was dropped before quantization request could be processed, ignore request
+                                    state.Finalization?.End(self);
                                     return true;
                                 }
 
@@ -222,22 +254,22 @@ namespace Garnet.server
                                                 SetFlags(keySpan, VectorSetFlags.ImportPending | VectorSetFlags.ImportFailed, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
 
                                                 // On error, we want to unblock immediately
-                                                RemoveFromActiveImports(self, keySpan);
+                                                state.Finalization.End(self);
                                             }
-                                            else if (state.Countdown.TickDown())
+                                            else if (state.Finalization.TickDown())
                                             {
                                                 // No need to check for failed here, because we only count down on successes
                                                 SetFlags(keySpan, VectorSetFlags.ImportCompleted, ref ActiveThreadSession.stringBasicContext, SetImportStateArg);
 
                                                 // On success, if we're the last finalizer, then 
-                                                RemoveFromActiveImports(self, keySpan);
+                                                state.Finalization.End(self);
                                             }
                                         }
                                         catch (Exception e)
                                         {
                                             self.logger?.LogError(e, "During VectorManager background FinalizeImport");
 
-                                            RemoveFromActiveImports(self, keySpan);
+                                            state.Finalization.End(self);
                                         }
                                         break;
 
@@ -255,16 +287,6 @@ namespace Garnet.server
                 {
                     self.logger?.LogError(ex, "During Vector Set quantization");
                     return true;
-                }
-
-                // Remove the given set from activeImportFinalization
-                static void RemoveFromActiveImports(VectorManager self, ReadOnlySpan<byte> keySpan)
-                {
-#if NET9_0_OR_GREATER
-                    _ = self.activeImportFinalizationsLookup.TryRemove(keySpan, out _);
-#else
-                    _ = self.activeImportFinalizations.TryRemove(keySpan.ToArray(), out _);
-#endif
                 }
             }
         }

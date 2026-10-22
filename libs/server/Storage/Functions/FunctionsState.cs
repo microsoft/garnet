@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -37,7 +38,45 @@ namespace Garnet.server
         public bool StoredProcMode;
         public readonly VectorManager vectorManager;
 
+        /// <summary>
+        /// The observer the item broker's main loop is popping for, set only around that pop, else null. A pop
+        /// for it commits the observer to what it takes, inside the store's update of the key
+        /// (<see cref="CollectionItemObserver.TryBeginTake"/>).
+        /// </summary>
+        internal CollectionItemObserver itemRecipient;
+
+        /// <summary>
+        /// Restart point of the command the session owning this state is running. A network session shares its own with
+        /// all its storage sessions; any other session has one of its own that is never armed.
+        /// </summary>
+        internal CommandRestartPoint restartPoint = new();
+
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
+
+        /// <summary>
+        /// Called by every store callback that changes the record of a key, whatever the change.
+        /// </summary>
+        /// <param name="keyHash">Hash of the key.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void OnKeyChanged(long keyHash)
+        {
+            watchVersionMap.IncrementVersion(keyHash);
+            restartPoint.Disarm();
+        }
+
+        /// <summary>
+        /// Called by every store callback that changes the record of a key, whatever the change, where the watch version is
+        /// to move only under a condition, such as the record not having been changed since a WATCH last reset it.
+        /// </summary>
+        /// <param name="keyHash">Hash of the key.</param>
+        /// <param name="bumpWatchVersion">Whether to move the watch version of the key.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void OnKeyChanged(long keyHash, bool bumpWatchVersion)
+        {
+            if (bumpWatchVersion)
+                watchVersionMap.IncrementVersion(keyHash);
+            restartPoint.Disarm();
+        }
 
         public FunctionsState(GarnetAppendOnlyFile appendOnlyFile, WatchVersionMap watchVersionMap, StoreWrapper storeWrapper,
             MemoryPool<byte> memoryPool, CacheSizeTracker objectStoreSizeTracker, VectorManager vectorManager, ILogger logger,

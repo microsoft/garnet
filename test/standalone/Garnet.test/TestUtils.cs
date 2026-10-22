@@ -426,6 +426,13 @@ namespace Garnet.test
 #endif
         }
 
+        /// <summary>
+        /// Whether <c>DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS=1</c> makes every socket in the process run its
+        /// completions on its socket event thread, whatever a server's own setting says.
+        /// </summary>
+        public static bool InlineCompletionsForcedByEnvironment
+            => Environment.GetEnvironmentVariable("DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS") == "1";
+
         public static void WaitUntilNextSecond(IDatabase db, long baseSeconds)
         {
             // LASTSAVE returns Unix seconds via DateTimeOffset.ToUnixTimeSeconds() so it has
@@ -528,7 +535,11 @@ namespace Garnet.test
             int? sessionParseStateMaxRetainedArgs = null,
             int? networkSendThrottleMax = null,
             TimeSpan? networkSendTimeout = null,
-            TimeSpan? tlsHandshakeTimeout = null
+            TimeSpan? tlsHandshakeTimeout = null,
+            bool networkInlineCompletions = false,
+            ILoggerFactory loggerFactory = null,
+            SslServerAuthenticationOptions tlsServerOptionsOverride = null,
+            DeviceType deviceType = DeviceType.Default
         )
         {
             if (useAzureStorage)
@@ -576,6 +587,7 @@ namespace Garnet.test
                 NetworkBufferSize = networkBufferSize,
                 NetworkBufferMemoryBudget = networkBufferMemoryBudget,
                 NetworkConnectionLimit = networkConnectionLimit,
+                NetworkInlineCompletions = networkInlineCompletions,
                 NetworkReceiveBufferMinSize = networkReceiveBufferMinSize,
                 NetworkSendBufferMinSize = networkSendBufferMinSize,
                 SessionScratchBufferMaxRetainedSize = sessionScratchBufferMaxRetainedSize,
@@ -595,7 +607,9 @@ namespace Garnet.test
                     clientCertificateRequired: true,
                     certificateRevocationCheckMode: X509RevocationMode.NoCheck,
                     issuerCertificatePath: null,
-                    null, 0, false, null, logger: logger)
+                    null, 0, false, null,
+                    tlsServerOptionsOverride: tlsServerOptionsOverride,
+                    logger: logger)
                 : null,
                 DisableObjects = disableObjects,
                 QuietMode = true,
@@ -605,7 +619,7 @@ namespace Garnet.test
                 CommandStatsMonitor = commandStatsMonitor,
                 DeviceFactoryCreator = useAzureStorage ?
                         logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
-                        : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
+                        : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
                 AuthSettings = authenticationSettings,
                 ExtensionBinPaths = extensionBinPaths,
                 ExtensionAllowUnsignedAssemblies = extensionAllowUnsignedAssemblies,
@@ -639,6 +653,9 @@ namespace Garnet.test
 
             if (!string.IsNullOrEmpty(memorySize))
                 opts.LogMemorySize = memorySize;
+
+            if (networkSendThrottleMax.HasValue)
+                opts.NetworkSendThrottleMax = networkSendThrottleMax.Value;
 
             if (!string.IsNullOrEmpty(pageSize))
                 opts.PageSize = pageSize;
@@ -695,8 +712,7 @@ namespace Garnet.test
                     opts.ReadCacheMemorySize = string.Empty;
             }
 
-            ILoggerFactory loggerFactory = null;
-            if (useTestLogger || logTo != null)
+            if (loggerFactory == null && (useTestLogger || logTo != null))
             {
                 loggerFactory = LoggerFactory.Create(builder =>
                 {
@@ -824,7 +840,10 @@ namespace Garnet.test
             int vectorSetReplayTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
             bool enableRangeIndexPreview = false,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            int clusterConfigFlushFrequencyMs = 0,
+            bool enableVectorSetPreview = true,
+            Action<int, GarnetServerOptions> configureNode = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -894,7 +913,9 @@ namespace Garnet.test
                     vectorSetReplayTaskCount: vectorSetReplayTaskCount,
                     threadPoolMinIOCompletionThreads: threadPoolMinIOCompletionThreads,
                     enableRangeIndexPreview: enableRangeIndexPreview,
-                    networkSendTimeout: networkSendTimeout);
+                    networkSendTimeout: networkSendTimeout,
+                    clusterConfigFlushFrequencyMs: clusterConfigFlushFrequencyMs,
+                    enableVectorSetPreview: enableVectorSetPreview);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -909,6 +930,7 @@ namespace Garnet.test
                     }
                 }
 
+                configureNode?.Invoke(i, opts[i]);
                 nodes[i] = new GarnetServer(opts[i], loggerFactory);
             }
             return (nodes, opts);
@@ -981,7 +1003,8 @@ namespace Garnet.test
             bool enableRangeIndexPreview = false,
             int vectorSetQuantizationTaskCount = 0,
             int threadPoolMinIOCompletionThreads = 0,
-            TimeSpan? networkSendTimeout = null)
+            TimeSpan? networkSendTimeout = null,
+            int clusterConfigFlushFrequencyMs = 0)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -1071,7 +1094,7 @@ namespace Garnet.test
                 : null,
                 DeviceFactoryCreator = useAzureStorage ?
                     logger == null ? TestUtils.AzureStorageNamedDeviceFactoryCreator : new AzureStorageNamedDeviceFactoryCreator(AzureEmulatedStorageString, logger)
-                    : new LocalStorageNamedDeviceFactoryCreator(logger: logger),
+                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
                 FastAofTruncate = fastAofTruncate,
                 AofMemorySize = aofMemorySize,
                 AofPageSize = aofPageSize ?? "32m",
@@ -1110,6 +1133,7 @@ namespace Garnet.test
                 VectorSetQuantizationTaskCount = vectorSetQuantizationTaskCount,
                 ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
                 ThreadPoolMinIOCompletionThreads = threadPoolMinIOCompletionThreads,
+                ClusterConfigFlushFrequencyMs = clusterConfigFlushFrequencyMs,
             };
 
             if (networkSendTimeout.HasValue)
@@ -1228,7 +1252,7 @@ namespace Garnet.test
             return new GarnetClient(endpoint ?? EndPoint, sslOptions, recordLatency: recordLatency, epoch: epoch);
         }
 
-        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null)
+        public static GarnetClientSession GetGarnetClientSession(bool useTLS = false, bool raw = false, EndPoint endPoint = null, LimitedFixedBufferPool networkPool = null)
         {
             SslClientAuthenticationOptions sslOptions = null;
             if (useTLS)
@@ -1241,7 +1265,7 @@ namespace Garnet.test
                     RemoteCertificateValidationCallback = ValidateServerCertificate,
                 };
             }
-            return new GarnetClientSession(endPoint ?? EndPoint, new(), tlsOptions: sslOptions, rawResult: raw);
+            return new GarnetClientSession(endPoint ?? EndPoint, new(), networkPool, tlsOptions: sslOptions, rawResult: raw);
         }
 
         public static LightClientRequest CreateRequest(LightClient.OnResponseDelegateUnsafe onReceive = null, bool useTLS = false, CountResponseType countResponseType = CountResponseType.Tokens)

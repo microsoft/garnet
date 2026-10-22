@@ -46,6 +46,12 @@ namespace Garnet.cluster
         long stagedPulseSequenceNumber;
         readonly int directVirtualSublogIdx;
 
+        /// <summary>
+        /// Wakes the primary's session when background replay has caught up enough for it to carry on.
+        /// </summary>
+        readonly ProgressSignal replayProgress = new();
+        readonly Func<bool> lagExceeded;
+
         internal long StagedPulseSequenceNumber => Volatile.Read(ref stagedPulseSequenceNumber);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -77,6 +83,7 @@ namespace Garnet.cluster
             directVirtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, 0);
             this.cts = cts;
             this.logger = logger;
+            lagExceeded = LagExceeded;
 
             // Initialize background replay tasks for this sublog replay driver
             var replayTaskCount = serverOptions.AofReplayTaskCount;
@@ -87,7 +94,11 @@ namespace Garnet.cluster
                 barrier = new DoubleTurnstileBarrier(replayTaskCount + 1);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
-                    _ = Task.Run(() => replayTask.FullPageBasedBackgroundReplayAsync());
+                {
+                    // The monitor was just created, so it cannot be closed yet
+                    _ = ResumeReplay();
+                    replayTask.Start();
+                }
             }
         }
 
@@ -121,13 +132,29 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Consumes a record that the primary streamed to this replica, on the thread of the session that received it.
+        /// A record that can wait on something other than the local store is replayed on a thread of its own and the
+        /// replay between the barriers of a sharded replay does not hold a thread, so that the session's network thread
+        /// is not held while it waits.
+        /// </summary>
+        /// <param name="record">Pointer to the log entry record to consume.</param>
+        /// <param name="recordLength">Length of the log entry record in bytes.</param>
+        /// <param name="currentAddress">Current address of the log entry in the log.</param>
+        /// <param name="nextAddress">Next address in the log after the current record.</param>
+        /// <param name="isProtected">Indicates whether the log entry is protected.</param>
+        /// <returns>
+        /// A completed task when the record was replayed on the calling thread. Otherwise a task that completes once it has
+        /// been replayed, until which <paramref name="record"/> must stay valid.
+        /// </returns>
+        public unsafe ValueTask ConsumeFromSessionAsync(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+            => serverOptions.AofReplayTaskCount == 1
+                ? ConsumeDirectFromSessionAsync(record, recordLength, currentAddress, nextAddress, isProtected)
+                : ConsumeSchedulePageFromSessionAsync(record, recordLength, currentAddress, nextAddress, isProtected);
+
         private unsafe void ConsumeSchedulePage(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
-            replayBatchContext.Record = record;
-            replayBatchContext.RecordLength = recordLength;
-            replayBatchContext.CurrentAddress = currentAddress;
-            replayBatchContext.NextAddress = nextAddress;
-            replayBatchContext.IsProtected = isProtected;
+            PublishPage(record, recordLength, currentAddress, nextAddress, isProtected);
 
             // Rendezvous 1 (ready): the page context above is published before the leader arrives, so
             // once this returns every replay task has met at the barrier and may scan the page.
@@ -148,6 +175,35 @@ namespace Garnet.cluster
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
         }
 
+        private unsafe ValueTask ConsumeSchedulePageFromSessionAsync(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            // The page is published here, and only addresses go to the asynchronous part, which cannot hold the pointer
+            PublishPage(record, recordLength, currentAddress, nextAddress, isProtected);
+            return ReplayPublishedPageAsync(currentAddress, nextAddress);
+        }
+
+        private unsafe void PublishPage(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            replayBatchContext.Record = record;
+            replayBatchContext.RecordLength = recordLength;
+            replayBatchContext.CurrentAddress = currentAddress;
+            replayBatchContext.NextAddress = nextAddress;
+            replayBatchContext.IsProtected = isProtected;
+        }
+
+        /// <summary>
+        /// Replays the page in <see cref="replayBatchContext"/> on the replay tasks, as <see cref="ConsumeSchedulePage"/>
+        /// does, but parks at the barriers instead of blocking.
+        /// </summary>
+        private async ValueTask ReplayPublishedPageAsync(long currentAddress, long nextAddress)
+        {
+            await barrier.SignalWorkReadyWaitAsync(serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
+            await barrier.SignalWorkCompletedWaitAsync(serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+            await replicationManager.AofProcessor.WaitForVectorOperationsToCompleteAsync(cts.Token).ConfigureAwait(false);
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
+        }
+
         /// <summary>
         /// Processes record on a single replay task directly.
         /// </summary>
@@ -162,12 +218,112 @@ namespace Garnet.cluster
         {
             ValidateSublogIndex(physicalSublogIdx);
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
+
+#if DEBUG
+            // Holds the page on this thread, as replaying a record that waits would
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Replication_Hold_Replay_Thread);
+#endif
+
+            var ptr = record;
             var replicationOffset = currentAddress;
+            _ = ReplayRecords(record, recordLength, currentAddress, isProtected, stopAtBlockingRecord: false, ref ptr, ref replicationOffset);
+            CompleteDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+        }
+
+        /// <summary>
+        /// Processes record on a single replay task directly, from a session's network thread. Records are replayed on
+        /// the calling thread until one has to wait. A record that waits for queued Vector Set operations is replayed
+        /// once they have completed, without holding a thread meanwhile; one that waits on anything else is replayed,
+        /// with everything after it, on a thread of its own.
+        /// </summary>
+        private unsafe ValueTask ConsumeDirectFromSessionAsync(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            ValidateSublogIndex(physicalSublogIdx);
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
+
+            var ptr = record;
+            var replicationOffset = currentAddress;
+            switch (ReplayRecords(record, recordLength, currentAddress, isProtected, stopAtBlockingRecord: true, ref ptr, ref replicationOffset))
+            {
+                case ReplayWait.Thread:
+                    return new OffloadedPage(this, record, recordLength, currentAddress, nextAddress, isProtected, ptr, replicationOffset).StartAsync();
+                case ReplayWait.VectorOperations:
+                    return ReplayAfterVectorOperationsAsync((nint)record, recordLength, currentAddress, nextAddress, (nint)ptr, replicationOffset);
+            }
+
+            var vectorOperations = replicationManager.AofProcessor.WaitForVectorOperationsToCompleteAsync(cts.Token);
+            if (!vectorOperations.IsCompletedSuccessfully)
+                return AdvertiseAfterVectorOperationsAsync(vectorOperations, recordLength, currentAddress, nextAddress, replicationOffset);
+
+            AdvertiseDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+            return default;
+        }
+
+        /// <summary>
+        /// Replays the rest of a page received by a session, from a record that waits for the Vector Set operations queued
+        /// before it, as <see cref="ConsumeDirectFromSessionAsync"/> does, awaiting those operations on each such record.
+        /// </summary>
+        private async ValueTask ReplayAfterVectorOperationsAsync(nint record, int recordLength, long currentAddress, long nextAddress, nint ptr, long replicationOffset)
+        {
+            ReplayWait wait;
+            do
+            {
+                await replicationManager.AofProcessor.WaitForVectorOperationsToCompleteAsync(cts.Token).ConfigureAwait(false);
+                wait = ReplayRecordsFromSession(record, recordLength, currentAddress, ref ptr, ref replicationOffset);
+            }
+            while (wait == ReplayWait.VectorOperations);
+
+            if (wait == ReplayWait.Thread)
+            {
+                await OffloadPageAsync(record, recordLength, currentAddress, nextAddress, ptr, replicationOffset).ConfigureAwait(false);
+                return;
+            }
+
+            await replicationManager.AofProcessor.WaitForVectorOperationsToCompleteAsync(cts.Token).ConfigureAwait(false);
+            AdvertiseDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+        }
+
+        /// <summary>
+        /// Advertises the replication offset reached by a page received by a session, once the Vector Set operations it
+        /// queued have completed.
+        /// </summary>
+        private async ValueTask AdvertiseAfterVectorOperationsAsync(ValueTask vectorOperations, int recordLength, long currentAddress, long nextAddress, long replicationOffset)
+        {
+            await vectorOperations.ConfigureAwait(false);
+            AdvertiseDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+        }
+
+        /// <summary>
+        /// Replays the records of a page received by a session from <paramref name="ptr"/> on, until one has to wait, as
+        /// <see cref="ReplayRecords"/> does. The session receives with no epoch held, so the page is unprotected.
+        /// </summary>
+        private unsafe ReplayWait ReplayRecordsFromSession(nint record, int recordLength, long currentAddress, ref nint ptr, ref long replicationOffset)
+        {
+            var next = (byte*)ptr;
+            var wait = ReplayRecords((byte*)record, recordLength, currentAddress, isProtected: false, stopAtBlockingRecord: true, ref next, ref replicationOffset);
+            ptr = (nint)next;
+            return wait;
+        }
+
+        /// <summary>
+        /// Replays the rest of an unprotected page received by a session, from <paramref name="ptr"/> on, on a thread of its own.
+        /// </summary>
+        private unsafe ValueTask OffloadPageAsync(nint record, int recordLength, long currentAddress, long nextAddress, nint ptr, long replicationOffset)
+            => new OffloadedPage(this, (byte*)record, recordLength, currentAddress, nextAddress, isProtected: false, (byte*)ptr, replicationOffset).StartAsync();
+
+        /// <summary>
+        /// Replays the records of a page from <paramref name="ptr"/> on, advancing <paramref name="ptr"/> and
+        /// <paramref name="replicationOffset"/> past each record replayed.
+        /// </summary>
+        /// <param name="stopAtBlockingRecord">Whether the calling thread must not wait, so that replay stops at a record
+        /// that would wait, leaving it unreplayed.</param>
+        /// <returns>What the record replay stopped at waits on, or <see cref="ReplayWait.None"/> once the page has been replayed.</returns>
+        private unsafe ReplayWait ReplayRecords(byte* record, int recordLength, long currentAddress, bool isProtected, bool stopAtBlockingRecord, ref byte* ptr, ref long replicationOffset)
+        {
             // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
 
             try
             {
-                var ptr = record;
                 while (ptr < record + recordLength)
                 {
                     cts.Token.ThrowIfCancellationRequested();
@@ -176,7 +332,18 @@ namespace Garnet.cluster
                     if (payloadLength > 0)
                     {
                         var logAddressSequenceNumber = currentAddress + (ptr - record);
-                        replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart, logAddressSequenceNumber);
+                        bool isCheckpointStart;
+                        if (stopAtBlockingRecord)
+                        {
+                            var wait = replicationManager.AofProcessor.TryProcessAofRecordWithoutWaiting(physicalSublogIdx, ptr + entryLength, payloadLength, true, out isCheckpointStart, logAddressSequenceNumber);
+                            if (wait != ReplayWait.None)
+                                return wait;
+                        }
+                        else
+                        {
+                            replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out isCheckpointStart, logAddressSequenceNumber);
+                        }
+
                         // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                         // point when we take a checkpoint at the checkpoint end marker
                         if (isCheckpointStart)
@@ -197,6 +364,7 @@ namespace Garnet.cluster
                     replicationOffset += entryLength;
                 }
                 // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
+                return ReplayWait.None;
             }
             catch
             {
@@ -204,10 +372,25 @@ namespace Garnet.cluster
                 replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
                 throw;
             }
+        }
 
+        /// <summary>
+        /// Advertises the replication offset reached once every record of a page has been replayed, and checks that it is
+        /// the address the page was expected to end at.
+        /// </summary>
+        private void CompleteDirect(int recordLength, long currentAddress, long nextAddress, long replicationOffset)
+        {
             // Before updating replication offset, we must wait for any pending Vector Set ops to complete
             replicationManager.AofProcessor.WaitForVectorOperationsToComplete();
+            AdvertiseDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+        }
 
+        /// <summary>
+        /// Advertises the replication offset reached once every record of a page has been replayed and the Vector Set
+        /// operations they queued have completed, and checks that it is the address the page was expected to end at.
+        /// </summary>
+        private void AdvertiseDirect(int recordLength, long currentAddress, long nextAddress, long replicationOffset)
+        {
             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, replicationOffset);
 
             if (replicationOffset != nextAddress)
@@ -217,24 +400,113 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// The rest of a page, from a record that can block, replayed on a thread of its own. Blocking records rendezvous
+        /// with the other sublogs' replay, which are themselves on network threads of a server whose socket engine may run
+        /// several connections' receive callbacks on one thread, so they cannot wait on the thread that received the page,
+        /// and a pool thread that waits can be starved by the very work it waits for.
+        /// </summary>
+        private sealed unsafe class OffloadedPage
+        {
+            readonly ReplicaReplayDriver driver;
+            readonly byte* record;
+            readonly int recordLength;
+            readonly long currentAddress;
+            readonly long nextAddress;
+            readonly bool isProtected;
+            byte* ptr;
+            long replicationOffset;
+
+            // The session resumes on the pool when this completes, never inline on the offload thread
+            readonly TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            internal OffloadedPage(ReplicaReplayDriver driver, byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected, byte* ptr, long replicationOffset)
+            {
+                this.driver = driver;
+                this.record = record;
+                this.recordLength = recordLength;
+                this.currentAddress = currentAddress;
+                this.nextAddress = nextAddress;
+                this.isProtected = isProtected;
+                this.ptr = ptr;
+                this.replicationOffset = replicationOffset;
+            }
+
+            internal ValueTask StartAsync()
+            {
+                new Thread(Replay) { IsBackground = true, Name = $"AofReplayOffload-{driver.physicalSublogIdx}" }.Start();
+                return new ValueTask(completion.Task);
+            }
+
+            void Replay()
+            {
+                try
+                {
+                    _ = driver.ReplayRecords(record, recordLength, currentAddress, isProtected, stopAtBlockingRecord: false, ref ptr, ref replicationOffset);
+                    driver.CompleteDirect(recordLength, currentAddress, nextAddress, replicationOffset);
+                    completion.SetResult();
+                }
+                catch (Exception ex)
+                {
+                    completion.SetException(ex);
+                }
+            }
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Throttle()
-            => TryApplyPendingPulse();
+        {
+            TryApplyPendingPulse();
+            replayProgress.Pulse();
+        }
         #endregion
 
-        public void SignalTimeAdvance(long sequenceNumber)
+        /// <summary>
+        /// Records a time-advance pulse for this sublog and applies it as soon as everything streamed before it has been
+        /// replayed. The pulse is applied on the calling thread only when that thread owns replay of the sublog.
+        /// </summary>
+        /// <returns>
+        /// A completed task when the pulse was applied, or left for the replay task to apply, without waiting. Otherwise a
+        /// task that completes once the pulse has been applied.
+        /// </returns>
+        public ValueTask SignalTimeAdvanceAsync(long sequenceNumber)
         {
             if (sequenceNumber <= Volatile.Read(ref pendingPulseSequenceNumber))
-                return;
+                return default;
             Volatile.Write(ref pendingPulseSequenceNumber, sequenceNumber);
 
             var sessionThreadOwnsReplay = serverOptions.AofReplayMaxLagBytes == 0 || replayIterator == null;
             if (!sessionThreadOwnsReplay || !ResumeReplay())
-                return;
+                return default;
 
+            ValueTask applying;
             try
             {
-                TryApplyPendingPulse();
+                applying = TryApplyPendingPulseAsync();
+            }
+            catch
+            {
+                SuspendReplay();
+                throw;
+            }
+
+            if (applying.IsCompletedSuccessfully)
+            {
+                SuspendReplay();
+                return default;
+            }
+            return ReleaseReplayAfterAsync(applying);
+        }
+
+        /// <summary>
+        /// Awaits <paramref name="applying"/> and then gives up the replay that the caller took, which is released on
+        /// whichever thread the wait ends on.
+        /// </summary>
+        async ValueTask ReleaseReplayAfterAsync(ValueTask applying)
+        {
+            try
+            {
+                await applying.ConfigureAwait(false);
             }
             finally
             {
@@ -242,17 +514,25 @@ namespace Garnet.cluster
             }
         }
 
+        // Whether a recorded pulse can be applied: everything streamed before it must have been replayed
+        bool TryGetPulseToApply(out long pending)
+        {
+            pending = Volatile.Read(ref pendingPulseSequenceNumber);
+            return pending > appliedPulseSequenceNumber &&
+                replicationManager.GetSublogReplicationOffset(physicalSublogIdx) == physicalSublog.TailAddress;
+        }
+
         void TryApplyPendingPulse()
         {
-            var pending = Volatile.Read(ref pendingPulseSequenceNumber);
-            if (pending <= appliedPulseSequenceNumber)
-                return;
-            if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != physicalSublog.TailAddress)
+            if (!TryGetPulseToApply(out var pending))
                 return;
 
             ApplyPulse(pending);
             appliedPulseSequenceNumber = pending;
         }
+
+        ValueTask TryApplyPendingPulseAsync()
+            => TryGetPulseToApply(out var pending) ? ApplyPulseAsync(pending) : default;
 
         unsafe void ApplyPulse(long sequenceNumber)
         {
@@ -262,14 +542,9 @@ namespace Garnet.cluster
                 return;
             }
 
-            Volatile.Write(ref stagedPulseSequenceNumber, sequenceNumber);
+            StagePulse(sequenceNumber);
             try
             {
-                replayBatchContext.Record = null;
-                replayBatchContext.RecordLength = 0;
-                replayBatchContext.CurrentAddress = 0;
-                replayBatchContext.NextAddress = 0;
-                replayBatchContext.IsProtected = false;
                 barrier.SignalWorkReadyWait(serverOptions.ReplicaSyncTimeout, cts.Token);
                 barrier.SignalWorkCompletedWait(serverOptions.ReplicaSyncTimeout, cts.Token);
             }
@@ -277,6 +552,44 @@ namespace Garnet.cluster
             {
                 Volatile.Write(ref stagedPulseSequenceNumber, 0);
             }
+        }
+
+        ValueTask ApplyPulseAsync(long sequenceNumber)
+        {
+            if (serverOptions.AofReplayTaskCount == 1)
+            {
+                appendOnlyFile.readConsistencyManager.AdvanceVirtualSublogTime(directVirtualSublogIdx, sequenceNumber);
+                appliedPulseSequenceNumber = sequenceNumber;
+                return default;
+            }
+
+            StagePulse(sequenceNumber);
+            return ApplyStagedPulseAsync(sequenceNumber);
+        }
+
+        async ValueTask ApplyStagedPulseAsync(long sequenceNumber)
+        {
+            try
+            {
+                await barrier.SignalWorkReadyWaitAsync(serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                await barrier.SignalWorkCompletedWaitAsync(serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                Volatile.Write(ref stagedPulseSequenceNumber, 0);
+            }
+            appliedPulseSequenceNumber = sequenceNumber;
+        }
+
+        // Publishes a pulse for the replay tasks to apply, as a page that holds no records
+        unsafe void StagePulse(long sequenceNumber)
+        {
+            Volatile.Write(ref stagedPulseSequenceNumber, sequenceNumber);
+            replayBatchContext.Record = null;
+            replayBatchContext.RecordLength = 0;
+            replayBatchContext.CurrentAddress = 0;
+            replayBatchContext.NextAddress = 0;
+            replayBatchContext.IsProtected = false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -287,7 +600,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Method to create a background replay task that iterates and consume this replicas physical log
+        /// Starts the background replay that iterates and consumes this replica's physical log, on a thread of its own:
+        /// it replays each page before it returns to the log, and replaying a page can wait, on the replay tasks or on a
+        /// record that waits.
         /// </summary>
         /// <param name="startAddress"></param>
         public void InitializeBackgroundReplayTask(long startAddress)
@@ -295,25 +610,22 @@ namespace Garnet.cluster
             if (replayIterator == null)
             {
                 replayIterator = appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
-                _ = BackgroundReplayTaskAsync();
+                new Thread(BackgroundReplay) { IsBackground = true, Name = $"AofReplay-{physicalSublogIdx}" }.Start();
             }
 
-            async Task BackgroundReplayTaskAsync()
+            void BackgroundReplay()
             {
-                // Force async
-                await Task.Yield();
-
                 var readLock = ResumeReplay();
                 try
                 {
                     if (!readLock)
                         throw new GarnetException("Failed to acquire replayLock");
 
-                    await replayIterator.BulkConsumeAllAsync(
+                    replayIterator.BulkConsumeAll(
                         this,
                         runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
                         maxChunkSize: 1 << 20,
-                        cts.Token).ConfigureAwait(false);
+                        cts.Token);
                 }
                 catch (Exception ex)
                 {
@@ -327,15 +639,22 @@ namespace Garnet.cluster
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ThrottlePrimary()
-        {
-            while (runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES) is var maxLag && maxLag != -1 && replayIterator != null &&
-                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > maxLag)
-            {
-                cts.Token.ThrowIfCancellationRequested();
-                Thread.Yield();
-            }
-        }
+        /// <summary>
+        /// Applies a pulse that has become applicable now that the records streamed before it have been replayed, from a
+        /// session's thread, as <see cref="Throttle"/> does between the chunks of the background replay.
+        /// </summary>
+        public ValueTask ThrottleAsync() => TryApplyPendingPulseAsync();
+
+        // Whether replay trails what this replica has received by more than the bound that holds the primary's stream back
+        bool LagExceeded()
+            => runtimeConfig.GetInt(ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES) is var maxLag && maxLag != -1 && replayIterator != null &&
+                appendOnlyFile.Log.GetTailAddress(physicalSublogIdx) - replicationManager.GetReplicationOffset(physicalSublogIdx) > maxLag;
+
+        /// <summary>
+        /// Holds the primary's stream back, without holding a thread, while background replay trails what this replica has
+        /// received by more than <see cref="ServerConfigType.AOF_REPLAY_MAX_LAG_BYTES"/>. Background replay wakes the wait from
+        /// <see cref="Throttle"/> as it makes progress.
+        /// </summary>
+        public ValueTask ThrottlePrimaryAsync() => replayProgress.WaitWhileAsync(lagExceeded, cts.Token);
     }
 }

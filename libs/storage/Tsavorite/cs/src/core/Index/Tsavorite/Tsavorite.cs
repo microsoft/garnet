@@ -164,35 +164,33 @@ namespace Tsavorite.core
 
         internal Func<AllocatorSettings, TStoreFunctions, TAllocator> allocatorFactory;
 
-        internal readonly ManualResetEventSlim pauseRevivEvent = new(false);
-        private readonly object pauseRevivLock = new();
-
         /// <summary>
-        /// Pause Revivification
+        /// Pause Revivification, completing once every thread that was protected when it paused has refreshed its epoch,
+        /// or once <paramref name="timeout"/> has elapsed.
         /// </summary>
-        /// <param name="timeout"></param>
-        /// /// <param name="token"></param>
-        public void PauseRevivification(TimeSpan timeout, CancellationToken token)
+        /// <param name="timeout">How long to wait for protected threads to observe the pause before proceeding anyway.</param>
+        /// <param name="token">Cancels the wait.</param>
+        public async Task PauseRevivificationAsync(TimeSpan timeout, CancellationToken token)
         {
-            lock (pauseRevivLock)
+            // The drain action may run on a thread holding the epoch, so the waiter must not continue on it.
+            var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            try
             {
-                try
-                {
-                    epoch.Resume();
-                    // Pause Reviv
-                    RevivificationManager.PauseRevivification();
-                    // Reset event to be used for signaling that everyone has observed the pause signal
-                    pauseRevivEvent.Reset();
-                    // BumpEpoch with Set signal
-                    epoch.BumpCurrentEpoch(() => pauseRevivEvent.Set());
-                }
-                finally
-                {
-                    epoch.Suspend();
-                }
+                epoch.Resume();
+                RevivificationManager.PauseRevivification();
+                epoch.BumpCurrentEpoch(() => observed.TrySetResult());
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
 
-                // Wait for everyone to observe the reviv suspend signal
-                pauseRevivEvent.Wait(timeout, token);
+            try
+            {
+                await observed.Task.WaitAsync(timeout, token).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
             }
         }
 
@@ -556,7 +554,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: false));
 
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
@@ -589,7 +587,7 @@ namespace Tsavorite.core
 
                 do
                     internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
-                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, hash, exclusive: false));
 
                 batch.SetStatus(0, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                 batch.SetOutput(0, output);
@@ -655,7 +653,7 @@ namespace Tsavorite.core
 
                             do
                                 internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
-                            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+                            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, hash, exclusive: false));
 
                             batch.SetStatus(nextBatchIx, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                             batch.SetOutput(nextBatchIx, output);
@@ -681,7 +679,7 @@ namespace Tsavorite.core
 
                         do
                             internalStatus = InternalRead(key, hash, ref input, ref output, context, ref operationState, sessionFunctions);
-                        while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+                        while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, hash, exclusive: false));
 
                         batch.SetStatus(i, HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus));
                         batch.SetOutput(i, output);
@@ -702,7 +700,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: false));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -755,7 +753,7 @@ namespace Tsavorite.core
             do
                 internalStatus = InternalUpsert<TKey, SpanUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
                         key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -774,7 +772,7 @@ namespace Tsavorite.core
             do
                 internalStatus = InternalUpsert<TKey, ObjectUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -793,7 +791,7 @@ namespace Tsavorite.core
             do
                 internalStatus = InternalUpsert<TKey, LogRecordUpsertValueSelector, TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -810,7 +808,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -834,7 +832,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             recordMetadata = new(operationState.logicalAddress);
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
@@ -850,7 +848,7 @@ namespace Tsavorite.core
 
             do
                 internalStatus = InternalDelete(key, keyHash, ref context, ref operationState, sessionFunctions);
-            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState));
+            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref operationState, keyHash, exclusive: true));
 
             return HandleOperationStatus(sessionFunctions.Ctx, ref operationState, internalStatus);
         }
@@ -880,7 +878,6 @@ namespace Tsavorite.core
             if (disposeCheckpointManager)
                 checkpointManager?.Dispose();
             RevivificationManager.Dispose();
-            pauseRevivEvent?.Dispose();
 
             // Currently this doesn't do much, but for future safety make sure it's called after its contained objects are disposed.
             Free();

@@ -367,10 +367,14 @@ namespace Tsavorite.core
             Exception ex = null;
             try
             {
+                var stepsMayBlock = stateMachine.StepsMayBlock;
                 do
                 {
                     // Publish one transition, then wait for both transition-in and its registered phase work.
-                    GlobalStateMachineStep(systemState);
+                    if (stepsMayBlock)
+                        await StepOnDedicatedThreadAsync(systemState).ConfigureAwait(false);
+                    else
+                        GlobalStateMachineStep(systemState);
                     await ProcessWaitingListAsync(token).ConfigureAwait(false);
                 } while (systemState.Phase != Phase.REST);
             }
@@ -400,6 +404,28 @@ namespace Tsavorite.core
                     _ = _stateMachineCompleted.TrySetResult(true);
                 }
             }
+        }
+
+        /// <summary>
+        /// Runs <see cref="GlobalStateMachineStep"/> on a dedicated thread, for a step that may block the thread it runs on.
+        /// </summary>
+        Task StepOnDedicatedThreadAsync(SystemState expectedState)
+        {
+            var stepped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            new Thread(() =>
+            {
+                try
+                {
+                    GlobalStateMachineStep(expectedState);
+                    stepped.SetResult();
+                }
+                catch (Exception e)
+                {
+                    stepped.SetException(e);
+                }
+            })
+            { IsBackground = true, Name = "TsavoriteStateMachineStep" }.Start();
+            return stepped.Task;
         }
 
         /// <summary>

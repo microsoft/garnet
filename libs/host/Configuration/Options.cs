@@ -420,6 +420,14 @@ namespace Garnet
         public int NetworkConnectionLimit { get; set; }
 
         [OptionValidation]
+        [Option("network-inline-completions", Required = false, HelpText = "Process the input of client connections on the socket event thread that receives it (Linux and macOS), rather than handing each receive to the thread pool. Saves a thread hop per request; the event thread and the other connections it serves wait while a request runs. A command that waits on another client, a timer, the AOF, a cluster peer, a device read or, for most key commands, a key another client holds locked releases the thread, and one that may wait on synchronous storage IO moves to the thread pool. Pair with --network-event-threads. Ignored on Windows.")]
+        public bool? NetworkInlineCompletions { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("network-event-threads", Required = false, HelpText = "Number of socket event threads in the process (Linux and macOS), overriding DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT. 0 uses that variable if set, otherwise the processor count with --network-inline-completions and the .NET default without. Fixed by the first socket operation in the process. Ignored on Windows.")]
+        public int NetworkEventThreads { get; set; }
+
+        [OptionValidation]
         [Option("use-azure-storage", Required = false, HelpText = "Use Azure Page Blobs for storage instead of local storage.")]
         public bool? UseAzureStorage { get; set; }
 
@@ -467,7 +475,7 @@ namespace Garnet
         [Option("aof-replay-max-lag-bytes", Required = false, HelpText = "Throttle ClusterAppendLog when replica.AOFTailAddress - ReplicationOffset > AofReplayMaxLagBytes. 0: Synchronous replay,  >=1: background replay with specified lag, -1: infinite lag")]
         public int AofReplayMaxLagBytes { get; set; }
 
-        [Option("aof-sync-max-lag-bytes", Required = false, HelpText = "Stall primary AOF appends when the replication lag exceeds this budget, divided evenly per sublog (each sublog stalls at an even 1/m share). -1: disabled, >=1: max lag in bytes.")]
+        [Option("aof-sync-max-lag-bytes", Required = false, HelpText = "Stall primary AOF appends when the replication lag exceeds this budget, divided evenly per sublog (each sublog stalls at an even 1/m share). Writes that can wait are held back without occupying a thread once the lag of any sublog is within 1/8 of its share, so only appends already in flight stall at the share itself. -1: disabled, >=1: max lag in bytes.")]
         public long AofSyncMaxLagBytes { get; set; }
 
         [OptionValidation]
@@ -1010,6 +1018,8 @@ namespace Garnet
                 ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
+                NetworkInlineCompletions = NetworkInlineCompletions.GetValueOrDefault(),
+                NetworkEventThreads = NetworkEventThreads,
                 DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
                     : new LocalStorageNamedDeviceFactoryCreator(
                         deviceType: deviceType,

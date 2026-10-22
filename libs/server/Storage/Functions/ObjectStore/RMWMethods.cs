@@ -78,7 +78,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            functionsState.OnKeyChanged(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
@@ -106,8 +106,7 @@ namespace Garnet.server
 
             if (InPlaceUpdaterWorker(ref logRecord, ref input, ref output, ref rmwInfo))
             {
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                functionsState.OnKeyChanged(rmwInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
                 if (functionsState.appendOnlyFile != null)
                     rmwInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                 return true;
@@ -119,13 +118,21 @@ namespace Garnet.server
         {
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion);
+                var value = (IGarnetObject)logRecord.ValueObject;
+                bool operateSuccessful;
+                if (functionsState.itemRecipient is null)
+                    operateSuccessful = value.Operate(ref input, ref output, functionsState.respProtocolVersion);
+                else if (!TryOperateForItemRecipient(value, ref input, ref output, out operateSuccessful))
+                {
+                    rmwInfo.Action = RMWAction.CancelOperation;
+                    return false;
+                }
+
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
                 {
-                    if (!logRecord.Info.Modified)
-                        functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                    functionsState.OnKeyChanged(rmwInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
                     if (functionsState.appendOnlyFile != null)
                         rmwInfo.UserData |= NeedAofLog;
                     rmwInfo.Action = RMWAction.ExpireAndStop;
@@ -153,6 +160,39 @@ namespace Garnet.server
             finally
             {
                 writer.Dispose();
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Runs the item broker's pop for <see cref="FunctionsState.itemRecipient"/>, committing that observer to the
+        /// items it takes, unless a completion deferred while the observer was claimed refuses the pop.
+        /// </summary>
+        /// <remarks>
+        /// Runs inside the update of the key, so no other update of the key can come between the observer's
+        /// commit and the pop. A pop reports in <see cref="ObjectOutput.result1"/> how many items it took.
+        /// </remarks>
+        /// <returns>False if the pop was refused and did not run</returns>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        bool TryOperateForItemRecipient(IGarnetObject value, ref ObjectInput input, ref ObjectOutput output, out bool operateSuccessful)
+        {
+            var recipient = functionsState.itemRecipient;
+            if (!recipient.TryBeginTake())
+            {
+                operateSuccessful = false;
+                return false;
+            }
+
+            var took = false;
+            try
+            {
+                operateSuccessful = value.Operate(ref input, ref output, functionsState.respProtocolVersion);
+                took = output.result1 > 0;
+            }
+            finally
+            {
+                recipient.EndTake(took);
             }
 
             return true;
@@ -200,11 +240,16 @@ namespace Garnet.server
             // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
             // TODO: Object store ETags
 
-            functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+            functionsState.OnKeyChanged(rmwInfo.KeyHash);
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                value.Operate(ref input, ref output, functionsState.respProtocolVersion);
+                // A refused pop leaves the copy as it was, with nothing to log
+                if (functionsState.itemRecipient is null)
+                    value.Operate(ref input, ref output, functionsState.respProtocolVersion);
+                else if (!TryOperateForItemRecipient(value, ref input, ref output, out _))
+                    return true;
+
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)

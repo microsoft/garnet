@@ -142,6 +142,7 @@ namespace Garnet.cluster
                             authUsername: this.clusterProvider.ClusterUsername,
                             authPassword: this.clusterProvider.ClusterPassword,
                             clientName: $"AofSyncTask-{physicalSublogIdx}:({currentConfig.LocalNodeEndpoint})",
+                            sendWithoutWaiting: true,
                             logger: logger);
                 this.logger = logger;
             }
@@ -230,9 +231,8 @@ namespace Garnet.cluster
                 if (!garnetClient.IsConnected)
                     ExceptionUtils.ThrowException(new GarnetException($"AOF stream client disconnected! [{physicalSublogIdx}]:({startAddress},{previousAddress})"));
 
-                // Trigger flush while we are out of epoch protection
+                // Trigger flush while we are out of epoch protection. Sends never wait: ThrottleAsync waits for send capacity.
                 garnetClient.CompletePending(false);
-                garnetClient.Throttle();
 
                 // Refresh the shipped watermark in the backpressure gate outside epoch protection.
                 // The shipped high-water folds the iterator's scan position with previousAddress:
@@ -263,6 +263,12 @@ namespace Garnet.cluster
 
                 SendAdvanceTimePulse();
             }
+
+            /// <summary>
+            /// Waits for the replica to take the sends outstanding below the throttle limit, without holding a thread
+            /// </summary>
+            public ValueTask ThrottleAsync(CancellationToken token)
+                => garnetClient.WaitForSendCapacityAsync();
 
             void SendAdvanceTimePulse()
             {

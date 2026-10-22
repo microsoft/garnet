@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -55,6 +56,7 @@ namespace Garnet.server
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.XVCREATE or RespCommand.XVIMPORT;
+            csvi.canWait = CanSuspend;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
@@ -75,6 +77,7 @@ namespace Garnet.server
             csvi.readOnly = isReadOnly;
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = false;
+            csvi.canWait = CanSuspend;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
@@ -83,6 +86,10 @@ namespace Garnet.server
         /// are servable by this node. Returns true if servable. Used by the scatter-gather GET loop, where keys
         /// past the first bypass the per-command <see cref="CanServeSlot"/> in ProcessMessages.
         /// </summary>
+        /// <remarks>
+        /// A key being migrated counts as not servable, without this call waiting for the migration or for the device.
+        /// The caller stops its run there and leaves the command to <see cref="CanServeSlot"/>, which parks the session.
+        /// </remarks>
         /// <param name="cmd"></param>
         /// <returns></returns>
         bool CanServeSlotNoResponse(RespCommand cmd)
@@ -101,7 +108,30 @@ namespace Garnet.server
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
             csvi.waitForStableSlot = false;
+            csvi.canWait = CanSuspend;
             return !clusterSession.NetworkMultiKeySlotVerifyNoResponse(ref parseState, ref csvi, ref dcurr, ref dend);
         }
+
+        /// <summary>
+        /// Verifies a key that the <c>Prepare</c> of a custom transaction adds to the keys it locks, against the keys it
+        /// added before. Whether a key being migrated may defer the transaction is set by
+        /// <see cref="TryTransactionProc"/> before it runs the transaction.
+        /// </summary>
+        /// <param name="key">Key to verify.</param>
+        /// <param name="readOnly">Whether the transaction only reads the key.</param>
+        /// <returns>True if the transaction can be served here so far.</returns>
+        internal bool CanServeTransactionKey(PinnedSpanByte key, bool readOnly)
+        {
+            csvi.readOnly = readOnly;
+            csvi.sessionAsking = SessionAsking;
+            csvi.waitForStableSlot = false;
+            return clusterSession.NetworkIterativeSlotVerify(key, ref csvi);
+        }
+
+        /// <summary>
+        /// Whether a slot verification has left the command to be run again from the start, once a key being migrated
+        /// is accessible or on the thread pool, rather than answered.
+        /// </summary>
+        internal bool SlotVerificationDeferred => csvi.mustWait || csvi.mustOffload;
     }
 }

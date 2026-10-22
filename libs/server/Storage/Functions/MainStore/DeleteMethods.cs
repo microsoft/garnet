@@ -13,7 +13,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            functionsState.OnKeyChanged(deleteInfo.KeyHash);
             return true;
         }
 
@@ -28,8 +28,7 @@ namespace Garnet.server
         public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             logRecord.ClearOptionals();
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
+            functionsState.OnKeyChanged(deleteInfo.KeyHash, bumpWatchVersion: !logRecord.Info.Modified);
             if (functionsState.appendOnlyFile != null)
                 deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;

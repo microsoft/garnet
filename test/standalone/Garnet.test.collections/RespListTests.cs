@@ -1552,6 +1552,23 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
+        /// <summary>
+        /// <c>BLMPOP</c> and <c>BZMPOP</c> share one argument parser. An unrecognized selector is a syntax
+        /// error whatever follows it, so the selector is decided before the optional count is read.
+        /// </summary>
+        [Test]
+        public void BlockingMPopReportsAnUnknownSelectorRatherThanItsCount()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var expectedResponse = "-ERR syntax error\r\n+PONG\r\n";
+
+            var response = lightClientRequest.SendCommands("BLMPOP 0 1 blmpop-selector BOGUS COUNT 0", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            response = lightClientRequest.SendCommands("BZMPOP 0 1 bzmpop-selector BOGUS COUNT 0", "PING");
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+        }
+
         [Test]
         public void LPOPAndRPOPWithZeroCountReturnEmptyArray()
         {

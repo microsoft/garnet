@@ -21,34 +21,5 @@ namespace Tsavorite.core
         /// <returns></returns>
         internal static ValueTask ReadyToCompletePendingAsync<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx, CancellationToken token = default)
             => sessionCtx.WaitPendingAsync(token);
-
-        /// <summary>
-        /// Complete outstanding pending operations that were issued synchronously
-        /// Async operations (e.g., ReadAsync) need to be completed individually
-        /// </summary>
-        /// <returns></returns>
-        internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                      CancellationToken token, CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-        {
-            while (true)
-            {
-                sessionFunctions.UnsafeResumeThread();
-                try
-                {
-                    InternalCompletePendingRequests(sessionFunctions, completedOutputs);
-                }
-                finally
-                {
-                    sessionFunctions.UnsafeSuspendThread();
-                }
-
-                await sessionFunctions.Ctx.WaitPendingAsync(token).ConfigureAwait(false);
-                if (sessionFunctions.Ctx.HasNoPendingRequests)
-                    return;
-
-                Thread.Yield();
-            }
-        }
     }
 }

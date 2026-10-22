@@ -87,20 +87,9 @@ namespace Garnet.server
 
             var output = GetObjectOutput();
 
-            var status = storageApi.GeoAdd(key, ref input, ref output);
+            var status = storageApi.RMW_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                default:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-            }
-
-            return true;
+            return CompleteObjectOp(status, ref output, pending, ObjectMissReply.AsHit, ref storageApi);
         }
 
         /// <summary>
@@ -167,38 +156,11 @@ namespace Garnet.server
 
             var output = GetObjectOutput();
 
-            var status = storageApi.GeoCommands(key, ref input, ref output);
+            var status = storageApi.Read_ObjectStore_WithPending(key, ref input, ref output, out var pending);
 
-            switch (status)
-            {
-                case GarnetStatus.OK:
-                    ProcessOutput(output.SpanByteAndMemory);
-                    break;
-                case GarnetStatus.NOTFOUND:
-                    switch (op)
-                    {
-                        case SortedSetOperation.GEODIST:
-                            WriteNull();
-                            break;
-                        default:
-                            var inputCount = parseState.Count - 1;
-                            while (!RespWriteUtils.TryWriteArrayLength(inputCount, ref dcurr, dend))
-                                SendAndReset();
-                            for (var i = 0; i < inputCount; i++)
-                            {
-                                WriteNullArray();
-                            }
-                            break;
-                    }
-
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-            }
-
-            return true;
+            return CompleteObjectOp(status, ref output, pending,
+                new ObjectReplyShape(ObjectMissReply.NullIfFlagElseNullArrayPerArg, flag: op == SortedSetOperation.GEODIST),
+                ref storageApi);
         }
 
         /// <summary>

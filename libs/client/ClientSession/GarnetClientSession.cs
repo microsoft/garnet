@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.client
 {
@@ -32,6 +33,11 @@ namespace Garnet.client
         /// Max outstanding network sends allowed
         /// </summary>
         readonly int networkSendThrottleMax;
+
+        /// <summary>
+        /// Notified when send capacity returns, for a session whose sends never wait for it; null otherwise
+        /// </summary>
+        readonly SendCapacityWaiter sendCapacityWaiter;
 
         readonly SslClientAuthenticationOptions sslOptions;
         GarnetClientSessionTcpNetworkHandler networkHandler;
@@ -117,6 +123,10 @@ namespace Garnet.client
         /// <param name="networkPool">Buffer pool to use for allocating send and receive buffers</param>
         /// <param name="networkSendThrottleMax">Max outstanding network sends allowed</param>
         /// <param name="rawResult">Flag if raw result from response will be processed</param>
+        /// <param name="sendWithoutWaiting">
+        /// Whether sends never wait for send capacity. The caller then bounds the sends outstanding by awaiting
+        /// <see cref="WaitForSendCapacityAsync"/>, so a slow reader does not hold the sending thread.
+        /// </param>
         /// <param name="logger">Logger</param>
         public GarnetClientSession(
             EndPoint endpoint,
@@ -128,6 +138,7 @@ namespace Garnet.client
             string clientName = null,
             int networkSendThrottleMax = 8,
             bool rawResult = false,
+            bool sendWithoutWaiting = false,
             ILogger logger = null)
         {
             EndPoint = endpoint;
@@ -145,6 +156,8 @@ namespace Garnet.client
             this.authPassword = authPassword;
             this.clientName = clientName;
             this.RawResult = rawResult;
+            if (sendWithoutWaiting)
+                sendCapacityWaiter = new();
         }
 
         /// <summary>
@@ -464,7 +477,8 @@ namespace Garnet.client
             networkSender?.ReturnResponseObject();
             socket?.Dispose();
             networkHandler?.Dispose();
-            if (!usingManagedNetworkPool) networkPool.Dispose();
+            // The receive buffers come back when the receive loop ends, on a socket completion that may need this thread
+            if (!usingManagedNetworkPool) networkPool.DisposeOnLastReturn();
         }
 
         /// <summary>
@@ -604,6 +618,34 @@ namespace Garnet.client
         /// </summary>
         public void Throttle()
             => networkSender.Throttle();
+
+        /// <summary>
+        /// Waits, without holding a thread, until the sends outstanding drop below the throttle limit, for a session
+        /// created to send without waiting. Completes at once for any other session, and when the limit is not reached.
+        /// The wait also ends when the connection closes, as that completes the sends outstanding. Only one wait at a time.
+        /// </summary>
+        public ValueTask WaitForSendCapacityAsync()
+            => sendCapacityWaiter != null && networkSender.IsSendSaturated ? WaitForSendCapacitySlowAsync() : default;
+
+        async ValueTask WaitForSendCapacitySlowAsync()
+        {
+            // Each registration is notified exactly once, so a notification is never left over for the next wait
+            while (networkSender.TryRegisterSendCapacityWaiter(sendCapacityWaiter))
+                await sendCapacityWaiter.WaitAsync().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Resumes a <see cref="WaitForSendCapacityAsync"/> from the send completion that frees capacity, which can run on
+        /// a network IO thread, so the wait resumes on the thread pool instead.
+        /// </summary>
+        sealed class SendCapacityWaiter : ISendCapacityWaiter
+        {
+            readonly SingleWaiterAutoResetEvent capacity = new() { RunContinuationsAsynchronously = true };
+
+            public void OnSendCapacity() => capacity.Signal();
+
+            public ValueTask WaitAsync() => capacity.WaitAsync();
+        }
 
         /// <summary>
         /// Flush current buffer of outgoing messages. Optionally spin-wait for all responses to be received and processed.
@@ -752,7 +794,10 @@ namespace Garnet.client
 
                 try
                 {
-                    networkSender.SendResponse(0, payloadSize);
+                    if (sendCapacityWaiter != null)
+                        _ = networkSender.SendResponseNoWait(0, payloadSize);
+                    else
+                        _ = networkSender.SendResponse(0, payloadSize);
                 }
                 catch (Exception ex)
                 {

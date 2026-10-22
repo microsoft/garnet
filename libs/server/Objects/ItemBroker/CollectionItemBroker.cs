@@ -22,6 +22,25 @@ namespace Garnet.server
     /// The main loop, in the Start method, listens for published item additions as well as new observers
     /// and notifies the calling method if an item was found.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The main loop serves one event at a time, and its attempts to serve an observer may wait on the device:
+    /// an attempt that finds a collection on disk awaits the read rather than holding a thread on it. The loop
+    /// alone mutates the observer map, so network threads reporting a collection update take no lock: they
+    /// only look the key up, and raise an event if observers are waiting on it.
+    /// </para>
+    /// <para>
+    /// An update cannot be lost between those two sides. The loop registers an observer before it attempts to
+    /// serve it, and the store serializes the attempt with the update, as it does any two operations on one key.
+    /// Either the update comes first, and the attempt sees the item, or the attempt does, and the update - which
+    /// looks the key up once it has been applied - sees the registration and raises an event.
+    /// </para>
+    /// <para>
+    /// An attempt for a single-key command is one pop, which locks nothing. A BLMOVE attempt locks its source and
+    /// destination and keeps them locked across a device wait, as a transaction does. An update to one of those
+    /// keys meanwhile retries until the attempt ends.
+    /// </para>
+    /// </remarks>
     public class CollectionItemBroker : IDisposable
     {
         // Minimum amount of seconds between cleanings of keysToObservers map
@@ -33,18 +52,16 @@ namespace Garnet.server
         // Mapping of RespServerSession ID (ObjectStoreSessionID) to observer instance
         readonly ConcurrentDictionary<int, CollectionItemObserver> sessionIdToObserver = new();
 
-        // Mapping of observed keys to queue of observers, by order of subscription
-        // Instantiated only when needed
-        Dictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers = null;
+        // Mapping of observed keys to queue of observers, by order of subscription. Created by the main loop on
+        // first use and mutated only by it; network threads only look keys up. A queue is published only once it
+        // holds an observer.
+        ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>> keysToObservers;
 
         // Last time keysToObservers was cleaned (in ticks)
         long keysToObserversTimeLastClean = DateTime.Now.Ticks;
 
         // Minimum amount of time between cleanings of keysToObservers (in ticks)
         readonly long keysToObserversTimeBetweenCleans = TimeSpan.FromSeconds(MIN_SECS_BETWEEN_KEYS_TO_OBSERVERS_CLEANS).Ticks;
-
-        // Synchronization for the keysToObservers dictionary
-        SingleWriterMultiReaderLock keysToObserversLock = new();
 
         // Cancellation token for the main loop
         readonly CancellationTokenSource cts = new();
@@ -63,11 +80,54 @@ namespace Garnet.server
         private const int MAIN_LOOP_STARTED = 1;
         private const int MAIN_LOOP_DISPOSED = 2;
 
+        readonly StoreWrapper storeWrapper;
+
+        /// <summary>
+        /// Storage sessions the main loop runs its attempts on, one per database it has served.
+        /// </summary>
+        /// <remarks>
+        /// The loop cannot borrow the waiting session's. A storage session and its transaction manager are
+        /// single-threaded state belonging to the network thread that owns them, and an attempt runs a
+        /// transaction: it drives that session's Tsavorite contexts, takes its locks, and leaves its
+        /// transaction state machine behind. A blocking command registers its observer before its handler
+        /// returns, so the loop can be inside an attempt while that network thread is still unwinding the
+        /// batch it parked in, trimming the transaction manager the attempt is using. Created lazily and
+        /// reached only from the main loop, so neither the map nor the sessions it holds need a lock.
+        /// </remarks>
+        readonly Dictionary<int, StorageSession> loopStorageSessions = [];
+
         /// <summary>
         /// Constructor for CollectionItemBroker
         /// </summary>
-        public CollectionItemBroker()
+        /// <param name="storeWrapper">The store the main loop runs its attempts against</param>
+        public CollectionItemBroker(StoreWrapper storeWrapper) => this.storeWrapper = storeWrapper;
+
+        /// <summary>
+        /// The main loop's storage session for one database, created on first use.
+        /// </summary>
+        StorageSession LoopStorageSession(int dbId)
         {
+            if (loopStorageSessions.TryGetValue(dbId, out var session))
+                return session;
+
+            var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
+            Debug.Assert(dbFound, "A blocking command waited on a database the store does not have");
+
+            var scratchBufferAllocator = new ScratchBufferAllocator();
+            session = new StorageSession(storeWrapper, new ScratchBufferBuilder(), scratchBufferAllocator, sessionMetrics: null,
+                    LatencyMetrics: null, dbId, readSessionState: null, db.VectorManager, storeWrapper.logger);
+
+            // An attempt wraps its reads and writes in an internal transaction, so the session needs a
+            // transaction manager of its own. The manager is given no RESP session because the attempt locks
+            // the keys it was handed rather than deriving them from a parse state, which is the only thing a
+            // RESP session is consulted for here.
+            session.txnManager = new TransactionManager(storeWrapper, respSession: null,
+                    new BasicGarnetApi(session, session.stringBasicContext, session.objectBasicContext, session.unifiedBasicContext),
+                    new TransactionalGarnetApi(session, session.stringTransactionalContext, session.objectTransactionalContext, session.unifiedTransactionalContext),
+                    session, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger: storeWrapper.logger, dbId: dbId);
+
+            loopStorageSessions[dbId] = session;
+            return session;
         }
 
         /// <summary>
@@ -90,12 +150,9 @@ namespace Garnet.server
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
-        internal async Task<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
-            RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs = null)
-        {
-            var observer = new CollectionItemObserver(session, command, cmdArgs);
-            return await GetCollectionItemAsync(observer, keys, timeoutInSeconds).ConfigureAwait(false);
-        }
+        internal ValueTask<CollectionItemResult> GetCollectionItemAsync(RespCommand command, byte[][] keys,
+            RespServerSession session, double timeoutInSeconds, CollectionItemArgs cmdArgs = default)
+            => WaitForResultAsync(new CollectionItemObserver(session, command, cmdArgs), keys, timeoutInSeconds);
 
         /// <summary>
         /// Asynchronously wait for item from collection object at srcKey and
@@ -107,11 +164,38 @@ namespace Garnet.server
         /// <param name="timeoutInSeconds">Timeout of operation (in seconds, 0 for waiting indefinitely)</param>
         /// <param name="cmdArgs">Additional arguments for command</param>
         /// <returns>Result of operation</returns>
-        internal async Task<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey,
-            RespServerSession session, double timeoutInSeconds, PinnedSpanByte[] cmdArgs)
+        internal ValueTask<CollectionItemResult> MoveCollectionItemAsync(RespCommand command, byte[] srcKey,
+            RespServerSession session, double timeoutInSeconds, CollectionItemArgs cmdArgs)
+            => WaitForResultAsync(new CollectionItemObserver(session, command, cmdArgs), [srcKey], timeoutInSeconds);
+
+        /// <summary>
+        /// Makes the single attempt of a blocking command that may not wait, trying <paramref name="keys"/> in
+        /// order on the calling session's own storage session.
+        /// </summary>
+        /// <remarks>
+        /// For a command inside a transaction or a script (<see cref="RespServerSession.DenyBlocking"/>). It runs
+        /// on the caller's session, so inside a transaction it works under the locks the transaction already
+        /// holds, which the main loop's session would wait on. No observer is registered, so nothing is left
+        /// behind for a timeout, CLIENT UNBLOCK or the session's disposal to complete.
+        /// </remarks>
+        /// <param name="command">RESP command</param>
+        /// <param name="keys">Keys to try, in order; the source key alone for BLMOVE</param>
+        /// <param name="storageSession">The calling session's storage session</param>
+        /// <param name="cmdArgs">Additional arguments for command</param>
+        /// <param name="waitInPlace">True to wait on the device on this thread, for a caller that cannot suspend</param>
+        /// <returns>The item or a type mismatch from the first key that has one, otherwise an empty result</returns>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+        internal async ValueTask<CollectionItemResult> TryGetCollectionItemNowAsync(RespCommand command, byte[][] keys,
+            StorageSession storageSession, CollectionItemArgs cmdArgs, bool waitInPlace)
         {
-            var observer = new CollectionItemObserver(session, command, cmdArgs);
-            return await GetCollectionItemAsync(observer, [srcKey], timeoutInSeconds).ConfigureAwait(false);
+            foreach (var key in keys)
+            {
+                var result = await TryGetResultAsync(key, storageSession, command, cmdArgs, observer: null, failOnSrcTypeMismatch: true, waitInPlace).ConfigureAwait(false);
+                if (result.Found || result.IsTypeMismatch)
+                    return result;
+            }
+
+            return CollectionItemResult.Empty;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -124,8 +208,17 @@ namespace Garnet.server
             }
         }
 
-        private async Task<CollectionItemResult> GetCollectionItemAsync(CollectionItemObserver observer, byte[][] keys,
-            double timeoutInSeconds)
+        /// <summary>
+        /// Registers <paramref name="observer"/> against the keys it observes and waits for it to be completed,
+        /// by a result arriving, by CLIENT UNBLOCK, by its session being disposed, or by its timeout expiring.
+        /// </summary>
+        /// <remarks>
+        /// Pools its state machine: this is the only await on the blocking-command path, and the returned
+        /// <see cref="ValueTask{TResult}"/> is awaited exactly once by each of its callers.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+        private async ValueTask<CollectionItemResult> WaitForResultAsync(CollectionItemObserver observer,
+            byte[][] keys, double timeoutInSeconds)
         {
             // Add the session ID to observer mapping
             sessionIdToObserver.TryAdd(observer.Session.ObjectStoreSessionID, observer);
@@ -133,33 +226,18 @@ namespace Garnet.server
             // Start the main loop task if it hasn't been started yet
             StartMainLoop();
 
+            // Begin the wait before the observer is published, so that a result or a timeout arriving
+            // immediately completes this wait rather than racing its creation.
+            var wait = observer.WaitAsync(timeoutInSeconds);
+
             // Add a new observer event to the event queue
             brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateNewObserverEvent(observer, keys));
 
-            var timeout = timeoutInSeconds == 0
-                ? TimeSpan.FromMilliseconds(-1)
-                : TimeSpan.FromSeconds(timeoutInSeconds);
-
-            try
-            {
-                // Wait for either the result found notification or the timeout to expire
-                await observer.ResultFoundSemaphore.WaitAsync(timeout, observer.CancellationTokenSource.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Session is disposed
-            }
+            var result = await wait.ConfigureAwait(false);
 
             sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
 
-            // Check if observer is still waiting for result
-            if (observer.Status == ObserverStatus.WaitingForResult)
-            {
-                // Try to set the observer result to an empty one
-                observer.HandleSetResult(CollectionItemResult.Empty);
-            }
-
-            return observer.Result;
+            return result;
         }
 
         /// <summary>
@@ -169,49 +247,16 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void HandleCollectionUpdate(byte[] key)
         {
-            if (keysToObservers is null)
+            var map = Volatile.Read(ref keysToObservers);
+            if (map is null)
                 return;
-            HandleCollectionUpdateWorker(key);
+            HandleCollectionUpdateWorker(map, key);
         }
 
-        void HandleCollectionUpdateWorker(byte[] key)
+        void HandleCollectionUpdateWorker(ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>> map, byte[] key)
         {
-            ConcurrentQueue<CollectionItemObserver> observers;
-
-            keysToObserversLock.ReadLock();
-            try
-            {
-                if (!keysToObservers.TryGetValue(key, out observers))
-                    return;
-            }
-            finally
-            {
-                keysToObserversLock.ReadUnlock();
-            }
-
-            // If the observer queue is empty, remove the key entry
-            if (observers.IsEmpty)
-            {
-                keysToObserversLock.WriteLock();
-                try
-                {
-                    if (!keysToObservers.TryGetValue(key, out observers))
-                        return;
-
-                    if (observers.IsEmpty)
-                    {
-                        keysToObservers.Remove(key);
-                        return;
-                    }
-                }
-                finally
-                {
-                    keysToObserversLock.WriteUnlock();
-                }
-            }
-
-            // Add collection updated event to queue
-            brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(key));
+            if (map.TryGetValue(key, out var observers) && !observers.IsEmpty)
+                brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(key));
         }
 
         /// <summary>
@@ -232,67 +277,58 @@ namespace Garnet.server
         /// Calls the appropriate method based on the broker event type
         /// </summary>
         /// <param name="brokerEvent">Event to handle</param>
-        private void HandleBrokerEvent(ref CollectionItemBrokerEvent brokerEvent)
-        {
-            switch (brokerEvent.EventType)
+        private ValueTask HandleBrokerEventAsync(in CollectionItemBrokerEvent brokerEvent)
+            => brokerEvent.EventType switch
             {
-                case CollectionItemBrokerEventType.NewObserver:
-                    InitializeObserver(brokerEvent.Observer, brokerEvent.Keys);
-                    return;
-                case CollectionItemBrokerEventType.CollectionUpdated:
-                    TryAssignItemFromKey(brokerEvent.Key);
-                    return;
-            }
-        }
+                CollectionItemBrokerEventType.NewObserver => InitializeObserverAsync(brokerEvent.Observer, brokerEvent.Keys),
+                CollectionItemBrokerEventType.CollectionUpdated => TryAssignItemFromKeyAsync(brokerEvent.Key),
+                _ => default,
+            };
 
         /// <summary>
-        /// Handles a new observer
+        /// Registers a new observer against every key it observes, then tries to serve it from those keys, in order,
+        /// where it is first in line.
         /// </summary>
         /// <param name="observer">The new observer instance</param>
         /// <param name="keys">Keys observed by the new observer</param>
-        private void InitializeObserver(CollectionItemObserver observer, byte[][] keys)
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+        private async ValueTask InitializeObserverAsync(CollectionItemObserver observer, byte[][] keys)
         {
-            // This lock is for synchronization with incoming collection updated events 
-            keysToObserversLock.WriteLock();
-            try
+            var map = keysToObservers;
+            if (map is null)
             {
-                keysToObservers ??= new Dictionary<byte[], ConcurrentQueue<CollectionItemObserver>>(ByteArrayComparer.Instance);
+                map = new ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>>(ByteArrayComparer.Instance);
+                Volatile.Write(ref keysToObservers, map);
+            }
 
-                // Iterate over the keys in order, set the observer's result if collection in key contains an item
-                foreach (var key in keys)
+            // Register before attempting, so that an update to any of the keys from here on raises an event.
+            foreach (var key in keys)
+            {
+                if (map.TryGetValue(key, out var observers))
                 {
-                    // If the key already has a non-empty observer queue, it does not have an item to retrieve
-                    if (keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty)
-                        continue;
-
-                    // The key has an empty observer queue, try to retrieve next available item
-                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
-                            out _, out var result))
-                        continue;
-
-                    // An item was found - set the observer result and return
-                    sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
-                    observer.HandleSetResult(result);
-
-                    // The key still has an empty observer queue, and the current observer retrieved a result, so we can remove the key.
-                    keysToObservers.Remove(key);
-
-                    return;
+                    observers.Enqueue(observer);
                 }
-
-                // No item was found, enqueue new observer in every observed key's queue
-                foreach (var key in keys)
+                else
                 {
-                    if (!keysToObservers.ContainsKey(key))
-                        keysToObservers.Add(key, new ConcurrentQueue<CollectionItemObserver>());
-
-                    keysToObservers[key].Enqueue(observer);
+                    observers = new ConcurrentQueue<CollectionItemObserver>();
+                    observers.Enqueue(observer);
+                    map[key] = observers;
                 }
             }
-            finally
+
+            foreach (var key in keys)
             {
-                keysToObserversLock.WriteUnlock();
+                // A key whose queue holds a waiting observer ahead of this one has no item to serve it
+                if (!TryPeekWaitingHead(map, key, out var head) || head != observer)
+                    continue;
+
+                if (!await AttemptForObserverAsync(observer, key, failOnSrcTypeMismatch: true).ConfigureAwait(false))
+                    break;
             }
+
+            // Leaves the keys whose queue no longer holds a waiting observer
+            foreach (var key in keys)
+                _ = TryPeekWaitingHead(map, key, out _);
         }
 
         /// <summary>
@@ -300,259 +336,119 @@ namespace Garnet.server
         /// it, in queue order, until either no observer remains or the collection can no longer serve one.
         /// </summary>
         /// <param name="key">Key</param>
-        /// <returns>True if at least one observer was assigned an item</returns>
-        private bool TryAssignItemFromKey(byte[] key)
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+        private async ValueTask TryAssignItemFromKeyAsync(byte[] key)
         {
-            ConcurrentQueue<CollectionItemObserver> observers;
-            var assignedAny = false;
+            var map = keysToObservers;
+            if (map is null)
+                return;
 
-            keysToObserversLock.ReadLock();
+            // Keep serving: one update event can make several items available (e.g. LPUSH with multiple elements),
+            // and a no-op BLMOVE leaves the item in place for the next observer. Stop at the first observer the
+            // collection cannot serve rather than skipping it, since the queue is FIFO.
+            while (TryPeekWaitingHead(map, key, out var observer))
+            {
+                if (await AttemptForObserverAsync(observer, key, failOnSrcTypeMismatch: false).ConfigureAwait(false))
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Drops the observers at the head of <paramref name="key"/>'s queue that are no longer waiting, and the key
+        /// itself if none remain.
+        /// </summary>
+        /// <returns>True if an observer is waiting, with the first one in <paramref name="head"/></returns>
+        private static bool TryPeekWaitingHead(ConcurrentDictionary<byte[], ConcurrentQueue<CollectionItemObserver>> map,
+            byte[] key, out CollectionItemObserver head)
+        {
+            if (!map.TryGetValue(key, out var observers))
+            {
+                head = null;
+                return false;
+            }
+
+            while (observers.TryPeek(out head))
+            {
+                if (!head.IsCompleted)
+                    return true;
+
+                _ = observers.TryDequeue(out _);
+            }
+
+            // Only the main loop adds to a queue, so an empty one stays empty
+            _ = map.TryRemove(key, out _);
+            return false;
+        }
+
+        /// <summary>
+        /// Attempts to serve <paramref name="observer"/> from <paramref name="key"/>, holding it claimed for the
+        /// attempt. The pop commits the observer to the items it takes, unless a completion arriving during the
+        /// claim got there first, in which case the attempt takes nothing.
+        /// </summary>
+        /// <returns>True if the observer is still waiting</returns>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+        private async ValueTask<bool> AttemptForObserverAsync(CollectionItemObserver observer, byte[] key, bool failOnSrcTypeMismatch)
+        {
+            if (!observer.TryClaim())
+                return false;
+
+            var storageSession = LoopStorageSession(observer.DatabaseId);
+            CollectionItemResult result = default;
+            bool stillWaiting;
             try
             {
-                keysToObservers.TryGetValue(key, out observers);
-
-                if (observers != null && !observers.IsEmpty)
-                {
-                    // Peek at next observer in queue
-                    while (observers.TryPeek(out var observer))
-                    {
-                        // If observer is not waiting for result, dequeue it and continue to next observer in queue
-                        if (observer.Status != ObserverStatus.WaitingForResult)
-                        {
-                            _ = observers.TryDequeue(out _);
-                            continue;
-                        }
-
-                        observer.ObserverStatusLock.WriteLock();
-                        try
-                        {
-                            // If observer is not waiting for result, dequeue it and continue to next observer in queue
-                            if (observer.Status != ObserverStatus.WaitingForResult)
-                            {
-                                _ = observers.TryDequeue(out _);
-                                continue;
-                            }
-
-                            // Try to get next available item from object stored in key
-                            if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: false,
-                                    out _, out var result))
-                            {
-                                // The collection cannot serve the observer at the head of the queue. Stop here rather
-                                // than skipping it: the queue is FIFO, and leaving it in place while continuing would
-                                // peek the same observer forever.
-                                break;
-                            }
-
-                            // Dequeue the observer, and set the observer's result
-                            _ = observers.TryDequeue(out observer);
-
-                            sessionIdToObserver.TryRemove(observer!.Session.ObjectStoreSessionID, out _);
-
-                            observer.HandleSetResult(result, true);
-
-                            assignedAny = true;
-                        }
-                        finally
-                        {
-                            observer.ObserverStatusLock.WriteUnlock();
-                        }
-
-                        // Keep serving: one update event can make several items available (e.g. LPUSH with multiple
-                        // elements), and a no-op BLMOVE leaves the item in place for the next observer. Every
-                        // iteration dequeues an observer or breaks, so the loop terminates.
-                    }
-                }
+                result = await TryGetResultAsync(key, storageSession, observer.Command, observer.CommandArgs, observer,
+                    failOnSrcTypeMismatch, waitInPlace: false).ConfigureAwait(false);
             }
             finally
             {
-                keysToObserversLock.ReadUnlock();
+                // The result holds its own copies of what the attempt read into the scratch buffers
+                storageSession.scratchBufferAllocator.Reset();
+                stillWaiting = observer.ReleaseClaim(result);
             }
 
-            if (observers != null && observers.IsEmpty)
-            {
-                keysToObserversLock.WriteLock();
-                try
-                {
-                    if (keysToObservers.TryGetValue(key, out observers) && observers.IsEmpty)
-                    {
-                        keysToObservers.Remove(key);
-                    }
-                }
-                finally
-                {
-                    keysToObserversLock.WriteUnlock();
-                }
-            }
-
-            return assignedAny;
+            return stillWaiting;
         }
 
         /// <summary>
-        /// Pops the next available item(s) from the list at <paramref name="asKey"/> using RMW, so that the update is
-        /// applied by Tsavorite rather than by mutating the heap object in place.
+        /// Completes the one object-store operation a context has pending, on this thread if
+        /// <paramref name="waitInPlace"/> is set and otherwise without holding a thread on the device.
         /// </summary>
-        private static unsafe bool TryGetNextListResult<TObjectContext>(byte[] key, PinnedSpanByte asKey,
-            PinnedSpanByte dstKey, StorageSession storageSession, RespCommand command, PinnedSpanByte[] cmdArgs,
-            ListObject srcList, int currCount, ref TObjectContext objectContext, out CollectionItemResult result,
-            out byte[] notifyKey)
+        private static ValueTask<CompletedOutputIterator<ObjectInput, ObjectOutput, long>> DrainAsync<TObjectContext>(StorageSession storageSession,
+            ref TObjectContext context, bool waitInPlace)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            result = default;
-            notifyKey = null;
+            if (!waitInPlace)
+                return storageSession.Object_CompletePendingAsync(ref context);
 
-            switch (command)
-            {
-                case RespCommand.BLPOP:
-                case RespCommand.BRPOP:
-                    {
-                        var status = storageSession.ListPop(asKey,
-                            command == RespCommand.BLPOP ? ListOperation.LPOP : ListOperation.RPOP,
-                            ref objectContext, out var element);
-
-                        if (status != GarnetStatus.OK || !element.IsValid)
-                            return false;
-
-                        result = new CollectionItemResult(key, element.ToArray());
-                        return true;
-                    }
-                case RespCommand.BLMOVE:
-                    {
-                        var srcDirection = (OperationDirection)cmdArgs[1].ReadOnlySpan[0];
-                        var dstDirection = (OperationDirection)cmdArgs[2].ReadOnlySpan[0];
-
-                        if (srcDirection == OperationDirection.Unknown || dstDirection == OperationDirection.Unknown)
-                            return false;
-
-                        // Moving between the same ends of one list, or rotating a single-element list, leaves the
-                        // list unchanged. Returning without the pop/push also avoids emptying the key, which would
-                        // drop its TTL.
-                        if (asKey.ReadOnlySpan.SequenceEqual(dstKey.ReadOnlySpan) &&
-                            (srcDirection == dstDirection || currCount == 1))
-                        {
-                            var unchanged = srcDirection == OperationDirection.Right
-                                ? srcList.LnkList.Last.Value
-                                : srcList.LnkList.First.Value;
-                            result = new CollectionItemResult(key, unchanged.AsSpan().ToArray());
-                            return true;
-                        }
-
-                        var status = storageSession.ListPop(asKey,
-                                srcDirection == OperationDirection.Left ? ListOperation.LPOP : ListOperation.RPOP,
-                                ref objectContext, out var element);
-
-                        if (status != GarnetStatus.OK || !element.IsValid)
-                            return false;
-
-                        // The result outlives the session's scratch buffers, so copy the element onto the heap.
-                        var movedItem = element.ToArray();
-
-                        // The destination type was already validated against the source type by the caller, so the
-                        // push cannot fail on type mismatch here.
-                        // The broker's observer lock is held here, so the push must not notify the broker inline.
-                        // The destination key is reported back instead, and notified once the lock is released.
-                        status = storageSession.ListPush(dstKey, element,
-                            dstDirection == OperationDirection.Left ? ListOperation.LPUSH : ListOperation.RPUSH,
-                            out _, ref objectContext, notifyItemBroker: false);
-
-                        // The destination type was already validated against the source type by the caller, and the
-                        // push creates the destination if it is absent, so the push cannot fail here. If it ever did,
-                        // the element has already been popped and the transaction is committed unconditionally, so
-                        // deliver it to the blocked client rather than discard it.
-                        if (status != GarnetStatus.OK)
-                        {
-                            Debug.Assert(false, "List push to the BLMOVE destination failed after the source pop");
-                            result = new CollectionItemResult(key, movedItem);
-                            return true;
-                        }
-
-                        notifyKey = dstKey.ToArray();
-                        result = new CollectionItemResult(key, movedItem);
-                        return true;
-                    }
-                case RespCommand.BLMPOP:
-                    {
-                        var popDirection = (OperationDirection)cmdArgs[0].ReadOnlySpan[0];
-                        var popCount = Math.Min(*(int*)cmdArgs[1].ToPointer(), currCount);
-
-                        var status = storageSession.ListPop(asKey, popCount,
-                            popDirection == OperationDirection.Left ? ListOperation.LPOP : ListOperation.RPOP,
-                            ref objectContext, out var elements);
-
-                        if (status != GarnetStatus.OK || elements is null || elements.Length == 0)
-                            return false;
-
-                        var items = new byte[elements.Length][];
-                        for (var i = 0; i < elements.Length; i++)
-                            items[i] = elements[i].ToArray();
-
-                        result = new CollectionItemResult(key, items);
-                        return true;
-                    }
-                default:
-                    return false;
-            }
+            _ = storageSession.Object_CompletePending(out var completed, wait: true, ref context);
+            return new ValueTask<CompletedOutputIterator<ObjectInput, ObjectOutput, long>>(completed);
         }
 
         /// <summary>
-        /// Pops the next available item(s) from the sorted set at <paramref name="asKey"/> using RMW, so that the
-        /// update is applied by Tsavorite rather than by mutating the heap object in place.
-        /// BZPOPMIN and BZPOPMAX share the same implementation, differing only in pop order.
+        /// Takes the status and output of the one operation <paramref name="completed"/> carries, and disposes it.
         /// </summary>
-        private static unsafe bool TryGetNextSortedSetResult<TObjectContext>(byte[] key, PinnedSpanByte asKey,
-            StorageSession storageSession, RespCommand command, PinnedSpanByte[] cmdArgs, int currCount,
-            ref TObjectContext objectContext, out CollectionItemResult result)
-            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        private static GarnetStatus TakeOutput(CompletedOutputIterator<ObjectInput, ObjectOutput, long> completed, out ObjectOutput output)
         {
-            result = default;
-
-            bool lowScoresFirst;
-            int popCount;
-
-            switch (command)
+            using (completed)
             {
-                case RespCommand.BZPOPMIN:
-                case RespCommand.BZPOPMAX:
-                    lowScoresFirst = command == RespCommand.BZPOPMIN;
-                    popCount = 1;
-                    break;
-                case RespCommand.BZMPOP:
-                    lowScoresFirst = *(bool*)cmdArgs[0].ToPointer();
-                    popCount = Math.Min(*(int*)cmdArgs[1].ToPointer(), currCount);
-                    break;
-                default:
-                    return false;
+                var more = completed.Next();
+                Debug.Assert(more, "A pending object-store operation completed without producing an output");
+
+                var status = completed.Current.Status;
+                output = completed.Current.Output;
+
+                Debug.Assert(!completed.Next(), "A pending object-store operation produced more than one output");
+                return StorageSession.InterpretObjectStoreStatus(status, ref output);
             }
-
-            var status = storageSession.SortedSetPop(asKey, popCount, lowScoresFirst, out var pairs, ref objectContext);
-
-            if (status != GarnetStatus.OK || pairs is null || pairs.Length == 0)
-                return false;
-
-            if (command == RespCommand.BZMPOP)
-            {
-                var scores = new double[pairs.Length];
-                var items = new byte[pairs.Length][];
-
-                for (var i = 0; i < pairs.Length; i++)
-                {
-                    scores[i] = ParseScoreOrDefault(pairs[i].score);
-                    items[i] = pairs[i].member.ToArray();
-                }
-
-                result = new CollectionItemResult(key, scores, items);
-                return true;
-            }
-
-            result = new CollectionItemResult(key, ParseScoreOrDefault(pairs[0].score), pairs[0].member.ToArray());
-            return true;
         }
 
         /// <summary>
         /// Parses a score emitted by the sorted set pop output.
-        /// The members have already been popped and the transaction is committed unconditionally, so a parse failure
-        /// must still deliver the member to the blocked client rather than discard it. Scores are written by
-        /// <see cref="RespWriteUtils.TryWriteDoubleBulkString"/> using the shortest round-trippable form and NaN is
-        /// rejected at insert time, so this fallback is not expected to be reachable.
+        /// The members have already been popped, so a parse failure must still deliver the member to the blocked
+        /// client rather than discard it. Scores are written by <see cref="RespWriteUtils.TryWriteDoubleBulkString"/>
+        /// using the shortest round-trippable form and NaN is rejected at insert time, so this fallback is not
+        /// expected to be reachable.
         /// </summary>
         private static double ParseScoreOrDefault(PinnedSpanByte score)
         {
@@ -563,121 +459,248 @@ namespace Garnet.server
             return default;
         }
 
-        private unsafe bool TryGetResult(byte[] key, StorageSession storageSession, RespCommand command,
-            PinnedSpanByte[] cmdArgs, bool failOnSrcTypeMismatch, out int currCount, out CollectionItemResult result)
+        /// <summary>
+        /// Takes the next item(s) <paramref name="command"/> would take from the collection at <paramref name="key"/>,
+        /// on <paramref name="storageSession"/>, within its transaction if one is running.
+        /// </summary>
+        /// <param name="key">Key of the collection</param>
+        /// <param name="storageSession">Storage session to run on</param>
+        /// <param name="command">RESP command</param>
+        /// <param name="cmdArgs">Additional arguments for command</param>
+        /// <param name="observer">The claimed observer the items are taken for, which the take commits; null for a caller that cannot wait</param>
+        /// <param name="failOnSrcTypeMismatch">True to report a source of the wrong type, false to treat it as empty</param>
+        /// <param name="waitInPlace">True to wait on the device on this thread</param>
+        /// <returns>The item(s) taken, a type mismatch, or the default result if nothing was taken</returns>
+        private ValueTask<CollectionItemResult> TryGetResultAsync(byte[] key, StorageSession storageSession, RespCommand command,
+            CollectionItemArgs cmdArgs, CollectionItemObserver observer, bool failOnSrcTypeMismatch, bool waitInPlace)
         {
-            currCount = default;
-            result = default;
-            var createTransaction = false;
-
-            var objectType = command switch
-            {
-                RespCommand.BLPOP or RespCommand.BRPOP or RespCommand.BLMOVE or RespCommand.BLMPOP => GarnetObjectType.List,
-                RespCommand.BZPOPMIN or RespCommand.BZPOPMAX or RespCommand.BZMPOP => GarnetObjectType.SortedSet,
-                _ => throw new NotSupportedException()
-            };
-
-            PinnedSpanByte dstKey = default;
             if (command == RespCommand.BLMOVE)
-                dstKey = cmdArgs[0];
+                return TryMoveAsync(key, storageSession, cmdArgs, observer, failOnSrcTypeMismatch, waitInPlace);
 
-            var asKey = storageSession.scratchBufferBuilder.CreateArgSlice(key);
+            var txnManager = storageSession.txnManager;
+            return txnManager.state == TxnState.Running
+                ? TryPopAsync(key, storageSession, txnManager.ObjectTransactionalContext, command, cmdArgs, observer, failOnSrcTypeMismatch, waitInPlace)
+                : TryPopAsync(key, storageSession, storageSession.objectBasicContext, command, cmdArgs, observer, failOnSrcTypeMismatch, waitInPlace);
+        }
 
-            // Create a transaction if not currently in a running transaction
-            if (storageSession.txnManager.state != TxnState.Running)
-            {
-                Debug.Assert(storageSession.txnManager.state == TxnState.None);
-                createTransaction = true;
-                storageSession.txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
-                storageSession.txnManager.SaveKeyEntryToLock(asKey, LockType.Exclusive);
+        /// <summary>
+        /// Pops the next item(s) a single-key blocking command takes from the collection at <paramref name="key"/>.
+        /// </summary>
+        /// <remarks>
+        /// The pop is one RMW, which the store serializes with every other update of the key, so it locks nothing
+        /// and holds nothing while it waits on the device. A missing key, a collection of another type and an
+        /// empty collection all leave the pop with nothing to take.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+        private static async ValueTask<CollectionItemResult> TryPopAsync<TObjectContext>(byte[] key, StorageSession storageSession,
+            TObjectContext context, RespCommand command, CollectionItemArgs cmdArgs, CollectionItemObserver observer,
+            bool failOnSrcTypeMismatch, bool waitInPlace)
+            where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var asKey = BlockingKeys.AsSpanByte(key);
+            var popOutput = new ObjectOutput();
+            GarnetStatus status;
+            bool pending;
 
-                if (command == RespCommand.BLMOVE)
-                    storageSession.txnManager.SaveKeyEntryToLock(dstKey, LockType.Exclusive);
+            var isSortedSet = command is RespCommand.BZPOPMIN or RespCommand.BZPOPMAX or RespCommand.BZMPOP;
 
-                _ = storageSession.txnManager.Run(true);
-            }
-
-            var objectTransactionalContext = storageSession.txnManager.ObjectTransactionalContext;
-
-            // Key whose observers must be notified once this operation completes (BLMOVE destination).
-            byte[] notifyKey = null;
-
+            // Set across a device wait too, since the pop then runs when the read completes
+            storageSession.functionsState.itemRecipient = observer;
             try
             {
-                // Get the object stored at key
-                var statusOp = storageSession.GET(asKey, out var osObject, ref objectTransactionalContext);
-                if (statusOp == GarnetStatus.NOTFOUND)
-                    return false;
-
-                // Check for type match between the observer and the source object type
-                if (statusOp == GarnetStatus.WRONGTYPE || (GarnetObjectType)osObject.GarnetObject.Type != objectType)
+                if (isSortedSet)
                 {
-                    // Return a type mismatch result if we should fail on source object type mismatch
-                    if (failOnSrcTypeMismatch)
-                    {
-                        result = CollectionItemResult.TypeMismatch;
-                        return true;
-                    }
-
-                    return false;
+                    var lowScoresFirst = command == RespCommand.BZMPOP ? cmdArgs.LowScoresFirst : command == RespCommand.BZPOPMIN;
+                    var count = command == RespCommand.BZMPOP ? cmdArgs.Count : 1;
+                    status = storageSession.SortedSetPop_WithPending(asKey, count, lowScoresFirst, ref popOutput, out pending, ref context);
+                }
+                else
+                {
+                    Debug.Assert(command is RespCommand.BLPOP or RespCommand.BRPOP or RespCommand.BLMPOP);
+                    var fromLeft = command == RespCommand.BLMPOP ? cmdArgs.SourceDirection == OperationDirection.Left : command == RespCommand.BLPOP;
+                    var count = command == RespCommand.BLMPOP ? cmdArgs.Count : 1;
+                    status = storageSession.ListPop_WithPending(asKey, count, fromLeft ? ListOperation.LPOP : ListOperation.RPOP,
+                        ref popOutput, out pending, ref context);
                 }
 
-                IGarnetObject dstObj = null;
-                if (command == RespCommand.BLMOVE)
-                {
-                    var dstStatusOp = storageSession.GET(dstKey, out var osDstObject, ref objectTransactionalContext);
-                    if (dstStatusOp != GarnetStatus.NOTFOUND)
-                    {
-                        dstObj = osDstObject.GarnetObject;
-
-                        // If there is a destination object type mismatch, we should always return a type mismatch result
-                        if (dstStatusOp == GarnetStatus.WRONGTYPE || (GarnetObjectType)dstObj.Type != objectType)
-                        {
-                            result = CollectionItemResult.TypeMismatch;
-                            return true;
-                        }
-                    }
-                }
-
-                // Get next item based on item type. The objects read above are only inspected for their type and
-                // element count; all mutation is performed through RMW below so that Tsavorite controls whether the
-                // record is updated in place or copied into the mutable region. Mutating the heap object returned by
-                // GET directly would be lost for records that are no longer mutable, and may corrupt records that the
-                // flush path is concurrently serializing.
-                switch (osObject.GarnetObject)
-                {
-                    case ListObject listObj:
-                        currCount = listObj.LnkList.Count;
-                        if (currCount == 0)
-                            return false;
-
-                        return TryGetNextListResult(key, asKey, dstKey, storageSession, command, cmdArgs, listObj,
-                            currCount, ref objectTransactionalContext, out result, out notifyKey);
-
-                    case SortedSetObject sortedSetObj:
-                        currCount = sortedSetObj.Count();
-                        if (currCount == 0)
-                            return false;
-
-                        return TryGetNextSortedSetResult(key, asKey, storageSession, command, cmdArgs, currCount,
-                            ref objectTransactionalContext, out result);
-
-                    default:
-                        return false;
-                }
+                if (pending)
+                    status = TakeOutput(await DrainAsync(storageSession, ref context, waitInPlace).ConfigureAwait(false), out popOutput);
             }
             finally
             {
-                storageSession.scratchBufferBuilder.RewindScratchBuffer(asKey);
-                if (createTransaction)
-                    storageSession.txnManager.Commit(true);
+                storageSession.functionsState.itemRecipient = null;
+            }
 
-                // Wake observers blocked on the destination key. The event is enqueued directly rather than going
-                // through HandleCollectionUpdate, because callers of this method hold keysToObserversLock and
-                // re-acquiring it here would deadlock. The broker loop resolves the event asynchronously and
-                // tolerates keys that have no observers.
-                if (notifyKey is not null)
-                    brokerEventsQueue.Enqueue(CollectionItemBrokerEvent.CreateCollectionUpdatedEvent(notifyKey));
+            if (status == GarnetStatus.WRONGTYPE)
+                return failOnSrcTypeMismatch ? CollectionItemResult.TypeMismatch : default;
+
+            // A pop refused by a completion that arrived first leaves the output unwritten
+            if (status != GarnetStatus.OK || popOutput.result1 <= 0)
+                return default;
+
+            if (isSortedSet)
+            {
+                var pairs = storageSession.ProcessRespArrayOutputAsPairs(popOutput, out _);
+                if (pairs is null || pairs.Length == 0)
+                    return default;
+
+                if (command != RespCommand.BZMPOP)
+                    return new CollectionItemResult(key, ParseScoreOrDefault(pairs[0].score), pairs[0].member.ToArray());
+
+                var scores = new double[pairs.Length];
+                var members = new byte[pairs.Length][];
+                for (var i = 0; i < pairs.Length; i++)
+                {
+                    scores[i] = ParseScoreOrDefault(pairs[i].score);
+                    members[i] = pairs[i].member.ToArray();
+                }
+
+                return new CollectionItemResult(key, scores, members);
+            }
+
+            // The elements are in the session's scratch buffers until its next reset, so the result copies them
+            var elements = storageSession.ProcessRespArrayOutput(popOutput, out _);
+            if (elements is null || elements.Length == 0)
+                return default;
+
+            if (command != RespCommand.BLMPOP)
+                return new CollectionItemResult(key, elements[0].ToArray());
+
+            var items = new byte[elements.Length][];
+            for (var i = 0; i < elements.Length; i++)
+                items[i] = elements[i].ToArray();
+
+            return new CollectionItemResult(key, items);
+        }
+
+        /// <summary>
+        /// Moves the next item BLMOVE takes from the list at <paramref name="key"/> to its destination list, inside a
+        /// transaction on <paramref name="storageSession"/>: its own if none is running, else the running one.
+        /// </summary>
+        /// <remarks>
+        /// The source and destination are locked together so that the item is never seen in neither or both, and
+        /// the destination's type is checked before the pop so that the item is never popped with nowhere to go.
+        /// Both lists are read only for their type and length; all mutation is performed through RMW so that
+        /// Tsavorite controls whether a record is updated in place or copied into the mutable region.
+        /// </remarks>
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
+        private async ValueTask<CollectionItemResult> TryMoveAsync(byte[] key, StorageSession storageSession,
+            CollectionItemArgs cmdArgs, CollectionItemObserver observer, bool failOnSrcTypeMismatch, bool waitInPlace)
+        {
+            var asKey = BlockingKeys.AsSpanByte(key);
+            var dstKey = BlockingKeys.AsSpanByte(cmdArgs.DestinationKey);
+
+            var txnManager = storageSession.txnManager;
+            var createTransaction = false;
+
+            // Create a transaction if not currently in a running transaction
+            if (txnManager.state != TxnState.Running)
+            {
+                Debug.Assert(txnManager.state == TxnState.None);
+                createTransaction = true;
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
+                txnManager.SaveKeyEntryToLock(asKey, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(dstKey, LockType.Exclusive);
+                _ = txnManager.Run(true);
+            }
+
+            // Set once the push succeeds, so that observers of the destination are woken after the commit
+            var notifyDestination = false;
+
+            try
+            {
+                var context = txnManager.ObjectTransactionalContext;
+
+                // Get the object stored at key
+                ObjectInput readInput = default;
+                ObjectOutput srcOutput = default;
+                var status = storageSession.Read_ObjectStore_WithPending(key, ref readInput, ref srcOutput, out var pending, ref context);
+                if (pending)
+                    status = TakeOutput(await DrainAsync(storageSession, ref context, waitInPlace).ConfigureAwait(false), out srcOutput);
+
+                if (status == GarnetStatus.NOTFOUND)
+                    return default;
+
+                if (status == GarnetStatus.WRONGTYPE || srcOutput.GarnetObject is not ListObject srcList)
+                    return failOnSrcTypeMismatch ? CollectionItemResult.TypeMismatch : default;
+
+                ObjectOutput dstOutput = default;
+                status = storageSession.Read_ObjectStore_WithPending(cmdArgs.DestinationKey, ref readInput, ref dstOutput, out pending, ref context);
+                if (pending)
+                    status = TakeOutput(await DrainAsync(storageSession, ref context, waitInPlace).ConfigureAwait(false), out dstOutput);
+
+                // A destination of another type is always reported, whatever the source
+                if (status != GarnetStatus.NOTFOUND && (status == GarnetStatus.WRONGTYPE || dstOutput.GarnetObject is not ListObject))
+                    return CollectionItemResult.TypeMismatch;
+
+                var currCount = srcList.LnkList.Count;
+                if (currCount == 0)
+                    return default;
+
+                var srcDirection = cmdArgs.SourceDirection;
+                var dstDirection = cmdArgs.DestinationDirection;
+
+                if (srcDirection == OperationDirection.Unknown || dstDirection == OperationDirection.Unknown)
+                    return default;
+
+                // Moving between the same ends of one list, or rotating a single-element list, leaves the list
+                // unchanged. Returning without the pop/push also avoids emptying the key, which would drop its TTL.
+                // The keys are locked, so committing the observer here is as final as a pop that commits it.
+                if (key.AsSpan().SequenceEqual(cmdArgs.DestinationKey) && (srcDirection == dstDirection || currCount == 1))
+                {
+                    if (observer is not null && !observer.TryCommit())
+                        return default;
+
+                    var unchanged = srcDirection == OperationDirection.Right ? srcList.LnkList.Last.Value : srcList.LnkList.First.Value;
+                    return new CollectionItemResult(key, unchanged.AsSpan().ToArray());
+                }
+
+                var popOutput = new ObjectOutput();
+                storageSession.functionsState.itemRecipient = observer;
+                try
+                {
+                    status = storageSession.ListPop_WithPending(asKey, 1,
+                        srcDirection == OperationDirection.Left ? ListOperation.LPOP : ListOperation.RPOP, ref popOutput, out pending, ref context);
+                    if (pending)
+                        status = TakeOutput(await DrainAsync(storageSession, ref context, waitInPlace).ConfigureAwait(false), out popOutput);
+                }
+                finally
+                {
+                    storageSession.functionsState.itemRecipient = null;
+                }
+
+                // A pop refused by a completion that arrived first leaves the output unwritten
+                if (status != GarnetStatus.OK || popOutput.result1 <= 0)
+                    return default;
+
+                // The element is in the session's scratch buffers until its next reset, so the result copies it
+                var elements = storageSession.ProcessRespArrayOutput(popOutput, out _);
+                if (elements is null || elements.Length == 0)
+                    return default;
+
+                var pushOutput = new ObjectOutput();
+                status = storageSession.ListPush_WithPending(dstKey, elements[0],
+                    dstDirection == OperationDirection.Left ? ListOperation.LPUSH : ListOperation.RPUSH,
+                    ref pushOutput, out pending, ref context);
+                if (pending)
+                    status = TakeOutput(await DrainAsync(storageSession, ref context, waitInPlace).ConfigureAwait(false), out pushOutput);
+
+                // The destination type was validated above and the push creates the destination if it is absent,
+                // so the push cannot fail. If it ever did, the element has already been popped and the transaction
+                // is committed unconditionally, so deliver it to the blocked client rather than discard it.
+                Debug.Assert(status == GarnetStatus.OK, "List push to the BLMOVE destination failed after the source pop");
+                notifyDestination = status == GarnetStatus.OK;
+
+                return new CollectionItemResult(key, elements[0].ToArray());
+            }
+            finally
+            {
+                if (createTransaction)
+                    txnManager.Commit(true);
+
+                // Wake observers blocked on the destination key, now that its lock is released
+                if (notifyDestination)
+                    HandleCollectionUpdate(cmdArgs.DestinationKey);
             }
         }
 
@@ -692,23 +715,17 @@ namespace Garnet.server
                 // Repeat while not disposed or cancelled
                 while (!cts.IsCancellationRequested)
                 {
-
                     // Try to synchronously get the next event
                     if (!brokerEventsQueue.TryDequeue(out var nextEvent))
                     {
-                        // Asynchronously dequeue next event in broker's queue
-                        // once event is dequeued successfully, call handler method
-                        try
-                        {
-                            nextEvent = await brokerEventsQueue.DequeueAsync(cts.Token).ConfigureAwait(false);
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            continue;
-                        }
+                        // Park until an event arrives. The wait is uncancellable so that the queue serves it
+                        // from its single-waiter gate rather than from a semaphore waiter plus a token
+                        // registration; Dispose wakes this loop with a sentinel event instead.
+                        await brokerEventsQueue.WaitForEntryAsync().ConfigureAwait(false);
+                        continue;
                     }
 
-                    HandleBrokerEvent(ref nextEvent);
+                    await HandleBrokerEventAsync(nextEvent).ConfigureAwait(false);
 
                     // Check if keysToObservers requires cleaning
                     if (keysToObserversTimeLastClean + keysToObserversTimeBetweenCleans < DateTime.Now.Ticks)
@@ -723,48 +740,27 @@ namespace Garnet.server
 
         private void CleanKeysToObservers()
         {
-            keysToObserversLock.WriteLock();
-            try
+            var map = keysToObservers;
+            if (map is not null)
             {
-                foreach (var kvp in keysToObservers)
-                {
-                    // Pop disposed observers from head of queue
-                    while (kvp.Value.TryPeek(out var observer) && observer.Status != ObserverStatus.WaitingForResult)
-                        kvp.Value.TryDequeue(out _);
-
-                    // Remove key from map if queue is now empty
-                    if (kvp.Value.IsEmpty)
-                        keysToObservers.Remove(kvp.Key);
-                }
-
-                // Update last cleaned time
-                keysToObserversTimeLastClean = DateTime.Now.Ticks;
+                foreach (var kvp in map)
+                    _ = TryPeekWaitingHead(map, kvp.Key, out _);
             }
-            finally
-            {
-                keysToObserversLock.WriteUnlock();
-            }
+
+            // Update last cleaned time
+            keysToObserversTimeLastClean = DateTime.Now.Ticks;
         }
 
         /// <inheritdoc />
         public void Dispose()
         {
             cts.Cancel();
+
+            // Wake the main loop, which parks on an uncancellable wait for the next event.
+            brokerEventsQueue.Enqueue(default);
+
             foreach (var observer in sessionIdToObserver.Values)
-            {
-                if (observer.Status == ObserverStatus.WaitingForResult &&
-                    !observer.CancellationTokenSource.IsCancellationRequested)
-                {
-                    try
-                    {
-                        observer.CancellationTokenSource.Cancel();
-                    }
-                    catch (Exception)
-                    {
-                        // ignored
-                    }
-                }
-            }
+                observer.HandleSessionDisposed();
 
             var prevMainLoopStatus = Interlocked.Exchange(ref mainLoopTaskStatus, MAIN_LOOP_DISPOSED);
 
@@ -772,6 +768,11 @@ namespace Garnet.server
             {
                 done.Wait();
             }
+
+            // The main loop has finished, so its storage sessions are no longer in use.
+            foreach (var session in loopStorageSessions.Values)
+                session.Dispose();
+            loopStorageSessions.Clear();
 
             done.Dispose();
             cts.Dispose();

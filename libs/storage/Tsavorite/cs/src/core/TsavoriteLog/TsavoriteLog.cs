@@ -93,6 +93,12 @@ namespace Tsavorite.core
         public long FlushedUntilAddress => allocator.FlushedUntilAddress;
 
         /// <summary>
+        /// Whether an enqueue that moves the tail onto a new page would wait for a flush to complete; see
+        /// <see cref="AllocatorBase{TStoreFunctions, TAllocator}.AllocationMayWaitForFlush"/>.
+        /// </summary>
+        public bool AllocationMayWaitForFlush => allocator.AllocationMayWaitForFlush;
+
+        /// <summary>
         /// Log safe read-only address.
         /// This is the largest address below which every byte has been fully written and is safe to
         /// read by uncommitted iterators / replication streams. Computed lazily via a <c>min</c> fold
@@ -541,26 +547,44 @@ namespace Tsavorite.core
         /// <summary>
         /// Initialize new log instance safely by notifying readers that initialization is in progress.
         /// </summary>
+        /// <remarks>
+        /// The log is initialized once every thread protected by the epoch has moved past it, which a reader consuming a
+        /// chunk of the log under protection can delay for as long as it takes to consume it.
+        /// </remarks>
         /// <param name="beginAddress"></param>
         /// <param name="committedUntilAddress"></param>
         /// <param name="lastCommitNum"></param>
-        public void SafeInitialize(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
+        /// <returns>
+        /// A task that completes once the log is initialized, or with the exception that failed initialization. Its
+        /// continuations do not run on the thread that initialized the log.
+        /// </returns>
+        public Task SafeInitializeAsync(long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
         {
+            var initialized = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             try
             {
                 epoch.Resume();
                 // Signal initialization in progress
                 Initializing = true;
-                epoch.BumpCurrentEpoch(() => Initialize(beginAddress, committedUntilAddress, lastCommitNum));
+                epoch.BumpCurrentEpoch(() =>
+                {
+                    try
+                    {
+                        Initialize(beginAddress, committedUntilAddress, lastCommitNum);
+                        initialized.SetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        initialized.SetException(ex);
+                    }
+                });
             }
             finally
             {
                 epoch.Suspend();
             }
 
-            // Wait for initialization to complete
-            while (Initializing)
-                _ = Thread.Yield();
+            return initialized.Task;
         }
 
         /// <summary>
@@ -697,10 +721,12 @@ namespace Tsavorite.core
 
         internal void TrueDispose()
         {
+            // Waits for a commit in progress, which writes commit metadata and may shift the begin address
+            commitQueue.Dispose();
+
             // Release our in-flight user-word slot back to the epoch. Iterators no longer parked; the
             // slot column is no longer referenced.
             epoch.ReleaseUserWord(inflightWord);
-            commitQueue.Dispose();
             _ = commitTcs.TrySetException(new ObjectDisposedException("TsavoriteLog has been disposed"));
             allocator.Dispose();
             if (isEpochOwned)

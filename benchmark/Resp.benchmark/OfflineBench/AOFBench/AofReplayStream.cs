@@ -4,6 +4,7 @@
 using System.Net;
 using Embedded.server;
 using Garnet.cluster;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
@@ -90,7 +91,10 @@ namespace Resp.benchmark
                 // Direct mode: initialize ReplicaReplayDriver without going through RESP
                 var clusterProvider = (ClusterProvider)instance.server.StoreWrapper.clusterProvider;
                 var networkSender = new EmbeddedNetworkSender();
-                clusterProvider.replicationManager.InitializeReplicaReplayDriver(threadId, networkSender);
+                clusterProvider.replicationManager.InitializeReplicaReplayDriver(threadId, networkSender, out var sublogsInitialized);
+
+                // The benchmark owns this thread, so it may block until every sublog has connected
+                _ = AsyncUtils.BlockingWait(sublogsInitialized.AsTask());
                 replayDriver = clusterProvider.replicationManager.ReplicaReplayDriverStore.GetReplayDriver(threadId);
                 replayDriver.ResumeReplay();
             }
@@ -158,13 +162,16 @@ namespace Resp.benchmark
         {
             try
             {
-                instance.sessions[threadId].clusterSession.ProcessPrimaryStream(
+                // The benchmark owns this thread, so it may block until a record that has to wait is applied
+                var applying = instance.sessions[threadId].clusterSession.ProcessPrimaryStreamAsync(
                     physicalSublogIdx: threadId,
                     payloadPtr,
                     payloadLength,
                     previousAddress,
                     currentAddress,
                     nextAddress);
+                if (!applying.IsCompletedSuccessfully)
+                    AsyncUtils.BlockingWait(applying.AsTask());
 
                 previousAddress = nextAddress;
             }

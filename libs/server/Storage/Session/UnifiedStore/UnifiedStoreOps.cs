@@ -30,7 +30,7 @@ namespace Garnet.server
             {
                 StartPendingMetrics();
                 CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);
-                StopPendingMetrics();
+                StopPendingLatency();
             }
 
             if (status.Found)

@@ -159,6 +159,13 @@ namespace Tsavorite.core
             [In] bool fAlertable);
 
         [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool PostQueuedCompletionStatus(
+            [In] IntPtr CompletionPort,
+            [In] uint dwNumberOfBytesTransferred,
+            [In] UIntPtr dwCompletionKey,
+            [In] NativeOverlapped* lpOverlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool GetFileSizeEx(
             [In] SafeFileHandle hFile,
             [Out] out long lpFileSize);
