@@ -89,6 +89,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
+            // Expired data is logically absent, so check this before the ValueIsObject check below; otherwise an
+            // expired string-typed key would incorrectly report WrongType instead of being treated as missing.
+            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                return false;
+            }
+
             if (!logRecord.DataHeader.ValueIsObject)
             {
                 rmwInfo.Action = RMWAction.WrongType;
@@ -109,13 +117,6 @@ namespace Garnet.server
 
         bool InPlaceUpdaterWorker(ref LogRecord logRecord, ref ObjectInput input, ref ObjectOutput output, ref RMWInfo rmwInfo)
         {
-            // Expired data
-            if (logRecord.DataHeader.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
-            {
-                rmwInfo.Action = RMWAction.ExpireAndResume;
-                return false;
-            }
-
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion);

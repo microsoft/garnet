@@ -349,6 +349,10 @@ namespace Garnet
         [Option("certificate-revocation-check-mode", Required = false, HelpText = "Certificate revocation check mode for certificate validation (NoCheck, Online, Offline).")]
         public X509RevocationMode CertificateRevocationCheckMode { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("tls-handshake-timeout", Required = false, HelpText = "Seconds an accepted connection may take to complete its TLS handshake before the server closes it (0 to disable).")]
+        public int TlsHandshakeTimeout { get; set; }
+
         [Option("issuer-certificate-path", Required = false, HelpText = "Full path of file with issuer certificate for validation. If empty or null, validation against issuer will not be performed.")]
         public string IssuerCertificatePath { get; set; }
 
@@ -442,6 +446,10 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("network-send-throttle", Required = false, HelpText = "Throttle the maximum outstanding network sends per session.")]
         public int NetworkSendThrottleMax { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("network-send-timeout", Required = false, HelpText = "Seconds a client with network-send-throttle responses outstanding may go without accepting any data before the server closes its connection (0 to disable).")]
+        public int NetworkSendTimeout { get; set; }
 
         [MemorySizeValidation(false)]
         [Option("network-buffer-memory-budget", Required = false, HelpText = "Process-wide budget for the network buffers held by live client connections, shared across all listeners. While connections are few this is slack and each connection gets the full 128k send and receive buffers; once the budget divided by the live buffer count falls below that, the base size for new buffers adapts down toward a 16k floor so the total stays near the budget. Buffers still grow on demand beyond their base size, so large requests are unaffected. Set to 0 to disable adaptation, leaving per-connection buffers unbounded. E.g. 1g, 512m.")]
@@ -965,6 +973,7 @@ namespace Garnet
                 ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
+                NetworkSendTimeout = NetworkSendTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(NetworkSendTimeout),
                 NetworkBufferMemoryBudget = NetworkBufferMemoryBudget,
 
                 // Not operator-settable, but the standalone server has always run a 64 MB idle pool ceiling.
@@ -982,6 +991,7 @@ namespace Garnet
                     ClusterTlsClientTargetHost,
                     ServerCertificateRequired.GetValueOrDefault(),
                     logger: logger) : null,
+                TlsHandshakeTimeout = TlsHandshakeTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(TlsHandshakeTimeout),
                 LatencyMonitor = LatencyMonitor.GetValueOrDefault(),
                 LatencyMonitorPrecision = LatencyMonitorPrecision,
                 CommandStatsMonitor = CommandStatsMonitor.GetValueOrDefault(),

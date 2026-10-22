@@ -92,8 +92,14 @@ namespace Garnet.server
             // Prepare UnifiedOutput output
             var output = new UnifiedOutput();
 
-            // TODO: The output is unused so optimize ReadMethods to not copy it.
-            return Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+            // The value is not needed, so avoid copying it to the log tail (and any backing files) just before it is deleted
+            var readOptions = new ReadOptions { CopyOptions = ReadCopyOptions.None };
+            var status = unifiedContext.Read((FixedSpanByteKey)key, ref input, ref output, ref readOptions);
+
+            if (status.IsPending)
+                CompletePendingForUnifiedStoreSession(ref status, ref output, ref unifiedContext);
+
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         /// <summary>
@@ -108,7 +114,9 @@ namespace Garnet.server
             var status = unifiedContext.Delete((FixedSpanByteKey)key);
 
             Debug.Assert(!status.IsPending);
-            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+
+            // An expired record is physically deleted but is logically absent, so it is reported as not found
+            return status.Found && !status.IsExpired ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         /// <summary>
@@ -188,14 +196,20 @@ namespace Garnet.server
             Span<byte> rmwOutput = stackalloc byte[sizeof(int)];
             var unifiedOutput = new UnifiedOutput(SpanByteAndMemory.FromPinnedSpan(rmwOutput));
 
-            // Convert to expiration time in ticks
-            var expirationTimeInTicks = respCommand switch
+            // Convert to expiration time in ticks, rejecting values that would overflow the representable date range
+            long expirationTimeInTicks;
+            var isValidExpiration = respCommand switch
             {
-                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
-                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
-                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
-                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+                RespCommand.EXPIRE => ConvertUtils.TryRelativeSecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.PEXPIRE => ConvertUtils.TryRelativeMillisecondsToTicks(expiration, out expirationTimeInTicks),
+                RespCommand.EXPIREAT => ConvertUtils.TryUnixTimestampInSecondsToTicks(expiration, out expirationTimeInTicks),
+                _ => ConvertUtils.TryUnixTimestampInMillisecondsToTicks(expiration, out expirationTimeInTicks)
             };
+
+            if (!isValidExpiration)
+            {
+                throw new GarnetException($"ERR invalid expire time in '{respCommand.ToString().ToLowerInvariant()}' command", disposeSession: false);
+            }
 
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 

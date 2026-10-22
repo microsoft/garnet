@@ -1869,6 +1869,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task VSIMBadAttributeFiltersAsync()
+        {
+            const string Key = nameof(VSIMBadAttributeFiltersAsync);
+            const string Element0 = nameof(Element0);
+            const string Element1 = nameof(Element1);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+#pragma warning disable JSON001 // Invalid JSON pattern - which is the point of this test
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element0, new float[] { 1, 2, 3 }, "{\"a\\")).ConfigureAwait(false));
+            ClassicAssert.IsTrue(await db.VectorSetAddAsync(Key, VectorSetAddRequest.Member(Element1, new float[] { 1, 2, 3 }, "{\"a\": [\"\\")).ConfigureAwait(false));
+#pragma warning restore JSON001
+
+            var searchReq = VectorSetSimilaritySearchRequest.ByVector(new float[] { 1, 2, 3 });
+            searchReq.FilterExpression = ".a == 1";
+            using var res = await db.VectorSetSimilaritySearchAsync(Key, searchReq).ConfigureAwait(false);
+            ClassicAssert.AreEqual(0, res.Length);
+        }
+
+        [Test]
         public void VSIMBadFilters()
         {
             const string VectorSet = "vs";
@@ -5582,6 +5603,37 @@ namespace Garnet.test
             }
         }
 #endif
+
+        [Test]
+        public async Task VeryLargeVectorSetOptionsAsync()
+        {
+            const int DataLength = VectorManager.MaxVectorDimensions;
+            const int EF = VectorManager.MaxExplorationFactor;
+            const int M = VectorManager.MaxNumLinks;
+            const string Member = nameof(Member);
+
+            var key = $"vs:d{DataLength}-ef{EF}-m{M}";
+
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var dataFloat = new float[DataLength];
+            for (var i = 0; i < dataFloat.Length; i++)
+            {
+                dataFloat[i] = Random.Shared.NextSingle();
+            }
+
+            var data = MemoryMarshal.AsBytes(dataFloat).ToArray();
+            ClassicAssert.AreEqual(1, (int)await db.ExecuteAsync("VADD", [key, "FP32", data, Member, "NOQUANT", "EF", EF, "M", M]).ConfigureAwait(false));
+
+            var res = (string[])await db.ExecuteAsync("VSIM", [key, "FP32", data]).ConfigureAwait(false);
+
+            ClassicAssert.AreEqual(1, res.Length);
+            ClassicAssert.AreEqual(Member, res[0]);
+
+            var info = await db.VectorSetInfoAsync(key).ConfigureAwait(false);
+            ClassicAssert.AreEqual(1, info.Value.Length);
+        }
 
         /// <summary>
         /// Wait for a `XVIMPORT ... FINISH` to complete on the given key.
