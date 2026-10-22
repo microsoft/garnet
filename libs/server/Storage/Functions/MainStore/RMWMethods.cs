@@ -1110,9 +1110,12 @@ namespace Garnet.server
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
 
-                    // Copy input to value, along with the source record's Expiration.
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo) || !dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
+                    if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
+                        return false;
+
+                    // Carry the existing expiration into the new record.
+                    if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(srcLogRecord.Expiration))
                         return false;
 
                     break;
