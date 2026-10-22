@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using StackExchange.Redis;
@@ -183,7 +184,44 @@ namespace Garnet.test
         }
 
         [Test]
-        public unsafe void ConcurrentImportWriterCheckpointRecovery([Values(1, 2)] int logs)
+        public void CheckpointRecoveryContinuesAfterTruncatedImportTransaction([Values(1, 2)] int logs, [Values] bool abort)
+        {
+            server.Dispose();
+            server = CreateAofServer(logs, false);
+            server.Start();
+            ConfigurationOptions config = TestUtils.GetConfig();
+            config.AllowAdmin = true;
+            using (ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(config))
+            {
+                IDatabase db = redis.GetDatabase();
+                db.Execute("SETIFGREATER", "source", "imported", 3);
+                GarnetLog log = server.Provider.StoreWrapper.appendOnlyFile.Log;
+                long[] begin = Enumerable.Range(0, logs).Select(index => log.TailAddress[index]).ToArray();
+                ImportRecord("source", "destination");
+                AofHeader importedCommit = ReadHeader(Capture(begin).Single(entry => ReadHeader(entry.Entry).opType == AofEntryType.TxnCommit).Entry);
+                db.Execute("SAVE");
+
+                int physical = log.GetPhysicalSublogIdx("destination"u8);
+                BitVector[] vectors = new BitVector[log.Size];
+                for (int index = 0; index < vectors.Length; index++)
+                    vectors[index] = new BitVector(AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes);
+                _ = vectors[physical].SetBit(log.GetReplayTaskIdx("destination"u8));
+                // A checkpoint can truncate the start of an older imported transaction.
+                log.EnqueueTxn(abort ? AofEntryType.TxnAbort : AofEntryType.TxnCommit, importedCommit.storeVersion,
+                    importedCommit.sessionID, 1UL << physical, vectors, 1);
+                db.Execute("SETWITHETAG", "destination", "after-checkpoint");
+                AssertTaggedValue(db, "destination", 4, "after-checkpoint");
+                db.Execute("COMMITAOF");
+            }
+            server.Dispose(false);
+            server = CreateAofServer(logs, true);
+            server.Start();
+            using ConnectionMultiplexer recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            AssertTaggedValue(recovered.GetDatabase(), "destination", 4, "after-checkpoint");
+        }
+
+        [Test]
+        public void ConcurrentImportWriterCheckpointRecovery([Values(1, 2)] int logs)
         {
             const int length = 32;
             server.Dispose();
@@ -213,31 +251,11 @@ namespace Garnet.test
                 expectedValue = (string)expected[1];
                 expectedExpiration = (long)db.Execute("PEXPIRETIME", "destination");
                 db.Execute("COMMITAOF");
-                TestContext.WriteLine($"Expected {expectedTag} {expectedValue}; store version {server.Provider.StoreWrapper.store.CurrentVersion}");
-                foreach ((int sublog, byte[] entry) in Capture(new long[logs]))
-                {
-                    fixed (byte* pointer = entry)
-                    {
-                        AofHeader header = *(AofHeader*)pointer;
-                        string command = "";
-                        if (header.opType == AofEntryType.StoreRMW)
-                        {
-                            byte* cursor = AofHeader.SkipHeader(pointer);
-                            PinnedSpanByte key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(cursor);
-                            cursor += key.TotalSize;
-                            StringInput input = default;
-                            input.DeserializeFrom(cursor);
-                            command = $"{Encoding.UTF8.GetString(key.ReadOnlySpan)} {input.header.cmd} flags={input.header.flags} {Encoding.UTF8.GetString(input.parseState.GetArgSliceByRef(0).ReadOnlySpan)}";
-                        }
-                        TestContext.WriteLine($"{sublog} {header.opType} version={header.storeVersion} session={header.sessionID} {command}");
-                    }
-                }
             }
             server.Dispose(false);
             server = CreateAofServer(logs, true);
             server.Start();
             using ConnectionMultiplexer recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            TestContext.WriteLine($"Recovered store version {server.Provider.StoreWrapper.store.CurrentVersion}");
             AssertTaggedValue(recovered.GetDatabase(), "destination", expectedTag, expectedValue);
             Assert.That((long)recovered.GetDatabase().Execute("PEXPIRETIME", "destination"), Is.EqualTo(expectedExpiration));
         }

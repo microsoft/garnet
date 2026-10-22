@@ -139,6 +139,7 @@ namespace Garnet.test
             GarnetServerOptions options = TestUtils.GetGarnetServerOptions(TestUtils.MethodTestDir,
                 TestUtils.MethodTestDir, TestUtils.EndPoint, enableCluster: false, enableAOF: true,
                 tryRecover: recover, sublogCount: sublogCount, aofPageSize: "32m", aofMemorySize: "64m");
+            options.FailOnRecoveryError = true;
             return new GarnetServer(options);
         }
 

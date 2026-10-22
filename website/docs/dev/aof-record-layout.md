@@ -124,8 +124,9 @@ An untagged import uses delete followed by `StoreUpsert`. An existing transactio
 `RENAME`, supplies the transaction markers when one is already active.
 
 Replay uses the existing delete and update paths. Incomplete transactions remain unapplied.
-Ordinary and chunked entries use the same operation layouts. Older version-5 binaries can
-parse these logs and recover them at startup.
+Ordinary and chunked entries use the same operation layouts, which older version-5 binaries can
+parse. Use upgraded readers for recovery when checkpoint truncation leaves a transaction commit
+or abort without its start. Older single-log readers can stop replay at that boundary.
 
 Conditional writes remain atomic on the primary. Asynchronous replica reads have ordinary
 `GET` visibility and can observe the delete before recreation; replay does not provide a
