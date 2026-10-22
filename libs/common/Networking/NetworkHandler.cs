@@ -3,10 +3,8 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Net.Security;
 using System.Runtime.CompilerServices;
-using System.Runtime.ExceptionServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
@@ -162,6 +160,18 @@ namespace Garnet.networking
 
         // Number of times Dispose has been called
         int disposeCount;
+
+        /// <summary>
+        /// Set once the connection is asked to close; see <see cref="TryRequestClose"/>.
+        /// </summary>
+        int closeRequested;
+
+        /// <summary>
+        /// Set while the receive loop waits for a batch that suspended. Paired with <see cref="closeRequested"/>
+        /// so that a close request and a park cannot both miss each other: each side writes its own flag with a
+        /// full fence and then reads the other's.
+        /// </summary>
+        int batchParked;
 
         // Set once a TLS write fails; a failed write can leave a partial record on the connection, so nothing
         // further can be written to it
@@ -695,13 +705,66 @@ namespace Garnet.networking
         {
             var consumed = BeginProcess();
             if (!consumed.IsCompletedSuccessfully)
+            {
+                OnBatchParked();
                 return AwaitProcessAsync(consumed);
+            }
 
             CompleteProcess(consumed.GetAwaiter().GetResultGuarded());
             return default;
         }
 
-        async ValueTask AwaitProcessAsync(ValueTask<int> consumed) => CompleteProcess(await consumed.ConfigureAwait(false));
+        async ValueTask AwaitProcessAsync(ValueTask<int> consumed)
+        {
+            var result = await consumed.ConfigureAwait(false);
+            OnBatchUnparked();
+            CompleteProcess(result);
+        }
+
+        /// <summary>
+        /// Records a request to close the connection.
+        /// </summary>
+        /// <param name="parked">
+        /// Whether the receive loop was waiting for a suspended batch. Only then may the caller dispose the
+        /// connection: teardown is otherwise left to the receive loop, which runs it once the batch is done.
+        /// A parked loop that this misses observes the request itself, in <see cref="OnBatchParked"/>.
+        /// </param>
+        /// <returns>True if the caller is the first to request it.</returns>
+        private protected bool TryRequestClose(out bool parked)
+        {
+            if (Interlocked.CompareExchange(ref closeRequested, 1, 0) != 0)
+            {
+                parked = false;
+                return false;
+            }
+
+            parked = Volatile.Read(ref batchParked) != 0;
+            return true;
+        }
+
+        /// <summary>
+        /// Called by the receive loop on observing that its batch suspended. A suspended command posts no receive
+        /// and may wait indefinitely, so a close requested before the park is acted on here, by disposing.
+        /// </summary>
+        private protected void OnBatchParked()
+        {
+            _ = Interlocked.Exchange(ref batchParked, 1);
+            if (Volatile.Read(ref closeRequested) != 0)
+                Dispose();
+        }
+
+        /// <summary>
+        /// Called by the receive loop once a suspended batch has finished, before it touches the session again.
+        /// </summary>
+        /// <exception cref="SessionTornDownException">
+        /// A close was requested, so the loop must end rather than start a batch beside the teardown.
+        /// </exception>
+        private protected void OnBatchUnparked()
+        {
+            _ = Interlocked.Exchange(ref batchParked, 0);
+            if (Volatile.Read(ref closeRequested) != 0)
+                throw new SessionTornDownException(GetType().Name);
+        }
 
         /// <summary>
         /// Get network sender for this handler
@@ -1168,14 +1231,9 @@ namespace Garnet.networking
                 sslStream.Write(transportSendBuffer, offset, size);
                 sslStream.Flush();
             }
-            catch (Exception ex)
+            catch
             {
                 writeFailed = true;
-
-                // SslStream wraps what the underlying sender throws; surface the sender's own failure, such as a send
-                // timeout, as the session would see it without TLS
-                if (ex is IOException { InnerException: GarnetException inner })
-                    ExceptionDispatchInfo.Throw(inner);
                 throw;
             }
             return true;
@@ -1264,7 +1322,12 @@ namespace Garnet.networking
             }
 
             cancellationTokenSource?.Cancel();
+
+            // The session ends before the transport closes. Closing the transport fails the sends in flight, which
+            // frees send capacity, and a session parked waiting for that capacity must find itself torn down
+            // rather than run its next command against a closed connection.
             serverHook.DisposeMessageConsumer(this);
+            CloseTransport();
             networkSender.Dispose();
             sslStream?.Dispose();
             // Release the reader so it sees the cancellation
@@ -1278,6 +1341,11 @@ namespace Garnet.networking
             // them, so disposing them would release nothing.
             ReleaseBufferHold();
         }
+
+        /// <summary>
+        /// Closes the connection underneath the handler. Called once, on dispose, after the session has ended.
+        /// </summary>
+        protected virtual void CloseTransport() { }
 
         /// <summary>
         /// Takes a hold on the buffers for a receive loop or TLS reader. The caller must be on a path that

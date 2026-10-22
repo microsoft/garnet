@@ -124,7 +124,7 @@ namespace Garnet.server
         // publishes to a channel it is itself subscribed to.
         int publishingThreadId;
 
-        // Failure of a reentrant self-delivery, rethrown by the publishing command once the broadcast completes
+        // Failure of a reentrant self-delivery, rethrown by the publishing command in place of its reply
         ExceptionDispatchInfo reentrantPublishFailure;
 
         /// <summary>

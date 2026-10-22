@@ -82,10 +82,35 @@ namespace Garnet.common
         protected readonly int ThrottleMax = 8;
 
         /// <summary>
-        /// Longest a send waits for an earlier send to complete, in milliseconds, before the connection is
-        /// closed as stalled; <see cref="Timeout.Infinite"/> waits indefinitely.
+        /// Longest the connection may stay stalled without a send completing, in milliseconds, before it is
+        /// closed; <see cref="Timeout.Infinite"/> waits indefinitely. See <see cref="IsStalled"/>.
         /// </summary>
         readonly int sendTimeoutMs;
+
+        /// <summary>
+        /// Watches a stalled connection for a send to complete. Created the first time the connection stalls, and
+        /// scheduled only while it is stalled. Guarded by <see cref="stallLock"/>.
+        /// </summary>
+        Timer stallTimer;
+
+        /// <summary>
+        /// Whether <see cref="stallTimer"/> is watching. Written under <see cref="stallLock"/>, and read without
+        /// it by the sends that stall the connection and the completions that record progress.
+        /// </summary>
+        volatile bool stallWatchArmed;
+
+        /// <summary>
+        /// When a send last completed while <see cref="stallWatchArmed"/>, or when the watch was armed
+        /// </summary>
+        long lastProgressTicks;
+
+        readonly object stallLock = new();
+
+        /// <summary>
+        /// Ends the connection, with its session, when it stalls for <see cref="sendTimeoutMs"/> or is closed on
+        /// request; the sender closes only itself when there is none
+        /// </summary>
+        ISenderOwner owner;
 
         readonly string remoteEndpoint;
         readonly string localEndpoint;
@@ -112,8 +137,8 @@ namespace Garnet.common
         /// <param name="networkBufferSettings"></param>
         /// <param name="throttleMax"></param>
         /// <param name="sendTimeout">
-        /// Longest a send waits for an earlier send to complete before the connection is closed as stalled.
-        /// Zero or negative waits indefinitely.
+        /// Longest the connection may go without a send completing, while it has the most sends outstanding that
+        /// it allows or is closing with sends in flight, before it is closed. Zero or negative waits indefinitely.
         /// </param>
         public GarnetTcpNetworkSender(
             Socket socket,
@@ -308,7 +333,12 @@ namespace Garnet.common
             }
 
             StartSend(_r, offset, size);
-            return IsSendSaturated;
+            if (!IsSendSaturated)
+                return false;
+
+            if (sendTimeoutMs != Timeout.Infinite && !stallWatchArmed)
+                WatchForStall();
+            return true;
         }
 
         /// <inheritdoc />
@@ -398,8 +428,12 @@ namespace Garnet.common
             // Stop taking sends and let the ones in flight finish. The last of them closes the sender, so no
             // thread waits here, which matters because this is called from the thread that handles the
             // connection's network callbacks.
-            if (Interlocked.CompareExchange(ref closeState, Closing, Open) == Open)
-                TryFinishClose();
+            if (Interlocked.CompareExchange(ref closeState, Closing, Open) != Open)
+                return;
+
+            TryFinishClose();
+            if (sendTimeoutMs != Timeout.Infinite && !stallWatchArmed && IsStalled)
+                WatchForStall();
         }
 
         /// <summary>
@@ -437,7 +471,108 @@ namespace Garnet.common
             // disposes them. The throttle is not disposed: those completions still release it.
             socket.Dispose();
             saeaStack.Dispose();
+
+            lock (stallLock)
+            {
+                stallWatchArmed = false;
+                stallTimer?.Dispose();
+                stallTimer = null;
+            }
         }
+
+        /// <summary>
+        /// Whether the connection is waiting on its client to accept data: it has the most sends outstanding that
+        /// it allows, or it is closing with sends still in flight
+        /// </summary>
+        bool IsStalled
+            => Volatile.Read(ref closeState) switch
+            {
+                Open => IsSendSaturated,
+                Closing => Volatile.Read(ref nonBlockingSends) != 0 || Volatile.Read(ref throttleCount) != 0,
+                _ => false,
+            };
+
+        /// <summary>
+        /// Arms the stall watch for a connection that has just stalled, unless it is already armed
+        /// </summary>
+        /// <remarks>
+        /// The caller has made the connection stall, by a send or by closing, before reading
+        /// <see cref="stallWatchArmed"/>, and <see cref="OnStallTimer"/> disarms before reading whether it is
+        /// stalled. So a stall that begins as the watch is disarmed is seen by one of the two.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        void WatchForStall()
+        {
+            lock (stallLock)
+            {
+                if (stallWatchArmed || IsClosed)
+                    return;
+
+                ArmStallWatch();
+            }
+        }
+
+        void ArmStallWatch()
+        {
+            Debug.Assert(Monitor.IsEntered(stallLock));
+
+            Volatile.Write(ref lastProgressTicks, Environment.TickCount64);
+            stallWatchArmed = true;
+
+            if (stallTimer is null)
+            {
+                // The timer would otherwise capture the execution context of whichever command stalled the connection
+                using (ExecutionContext.SuppressFlow())
+                    stallTimer = new Timer(static sender => ((GarnetTcpNetworkSender)sender).OnStallTimer(), this, Timeout.Infinite, Timeout.Infinite);
+            }
+
+            _ = stallTimer.Change(sendTimeoutMs, Timeout.Infinite);
+        }
+
+        /// <summary>
+        /// Closes the connection if it is still stalled and no send has completed for the send timeout, and
+        /// otherwise watches on for the rest of the timeout, or stops watching if it is no longer stalled
+        /// </summary>
+        void OnStallTimer()
+        {
+            lock (stallLock)
+            {
+                if (!stallWatchArmed)
+                    return;
+
+                if (!IsStalled)
+                {
+                    stallWatchArmed = false;
+
+                    // Rearm for a stall that began after the read above and found the watch still armed
+                    Interlocked.MemoryBarrier();
+                    if (IsStalled)
+                        ArmStallWatch();
+                    return;
+                }
+
+                var remaining = sendTimeoutMs - (Environment.TickCount64 - Volatile.Read(ref lastProgressTicks));
+                if (remaining > 0)
+                {
+                    _ = stallTimer.Change(remaining, Timeout.Infinite);
+                    return;
+                }
+
+                stallWatchArmed = false;
+            }
+
+            // Outside the lock, because closing the connection closes this sender, which takes it
+            if (owner is { } o)
+                o.OnSendStalled(TimeSpan.FromMilliseconds(sendTimeoutMs));
+            else
+                CloseNow(graceful: false);
+        }
+
+        /// <summary>
+        /// Sets what ends the connection when it stalls for the send timeout or is closed on request
+        /// </summary>
+        internal void SetOwner(ISenderOwner owner)
+            => this.owner = owner;
 
         /// <inheritdoc />
         public override void Throttle()
@@ -457,6 +592,9 @@ namespace Garnet.common
         /// <inheritdoc />
         public override bool TryClose()
         {
+            if (owner is { } o)
+                return o.TryClose();
+
             // Only one caller gets to invoke Close, as we'd expect subsequent ones to fail and throw
             if (Interlocked.CompareExchange(ref closeRequested, 1, 0) != 0)
             {
@@ -525,12 +663,31 @@ namespace Garnet.common
 
             // The socket finished the send synchronously, so there is no completion callback to wait for
             if (!pending)
+            {
+                RecordSendProgress();
                 FinishSend(sendObject);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SeaaBuffer_Completed(object sender, SocketAsyncEventArgs e)
-            => FinishSend((GarnetSaeaBuffer)e.UserToken);
+        {
+#if DEBUG
+            ExceptionInjectionHelper.ResetAndWait(ExceptionInjectionType.Sender_Pause_Before_Slot_Release);
+#endif
+            RecordSendProgress();
+            FinishSend((GarnetSaeaBuffer)e.UserToken);
+        }
+
+        /// <summary>
+        /// Notes that a send has completed, for a stall watch that is armed. Dropped sends do not count.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void RecordSendProgress()
+        {
+            if (stallWatchArmed)
+                Volatile.Write(ref lastProgressTicks, Environment.TickCount64);
+        }
 
         /// <summary>
         /// Returns the buffer of a send that has finished, or that was dropped before it started, and releases

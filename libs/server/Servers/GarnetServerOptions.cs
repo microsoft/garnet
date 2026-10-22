@@ -452,9 +452,10 @@ namespace Garnet.server
         public int NetworkSendThrottleMax = 8;
 
         /// <summary>
-        /// Longest a response send waits, once <see cref="NetworkSendThrottleMax"/> sends are outstanding, for the client
-        /// to accept data before its connection is closed. Bounds how long a client that stops reading can hold a server
-        /// thread. <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> waits indefinitely.
+        /// Longest a connection may go without a send completing, while <see cref="NetworkSendThrottleMax"/> sends are
+        /// outstanding or while its responses drain after the session ends, before the connection is closed. Bounds
+        /// how long a client that stops reading keeps its connection and the responses queued for it.
+        /// <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> keeps the connection open indefinitely.
         /// </summary>
         public TimeSpan NetworkSendTimeout = TimeSpan.FromSeconds(60);
 

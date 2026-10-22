@@ -64,7 +64,7 @@ namespace Garnet.server
             deferred.Clear();
 
             await forward.ConfigureAwait(false);
-            WriteInt32(numClients);
+            WritePublishReply(numClients);
         }
 
         /// <summary>

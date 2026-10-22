@@ -261,6 +261,51 @@ namespace Garnet.test
             }
         }
 
+        /// <summary>
+        /// A delivery to the publisher itself that fails, as one does when its connection is closed under it, ends
+        /// the publisher's session in place of the reply, once the message has gone to every other subscriber: the
+        /// failed send may have released the response buffer the reply would be written into.
+        /// </summary>
+        [Test]
+        public async Task APublisherWhoseDeliveryToItselfFailsEndsItsSession([Values] bool heldBack, [Values] bool cluster)
+        {
+            StartServer(cluster);
+            var publisher = new ControlledSender(bufferSize: 4096);
+            var subscriber = new ControlledSender(bufferSize: 4096);
+            var publisherSession = NewSession(publisher);
+            var subscriberSession = NewSession(subscriber);
+            try
+            {
+                await ConsumeAsync(subscriberSession, Frame("SUBSCRIBE", "c"));
+                var subscribed = subscriber.Sent;
+                await ConsumeAsync(publisherSession, Frame("HELLO", "3"), Frame("SUBSCRIBE", "c"));
+
+                // Held back, the reply is written after the publisher resumes from waiting for the subscriber
+                subscriber.Full = heldBack;
+
+                // Larger than the response buffer, so the delivery to the publisher sends part way through
+                var payload = new string('x', 8192);
+                publisher.FailNextSend = true;
+                var consume = await PublishAsync(publisherSession, Pinned(Frame("PUBLISH", "c", payload), Frame("PING")));
+                if (heldBack)
+                {
+                    ClassicAssert.IsFalse(consume.IsCompleted, "the publisher did not wait for the subscriber");
+                    subscriber.Full = false;
+                    subscriber.SignalCapacity();
+                }
+
+                _ = await consume.AsTask().WaitAsync(Bound);
+                ClassicAssert.AreEqual(subscribed + Message("c", payload), subscriber.Sent);
+                ClassicAssert.IsTrue(publisher.Closed, "the session went on after its delivery to itself failed");
+                StringAssert.DoesNotContain("PONG", publisher.Sent, "the session ran a command after its delivery to itself failed");
+            }
+            finally
+            {
+                subscriberSession.Dispose();
+                publisherSession.Dispose();
+            }
+        }
+
         [Test]
         public async Task AMessageForAChannelAndAPatternOfOneSubscriberArrivesInTheOrderItWasMade()
         {

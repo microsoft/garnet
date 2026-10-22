@@ -201,9 +201,6 @@ namespace Garnet.server
                 publishingThreadId = 0;
             }
 
-            var selfDeliveryFailure = reentrantPublishFailure;
-            reentrantPublishFailure = null;
-
             if (DenyBlocking && deferredDeliveries is { Count: > 0 })
                 DeliverDeferredWithoutWaiting();
 
@@ -221,13 +218,24 @@ namespace Garnet.server
             if (holdingDeliveries)
                 return CompleteDeferredPublish(default, numClients);
 
-            // A failed delivery to this session ends it, before the reply is written into the response buffer
-            // the failed send released
-            selfDeliveryFailure?.Throw();
+            WritePublishReply(numClients);
+            return true;
+        }
+
+        /// <summary>
+        /// Writes the reply to a PUBLISH, once the message has been delivered. A failed delivery of the message to
+        /// this session instead ends the session: the failed send may have released the response buffer the reply
+        /// would be written into.
+        /// </summary>
+        void WritePublishReply(int numClients)
+        {
+            if (reentrantPublishFailure is { } selfDeliveryFailure)
+            {
+                reentrantPublishFailure = null;
+                selfDeliveryFailure.Throw();
+            }
 
             WriteInt32(numClients);
-
-            return true;
         }
 
         private bool NetworkSUBSCRIBE(RespCommand cmd)

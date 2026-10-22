@@ -17,7 +17,7 @@ namespace Garnet.common
     /// </summary>
     /// <typeparam name="TServerHook"></typeparam>
     /// <typeparam name="TNetworkSender"></typeparam>
-    public abstract class TcpNetworkHandlerBase<TServerHook, TNetworkSender> : NetworkHandler<TServerHook, TNetworkSender>
+    public abstract class TcpNetworkHandlerBase<TServerHook, TNetworkSender> : NetworkHandler<TServerHook, TNetworkSender>, ISenderOwner
         where TServerHook : IServerHook
         where TNetworkSender : INetworkSender
     {
@@ -32,8 +32,6 @@ namespace Garnet.common
         /// suspends its receive loop at most once at a time: the suspension is what stops it receiving.
         /// </summary>
         readonly FireAndForgetBoxHolder resumeBox = new();
-
-        int closeRequested;
 
         /// <summary>
         /// Constructor
@@ -50,9 +48,27 @@ namespace Garnet.common
             this.isLocalConnection = remoteEndpoint is IPEndPoint ip
                 ? IPAddress.IsLoopback(ip.Address)
                 : remoteEndpoint is UnixDomainSocketEndPoint;
-            this.closeRequested = 0;
+
+            if (networkSender is GarnetTcpNetworkSender sender)
+                sender.SetOwner(this);
 
             AllocateNetworkReceiveBuffer();
+        }
+
+        /// <summary>
+        /// Ends the connection as <see cref="TryClose"/> does. Runs on a timer thread, which is never inside a
+        /// batch, so a parked session is disposed inline.
+        /// </summary>
+        void ISenderOwner.OnSendStalled(TimeSpan timeout)
+        {
+            logger?.LogWarning("Closed connection to {remoteEndpoint}: no send completed within {timeout}", remoteEndpointName, timeout);
+            if (TryRequestClose(out var parked))
+            {
+                if (parked)
+                    DisposeQuietly();
+                else
+                    CloseSocket();
+            }
         }
 
         /// <inheritdoc />
@@ -99,28 +115,57 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// A session whose batch is running, or that is waiting for input, has its socket closed. That fails the
+        /// batch's sends and the receive, and the receive loop ends the session once the batch is done, so
+        /// teardown never runs beside a batch. A session parked in a suspended command posts no receive, so a
+        /// close alone would not reach it until the command completed; it is disposed instead. Disposal is
+        /// queued rather than run here, because the caller may be a command of that session's own resumed
+        /// batch, which teardown waits for.
+        /// </remarks>
         public override bool TryClose()
         {
-            // Only one caller gets to invoke Close, as we'd expect subsequent ones to fail and throw
-            if (Interlocked.CompareExchange(ref closeRequested, 1, 0) != 0)
-            {
+            if (!TryRequestClose(out var parked))
                 return false;
-            }
 
+            if (parked)
+                _ = ThreadPool.UnsafeQueueUserWorkItem(static handler => handler.DisposeParked(), this, preferLocal: false);
+            else
+                CloseSocket();
+
+            return true;
+        }
+
+        void DisposeParked()
+        {
+#if DEBUG
+            ExceptionInjectionHelper.WaitOnClear(ExceptionInjectionType.Close_Hold_Parked_Session_Dispose);
+#endif
+            DisposeQuietly();
+        }
+
+        void DisposeQuietly()
+        {
             try
             {
-                // This close should cause all outstanding requests to fail.
-                // 
-                // We don't distinguish between clients closing their end of the Socket
-                // and us forcing it closed on request.
+                Dispose();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogDebug(ex, "Disposing a closed connection threw");
+            }
+        }
+
+        void CloseSocket()
+        {
+            try
+            {
                 socket.Close();
             }
             catch
             {
                 // Best effort, just swallow any exceptions
             }
-
-            return true;
         }
 
         /// <summary>
@@ -158,7 +203,10 @@ namespace Garnet.common
         }
 
         /// <inheritdoc />
-        public override void Dispose()
+        public override void Dispose() => DisposeImpl();
+
+        /// <inheritdoc />
+        protected override void CloseTransport()
         {
             try
             {
@@ -170,7 +218,7 @@ namespace Garnet.common
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Error shutting down socket");
+                logger?.LogTrace(ex, "Error shutting down socket");
             }
             finally
             {
@@ -179,7 +227,6 @@ namespace Garnet.common
                 // Dispose of the socket to free up unmanaged resources
                 socket.Dispose();
             }
-            DisposeImpl();
         }
 
         /// <summary>
@@ -195,22 +242,6 @@ namespace Garnet.common
         /// </summary>
         void Dispose(SocketAsyncEventArgs e)
         {
-            try
-            {
-                if (e.AcceptSocket.Connected)
-                {
-                    e.AcceptSocket.Shutdown(SocketShutdown.Both);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger?.LogTrace(ex, "Error shutting down accept socket during SAEA dispose");
-            }
-            finally
-            {
-                e.AcceptSocket.Close();
-                e.AcceptSocket.Dispose();
-            }
             DisposeImpl();
             e.Dispose();
             ReleaseBufferHold();
@@ -279,6 +310,7 @@ namespace Garnet.common
                 if (!consume.IsCompletedSuccessfully)
                 {
                     pending = consume;
+                    OnBatchParked();
                     return true;
                 }
 
@@ -305,6 +337,7 @@ namespace Garnet.common
                 while (true)
                 {
                     var consumed = await pending.ConfigureAwait(false);
+                    OnBatchUnparked();
 #if DEBUG
                     if (ExceptionInjectionHelper.IsEnabled(ExceptionInjectionType.Receive_Hold_Resumed_Pass))
                         await ExceptionInjectionHelper.WaitOnClearAsync(ExceptionInjectionType.Receive_Hold_Resumed_Pass).ConfigureAwait(false);

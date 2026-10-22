@@ -34,6 +34,7 @@ namespace Garnet.test
         int registrations;
         int waitingSends;
         int entered;
+        int failNextSend;
         volatile bool full;
         volatile bool closed;
         volatile bool waitingSendsBlock;
@@ -76,6 +77,11 @@ namespace Garnet.test
 
         /// <summary>Whether <see cref="FailTryEnterUntil"/> is still making entries fail.</summary>
         public bool FailingTryEnter => Volatile.Read(ref failTryEnterUntil) != null;
+
+        /// <summary>
+        /// Makes the next send throw, as a send does on a connection closed under it, without recording anything.
+        /// </summary>
+        public bool FailNextSend { set => Volatile.Write(ref failNextSend, value ? 1 : 0); }
 
         /// <summary>
         /// Makes <see cref="SendResponse(int, int)"/> wait while the sender is full, until
@@ -131,6 +137,9 @@ namespace Garnet.test
 
         void Record(int offset, int size)
         {
+            if (Interlocked.Exchange(ref failNextSend, 0) != 0)
+                throw new ObjectDisposedException("socket");
+
             lock (gate)
                 sent.AddRange(new ReadOnlySpan<byte>(head + offset, size).ToArray());
 

@@ -168,6 +168,12 @@ namespace Garnet.common
         /// </summary>
         Receive_Hold_Resumed_Pass,
         /// <summary>
+        /// Connection closed on request while its session was parked: hold the disposal the request queues, before it
+        /// starts, until the condition is cleared. The parked command can then finish, and the receive loop meet the
+        /// close request on its own.
+        /// </summary>
+        Close_Hold_Parked_Session_Dispose,
+        /// <summary>
         /// Replica full sync: fail recovery of the checkpoint received from the primary, before any of it is applied.
         /// </summary>
         Replication_Fail_Replica_Checkpoint_Recovery,
@@ -181,10 +187,10 @@ namespace Garnet.common
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
         /// <summary>
-        /// Server network sender: pause a send completion that frees a slot for a waiting send, after it has
-        /// decremented the send count and before it releases the waiter.
+        /// Server network sender: pause a send completion before it records progress or releases its slot.
         /// </summary>
         Sender_Pause_Before_Slot_Release,
+        /// <summary>
         /// Accept loop: report the next accepted connection as failed by resource pressure, to exercise the
         /// backoff and the restart of the loop that follows it.
         /// </summary>

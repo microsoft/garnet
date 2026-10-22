@@ -20,7 +20,7 @@ namespace Garnet.server
         {
             if (forward.IsCompletedSuccessfully)
             {
-                WriteInt32(numClients);
+                WritePublishReply(numClients);
                 return true;
             }
 
@@ -35,7 +35,7 @@ namespace Garnet.server
         async ValueTask ClusterPublishBodyAsync(ValueTask forward, int numClients)
         {
             await forward.ConfigureAwait(false);
-            WriteInt32(numClients);
+            WritePublishReply(numClients);
         }
     }
 }

@@ -19,9 +19,9 @@ using NUnit.Framework.Legacy;
 namespace Garnet.test
 {
     /// <summary>
-    /// Covers clients that stop reading their responses. A session executes commands on a thread-pool thread
-    /// and blocks that thread once its outstanding sends reach the per-session throttle, so a client that never
-    /// drains its socket holds the thread for as long as its sends cannot complete.
+    /// Covers clients that stop reading their responses. A session whose outstanding sends reach the per-session
+    /// throttle parks until a send completes, so a client that never drains its socket holds no thread, and is
+    /// disconnected once no send completes for the send timeout.
     /// </summary>
     /// <remarks>
     /// Each client requests <see cref="GetsPerClient"/> copies of a <see cref="ValueSize"/> value: several times what
@@ -34,6 +34,7 @@ namespace Garnet.test
         const int GetsPerClient = 3;
         const string Key = "bigkey";
         const ExceptionInjectionType PauseBeforeSlotRelease = ExceptionInjectionType.Sender_Pause_Before_Slot_Release;
+        const ExceptionInjectionType HoldParkedDispose = ExceptionInjectionType.Close_Hold_Parked_Session_Dispose;
 
         // A throttle no response reaches, so every send is in flight when QUIT ends the session and the only wait
         // is the one for them to drain
@@ -62,6 +63,7 @@ namespace Garnet.test
         public void TearDown()
         {
             ExceptionInjectionHelper.DisableException(PauseBeforeSlotRelease);
+            ExceptionInjectionHelper.DisableException(HoldParkedDispose);
             server?.Dispose();
             server = null;
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
@@ -167,8 +169,7 @@ namespace Garnet.test
 
         /// <summary>
         /// A client that quits while its earlier responses are undelivered, and then stops reading, is
-        /// disconnected once those responses stop draining, rather than holding the session's thread until it
-        /// reads them.
+        /// disconnected once those responses stop draining.
         /// </summary>
         [Test]
         public void AClientThatQuitsWithoutReadingIsDisconnected()
@@ -210,10 +211,9 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A stalled client holds a server thread until its sends complete or time out, whether the thread is
-        /// waiting to send more of a response or, after QUIT, for the responses already sent to drain. That thread
-        /// is lent back to the thread pool while it waits, so other connections are still served even when stalled
-        /// clients outnumber the threads the pool would otherwise run.
+        /// Stalled clients hold no server thread, whether a session is parked waiting to send more of a response
+        /// or, after QUIT, its responses are waiting to drain, so other connections are still served even when
+        /// stalled clients outnumber the threads the pool runs.
         /// </summary>
         [Test]
         public void ClientsThatStopReadingDoNotDelayOtherConnections([Values] bool quit)
@@ -224,7 +224,7 @@ namespace Garnet.test
             const int StalledClients = 4 * ThreadGoal;
             var probeDeadline = TimeSpan.FromSeconds(5);
 
-            // No timeout, so only the thread pool can make room for other connections
+            // No timeout, so the stalled sessions stay stalled for the whole test
             StartServer(Timeout.InfiniteTimeSpan, networkSendThrottleMax: quit ? UnreachedThrottle : null);
             using var healthy = Connect();
             Ping(healthy);
@@ -243,7 +243,7 @@ namespace Garnet.test
                 foreach (var socket in stalled)
                     socket.Send(quit ? [.. Gets(), .. Command("QUIT")] : Gets());
 
-                // Let the stalled sessions take their threads
+                // Let the stalled sessions fill their sockets
                 Thread.Sleep(1000);
 
                 var elapsed = Stopwatch.StartNew();
@@ -258,11 +258,11 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A session subscribed to a channel it publishes to delivers the message into its own response. A send of
-        /// that message that times out ends the session without error, rather than letting the PUBLISH reply be
-        /// written into the response buffer the failed send released, and the message still reaches the
-        /// subscribers after it. A session subscribed both to the channel and to a pattern matching it receives
-        /// the message twice, and writes neither delivery after the first fails.
+        /// A session subscribed to a channel it publishes to delivers the message into its own response, past its
+        /// connection's limit on outstanding sends, and then parks until the connection has room. A client that
+        /// stops reading is disconnected without error once no send completes for the send timeout, and the
+        /// message still reaches the subscribers after it. A session subscribed both to the channel and to a
+        /// pattern matching it receives the message twice.
         /// </summary>
         [Test]
         public async Task AClientThatStopsReadingItsOwnPublishedMessageIsDisconnected(
@@ -306,13 +306,12 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// A send that times out has its connection closed, but must not let the connection be disposed while the
-        /// completion that freed its slot has yet to release it, since that release would then land on the
-        /// disposed sender. The completion is held between freeing the slot and releasing it until the send has
-        /// timed out.
+        /// A send completion held past the send timeout leaves its send outstanding, so the connection stays stalled
+        /// and is closed once the sends that do complete stop. Released after the close, the completion returns its
+        /// buffer to the disposed sender without error.
         /// </summary>
         [Test]
-        public async Task ASendCompletionHeldPastTheSendTimeoutDoesNotOutliveItsConnection()
+        public async Task ASendCompletionHeldPastTheSendTimeoutIsHarmless()
         {
             TestUtils.IgnoreIfExceptionInjectionDisabled();
 
@@ -320,28 +319,216 @@ namespace Garnet.test
             StartServer(SendTimeout, networkSendThrottleMax: 1, logTo: TextWriter.Synchronized(log));
             using var healthy = Connect();
 
+            // The session parks after the first GET, behind the one send the throttle allows. The first send to
+            // complete asynchronously is held.
             using var stalled = Connect(receiveBufferSize: 4096);
             ExceptionInjectionHelper.EnableException(PauseBeforeSlotRelease);
-            stalled.Send(Command("GET", Key));
+            stalled.Send(Gets());
 
-            // Let the session fill the socket and wait for a slot, then read, so a send completes and frees the
-            // slot while the session waits for it. Reading on to the close leaves no other send in flight.
+            // Let the session fill the socket and park, then read, so that sends complete until only the held one
+            // is outstanding
             Thread.Sleep(200);
-            var drained = Task.Run(() => AssertClosedBeforeFullResponse(stalled, expected: BulkStringLength(ValueSize)));
+            var drained = Task.Run(() => AssertClosedBeforeFullResponse(stalled));
             await ExceptionInjectionHelper.WaitOnClearAsync(PauseBeforeSlotRelease).WaitAsync(Deadline);
-            await drained.WaitAsync(Deadline);
 
-            Thread.Sleep(500);
-            ClassicAssert.AreEqual(1, ((GarnetServerBase)server.Provider.StoreWrapper.Servers[0]).TotalConnectionsDisposed,
-                "a connection must not be disposed while a completion has yet to release its timed-out send's slot");
+            WaitForDisposedConnections(2, "a connection whose send completion is held must close once no send completes for the send timeout");
 
             ExceptionInjectionHelper.EnableException(PauseBeforeSlotRelease);
-            WaitForDisposedConnections(2, "a send that times out must dispose its connection once its slot is released");
+            await drained.WaitAsync(Deadline);
             Ping(healthy);
 
             var logged = log.ToString();
             Assert.That(logged, Does.Not.Contain(".(errr)").And.Not.Contain(".(crit)"),
-                "a send completion released after its connection timed out must not fail");
+                "a send completion released after its connection closed must not fail");
+        }
+
+        /// <summary>
+        /// CLIENT KILL of a session parked until its client accepts more data ends the session, rather than letting
+        /// the sends the kill fails free capacity for its next command.
+        /// </summary>
+        [Test]
+        public void ClientKillEndsASessionParkedOnSendCapacity()
+        {
+            var log = new StringWriter();
+            StartServer(Timeout.InfiniteTimeSpan, logTo: TextWriter.Synchronized(log));
+            using var healthy = Connect();
+            using var stalled = ConnectAndStopReading();
+
+            // Let the session fill the socket and park before the GETs it has yet to run
+            Thread.Sleep(500);
+            using (var stream = new NetworkStream(healthy, ownsSocket: false))
+            {
+                stream.Write(Command("CLIENT", "KILL", "TYPE", "NORMAL", "SKIPME", "YES"));
+                ExpectReply(stream, ":1\r\n");
+            }
+
+            WaitForDisposedConnections(2, "a killed session must be disposed");
+            AssertClosedBeforeFullResponse(stalled);
+            Ping(healthy);
+
+            var logged = log.ToString();
+            Assert.That(logged, Does.Not.Contain(".(errr)").And.Not.Contain(".(crit)"),
+                "killing a session parked on send capacity must end it without error");
+        }
+
+        /// <summary>
+        /// CLIENT KILL of a session parked in a blocking command ends the session at once, rather than when the
+        /// command completes. Over TLS the session sends through its connection's handler rather than the socket's
+        /// sender, so the kill reaches the connection by the other route.
+        /// </summary>
+        [Test]
+        public void ClientKillEndsASessionParkedInABlockingCommand([Values] bool tls)
+        {
+            var log = new StringWriter();
+            StartServer(SendTimeout, logTo: TextWriter.Synchronized(log), enableTLS: tls);
+            using Stream healthy = tls ? ConnectTls() : new NetworkStream(Connect(), ownsSocket: true);
+            using Stream blocked = tls ? ConnectTls() : new NetworkStream(Connect(), ownsSocket: true);
+            blocked.Write([.. Command("DEBUG", "BLOCK", "3"), .. Command("PING")]);
+
+            Thread.Sleep(200);
+            var elapsed = Stopwatch.StartNew();
+            healthy.Write(Command("CLIENT", "KILL", "TYPE", "NORMAL", "SKIPME", "YES"));
+            ExpectReply(healthy, ":1\r\n");
+
+            WaitForDisposedConnections(2, "a killed session must be disposed");
+            Assert.That(elapsed.Elapsed, Is.LessThan(TimeSpan.FromSeconds(2)),
+                "a killed session must end without waiting for its blocking command");
+
+            // Past the end of the block, when a session left parked would resume
+            Thread.Sleep(TimeSpan.FromSeconds(4));
+            Ping(healthy);
+
+            var logged = log.ToString();
+            Assert.That(logged, Does.Not.Contain(".(errr)").And.Not.Contain(".(crit)"),
+                "killing a session parked in a blocking command must end it without error");
+        }
+
+        /// <summary>
+        /// A session that kills itself and then parks in a blocking command ends at once. The kill finds its batch
+        /// running and only closes the socket, which a parked session does not notice, so the session acts on the
+        /// close request as it parks.
+        /// </summary>
+        [Test]
+        public void ASessionThatKillsItselfAndThenParksEndsAtOnce([Values] bool tls)
+        {
+            StartServer(SendTimeout, enableTLS: tls);
+            using var healthy = Open(tls);
+            using var killer = Open(tls);
+            var id = ClientId(killer);
+
+            var elapsed = Stopwatch.StartNew();
+            killer.Write([.. Command("CLIENT", "KILL", "ID", id, "SKIPME", "NO"), .. Command("DEBUG", "BLOCK", "3"), .. Command("PING")]);
+
+            WaitForDisposedConnections(2, "a session that killed itself must be disposed");
+            Assert.That(elapsed.Elapsed, Is.LessThan(TimeSpan.FromSeconds(2)),
+                "a session that killed itself must end without waiting for the blocking command it parked in");
+            Ping(healthy);
+        }
+
+        /// <summary>
+        /// A session that kills itself from a command resumed after a park ends once its batch is done, and the
+        /// teardown undoes what the rest of the batch did. Teardown run inside the batch would precede the
+        /// subscription that follows the kill, and leave it registered for a session that no longer exists.
+        /// </summary>
+        [Test]
+        public void ASessionThatKillsItselfAfterAParkEndsOnceItsBatchIsDone([Values] bool tls)
+        {
+            var log = new StringWriter();
+            StartServer(SendTimeout, logTo: TextWriter.Synchronized(log), enableTLS: tls);
+            using var healthy = Open(tls);
+            using var killer = Open(tls);
+            var id = ClientId(killer);
+
+            killer.Write([.. Command("DEBUG", "BLOCK", "1"), .. Command("CLIENT", "KILL", "ID", id, "SKIPME", "NO"), .. Command("SUBSCRIBE", "channel")]);
+            ReadUntil(killer, "$9\r\nsubscribe\r\n$7\r\nchannel\r\n:1\r\n");
+
+            WaitForDisposedConnections(2, "a session that killed itself must be disposed");
+            WaitForReply(healthy, Command("PUBSUB", "NUMSUB", "channel"), "*2\r\n$7\r\nchannel\r\n:0\r\n",
+                "the teardown of a session that killed itself must remove the subscription its batch made");
+
+            var logged = log.ToString();
+            Assert.That(logged, Does.Not.Contain(".(errr)").And.Not.Contain(".(crit)"),
+                "a session that killed itself must end without error");
+        }
+
+        /// <summary>
+        /// A session killed while parked runs no command it receives afterwards, even when its parked command
+        /// finishes before the kill has torn it down.
+        /// </summary>
+        [Test]
+        public void AKilledParkedSessionRunsNoLaterCommand([Values] bool tls)
+        {
+            StartServer(SendTimeout, enableTLS: tls);
+            using var healthy = Open(tls);
+            using var parked = Open(tls);
+            parked.Write(Command("DEBUG", "BLOCK", "1"));
+            Thread.Sleep(200);
+
+            ExceptionInjectionHelper.EnableException(HoldParkedDispose);
+            healthy.Write(Command("CLIENT", "KILL", "TYPE", "NORMAL", "SKIPME", "YES"));
+            ExpectReply(healthy, ":1\r\n");
+
+            // The block ends while the kill's teardown is held, so the session can be sent another command
+            ExpectReply(parked, "+OK\r\n");
+            try
+            {
+                parked.Write(Command("SET", "afterkill", "1"));
+            }
+            catch (IOException)
+            {
+            }
+
+            // Long enough for the command to run, had the session gone on receiving
+            Thread.Sleep(500);
+            ExceptionInjectionHelper.DisableException(HoldParkedDispose);
+
+            WaitForDisposedConnections(2, "a killed session must be disposed");
+            healthy.Write(Command("EXISTS", "afterkill"));
+            ExpectReply(healthy, ":0\r\n");
+        }
+
+        /// <summary>
+        /// Repeats <paramref name="command"/> until it replies <paramref name="expected"/>. Every reply must be as
+        /// long as the one expected.
+        /// </summary>
+        static void WaitForReply(Stream stream, byte[] command, string expected, string because)
+        {
+            var buffer = new byte[expected.Length];
+            var elapsed = Stopwatch.StartNew();
+            while (true)
+            {
+                stream.Write(command);
+                for (var received = 0; received < buffer.Length;)
+                {
+                    var read = stream.Read(buffer, received, buffer.Length - received);
+                    ClassicAssert.Greater(read, 0, "connection closed before the reply");
+                    received += read;
+                }
+
+                var reply = Encoding.ASCII.GetString(buffer);
+                if (reply == expected)
+                    return;
+                if (elapsed.Elapsed > TimeSpan.FromSeconds(5))
+                    Assert.Fail($"replied {reply.ReplaceLineEndings("\\r\\n")}: {because}");
+                Thread.Sleep(10);
+            }
+        }
+
+        static Stream Open(bool tls)
+            => tls ? ConnectTls() : new NetworkStream(Connect(), ownsSocket: true);
+
+        static string ClientId(Stream stream)
+        {
+            stream.Write(Command("CLIENT", "ID"));
+            var reply = new StringBuilder();
+            while (!reply.ToString().EndsWith("\r\n", StringComparison.Ordinal))
+            {
+                var read = stream.ReadByte();
+                ClassicAssert.GreaterOrEqual(read, 0, "connection closed before the reply");
+                _ = reply.Append((char)read);
+            }
+            ClassicAssert.AreEqual(':', reply[0], reply.ToString());
+            return reply.ToString(1, reply.Length - 3);
         }
 
         static SslStream ConnectTls(int receiveBufferSize = 0)
