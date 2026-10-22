@@ -88,18 +88,6 @@ namespace Garnet.common
             /// </summary>
             public readonly bool IsExclusive => type is LockType.Exclusive or LockType.AllExclusive;
 
-            /// <summary>
-            /// Assert that this token holds an exclusive lock.
-            /// </summary>
-            [Conditional("DEBUG")]
-            public void AssertExclusive() => Debug.Assert(IsExclusive, "Expected an exclusive lock");
-
-            /// <summary>
-            /// Assert that this token holds a shared lock.
-            /// </summary>
-            [Conditional("DEBUG")]
-            public void AssertShared() => Debug.Assert(type == LockType.Shared, "Expected a shared lock");
-
             private LockToken(LockType type, int token)
             {
                 this.type = type;

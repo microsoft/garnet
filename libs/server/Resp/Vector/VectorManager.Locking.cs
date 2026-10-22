@@ -312,7 +312,6 @@ namespace Garnet.server
                             }
                         }
 
-                        lockToken.AssertExclusive();
                         ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
 
                         input.arg1 = RecreateIndexArg;
@@ -393,7 +392,6 @@ namespace Garnet.server
                         return default;
                     }
 
-                    lockToken.AssertShared();
                     status = GarnetStatus.OK;
                     importPending = false;
                     return new(in vectorSetLocks, lockToken);
@@ -535,7 +533,6 @@ namespace Garnet.server
                             }
                         }
 
-                        lockToken.AssertExclusive();
                         ulong indexContext;
                         nint newlyAllocatedIndex;
                         bool requestQuantization;
@@ -676,7 +673,6 @@ namespace Garnet.server
                         return default;
                     }
 
-                    lockToken.AssertShared();
                     status = GarnetStatus.OK;
                     importPending = false;
                     return new(in vectorSetLocks, lockToken);
@@ -701,7 +697,6 @@ namespace Garnet.server
             var keyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)key);
 
             vectorSetLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
-            exclusiveLockToken.AssertExclusive();
 
             return new(in vectorSetLocks, exclusiveLockToken);
         }
