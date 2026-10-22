@@ -115,11 +115,11 @@ namespace Garnet.test.cluster
             // ASKING belongs to this connection and permits only its next command.
             AssertRedirect(1, command, missingArguments, moved);
             if (command == "GETWITHETAG")
-                Assert.That(await importer.ExecuteForArrayAsync(command, MissingKey).WaitAsync(context.cts.Token), Is.EqualTo(new[] { "1", "created" }));
+                Assert.That(await importer.ExecuteForArrayAsync(command, MissingKey).WaitAsync(context.cts.Token), Is.EqualTo(["1", "created"]));
             else if (command == "SETWITHETAG")
                 Assert.That(await importer.ExecuteAsync(command, MissingKey, "created").WaitAsync(context.cts.Token), Is.EqualTo("1"));
             else
-                Assert.That(await importer.ExecuteForArrayAsync(command, MissingKey, "created", "0").WaitAsync(context.cts.Token), Is.EqualTo(new string[] { "1", null }));
+                Assert.That(await importer.ExecuteForArrayAsync(command, MissingKey, "created", "0").WaitAsync(context.cts.Token), Is.EqualTo(["1", null]));
 
             string[] request = command switch
             {
@@ -174,10 +174,10 @@ namespace Garnet.test.cluster
             AssertReplicaRedirect("SETIFMATCH", Key, "rejected", "2");
 
             Assert.That(await replica.ExecuteAsync("READONLY"), Is.EqualTo("OK"));
-            Assert.That(await replica.ExecuteForArrayAsync("GETWITHETAG", Key), Is.EqualTo(new[] { "2", "second" }));
+            Assert.That(await replica.ExecuteForArrayAsync("GETWITHETAG", Key), Is.EqualTo(["2", "second"]));
             AssertReplicaRedirect("SETWITHETAG", Key, "rejected");
             AssertReplicaRedirect("SETIFMATCH", Key, "rejected", "2");
-            Assert.That(await replica.ExecuteForArrayAsync("GETWITHETAG", Key), Is.EqualTo(new[] { "2", "second" }));
+            Assert.That(await replica.ExecuteForArrayAsync("GETWITHETAG", Key), Is.EqualTo(["2", "second"]));
             AssertPair(Execute(0, "GETWITHETAG", Key), 2, "second");
 
             Assert.That(await replica.ExecuteAsync("READWRITE"), Is.EqualTo("OK"));

@@ -183,7 +183,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ConcurrentImportWriterCheckpointRecovery([Values(1, 2)] int logs)
+        public unsafe void ConcurrentImportWriterCheckpointRecovery([Values(1, 2)] int logs)
         {
             const int length = 32;
             server.Dispose();
@@ -213,11 +213,31 @@ namespace Garnet.test
                 expectedValue = (string)expected[1];
                 expectedExpiration = (long)db.Execute("PEXPIRETIME", "destination");
                 db.Execute("COMMITAOF");
+                TestContext.WriteLine($"Expected {expectedTag} {expectedValue}; store version {server.Provider.StoreWrapper.store.CurrentVersion}");
+                foreach ((int sublog, byte[] entry) in Capture(new long[logs]))
+                {
+                    fixed (byte* pointer = entry)
+                    {
+                        AofHeader header = *(AofHeader*)pointer;
+                        string command = "";
+                        if (header.opType == AofEntryType.StoreRMW)
+                        {
+                            byte* cursor = AofHeader.SkipHeader(pointer);
+                            PinnedSpanByte key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(cursor);
+                            cursor += key.TotalSize;
+                            StringInput input = default;
+                            input.DeserializeFrom(cursor);
+                            command = $"{Encoding.UTF8.GetString(key.ReadOnlySpan)} {input.header.cmd} flags={input.header.flags} {Encoding.UTF8.GetString(input.parseState.GetArgSliceByRef(0).ReadOnlySpan)}";
+                        }
+                        TestContext.WriteLine($"{sublog} {header.opType} version={header.storeVersion} session={header.sessionID} {command}");
+                    }
+                }
             }
             server.Dispose(false);
             server = CreateAofServer(logs, true);
             server.Start();
             using ConnectionMultiplexer recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            TestContext.WriteLine($"Recovered store version {server.Provider.StoreWrapper.store.CurrentVersion}");
             AssertTaggedValue(recovered.GetDatabase(), "destination", expectedTag, expectedValue);
             Assert.That((long)recovered.GetDatabase().Execute("PEXPIRETIME", "destination"), Is.EqualTo(expectedExpiration));
         }
