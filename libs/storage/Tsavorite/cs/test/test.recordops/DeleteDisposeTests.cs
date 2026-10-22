@@ -390,21 +390,6 @@ namespace Tsavorite.test
             _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TestObjectValue { value = value }, 0);
         }
 
-        /// <summary>Keys for <see cref="FlushPastLastSector"/>, clear of the keys the tests operate on.</summary>
-        const int FillerKeyBase = 1_000_000;
-
-        /// <summary>
-        /// Make every record so far durable, with FlushedUntilAddress past their sector. A flush that ends mid-sector leaves the records
-        /// in that sector frozen for flush until a later flush moves past it, because that flush rewrites the sector from the live page.
-        /// </summary>
-        private void FlushPastLastSector()
-        {
-            var sectorEnd = RoundUp(store.Log.TailAddress, (long)log.SectorSize);
-            for (var key = FillerKeyBase; store.Log.TailAddress <= sectorEnd; ++key)
-                UpsertObj(key, key);
-            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
-        }
-
         #region Delete
 
         [Test]
@@ -423,7 +408,7 @@ namespace Tsavorite.test
         public void ObjDisposeOnImmutableDeleteTest()
         {
             UpsertObj(1, 100);
-            FlushPastLastSector();
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
             tracker.Reset();
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
@@ -436,7 +421,7 @@ namespace Tsavorite.test
         {
             const int n = 10;
             for (int i = 0; i < n; i++) UpsertObj(i, i * 10);
-            FlushPastLastSector();
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
             tracker.Reset();
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             for (int i = 0; i < n; i++) _ = s.BasicContext.Delete(new TestObjectKey { key = i });
@@ -477,14 +462,13 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// A partial flush must start its device write on a sector boundary, so it rewrites, from the live page, the records
-        /// between that boundary and its own start address - records a previous flush already made durable. Disposing one of
-        /// them while that write is in flight can persist a torn record image, so the frozen window has to extend down to the
-        /// sector boundary rather than stopping at FlushedUntilAddress.
+        /// A partial flush starts its device write on a sector boundary, so it writes again the records between that boundary and its
+        /// own start address, which a previous flush already made durable. It takes those bytes from the image the previous flush kept,
+        /// not the live page, so such a record is not frozen and its disposal runs at once, even while that write is in flight.
         /// </summary>
         [Test]
         [Category("TsavoriteKV")]
-        public void ObjDisposeDeferredWhileInRewrittenPartialSectorTest()
+        public void ObjDisposeImmediateWhileNextFlushWritesItsPartialSectorTest()
         {
             var recordAddress = store.Log.TailAddress;
             UpsertObj(1, 100);
@@ -495,41 +479,44 @@ namespace Tsavorite.test
             var sectorSize = (int)log.SectorSize;
             var flushedUntil = store.hlogBase.FlushedUntilAddress;
             Assert.That(flushedUntil, Is.GreaterThan(recordAddress), "record should be durable");
-            Assert.That(flushedUntil % sectorSize, Is.Not.EqualTo(0), "the flush must end mid-sector for the next one to rewrite it");
+            Assert.That(flushedUntil % sectorSize, Is.Not.EqualTo(0), "the flush must end mid-sector for the next one to write the sector again");
             Assert.That(recordAddress, Is.GreaterThanOrEqualTo(RoundDown(flushedUntil, sectorSize)),
-                "record must sit in the sector that the next flush rewrites");
+                "record must sit in the sector that the next flush writes again");
 
-            // Second flush: hold its device write. It starts at the first flush's end and rounds that down to the sector
-            // boundary, so its write span covers the already-durable record.
-            gatedLog.Gate = true;
+            // Second flush: hold its device writes. It starts at the first flush's end and writes that sector on its own, followed by
+            // the rest of its span if the span reaches past that sector.
             UpsertObj(2, 200);
+            var heldWrites = RoundUp(store.Log.TailAddress, sectorSize) - RoundDown(flushedUntil, sectorSize) > sectorSize ? 2 : 1;
+            gatedLog.Gate = true;
             store.hlogBase.ShiftReadOnlyAddressWithWait(store.Log.TailAddress, wait: false);
-            gatedLog.WaitForPending(1, TimeSpan.FromSeconds(30));
+            gatedLog.WaitForPending(heldWrites, TimeSpan.FromSeconds(30));
             tracker.Reset();
 
-            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.True,
-                "a record being rewritten by an in-flight flush must be frozen");
+            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.False,
+                "a durable record must not be frozen while the next flush writes its sector");
 
             using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
                 _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
 
-            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount,
-                "OnDispose(Deleted) must be deferred while a flush is rewriting the record's sector");
+            ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) must run at once for a durable record");
 
             // Let the flush complete so teardown does not block on it.
-            gatedLog.Release(0);
-            gatedLog.WaitForCompletion(0, TimeSpan.FromSeconds(30));
+            gatedLog.Gate = false;
+            for (var i = 0; i < heldWrites; i++)
+            {
+                gatedLog.Release(i);
+                gatedLog.WaitForCompletion(i, TimeSpan.FromSeconds(30));
+            }
         }
 
         /// <summary>
-        /// The sector a flush ended in stays frozen after that flush completes, not only while the next one is in flight. That next flush
-        /// starts there and rewrites it from the live page, and its durable image may be what a completed checkpoint recovers, so disposing
-        /// a record there at any time before the rewrite would replace that image. Disposal must wait until FlushedUntilAddress leaves the
-        /// sector, and then run once.
+        /// A record below FlushedUntilAddress is durable and not frozen, even in the sector a flush ended in. The next flush starts in
+        /// that sector and writes it again, but takes the bytes below its start from the image the previous flush kept, so disposing the
+        /// record cannot reach its durable image and runs at once.
         /// </summary>
         [Test]
         [Category("TsavoriteKV")]
-        public void ObjDisposeDeferredInCompletedPartialSectorTest()
+        public void ObjDisposeImmediateInCompletedPartialSectorTest()
         {
             var recordAddress = store.Log.TailAddress;
             UpsertObj(1, 100);
@@ -537,22 +524,17 @@ namespace Tsavorite.test
 
             var sectorSize = (int)log.SectorSize;
             var flushedUntil = store.hlogBase.FlushedUntilAddress;
-            Assert.That(flushedUntil % sectorSize, Is.Not.EqualTo(0), "the flush must end mid-sector for the next one to rewrite it");
+            Assert.That(flushedUntil % sectorSize, Is.Not.EqualTo(0), "the flush must end mid-sector for the next one to write the sector again");
             Assert.That(recordAddress, Is.GreaterThanOrEqualTo(RoundDown(flushedUntil, sectorSize)),
-                "record must sit in the sector that the next flush rewrites");
-            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.True,
-                "a record in the sector the next flush rewrites must be frozen with no flush in flight");
+                "record must sit in the sector that the next flush writes again");
+            Assert.That(store.hlog.IsFrozenForFlush(recordAddress), Is.False,
+                "a durable record in the sector the next flush writes again must not be frozen");
             tracker.Reset();
 
             using (var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete()))
                 _ = s.BasicContext.Delete(new TestObjectKey { key = 1 });
 
-            ClassicAssert.AreEqual(0, tracker.DisposeRecordDeletedCount,
-                "OnDispose(Deleted) must be deferred while the record's sector can still be rewritten");
-
-            FlushPastLastSector();
-            Assert.That(() => tracker.DisposeRecordDeletedCount, Is.EqualTo(1).After(30_000, 10),
-                "the drain must dispose the record exactly once after FlushedUntilAddress leaves its sector");
+            ClassicAssert.AreEqual(1, tracker.DisposeRecordDeletedCount, "OnDispose(Deleted) must run at once for a durable record");
         }
 
         #endregion
@@ -577,7 +559,7 @@ namespace Tsavorite.test
         public void ObjDisposeOnImmutableExpireAndStopTest()
         {
             UpsertObj(1, 100);
-            FlushPastLastSector();
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
             tracker.Reset();
             var fn = new ObjExpirableFunctions { expireAction = RMWAction.ExpireAndStop };
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn);
@@ -608,7 +590,7 @@ namespace Tsavorite.test
         public void ObjDisposeOnImmutableExpireAndResumeTest()
         {
             UpsertObj(1, 100);
-            FlushPastLastSector();
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
             tracker.Reset();
             var fn = new ObjExpirableFunctions { expireAction = RMWAction.ExpireAndResume };
             using var s = store.NewSession<TestObjectKey, TestObjectInput, TestObjectOutput, int, ObjExpirableFunctions>(fn);

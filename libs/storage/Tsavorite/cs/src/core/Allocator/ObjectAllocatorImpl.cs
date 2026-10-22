@@ -49,8 +49,8 @@ namespace Tsavorite.core
             => Volatile.Read(ref LastIssuedFlushedUntilAddress);
 
         /// <summary>
-        /// Whether <paramref name="logicalAddress"/> is in a read-only flush that is committed but not yet durable, or in the durable
-        /// part of the sector the next flush rewrites, so that its record image must not be mutated.
+        /// Whether <paramref name="logicalAddress"/> is in a read-only flush that is committed but not yet durable, so that its record
+        /// image must not be mutated.
         /// </summary>
         /// <remarks>
         /// This allocator resolves objectIds against the live <see cref="ObjectIdMap"/>, stamps ObjectLogPosition and size hints
@@ -67,19 +67,15 @@ namespace Tsavorite.core
         /// bound that cannot be observed too late.
         /// </para>
         /// <para>
-        /// A record below <see cref="AllocatorBase{TStoreFunctions, TAllocator}.FlushedUntilAddress"/> is durable, but not yet
-        /// free while it shares a sector with FlushedUntilAddress. The next flush starts there and must begin its device write on
-        /// a sector boundary, so it rewrites from the live page every record between that boundary and its own start address.
-        /// Those records are below its record walk and are never re-serialized, but their durable image may belong to a completed
-        /// checkpoint: a FoldOver recovers them from the main log, as Snapshot does below its recovery boundary. A change made to
-        /// one at any time before that rewrite - while it is in flight or long before it is issued - would replace that image, so
-        /// eliding a record there persists its Invalid bit and releasing its heap persists an inline value. The sector is released
-        /// only when FlushedUntilAddress moves past it, which is also where the deferred-disposal drain stops.
+        /// A record below <see cref="AllocatorBase{TStoreFunctions, TAllocator}.FlushedUntilAddress"/> is free, even one that shares a
+        /// sector with it. The next flush starts in that sector and writes it whole, but it takes the bytes below its start from
+        /// <see cref="PartialSectorImage"/> or the device, never from the live page, so a later change to such a record cannot reach
+        /// the image a completed checkpoint recovers.
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool IsFrozenForFlush(long logicalAddress)
-            => logicalAddress < SafeReadOnlyAddress && logicalAddress >= RoundDown(FlushedUntilAddress, sectorSize);
+            => logicalAddress < SafeReadOnlyAddress && logicalAddress >= FlushedUntilAddress;
 
         /// <summary>
         /// Dynamically extended Flush end address, used by <see cref="OnPagesMarkedReadOnlyWorker"/>
@@ -90,6 +86,42 @@ namespace Tsavorite.core
         /// If the "noFlush" option on <see cref="AllocatorBase{TStoreFunctions, TAllocator}.ShiftReadOnlyAddress(long, bool)"/> is true, we won't try to flush anything below that.
         /// </summary>
         long NoFlushUntilAddress;
+
+        /// <summary>
+        /// The durable part of the sector the last ReadOnly flush ended in, which the next flush writes again. Null if that flush ended on a
+        /// sector boundary, or if no ReadOnly flush has run since the allocator was initialized, reset, or recovered.
+        /// </summary>
+        PartialSectorImage lastPartialSector;
+
+        /// <summary>
+        /// The bytes a ReadOnly flush wrote for [<see cref="SectorStart"/>, <see cref="SectorStart"/> + <see cref="Length"/>), the durable
+        /// part of the sector that flush ended in.
+        /// </summary>
+        /// <remarks>
+        /// Device writes are sector-aligned, so the next flush, which starts where this one ended, writes the whole sector again. It must not
+        /// take these bytes from the live page. They are durable and may be a completed checkpoint's image, while the records they hold may
+        /// since have changed in memory: released after being superseded, or rewritten by recovery's object load. So the next flush writes
+        /// them from here, or reads them back from the device when there is no image, as for the first flush after recovery.
+        /// </remarks>
+        sealed class PartialSectorImage
+        {
+            /// <summary>Logical address of the start of the sector.</summary>
+            internal readonly long SectorStart;
+
+            /// <summary>Number of bytes, from the start of the sector, that the flush wrote.</summary>
+            internal readonly int Length;
+
+            /// <summary>The bytes written; null if the range ending here was skipped rather than written. A range is skipped when it lies
+            /// below BeginAddress or below a no-flush boundary, and nothing reads such bytes, so the next flush may take them from the live page.</summary>
+            internal readonly byte[] Bytes;
+
+            internal PartialSectorImage(long sectorStart, int length, byte[] bytes)
+            {
+                SectorStart = sectorStart;
+                Length = length;
+                Bytes = bytes;
+            }
+        }
 
         /// <summary>The lowest object-log segment in use; adjusted with Truncate to remain consistent with BeginAddress.</summary>
         internal int lowestObjectLogSegmentInUse = 0;
@@ -176,6 +208,7 @@ namespace Tsavorite.core
             LastIssuedFlushedUntilAddress = FlushedUntilAddress;
             OngoingFlushedUntilAddress = 0;
             NoFlushUntilAddress = 0;
+            lastPartialSector = null;
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -895,6 +928,10 @@ namespace Tsavorite.core
             LastIssuedFlushedUntilAddress = readonlyAddress;
             OngoingFlushedUntilAddress = 0;
             NoFlushUntilAddress = 0;
+
+            // Recovery's object load has rewritten the resident records below readonlyAddress in memory, so the first flush must read the
+            // durable bytes of the sector it starts in back from the device.
+            lastPartialSector = null;
         }
 
         /// <inheritdoc/>
@@ -919,7 +956,10 @@ namespace Tsavorite.core
                 {
                     WaitForSnapshotPage(snapshotCoordination, flushPage);
                     if (!PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
+                    {
+                        NoteSkippedFlushEnd(asyncResult.untilAddress);
                         continue;
+                    }
 
                     asyncResult.flushBuffers = flushBuffers;
 
@@ -1057,7 +1097,8 @@ namespace Tsavorite.core
                 }
             }
 
-            var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
+            var deviceSectorSize = (int)device.SectorSize;
+            var alignedStartOffset = RoundDown(startOffset, deviceSectorSize);
 
             // A page whose records are entirely inline (no Overflow keys/values and no Object values, i.e. the page's objectIdMap is empty) has
             // nothing to serialize to the object log, so write its inline span directly and skip renting an object-log write buffer and walking
@@ -1076,6 +1117,7 @@ namespace Tsavorite.core
             var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
             var pageHasNoObjectsToFlush = objectIdMap.Count == 0
                 && asyncResult.flushRequestState is FlushRequestState.ReadOnly or FlushRequestState.Snapshot;
+            var writeInlineOnly = false;
             if (asyncResult.flushBuffers is null || pageHasNoObjectsToFlush)
             {
                 // Recovery never takes the inline path, for two independent reasons. Its objectIdMap is empty because records read from disk
@@ -1084,18 +1126,14 @@ namespace Tsavorite.core
                 // snapshot-region records copy their object bytes into the main object log and are repointed, and legacy records are
                 // up-converted, so there is no case with nothing to do.
                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
+                    writeInlineOnly = true;
+                else
                 {
-                    var inlineWriteLength = RoundUp(endOffset, (int)device.SectorSize) - alignedStartOffset;
-                    asyncResult.count = 1;
-                    device.WriteAsync((nint)(logPagePointer + alignedStartOffset), alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
-                        (uint)inlineWriteLength, callback, asyncResult);
-                    asyncResult.snapshotDeviceWriteIssued = true;
-                    return;
+                    // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
+                    // extends to the end of the page.
+                    Debug.Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
+                        $"Recovery flush should extend to the end of page {flushPage}");
                 }
-                // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
-                // extends to the end of the page.
-                Debug.Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
-                    $"Recovery flush should extend to the end of page {flushPage}");
             }
 
             // All object-log flush modes stamp and write the live page. Recovery has exclusive access. Snapshot writes one page at a time
@@ -1103,11 +1141,13 @@ namespace Tsavorite.core
             // replaces Snapshot positions with main-object-log positions. Fuzzy v+1 records remain unchanged and recovery rejects them
             // before interpreting their payload.
             //
-            // A front-partial ReadOnly flush starts after bytes that this flush sequence has already made durable. Rounding its device write
-            // down to a sector boundary is therefore safe: the live prefix already has main-object-log metadata, and IsFrozenForFlush has
-            // kept it unchanged since it was written, so rewriting it does not alter the image a completed checkpoint recovers.
-            // The write likewise rounds UP at the logical end, carrying live bytes above the endpoint to disk verbatim; see the write span
-            // comment below for why those bytes are never read back.
+            // A front-partial ReadOnly flush starts after bytes that this flush sequence has already made durable, and its device write
+            // rounds down to a sector boundary, so it writes those bytes again. It takes them from the PartialSectorImage the previous
+            // flush kept, or reads them back from the device, never from the live page: the records there may have changed in memory since
+            // they became durable, and the durable bytes may be a completed checkpoint's image. Recovery and Snapshot write the live page:
+            // recovery's resident bytes below the start are the ones it read from the device, and a snapshot file is never read below its
+            // start. The write likewise rounds UP at the logical end, carrying live bytes above the endpoint to disk verbatim; see the
+            // write span comment below for why those bytes are never read back.
             //
             // Correctness also relies on the OnDispose contract that a record stays READABLE (byte-consistent) throughout a flush --
             // OnDispose implementations copy off whatever they need for cleanup rather than tearing the record's flush-critical bytes
@@ -1144,6 +1184,14 @@ namespace Tsavorite.core
             // Do everything below here in the try{} to be sure the epoch is Resumed()d if we Suspended it.
             try
             {
+                // A ReadOnly flush that starts mid-sector composes that sector separately; get the durable bytes below its start first.
+                var startsMidSector = asyncResult.flushRequestState == FlushRequestState.ReadOnly && alignedStartOffset != startOffset;
+                Debug.Assert(!startsMidSector || deviceSectorSize == sectorSize, "A ReadOnly flush writes the main log device");
+                SectorAlignedMemory firstSector = null;
+                if (startsMidSector && !TryGetDurableSectorPrefix(pageStart + alignedStartOffset, startOffset - alignedStartOffset,
+                        alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, device, callback, asyncResult, out firstSector))
+                    return;
+
                 // Record traversal and metadata stamping are page-relative. The page remains resident until this flush's callback completes.
                 var recordsBasePtr = (byte*)logPagePointer;
 
@@ -1151,7 +1199,7 @@ namespace Tsavorite.core
                 // tail; objectLogTail is left holding the downlevel tail, which continues to bound reads of the downlevel device.
                 ref var flushObjectLogTail = ref isUpgradingObjectLog ? ref upgradeObjectLogTail : ref objectLogTail;
 
-                if (asyncResult.flushBuffers is not null)
+                if (asyncResult.flushBuffers is not null && !writeInlineOnly)
                 {
                     logWriter = new(device, asyncResult.flushBuffers, storeFunctions);
                     _ = logWriter.OnBeginPartialFlush(flushObjectLogTail);
@@ -1167,6 +1215,10 @@ namespace Tsavorite.core
                 ref var pageHeader = ref *(PageHeader*)recordsBasePtr;
 
                 var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
+
+                // A page with nothing to serialize skips the record walk and writes its span as it is.
+                if (writeInlineOnly)
+                    physicalAddress = endPhysicalAddress;
 
                 while (physicalAddress < endPhysicalAddress)
                 {
@@ -1315,30 +1367,58 @@ namespace Tsavorite.core
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
 
-                // Object serialization and metadata stamping are complete. Write the live page.
+                // Object serialization and metadata stamping are complete. Write the page span.
                 {
-                    // Write whole sectors straight out of the live page: [alignedStartOffset, RoundUp(endOffset)).
-                    // Bytes above the logical endpoint go to disk verbatim, because they are never read back:
-                    //   - a later flush of this page starts at its own rounded-down offset and rewrites the sector from the live page;
+                    // Write whole sectors: [alignedStartOffset, RoundUp(endOffset)). Bytes above the logical endpoint go to disk verbatim
+                    // from the live page, because they are never read back:
+                    //   - the next ReadOnly flush starts at the endpoint and writes this sector again;
                     //   - recovery bounds its record walk by maxAddressOffsetOnPage, which is the UNROUNDED endpoint, so records above
                     //     the endpoint are never parsed and their object-log position words are never interpreted; and
                     //   - the hybrid-log/snapshot boundary is applied at exact address granularity (RecoveryLoadObjectsPass2 splits the
                     //     boundary page at snapshotScanFromAddress), so a snapshot object-log position cannot be read as a main-log one.
                     // PageSize >= sectorSize and AlignedPageSizeBytes == RoundUp(PageSize, sectorSize), so the span stays within the page.
-                    var sectorSize = (int)device.SectorSize;
-                    var writePtr = (byte*)logPagePointer + alignedStartOffset;
-                    var writeLength = RoundUp(endOffset, sectorSize) - alignedStartOffset;
                     var writeAddress = alignedMainLogFlushPageAddress + (uint)alignedStartOffset;
+                    var writePtr = (byte*)logPagePointer + alignedStartOffset;
+                    var writeLength = RoundUp(endOffset, deviceSectorSize) - alignedStartOffset;
                     Debug.Assert(writeLength > 0, $"Flush of page {flushPage} produced an empty write span");
+
+                    // A ReadOnly flush that starts mid-sector writes that sector from firstSector, which holds the durable bytes below its
+                    // start; complete it with the live bytes from the start. The rest of the span is written from the live page.
+                    byte* firstSectorPtr = null;
+                    var firstSectorLength = 0;
+                    if (firstSector is not null)
+                    {
+                        firstSectorPtr = firstSector.aligned_pointer;
+                        firstSectorLength = deviceSectorSize;
+                        var prefixLength = startOffset - alignedStartOffset;
+                        Buffer.MemoryCopy(writePtr + prefixLength, firstSectorPtr + prefixLength, deviceSectorSize - prefixLength, deviceSectorSize - prefixLength);
+                        writePtr += deviceSectorSize;
+                        writeLength -= deviceSectorSize;
+                    }
+
+                    if (asyncResult.flushRequestState == FlushRequestState.ReadOnly)
+                    {
+                        RecordPartialSectorImage(pageStart, alignedStartOffset, endOffset, (byte*)logPagePointer, firstSector);
+
+                        // The previous flush also wrote the sector this one starts in. Devices do not order overlapping writes, so let that
+                        // write complete first, or it could land after this one and replace the records stamped here with their image from
+                        // before this flush.
+                        if (startsMidSector)
+                            WaitForWritesBelow(pageStart + startOffset);
+                    }
 
                     if (logWriter is not null)
                     {
-                        logWriter.OnPartialFlushComplete(writePtr, writeLength, device, writeAddress, callback, asyncResult, ref flushObjectLogTail);
+                        logWriter.OnPartialFlushComplete(firstSectorPtr, firstSectorLength, writePtr, writeLength, device, writeAddress, callback, asyncResult,
+                            ref flushObjectLogTail);
                     }
                     else
                     {
-                        asyncResult.count = 1;
-                        device.WriteAsync((IntPtr)writePtr, writeAddress, (uint)writeLength, callback, asyncResult);
+                        asyncResult.count = (firstSectorLength > 0 ? 1 : 0) + (writeLength > 0 ? 1 : 0);
+                        if (firstSectorLength > 0)
+                            device.WriteAsync((IntPtr)firstSectorPtr, writeAddress, (uint)firstSectorLength, callback, asyncResult);
+                        if (writeLength > 0)
+                            device.WriteAsync((IntPtr)writePtr, writeAddress + (uint)firstSectorLength, (uint)writeLength, callback, asyncResult);
                     }
 
                     // Main device write submitted: its completion callback owns releasing this page's native
@@ -1355,6 +1435,103 @@ namespace Tsavorite.core
                 logWriter?.Dispose();
                 snapshotObjectReader?.OnEndReadRecords();
                 snapshotObjectReadBuffers?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Records that a ReadOnly flush range ending at <paramref name="untilAddress"/> was skipped rather than written. Nothing reads a
+        /// skipped range's bytes, so a flush that starts right after it may write the start of its sector from the live page.
+        /// </summary>
+        private void NoteSkippedFlushEnd(long untilAddress)
+        {
+            var sectorStart = RoundDown(untilAddress, sectorSize);
+            lastPartialSector = untilAddress == sectorStart ? null : new PartialSectorImage(sectorStart, (int)(untilAddress - sectorStart), bytes: null);
+        }
+
+        /// <summary>
+        /// Gets the bytes that a ReadOnly flush starting mid-sector must write again below its start: the durable part of that sector, from
+        /// <see cref="lastPartialSector"/>, or read back from the device when that does not describe this sector.
+        /// </summary>
+        /// <param name="sectorStartAddress">Logical address of the sector the flush starts in</param>
+        /// <param name="prefixLength">Number of bytes from the start of the sector to the start of the flush</param>
+        /// <param name="deviceAddress">Device address of the sector</param>
+        /// <param name="device">The main log device</param>
+        /// <param name="callback">The flush's completion callback, which receives a read-back failure</param>
+        /// <param name="asyncResult">The flush's result, which returns <paramref name="firstSector"/> to the pool when the flush completes</param>
+        /// <param name="firstSector">A sector buffer starting with the durable bytes; null if the range below the flush was skipped, so the
+        /// bytes may come from the live page</param>
+        /// <returns>False if the read-back failed, in which case the failure has been reported to <paramref name="callback"/></returns>
+        private bool TryGetDurableSectorPrefix<TContext>(long sectorStartAddress, int prefixLength, ulong deviceAddress, IDevice device,
+            DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult, out SectorAlignedMemory firstSector)
+        {
+            var image = lastPartialSector;
+            if (image is not null && image.SectorStart == sectorStartAddress && image.Length == prefixLength)
+            {
+                if (image.Bytes is null)
+                {
+                    firstSector = null;
+                    return true;
+                }
+                firstSector = bufferPool.Get(sectorSize);
+                asyncResult.freeBuffer1 = firstSector;
+                image.Bytes.AsSpan().CopyTo(new Span<byte>(firstSector.aligned_pointer, prefixLength));
+                return true;
+            }
+
+            // No image of this sector, as for the first flush after recovery: read it back once its earlier write has completed.
+            WaitForWritesBelow(sectorStartAddress + prefixLength);
+            firstSector = bufferPool.Get(sectorSize);
+            asyncResult.freeBuffer1 = firstSector;
+            if (TryReadDevice(device, deviceAddress, (IntPtr)firstSector.aligned_pointer, (uint)sectorSize, "Partial-sector flush read-back",
+                    out var errorCode, out var numBytesRead, out var ioException))
+                return true;
+            callback(errorCode, numBytesRead, asyncResult, ioException);
+            return false;
+        }
+
+        /// <summary>
+        /// Keeps what a ReadOnly flush writes for the durable part of the sector it ends in, which the next flush writes again.
+        /// </summary>
+        /// <param name="pageStart">Logical address of the start of the flushed page</param>
+        /// <param name="alignedStartOffset">Page offset of the sector the flush starts in</param>
+        /// <param name="endOffset">Page offset where the flush ends</param>
+        /// <param name="logPagePointer">The live page</param>
+        /// <param name="firstSector">The flush's composed first sector, or null</param>
+        private void RecordPartialSectorImage(long pageStart, int alignedStartOffset, int endOffset, byte* logPagePointer, SectorAlignedMemory firstSector)
+        {
+            var endSectorOffset = RoundDown(endOffset, sectorSize);
+            var length = endOffset - endSectorOffset;
+            if (length == 0)
+            {
+                lastPartialSector = null;
+                return;
+            }
+
+            // A flush that ends in the sector it composed writes that sector from firstSector, not the live page.
+            var source = firstSector is not null && endSectorOffset == alignedStartOffset ? firstSector.aligned_pointer : logPagePointer + endSectorOffset;
+            lastPartialSector = new PartialSectorImage(pageStart + endSectorOffset, length, new ReadOnlySpan<byte>(source, length).ToArray());
+        }
+
+        /// <summary>
+        /// Blocks until every flush write below <paramref name="address"/> has completed, so that a write of the sector holding it cannot be
+        /// overtaken by an earlier write of the same sector that is still in flight.
+        /// </summary>
+        /// <remarks>The caller must not hold the epoch. Returns early if the allocator is disposed, or if a failed flush below
+        /// <paramref name="address"/> means FlushedUntilAddress can never reach it.</remarks>
+        private void WaitForWritesBelow(long address)
+        {
+            Debug.Assert(!epoch.ThisInstanceProtected(), "WaitForWritesBelow must not hold the epoch");
+            var spins = 0;
+            var localFlushEvent = flushEvent;
+            while (FlushedUntilAddress < address)
+            {
+                if (IsDisposed || HasFlushFailedBelow(address))
+                    return;
+                if (++spins < Constants.kFlushSpinCount)
+                    _ = Thread.Yield();
+                else
+                    localFlushEvent.Wait();
+                localFlushEvent = flushEvent;
             }
         }
 

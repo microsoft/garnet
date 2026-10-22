@@ -141,7 +141,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This write to the device is sector-aligned, which means the next fragment will probably rewrite the sector, since the currentPosition is probably
         /// somewhere in the middle of the sector.</remarks>
-        /// <param name="mainLogPageSpanPtr">Starting pointer of the main log page span to write</param>
+        /// <param name="firstSectorPtr">If <paramref name="firstSectorLength"/> is nonzero, the first sector of the main log write, composed in a separate buffer</param>
+        /// <param name="firstSectorLength">Length of <paramref name="firstSectorPtr"/>: zero, or one sector</param>
+        /// <param name="mainLogPageSpanPtr">Starting pointer of the main log page span to write, following the first sector if there is one</param>
         /// <param name="mainLogPageSpanLength">Length of the main log page span to write</param>
         /// <param name="mainLogDevice">The main log device to write to</param>
         /// <param name="alignedMainLogFlushAddress">The offset in the main log to write at</param>
@@ -149,15 +151,16 @@ namespace Tsavorite.core
         ///     It usually signals the <see cref="PageAsyncFlushResult{T}.done"/> event so the caller knows the flush is complete and it can continue.</param>
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endObjectLogFilePosition">The ending file position after the partial flush is complete</param>
-        internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
-                DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogPositionInfo endObjectLogFilePosition)
+        internal unsafe void OnPartialFlushComplete(byte* firstSectorPtr, int firstSectorLength, byte* mainLogPageSpanPtr, int mainLogPageSpanLength,
+                IDevice mainLogDevice, ulong alignedMainLogFlushAddress, DeviceIOCompletionCallback externalCallback, object externalContext,
+                ref ObjectLogPositionInfo endObjectLogFilePosition)
         {
             // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log page write, and
             // when the countdownCallbackAndContext.Decrement hits 0 again, we're done with this partial flush range and will call the external callback.
             countdownCallbackAndContext.Increment();
             try
             {
-                countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)mainLogPageSpanLength);
+                countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)(firstSectorLength + mainLogPageSpanLength));
 
                 // Issue the last ObjectLog write for this partial flush.
                 var buffer = GetCurrentBuffer();
@@ -195,8 +198,11 @@ namespace Tsavorite.core
                     endObjectLogFilePosition = filePosition;
 
                 // The main-log span joins the same countdown batch, so the external callback runs only after all object-log and main-log writes complete.
+                if (firstSectorLength > 0)
+                    FlushToMainLogDevice(firstSectorPtr, firstSectorLength, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
                 if (mainLogPageSpanLength > 0)
-                    FlushToMainLogDevice(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
+                    FlushToMainLogDevice(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress + (ulong)firstSectorLength,
+                        CreateDiskWriteCallbackContext());
             }
             finally
             {

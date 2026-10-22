@@ -573,15 +573,24 @@ finishes. `OnDispose` implementations must copy off cleanup state and defer clea
 finishes.
 
 A front-partial ReadOnly flush starts after a prefix already written by the same monotonic flush sequence. The physical
-write rounds down to the sector boundary and rewrites that prefix from the live page; those records already carry
-main-object-log positions, so no leading-sector read or page image is needed. That is sound only because the prefix has
-not changed since it was written: a completed FoldOver recovers those records from the main log, so a change would alter
-its image. `IsFrozenForFlush` therefore covers `[RoundDown(FlushedUntilAddress, sector), SafeReadOnlyAddress)` whether
-or not a flush is in flight, and elision, a Delete's disposal, and a CopyUpdate's release of its source value there are
-deferred until `FlushedUntilAddress` leaves the sector. Complete sectors are written directly.
-If the logical endpoint is inside a sector, one pooled sector buffer copies live bytes through that endpoint and zeros
-the remainder. The zero suffix prevents metadata above the main-log durable boundary from looking valid if recovery
-boundaries ever become inconsistent; a later ReadOnly flush overwrites it.
+write rounds down to the sector boundary, so it writes that prefix again, and it must not take the prefix from the live
+page: a completed FoldOver recovers those records from the main log, and since they became durable they may have changed
+in memory - elided, disposed, released by a CopyUpdate, or rewritten by recovery's object load. So the flush writes its
+first sector from a pooled sector buffer holding the durable prefix followed by the live bytes from its own start. The
+prefix comes from the `PartialSectorImage` the previous ReadOnly flush kept of the sector it ended in, or, when no image
+describes that sector (after recovery or a reset), from reading the sector back from the device. If the range below the
+flush was skipped rather than written, because it lies below `BeginAddress`, nothing reads the prefix and it comes from
+the live page. The rest of the span is written directly from the live page.
+
+Devices do not order overlapping writes, and the object allocator issues adjacent fragments without the `PendingFlush`
+chaining `AllocatorBase` uses for the same reason. So a flush that starts mid-sector issues its writes only once
+`FlushedUntilAddress` reaches its start, which means the previous write of that sector has completed. Otherwise that
+write could land last and replace the records this flush stamped there with their image from before it.
+
+Records below `FlushedUntilAddress` are therefore never written again from the live page, and `IsFrozenForFlush` covers
+only `[FlushedUntilAddress, SafeReadOnlyAddress)`. If the logical endpoint is inside a sector, the write carries the live
+bytes above it to the end of that sector. Nothing reads them: the next ReadOnly flush writes that sector again, and
+recovery bounds its record walk by the unrounded endpoint.
 
 ### 5.7 Snapshot and ReadOnly page ordering
 

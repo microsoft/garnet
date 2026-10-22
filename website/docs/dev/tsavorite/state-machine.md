@@ -569,15 +569,18 @@ No-copy flushing introduces a second, structurally identical window that has
 nothing to do with the state machine at all. The object allocator's read-only
 flush serializes directly from the live page, so between the moment a record
 becomes immutable and the moment its bytes are durable, it is just as
-unsafe to dispose. The window also covers the durable part of the sector the
-last flush ended in: the next flush starts there and, because device writes are
-sector-aligned, rewrites that sector from the live page. A FoldOver checkpoint
-recovers those records from the main log, so changing one at any time before the
-rewrite — eliding it, releasing its heap — would replace the checkpoint's image:
+unsafe to dispose:
 
 ```
-RoundDown(FlushedUntilAddress, sector) <= A < SafeReadOnlyAddress   → IsFrozenForFlush(A)
+FlushedUntilAddress <= A < SafeReadOnlyAddress   → IsFrozenForFlush(A)
 ```
+
+The window ends at `FlushedUntilAddress` even inside the sector the last flush
+ended in. The next flush starts in that sector and, because device writes are
+sector-aligned, writes it again — but it takes the bytes below its start from
+the image the previous flush kept, or from the device, never from the live page.
+A FoldOver checkpoint recovers those records from the main log, so they can be
+elided or released in memory without changing the checkpoint's image.
 
 Every release of a superseded source honors it: elision is declined, a Delete
 defers its disposal, and a CopyUpdate defers releasing its source's value.
@@ -602,7 +605,7 @@ The two freezes are released by different signals, and that difference matters:
 
 | Freeze | Released by | Deferred disposal |
 |---|---|---|
-| Flush | `FlushedUntilAddress` leaving the record's sector | **Marked** (`RecordInfo.DeferredDispose`) and drained on flush completion, or released at eviction |
+| Flush | `FlushedUntilAddress` passing the record | **Marked** (`RecordInfo.DeferredDispose`) and drained on flush completion, or released at eviction |
 | Checkpoint | the checkpoint completing | **Not marked** — left to eviction |
 
 A checkpoint freeze deliberately is *not* marked for the drain. The drain fires
@@ -627,12 +630,14 @@ parks a flush mid-write and asserts disposal is declined and then drained;
 same for a CopyUpdate; and
 `FlushBoundarySectorRecoveryTests.SupersedingABoundarySectorRecordKeepsTheFoldOverImage`
 recovers a FoldOver after an RMW, Upsert, or Delete of a record in its last
-sector, with and without the next flush in flight.
+sector, with and without the next flush in flight, and
+`RecoveredFlushBoundaryTests.FoldOverRecoveryThenPartialFlushKeepsBoundarySectorReadable`
+does the same for the first flush after recovery.
 
-`SpanByteAllocator` also rewrites that sector from the live page but reports
+`SpanByteAllocator` still writes that sector again from the live page and reports
 nothing as frozen for flush, so eliding a record there, or a Delete's
 `ClearOptionals`, can still change a completed FoldOver's image. It is not used by
-Garnet; closing it needs the deferred-disposal drain for that allocator.
+Garnet; keeping the same partial-sector image there would close it.
 
 ## Rules for state-machine task code
 

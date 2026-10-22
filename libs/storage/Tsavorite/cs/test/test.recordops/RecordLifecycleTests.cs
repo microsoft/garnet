@@ -246,21 +246,6 @@ namespace Tsavorite.test
             _ = s.BasicContext.Upsert(new TestObjectKey { key = key }, new TrackedObjectValue { value = value }, 0);
         }
 
-        /// <summary>Keys for <see cref="FlushPastLastSector"/>, clear of the keys the tests operate on.</summary>
-        const int FillerKeyBase = 1_000_000;
-
-        /// <summary>
-        /// Make every record so far durable, with FlushedUntilAddress past their sector. A flush that ends mid-sector leaves the records
-        /// in that sector frozen for flush until a later flush moves past it, because that flush rewrites the sector from the live page.
-        /// </summary>
-        private void FlushPastLastSector()
-        {
-            var sectorEnd = RoundUp(store.Log.TailAddress, (long)log.SectorSize);
-            for (var key = FillerKeyBase; store.Log.TailAddress <= sectorEnd; ++key)
-                Upsert(key, key);
-            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
-        }
-
         private void RmwAdd(int key, int value)
         {
             using var s = NewSession();
@@ -405,27 +390,28 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// A CopyUpdate releases its source's value only when no flush can still read or rewrite the source. Here the flush that made
-        /// the source durable ended mid-sector, so the next flush will rewrite that sector from the live page, replacing the image a
-        /// completed checkpoint would recover. The release must wait until FlushedUntilAddress leaves the sector, and then run once.
+        /// A CopyUpdate releases a durable source's value at once, even when the source sits in the sector the last flush ended in. The
+        /// next flush starts in that sector and writes it again, but takes the bytes below its start from the image the previous flush
+        /// kept, so the release cannot reach the source's durable image.
         /// </summary>
         [Test, Category("TsavoriteKV")]
-        public void CopyUpdateReleasesASourceInTheRewrittenSectorOnlyAfterItIsPassed()
+        public void CopyUpdateReleasesADurableSourceInTheBoundarySectorAtOnce()
         {
             var sourceAddress = store.Log.TailAddress;
             Upsert(1, 100);
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
-            Assert.That(store.hlog.IsFrozenForFlush(sourceAddress), Is.True, "the source must sit in the sector the next flush rewrites");
+
+            var sectorSize = (int)log.SectorSize;
+            var flushedUntil = store.hlogBase.FlushedUntilAddress;
+            Assert.That(flushedUntil % sectorSize, Is.Not.Zero, "the flush must end mid-sector for the next one to write the sector again");
+            Assert.That(sourceAddress, Is.GreaterThanOrEqualTo(RoundDown(flushedUntil, sectorSize)),
+                "the source must sit in the sector the next flush writes again");
+            Assert.That(store.hlog.IsFrozenForFlush(sourceAddress), Is.False, "a durable source must not be frozen");
 
             RmwAdd(1, 7);
-            Assert.That(SourceHoldsObject(sourceAddress), Is.True, "the source's value was released while its sector could still be rewritten");
-            Assert.That(TrackedObjectValue.Snapshot().total, Is.Zero, "the source's value was disposed while its sector could still be rewritten");
-
-            FlushPastLastSector();
-            Assert.That(() => TrackedObjectValue.Snapshot().total, Is.EqualTo(1).After(30_000, 10),
-                "the deferred release must dispose the source's value once FlushedUntilAddress leaves its sector");
+            Assert.That(TrackedObjectValue.Snapshot().total, Is.EqualTo(1), "the CopyUpdate must dispose the durable source's value at once");
             Assert.That(TrackedObjectValue.Snapshot().max, Is.EqualTo(1), "no value object may be disposed more than once");
-            Assert.That(SourceHoldsObject(sourceAddress), Is.False, "the deferred release did not clear the source's value");
+            Assert.That(SourceHoldsObject(sourceAddress), Is.False, "the CopyUpdate did not clear the source's value");
         }
 
         /// <summary>
@@ -472,9 +458,8 @@ namespace Tsavorite.test
                 ObjectFlushInjection.Reset();
             }
 
-            FlushPastLastSector();
             Assert.That(() => TrackedObjectValue.Snapshot().total, Is.EqualTo(1).After(30_000, 10),
-                "the deferred release must dispose the source's value once the flush window closes");
+                "the deferred release must dispose the source's value once its flush completes");
             Assert.That(TrackedObjectValue.Snapshot().max, Is.EqualTo(1), "no value object may be disposed more than once");
         }
 
@@ -520,7 +505,7 @@ namespace Tsavorite.test
         public void CopyUpdateDisposesSourceValueExactlyOnce()
         {
             Upsert(1, 100);
-            FlushPastLastSector();
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
             tracker.Reset();
 
             using (var s = NewSession())

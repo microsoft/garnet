@@ -627,10 +627,9 @@ namespace Tsavorite.core
                             {
                                 ref var srcMemLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
 
-                                // A main-log source that is frozen for flush keeps its value until the window closes: the flush may still be
-                                // walking it, or the next flush will rewrite its sector from the live page and so replace the durable image a
-                                // completed checkpoint recovers. Mark it for the drain (or eviction) to release, as Delete does; the bit is safe
-                                // to set on a frozen record and is stripped from disk images.
+                                // A main-log source that is frozen for flush keeps its value until its flush completes, because the flush
+                                // may still be walking it or writing its page. Mark it for the drain (or eviction) to release, as Delete does;
+                                // the bit is safe to set on a frozen record and is stripped from disk images.
                                 if (stackCtx.recSrc.HasMainLogSrc && hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress))
                                 {
                                     srcMemLogRecord.InfoRef.DeferredDispose = true;

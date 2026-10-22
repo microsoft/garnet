@@ -99,17 +99,20 @@ namespace Tsavorite.core
         /// <summary>
         /// Finish all the current partial flushes, then write the main log page (or page fragment).
         /// </summary>
-        /// <param name="mainLogPageSpanPtr">Starting pointer of the main log page span to write</param>
+        /// <param name="firstSectorPtr">If <paramref name="firstSectorLength"/> is nonzero, the first sector of the main log write, composed in a separate buffer</param>
+        /// <param name="firstSectorLength">Length of <paramref name="firstSectorPtr"/>: zero, or one sector</param>
+        /// <param name="mainLogPageSpanPtr">Starting pointer of the main log page span to write, following the first sector if there is one</param>
         /// <param name="mainLogPageSpanLength">Length of the main log page span to write</param>
         /// <param name="mainLogDevice">The main log device to write to</param>
         /// <param name="alignedMainLogFlushAddress">The offset in the main log to write at; aligned to sector</param>
         /// <param name="externalCallback">Callback sent to the initial Flush() command. Called when we are done with this partial flush operation.</param>
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
-        internal void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
-                DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogPositionInfo endFilePosition)
-            => flushBuffers.OnPartialFlushComplete(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress,
-                externalCallback, externalContext, ref endFilePosition);
+        internal void OnPartialFlushComplete(byte* firstSectorPtr, int firstSectorLength, byte* mainLogPageSpanPtr, int mainLogPageSpanLength,
+                IDevice mainLogDevice, ulong alignedMainLogFlushAddress, DeviceIOCompletionCallback externalCallback, object externalContext,
+                ref ObjectLogPositionInfo endFilePosition)
+            => flushBuffers.OnPartialFlushComplete(firstSectorPtr, firstSectorLength, mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice,
+                alignedMainLogFlushAddress, externalCallback, externalContext, ref endFilePosition);
 
         /// <summary>
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.

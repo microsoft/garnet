@@ -930,6 +930,16 @@ namespace Tsavorite.test
                 return Volatile.Read(ref pending[index].CompletionStamp);
         }
 
+        /// <summary>Number of operations the gate has captured so far, including those already released.</summary>
+        public int CapturedCount
+        {
+            get
+            {
+                lock (gateLock)
+                    return pending.Count;
+            }
+        }
+
         /// <summary>Blocks until the gate has captured <paramref name="count"/> operations.</summary>
         public void WaitForPending(int count, TimeSpan timeout)
         {

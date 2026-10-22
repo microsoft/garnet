@@ -90,10 +90,9 @@ namespace Tsavorite.core
         }
 
         // If the record is in a checkpoint range, it must not be modified. If it is in the fuzzy region, it can only be modified
-        // if it is a new record. A record an allocator is flushing from the live page, or one in the durable part of the sector the
-        // next flush rewrites from the live page, is frozen for the same reason: releasing its heap, rewriting its layout, or
-        // invalidating it would persist a torn record, or replace the image a completed checkpoint recovers. Such a record is
-        // released by the deferred-disposal drain or at eviction instead.
+        // if it is a new record. A record an allocator is still flushing from the live page is frozen for the same reason:
+        // releasing its heap, rewriting its layout, or invalidating it would persist a torn record, or alter the image a
+        // checkpoint recovers. Such a record is released by the deferred-disposal drain or at eviction instead.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFrozen<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
                 ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, RecordInfo srcRecordInfo)

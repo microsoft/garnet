@@ -80,9 +80,8 @@ namespace Tsavorite.core
         private protected long deferredDisposeMaxAddress;
 
         /// <summary>High-water address the deferred-disposal drain has already covered.</summary>
-        /// <remarks>The drain cannot simply reuse the FlushedUntilAddress delta. That delta is truncated to a sector boundary, and
-        /// the next delta begins at the untruncated FlushedUntilAddress, so the truncated remainder would fall into a permanent gap
-        /// that no range ever revisits. Tracking what has actually been drained carries that remainder forward into the next range.</remarks>
+        /// <remarks>A flush completion claims [this, FlushedUntilAddress) by advancing it with MonotonicUpdate, so concurrent completions
+        /// drain disjoint ranges, and a range passed over while nothing was marked is carried into the next one.</remarks>
         private protected long deferredDisposeDrainedUntilAddress;
 
         /// <summary>Record that the superseded source at <paramref name="logicalAddress"/> was marked for deferred release because it was
@@ -1485,6 +1484,10 @@ namespace Tsavorite.core
                     error.Exception);
         }
 
+        /// <summary>Whether a recorded flush error makes <paramref name="untilAddress"/> unreachable for <see cref="FlushedUntilAddress"/>.</summary>
+        private protected bool HasFlushFailedBelow(long untilAddress)
+            => !errorList.Empty && errorList.GetEarliestError().FromAddress < untilAddress;
+
         /// <summary>Throw if a recorded flush error blocks the minimum progress an allocation retry needs.</summary>
         /// <remarks>
         /// An allocation that cannot proceed is waiting for a buffer page to be flushed and closed, which requires
@@ -2337,20 +2340,17 @@ namespace Tsavorite.core
                         _ = notifyFlushedUntilAddressTcs?.TrySetResult(true);
 
                     // A superseded source whose release was declined while frozen - a deleted record's disposal, or a CopyUpdate
-                    // source's value release - becomes releasable once no flush can read or rewrite it. This delta is that range, and it
-                    // is contiguous by construction because FlushedUntilAddress advances only over completed writes -- unlike anything
-                    // page-scoped, which cannot be sound when a page is flushed in fragments that are neither tracked nor coalesced, so
-                    // a callback cannot tell whether it holds the last one. Truncating to the sector boundary matches the freeze: a later
-                    // partial-sector rewrite reads [RoundDown(F, sectorSize), F) for some future F >= this one, and RoundDown is
-                    // monotonic, so every address below the boundary here can never fall in that window. The truncated tail sector is
-                    // carried into the next range by deferredDisposeDrainedUntilAddress, so a record in it waits only for further log
-                    // progress -- or, failing that, for eviction. Claiming the range with MonotonicUpdate is what makes concurrent flush
-                    // completions take disjoint ranges. The caller performs the drain, so that it does not sit in front of the next
-                    // chained flush.
+                    // source's value release - becomes releasable once no flush can read it from the live page. This delta is that range,
+                    // and it is contiguous by construction because FlushedUntilAddress advances only over completed writes -- unlike
+                    // anything page-scoped, which cannot be sound when a page is flushed in fragments that are neither tracked nor
+                    // coalesced, so a callback cannot tell whether it holds the last one. A later flush that rewrites the sector holding
+                    // FlushedUntilAddress takes the bytes below it from a copy, not the live page, so the range ends exactly here.
+                    // Claiming the range with MonotonicUpdate is what makes concurrent flush completions take disjoint ranges. The
+                    // caller performs the drain, so that it does not sit in front of the next chained flush.
                     var maxDeferredAddress = Interlocked.Read(ref deferredDisposeMaxAddress);
                     if (maxDeferredAddress > 0)
                     {
-                        var candidateUntilAddress = RoundDown(currentFlushedUntilAddress, sectorSize);
+                        var candidateUntilAddress = currentFlushedUntilAddress;
                         if (MonotonicUpdate(ref deferredDisposeDrainedUntilAddress, candidateUntilAddress, out var oldDrainedUntilAddress)
                                 && maxDeferredAddress >= oldDrainedUntilAddress)
                         {
