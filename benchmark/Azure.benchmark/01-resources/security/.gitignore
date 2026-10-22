@@ -1,0 +1,2 @@
+# Ignore all public keys (copied from local .ssh by deploy-common-resources.ps1)
+*.pub

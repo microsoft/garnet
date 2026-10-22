@@ -9,17 +9,20 @@
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
     <Nullable>enable</Nullable>
-    <!--
-      Disable implicit usings so the SDK does not emit a GlobalUsings.g.cs
-      for this project. The Microsoft.NET.Sdk may default ImplicitUsings=enable
-      for executable projects, which can produce a GlobalUsings.g.cs with
-      <Using> items referencing namespaces not visible to this project (e.g.
-      Tsavorite.test.*), causing CS0234 in CI. This project only references
-      Garnet's public API and the stock redis-server / redis-sentinel binaries,
-      so implicit usings are not needed.
-    -->
-    <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
+
+  <!--
+    test/standalone/Directory.Build.props aliases TestBase to Tsavorite.test.TestBase
+    for every project under test/standalone. This project deliberately does not
+    reference Garnet.test or Tsavorite.test (it only exercises Garnet's public API
+    surface plus the stock redis-server / redis-sentinel binaries), so that alias
+    cannot resolve here and fails the build with CS0234 on the generated
+    GlobalUsings.g.cs. This project ships its own Garnet.test.sentinel.TestBase, so
+    drop the inherited alias and let the local type resolve.
+  -->
+  <ItemGroup>
+    <Using Remove="Tsavorite.test.TestBase" />
+  </ItemGroup>
 
   <!--
     Sentinel / external-redis test gating.

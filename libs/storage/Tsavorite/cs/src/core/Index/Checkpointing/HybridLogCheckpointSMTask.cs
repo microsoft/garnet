@@ -126,6 +126,12 @@ namespace Tsavorite.core
             // reclaiming deletions - must stay pending for the next successful checkpoint.
             store.storeFunctions.OnCheckpoint(CheckpointTrigger.CheckpointFailed, guid);
 
+            // The snapshot flush issued at WAIT_FLUSH writes through the devices and flush buffers that Dispose
+            // releases below, and the driver only awaits it when it reaches the end of that phase. Aborting in
+            // between leaves the flush in flight, so it has to be awaited here: releasing what it is writing to
+            // fails it, and its completion would then be counted against the next checkpoint's flush state.
+            TsavoriteBase.WaitForCheckpointFlush(store._hybridLogCheckpoint.flushedTask);
+
             // Releases any snapshot devices and flush buffers already created, and clears the checkpoint so the next
             // one can run. Matches the cleanup CompleteCheckpointAsync performs when it observes a failed checkpoint.
             store._hybridLogCheckpoint.Dispose();

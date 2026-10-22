@@ -9,10 +9,10 @@ using Tsavorite.core;
 namespace Tsavorite.test.epoch
 {
     /// <summary>
-    /// Base for every fixture here: the running-test tracking from <see cref="Garnet.test.TestBase"/>,
+    /// Base for every fixture here: the running-test tracking from <see cref="TestBase"/>,
     /// a fresh <see cref="LightEpoch"/> per test, and the join helper they share.
     /// </summary>
-    public abstract class EpochTestBase : Garnet.test.TestBase
+    public abstract class EpochTestBase : TestBase
     {
         protected LightEpoch epoch;
 

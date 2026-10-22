@@ -3,4 +3,10 @@
   <PropertyGroup>
     <RunSettingsFilePath>$(MSBuildThisFileDirectory)garnet.runsettings</RunSettingsFilePath>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- TestBase lives in Tsavorite, which must build without reaching into Garnet. Aliasing just the one
+         type keeps the rest of the Tsavorite.test namespace out of these projects, where TestUtils would
+         otherwise collide with Garnet's own. -->
+    <Using Include="Tsavorite.test.TestBase" Alias="TestBase" />
+  </ItemGroup>
 </Project>

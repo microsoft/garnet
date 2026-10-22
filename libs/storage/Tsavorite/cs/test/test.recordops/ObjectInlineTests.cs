@@ -3,7 +3,6 @@
 
 using System;
 using System.IO;
-using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;

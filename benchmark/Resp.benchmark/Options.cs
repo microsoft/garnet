@@ -89,6 +89,12 @@ namespace Resp.benchmark
         [Option("cert-password", Required = false, HelpText = "TLS certificate password (example: placeholder).")]
         public string CertPassword { get; set; }
 
+        [Option("cert-password-file", Required = false, HelpText = "File containing the TLS certificate password.")]
+        public string CertPasswordFile { get; set; }
+
+        [Option("issuer-certificate-path", Required = false, HelpText = "CA certificate used to validate the TLS server certificate.")]
+        public string IssuerCertificatePath { get; set; }
+
         [Option('o', "online", Required = false, Default = false, HelpText = "Online get/set mix based on --readpercent.")]
         public bool Online { get; set; }
 

@@ -82,7 +82,7 @@ jobs:
 
       # Run `github-action-benchmark` action for the Continuous Benchmarking Charts (https://microsoft.github.io/garnet/charts/)
       - name: Store benchmark result for charts
-        uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1  for security reasons we have pinned the tag (commit SHA) for 3rd party
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.1  for security reasons we have pinned the tag (commit SHA) for 3rd party
         with:
           name: ${{matrix.test}} (${{matrix.os}}  ${{matrix.framework}} ${{matrix.configuration}})
           tool: 'benchmarkdotnet'

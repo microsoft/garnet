@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.IO;
-using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;

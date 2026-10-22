@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -33,9 +34,20 @@ namespace Garnet.test
         static readonly long EpochTicks = DateTimeOffset.FromUnixTimeSeconds(0).Ticks;
         static readonly TimeSpan CheckpointTimeout = TimeSpan.FromSeconds(30);
 
+        // Taken from the naming scheme rather than hard-coded, so renaming a checkpoint file cannot silently turn a
+        // deferred-write test into one that defers nothing.
+        static readonly string HashTableFileName = new DefaultCheckpointNamingScheme(string.Empty).HashTable(Guid.Empty).fileName;
+        static readonly string LogSnapshotFileName = new DefaultCheckpointNamingScheme(string.Empty).LogSnapshot(Guid.Empty).fileName;
+
+        // How long a SAVE that correctly waits for its in-flight writes must still be running before the test
+        // concludes it is waiting. It bounds nothing on the passing path - the release below is what ends the wait -
+        // so it only has to outlast the return of an abort that does not wait, which does no blocking work at all.
+        static readonly TimeSpan AbortBlockedGracePeriod = TimeSpan.FromSeconds(1);
+
         GarnetServer server;
         GarnetServerOptions options;
         FailingCheckpointDeviceFactoryCreator deviceFactoryCreator;
+        DeferringCheckpointDeviceFactoryCreator deferringDeviceFactoryCreator;
 
         [SetUp]
         public void Setup()
@@ -70,6 +82,29 @@ namespace Garnet.test
             options.DeviceFactoryCreator = deviceFactoryCreator;
 
             return new GarnetServer(options);
+        }
+
+        /// <summary>
+        /// Replaces the running server with one whose writes to <paramref name="checkpointFileName"/> only report
+        /// completion when the test releases them, so a checkpoint can be aborted while its writes are in flight.
+        /// </summary>
+        void RestartServerDeferringWritesTo(string checkpointFileName)
+        {
+            server.Dispose();
+
+            options = TestUtils.GetGarnetServerOptions(
+                checkpointDir: TestUtils.MethodTestDir,
+                logDir: TestUtils.MethodTestDir,
+                endpoint: TestUtils.EndPoint,
+                enableCluster: false,
+                enableAOF: false,
+                tryRecover: false);
+
+            deferringDeviceFactoryCreator = new DeferringCheckpointDeviceFactoryCreator(options.StoreCheckpointBaseDirectory, checkpointFileName);
+            options.DeviceFactoryCreator = deferringDeviceFactoryCreator;
+
+            server = new GarnetServer(options);
+            server.Start();
         }
 
         [Test]
@@ -313,6 +348,116 @@ namespace Garnet.test
             ClassicAssert.AreNotEqual(EpochTicks, redisServer.LastSave().Ticks, "LASTSAVE should advance for a successful save");
             ClassicAssert.AreEqual("ok", GetLastSaveStatus(db));
             ClassicAssert.Greater(CountCheckpointFiles(dbId: 0), 0);
+        }
+
+        [Test]
+        public void AbortedCheckpointWaitsForTheIndexCheckpointFlushItIssued()
+        {
+            RestartServerDeferringWritesTo(HashTableFileName);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            db.StringSet(TestKey, TestValue);
+
+            // The fuzzy index checkpoint is issued in PREPARE and only put on the driver's waiting list in
+            // WAIT_INDEX_CHECKPOINT, so aborting at the version shift in between is the window where nothing else
+            // waits for it.
+            var driver = server.Provider.StoreWrapper.DefaultDatabase.StateMachineDriver;
+            var failOnce = new ThrowOnceAtPhase(Phase.IN_PROGRESS);
+            driver.UnsafeRegisterCallback(failOnce);
+
+            deferringDeviceFactoryCreator.Deferring = true;
+
+            // Run SAVE off-thread and synchronize on observed state rather than elapsed time: releasing on a timer
+            // could drain the held writes before the abort ever reached OnAbort, which would let this pass against a
+            // non-waiting abort.
+            var save = Task.Run(() => db.Execute("SAVE"));
+            bool returnedWithWriteInFlight;
+            try
+            {
+                var abortedWithWriteHeld = SpinWait.SpinUntil(
+                    () => failOnce.Fired && deferringDeviceFactoryCreator.Outstanding > 0, CheckpointTimeout);
+                ClassicAssert.IsTrue(abortedWithWriteHeld,
+                    "The abort never fired with an index checkpoint write held back, so the race was not set up");
+
+                // An abort that waits for the write it issued cannot get past this; only the release below ends it.
+                returnedWithWriteInFlight = save.Wait(AbortBlockedGracePeriod);
+            }
+            finally
+            {
+                deferringDeviceFactoryCreator.ReleaseAll();
+            }
+
+            // The abort disposes the index checkpoint device these writes target. One still in flight when SAVE
+            // returns fails because of that, and it reports through flush state that is shared with the next
+            // checkpoint, so the failure of this checkpoint would be charged to that one.
+            ClassicAssert.IsFalse(returnedWithWriteInFlight,
+                "SAVE reported the aborted checkpoint while an index checkpoint write it issued was still in flight");
+
+            var ex = Assert.ThrowsAsync<RedisServerException>(async () => await save);
+            ClassicAssert.IsTrue(ex.Message.StartsWith("ERR checkpoint failed", StringComparison.Ordinal),
+                $"SAVE should report the failure to the client, but replied: {ex.Message}");
+            ClassicAssert.AreEqual(0, deferringDeviceFactoryCreator.Outstanding, "No write may outlive the SAVE that issued it");
+
+            ClassicAssert.IsTrue(deferringDeviceFactoryCreator.AnyDeferred, "No index checkpoint write was held back");
+
+            AssertNoCheckpointStateLeaked();
+            ClassicAssert.AreEqual("OK", db.Execute("SAVE").ToString(), "The checkpoint after the abort should succeed");
+        }
+
+        [Test]
+        public void AbortedCheckpointWaitsForTheSnapshotFlushItIssued()
+        {
+            RestartServerDeferringWritesTo(LogSnapshotFileName);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+
+            // Enough records that the snapshot has pages to flush; with an empty log there is no flush to wait for.
+            for (var i = 0; i < 1024; i++)
+                db.StringSet($"{TestKey}{i}", TestValue);
+
+            // A state machine's own hooks run before the callbacks registered here, so by the time this fires,
+            // WAIT_FLUSH has already issued the snapshot flush to the device the abort goes on to dispose.
+            var driver = server.Provider.StoreWrapper.DefaultDatabase.StateMachineDriver;
+            var failOnce = new ThrowOnceAtPhase(Phase.WAIT_FLUSH);
+            driver.UnsafeRegisterCallback(failOnce);
+
+            deferringDeviceFactoryCreator.Deferring = true;
+
+            // Run SAVE off-thread and synchronize on observed state rather than elapsed time: releasing on a timer
+            // could drain the held write before the abort ever reached OnAbort, which would let this pass against a
+            // non-waiting abort.
+            var save = Task.Run(() => db.Execute("SAVE"));
+            bool returnedWithWriteInFlight;
+            try
+            {
+                var abortedWithWriteHeld = SpinWait.SpinUntil(
+                    () => failOnce.Fired && deferringDeviceFactoryCreator.Outstanding > 0, CheckpointTimeout);
+                ClassicAssert.IsTrue(abortedWithWriteHeld,
+                    "The abort never fired with a snapshot write held back, so the race was not set up");
+
+                // An abort that waits for the flush it issued cannot get past this; only the release below ends it.
+                returnedWithWriteInFlight = save.Wait(AbortBlockedGracePeriod);
+            }
+            finally
+            {
+                deferringDeviceFactoryCreator.ReleaseAll();
+            }
+
+            ClassicAssert.IsFalse(returnedWithWriteInFlight,
+                "SAVE reported the aborted checkpoint while the snapshot flush it issued was still in flight");
+
+            var ex = Assert.ThrowsAsync<RedisServerException>(async () => await save);
+            ClassicAssert.IsTrue(ex.Message.StartsWith("ERR checkpoint failed", StringComparison.Ordinal),
+                $"SAVE should report the failure to the client, but replied: {ex.Message}");
+            ClassicAssert.AreEqual(0, deferringDeviceFactoryCreator.Outstanding, "No write may outlive the SAVE that issued it");
+
+            ClassicAssert.IsTrue(deferringDeviceFactoryCreator.AnyDeferred, "No snapshot write was held back");
+
+            AssertNoCheckpointStateLeaked();
+            ClassicAssert.AreEqual("OK", db.Execute("SAVE").ToString(), "The checkpoint after the abort should succeed");
         }
 
         /// <summary>
