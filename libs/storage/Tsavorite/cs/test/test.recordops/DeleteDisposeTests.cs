@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -59,12 +59,16 @@ namespace Tsavorite.test
             internal RMWAction expireAction = RMWAction.Default;
             internal bool requestLargerReinit;
             internal bool expireOnlyInCU; // If true, only CopyUpdater returns the expire action (not IPU/NCU)
+            internal bool declineInitialUpdate; // If true, NeedInitialUpdate declines, so nothing replaces an expired record
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 if (!expireOnlyInCU && expireAction != RMWAction.Default) { rmwInfo.Action = expireAction; return false; }
                 return base.InPlaceUpdater(ref logRecord, ref input, ref output, ref rmwInfo);
             }
+
+            public override bool NeedInitialUpdate<TKey>(TKey key, ref int input, ref int output, ref RMWInfo rmwInfo)
+                => !declineInitialUpdate;
 
             public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
@@ -389,6 +393,29 @@ namespace Tsavorite.test
             status = s.BasicContext.Read(Key(ref k), ref output);
             ClassicAssert.IsTrue(status.Found, status.ToString());
             ClassicAssert.AreEqual(50, output);
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ImmutableExpireAndResumeWithoutInitialUpdateLeavesKeyAbsentTest()
+        {
+            UpsertKey(1, 100);
+            store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            tracker.Reset();
+            var fn = new ExpirableFunctions { expireAction = RMWAction.ExpireAndResume, declineInitialUpdate = true };
+            using var s = store.NewSession<TestSpanByteKey, int, int, Empty, ExpirableFunctions>(fn);
+            var k = 1; var input = 50;
+            var status = s.BasicContext.RMW(Key(ref k), ref input);
+            ClassicAssert.IsFalse(status.Found, status.ToString());
+            ClassicAssert.AreEqual(1, tracker.DeletedCount, "The expired source is disposed once");
+
+            // The disposed source must not be found again, by a Read or by a later RMW
+            var output = 0;
+            status = s.BasicContext.Read(Key(ref k), ref output);
+            ClassicAssert.IsFalse(status.Found, status.ToString());
+            status = s.BasicContext.RMW(Key(ref k), ref input);
+            ClassicAssert.IsFalse(status.Found, status.ToString());
+            ClassicAssert.AreEqual(1, tracker.DeletedCount, "The expired source is not disposed again");
         }
 
         #endregion

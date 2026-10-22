@@ -409,7 +409,7 @@ namespace Tsavorite.core
                     {
                         // The old value is logically deleted (expired). Dispose resources immediately unless frozen by a checkpoint.
                         if (stackCtx.recSrc.HasMainLogSrc)
-                            OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                            OnDisposeExpiredSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
                         doingCU = false;
                         forExpiration = true;
                     }
@@ -417,11 +417,11 @@ namespace Tsavorite.core
                     {
                         // Immediately dispose all resources on the expired source record, unless frozen by a checkpoint.
                         if (stackCtx.recSrc.HasMainLogSrc)
-                            OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                            OnDisposeExpiredSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
 
                         if (allocOptions.elideSourceRecord)
                         {
-                            srcLogRecord.InfoRef.SetTombstone();
+                            // OnDisposeExpiredSource has tombstoned the source: an elidable record is never frozen
                             srcLogRecord.InfoRef.SetModified();
 
                             // Elide from hei, and try to either do in-chain tombstoning or free list transfer. srcLogRecord is elidable so must be a memory LogRecord.
@@ -518,7 +518,7 @@ namespace Tsavorite.core
                         "This block should only handle expiration/tombstoning via RCU.");
                     // Dispose the source record's resources immediately, unless frozen by a checkpoint.
                     if (stackCtx.recSrc.HasMainLogSrc)
-                        OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                        OnDisposeExpiredSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
                     addTombstone = true;
                     newLogRecord.InfoRef.SetTombstone();
                     newLogRecord.InfoRef.SetModified();
@@ -529,7 +529,7 @@ namespace Tsavorite.core
                 {
                     // Dispose the source record's resources immediately, unless frozen by a checkpoint.
                     if (stackCtx.recSrc.HasMainLogSrc)
-                        OnDisposeSupersededSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
+                        OnDisposeExpiredSource<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord.AsMemoryLogRecordRef());
                     doingCU = false;
                     forExpiration = true;
 

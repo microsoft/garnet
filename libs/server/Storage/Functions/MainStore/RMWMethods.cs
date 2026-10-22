@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -164,8 +164,10 @@ namespace Garnet.server
                         return false;
                     }
 
-                    // Always return 0 at initial updater because previous value was 0
+                    // A revivified record or one reinitialized from an expired record keeps its old bytes, so clear the value before setting the bit.
+                    // Always return 0 at initial updater because previous value was 0.
                     value = logRecord.ValueSpan;
+                    value.Clear();
 
                     if (logRecord.IsPinnedValue)
                         _ = BitmapManager.UpdateBitmap(logRecord.PinnedValuePointer, bOffset, bSetVal);

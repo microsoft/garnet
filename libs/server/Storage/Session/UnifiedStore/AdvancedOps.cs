@@ -45,9 +45,7 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);
 
-            return status.Found || status.Record.Created || status.Record.InPlaceUpdated
-                ? GarnetStatus.OK
-                : GarnetStatus.NOTFOUND;
+            return InterpretRmw(status);
         }
 
         /// <summary>
@@ -129,12 +127,14 @@ namespace Garnet.server
             => status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
 
         /// <summary>
-        /// Maps the status of a completed unified-store update, matching <see cref="RMW_UnifiedStore{T}"/>.
+        /// Maps the status of a completed unified-store update.
         /// </summary>
+        /// <remarks>
+        /// Only a found record produces output: no unified-store update creates a record. A created or in-place-updated
+        /// record without <see cref="Status.Found"/> is an expired record tombstoned by the update, which wrote no output.
+        /// </remarks>
         internal static GarnetStatus InterpretRmw(Status status)
-            => status.Found || status.Record.Created || status.Record.InPlaceUpdated
-                ? GarnetStatus.OK
-                : GarnetStatus.NOTFOUND;
+            => status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
 
         /// <summary>
         /// The value the advanced API returns for an operation that went to the device. Deliberately outside
