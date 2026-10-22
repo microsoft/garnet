@@ -298,6 +298,7 @@ namespace Garnet.server
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                        fieldInfo.HasExpiration = srcLogRecord.DataHeader.HasExpiration;
                         return fieldInfo;
 
                     case RespCommand.SET:
