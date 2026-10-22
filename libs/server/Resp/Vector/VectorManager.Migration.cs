@@ -151,9 +151,10 @@ namespace Garnet.server
             var invalidMigrationRecord =
                 dimensions > MaxVectorDimensions ||
                 reduceDims > MaxVectorDimensions ||
+                reduceDims > dimensions ||
                 (quantType == VectorQuantType.Invalid || !Enum.IsDefined(quantType)) ||
-                buildExplorationFactor > MaxExplorationFactor ||
-                numLinks > MaxNumLinks ||
+                buildExplorationFactor is 0 or > MaxExplorationFactor ||
+                numLinks is < MinNumLinks or > MaxNumLinks ||
                 (distanceMetric == VectorDistanceMetricType.Invalid || !Enum.IsDefined(distanceMetric)) ||
                 (flags & ~VectorSetFlags.All) != 0;
 

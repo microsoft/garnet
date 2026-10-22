@@ -187,6 +187,12 @@ namespace Garnet.server
                                     {
                                         self.Service.DropIndex(state.Context, state.IndexPointer);
                                     }
+
+                                    // Now that we've dropped the index, request cleanup
+                                    if (!self.requestCleanupTaskChannel.TryPublish(state.Context))
+                                    {
+                                        self.logger?.LogCritical("VectorManager request cleanup channel rejected a delete request for an importing Vector Set");
+                                    }
                                 }
                                 finally
                                 {
@@ -196,9 +202,9 @@ namespace Garnet.server
                                 return true;
                             }
 
-                            // Dummy command, we just need something Vector Set-y
+                            // Command which will always acquire a lock (for importing indexes that means VINFO)
                             StringInput input = default;
-                            input.header.cmd = RespCommand.VSIM;
+                            input.header.cmd = RespCommand.VINFO;
 
                             Span<byte> indexSpan = indexArray;
 

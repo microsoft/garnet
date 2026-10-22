@@ -847,7 +847,7 @@ namespace Garnet.server
             }
 
             // If an import is in progress, we need to coordinate delete so we don't drop the index out from under a finalize step
-            if (flags.HasFlag(VectorSetFlags.ImportPending) && !(flags.HasFlag(VectorSetFlags.ImportCompleted) || flags.HasFlag(VectorSetFlags.ImportFailed)))
+            if (flags.HasFlag(VectorSetFlags.ImportPending) && !flags.HasFlag(VectorSetFlags.ImportCompleted))
             {
                 // If we fail to enqueue, that implies we are shutting down - so we'll pick it up on recovery
                 _ = quantizationOrImportChannel.TryPublish(new(key.ToArray(), QuantizationOrImportStep.DeleteDuringImport, 0, context, indexPtr, null));
@@ -858,7 +858,7 @@ namespace Garnet.server
             if (!requestCleanupTaskChannel.TryPublish(context))
             {
                 logger?.LogCritical("VectorManager request cleanup channel rejected a delete request");
-                Debug.Assert(false, "VectorManager request cleanup channel should never drop a request");
+                Debug.Fail("VectorManager request cleanup channel should never drop a request");
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
 
