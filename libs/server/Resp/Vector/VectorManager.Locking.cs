@@ -236,7 +236,6 @@ namespace Garnet.server
                         {
                             if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
                             {
-                                lockToken.AssertShared();
                                 status = GarnetStatus.OK;
                                 importPending = false;
                                 return new(in vectorSetLocks, lockToken);
@@ -246,7 +245,6 @@ namespace Garnet.server
                             {
                                 if (readCmd == RespCommand.VINFO)
                                 {
-                                    lockToken.AssertShared();
                                     status = GarnetStatus.OK;
                                     importPending = true;
                                     return new(in vectorSetLocks, lockToken);
