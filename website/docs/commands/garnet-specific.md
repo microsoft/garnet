@@ -293,18 +293,6 @@ Deletes a key only if the provided Etag is strictly greater than the existing Et
 
 ---
 
-### Cluster support
-
-`GETWITHETAG`, `SETWITHETAG` and `SETIFMATCH` support cluster slot routing, migration and replication. Commands sent to the wrong owner return `MOVED`; during migration, missing keys on the source return `ASK`. The importing node requires `ASKING` on the same connection before each redirected command.
-
-Replicas serve `GETWITHETAG` only after `READONLY` enables replica reads on the connection. Writes redirect to the primary. For an existing key on a primary, concurrent `SETIFMATCH` requests with the same current ETag allow exactly one update.
-
-Asynchronous replica reads have ordinary `GET` visibility. While replaying an import, they can observe a missing key between deletion and recreation. A returned value and ETag form a consistent pair, but replica reads do not provide stronger transaction isolation.
-
-Migration, diskless snapshots, replica replay and recovery preserve stored ETags and expiration. These guarantees do not cover replica stream resumption after restart. See the [append-only file compatibility and upgrade guidance](../dev/aof-record-layout.md#imported-string-record-optionals) before upgrading a cluster.
-
-Replication is asynchronous. Failover can lose acknowledged writes and revert an ETag to an earlier value. Applications must not use ETags as a durability guarantee.
-
 ### Deletion, expiration and recreation
 
 Deletion and expiration remove the stored ETag with the value. `SETWITHETAG` recreates a missing key with ETag 1. `SETIFMATCH` creates a missing key regardless of the supplied ETag and initializes its ETag to the supplied value plus one. ETags are not unique across a key's lifetime, and an old ETag can match a recreated key.
