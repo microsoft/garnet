@@ -149,7 +149,7 @@ namespace Garnet.server
             var startPointId = ReadStartPointId(value);
 
             var invalidMigrationRecord =
-                dimensions > MaxVectorDimensions ||
+                dimensions is 0 or > MaxVectorDimensions ||
                 reduceDims > MaxVectorDimensions ||
                 reduceDims > dimensions ||
                 (quantType == VectorQuantType.Invalid || !Enum.IsDefined(quantType)) ||

@@ -405,6 +405,7 @@ namespace Garnet.server
                 var hasPendingReconciliation = !potentiallyDeleted.IsEmpty;
                 var hasPendingVaddsAwaitingReplay = !replicationBlockEvent.Wait(0);
                 var hasPendingPostCheckpointTask = Interlocked.CompareExchange(ref postCheckpointTasksRunning, 0, 0) != 0;
+                var hasPendingQuantizationOrImport = quantizationOrImportChannel.HasPending;
 
                 // We don't remove from the channel until setting requestCleanupTaskRunning
                 var hasPendingCleanupRequests = Volatile.Read(ref requestCleanupTaskRunning) || requestCleanupTaskChannel.HasPending;
@@ -424,7 +425,7 @@ namespace Garnet.server
                     }
                 }
 
-                var quiescent = !hasPendingDrops && !hasPendingReconciliation && !hasPendingVaddsAwaitingReplay && !hasPendingPostCheckpointTask && !hasPendingCleanupRequests && !hasPendingCleanup;
+                var quiescent = !hasPendingDrops && !hasPendingReconciliation && !hasPendingVaddsAwaitingReplay && !hasPendingPostCheckpointTask && !hasPendingCleanupRequests && !hasPendingCleanup && !hasPendingQuantizationOrImport;
                 if (quiescent)
                 {
                     return;

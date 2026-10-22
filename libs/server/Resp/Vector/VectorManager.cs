@@ -622,6 +622,13 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
+            if (!IsEnabled)
+            {
+                replicationBlockEvent.Dispose();
+
+                return;
+            }
+
             // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
             foreach (var channel in replicationReplayChannels)
             {
@@ -636,6 +643,9 @@ namespace Garnet.server
             // Wait for any _drops_ in progress to finish
             requestDropTaskChannel.CompleteAndWaitForConsumerTask(requestDropTask);
 
+            // Complete all quantization or import tasks - this MIGHT queue something into requestCleanupTaskChannel, so wait for it first
+            quantizationOrImportChannel.CompleteAndWaitForConsumerTask(Task.WhenAll(quantizationAndImportTasks));
+
             // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
             // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
@@ -648,9 +658,6 @@ namespace Garnet.server
 
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
-
-            // Complete all quantization or import tasks
-            quantizationOrImportChannel.CompleteAndWaitForConsumerTask(Task.WhenAll(quantizationAndImportTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
