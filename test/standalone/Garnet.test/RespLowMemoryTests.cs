@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -84,6 +85,26 @@ namespace Garnet.test
 
             // Verify that key0 exists with correct value
             ClassicAssert.AreEqual(key0, (string)db.StringGet(key0));
+        }
+
+        [Test]
+        public void StringUpdateOfExpiredReadOnlyObjectKeyCreatesNewKey()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServer(TestUtils.EndPoint);
+
+            var key0 = "key00000";
+            ClassicAssert.IsTrue(db.HashSet(key0, "field", "value"));
+            ClassicAssert.IsTrue(db.KeyExpire(key0, TimeSpan.FromMilliseconds(200)));
+
+            MakeReadOnly(TestUtils.GetStoreAddressInfo(server).TailAddress, server, db);
+            while (db.KeyExists(key0))
+                Thread.Sleep(10);
+
+            // The expired hash is read-only, so INCR goes through copy-update, which must treat it as absent rather than as a hash.
+            ClassicAssert.AreEqual(1, db.StringIncrement(key0));
+            ClassicAssert.AreEqual("1", (string)db.StringGet(key0));
         }
     }
 }

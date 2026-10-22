@@ -983,16 +983,19 @@ namespace Garnet.server
         public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            // An expired source is logically absent whatever its type, so it is created anew, as InPlaceUpdater does in place.
+            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                return false;
+            }
+
             // Checked here rather than in CopyUpdater, because sizing the new record reads the source value first.
             if (IsWrongTypeForUpdate(in srcLogRecord, input.header.cmd))
             {
                 rmwInfo.Action = RMWAction.WrongType;
                 return false;
             }
-
-            // An expired source does not exist: CopyUpdater reinitializes it as a new key, as InPlaceUpdaterWorker does in place.
-            if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-                return true;
 
             switch (input.header.cmd)
             {
