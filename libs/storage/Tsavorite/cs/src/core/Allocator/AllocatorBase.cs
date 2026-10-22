@@ -1473,7 +1473,7 @@ namespace Tsavorite.core
         /// that address waits forever, and the error is visible only to a registered flush callback. Mirrors the error handling in
         /// <c>SnapshotFlushCoordination</c>.
         /// </remarks>
-        private void ThrowIfFlushFailedBelow(long untilAddress)
+        internal void ThrowIfFlushFailedBelow(long untilAddress)
         {
             if (errorList.Empty)
                 return;

@@ -1120,9 +1120,10 @@ The following formats are separate and must not borrow each other's length seman
 
 ## 12. ObjectLog: the log-structured substrate
 
-> **Status: in progress.** `ObjectLog` exists and is tested, but nothing above it uses it yet. Sections 1-11 describe
-> the format as it is written and read today. This section describes the substrate that replaces the hand-managed
-> object-log file underneath them, and will grow as each layer is ported onto it.
+> **Status: in progress.** `ObjectLog` and the writer and reader that lay records out on it (section 12.10) exist and are
+> tested, but nothing above them uses them yet. Sections 1-11 describe the format as it is written and read today. This
+> section describes the substrate that replaces the hand-managed object-log file underneath them, and will grow as each
+> layer is ported onto it.
 
 ### 12.1 What it is and why
 
@@ -1261,8 +1262,8 @@ while the main object log is written in page order. A writer that breaks that or
 A multi-chunk object records where its chunks are, rather than letting a reader discover them. **Position-word bit 62,
 `HasDirectory`**, says which shape a position has, and the reader learns that before issuing any IO:
 
-- **clear** — the common case — the position addresses a single data chunk: one IO, stream it, no framing to parse
-  beyond the entry header; and
+- **clear** — the common case — the position addresses a single extent holding the record's one out-of-line
+  component: one IO sized by the record's hint (section 12.10); and
 - **set** — the position addresses a *directory record* listing every chunk.
 
 `HasDirectory` is read through `ObjectLogPositionInfo.WordHasDirectory`, which reports false whenever the position is
@@ -1335,3 +1336,42 @@ wasting a tail bounded by the minimum useful chunk. A directory larger than a wh
 splitting.
 
 The spare bits in both words read back as zero, so a later format can claim them and tell old entries from new.
+
+### 12.10 Extent framing, hints, and writing a record
+
+`ObjectLogChunkWriter` writes a record's out-of-line components to an `ObjectLog`, and `ObjectLogChunkReader` reads them
+back.
+
+**Framing.** The extent a position addresses — a single component, or a top directory record — is exact or
+length-prefixed:
+
+- **Exact:** a payload of at most 511 bytes is stored headerless. The record's hint is its exact length, and the
+  matching exact-size flag is set.
+- **Length-prefixed:** a larger payload follows a 4-byte length. The hint is a 4 KB page count that sizes the first
+  read, and the prefix gives the exact length.
+
+Data chunks and spine records are reached only through directory entries, which hold exact lengths, so they carry no
+prefix.
+
+**Which hint.** The key slot sizes the extent whenever the key is overflow, since the extent is then the key alone or a
+directory; otherwise the value slot does. A key's 19-bit page count is exact. A value's 9-bit hint is exact up to 510
+pages, and 511 means "large": the first read covers a full chunk and its prefix, clamped to the page and the tail, and
+the prefix gives the rest. A zero-length component allocates nothing, and its exact hint of zero says so.
+
+**Writing.** A record's components form one stream, key first, staged in a pooled 4 MB buffer; a source span longer
+than a chunk is emitted straight from the source. Each emitted chunk is one allocation:
+
+- A data chunk fills a page tail exactly when the tail is at least `MinPartialBytes` (64 KB); a shorter tail is left
+  unused.
+- A single component that fits a chunk is one extent. A length-prefixed extent that does not fit the page tail, when
+  both pieces would be at least `MinPartialBytes`, is cut: the tail takes the start of the stream as a data chunk, and
+  the record gets a directory. An exact extent is never cut.
+- Every other record gets a directory. Its top record carries the final data when they fit one allocation together, so
+  a record with few chunks has its top record and final data read in one IO.
+- A directory record holds at most `MaxDirectoryRecordSize` (1 MB); past that, its entries are written out as a spine
+  record.
+
+**Reading.** One IO reads the extent the position addresses. A directory's spine is walked backward, one read per spine
+record, and every entry is validated before any data is read. Component lengths are then exact: an overflow array is
+allocated once at its final size, and an object's deserializer is bounded by its own byte count. Each entry outside the
+top record is one read.

@@ -18,8 +18,8 @@ namespace Tsavorite.core
     /// word1: bits  0..26  data length, biased by one (see below)
     ///        bits 27..31  spare
     /// </code>
-    /// <para>The address points at the data, not at the entry header that precedes it on the page, so a reader issues exactly
-    /// <see cref="Length"/> bytes of IO with no framing to parse. That is what removes the serial dependency the old format had, where
+    /// <para>The address points at the data. A data chunk carries no framing of its own, so a reader issues exactly
+    /// <see cref="Length"/> bytes of IO with nothing to parse. That is what removes the serial dependency the old format had, where
     /// read <i>k+1</i> could not be sized until read <i>k</i>'s framing had been parsed.</para>
     /// <para><b>Why the length is biased.</b> A chunk cannot exceed a page, so the largest possible chunk is a full page --
     /// <c>1 &lt;&lt; LogSettings.kMaxPageSizeBits</c>, which does not fit in that many bits. A zero length is meaningless (a chunk with
@@ -122,8 +122,10 @@ namespace Tsavorite.core
     /// <see cref="DirectoryFlags.DirectoryIsCombined"/> is set, the final data chunk.
     /// </summary>
     /// <remarks>
-    /// Entries cover <b>every</b> data chunk in stream order, so <see cref="EntryCount"/> is the chunk count and a reader's loop has one
-    /// shape; <see cref="DirectoryFlags.DirectoryIsCombined"/> only changes where the last chunk's bytes come from.
+    /// Entries cover every component portion in stream order. A chunk holding the end of the overflow key and the start of the value
+    /// contributes two entries at the same address; a reader places each such entry after the ones before it at that address.
+    /// <see cref="EntryCount"/> counts this record's entries, including a spine link, so it is not necessarily the chunk count.
+    /// <see cref="DirectoryFlags.DirectoryIsCombined"/> only changes where the last chunk's bytes come from.
     /// <para><b>Multilevel directories are a backward spine.</b> When the entry list outgrows what one record can hold, it is written out
     /// as a directory record, the list is cleared, and the <b>first</b> entry of the fresh list points back at the record just written
     /// with <see cref="DirectoryEntry.IsDirectory"/> set. Always first and only, so decoding is trivial, depth is unbounded, and it costs

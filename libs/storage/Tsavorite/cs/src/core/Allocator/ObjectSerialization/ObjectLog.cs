@@ -463,24 +463,46 @@ namespace Tsavorite.core
         internal long FlushTail(bool wait)
         {
             var tailAddress = TailAddress;
-            allocator.ShiftReadOnlyAddressWithWait(tailAddress, wait);
+            allocator.ShiftReadOnlyAddressWithWait(tailAddress, wait: false);
+            if (wait)
+                WaitForFlush(tailAddress);
             return tailAddress;
         }
 
         /// <summary>Wait until <paramref name="untilAddress"/> is on the device. The caller is responsible for having requested a flush
         /// that covers it (see <see cref="FlushTail"/>).</summary>
         /// <remarks>Safe to call while holding the epoch: the flush is completed by work queued on the epoch's drain list, so a holder
-        /// that merely spun would block the very progress it is waiting for.</remarks>
+        /// that merely spun would block the very progress it is waiting for. A caller that does not hold the epoch spins briefly and
+        /// then blocks on the allocator's flush event rather than yielding in a loop, since a page write can take milliseconds.</remarks>
         internal void WaitForFlush(long untilAddress)
         {
-            var holdsEpoch = epoch.ThisInstanceProtected();
-            while (!disposed && FlushedUntilAddress < untilAddress)
+            if (epoch.ThisInstanceProtected())
             {
-                allocator.ThrowIfFlushFailedForAllocation();
-                if (holdsEpoch)
+                while (!disposed && FlushedUntilAddress < untilAddress)
+                {
+                    allocator.ThrowIfFlushFailedBelow(untilAddress);
                     epoch.ProtectAndDrain();
-                else
+                }
+                return;
+            }
+
+            var spins = 0;
+            while (true)
+            {
+                // Capture the event before testing, so a flush that completes between the test and the wait signals this event.
+                var localFlushEvent = allocator.flushEvent;
+                if (disposed || allocator.IsDisposed || FlushedUntilAddress >= untilAddress)
+                    return;
+
+                // A failed flush never advances FlushedUntilAddress, and its signal may predate the capture above, leaving nothing to
+                // signal this generation; check before waiting so the wait below cannot be endless.
+                allocator.ThrowIfFlushFailedBelow(untilAddress);
+                if (++spins < Constants.kFlushSpinCount)
+                {
                     _ = Thread.Yield();
+                    continue;
+                }
+                localFlushEvent.Wait();
             }
         }
 
