@@ -855,6 +855,11 @@ The recovery write uses the live page rather than allocating a page-image copy. 
 copy, recovery records that its positions now address the main object log and Pass 2 deserializes it from that device.
 Each record's framing supplies its copy endpoint; no following record or page contributes a bound.
 
+The copy stops at the recovered tail. Past it, the Snapshot's image of the tail page holds the fuzzy `(v+1)` suffix, whose
+records recovery does not process and which carry object ids rather than snapshot positions. So a flush of the tail page,
+such as Pass 2's when its memory budget puts the head inside that page, ends at the recovered tail rather than the page
+end.
+
 The modulo-8 preservation is required because the first object header is aligned from the absolute object start.
 Moving identical bytes to a different residue would move the expected first-header location and make the copy
 unreadable.

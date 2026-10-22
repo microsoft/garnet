@@ -40,6 +40,10 @@ namespace Tsavorite.core
         /// so they must be flushed before eviction. -1 during hybrid-log recovery, where all read pages are already durable.</summary>
         public long snapshotScanFromAddress = -1;
 
+        /// <summary>For snapshot recovery, the recovered tail. A snapshot-region flush stops here: past it, the Snapshot's image of the
+        /// tail page holds the fuzzy next-version suffix, which recovery does not process and whose records carry no snapshot position.</summary>
+        public long snapshotUntilAddress = long.MaxValue;
+
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
         public ReadStatus[] readStatus;
         /// <summary>Circular status buffer of 'capacity' size; the indexing wraps per hlog.GetPageIndexForPage().</summary>
@@ -796,7 +800,7 @@ namespace Tsavorite.core
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
             hlogBase.AsyncFlushPagesForRecovery(recoveryStatus.snapshotScanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery,
                 recoveryStatus, recoveryStatus.checkpointVersion, recoveryStatus.objectLogRecoveryDevice, formerFlushedUntilAddress: recoveryStatus.snapshotScanFromAddress,
-                snapshotObjectLogReadEndWord: recoveryStatus.objectLogRecoveryReadEnd.word);
+                snapshotObjectLogReadEndWord: recoveryStatus.objectLogRecoveryReadEnd.word, untilAddress: recoveryStatus.snapshotUntilAddress);
             recoveryStatus.WaitFlush(pageIndex);
             recoveryStatus.snapshotPageFlushedToMain[pageIndex] = true;
         }
@@ -1165,6 +1169,7 @@ namespace Tsavorite.core
             // the hybrid-log/snapshot boundary; pages at or above its page are the snapshot region (read from the snapshot device without their
             // objects), pages strictly below it are the hybrid-log region (already durable on the main log/object-log).
             recoveryStatus.snapshotScanFromAddress = scanFromAddress;
+            recoveryStatus.snapshotUntilAddress = untilAddress;
             var snapshotBoundaryPage = hlogBase.GetPage(scanFromAddress);
 
             // The hybrid-log phase leaves a downlevel up-conversion open when there is a snapshot region to convert as well, so that the

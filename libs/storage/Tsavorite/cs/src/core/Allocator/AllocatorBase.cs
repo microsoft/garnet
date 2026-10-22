@@ -2709,9 +2709,10 @@ namespace Tsavorite.core
         /// <param name="formerFlushedUntilAddress">The former FlushedUntilAddress (hybrid-log/snapshot boundary); records at/above it have their objects copied.</param>
         /// <param name="snapshotObjectLogReadEndWord">Exclusive durable end of <paramref name="snapshotObjectLogDevice"/>, encoded in that
         /// device's object-log address space. Zero when no snapshot object-log bound applies.</param>
+        /// <param name="untilAddress">Exclusive end of the flush; a page that contains it is flushed only up to it.</param>
         public void AsyncFlushPagesForRecovery<TContext>(long scanFromAddress, int flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context,
             int checkpointVersion, IDevice snapshotObjectLogDevice = null, long formerFlushedUntilAddress = long.MaxValue,
-            ulong snapshotObjectLogReadEndWord = 0)
+            ulong snapshotObjectLogReadEndWord = 0, long untilAddress = long.MaxValue)
         {
             Debug.Assert(scanFromAddress < GetLogicalAddressOfStartOfPage(flushPageStart + 1), $"scanFromAddress ({scanFromAddress}) must be on flushPageStart ({flushPageStart})");
 
@@ -2721,7 +2722,9 @@ namespace Tsavorite.core
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
+                var pageEndAddress = GetLogicalAddressOfStartOfPage(flushPage + 1);
                 var flushFromAddress = Math.Max(scanFromAddress, pageStartAddress);
+                var flushUntilAddress = Math.Min(untilAddress, pageEndAddress);
 
                 // When copying snapshot object bytes into the main object-log, rent this page's object-log write buffers; the hybrid-log region
                 // (which reuses the stored lengths/positions without writing object bytes) needs none.
@@ -2732,12 +2735,13 @@ namespace Tsavorite.core
                     context = context,
                     count = 1,
                     // A recovery flush starts at scanFromAddress, which may be mid-page at the first record past the PageHeader.
-                    // In that case it is a front-partial flush: the write length is derived from untilAddress (the page end)
-                    // rather than a full page, and the PageHeader is re-included when the page is written. The snapshot/hybrid-log
-                    // boundary that selects which records copy their objects is carried separately via formerFlushedUntilAddress.
-                    partial = flushFromAddress > pageStartAddress,
+                    // In that case it is a front-partial flush: the write length is derived from untilAddress rather than a full
+                    // page, and the PageHeader is re-included when the page is written. It is back-partial when untilAddress ends
+                    // inside the page. The snapshot/hybrid-log boundary that selects which records copy their objects is carried
+                    // separately via formerFlushedUntilAddress.
+                    partial = flushFromAddress > pageStartAddress || flushUntilAddress < pageEndAddress,
                     fromAddress = flushFromAddress,
-                    untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
+                    untilAddress = flushUntilAddress,
                     flushRequestState = FlushRequestState.Recovery,
                     recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
                     recoverySnapshotObjectLogReadEnd = snapshotObjectLogReadEndWord == 0

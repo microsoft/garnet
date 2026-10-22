@@ -1127,13 +1127,6 @@ namespace Tsavorite.core
                 // up-converted, so there is no case with nothing to do.
                 if (asyncResult.flushRequestState != FlushRequestState.Recovery)
                     writeInlineOnly = true;
-                else
-                {
-                    // A recovery flush may be front-partial (starting mid-page at the first record past the PageHeader) but always
-                    // extends to the end of the page.
-                    Debug.Assert(asyncResult.untilAddress == GetLogicalAddressOfStartOfPage(flushPage + 1),
-                        $"Recovery flush should extend to the end of page {flushPage}");
-                }
             }
 
             // All object-log flush modes stamp and write the live page. Recovery has exclusive access. Snapshot writes one page at a time
