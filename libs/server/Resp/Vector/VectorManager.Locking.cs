@@ -232,7 +232,7 @@ namespace Garnet.server
                     {
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
 
-                        if (!needsRecreate && !lockToken.IsExclusive)
+                        if (!needsRecreate)
                         {
                             if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
                             {
