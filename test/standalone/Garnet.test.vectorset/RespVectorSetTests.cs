@@ -1368,7 +1368,6 @@ namespace Garnet.test
             }
         }
 
-#if DEBUG
         [Test, CancelAfter(10_000)]
         public async Task VSIMDoesNotRequireExclusiveIndexLockAsync(CancellationToken cancellationToken)
         {
@@ -1379,7 +1378,7 @@ namespace Garnet.test
 
             // Holding a shared lock on the Vector Set stands in for a concurrent reader; another reader must not wait for it.
             var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
-            var locks = vectorManager.VectorSetLocksForTest;
+            var locks = (ReadOptimizedLock)typeof(VectorManager).GetField("vectorSetLocks", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(vectorManager);
             var keyHash = server.Provider.StoreWrapper.DefaultDatabase.Store.GetKeyHash((FixedSpanByteKey)"foo"u8);
             locks.AcquireSharedLock(keyHash, out var sharedLock);
             try
@@ -1392,7 +1391,6 @@ namespace Garnet.test
                 locks.ReleaseLock(sharedLock);
             }
         }
-#endif
 
         [Test]
         public void VSIM()
