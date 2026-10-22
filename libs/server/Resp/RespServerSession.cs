@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -121,6 +122,9 @@ namespace Garnet.server
         // Used by Publish/PatternPublish to detect the reentrant self-delivery that occurs when a session
         // publishes to a channel it is itself subscribed to.
         int publishingThreadId;
+
+        // Failure of a reentrant self-delivery, rethrown by the publishing command once the broadcast completes
+        ExceptionDispatchInfo reentrantPublishFailure;
 
         /// <summary>
         /// Current database session items
@@ -614,9 +618,11 @@ namespace Garnet.server
                         SendAndReset();
                 }
 
-                // Send message and dispose the network sender to end the session
-                if (dcurr > networkSender.GetResponseObjectHead())
-                    Send(networkSender.GetResponseObjectHead());
+                // Send message and dispose the network sender to end the session. A failed send leaves no response
+                // buffer, and nothing further can be sent.
+                var responseHead = networkSender.GetResponseObjectHead();
+                if (responseHead != null && dcurr > responseHead)
+                    Send(responseHead);
 
                 if (ex.Panic)
                 {
@@ -1525,6 +1531,7 @@ namespace Garnet.server
             // Debug.WriteLine($"SEND: [{Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "")}]");
             // #endif
 
+            Debug.Assert(d != null, "Send requires a response buffer");
             if ((int)(dcurr - d) > 0)
             {
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");

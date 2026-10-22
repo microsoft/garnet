@@ -28,7 +28,6 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using KeraLua;
@@ -174,10 +173,10 @@ namespace Garnet.server
                 return true;
             }
 
-            int result = 0;
+            var result = 0;
             while (optIx < format.Length && char.IsDigit((char)format[optIx]))
             {
-                int digit = format[optIx] - '0';
+                var digit = format[optIx] - '0';
                 if (result > (int.MaxValue / 10) || result * 10 > (int.MaxValue - digit))
                 {
                     // Integral size overflow
@@ -186,7 +185,7 @@ namespace Garnet.server
                     return false;
                 }
 
-                result = result * 10 + digit;
+                result = (result * 10) + digit;
                 optIx++;
             }
 
@@ -218,8 +217,8 @@ namespace Garnet.server
 
         static bool TryParseControlOptions(LuaRunner self, char opt, Span<byte> format, ref Header h, ref int optIx, out int constStrRegisteryIndex)
         {
-            int padding = Marshal.SizeOf(typeof(cD)) - sizeof(double);
-            int MAXALIGN = padding > sizeof(int) ? padding : sizeof(int);
+            var padding = Marshal.SizeOf<cD>() - sizeof(double);
+            var maxAlign = padding > sizeof(int) ? padding : sizeof(int);
 
             switch (opt)
             {
@@ -240,7 +239,7 @@ namespace Garnet.server
                     return true;
 
                 case '!':
-                    if (!TryGetNum(self, format, ref optIx, MAXALIGN, out int a, out constStrRegisteryIndex))
+                    if (!TryGetNum(self, format, ref optIx, maxAlign, out var a, out constStrRegisteryIndex))
                     {
                         return false;
                     }
@@ -282,20 +281,20 @@ namespace Garnet.server
                 scratchBufferBuilder.Reset();
 
                 // Parse format
-                int totalSize = 0;
-                int optIx = 0;
-                Header h = DefaultOptions();
+                var totalSize = 0;
+                var optIx = 0;
+                var h = DefaultOptions();
 
                 while (optIx < format.Length)
                 {
-                    char opt = (char)format[optIx++];
+                    var opt = (char)format[optIx++];
 
-                    if (!TryGetOptSize(this, opt, format, ref optIx, out int size, out var errOptSizeIndex))
+                    if (!TryGetOptSize(this, opt, format, ref optIx, out var size, out var errOptSizeIndex))
                     {
                         return LuaWrappedError(1, errOptSizeIndex);
                     }
 
-                    int toAlign = GetToAlign(totalSize, h.Align, opt, size);
+                    var toAlign = GetToAlign(totalSize, h.Align, opt, size);
                     totalSize += toAlign;
 
                     while (toAlign-- > 0)
@@ -392,7 +391,11 @@ namespace Garnet.server
 
             static bool TryEncodeInteger(LuaRunner self, char opt, int size, int stackIndex, Header h, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+                if (stackIndex > self.state.StackTop || self.state.Type(stackIndex) != LuaType.Number)
+                {
+                    constStrRegisteryIndex = self.constStrs.BadArgPack;
+                    return false;
+                }
 
                 var numRaw = self.state.CheckNumber(stackIndex);
                 var value = (long)numRaw;
@@ -442,11 +445,11 @@ namespace Garnet.server
 
                             if (h.Endian == (int)Endian.BIG)
                             {
-                                BinaryPrimitives.WriteInt64BigEndian(into[0..], (long)value);
+                                BinaryPrimitives.WriteInt64BigEndian(into[0..], value);
                             }
                             else
                             {
-                                BinaryPrimitives.WriteInt64LittleEndian(into[0..], (long)value);
+                                BinaryPrimitives.WriteInt64LittleEndian(into[0..], value);
                             }
 
                             self.scratchBufferBuilder.MoveOffset(size);
@@ -528,7 +531,11 @@ namespace Garnet.server
 
             static bool TryEncodeSingle(LuaRunner self, int size, int stackIndex, Header h, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+                if (stackIndex > self.state.StackTop || self.state.Type(stackIndex) != LuaType.Number)
+                {
+                    constStrRegisteryIndex = self.constStrs.BadArgPack;
+                    return false;
+                }
 
                 var value = self.state.CheckNumber(stackIndex);
 
@@ -560,7 +567,11 @@ namespace Garnet.server
 
             static bool TryEncodeDouble(LuaRunner self, int stackIndex, Header h, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.Number, "Expected number");
+                if (stackIndex > self.state.StackTop || self.state.Type(stackIndex) != LuaType.Number)
+                {
+                    constStrRegisteryIndex = self.constStrs.BadArgPack;
+                    return false;
+                }
 
                 var value = self.state.CheckNumber(stackIndex);
 
@@ -592,11 +603,15 @@ namespace Garnet.server
 
             static bool TryEncodeBytes(LuaRunner self, int stackIndex, char opt, ref int size, out int constStrRegisteryIndex)
             {
-                Debug.Assert(self.state.Type(stackIndex) == LuaType.String, "Expected string");
+                if (stackIndex > self.state.StackTop || self.state.Type(stackIndex) != LuaType.String)
+                {
+                    constStrRegisteryIndex = self.constStrs.BadArgPack;
+                    return false;
+                }
 
                 self.state.KnownStringToBuffer(stackIndex, out var data);
 
-                int l = data.Length;
+                var l = data.Length;
 
                 if (size == 0)
                 {
@@ -655,8 +670,8 @@ namespace Garnet.server
                 state.KnownStringToBuffer(1, out var data);
                 state.Remove(1);
 
-                int pos = 0;
-                int dataLen = data.Length;
+                var pos = 0;
+                var dataLen = data.Length;
                 if (numLuaArgs >= 3) // Only check if the 3rd argument is passed
                 {
                     if (state.Type(1) != LuaType.Number || state.CheckNumber(1) <= 0)
@@ -674,15 +689,15 @@ namespace Garnet.server
                     pos--; // Lua indexes are 1-based
                 }
 
-                int decodedCount = 0;
-                int optIx = 0;
-                Header h = DefaultOptions();
+                var decodedCount = 0;
+                var optIx = 0;
+                var h = DefaultOptions();
 
                 while (optIx < format.Length)
                 {
-                    char opt = (char)format[optIx++];
+                    var opt = (char)format[optIx++];
 
-                    if (!TryGetOptSize(this, opt, format, ref optIx, out int size, out var errOptSizeIndex))
+                    if (!TryGetOptSize(this, opt, format, ref optIx, out var size, out var errOptSizeIndex))
                     {
                         return LuaWrappedError(0, errOptSizeIndex);
                     }
@@ -713,7 +728,7 @@ namespace Garnet.server
                         case 'i':
                         case 'I':
                             {
-                                if (!TryDecodeInteger(this, opt, h, size, pos, data, ref decodedCount, out int errIndex))
+                                if (!TryDecodeInteger(this, opt, h, size, pos, data, ref decodedCount, out var errIndex))
                                 {
                                     return LuaWrappedError(0, errIndex);
                                 }
@@ -723,7 +738,7 @@ namespace Garnet.server
                             break;
                         case 'f':
                             {
-                                if (!TryDecodeSingle(this, h, size, pos, data, ref decodedCount, out int errIndex))
+                                if (!TryDecodeSingle(this, h, size, pos, data, ref decodedCount, out var errIndex))
                                 {
                                     return LuaWrappedError(0, errIndex);
                                 }
@@ -731,7 +746,7 @@ namespace Garnet.server
                             }
                         case 'd':
                             {
-                                if (!TryDecodeDouble(this, h, size, pos, data, ref decodedCount, out int errIndex))
+                                if (!TryDecodeDouble(this, h, size, pos, data, ref decodedCount, out var errIndex))
                                 {
                                     return LuaWrappedError(0, errIndex);
                                 }
@@ -739,7 +754,7 @@ namespace Garnet.server
                             }
                         case 'c':
                             {
-                                if (!TryDecodeCharacter(this, pos, ref size, data, ref decodedCount, out int errIndex))
+                                if (!TryDecodeCharacter(this, pos, ref size, data, ref decodedCount, out var errIndex))
                                 {
                                     return LuaWrappedError(0, errIndex);
                                 }
@@ -747,7 +762,7 @@ namespace Garnet.server
                             }
                         case 's':
                             {
-                                if (!TryDecodeString(this, pos, ref size, data, ref decodedCount, out int errIndex))
+                                if (!TryDecodeString(this, pos, ref size, data, ref decodedCount, out var errIndex))
                                 {
                                     return LuaWrappedError(0, errIndex);
                                 }
@@ -763,6 +778,11 @@ namespace Garnet.server
                             }
                     }
                     pos += size;
+                }
+
+                if (!state.TryEnsureMinimumStackCapacity(3))
+                {
+                    return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
                 }
 
                 // Next position
@@ -794,7 +814,7 @@ namespace Garnet.server
 
                 if (h.Endian == 0) // Big-endian
                 {
-                    for (int i = 0; i < size; i++)
+                    for (var i = 0; i < size; i++)
                     {
                         l <<= 8;
                         l |= slice[i];
@@ -802,7 +822,7 @@ namespace Garnet.server
                 }
                 else // Little-endian
                 {
-                    for (int i = size - 1; i >= 0; i--)
+                    for (var i = size - 1; i >= 0; i--)
                     {
                         l <<= 8;
                         l |= slice[i];
@@ -813,21 +833,21 @@ namespace Garnet.server
                 if (char.IsLower(opt))
                 {
                     // Sign extension for negative values
-                    ulong mask = ~0UL << (size * 8 - 1);
+                    var mask = ~0UL << ((size * 8) - 1);
                     if ((l & mask) != 0)
                     {
                         l |= mask; // Extend the sign bit
-                        long signedValue = unchecked((long)l);
-                        result = (double)signedValue;
+                        var signedValue = unchecked((long)l);
+                        result = signedValue;
                     }
                     else
                     {
-                        result = (double)(long)l;
+                        result = (long)l;
                     }
                 }
                 else
                 {
-                    result = (double)l;
+                    result = l;
                 }
 
                 self.state.PushNumber(result);
@@ -901,7 +921,7 @@ namespace Garnet.server
 
                 if (size == 0)
                 {
-                    int previousArgIndex = self.state.StackTop;
+                    var previousArgIndex = self.state.StackTop;
 
                     // if c0, then get the size from the previous decoded number
                     if (decodedCount == 0 || self.state.Type(previousArgIndex) != LuaType.Number)
@@ -940,7 +960,7 @@ namespace Garnet.server
             {
                 var slice = data.Slice(pos);
 
-                int nullIndex = slice.IndexOf((byte)0);
+                var nullIndex = slice.IndexOf((byte)0);
                 if (nullIndex == -1)
                 {
                     // Unfinished string in data
@@ -983,20 +1003,20 @@ namespace Garnet.server
                 scratchBufferBuilder.Reset();
 
                 // Parse format
-                int totalSize = 0;
-                int optIx = 0;
-                Header h = DefaultOptions();
+                var totalSize = 0;
+                var optIx = 0;
+                var h = DefaultOptions();
 
                 while (optIx < format.Length)
                 {
-                    char opt = (char)format[optIx++];
+                    var opt = (char)format[optIx++];
 
-                    if (!TryGetOptSize(this, opt, format, ref optIx, out int size, out var errOptSizeIndex))
+                    if (!TryGetOptSize(this, opt, format, ref optIx, out var size, out var errOptSizeIndex))
                     {
                         return LuaWrappedError(1, errOptSizeIndex);
                     }
 
-                    int toAlign = GetToAlign(totalSize, h.Align, opt, size);
+                    var toAlign = GetToAlign(totalSize, h.Align, opt, size);
                     totalSize += toAlign;
 
                     if (opt == 's')

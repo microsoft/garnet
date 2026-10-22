@@ -285,6 +285,13 @@ namespace Garnet.server
         public IGarnetTlsOptions TlsOptions;
 
         /// <summary>
+        /// Longest an accepted connection may take to complete its TLS handshake before it is closed, which frees its
+        /// connection slot. <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> waits indefinitely. A timeout beyond
+        /// the longest a timer supports, about 49.7 days, is limited to it.
+        /// </summary>
+        public TimeSpan TlsHandshakeTimeout = TimeSpan.FromSeconds(10);
+
+        /// <summary>
         /// Username for clients used by cluster backend
         /// </summary>
         public string ClusterUsername;
@@ -429,6 +436,13 @@ namespace Garnet.server
         /// Throttle the maximum outstanding network sends per session
         /// </summary>
         public int NetworkSendThrottleMax = 8;
+
+        /// <summary>
+        /// Longest a response send waits, once <see cref="NetworkSendThrottleMax"/> sends are outstanding, for the client
+        /// to accept data before its connection is closed. Bounds how long a client that stops reading can hold a server
+        /// thread. <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> waits indefinitely.
+        /// </summary>
+        public TimeSpan NetworkSendTimeout = TimeSpan.FromSeconds(60);
 
         /// <summary>
         /// Size of the per-connection network send buffer, and the initial size of the per-connection receive

@@ -1438,8 +1438,9 @@ namespace Garnet.test
             }
         }
 
-        [Test]
-        public void MultiRegisterProcTest()
+        [TestCase(false)]
+        [TestCase(true)]
+        public void MultiRegisterProcTest(bool reverseOrder)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -1461,7 +1462,8 @@ namespace Garnet.test
             for (var i = 0; i < regCount; i++)
             {
                 // Include non-existent and string keys as well
-                var retValue = db.Execute($"SUM{i + 1}", "key1", "key2", "key3", "key4");
+                var procedureNumber = reverseOrder ? regCount - i : i + 1;
+                var retValue = db.Execute($"SUM{procedureNumber}", "key1", "key2", "key3", "key4");
                 ClassicAssert.AreEqual("65", retValue.ToString());
             }
         }

@@ -2208,6 +2208,11 @@ namespace Garnet.server
             }
 
             // Error and count for error_wrapper_rvar
+            if (!state.TryEnsureMinimumStackCapacity(2))
+            {
+                return LuaWrappedError(0, constStrs.InsufficientLuaStackSpace);
+            }
+
             state.PushNil();
             state.PushInteger(decodedCount);
             state.Rotate(2, 2);

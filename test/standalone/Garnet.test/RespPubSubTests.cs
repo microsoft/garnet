@@ -104,6 +104,37 @@ namespace Garnet.test
         }
 
         [Test]
+        public void PubSubSupportsDeepWildcardPatterns()
+        {
+            using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var sub = subRedis.GetSubscriber();
+            var db = redis.GetDatabase(0);
+            var channel = new string('a', 8192);
+            var pattern = string.Concat(Enumerable.Repeat("*a", channel.Length));
+            using var delivered = new ManualResetEventSlim();
+
+            sub.Subscribe(RedisChannel.Pattern(pattern + "b"), (_, _) => { });
+            sub.Subscribe(RedisChannel.Pattern(pattern), (_, message) =>
+            {
+                if (message == "message")
+                    delivered.Set();
+            });
+            ClassicAssert.AreEqual(1, db.Publish(RedisChannel.Literal(channel), "message"));
+            ClassicAssert.IsTrue(delivered.Wait(TimeSpan.FromSeconds(10)));
+
+            sub.Subscribe(RedisChannel.Literal(channel), (_, _) => { });
+            var channels = (string[])db.Execute("PUBSUB", "CHANNELS", pattern);
+            CollectionAssert.AreEqual(new[] { channel }, channels);
+            ClassicAssert.AreEqual(0, ((RedisResult[])db.Execute("PUBSUB", "CHANNELS", pattern + "b")).Length);
+
+            sub.UnsubscribeAll();
+            ClassicAssert.AreEqual("PONG", (string)db.Execute("PING"));
+            using var other = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            ClassicAssert.AreEqual("PONG", (string)other.GetDatabase(0).Execute("PING"));
+        }
+
+        [Test]
         public void BasicPUBSUB_CHANNELS()
         {
             using var subRedis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

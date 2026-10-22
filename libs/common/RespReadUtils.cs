@@ -70,16 +70,18 @@ namespace Garnet.common
         /// <param name="end">The end of the string to parse.</param>
         /// <param name="value">If parsing was successful, contains the parsed ulong value.</param>
         /// <param name="bytesRead">If parsing was successful, contains the number of bytes that were parsed.</param>
+        /// <param name="overflow">True if the digit run represents a value larger than <see cref="ulong.MaxValue"/>.</param>
         /// <returns>
         /// True if a ulong was successfully parsed, false if the input string did not start with
-        /// a valid integer or the end of the string was reached before finishing parsing.
+        /// a valid integer, the end of the string was reached before finishing parsing, or the
+        /// value overflowed (see <paramref name="overflow"/>).
         /// </returns>
-        /// <exception cref="RespParsingException">Thrown if integer overflow occurs.</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool TryReadUInt64(ref byte* ptr, byte* end, out ulong value, out ulong bytesRead)
+        private static bool TryReadUInt64(ref byte* ptr, byte* end, out ulong value, out ulong bytesRead, out bool overflow)
         {
             bytesRead = 0;
             value = 0;
+            overflow = false;
             var readHead = ptr;
 
             // Fast path for the first 19 digits.
@@ -119,7 +121,9 @@ namespace Garnet.common
 
                 if ((value == 1844674407370955161UL && ((int)nextDigit > 5)) || (value > 1844674407370955161UL))
                 {
-                    RespParsingException.ThrowIntegerOverflow(ptr, (int)(readHead - ptr));
+                    overflow = true;
+                    bytesRead = (ulong)(readHead - ptr);
+                    return false;
                 }
 
                 value = (10 * value) + nextDigit;
@@ -203,8 +207,11 @@ namespace Garnet.common
             }
 
             // Parse digits as ulong
-            if (!TryReadUInt64(ref ptr, end, out var number, out var digitsRead))
+            if (!TryReadUInt64(ref ptr, end, out var number, out var digitsRead, out var uint64Overflow))
             {
+                // A digit run too large to even fit in a ulong is still an ordinary
+                // out-of-range argument value, not a RESP protocol error.
+                overflow = uint64Overflow;
                 return false;
             }
 
@@ -296,8 +303,11 @@ namespace Garnet.common
             }
 
             // Parse digits as unsigned 64-bit integer
-            if (!TryReadUInt64(ref ptr, end, out var number, out var digitsRead))
+            if (!TryReadUInt64(ref ptr, end, out var number, out var digitsRead, out var uint64Overflow))
             {
+                // A digit run too large to even fit in a ulong is still an ordinary
+                // out-of-range argument value, not a RESP protocol error.
+                overflow = uint64Overflow;
                 return false;
             }
 
@@ -422,8 +432,15 @@ namespace Garnet.common
             }
 
             // Parse length
-            if (!TryReadUInt64(ref readHead, end, out var value, out var digitsRead))
+            if (!TryReadUInt64(ref readHead, end, out var value, out var digitsRead, out var uint64Overflow))
             {
+                // Length headers are part of the RESP wire protocol itself, so an overflowing
+                // length is a genuine protocol error and must still be thrown.
+                if (uint64Overflow)
+                {
+                    RespParsingException.ThrowIntegerOverflow(readHead, (int)digitsRead);
+                }
+
                 return false;
             }
 
@@ -693,8 +710,13 @@ namespace Garnet.common
 
             // Parse associated integer value
             var numberStart = ptr;
-            if (!TryReadUInt64(ref ptr, end, out number, out var bytesRead))
+            if (!TryReadUInt64(ref ptr, end, out number, out var bytesRead, out var uint64Overflow))
             {
+                if (uint64Overflow)
+                {
+                    RespParsingException.ThrowIntegerOverflow(numberStart, (int)bytesRead);
+                }
+
                 return false;
             }
 
