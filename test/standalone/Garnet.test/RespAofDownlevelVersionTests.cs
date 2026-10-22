@@ -17,7 +17,6 @@ namespace Garnet.test
     ///
     /// The legacy operation bodies used here retain their version-4 and version-5 layouts.
     /// Rewriting only their version byte exercises legacy replay without changing payload bytes.
-    /// Record upserts with optional metadata use a distinct version-6 operation and are excluded here.
     /// </summary>
     [TestFixture]
     public class RespAofDownlevelVersionTests : TestBase

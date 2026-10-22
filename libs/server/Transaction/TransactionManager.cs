@@ -272,6 +272,7 @@ namespace Garnet.server
             this.state = TxnState.None;
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
+            functionsState.HasEnclosingTransaction = false;
             this.PerformWrites = false;
 
             // Reset cluster key parse state
@@ -547,6 +548,7 @@ namespace Garnet.server
             }
 
             state = TxnState.Running;
+            functionsState.HasEnclosingTransaction = true;
             return true;
         }
 

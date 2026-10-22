@@ -117,22 +117,23 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 
 ### Imported string record optionals
 
-Append-only file header version 6 adds `UnifiedStoreStringRecordUpsert`, operation type `0x74`.
-Its body is a length-prefixed key, a length-prefixed value, the existing serialized `UnifiedInput`,
-then the original entity tag and absolute expiration as two little-endian 64-bit integers.
-Zero means the corresponding optional field is absent. `RecordUpsertInput` writes and reads this input
-suffix. Chunked entries include the same suffix in their input component.
-Replay checks the input header and every argument length against the input boundary before
-allocating argument storage or decoding the input, including replica transaction classification.
+Imported ordinary strings retain append-only file version 5 and existing operation layouts.
+A committed transaction contains a destination delete followed by `StoreRMW` with `SETIFGREATER`,
+the original value and entity tag, and the original absolute expiration in `StringInput.arg1`.
+An untagged import uses delete followed by `StoreUpsert`. An existing transaction, including
+`RENAME`, supplies the transaction markers when one is already active.
 
-Migration imports and string renames use this entry to preserve both optionals during replica replay
-and recovery. Diskless snapshot imports preserve them directly without appending snapshot records to
-the log. Ordinary string commands retain their existing operation formats.
+Replay uses the existing delete and update paths. Incomplete transactions remain unapplied.
+Ordinary and chunked entries use the same operation layouts. Older version-5 binaries can
+parse these logs and recover them at startup.
 
-Existing operation bodies and `UnifiedInput` serialization are unchanged. Version-4 and version-5
-logs remain readable. Older builds reject version-6 headers before interpreting entries. Upgrade
-replicas before allowing a primary to emit version-6 entries. Cluster gossip does not negotiate
-append-only file versions. A version-6 primary cannot replicate to a version-5 replica.
+Conditional writes remain atomic on the primary. Asynchronous replica reads have ordinary
+`GET` visibility and can observe the delete before recreation; replay does not provide a
+stronger transaction-isolation guarantee. Every returned value and entity tag must form a
+consistent pair. Upgrade readers and replicas before enabling the fix to receive its import
+metadata corrections. Post-restart replication stream resumption is not established by
+startup recovery compatibility. Diskless snapshot imports preserve metadata directly without
+appending snapshot records.
 
 ---
 
