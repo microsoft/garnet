@@ -111,13 +111,14 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    // Set actual FlushedUntil to the latest possible main-log data on disk. NullDevice has no durable
-                    // main-log prefix; Head may advance behind Snapshot for eviction, so recovery must still begin the
-                    // snapshot overlay at the captured Snapshot start.
+                    // Set actual FlushedUntil to the latest possible main-log data on disk, but no further than the checkpoint's
+                    // tail: a ReadOnly flush can pass it before this sample, and bytes beyond it belong to later versions.
+                    // NullDevice has no durable main-log prefix; Head may advance behind Snapshot for eviction, so recovery must
+                    // still begin the snapshot overlay at the captured Snapshot start.
                     ObjectLog_OnPersistenceCallback();
-                    store._hybridLogCheckpoint.info.mainLogRecoveryEndAddress = store.hlogBase.IsNullDevice
+                    store._hybridLogCheckpoint.info.mainLogRecoveryEndAddress = Math.Min(store.hlogBase.IsNullDevice
                         ? store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress
-                        : store.hlogBase.FlushedUntilAddress;
+                        : store.hlogBase.FlushedUntilAddress, store._hybridLogCheckpoint.info.recoveredTailAddress);
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.snapshotFileDevice?.Dispose();
                     store._hybridLogCheckpoint.snapshotFileDevice = null;

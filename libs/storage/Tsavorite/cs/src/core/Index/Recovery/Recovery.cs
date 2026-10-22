@@ -294,7 +294,7 @@ namespace Tsavorite.core
                 // Hybrid (main log file) info:
                 //   - The main log address range is from:
                 //     - BeginAddress at PREPARE to...
-                //     - FlushedUntilAddress at PERSISTENCE_CALLBACK.
+                //     - FlushedUntilAddress at PERSISTENCE_CALLBACK, capped at the TailAddress taken at the start of WAIT_FLUSH.
                 //   - The snapshot address range starts at 0 in the snapshot files and includes all main-log data until the final TailAddress. In detail, it is from:
                 //     - 0, but the start offset is FlushedUntilAddress taken at the start of WAIT_FLUSH (which is used to calculate this.snapshotDeviceOffset) to...
                 //     - TailAddress taken at the start of WAIT_FLUSH minus the start offset. This TailAddress is the maximum logical address that will be written to the snapshot.
@@ -307,7 +307,8 @@ namespace Tsavorite.core
                 // Object log file info:
                 //   - The object log address range is from:
                 //     - The start of the in-use object segment corresponding to main-log BeginAddress at PREPARE (matching this.hybridLogFileStartAddress) to...
-                //     - The hLogEndObjectLogTail taken at PERSISTENCE_CALLBACK (matching this.hybridLogFileEndAddress).
+                //     - The hLogEndObjectLogTail taken at PERSISTENCE_CALLBACK. This matches this.hybridLogFileEndAddress unless that was capped at the
+                //       TailAddress, in which case it also covers objects of records past the TailAddress, which recovery does not read.
                 //   - The snapshot address range starts at 0 in the snapshot file and includes all object-log data until the final TailAddress. In detail, it is from:
                 //     - The objectLogTail taken at the start of WAIT_FLUSH as info.snapshotStartObjectLogTail, corresponding to the main log's FlushedUntilAddress at
                 //       that point (which is used to calculate this.snapshotDeviceOffset) to...
@@ -546,6 +547,12 @@ namespace Tsavorite.core
         /// <summary>Asynchronous recovery driver</summary>
         private async ValueTask<long> InternalRecoverAsync(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, bool undoNextVersion, CancellationToken cancellationToken)
         {
+            // A ReadOnly flush can pass the checkpoint's tail before PERSISTENCE_CALLBACK samples FlushedUntilAddress. Everything past
+            // the tail belongs to later versions, so the main-log region, and the FlushedUntilAddress recovery restores, end at the tail.
+            // Clamping here, not only when the checkpoint is written, also covers checkpoints written before the clamp existed.
+            if (recoveredHLCInfo.info.useSnapshotFile != 0 && recoveredHLCInfo.info.mainLogRecoveryEndAddress > recoveredHLCInfo.info.recoveredTailAddress)
+                recoveredHLCInfo.info.mainLogRecoveryEndAddress = recoveredHLCInfo.info.recoveredTailAddress;
+
             hlogBase.VerifyRecoveryInfo(recoveredHLCInfo, false);
 
             if (hlogBase.GetTailAddress() > hlogBase.GetFirstValidLogicalAddressOnPage(0))

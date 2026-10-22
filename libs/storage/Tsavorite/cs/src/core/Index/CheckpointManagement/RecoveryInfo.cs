@@ -74,7 +74,8 @@ namespace Tsavorite.core
         /// </summary>
         public long nextVersion;
         /// <summary>
-        /// Exclusive end of the main-log recovery range. For Snapshot recovery, the Snapshot overlay begins here.
+        /// Exclusive end of the main-log recovery range. For Snapshot recovery, the Snapshot overlay begins here. Never above
+        /// <see cref="recoveredTailAddress"/>; recovery also clamps checkpoints written before this was enforced.
         /// </summary>
         public long mainLogRecoveryEndAddress;
         /// <summary>
@@ -111,7 +112,8 @@ namespace Tsavorite.core
         internal int beginAddressObjectLogSegment;
 
         /// <summary>
-        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> taken at PERSISTENCE_CALLBACK (matching <see cref="mainLogRecoveryEndAddress"/>).
+        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> taken at PERSISTENCE_CALLBACK (matching the main log's FlushedUntilAddress
+        /// then, which <see cref="mainLogRecoveryEndAddress"/> may cap at <see cref="recoveredTailAddress"/>).
         /// This is incremented for any flushes due to ReadOnlyAddress growth during the snapshot.
         /// </summary>
         internal ObjectLogPositionInfo hlogEndObjectLogTail;

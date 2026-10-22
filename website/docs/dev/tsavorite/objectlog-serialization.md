@@ -624,7 +624,8 @@ page. ReadOnly does not consume `ObjectLogPosition`; after Snapshot completes th
 journal is required.
 
 ReadOnly's image is not discardable. `mainLogRecoveryEndAddress` is the main log's `FlushedUntilAddress` at
-`PERSISTENCE_CALLBACK`, and recovery reads the main log below it, so a page that ReadOnly writes after Snapshot has
+`PERSISTENCE_CALLBACK`, capped at `recoveredTailAddress` because ReadOnly may by then have flushed later versions past the
+checkpoint's tail. Recovery reads the main log below it, so a page that ReadOnly writes after Snapshot has
 completed it, but before that sample, is recovered from ReadOnly's image. A `(v)` record superseded during the checkpoint
 must therefore keep its `(v)` content for ReadOnly too, until the checkpoint completes - not only until Snapshot has
 written its page.
