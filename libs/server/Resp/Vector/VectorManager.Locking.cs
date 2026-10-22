@@ -75,10 +75,6 @@ namespace Garnet.server
 
         private readonly ReadOptimizedLock vectorSetLocks;
 
-#if DEBUG
-        internal ReadOptimizedLock VectorSetLocksForTest => vectorSetLocks;
-#endif
-
         private readonly int vectorSetElementSelectMask;
         private readonly int[] vectorSetElementUpdateLocks;
 
