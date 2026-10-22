@@ -6,7 +6,7 @@
     <DefineConstants>$(DefineConstants);GARNET_TEST_PROJECT</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(MSBuildThisFileDirectory)libs/GlobalUsings.cs" Link="GlobalUsings.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)libs/GlobalUsings.cs" Exclude="@(Compile)" Link="GlobalUsings.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(MSBuildProjectName)' != 'Garnet.Diagnostics'">
     <ProjectReference Include="$(MSBuildThisFileDirectory)libs/diagnostics/Garnet.Diagnostics.csproj" PrivateAssets="all" />
