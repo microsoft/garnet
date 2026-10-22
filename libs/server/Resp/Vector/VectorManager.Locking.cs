@@ -388,13 +388,6 @@ namespace Garnet.server
                         return default;
                     }
 
-                    if (!lockToken.IsExclusive && !vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
-                    {
-                        vectorSetLocks.ReleaseLock(lockToken);
-                        takeExclusiveLock = true;
-                        continue;
-                    }
-
                     status = GarnetStatus.OK;
                     importPending = false;
                     return new(in vectorSetLocks, lockToken);
