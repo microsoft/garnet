@@ -2155,6 +2155,43 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ExpiryCommandOnExpiredKeyReturnsZero([Values(false, true)] bool isObject, [Values("EXPIRE", "PEXPIRE", "PERSIST")] string command)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "myKey";
+            if (isObject)
+                db.HashSet(key, "field", "value");
+            else
+                db.StringSet(key, "value");
+            db.KeyExpire(key, TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            var reply = command == "PERSIST" ? db.Execute(command, key) : db.Execute(command, key, "100");
+            ClassicAssert.AreEqual(ResultType.Integer, reply.Resp2Type);
+            ClassicAssert.AreEqual(0, (int)reply);
+            ClassicAssert.IsFalse(db.KeyExists(key));
+        }
+
+        [Test]
+        public void SetBitOnExpiredKeyStartsFromZeroes()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // The expired value is as long as the bitmap SETBIT creates, so its record is reused without growing
+            var key = "myKey";
+            db.StringSet(key, "garnet-string", TimeSpan.FromMilliseconds(1));
+            Thread.Sleep(50);
+
+            ClassicAssert.IsFalse(db.StringSetBit(key, 100, true));
+            var expected = new byte[13];
+            expected[12] = 0x08;
+            ClassicAssert.AreEqual(expected, (byte[])db.StringGet(key));
+        }
+
+        [Test]
         public void MultiKeyUnlink([Values] bool withoutObjectStore)
         {
             if (withoutObjectStore)

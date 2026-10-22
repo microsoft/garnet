@@ -166,6 +166,9 @@ namespace Garnet.server
                     return true;
                 case IPUResult.NotUpdated:
                 default:
+                    // The record keeps its Modified bit: setting it without a version bump would hide the key's next
+                    // in-place update from WATCH.
+                    rmwInfo.RecordUnchanged = true;
                     return true;
             }
         }
