@@ -73,7 +73,7 @@ namespace Garnet.server
             }
         }
 
-        private readonly ReadOptimizedLock vectorSetLocks;
+        internal readonly ReadOptimizedLock vectorSetLocks;
 
         private readonly int vectorSetElementSelectMask;
         private readonly int[] vectorSetElementUpdateLocks;
@@ -228,10 +228,11 @@ namespace Garnet.server
                     {
                         needsRecreate = NeedsRecreate(indexConfigOutput.SpanByteAndMemory.ReadOnlySpan);
 
-                        if (!needsRecreate)
+                        if (!needsRecreate && !lockToken.IsExclusive)
                         {
                             if (readCmd == RespCommand.XVIMPORT && (IsImportCompleted(indexSpan) || IsImportFailed(indexSpan)))
                             {
+                                Debug.Assert(!lockToken.IsExclusive, "Index reads must return a shared lock");
                                 status = GarnetStatus.OK;
                                 importPending = false;
                                 return new(in vectorSetLocks, lockToken);
@@ -241,6 +242,7 @@ namespace Garnet.server
                             {
                                 if (readCmd == RespCommand.VINFO)
                                 {
+                                    Debug.Assert(!lockToken.IsExclusive, "Index reads must return a shared lock");
                                     status = GarnetStatus.OK;
                                     importPending = true;
                                     return new(in vectorSetLocks, lockToken);
@@ -308,6 +310,7 @@ namespace Garnet.server
                             }
                         }
 
+                        Debug.Assert(lockToken.IsExclusive, "Index recreation requires an exclusive lock");
                         ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out _);
 
                         input.arg1 = RecreateIndexArg;
@@ -388,13 +391,7 @@ namespace Garnet.server
                         return default;
                     }
 
-                    if (!lockToken.IsExclusive && !vectorSetLocks.TryPromoteSharedLock(keyHash, ref lockToken))
-                    {
-                        vectorSetLocks.ReleaseLock(lockToken);
-                        takeExclusiveLock = true;
-                        continue;
-                    }
-
+                    Debug.Assert(!lockToken.IsExclusive, "Index reads must return a shared lock");
                     status = GarnetStatus.OK;
                     importPending = false;
                     return new(in vectorSetLocks, lockToken);
@@ -536,6 +533,7 @@ namespace Garnet.server
                             }
                         }
 
+                        Debug.Assert(lockToken.IsExclusive, "Index creation or recreation requires an exclusive lock");
                         ulong indexContext;
                         nint newlyAllocatedIndex;
                         bool requestQuantization;
@@ -676,6 +674,7 @@ namespace Garnet.server
                         return default;
                     }
 
+                    Debug.Assert(!lockToken.IsExclusive, "Vector operations must return a shared index lock");
                     status = GarnetStatus.OK;
                     importPending = false;
                     return new(in vectorSetLocks, lockToken);
@@ -700,6 +699,7 @@ namespace Garnet.server
             var keyHash = storageSession.stringTransactionalContext.GetKeyHash((FixedSpanByteKey)key);
 
             vectorSetLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
+            Debug.Assert(exclusiveLockToken.IsExclusive, "Index deletion requires an exclusive lock");
 
             return new(in vectorSetLocks, exclusiveLockToken);
         }
