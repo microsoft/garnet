@@ -274,14 +274,28 @@ namespace Garnet.server
                     if (keysToObservers.ContainsKey(key) && !keysToObservers[key].IsEmpty)
                         continue;
 
-                    // The key has an empty observer queue, try to retrieve next available item
-                    if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
-                            out _, out var result))
-                        continue;
+                    // Hold the status lock across the pop so that CLIENT UNBLOCK, a timeout or a disconnect cannot
+                    // complete the observer between taking the item and handing it over
+                    observer.ObserverStatusLock.WriteLock();
+                    try
+                    {
+                        // An observer completed before reaching the broker takes no item and is not enqueued
+                        if (observer.Status != ObserverStatus.WaitingForResult)
+                            return;
 
-                    // An item was found - set the observer result and return
-                    sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
-                    observer.HandleSetResult(result);
+                        // The key has an empty observer queue, try to retrieve next available item
+                        if (!TryGetResult(key, observer.Session.storageSession, observer.Command, observer.CommandArgs, failOnSrcTypeMismatch: true,
+                                out _, out var result))
+                            continue;
+
+                        // An item was found - set the observer result and return
+                        sessionIdToObserver.TryRemove(observer.Session.ObjectStoreSessionID, out _);
+                        observer.HandleSetResult(result, true);
+                    }
+                    finally
+                    {
+                        observer.ObserverStatusLock.WriteUnlock();
+                    }
 
                     // The key still has an empty observer queue, and the current observer retrieved a result, so we can remove the key.
                     keysToObservers.Remove(key);
