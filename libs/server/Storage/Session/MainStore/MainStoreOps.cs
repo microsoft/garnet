@@ -302,8 +302,9 @@ namespace Garnet.server
                 StopPendingMetrics();
             }
 
-            // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
-            if (status.IsExpired)
+            // Deletions in RMW are done by expiring the record, so expiration of a record that was found indicates success;
+            // a record that had already expired was not found.
+            if (status.Found && status.IsExpired)
             {
                 incr_session_found();
                 return GarnetStatus.OK;
