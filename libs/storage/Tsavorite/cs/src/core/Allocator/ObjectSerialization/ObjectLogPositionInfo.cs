@@ -30,8 +30,8 @@ namespace Tsavorite.core
         /// <remarks>
         /// <b>This is a 60-bit value, not all-ones.</b> It must leave the flag bits clear, because a flag is a claim about the position
         /// and an unstamped word makes no claims. When this was all-ones, every freshly initialized record read as "has a directory"
-        /// and a capture protocol that tries to claim a flag bit by setting it found the bit already set -- a no-op rather than an
-        /// ownership transition.
+        /// and a protocol that claims a flag bit by setting it would find the bit already set -- a no-op rather than an ownership
+        /// transition.
         /// <para>Words written before this was narrowed are still all-ones. They remain correctly recognized as unstamped, because
         /// every test for that goes through <see cref="WordIsUnstamped"/>, which looks only at the address bits. Flag <i>readers</i>
         /// must therefore reject an unstamped word rather than testing their bit in isolation -- see <see cref="WordHasDirectory"/>.

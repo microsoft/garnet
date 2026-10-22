@@ -1115,11 +1115,11 @@ The object log has been a file that the allocator addressed by segment and offse
 deleting segments. `ObjectLog` replaces that with a log-structured store composed over `TsavoriteLogAllocatorImpl`,
 which already provides concurrent allocation, a page ring, flushing, eviction, and truncation.
 
-The motivating requirement is retiring `CacheSerializedObjectData`, which preserves a `(v)` record's image during a
-Snapshot checkpoint by serializing it into a managed `byte[]` on the RMW thread - materializing the whole object in
-memory exactly where that hurts most. Writing those bytes to the object log instead needs three things the old object
-log could not do: concurrent allocation, stamping a record's position outside a flush, and a durability deadline later
-than "now". All three fall out of the allocator.
+A further motivation is retiring `CacheSerializedObjectData`, which preserves a `(v)` record's image during a Snapshot
+checkpoint by serializing it into a managed `byte[]` on the RMW thread - materializing the whole object in memory
+exactly where that hurts most. Writing those bytes to the object log instead would need three things the old object log
+could not do: concurrent allocation, stamping a record's position outside a flush, and a durability deadline later than
+"now". All three fall out of the allocator.
 
 `ObjectLog` **composes** the allocator rather than wrapping `TsavoriteLog` or sharing a base class with it. The overlap
 with `TsavoriteLog` proper is about sixty lines of entry framing; the divergence is its entire commit, recovery,
@@ -1231,16 +1231,15 @@ silent corruption. The address space is monotonic over the log's lifetime — it
 bytes live — so this is reached only after sustained writes over many years, and the remedy named in the exception is a
 checkpoint, which starts a fresh object log.
 
-### 12.8 Sequential and non-sequential object logs
+### 12.8 Write order
 
-The two object logs have different write ordering, and this is the reason they have different guarantees:
+Each object log is written in hybrid-log page order: the main object log by the single ReadOnly flush worker (and by
+recovery, before the store opens), and the checkpoint (snapshot) object log by the Snapshot worker.
 
-- the **main object log is strictly sequential** - only the ReadOnly flush worker writes it; and
-- the **checkpoint (snapshot) object log is not** - captures that preserve `(v)` images interleave with the Snapshot
-  worker.
-
-The main log's apparent sequentiality must still not be relied upon for addressing, for the reason given in section
-12.5.
+Addressing must not rely on that order, for the reason given in section 12.5, so a writer that interleaves with these
+needs no format change. Truncation does rely on it: `GetLowestObjectLogSegmentInUse` reads only the boundary page's
+`PageHeader.objectLogLowestPositionWord`, which bounds the object-log references of that page and every later page only
+while the main object log is written in page order. A writer that breaks that order must keep that floor a lower bound.
 
 ### 12.9 The directory
 
