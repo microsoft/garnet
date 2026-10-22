@@ -75,8 +75,11 @@ namespace Garnet.server
 
         private readonly ReadOptimizedLock vectorSetLocks;
 
+        internal ReadOptimizedLock VectorSetLocksForTest =>
 #if DEBUG
-        internal ReadOptimizedLock VectorSetLocksForTest => vectorSetLocks;
+            vectorSetLocks;
+#else
+            throw new InvalidOperationException("Vector Set test locks are only available in DEBUG builds");
 #endif
 
         private readonly int vectorSetElementSelectMask;

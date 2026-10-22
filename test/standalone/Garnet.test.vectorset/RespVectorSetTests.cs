@@ -1368,10 +1368,11 @@ namespace Garnet.test
             }
         }
 
-#if DEBUG
         [Test]
         public async Task VSIMDoesNotRequireExclusiveIndexLockAsync()
         {
+            TestUtils.IgnoreIfExceptionInjectionDisabled();
+
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
@@ -1394,7 +1395,6 @@ namespace Garnet.test
                 locks.ReleaseLock(sharedLock);
             }
         }
-#endif
 
         [Test]
         public void VSIM()
