@@ -1,10 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#pragma warning disable IDE0005 // Shared imports may be unused in individual projects.
-
-global using Garnet.Diagnostics;
-
 #if SERVER_PROJECT || TEST_PROJECT || CLUSTER_PROJECT
 global using BasicGarnetApi = Garnet.server.GarnetApi<
     Tsavorite.core.BasicContext<Garnet.common.FixedSpanByteKey, Garnet.server.StringInput, Garnet.server.StringOutput, long, Garnet.server.MainSessionFunctions,
