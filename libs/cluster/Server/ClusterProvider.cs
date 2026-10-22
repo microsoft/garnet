@@ -134,6 +134,9 @@ namespace Garnet.cluster
             => clusterManager?.CurrentConfig.LocalNodeRole == NodeRole.REPLICA || replicationManager?.IsRecovering == true;
 
         /// <inheritdoc />
+        public bool IsWritePaused => failoverManager?.IsWritePaused ?? false;
+
+        /// <inheritdoc />
         public bool IsReplica(string nodeId)
         {
             var config = clusterManager?.CurrentConfig;
@@ -366,7 +369,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="token">Cancellation token for the transition wait.</param>
         /// <returns></returns>
-        internal ValueTask<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default)
+        public ValueTask<bool> BumpAndWaitForEpochTransitionAsync(CancellationToken token = default)
             => garnetEpoch.BumpAndWaitForEpochTransitionAsync(token);
 
         /// <inheritdoc />

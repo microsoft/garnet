@@ -58,6 +58,35 @@ namespace Garnet.test
             }
         }
 
+        [TestCase(TaskPlacementCategory.Primary)]
+        [TestCase(TaskPlacementCategory.All)]
+        public async Task CategoryCancellationKeepsCommitsUntilMutationsFinish(TaskPlacementCategory category)
+        {
+            using var taskManager = new TaskManager();
+            var canceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            taskManager.RegisterAndRun(TaskType.CommitTask, token => Task.Delay(Timeout.Infinite, token));
+            taskManager.RegisterAndRun(TaskType.ObjectCollectTask, async token =>
+            {
+                using var registration = token.Register(() => canceled.TrySetResult());
+                await finish.Task.ConfigureAwait(false);
+            });
+            var cancellation = taskManager.CancelAsync(category);
+            try
+            {
+                await canceled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.That(taskManager.IsRunning(TaskType.CommitTask), Is.True,
+                    "Commit cancellation must follow completion of mutation-producing tasks.");
+                Assert.That(cancellation.IsCompleted, Is.False);
+            }
+            finally
+            {
+                finish.TrySetResult();
+                await cancellation.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            Assert.That(taskManager.IsRegistered(TaskType.CommitTask), Is.False);
+        }
+
         [Test]
         [TestCase(TaskPlacementCategory.Primary)]
         [TestCase(TaskPlacementCategory.All)]

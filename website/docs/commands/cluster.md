@@ -217,6 +217,11 @@ including waits for session epochs. Omitting `TIMEOUT` leaves the pause unlimite
 After demotion, cancellation can leave the node redirecting to a replica that has not yet promoted; it does not guarantee successful handoff.
 
 Failover cancels and drains primary maintenance before capturing the AOF synchronization target.
+The suspension method drains cluster-session epochs before canceling primary maintenance, so admitted
+`WaitForCommit` requests can finish. Local commits remain permitted during this drain even after demotion,
+and task-category cancellation stops commits last so background mutations can finish. Commits stop before
+replica synchronization can change AOF addresses. `CLUSTER REPLICATE` and `REPLICAOF`
+use the same ordering.
 Background collection and other primary tasks cannot restart during this interval, including through `CONFIG SET`.
 Cancellation releases the write pause without waiting for a stalled maintenance cycle, but the failover worker
 retains ownership until that cycle finishes. Cleanup restarts enabled maintenance only if the node remains primary.

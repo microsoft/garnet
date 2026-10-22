@@ -30,6 +30,7 @@ namespace Garnet.cluster
 
             try
             {
+                session?.ReleaseCurrentEpoch();
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
                 if (options.TryAddReplica)
                 {
@@ -46,7 +47,7 @@ namespace Garnet.cluster
                 // Wait for threads to agree configuration change of this node
                 if (session != null)
                 {
-                    await session.UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                    await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
                 }
 
                 if (options.Background)
@@ -65,6 +66,10 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSyncAsync)}");
                 return (false, errorMessage);
+            }
+            finally
+            {
+                session?.AcquireCurrentEpoch();
             }
 
             return (true, errorMessage);

@@ -106,11 +106,12 @@ namespace Garnet.cluster
                     cts.CancelAfter(failoverTimeout);
                 cts.Token.ThrowIfCancellationRequested();
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
+
                 clusterProvider.failoverManager.PauseWrites(true);
                 writesPaused = true;
+
                 primaryTasksSuspended = true;
-                await clusterProvider.storeWrapper.SuspendPrimaryTasksForFailoverAsync().WaitAsync(cts.Token).ConfigureAwait(false);
-                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync(cts.Token).ConfigureAwait(false);
+                await clusterProvider.storeWrapper.SuspendPrimaryOnlyTasksAsync(cts.Token).WaitAsync(cts.Token).ConfigureAwait(false);
                 cts.Token.ThrowIfCancellationRequested();
 
                 checkpointsPaused = TryPauseCheckpointsForFailover();

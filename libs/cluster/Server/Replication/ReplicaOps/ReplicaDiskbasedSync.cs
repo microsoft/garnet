@@ -35,6 +35,7 @@ namespace Garnet.cluster
             ReadOnlyMemory<byte> errorMessage = default;
             try
             {
+                session?.ReleaseCurrentEpoch();
                 logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
                 // Update the configuration to make this node a replica of provided nodeId
                 if (options.TryAddReplica)
@@ -52,7 +53,7 @@ namespace Garnet.cluster
                 // Wait for threads to agree
                 if (session != null)
                 {
-                    await session.UnsafeBumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                    await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
                 }
 
                 // Initiate remote checkpoint retrieval
@@ -78,6 +79,10 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDiskbasedSyncAsync)}");
                 return (false, errorMessage);
+            }
+            finally
+            {
+                session?.AcquireCurrentEpoch();
             }
 
             async Task<string> ReplicaSyncAttachTaskAsync(bool downgradeLock, bool forceAsync)

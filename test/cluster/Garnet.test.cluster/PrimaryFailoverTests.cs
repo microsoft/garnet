@@ -128,6 +128,136 @@ namespace Garnet.test.cluster
 
 #if DEBUG
         [Test, CancelAfter(120_000)]
+        [TestCase("primary", false)]
+        [TestCase("primary", true)]
+        [TestCase("replica", false)]
+        [TestCase("replica", true)]
+        [TestCase("replicate", false)]
+        [TestCase("replicate", true)]
+        [TestCase("replicaof", false)]
+        [TestCase("replicaof", true)]
+        [TestCase("abort", false)]
+        [TestCase("timeout", false)]
+        public async Task SuspensionDrainsCommitWaiters(string operation, bool diskless)
+        {
+            var canceled = operation is "abort" or "timeout";
+            var failover = operation is "primary" or "replica" || canceled;
+            var index = failover ? 0 : 1;
+            context.CreateInstances(2, enableAOF: true, enableDisklessSync: diskless);
+            context.ShutdownNode(index);
+            context.nodeOptions[index].CommitFrequencyMs = 100;
+            context.nodeOptions[index].WaitForCommit = true;
+            context.RestartNode(index);
+            context.CreateConnection();
+            context.SimplePrimaryReplicaSetup();
+            var primaryId = context.clusterTestUtils.GetNodeIdFromNode(0, context.logger);
+            if (failover)
+            {
+                Assert.That(context.clusterTestUtils.ClusterReplicate(1, primaryId, async: false, logger: context.logger),
+                    Is.EqualTo("OK"));
+                context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+            }
+
+            var candidate = Provider(index);
+            using var writer = new TcpClient();
+            using var control = new TcpClient();
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var token = deadline.Token;
+            var session = await ConnectIdleSessionAsync(writer, token, index);
+            await ConnectIdleSessionAsync(control, token, index);
+            const ExceptionInjectionType injection = ExceptionInjectionType.Aof_Pause_Before_Periodic_Commit;
+            ExceptionInjectionHelper.EnableException(injection);
+            try
+            {
+                Assert.That(() => ExceptionInjectionHelper.IsEnabled(injection), Is.False.After(5_000, 10));
+                var log = candidate.storeWrapper.appendOnlyFile.Log;
+                var tail = log.TailAddress;
+                var write = ExecuteCommandAsync(writer, failover
+                    ? "*3\r\n$3\r\nSET\r\n$13\r\n{commit}write\r\n$5\r\nvalue\r\n"
+                    : "*1\r\n$7\r\nFLUSHDB\r\n", token);
+                Assert.That(() => log.TailAddress.EqualsAll(tail), Is.False.After(5_000, 10));
+                Assert.That(write.IsCompleted, Is.False);
+                var epoch = session.LocalCurrentEpoch;
+                Assert.That(epoch, Is.Not.Zero);
+
+                Task<string> attachment = null;
+                if (operation is "primary" or "abort" or "timeout")
+                {
+                    var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(1);
+                    Assert.That(candidate.failoverManager.TryStartPrimaryFailover(endpoint.Address.ToString(), endpoint.Port,
+                        FailoverOption.DEFAULT, TimeSpan.FromSeconds(canceled ? 2 : 20)), Is.True);
+                }
+                else if (operation == "replica")
+                    Assert.That(Provider(1).failoverManager.TryStartReplicaFailover(
+                        FailoverOption.DEFAULT, TimeSpan.FromSeconds(20)), Is.True);
+                else if (operation == "replicate")
+                    attachment = ExecuteCommandAsync(control,
+                        $"*4\r\n$7\r\nCLUSTER\r\n$9\r\nREPLICATE\r\n${primaryId.Length}\r\n{primaryId}\r\n$4\r\nSYNC\r\n", token);
+                else
+                {
+                    var endpoint = (IPEndPoint)context.clusterTestUtils.GetEndPoint(0);
+                    var address = endpoint.Address.ToString();
+                    var port = endpoint.Port.ToString();
+                    attachment = ExecuteCommandAsync(control,
+                        $"*3\r\n$9\r\nREPLICAOF\r\n${address.Length}\r\n{address}\r\n${port.Length}\r\n{port}\r\n", token);
+                }
+
+                Assert.That(() => candidate.garnetEpoch.GetCurrentEpoch(), Is.GreaterThan(epoch).After(5_000, 10));
+                Assert.That(candidate.storeWrapper.TaskManager.IsRegistered(TaskType.CommitTask), Is.True,
+                    "Commits must remain available until the admitted writer releases its epoch.");
+                Assert.That(session.LocalCurrentEpoch, Is.EqualTo(epoch));
+                if (canceled)
+                {
+                    if (operation == "abort")
+                        candidate.failoverManager.TryAbortReplicaFailover();
+                    Assert.That(() => candidate.storeWrapper.TaskManager.IsRegistered(TaskType.FailoverTask),
+                        Is.False.After(5_000, 10));
+                    Assert.That(candidate.failoverManager.IsWritePaused, Is.False);
+                }
+                ExceptionInjectionHelper.SuspendParking();
+                try
+                {
+                    ExceptionInjectionHelper.DisableException(injection);
+                    Assert.That(await write.WaitAsync(token), Is.EqualTo("+OK"));
+                    if (attachment != null)
+                        Assert.That(await attachment.WaitAsync(token), Is.EqualTo("+OK"));
+                    Assert.That(() => candidate.clusterManager.CurrentConfig.LocalNodeRole,
+                        Is.EqualTo(canceled ? ClusterNodeRole.PRIMARY : ClusterNodeRole.REPLICA).After(10_000, 10));
+                    Assert.That(() => candidate.storeWrapper.TaskManager.IsRegistered(TaskType.CommitTask),
+                        Is.EqualTo(canceled).After(10_000, 10));
+                    if (failover && !canceled)
+                    {
+                        Assert.That(() => Provider(1).clusterManager.CurrentConfig.LocalNodeRole,
+                            Is.EqualTo(ClusterNodeRole.PRIMARY).After(10_000, 10));
+                        Assert.That(() => Provider(1).storeWrapper.TaskManager.IsRegistered(TaskType.FailoverTask),
+                            Is.False.After(10_000, 10));
+                    }
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+            }
+            finally
+            {
+                ExceptionInjectionHelper.SuspendParking();
+                try
+                {
+                    ExceptionInjectionHelper.DisableException(injection);
+                    for (var i = 0; i < 2; i++)
+                    {
+                        Provider(i).failoverManager.TryAbortReplicaFailover();
+                        await Provider(i).storeWrapper.TaskManager.CancelAsync(TaskType.FailoverTask).WaitAsync(token);
+                    }
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.ResumeParking();
+                }
+            }
+        }
+
+        [Test, CancelAfter(120_000)]
         public async Task FailedReplicaOfDoesNotRestartReplicaTasks([Values] bool diskless)
         {
             context.CreateInstances(2, enableAOF: true, CommitFrequencyMs: 100, enableDisklessSync: diskless);
@@ -958,10 +1088,10 @@ namespace Garnet.test.cluster
             Assert.That(Provider(1).clusterManager.CurrentConfig.LocalNodeRole, Is.EqualTo(ClusterNodeRole.PRIMARY));
         }
 
-        async Task<ClusterSession> ConnectIdleSessionAsync(TcpClient connection, CancellationToken token)
+        async Task<ClusterSession> ConnectIdleSessionAsync(TcpClient connection, CancellationToken token, int index = 0)
         {
-            var server = (GarnetServerTcp)Provider(0).storeWrapper.Servers[0];
-            await connection.ConnectAsync((IPEndPoint)context.clusterTestUtils.GetEndPoint(0), token);
+            var server = (GarnetServerTcp)Provider(index).storeWrapper.Servers[0];
+            await connection.ConnectAsync((IPEndPoint)context.clusterTestUtils.GetEndPoint(index), token);
             var stream = connection.GetStream();
             await stream.WriteAsync("*1\r\n$4\r\nPING\r\n"u8.ToArray(), token);
             await stream.ReadExactlyAsync(new byte[7], token);
