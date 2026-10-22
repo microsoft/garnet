@@ -188,7 +188,8 @@ namespace Garnet.test.Resp
 
             foreach (var (reply, pooled) in new[] { (nested, false), (flat, false), (flat, true) })
             {
-                var bytes = Encoding.ASCII.GetBytes(reply);
+                var bytes = new byte[reply.Length];
+                _ = Encoding.ASCII.GetBytes(reply, bytes);
                 MemoryResult<byte>[] warmPooled = null;
                 fixed (byte* start = bytes)
                 {
