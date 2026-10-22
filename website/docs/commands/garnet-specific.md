@@ -293,14 +293,10 @@ Deletes a key only if the provided Etag is strictly greater than the existing Et
 
 ---
 
-### Deletion, expiration and recreation
-
-Deletion and expiration remove the stored ETag with the value. `SETWITHETAG` recreates a missing key with ETag 1. `SETIFMATCH` creates a missing key regardless of the supplied ETag and initializes its ETag to the supplied value plus one. ETags are not unique across a key's lifetime, and an old ETag can match a recreated key.
-
 ### Compatibility and Behavior with Non-ETag Commands
 
 :::warning Important: Key Partitioning Required
-Non-ETag commands do not provide ETag-based conditional updates. Do not rely on them to maintain ETag semantics.
+Commands such as SET, GET, APPEND, INCR, MSET, BITOP, etc. are completely **ETag-blind**. They do not read, check, update, or preserve ETags.
 
 **Users MUST partition their keys**: use ONLY ETag commands (`SETWITHETAG`, `GETWITHETAG`, `SETIFMATCH`, `SETIFGREATER`, `GETIFNOTMATCH`, `DELIFGREATER`) on ETag-managed keys.
 
