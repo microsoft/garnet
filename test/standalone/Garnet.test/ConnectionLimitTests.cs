@@ -619,9 +619,9 @@ namespace Garnet.test
             try
             {
                 // Fillers are real TLS clients rather than bare sockets so that the test asserts on
-                // admitted connections. Bare silent sockets would also occupy slots -- the handshake
-                // has no timeout, so they hold them indefinitely -- but nothing would distinguish an
-                // occupied slot from a connection still waiting to be accepted.
+                // admitted connections. Bare silent sockets would also occupy slots -- until the TLS
+                // handshake deadline closes them -- but nothing would distinguish an occupied slot from
+                // a connection still waiting to be accepted.
                 for (var i = 0; i < Limit; i++)
                 {
                     var client = TestUtils.GetGarnetClient(useTLS: true);

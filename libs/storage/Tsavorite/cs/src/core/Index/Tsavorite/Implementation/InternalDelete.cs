@@ -115,6 +115,10 @@ namespace Tsavorite.core
 
                     // Mutable Region: Update the record in-place
 
+                    // Evaluate expiration before InPlaceDeleter, which may clear the optionals. An expired record is still deleted
+                    // (to reclaim it) but is reported as Expired so the caller does not count it as an existing key.
+                    var expired = IsExpiredRecord(ref srcLogRecord);
+
                     // DeleteInfo's lengths are filled in and GetRecordLengths and SetDeletedValueLength are called inside InPlaceDeleter.
                     if (sessionFunctions.InPlaceDeleter(ref srcLogRecord, ref deleteInfo))
                     {
@@ -130,7 +134,7 @@ namespace Tsavorite.core
                         if (CanElide<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, srcLogRecord.Info))
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref srcLogRecord);
 
-                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, expired ? StatusCode.InPlaceUpdatedRecord | StatusCode.Expired : StatusCode.InPlaceUpdatedRecord);
                         goto Done;
                     }
 
@@ -180,6 +184,10 @@ namespace Tsavorite.core
             return status;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool IsExpiredRecord(ref LogRecord logRecord)
+            => logRecord.DataHeader.HasExpiration && logRecord.Expiration < System.DateTimeOffset.UtcNow.Ticks;
+
         private LatchDestination CheckCPRConsistencyDelete(Phase phase, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref OperationStatus status)
         {
             // This is the same logic as Upsert; neither goes pending.
@@ -202,6 +210,9 @@ namespace Tsavorite.core
             where TKey : IKey, allows ref struct
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
+            // Capture expiration of the in-memory source (mutable-region, readonly-region or readcache) before it is disposed
+            var srcExpired = stackCtx.recSrc.HasInMemorySrc && IsExpiredRecord(ref srcLogRecord);
+
             var sizeInfo = hlog.GetDeleteRecordSize(key);
             Debug.Assert(!sizeInfo.FieldInfo.HasETag && !sizeInfo.FieldInfo.HasExpiration, $"Delete new-record sizeInfo should not have HasETag {sizeInfo.FieldInfo.HasETag} or HasExpiration {sizeInfo.FieldInfo.HasExpiration}");
 
@@ -279,7 +290,7 @@ namespace Tsavorite.core
 
                 stackCtx.ClearNewRecord();
                 operationState.logicalAddress = newLogicalAddress;
-                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
+                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, srcExpired ? StatusCode.CreatedRecord | StatusCode.Expired : StatusCode.CreatedRecord);
             }
 
             // CAS failed

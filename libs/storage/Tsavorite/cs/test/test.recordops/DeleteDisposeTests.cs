@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Threading;
 using NUnit.Framework;
@@ -92,6 +93,51 @@ namespace Tsavorite.test
             }
         }
 
+        internal class ExpiredReinitWithExpirationFunctions : SimpleIntSimpleFunctions
+        {
+            internal const long ExpirationTicks = 123456789L;
+
+            internal int newValueLength;
+            internal int readValueLength;
+            internal long readExpiration;
+            internal byte seedRecordType;
+            internal byte readRecordType;
+
+            public override bool InPlaceUpdater(ref LogRecord logRecord, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                rmwInfo.Action = RMWAction.ExpireAndResume;
+                return false;
+            }
+
+            public override RecordFieldInfo GetRMWInitialFieldInfo<TKey>(TKey key, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = newValueLength, HasExpiration = true, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
+
+            public override RecordFieldInfo GetUpsertFieldInfo<TKey>(TKey key, ReadOnlySpan<byte> value, ref int input)
+                => new() { KeySize = key.KeyBytes.Length, ValueSize = value.Length, RecordType = seedRecordType, ExtendedNamespaceSize = RecordNamespace.GetExtendedNamespaceSize(in key) };
+
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
+                => dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
+
+            public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                var value = new byte[sizeInfo.FieldInfo.ValueSize];
+                value[0] = (byte)input;
+                if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(value, in sizeInfo) || !dstLogRecord.TrySetExpiration(ExpirationTicks))
+                    return false;
+                output = input;
+                return true;
+            }
+
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input, ref int output, ref ReadInfo readInfo)
+            {
+                readValueLength = srcLogRecord.ValueSpan.Length;
+                readExpiration = srcLogRecord.Expiration;
+                readRecordType = srcLogRecord.RecordType;
+                output = srcLogRecord.ValueSpan[0];
+                return true;
+            }
+        }
+
         private TsavoriteKV<TrackingStoreFunctions, TrackingAllocator> store;
         private IDevice log;
         private DisposeTracker tracker;
@@ -170,6 +216,53 @@ namespace Tsavorite.test
             ClassicAssert.AreEqual(n, tracker.DeletedCount, $"Immutable delete multiple: expected exactly {n}");
         }
 
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ExpireAndResumeReinitDoesNotKeepStaleRecordTypeTest([Values(1, 2)] byte seedRecordType)
+        {
+            // The seed record is large enough that the new value would fit it in place; a differing RecordType must still force a new record
+            var fn = new ExpiredReinitWithExpirationFunctions { newValueLength = sizeof(int), seedRecordType = seedRecordType };
+            using var s = store.NewSession<TestSpanByteKey, int, int, Empty, ExpiredReinitWithExpirationFunctions>(fn);
+            var key = 1;
+            _ = s.BasicContext.Upsert(Key(ref key), new byte[64]);
+
+            var input = 50;
+            var output = 0;
+            _ = s.BasicContext.RMW(Key(ref key), ref input, ref output);
+
+            output = 0;
+            var status = s.BasicContext.Read(Key(ref key), ref input, ref output);
+            ClassicAssert.IsTrue(status.Found);
+            ClassicAssert.AreEqual(50, output);
+            ClassicAssert.AreEqual(0, fn.readRecordType, "Reinitialized record must not retain the expired record's RecordType");
+            ClassicAssert.AreEqual(ExpiredReinitWithExpirationFunctions.ExpirationTicks, fn.readExpiration);
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void DeleteReportsExpiredRecordTest([Values] bool immutable, [Values] bool expiring)
+        {
+            // InitialUpdater of ExpiredReinitWithExpirationFunctions stores a (long past) expiration
+            var fn = new ExpiredReinitWithExpirationFunctions { newValueLength = sizeof(int) };
+            using var s = store.NewSession<TestSpanByteKey, int, int, Empty, ExpiredReinitWithExpirationFunctions>(fn);
+            var key = 1;
+            if (expiring)
+            {
+                var input = 50;
+                _ = s.BasicContext.RMW(Key(ref key), ref input);
+            }
+            else
+                UpsertKey(key, 50);
+
+            if (immutable)
+                store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
+            tracker.Reset();
+
+            var status = s.BasicContext.Delete(Key(ref key));
+            ClassicAssert.AreEqual(expiring, status.IsExpired, $"Delete expired status (immutable {immutable}, expiring {expiring})");
+            ClassicAssert.AreEqual(1, tracker.DeletedCount, "Expected the record to be disposed even if expired");
+        }
+
         #endregion
 
         #region ExpireAndStop
@@ -246,6 +339,29 @@ namespace Tsavorite.test
             var k = 1; var input = 50;
             _ = s.BasicContext.RMW(Key(ref k), ref input);
             ClassicAssert.AreEqual(1, tracker.DeletedCount, "Immutable ExpireAndResume: expected exactly 1");
+        }
+
+        [Test]
+        [Category("TsavoriteKV")]
+        public void ExpireAndResumeReinitWithExpirationStoresValueTest([Values(1, 4, 5, 8)] int seedLength, [Values(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 16, 64)] int valueGrowth)
+        {
+            // The new value may fit the expired record without the expiration but not with it; the write must never be lost.
+            var fn = new ExpiredReinitWithExpirationFunctions { newValueLength = seedLength + valueGrowth };
+            using var s = store.NewSession<TestSpanByteKey, int, int, Empty, ExpiredReinitWithExpirationFunctions>(fn);
+            var key = 1;
+            var seed = new byte[seedLength];
+            _ = s.BasicContext.Upsert(Key(ref key), seed);
+
+            var input = 50;
+            var output = 0;
+            _ = s.BasicContext.RMW(Key(ref key), ref input, ref output);
+
+            output = 0;
+            var status = s.BasicContext.Read(Key(ref key), ref input, ref output);
+            ClassicAssert.IsTrue(status.Found, $"Key not found after RMW (seed {seedLength}, growth {valueGrowth})");
+            ClassicAssert.AreEqual(50, output);
+            ClassicAssert.AreEqual(seedLength + valueGrowth, fn.readValueLength);
+            ClassicAssert.AreEqual(ExpiredReinitWithExpirationFunctions.ExpirationTicks, fn.readExpiration);
         }
 
         #endregion

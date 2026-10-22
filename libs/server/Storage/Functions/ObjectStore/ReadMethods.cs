@@ -16,16 +16,18 @@ namespace Garnet.server
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ObjectInput input, ref ObjectOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!srcLogRecord.DataHeader.ValueIsObject)
-            {
-                readInfo.Action = ReadAction.WrongType;
-                return false;
-            }
-
+            // Expired data is logically absent, so check this before the type check below; otherwise an expired
+            // record of a different type would incorrectly report WrongType instead of being treated as missing.
             if (srcLogRecord.DataHeader.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.Now.UtcTicks)
             {
                 // Do not set 'value = null' or otherwise mark this; Reads should not update the database. We rely on consistently checking for expiration everywhere.
                 readInfo.Action = ReadAction.Expire;
+                return false;
+            }
+
+            if (!srcLogRecord.DataHeader.ValueIsObject)
+            {
+                readInfo.Action = ReadAction.WrongType;
                 return false;
             }
 
