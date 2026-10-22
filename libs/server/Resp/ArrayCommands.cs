@@ -98,6 +98,8 @@ namespace Garnet.server
             for (int c = 0; c < parseState.Count; c++)
             {
                 var key = parseState.GetArgSliceByRef(c);
+
+                // DELETE reports an expired record as not found, while still physically deleting it
                 var status = storageApi.DELETE(key);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append

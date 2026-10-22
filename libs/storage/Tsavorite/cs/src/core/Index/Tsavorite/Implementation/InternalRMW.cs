@@ -177,7 +177,10 @@ namespace Tsavorite.core
                     else if (rmwInfo.Action == RMWAction.ExpireAndResume)
                     {
                         // ExpireAndResume: for IPU, ReinitializeExpiredRecord already called OnDispose(Deleted).
-                        // If it failed and we fall through to CreateNewRecord, the record is already disposed.
+                        // If it failed and we fall through to CreateNewRecord, the record is already disposed, but the heap
+                        // fields were cleared without a tracker decrement, so apply the delta here.
+                        if (ipuDelta != 0)
+                            sizeTracker.IncrementSize(ipuDelta);
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
                     {

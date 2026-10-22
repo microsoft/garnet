@@ -160,5 +160,10 @@ namespace Garnet.common
         /// Pause after receiving the full diskless snapshot, before recovery resets the AOF addresses.
         /// </summary>
         Replication_Pause_Before_Diskless_Snapshot_Recovery,
+        /// <summary>
+        /// Server network sender: pause a send completion that frees a slot for a waiting send, after it has
+        /// decremented the send count and before it releases the waiter.
+        /// </summary>
+        Sender_Pause_Before_Slot_Release,
     }
 }
