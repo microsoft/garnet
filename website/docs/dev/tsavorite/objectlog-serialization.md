@@ -1290,9 +1290,17 @@ A directory record is a `DirectoryRecordHeader` followed by its entries:
 | `KeyEntryCount` | Entries belonging to the overflow key, counted over the **whole chain**; zero in a spine record |
 | `Flags` | `DirectoryIsCombined` |
 
-**Entries cover every data chunk**, in stream order, so `EntryCount` is the chunk count and the reader's loop has one
-shape. Summing each side's entry lengths gives exact component sizes, so an `OverflowByteArray` is allocated once at
-the right size and §6.3's rebase-at-actual-key-end discovery is retired.
+**Entries cover every component portion**, in stream order. A mixed key/value chunk contributes two entries sharing
+one address. `EntryCount` counts the entries immediately following this header, including a spine link when present;
+it is not necessarily the physical chunk count. `KeyEntryCount` counts key entries across the flattened chain,
+excluding spine links. Summing each component's data-entry lengths gives its exact size, so an `OverflowByteArray`
+is allocated once at the right size and section 6.3's rebase-at-actual-key-end discovery is retired.
+
+**Initial-read hints remain.** With `HasDirectory` set, the hint describes the top directory record, including
+combined data, rather than the component payload. Use the key slot when the key is out-of-line, otherwise the value
+slot; the matching exact-size flag selects exact bytes versus a page-count hint. Clamp that read to the page and
+known tail. Without a directory, the hint still describes the single component. A directory already covered by the
+initial read, including its combined data, is cached rather than fetched again.
 
 **Combined final record.** When the final chunk's remaining data and the accumulated directory fit one allocation
 together, they are written as one record and `DirectoryIsCombined` is set; otherwise the directory is its own record.
