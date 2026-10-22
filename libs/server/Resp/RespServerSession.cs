@@ -700,6 +700,14 @@ namespace Garnet.server
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
+        /// <summary>
+        /// Whether a blocking command on this session may wait for an item. It may not while a transaction is running
+        /// (EXEC, or a script in transaction mode): the transaction holds its keys' locks until commit, so no other
+        /// client can add an item. Nor may it in a session that runs scripts, since a script must not wait on other
+        /// clients. A blocking command that may not wait takes an available item or replies as on timeout.
+        /// </summary>
+        internal bool CanBlock => txnManager.state != TxnState.Running && noScriptBitmap == null;
+
         private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi transactionalApi)
             where TBasicApi : IGarnetApi
             where TTxnApi : IGarnetApi
