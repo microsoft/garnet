@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed class GossipVersionNegotiation
     {
-        private readonly GarnetClient client;
+        private readonly GarnetLightClient client;
         private readonly ClusterManager manager;
         private readonly SemaphoreSlim exchangeLock = new(1, 1);
         private ClusterConfig lastConfig;
@@ -20,7 +20,7 @@ namespace Garnet.cluster
 
         internal bool IsNegotiated => confirmed;
 
-        internal GossipVersionNegotiation(GarnetClient client, ClusterManager manager)
+        internal GossipVersionNegotiation(GarnetLightClient client, ClusterManager manager)
         {
             this.client = client;
             this.manager = manager;
@@ -31,9 +31,9 @@ namespace Garnet.cluster
             await exchangeLock.WaitAsync(token).ConfigureAwait(false);
             try
             {
-                bool sendFullConfig = withMeet || !confirmed || config != lastConfig;
-                byte[] payload = sendFullConfig ? config.ToGossipByteArray(version) : [];
-                using MemoryResult<byte> response = await SendAsync(payload, withMeet, token).ConfigureAwait(false);
+                var sendFullConfig = withMeet || !confirmed || config != lastConfig;
+                var payload = sendFullConfig ? config.ToGossipByteArray(version) : [];
+                using var response = await SendAsync(payload, withMeet, token).ConfigureAwait(false);
                 ClusterConfig remote = null;
                 if (response.Length == 0)
                 {
@@ -49,8 +49,8 @@ namespace Garnet.cluster
                             throw new InvalidDataException($"Gossip response does not match negotiated version {version}.");
 
                         // An older reply does not acknowledge the rejected configuration, so resend it in full.
-                        byte[] retryPayload = config.ToGossipByteArray(replyVersion);
-                        using MemoryResult<byte> retryResponse = await SendAsync(retryPayload, withMeet, token).ConfigureAwait(false);
+                        var retryPayload = config.ToGossipByteArray(replyVersion);
+                        using var retryResponse = await SendAsync(retryPayload, withMeet, token).ConfigureAwait(false);
                         if (retryResponse.Length > 0)
                         {
                             remote = ValidateResponse(retryResponse, remote.LocalNodeId, out byte retryVersion);
@@ -80,7 +80,7 @@ namespace Garnet.cluster
                 Interlocked.Increment(ref manager.gossipStats.gossip_empty_send);
             else
                 Interlocked.Increment(ref manager.gossipStats.gossip_full_send);
-            MemoryResult<byte> response = withMeet
+            var response = withMeet
                 ? await client.GossipWithMeetAsync(payload, token).ConfigureAwait(false)
                 : await client.GossipAsync(payload, token).ConfigureAwait(false);
             manager.gossipStats.UpdateGossipBytesRecv(response.Length);
@@ -91,7 +91,7 @@ namespace Garnet.cluster
         {
             if (!ClusterConfig.TryPeekVersion(response.Span, out replyVersion) || !ClusterConfig.IsSupportedVersion(replyVersion))
                 throw new InvalidDataException("Gossip response contains an unsupported configuration version.");
-            ClusterConfig remote = ClusterConfig.FromByteArray(response.Span.ToArray());
+            var remote = ClusterConfig.FromByteArray(response.Span.ToArray());
             if (string.IsNullOrEmpty(remote.LocalNodeId) || (expectedNodeId != null && remote.LocalNodeId != expectedNodeId))
                 throw new InvalidDataException("Gossip response does not match the expected node identity.");
             return remote;

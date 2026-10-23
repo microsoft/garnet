@@ -24,6 +24,32 @@ namespace Garnet.common
         public const int MaxArgumentLengthBytes = 512 * 1_024 * 1_024;
 
         /// <summary>
+        /// Maximum nesting depth of a structured value: a nested RESP array reply, or a Lua table converted
+        /// to or from JSON.
+        ///
+        /// This matches the Redis maximum JSON nesting depth of 1000.
+        /// </summary>
+        public const int MaxNestingDepth = 1000;
+
+        /// <summary>
+        /// Largest size a connection's receive buffer grows to; a message that does not fit in it is a protocol
+        /// error that closes the connection.
+        ///
+        /// This matches the default Redis client-query-buffer-limit of 1GB.
+        /// </summary>
+        public const int MaxReceiveBufferBytes = 1 << 30;
+
+        /// <summary>
+        /// Smallest encoding of an array element ("+\r\n" or ":\r\n").
+        /// </summary>
+        public const int MinArrayElementBytes = 3;
+
+        /// <summary>
+        /// Largest element count an array can declare: the most elements a full receive buffer can hold.
+        /// </summary>
+        public const int MaxArrayLength = MaxReceiveBufferBytes / MinArrayElementBytes;
+
+        /// <summary>
         /// Tries to read the leading sign of the given ASCII-encoded number.
         /// </summary>
         /// <param name="ptr">String to try reading sign from.</param>
@@ -1115,6 +1141,13 @@ namespace Garnet.common
         {
             result = null;
 
+            // Allocate only once the whole reply has been received and validated
+            var scan = ptr;
+            if (!TrySkipArrayReply(ref scan, end, allowNestedArrays: false))
+            {
+                return false;
+            }
+
             // Parse RESP array header
             if (!TryReadUnsignedArrayLength(out var length, ref ptr, end))
             {
@@ -1137,6 +1170,135 @@ namespace Garnet.common
                 }
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Checks, without allocating, that the bytes at <paramref name="ptr"/> hold a complete RESP array reply
+        /// whose elements are bulk strings, simple strings, integers and, if allowed, nested arrays.
+        /// </summary>
+        /// <remarks>
+        /// Readers call this before sizing any array, so a reply commits memory only once all of its bytes have
+        /// arrived, and a reply that is still arriving costs no allocation however many receives it spans.
+        /// </remarks>
+        /// <param name="ptr">The start of the reply. Advanced past the reply if it is complete.</param>
+        /// <param name="end">The current end of the received bytes.</param>
+        /// <param name="allowNestedArrays">Whether elements may themselves be arrays.</param>
+        /// <returns>True if the whole reply has been received; false if more bytes are needed.</returns>
+        /// <exception cref="RespParsingException">Thrown if the reply is malformed, declares an array longer than
+        /// <see cref="MaxArrayLength"/> or a bulk string longer than <see cref="MaxArgumentLengthBytes"/>, or nests
+        /// deeper than <see cref="MaxNestingDepth"/>.</exception>
+        public static bool TrySkipArrayReply(ref byte* ptr, byte* end, bool allowNestedArrays)
+        {
+            if (!TryReadSignedArrayLength(out var length, ref ptr, end))
+            {
+                return false;
+            }
+
+            if (length > MaxArrayLength)
+            {
+                RespParsingException.ThrowInvalidLength(length);
+            }
+
+            // Explicit counters bound stack usage independently of the reply's nesting.
+            Span<int> remaining = stackalloc int[allowNestedArrays ? MaxNestingDepth : 1];
+            var depth = 0;
+            remaining[depth] = Math.Max(length, 0);
+            while (depth >= 0)
+            {
+                if (remaining[depth] == 0)
+                {
+                    depth--;
+                    continue;
+                }
+
+                if (ptr >= end)
+                {
+                    return false;
+                }
+
+                remaining[depth]--;
+                switch (*ptr)
+                {
+                    case (byte)'$':
+                        if (!TrySkipBulkString(ref ptr, end))
+                            return false;
+                        break;
+                    case (byte)'+':
+                    case (byte)':':
+                        if (!TrySkipLine(ref ptr, end))
+                            return false;
+                        break;
+                    case (byte)'*' when allowNestedArrays:
+                        if (depth + 1 >= MaxNestingDepth)
+                        {
+                            RespParsingException.ThrowExcessiveNestingDepth(MaxNestingDepth);
+                        }
+                        if (!TryReadSignedArrayLength(out length, ref ptr, end))
+                            return false;
+                        if (length > MaxArrayLength)
+                        {
+                            RespParsingException.ThrowInvalidLength(length);
+                        }
+                        remaining[++depth] = Math.Max(length, 0);
+                        break;
+                    default:
+                        RespParsingException.ThrowUnexpectedToken(*ptr);
+                        break;
+                }
+            }
+
+            return true;
+        }
+
+        static bool TrySkipBulkString(ref byte* ptr, byte* end)
+        {
+            if (!TryReadSignedLengthHeader(out var length, ref ptr, end))
+            {
+                return false;
+            }
+
+            if (length > MaxArgumentLengthBytes)
+            {
+                RespParsingException.ThrowInvalidStringLength(length);
+            }
+
+            // Any negative length is a NULL value
+            if (length < 0)
+            {
+                return true;
+            }
+
+            if (length + 2L > end - ptr)
+            {
+                return false;
+            }
+
+            ptr += length;
+            if (*(ushort*)ptr != MemoryMarshal.Read<ushort>("\r\n"u8))
+            {
+                RespParsingException.ThrowUnexpectedToken(*ptr);
+            }
+
+            ptr += 2;
+            return true;
+        }
+
+        static bool TrySkipLine(ref byte* ptr, byte* end)
+        {
+            var start = ptr + 1;
+            if (start >= end)
+            {
+                return false;
+            }
+
+            var terminator = new ReadOnlySpan<byte>(start, (int)(end - start)).IndexOf("\r\n"u8);
+            if (terminator < 0)
+            {
+                return false;
+            }
+
+            ptr = start + terminator + 2;
             return true;
         }
 

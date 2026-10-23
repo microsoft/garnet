@@ -36,6 +36,24 @@ namespace Garnet.server
         AOF_SIZE_LIMIT_ENFORCE_FREQUENCY,
         CHECKPOINT_FREQ,
 
+        // GarnetLightClient (gossip) network-writer options. Plain runtime-adjustable storage slots seeded
+        // from LightNetworkWriterOptions.Default. CONFIG SET records the new value only; it is not propagated
+        // to live gossip client instances, which keep the options captured when they were constructed.
+        GOSSIP_NETWORK_BUFFER_SIZE_BYTES,
+        GOSSIP_REQUEST_PAGE_SIZE_BYTES,
+        GOSSIP_REQUEST_PAGE_COUNT,
+        GOSSIP_MAX_OUTSTANDING_REQUESTS,
+        GOSSIP_MAX_OUTSTANDING_COMPLETIONS,
+        GOSSIP_MAX_CONCURRENT_NETWORK_SENDS,
+        GOSSIP_MAX_OUT_OF_LINE_RENTED_BYTES,
+        GOSSIP_FLUSH_RESULT_ALLOCATION_MODE,
+
+        // Delay (seconds) applied once to the whole gossip client collection after a configuration
+        // swap before the previous clients begin graceful retirement. Read live at swap time; unlike the
+        // GOSSIP_* writer slots above it is not part of the GOSSIP_CLIENT group, so changing it does not
+        // itself trigger a client swap.
+        GOSSIP_CLIENT_SWAP_GRACE,
+
         // Runtime-adjustable options whose change requires a lifecycle action on a background task
         // (start / kill / restart), enacted through the ConfigMeta.UpdateAction during CONFIG SET.
         AOF_COMMIT_FREQ,
@@ -62,5 +80,11 @@ namespace Garnet.server
         AOF_SIZE_LIMIT,
         FAST_AOF_TRUNCATE,
         AOF_NULL_DEVICE,
+    }
+
+    public enum ServerConfigGroupType : int
+    {
+        NONE,
+        GOSSIP_CLIENT
     }
 }

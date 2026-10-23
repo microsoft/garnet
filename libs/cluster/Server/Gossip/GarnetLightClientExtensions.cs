@@ -1,0 +1,59 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Garnet.client;
+using Garnet.server;
+
+namespace Garnet.cluster
+{
+    internal static class GarnetLightClientExtensions
+    {
+        /// <summary>
+        /// Issue stop writes to primary node
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="nodeid"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.NetworkClusterFailStopWrites"/>
+        public static async Task<string> ExecuteClusterFailStopWritesAsync(this GarnetLightClient client, Memory<byte> nodeid, CancellationToken cancellationToken = default)
+            => await client.ExecuteForStringResultWithCancellationAsync(GarnetLightClient.CLUSTER, [CmdStrings.failstopwrites.ToArray(), nodeid], cancellationToken).ConfigureAwait(false);
+
+        /// <summary>
+        /// Acquire replication offset of primary. Used to delay failover until the calling replica catches up.
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="primaryReplicationOffset"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        /// <seealso cref="M:Garnet.client.GarnetClientSession.NetworkClusterFailReplicationOffset"/>
+        public static async Task<string> ExecuteClusterFailReplicationOffsetAsync(this GarnetLightClient client, AofAddress primaryReplicationOffset, CancellationToken cancellationToken = default)
+        {
+            var args = new Memory<byte>[] {
+                CmdStrings.failreplicationoffset.ToArray(),
+                primaryReplicationOffset.ToByteArray()
+            };
+            return await client.ExecuteForStringResultWithCancellationAsync(GarnetLightClient.CLUSTER, args, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Publishes a message to a specified channel in a clustered Garnet environment without waiting for a server
+        /// response.
+        /// </summary>
+        /// <param name="client">The Garnet light client instance used to send the publish command.</param>
+        /// <param name="cmd">The RESP command to execute. Must be either PUBLISH or SPUBLISH.</param>
+        /// <param name="channel">A span containing the channel name to which the message will be published.</param>
+        /// <param name="message">A span containing the message to publish to the channel.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        public static void ExecuteClusterPublishNoResponse(this GarnetLightClient client, RespCommand cmd, Span<byte> channel, Span<byte> message, CancellationToken cancellationToken = default)
+        {
+            if (RespCommand.PUBLISH == cmd)
+                client.ClusterPublishNoResponse(channel, message, cancellationToken);
+            else
+                client.ClusterSPublishNoResponse(channel, message, cancellationToken);
+        }
+    }
+}

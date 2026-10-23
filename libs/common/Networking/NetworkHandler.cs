@@ -11,6 +11,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.common.Parsing;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.networking
@@ -616,16 +617,7 @@ namespace Garnet.networking
                     if (transportReadHead > 0)
                         ShiftTransportReceiveBuffer();
 
-                    // Double the transport buffer if needed
-                    if (transportBytesRead == transportReceiveBuffer.Length)
-                    {
-                        DoubleTransportReceiveBuffer();
-                        retry = true;
-                    }
-                    else
-                    {
-                        TryShrinkTransportReceiveBuffer(transportDemand);
-                    }
+                    retry = AdjustTransportReceiveBufferAfterProcess(transportDemand);
                 }
                 else
                 {
@@ -669,19 +661,11 @@ namespace Garnet.networking
                 if (transportReadHead > 0)
                     ShiftTransportReceiveBuffer();
 
-                // Double the transport buffer if needed
-                if (transportBytesRead == transportReceiveBuffer.Length)
-                {
-                    DoubleTransportReceiveBuffer();
-                    retry = true;
-                }
-                else
-                {
-                    TryShrinkTransportReceiveBuffer(transportDemand);
-                }
+                retry = AdjustTransportReceiveBufferAfterProcess(transportDemand);
+
                 // Continue while a reply remains partially parsed even when all ciphertext has been consumed;
-                // SslStream may still hold its remaining plaintext internally. Also propagate retry after growing
-                // the transport buffer so the new space is read before returning to the network receive loop.
+                // SslStream may still hold its remaining plaintext internally. Also propagate retry after a read
+                // that filled the transport buffer so SslStream is drained before returning to the network receive loop.
                 if (networkBytesRead > networkReadHead || transportBytesRead > 0 || retry)
                 {
                     _ = SslReaderLoopAsync(retry, token);
@@ -745,16 +729,7 @@ namespace Garnet.networking
                     if (transportReadHead > 0)
                         ShiftTransportReceiveBuffer();
 
-                    // Double the transport buffer if needed
-                    if (transportBytesRead == transportReceiveBuffer.Length)
-                    {
-                        DoubleTransportReceiveBuffer();
-                        retry = true;
-                    }
-                    else
-                    {
-                        TryShrinkTransportReceiveBuffer(transportDemand);
-                    }
+                    retry = AdjustTransportReceiveBufferAfterProcess(transportDemand);
                 }
 
                 // Normal exit: hand control back to OnNetworkReceiveWithTLSAsync.
@@ -795,7 +770,8 @@ namespace Garnet.networking
 
         unsafe void DoubleNetworkReceiveBuffer()
         {
-            var tmp = networkPool.Get(networkReceiveBuffer.Length * 2, PoolEntryBufferType.DoubleNetworkReceiveBuffer);
+            RespParsingException.ThrowIfReceiveBufferLimitExceeded(networkReceiveBuffer.Length);
+            var tmp = networkPool.Get(Math.Min(networkReceiveBuffer.Length * 2, RespReadUtils.MaxReceiveBufferBytes), PoolEntryBufferType.DoubleNetworkReceiveBuffer);
             Array.Copy(networkReceiveBuffer, tmp.entry, networkReceiveBuffer.Length);
             networkReceiveBufferEntry.Dispose();
             networkReceiveBufferEntry = tmp;
@@ -855,7 +831,8 @@ namespace Garnet.networking
         {
             if (sslStream != null)
             {
-                var tmp = networkPool.Get(transportReceiveBuffer.Length * 2, PoolEntryBufferType.DoubleTransportReceiveBuffer);
+                RespParsingException.ThrowIfReceiveBufferLimitExceeded(transportReceiveBuffer.Length);
+                var tmp = networkPool.Get(Math.Min(transportReceiveBuffer.Length * 2, RespReadUtils.MaxReceiveBufferBytes), PoolEntryBufferType.DoubleTransportReceiveBuffer);
                 Array.Copy(transportReceiveBuffer, tmp.entry, transportReceiveBuffer.Length);
                 transportReceiveBufferEntry.Dispose();
                 transportReceiveBufferEntry = tmp;
@@ -863,6 +840,30 @@ namespace Garnet.networking
                 transportReceiveBufferPtr = tmp.entryPtr;
                 transportShrinkCountdown = ShrinkHysteresis;
             }
+        }
+
+        /// <summary>
+        /// Resizes the transport buffer after a processed read and reports whether the reader must read again.
+        /// A read that filled the buffer may have stopped short of the end of a TLS record, leaving decrypted
+        /// plaintext inside <see cref="SslStream"/> with no further ciphertext to trigger another receive, so
+        /// the reader re-reads even when processing consumed every byte. The buffer doubles only when unparsed
+        /// bytes still fill it.
+        /// </summary>
+        /// <param name="transportDemand">Bytes the buffer held before processing.</param>
+        /// <returns>True if the reader must issue another read before resting.</returns>
+        bool AdjustTransportReceiveBufferAfterProcess(int transportDemand)
+        {
+            if (transportBytesRead == transportReceiveBuffer.Length)
+            {
+                DoubleTransportReceiveBuffer();
+                return true;
+            }
+
+            if (transportDemand == transportReceiveBuffer.Length)
+                return true;
+
+            TryShrinkTransportReceiveBuffer(transportDemand);
+            return false;
         }
 
         /// <summary>

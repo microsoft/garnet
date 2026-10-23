@@ -18,11 +18,15 @@ namespace Garnet.cluster
         readonly ClusterProvider clusterProvider;
         readonly SslClientAuthenticationOptions tlsOptions;
         readonly LightEpoch epoch;
-        readonly GarnetClient gc;
+        readonly GarnetLightClient gc;
         GossipVersionNegotiation gossipNegotiation;
         ClusterAuthContainer clientAuth;
         ExponentialBackoff backoff;
         readonly object initializationSync = new();
+
+        // Version of the GOSSIP_CLIENT configuration group this node's client options were built from. Compared
+        // against the live version to detect a superseding publish before the node is added to the store.
+        private readonly long gossipClientConfigVersion;
 
         long gossipSend;
         long gossipRecv;
@@ -49,14 +53,18 @@ namespace Garnet.cluster
         public long GossipSend => gossipSend;
 
         /// <summary>
-        /// GarnetClient connection
-        /// </summary>
-        public GarnetClient Client => gc;
-
-        /// <summary>
         /// Whether the client connection has been initialized successfully.
         /// </summary>
         public bool IsInitialized => initialized;
+
+        /// <summary>
+        /// True when the GOSSIP_CLIENT configuration group has been republished since this node's client was
+        /// built, so its options are stale and it should be rebuilt before being added to the store. Compared
+        /// by the group's monotonic version - a single lock-free long read, never a torn multi-parameter view.
+        /// </summary>
+        internal bool IsGossipClientConfigStale
+            => clusterProvider.storeWrapper.runtimeConfig
+                .GetConfigGroup(ServerConfigGroupType.GOSSIP_CLIENT).IsStale(gossipClientConfigVersion);
 
         /// <summary>
         /// NodeId of remote node
@@ -68,15 +76,7 @@ namespace Garnet.cluster
         /// </summary>
         public EndPoint EndPoint;
 
-        /// <summary>
-        /// Default send page size for GarnetClient
-        /// </summary>
-        const int defaultSendPageSize = 1 << 17;
-
-        /// <summary>
-        /// Default max outstanding tasks for GarnetClient
-        /// </summary>
-        const int defaultMaxOutstandingTask = 8;
+        public GarnetLightClient Client => gc;
 
         internal static int GetClientTimeoutMilliseconds(int clusterTimeoutSeconds)
             => clusterTimeoutSeconds <= 0 ? 0 : (int)Math.Min((long)clusterTimeoutSeconds * 1000, int.MaxValue);
@@ -97,7 +97,13 @@ namespace Garnet.cluster
             this.EndPoint = endpoint;
             this.logger = logger;
             this.clientAuth = clusterProvider.ClusterAuth;
-            this.gc = CreateGarnetClient(clientAuth);
+            // Read the gossip options and the version they were published under in one consistent read. The
+            // version records which configuration this client was built against for the staleness check at
+            // add time; the options it carries are internally consistent (never a torn multi-parameter view).
+            var group = (IConfigGroup<LightNetworkWriterOptions>)clusterProvider.storeWrapper.runtimeConfig
+                .GetConfigGroup(ServerConfigGroupType.GOSSIP_CLIENT);
+            var networkWriterOptions = group.Read(out this.gossipClientConfigVersion);
+            this.gc = CreateGarnetClient(clientAuth, networkWriterOptions);
             gossipNegotiation = new(gc, clusterProvider.clusterManager);
             this.backoff = new ExponentialBackoff();
             initialized = false;
@@ -106,22 +112,30 @@ namespace Garnet.cluster
             ResetCts();
         }
 
-        GarnetClient CreateGarnetClient(ClusterAuthContainer auth)
-        {
-            var opts = clusterProvider.storeWrapper.serverOptions;
-            return new GarnetClient(
+        GarnetLightClient CreateGarnetClient(ClusterAuthContainer auth, LightNetworkWriterOptions networkWriterOptions)
+            => new(
                 EndPoint,
                 tlsOptions,
-                sendPageSize: opts.DisablePubSub ? defaultSendPageSize : Math.Max(defaultSendPageSize, (int)opts.PubSubPageSizeBytes()),
-                maxOutstandingTasks: defaultMaxOutstandingTask,
-                timeoutMilliseconds: GetClientTimeoutMilliseconds(
-                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
                 authUsername: auth.ClusterUsername,
                 authPassword: auth.ClusterPassword,
-                epoch: epoch,
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
+                networkWriterOptions: networkWriterOptions,
+                timeoutMilliseconds: GetClientTimeoutMilliseconds(
+                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
+                epoch: epoch,
                 logger: logger);
-        }
+
+        /// <summary>
+        /// Creates a replacement node targeting the same endpoint and identity whose client is built from the
+        /// current runtime configuration. Used to swap in a gossip client that observes an updated GOSSIP_CLIENT
+        /// configuration group; the previous node is retired gracefully after the swap. The replacement starts
+        /// uninitialized and is connected by the next gossip round.
+        /// </summary>
+        internal GarnetServerNode CreateReplacement()
+            => new(clusterProvider, EndPoint, tlsOptions, epoch, logger)
+            {
+                NodeId = NodeId
+            };
 
         /// <summary>
         /// Attempts to initialize the connection when its reconnect backoff permits.
@@ -145,7 +159,7 @@ namespace Garnet.cluster
                 return new(initializationTask);
             }
 
-            async Task<bool> InitializeCoreAsync(GarnetClient client)
+            async Task<bool> InitializeCoreAsync(GarnetLightClient client)
             {
                 try
                 {
@@ -230,6 +244,51 @@ namespace Garnet.cluster
             catch { }
         }
 
+        /// <summary>
+        /// Gracefully disposes the node: stops accepting new gossip operations and waits for the
+        /// in-flight requests on the underlying client to drain before releasing resources. The
+        /// in-flight requests are drained first and only then are the cancellation sources torn down,
+        /// so a pending gossip round is allowed to complete rather than being aborted. Cancelling the
+        /// optional <paramref name="token"/> forces normal disposal of the client.
+        /// </summary>
+        /// <param name="token">Cancellation token bounding the graceful drain wait.</param>
+        public async ValueTask DisposeGracefullyAsync(CancellationToken token = default)
+        {
+            // Single write lock acquisition only
+            if (!dispose.TryCloseLock())
+            {
+                logger?.LogTrace("GarnetServerNode.Dispose called multiple times");
+                return;
+            }
+
+            try
+            {
+                if (gc != null)
+                    await gc.DisposeGracefullyAsync(token).ConfigureAwait(false);
+            }
+            catch { }
+            finally
+            {
+                if (cts != null)
+                    await cts.CancelAsync().ConfigureAwait(false);
+                cts?.Dispose();
+                if (internalCts != null)
+                    await internalCts.CancelAsync().ConfigureAwait(false);
+                internalCts?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Gets current and configured-maximum accounted memory for the active client.
+        /// </summary>
+        public (long ActiveMemoryUsageBytes, long MaxMemoryUsageBytes) GetClientMemoryUsage()
+        {
+            var client = gc;
+            return client == null
+                ? default
+                : (client.ActiveMemoryUsageBytes, client.MaxMemoryUsageBytes);
+        }
+
         void UpdateGossipSend() => this.gossipSend = DateTimeOffset.UtcNow.Ticks;
         void UpdateGossipRecv() => this.gossipRecv = DateTimeOffset.UtcNow.Ticks;
         void ResetCts()
@@ -280,7 +339,7 @@ namespace Garnet.cluster
                 throw new GarnetException("Cannot send gossip before the peer connection is initialized.");
             using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
             timeout.CancelAfter(gossipNegotiation.IsNegotiated ? clusterProvider.clusterManager.gossipDelay : clusterProvider.clusterManager.clusterTimeout);
-            ClusterConfig other = await gossipNegotiation.ExchangeAsync(GetMostRecentConfig(), withMeet: false, NodeId, timeout.Token).ConfigureAwait(false);
+            var other = await gossipNegotiation.ExchangeAsync(GetMostRecentConfig(), withMeet: false, NodeId, timeout.Token).ConfigureAwait(false);
 
             try
             {
@@ -358,12 +417,13 @@ namespace Garnet.cluster
         {
             var nowTicks = DateTimeOffset.UtcNow.Ticks;
             var last_io_seconds = gossipRecv == 0 ? 0 : (int)TimeSpan.FromTicks(nowTicks - gossipSend).TotalSeconds;
+            var isConnected = gc.IsConnected;
 
             return new ConnectionInfo()
             {
                 ping = gossipSend,
                 pong = gossipRecv,
-                connected = gc.IsConnected,
+                connected = isConnected,
                 lastIO = last_io_seconds,
             };
         }
@@ -396,6 +456,13 @@ namespace Garnet.cluster
                     return;
                 }
                 gc.ExecuteClusterPublishNoResponse(cmd, channel, message);
+            }
+            catch (GarnetClientDisposedException)
+            {
+                // A node selected just before a configuration-driven swap may already be retiring; its client
+                // rejects new sends. Forwarding is best-effort, so drop this message rather than faulting the
+                // publish path — the caller may retry against the replacement that selectors now observe.
+                logger?.LogTrace($"{nameof(TryClusterPublish)}: client retiring; skipping publish forwarding");
             }
             finally
             {
