@@ -34,14 +34,14 @@ namespace Garnet.test
             return entries;
         }
 
-        void InitializeOldDestination(IDatabase db, bool oldObject)
+        void InitializeOldDestination(IDatabase db, bool oldObject, string destination = "destination")
         {
-            db.KeyDelete("destination");
+            db.KeyDelete(destination);
             if (oldObject)
-                db.HashSet("destination", "field", "old");
+                db.HashSet(destination, "field", "old");
             else
-                db.Execute("SETIFGREATER", "destination", "old", long.MaxValue);
-            db.KeyExpire("destination", TimeSpan.FromMinutes(10));
+                db.Execute("SETIFGREATER", destination, "old", long.MaxValue);
+            db.KeyExpire(destination, TimeSpan.FromMinutes(10));
         }
 
         [Test]
@@ -54,8 +54,10 @@ namespace Garnet.test
             using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase();
             GarnetLog log = server.Provider.StoreWrapper.appendOnlyFile.Log;
+            string destination = Enumerable.Range(0, 100).Select(index => "destination" + index)
+                .First(candidate => log.GetPhysicalSublogIdx(Encoding.UTF8.GetBytes(candidate)) == logs - 1);
             string source = Enumerable.Range(0, 100).Select(index => "source" + index)
-                .First(candidate => log.GetPhysicalSublogIdx(Encoding.UTF8.GetBytes(candidate)) == log.GetPhysicalSublogIdx("destination"u8));
+                .First(candidate => log.GetPhysicalSublogIdx(Encoding.UTF8.GetBytes(candidate)) == logs - 1);
             string value = new('v', length);
             long importedTag = tagged ? 3 : 0;
             if (tagged)
@@ -65,22 +67,23 @@ namespace Garnet.test
             if (expiry)
                 db.KeyExpire(source, TimeSpan.FromMinutes(5));
             long expiration = (long)db.Execute("PEXPIRETIME", source);
-            InitializeOldDestination(db, oldObject);
+            InitializeOldDestination(db, oldObject, destination);
             if (length > TsavoriteLog.MinPartialAllocSize)
-                db.KeyDelete("destination");
+                db.KeyDelete(destination);
             long[] begin = Enumerable.Range(0, logs).Select(index => log.TailAddress[index]).ToArray();
             if (rename)
-                Assert.That(db.KeyRename(source, "destination"), Is.True);
+                Assert.That(db.KeyRename(source, destination), Is.True);
             else
-                ImportRecord(source, "destination");
+                ImportRecord(source, destination);
             List<(int Sublog, byte[] Entry)> entries = Capture(begin);
+            Assert.That(entries.All(entry => entry.Sublog == logs - 1), Is.True);
             Assert.That(entries.Count(entry => ReadHeader(entry.Entry).opType == AofEntryType.TxnStart), Is.EqualTo(1));
             Assert.That(entries.Count(entry => ReadHeader(entry.Entry).opType == AofEntryType.TxnCommit), Is.EqualTo(1));
             Assert.That(entries.Select(entry => ReadHeader(entry.Entry).sessionID).Distinct().Count(), Is.EqualTo(1));
             Assert.That(entries.Any(entry => ReadHeader(entry.Entry).IsChunked), Is.EqualTo(length > TsavoriteLog.MinPartialAllocSize));
-            AssertTaggedValue(db, "destination", importedTag, value);
-            InitializeOldDestination(db, oldObject);
-            long oldExpiration = (long)db.Execute("PEXPIRETIME", "destination");
+            AssertTaggedValue(db, destination, importedTag, value);
+            InitializeOldDestination(db, oldObject, destination);
+            long oldExpiration = (long)db.Execute("PEXPIRETIME", destination);
             if (!commit)
                 entries.RemoveAll(entry => ReadHeader(entry.Entry).opType == AofEntryType.TxnCommit);
             AofProcessor processor = new(server.Provider.StoreWrapper);
@@ -100,7 +103,7 @@ namespace Garnet.test
                     RedisResult raw;
                     try
                     {
-                        raw = db.Execute("GETWITHETAG", "destination");
+                        raw = db.Execute("GETWITHETAG", destination);
                     }
                     catch (RedisServerException exception) when (oldObject && exception.Message.StartsWith("WRONGTYPE", StringComparison.Ordinal))
                     {
@@ -115,12 +118,12 @@ namespace Garnet.test
                 }
                 replay.GetAwaiter().GetResult();
                 if (commit)
-                    AssertTaggedValue(db, "destination", importedTag, value);
+                    AssertTaggedValue(db, destination, importedTag, value);
                 else if (oldObject)
-                    Assert.That((string)db.HashGet("destination", "field"), Is.EqualTo("old"));
+                    Assert.That((string)db.HashGet(destination, "field"), Is.EqualTo("old"));
                 else
-                    AssertTaggedValue(db, "destination", long.MaxValue, "old");
-                Assert.That((long)db.Execute("PEXPIRETIME", "destination"), Is.EqualTo(commit ? expiration : oldExpiration));
+                    AssertTaggedValue(db, destination, long.MaxValue, "old");
+                Assert.That((long)db.Execute("PEXPIRETIME", destination), Is.EqualTo(commit ? expiration : oldExpiration));
             }
             finally
             {

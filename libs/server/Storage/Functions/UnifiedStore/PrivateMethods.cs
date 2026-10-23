@@ -55,8 +55,7 @@ namespace Garnet.server
                 int physical = log.GetPhysicalSublogIdx(key);
                 physicalAccess = 1UL << physical;
                 vectors = new BitVector[log.Size];
-                for (int index = 0; index < vectors.Length; index++)
-                    vectors[index] = new BitVector(AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes);
+                vectors[physical] = new BitVector(AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes);
                 _ = vectors[physical].SetBit(log.GetReplayTaskIdx(key));
                 log.EnqueueTxn(AofEntryType.TxnStart, version, sessionId, physicalAccess, vectors, 1);
             }
