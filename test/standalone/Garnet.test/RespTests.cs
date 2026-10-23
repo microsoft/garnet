@@ -1532,6 +1532,22 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength("$1\r\n1\r\n", response);
         }
 
+        [TestCase(1L)]
+        [TestCase(100L)]
+        public void SingleIncrementFromLongMinValue(long increment)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "test";
+            db.StringSet(key, long.MinValue.ToString(CultureInfo.InvariantCulture));
+
+            var result = increment == 1 ? db.StringIncrement(key) : db.StringIncrement(key, increment);
+            var expected = long.MinValue + increment;
+
+            ClassicAssert.AreEqual(expected, result);
+            ClassicAssert.AreEqual(expected.ToString(CultureInfo.InvariantCulture), db.StringGet(key).ToString());
+        }
+
         [Test]
         public void SimpleIncrementByFloatWithNoKey()
         {
@@ -5914,4 +5930,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("testvalue", db.StringGet("testkey").ToString());
         }
     }
+        }
+
 }
