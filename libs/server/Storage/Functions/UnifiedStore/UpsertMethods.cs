@@ -20,13 +20,8 @@ namespace Garnet.server
             if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
 
-            if (input.isRecordImport)
-            {
-                if (!SetImportedOptionals(ref dstLogRecord, ref input))
-                    return false;
-            }
             // RENAMEs use arg1 for RecordType, not expiration
-            else if (input.header.cmd is not (RespCommand.RENAME or RespCommand.RENAMENX))
+            if (input.header.cmd is not (RespCommand.RENAME or RespCommand.RENAMENX))
             {
                 if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                     return false;
@@ -92,7 +87,6 @@ namespace Garnet.server
             ref UnifiedInput input, in TSourceLogRecord inputLogRecord, ref UnifiedOutput output,
             ref UpsertInfo upsertInfo) where TSourceLogRecord : ISourceLogRecord
         {
-            CaptureImportedOptionals(in inputLogRecord, ref input);
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -103,16 +97,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool InPlaceWriter(ref LogRecord logRecord, ref UnifiedInput input, ReadOnlySpan<byte> newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (input.isRecordImport)
-            {
-                RecordSizeInfo sizeInfo = new() { FieldInfo = GetUpsertFieldInfo(logRecord, newValue, ref input) };
-                functionsState.storeWrapper.store.Log.PopulateRecordSizeInfo(ref sizeInfo);
-                if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo) || !SetImportedOptionals(ref logRecord, ref input))
-                    return false;
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            }
-            else if (!InPlaceWriterForSpanValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
+            if (!InPlaceWriterForSpanValue(ref logRecord, ref input, newValue, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
@@ -137,27 +122,31 @@ namespace Garnet.server
         {
             if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState))
                 return false;
-            CaptureImportedOptionals(in inputLogRecord, ref input);
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
         }
 
-        static void CaptureImportedOptionals<TSourceLogRecord>(in TSourceLogRecord record, ref UnifiedInput input)
+        /// <inheritdoc />
+        public void PostUpsertOperation<TKey, TSourceLogRecord, TEpochAccessor>(TKey key, ref UnifiedInput input, in TSourceLogRecord inputLogRecord,
+            ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey, allows ref struct
             where TSourceLogRecord : ISourceLogRecord
+            where TEpochAccessor : IEpochAccessor
         {
-            input.isRecordImport = !record.DataHeader.ValueIsObject && record.RecordType == 0;
-            input.importedETag = record.ETag;
-            input.importedExpiration = record.Expiration;
-        }
+            if ((upsertInfo.UserData & NeedAofLog) != NeedAofLog || functionsState.StoredProcMode)
+                return;
 
-        static bool SetImportedOptionals(ref LogRecord record, ref UnifiedInput input)
-        {
-            if (input.importedETag != LogRecord.NoETag && !record.TrySetETag(input.importedETag))
-                return false;
-            if (input.importedExpiration != LogRecord.NoExpiration && !record.TrySetExpiration(input.importedExpiration))
-                return false;
-            return true;
+            if (inputLogRecord.DataHeader.ValueIsObject)
+                WriteLogUpsert(key, ref input, (IGarnetObject)inputLogRecord.ValueObject, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
+            else if (inputLogRecord.RecordType == 0)
+            {
+                long entityTag = inputLogRecord.ETag;
+                long expiration = inputLogRecord.Expiration;
+                WriteV5ImportedReplacement(key.KeyBytes, inputLogRecord.ValueSpan, entityTag, expiration, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
+            }
+            else
+                WriteLogUpsert(key.KeyBytes, ref input, inputLogRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
         }
 
         /// <inheritdoc />

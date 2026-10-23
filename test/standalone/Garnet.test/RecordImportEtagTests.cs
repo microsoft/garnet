@@ -129,6 +129,28 @@ namespace Garnet.test
             Assert.That(database.KeyTimeToLive("destination"), Is.Null);
         }
 
+        [Test]
+        public void LargerImportPreservesTagAndExpiry([Values] bool tagged, [Values] bool expiry)
+        {
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase database = redis.GetDatabase();
+            string value = new('v', 8192);
+            if (tagged)
+                database.Execute("SETIFGREATER", "source", value, 3);
+            else
+                database.StringSet("source", value);
+            if (expiry)
+                database.KeyExpire("source", TimeSpan.FromMinutes(5));
+            long expiration = (long)database.Execute("PEXPIRETIME", "source");
+            database.Execute("SETIFGREATER", "destination", "old", long.MaxValue);
+            database.KeyExpire("destination", TimeSpan.FromMinutes(10));
+
+            ImportRecord("source", "destination");
+
+            AssertTaggedValue(database, "destination", tagged ? 3 : 0, value);
+            Assert.That((long)database.Execute("PEXPIRETIME", "destination"), Is.EqualTo(expiration));
+        }
+
         GarnetServer CreateAofServer(int sublogCount, bool recover)
         {
             GarnetServerOptions options = TestUtils.GetGarnetServerOptions(TestUtils.MethodTestDir,

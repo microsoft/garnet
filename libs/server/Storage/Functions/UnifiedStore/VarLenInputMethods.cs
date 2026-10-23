@@ -118,8 +118,7 @@ namespace Garnet.server
                 KeySize = key.KeyBytes.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
-                HasETag = input.isRecordImport && input.importedETag != LogRecord.NoETag,
-                HasExpiration = input.isRecordImport && input.importedExpiration != LogRecord.NoExpiration,
+                HasETag = false,
                 RecordType = recordType,
             };
         }

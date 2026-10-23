@@ -171,6 +171,65 @@ namespace Garnet.test
         }
 
         [Test]
+        public void RecordCallbackSkipsUnsuccessfulAndStoredProcedureWrites([Values] bool storedProcedure)
+        {
+            server.Dispose();
+            server = CreateAofServer(1, false);
+            server.Start();
+            StoreWrapper wrapper = server.Provider.StoreWrapper;
+            FunctionsState state = wrapper.CreateFunctionsState();
+            state.StoredProcMode = storedProcedure;
+            UnifiedSessionFunctions functions = new(state);
+            UnifiedInput input = default;
+            LogRecord source = default;
+            UpsertInfo info = new() { UserData = storedProcedure ? (byte)1 : (byte)0 };
+            long[] begin = [wrapper.appendOnlyFile.Log.TailAddress[0]];
+
+            functions.PostUpsertOperation((FixedSpanByteKey)"destination"u8, ref input, in source, ref info, wrapper.store.epoch);
+
+            Assert.That(Capture(begin), Is.Empty);
+        }
+
+        [Test]
+        public void ImportedMetadataSurvivesLogPagePressure([Values(1, 2)] int logs)
+        {
+            server.Dispose();
+            GarnetServerOptions options = TestUtils.GetGarnetServerOptions(TestUtils.MethodTestDir,
+                TestUtils.MethodTestDir, TestUtils.EndPoint, enableCluster: false, enableAOF: true,
+                sublogCount: logs, lowMemory: true, pageSize: "4m", memorySize: "128m", aofPageSize: "8m", aofMemorySize: "16m");
+            options.FailOnRecoveryError = true;
+            server = new GarnetServer(options);
+            server.Start();
+            string value = new('v', 2097152);
+            long expiration;
+            using (ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                IDatabase db = redis.GetDatabase();
+                db.Execute("SETWITHETAG", "source", value, "EX", 300);
+                expiration = (long)db.Execute("PEXPIRETIME", "source");
+                for (int index = 0; index < 12; index++)
+                {
+                    db.Execute("SETIFMATCH", "source", value, index + 1);
+                    ImportRecord("source", "destination");
+                    AssertTaggedValue(db, "destination", index + 2, value);
+                    Assert.That((long)db.Execute("PEXPIRETIME", "destination"), Is.EqualTo(expiration));
+                }
+                db.Execute("COMMITAOF");
+                GarnetLog log = server.Provider.StoreWrapper.appendOnlyFile.Log;
+                int physical = log.GetPhysicalSublogIdx("destination"u8);
+                Assert.That(log.TailAddress[physical] - log.BeginAddress[physical], Is.GreaterThan(16 * 1024 * 1024));
+            }
+            server.Dispose(false);
+            options.Recover = true;
+            server = new GarnetServer(options);
+            server.Start();
+            using ConnectionMultiplexer recovered = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase recoveredDb = recovered.GetDatabase();
+            AssertTaggedValue(recoveredDb, "destination", 13, value);
+            Assert.That((long)recoveredDb.Execute("PEXPIRETIME", "destination"), Is.EqualTo(expiration));
+        }
+
+        [Test]
         public void CheckpointRecoveryContinuesAfterTruncatedImportTransaction([Values(1, 2)] int logs, [Values] bool abort)
         {
             server.Dispose();

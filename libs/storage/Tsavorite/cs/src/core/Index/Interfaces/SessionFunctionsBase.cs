@@ -76,6 +76,19 @@ namespace Tsavorite.core
         { }
 
         /// <inheritdoc/>
+        public virtual void PostUpsertOperation<TKey, TSourceLogRecord, TEpochAccessor>(TKey key, ref TInput input, in TSourceLogRecord inputLogRecord,
+            ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey, allows ref struct
+            where TSourceLogRecord : ISourceLogRecord
+            where TEpochAccessor : IEpochAccessor
+        {
+            if (inputLogRecord.DataHeader.ValueIsObject)
+                PostUpsertOperation(key, ref input, inputLogRecord.ValueObject, ref upsertInfo, epochAccessor);
+            else
+                PostUpsertOperation(key, ref input, inputLogRecord.ValueSpan, ref upsertInfo, epochAccessor);
+        }
+
+        /// <inheritdoc/>
         public virtual void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo) { }
         /// <inheritdoc/>
         public virtual void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo) { }

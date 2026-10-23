@@ -435,24 +435,6 @@ namespace Garnet.server
     public struct UnifiedInput : IStoreInput
     {
         /// <summary>
-        /// Identifies imported-record writes.
-        /// </summary>
-        /// <remarks>
-        /// These import fields are not serialized directly; imported metadata is encoded in logged command inputs.
-        /// </remarks>
-        internal bool isRecordImport;
-
-        /// <summary>
-        /// Imported record's entity tag.
-        /// </summary>
-        internal long importedETag;
-
-        /// <summary>
-        /// Imported record's absolute expiration.
-        /// </summary>
-        internal long importedExpiration;
-
-        /// <summary>
         /// Common input header for Garnet
         /// </summary>
         public RespInputHeader header;
