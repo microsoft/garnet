@@ -70,5 +70,6 @@ namespace Garnet.server
         // Error flags (Error bit always set)
         InvalidTypeError = Error | (1 << 0),
         NaNOrInfinityError = Error | (1 << 1),
+        ValueTooLargeError = Error | (1 << 2),
     }
 }

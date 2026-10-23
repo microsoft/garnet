@@ -432,6 +432,20 @@ namespace Garnet.test
         }
 
         [Test]
+        public void TransactionProcMSetPxRejectsInvalidExpiry([Values("0", "-1", "abc", "9223372036854775807")] string expiryMs)
+        {
+            server.Register.NewTransactionProc("MSETPX", () => new MSetPxTxn());
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("MSETPX", expiryMs, "key0", "value0", "key1", "value1"));
+            ClassicAssert.AreEqual("ERR invalid expire time in 'msetpx' command", ex.Message);
+            ClassicAssert.IsFalse(db.KeyExists("key0"));
+            ClassicAssert.IsFalse(db.KeyExists("key1"));
+        }
+
+        [Test]
         //[Repeat(10000)]
         public void TransactionProcMGetIfPMTest()
         {
