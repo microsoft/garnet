@@ -240,9 +240,9 @@ namespace Garnet.server
             vectorSetLocks = new(vectorSetReplayCount);
 
             this.getTempSession = getTempSession;
-            cleanupTaskChannel = new();
-            requestCleanupTaskChannel = new();
-            requestDropTaskChannel = new();
+            cleanupTaskChannel = VectorSetCleanupWorkChannel<object>.CreateSingleReaderMultiWriter();
+            requestCleanupTaskChannel = VectorSetCleanupWorkChannel<ulong>.CreateSingleReaderMultiWriter();
+            requestDropTaskChannel = VectorSetCleanupWorkChannel<object>.CreateSingleReaderMultiWriter();
 
             cleanupTask = RunCleanupTaskAsync();
             requestCleanupTask = RunRequestCleanupTaskAsync();
@@ -255,7 +255,7 @@ namespace Garnet.server
             recoveredIndexes = new();
             recoveredMetadata = new();
 
-            quantizationOrImportChannel = Channel.CreateUnbounded<QuantizationOrImportState>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false });
+            quantizationOrImportChannel = VectorSetCleanupWorkChannel<QuantizationOrImportState>.CreateMultiReaderMultiWriter();
 
             if (serverOptions.VectorSetQuantizationTaskCount < 0 || serverOptions.VectorSetQuantizationTaskCount > Environment.ProcessorCount)
                 throw new GarnetException($"VectorSetQuantizationTaskCount should be in range [0,{Environment.ProcessorCount}]!");
@@ -622,6 +622,13 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void Dispose()
         {
+            if (!IsEnabled)
+            {
+                replicationBlockEvent.Dispose();
+
+                return;
+            }
+
             // We must drain all these before disposing, otherwise we'll leave replicationBlockEvent unset
             foreach (var channel in replicationReplayChannels)
             {
@@ -636,6 +643,9 @@ namespace Garnet.server
             // Wait for any _drops_ in progress to finish
             requestDropTaskChannel.CompleteAndWaitForConsumerTask(requestDropTask);
 
+            // Complete all quantization or import tasks - this MIGHT queue something into requestCleanupTaskChannel, so wait for it first
+            quantizationOrImportChannel.CompleteAndWaitForConsumerTask(Task.WhenAll(quantizationAndImportTasks));
+
             // Wait for any _marking_ of cleanup state to finish. PauseCleanupAsync callers MUST
             // have called ResumeCleanup before reaching here, otherwise the cleanup task
             // is permanently blocked on cleanupGate.WaitAsync() and Dispose will hang.
@@ -648,16 +658,6 @@ namespace Garnet.server
 
             // Cleanup task has fully drained, so nothing else can take this gate.
             cleanupGate.Dispose();
-
-            // drain quantization work and stop the worker tasks
-            if (!quantizationOrImportChannel.Writer.TryComplete())
-            {
-                logger?.LogWarning("VectorManager quantization channel was already completed during disposal");
-                Debug.Fail("VectorManager quantization channel was already completed");
-            }
-
-            while (quantizationOrImportChannel.Reader.TryRead(out _)) { }
-            AsyncUtils.BlockingWait(Task.WhenAll(quantizationAndImportTasks));
         }
 
         private static void CompletePending(ref Status status, ref VectorOutput output, ref VectorBasicContext ctx)
@@ -793,7 +793,7 @@ namespace Garnet.server
             {
                 if (needsQuantization)
                 {
-                    EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
+                    EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, 0, 0, null));
                 }
 
                 return VectorManagerResult.OK;
@@ -833,7 +833,7 @@ namespace Garnet.server
         /// <summary>
         /// Request deletion of a Vector Set given the VALUE of the index key.
         /// </summary>
-        internal void RequestDeletion(ReadOnlySpan<byte> value)
+        internal void RequestDeletion(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
         {
             if (value.Length != IndexSize)
             {
@@ -843,7 +843,7 @@ namespace Garnet.server
 
             ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
-            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out _);
+            ReadIndex(value, out var context, out _, out _, out _, out _, out _, out _, out var flags, out var indexPtr);
 
             // Ignore any deletion requested for an index that has the SuppressCleanup flag
             //
@@ -853,10 +853,19 @@ namespace Garnet.server
                 return;
             }
 
+            // If an import is in progress, we need to coordinate delete so we don't drop the index out from under a finalize step
+            if (flags.HasFlag(VectorSetFlags.ImportPending) && !flags.HasFlag(VectorSetFlags.ImportCompleted))
+            {
+                // If we fail to enqueue, that implies we are shutting down - so we'll pick it up on recovery
+                _ = quantizationOrImportChannel.TryPublish(new(key.ToArray(), QuantizationOrImportStep.DeleteDuringImport, 0, context, indexPtr, null));
+
+                return;
+            }
+
             if (!requestCleanupTaskChannel.TryPublish(context))
             {
                 logger?.LogCritical("VectorManager request cleanup channel rejected a delete request");
-                Debug.Assert(false, "VectorManager request cleanup channel should never drop a request");
+                Debug.Fail("VectorManager request cleanup channel should never drop a request");
                 throw new GarnetException("Could not submit request for Vector Set cleanup, aborting delete");
             }
 
