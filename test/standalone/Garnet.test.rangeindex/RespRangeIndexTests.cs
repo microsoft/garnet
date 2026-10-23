@@ -1809,21 +1809,17 @@ namespace Garnet.test
             var result = db.Execute("RI.METRICS", "myindex");
             var arr = (RedisResult[])result;
 
-            // Should be 8 elements (4 field-value pairs)
-            ClassicAssert.AreEqual(8, arr.Length);
+            // Should be 6 elements (3 field-value pairs)
+            ClassicAssert.AreEqual(6, arr.Length);
 
-            ClassicAssert.AreEqual("tree_handle", (string)arr[0]);
-            // tree_handle should be a non-zero number
-            ClassicAssert.IsNotNull((string)arr[1]);
+            ClassicAssert.AreEqual("is_live", (string)arr[0]);
+            ClassicAssert.AreEqual("true", (string)arr[1]);
 
-            ClassicAssert.AreEqual("is_live", (string)arr[2]);
-            ClassicAssert.AreEqual("true", (string)arr[3]);
+            ClassicAssert.AreEqual("is_flushed", (string)arr[2]);
+            ClassicAssert.AreEqual("false", (string)arr[3]);
 
-            ClassicAssert.AreEqual("is_flushed", (string)arr[4]);
+            ClassicAssert.AreEqual("is_recovered", (string)arr[4]);
             ClassicAssert.AreEqual("false", (string)arr[5]);
-
-            ClassicAssert.AreEqual("is_recovered", (string)arr[6]);
-            ClassicAssert.AreEqual("false", (string)arr[7]);
         }
 
         /// <summary>

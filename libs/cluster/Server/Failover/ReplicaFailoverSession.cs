@@ -94,6 +94,7 @@ namespace Garnet.cluster
                 status = FailoverStatus.WAITING_FOR_SYNC;
                 while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
                 {
+                    cts.Token.ThrowIfCancellationRequested();
                     // Fail if upper bound time for failover has been reached
                     if (FailoverTimeout)
                     {
@@ -134,7 +135,8 @@ namespace Garnet.cluster
                     return false;
                 }
                 acquiredLock = true;
-                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync().ConfigureAwait(false);
+                _ = await clusterProvider.BumpAndWaitForEpochTransitionAsync(cts.Token).ConfigureAwait(false);
+                cts.Token.ThrowIfCancellationRequested();
 
                 // Take over slots from old primary
                 if (!clusterProvider.clusterManager.TryTakeOverForPrimary())
@@ -191,7 +193,9 @@ namespace Garnet.cluster
 
             var oldPrimaryId = oldConfig.LocalNodePrimaryId;
             var newConfig = clusterProvider.clusterManager.CurrentConfig;
-            var client = oldPrimaryId.Equals(replicaId) ? primaryClient : await GetConnectionAsync(replicaId).ConfigureAwait(false);
+            var client = oldPrimaryId.Equals(replicaId) && primaryClient != null
+                ? primaryClient
+                : await GetConnectionAsync(replicaId).ConfigureAwait(false);
 
             try
             {
@@ -252,8 +256,9 @@ namespace Garnet.cluster
             var replicaIds = newConfig.GetReplicaIds(oldPrimaryId);
             var attachReplicaTasks = new List<Task>();
 
-            // If DEFAULT failover try to make old primary replica of this new primary
-            if (option is FailoverOption.DEFAULT)
+            // A coordinated primary-initiated handoff demotes the old primary before requesting takeover.
+            if (option is FailoverOption.DEFAULT ||
+                newConfig.GetReplicaIds(newConfig.LocalNodeId).Contains(oldPrimaryId))
             {
                 replicaIds.Add(oldPrimaryId);
             }

@@ -362,7 +362,7 @@ namespace Garnet.server
                             // Post recreate the index might already need quantization - if so, queue it up
                             if (requestQuantization)
                             {
-                                EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
+                                EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, 0, 0, null));
                             }
 
                             // Try again so we don't hold an exclusive lock while performing a search
@@ -641,7 +641,7 @@ namespace Garnet.server
                             // Post (re)create the index might already need quantization - if so, queue it up
                             if (requestQuantization)
                             {
-                                EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, null));
+                                EnqueueQuantization(new(key.ToArray(), QuantizationOrImportStep.BuildQuantizationTable, 0, 0, 0, null));
                             }
 
                             // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
