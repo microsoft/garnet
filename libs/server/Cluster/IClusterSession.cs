@@ -28,6 +28,18 @@ namespace Garnet.server
         bool IsInternalWriteSession { get; }
 
         /// <summary>
+        /// Whether local application writes are paused for failover, including during demotion.
+        /// </summary>
+        bool IsWritePaused { get; }
+
+        /// <summary>
+        /// Waits outside the session epoch for an active primary failover pause to end.
+        /// Internal replay and requests already routed to a replica do not wait.
+        /// Callers must revalidate configuration-dependent admission after this wait.
+        /// </summary>
+        void WaitForWritesToResume();
+
+        /// <summary>
         /// If the current session is part of an active replication stream (set on first APPENDLOG, including the init handshake).
         /// </summary>
         bool IsReplicating { get; }
