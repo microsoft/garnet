@@ -8,6 +8,7 @@ using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
@@ -174,6 +175,41 @@ namespace Garnet.test.cluster
 
             // Validate replica data
             Validate(primaryIndex, replicaIndex, disableObjects);
+        }
+
+        [Test]
+        [Category("REPLICATION")]
+        public void ClusterDisklessSnapshotPreservesEtag([Values] bool expiry, [Values(32, 8192)] int valueLength)
+        {
+            const int primaryIndex = 0;
+            const int replicaIndex = 1;
+            context.CreateInstances(2, enableAOF: true, useTLS: useTLS, enableDisklessSync: true,
+                timeout: timeout, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+            context.clusterTestUtils.MeetAndAssignSlots(primaryIndex, 2, context.logger);
+            IServer primary = context.clusterTestUtils.GetServer(primaryIndex);
+            const string key = "{etag-snapshot}key";
+            string value = new('v', valueLength);
+            primary.Execute(0, "SETWITHETAG", [key, "first"]);
+            primary.Execute(0, "SETWITHETAG", [key, "second"]);
+            primary.Execute(0, "SETWITHETAG", expiry ? [key, value, "EX", 300] : [key, value]);
+            long expiration = (long)primary.Execute(0, "PEXPIRETIME", [key]);
+
+            _ = context.clusterTestUtils.ClusterReplicate(replicaIndex, primaryIndex, logger: context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex, logger: context.logger);
+            IServer replica = context.clusterTestUtils.GetServer(replicaIndex);
+            RedisResult[] imported = (RedisResult[])replica.Execute(0, "GETWITHETAG", [key], CommandFlags.NoRedirect);
+            Assert.That((long)imported[0], Is.EqualTo(3));
+            Assert.That((string)imported[1], Is.EqualTo(value));
+            Assert.That((long)replica.Execute(0, "PEXPIRETIME", [key], CommandFlags.NoRedirect), Is.EqualTo(expiration));
+
+            Failover(replicaIndex);
+            RedisResult[] stale = (RedisResult[])replica.Execute(0, "SETIFMATCH", [key, "stale", 2]);
+            Assert.That((long)stale[0], Is.EqualTo(3));
+            Assert.That((string)stale[1], Is.EqualTo(value));
+            RedisResult[] matching = (RedisResult[])replica.Execute(0, "SETIFMATCH", [key, "updated", 3]);
+            Assert.That((long)matching[0], Is.EqualTo(4));
+            Assert.That(matching[1].IsNull, Is.True);
         }
 
         [Test]

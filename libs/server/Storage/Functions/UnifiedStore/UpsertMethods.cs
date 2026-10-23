@@ -120,11 +120,33 @@ namespace Garnet.server
             in TSourceLogRecord inputLogRecord, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState, input.arg1))
+            if (!InPlaceWriterForLogRecordValue(ref logRecord, ref input, in inputLogRecord, ref output.SpanByteAndMemory, ref upsertInfo, this, functionsState))
                 return false;
             if (functionsState.appendOnlyFile != null)
                 upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
+        }
+
+        /// <inheritdoc />
+        public void PostUpsertOperation<TKey, TSourceLogRecord, TEpochAccessor>(TKey key, ref UnifiedInput input, in TSourceLogRecord inputLogRecord,
+            ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TKey : IKey, allows ref struct
+            where TSourceLogRecord : ISourceLogRecord
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((upsertInfo.UserData & NeedAofLog) != NeedAofLog || functionsState.StoredProcMode)
+                return;
+
+            if (inputLogRecord.DataHeader.ValueIsObject)
+                WriteLogUpsert(key, ref input, (IGarnetObject)inputLogRecord.ValueObject, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
+            else if (inputLogRecord.RecordType == 0)
+            {
+                long entityTag = inputLogRecord.ETag;
+                long expiration = inputLogRecord.Expiration;
+                WriteV5ImportedReplacement(key.KeyBytes, inputLogRecord.ValueSpan, entityTag, expiration, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
+            }
+            else
+                WriteLogUpsert(key.KeyBytes, ref input, inputLogRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
         }
 
         /// <inheritdoc />

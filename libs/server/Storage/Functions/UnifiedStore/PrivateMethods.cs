@@ -2,7 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Text;
 using System.Diagnostics;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using static Garnet.server.SessionFunctionsUtils;
@@ -32,14 +34,47 @@ namespace Garnet.server
                 input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Log.Enqueue(
-                AofEntryType.UnifiedStoreStringUpsert,
-                version,
-                sessionID,
-                key,
-                value,
-                ref input,
-                epochAccessor,
-                out _);
+                AofEntryType.UnifiedStoreStringUpsert, version, sessionID, key, value, ref input, epochAccessor, out _);
+        }
+
+        void WriteV5ImportedReplacement<TEpochAccessor>(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, long entityTag, long expiration,
+            long version, int sessionId, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor
+        {
+            GarnetLog log = functionsState.appendOnlyFile.Log;
+            bool ownsTransaction = !functionsState.HasEnclosingTransaction;
+            BitVector[] vectors = null;
+            ulong physicalAccess = 0;
+            if (ownsTransaction)
+            {
+                int physical = log.GetPhysicalSublogIdx(key);
+                physicalAccess = 1UL << physical;
+                vectors = new BitVector[log.Size];
+                vectors[physical] = new BitVector(AofShardedLogTransactionHeader.ReplayTaskAccessVectorBytes);
+                _ = vectors[physical].SetBit(log.GetReplayTaskIdx(key));
+                log.EnqueueTxn(AofEntryType.TxnStart, version, sessionId, physicalAccess, vectors, 1);
+            }
+            log.Enqueue(AofEntryType.UnifiedStoreDelete, version, sessionId, key, default, epochAccessor, out _);
+            if (entityTag == 0)
+            {
+                StringInput input = new(RespCommand.SET, RespInputFlags.Deterministic, expiration);
+                log.Enqueue(AofEntryType.StoreUpsert, version, sessionId, key, value, ref input, epochAccessor, out _);
+            }
+            else
+            {
+                Span<byte> tag = stackalloc byte[20];
+                if (!Utf8Formatter.TryFormat(entityTag, tag, out int tagLength))
+                    throw new GarnetException("Failed to format imported entity tag");
+                fixed (byte* valuePointer = value)
+                fixed (byte* tagPointer = tag)
+                {
+                    StringInput input = new(RespCommand.SETIFGREATER, RespInputFlags.Deterministic, expiration);
+                    input.parseState.InitializeWithArguments(PinnedSpanByte.FromPinnedPointer(valuePointer, value.Length),
+                        PinnedSpanByte.FromPinnedPointer(tagPointer, tagLength));
+                    log.Enqueue(AofEntryType.StoreRMW, version, sessionId, key, ref input, epochAccessor, out _);
+                }
+            }
+            if (ownsTransaction)
+                log.EnqueueTxn(AofEntryType.TxnCommit, version, sessionId, physicalAccess, vectors, 1);
         }
 
         /// <summary>

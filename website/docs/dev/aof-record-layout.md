@@ -115,6 +115,22 @@ value and/or the serialized input, laid out by `TsavoriteLog.Enqueue(header, key
 - Which components are present depends on the op shape: e.g. DELETE is key-only (the value slot is unused on replay);
   a plain upsert is key + value; an RMW / upsert-with-input carries the input.
 
+### Imported strings
+
+Imported ordinary strings retain append-only file version 5 and existing operation layouts.
+A committed transaction contains a destination delete followed by `StoreRMW` with `SETIFGREATER`,
+the original value and entity tag, and the original absolute expiration in `StringInput.arg1`.
+An untagged import uses delete followed by `StoreUpsert`. An existing transaction, including
+`RENAME`, supplies the transaction markers when one is already active.
+
+Replay uses the existing delete and update paths. Incomplete transactions remain unapplied.
+Ordinary and chunked entries use the same operation layouts, which older version-5 binaries can
+parse. Use upgraded readers for recovery when checkpoint truncation leaves a transaction commit
+or abort without its start. Older single-log readers can stop replay at that boundary.
+
+Parseable layouts alone do not establish safe mixed-version replication or replication
+stream resumption after restart.
+
 ---
 
 ## 5. Chunk management at a glance
