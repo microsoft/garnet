@@ -21,7 +21,7 @@ namespace Garnet.cluster
         /// Cluster node timeout, read live so that a CONFIG SET is observed by subsequent failover sessions.
         /// </summary>
         TimeSpan clusterTimeout
-            => clusterProvider.storeWrapper.runtimeServerConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT);
+            => clusterProvider.storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT);
 
         /// <summary>
         /// Shared epoch instance for failover GarnetClient connections

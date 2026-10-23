@@ -180,7 +180,7 @@ namespace Garnet.cluster
         /// </summary>
         public void EnsureReplication(ClusterSession activeSession, IEnumerable<IClusterSession> allClusterSessions)
         {
-            var pollFrequency = clusterProvider.storeWrapper.runtimeServerConfig.GetInt(ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT);
+            var pollFrequency = clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_REPLICATION_REESTABLISHMENT_TIMEOUT);
 
             if (pollFrequency == 0)
             {

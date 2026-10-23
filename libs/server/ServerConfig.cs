@@ -79,7 +79,7 @@ namespace Garnet.server
                     else
                     {
                         name = RuntimeServerConfig.Name(configType);
-                        value = storeWrapper.runtimeServerConfig.RespFormat(configType);
+                        value = storeWrapper.runtimeConfig.RespFormat(configType);
                     }
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString(name, ref dcurr, dend))
@@ -195,7 +195,7 @@ namespace Garnet.server
                 {
                     foreach (var (type, value) in dynamicSets)
                     {
-                        if (!storeWrapper.runtimeServerConfig.TrySet(type, value, out var error))
+                        if (!storeWrapper.runtimeConfig.TrySet(type, value, out var error))
                             AppendError(sbErrorMsg, error);
                     }
 
@@ -203,7 +203,7 @@ namespace Garnet.server
                     // unit, then notify downstream consumers. TrySet marks the owning group dirty per slot, so a
                     // multi-parameter group (e.g. GOSSIP_CLIENT) is materialized and published exactly once here
                     // - the swapped-in clients observe every updated value together, never a partial group.
-                    storeWrapper.runtimeServerConfig.PublishDirtyGroups(group =>
+                    storeWrapper.runtimeConfig.PublishDirtyGroups(group =>
                     {
                         if (group == ServerConfigGroupType.GOSSIP_CLIENT)
                             storeWrapper.clusterProvider?.OnGossipClientConfigChanged();

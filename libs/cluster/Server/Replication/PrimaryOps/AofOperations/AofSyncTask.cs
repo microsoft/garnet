@@ -350,7 +350,7 @@ namespace Garnet.cluster
 
                     await iter.BulkConsumeAllAsync(
                         this,
-                        clusterProvider.storeWrapper.runtimeServerConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
+                        clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.REPLICA_SYNC_DELAY),
                         maxChunkSize: 1 << 20,
                         cts.Token).ConfigureAwait(false);
                 }

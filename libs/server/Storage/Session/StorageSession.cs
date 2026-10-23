@@ -100,7 +100,7 @@ namespace Garnet.server
             this.scratchBufferAllocator = scratchBufferAllocator;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
-            this.runtimeConfig = storeWrapper.runtimeServerConfig;
+            this.runtimeConfig = storeWrapper.runtimeConfig;
             this.IsConsistentReadSession = readSessionState != null;
             this.readSessionState = readSessionState;
             parseState.Initialize();

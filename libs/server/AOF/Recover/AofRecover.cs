@@ -137,7 +137,7 @@ namespace Garnet.server
                         this,
                         appendOnlyFile,
                         storeWrapper.serverOptions,
-                        storeWrapper.runtimeServerConfig,
+                        storeWrapper.runtimeConfig,
                         dbId,
                         physicalSublogIdx,
                         beginAddress[physicalSublogIdx],

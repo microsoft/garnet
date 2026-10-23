@@ -22,7 +22,7 @@ namespace Garnet.cluster
         /// Cluster node timeout, read live so that a CONFIG SET is observed by in-flight gossip.
         /// </summary>
         public TimeSpan clusterTimeout
-            => clusterProvider.storeWrapper.runtimeServerConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT);
+            => clusterProvider.storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.CLUSTER_NODE_TIMEOUT);
         private volatile int numActiveTasks = 0;
         private readonly common.ReaderWriterLock activeMergeLock;
         public readonly GarnetClusterConnectionStore clusterConnectionStore;
@@ -68,7 +68,7 @@ namespace Garnet.cluster
         /// issuing their requests against it rather than observing retirement.
         /// </summary>
         TimeSpan GossipClientSwapGrace
-            => TimeSpan.FromSeconds(clusterProvider.storeWrapper.runtimeServerConfig.GetSeconds(ServerConfigType.GOSSIP_CLIENT_SWAP_GRACE));
+            => TimeSpan.FromSeconds(clusterProvider.storeWrapper.runtimeConfig.GetSeconds(ServerConfigType.GOSSIP_CLIENT_SWAP_GRACE));
 
         /// <summary>
         /// Swaps every live gossip client for a new instance built from the current runtime configuration and

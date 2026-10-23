@@ -63,7 +63,7 @@ namespace Garnet.cluster
         /// by the group's monotonic version - a single lock-free long read, never a torn multi-parameter view.
         /// </summary>
         internal bool IsGossipClientConfigStale
-            => clusterProvider.storeWrapper.runtimeServerConfig
+            => clusterProvider.storeWrapper.runtimeConfig
                 .GetConfigGroup(ServerConfigGroupType.GOSSIP_CLIENT).IsStale(gossipClientConfigVersion);
 
         /// <summary>
@@ -100,7 +100,7 @@ namespace Garnet.cluster
             // Read the gossip options and the version they were published under in one consistent read. The
             // version records which configuration this client was built against for the staleness check at
             // add time; the options it carries are internally consistent (never a torn multi-parameter view).
-            var group = (IConfigGroup<LightNetworkWriterOptions>)clusterProvider.storeWrapper.runtimeServerConfig
+            var group = (IConfigGroup<LightNetworkWriterOptions>)clusterProvider.storeWrapper.runtimeConfig
                 .GetConfigGroup(ServerConfigGroupType.GOSSIP_CLIENT);
             var networkWriterOptions = group.Read(out this.gossipClientConfigVersion);
             this.gc = CreateGarnetClient(clientAuth, networkWriterOptions);
@@ -121,7 +121,7 @@ namespace Garnet.cluster
                 clientName: $"Gossip-{clusterProvider.clusterManager.CurrentConfig.LocalNodeEndpoint}",
                 networkWriterOptions: networkWriterOptions,
                 timeoutMilliseconds: GetClientTimeoutMilliseconds(
-                    clusterProvider.storeWrapper.runtimeServerConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
+                    clusterProvider.storeWrapper.runtimeConfig.GetInt(ServerConfigType.CLUSTER_NODE_TIMEOUT)),
                 epoch: epoch,
                 logger: logger);
 

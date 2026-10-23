@@ -168,10 +168,10 @@ namespace Garnet.cluster
                         checkpointEntry: checkpointEntry);
 
                     // Exception injection point for testing cluster reset during diskless replication
-                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).WaitAsync(storeWrapper.runtimeServerConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT), linkedCts.Token).ConfigureAwait(false);
+                    await ExceptionInjectionHelper.ResetAndWaitAsync(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).WaitAsync(storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT), linkedCts.Token).ConfigureAwait(false);
 
                     var resp = await gcs.ExecuteClusterAttachSync(syncMetadata.ToByteArray()).
-                        WaitAsync(storeWrapper.runtimeServerConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT), linkedCts.Token).ConfigureAwait(false);
+                        WaitAsync(storeWrapper.runtimeConfig.GetTimeSpan(ServerConfigType.REPL_ATTACH_TIMEOUT), linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
