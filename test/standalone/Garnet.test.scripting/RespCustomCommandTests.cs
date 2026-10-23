@@ -155,7 +155,7 @@ namespace Garnet.test
             var keyToIncrement = GetNextArg(ref procInput, ref offset);
 
             // should update etag invisibly
-            garnetApi.Increment(keyToIncrement, out long _, 1);
+            garnetApi.Increment(keyToIncrement, out long _, out _, 1);
 
             var keyToReturn = GetNextArg(ref procInput, ref offset);
             garnetApi.GET(keyToReturn, out PinnedSpanByte outval);
@@ -218,7 +218,7 @@ namespace Garnet.test
             var keyToIncrment = GetNextArg(ref procInput, ref offset);
 
             // non-ETag commands are ETag-blind
-            garnetApi.Increment(keyToIncrment, out long _, 1);
+            garnetApi.Increment(keyToIncrment, out long _, out _, 1);
         }
     }
 

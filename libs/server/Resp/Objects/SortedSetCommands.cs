@@ -825,8 +825,9 @@ namespace Garnet.server
 
             if (parseState.Count >= 2)
             {
-                // Read count
-                if (!parseState.TryGetInt(1, out paramCount))
+                // Read count. A negative count returns that many members, repeats allowed, so unlike a positive count it
+                // cannot be capped below; reject one that the packed count field cannot carry
+                if (!parseState.TryGetInt(1, out paramCount) || paramCount < (int.MinValue >> 2))
                 {
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                         SendAndReset();

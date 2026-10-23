@@ -184,7 +184,7 @@ To initialize a key value pair with an ETag, use the `SETWITHETAG` command. You 
 SETWITHETAG key value [EX seconds | PX milliseconds]
 ```
 
-Set **key** to hold the string value along with an ETag. If the key already holds a value, it is overwritten. If the key had an existing ETag, the ETag is incremented; otherwise, a new ETag of 1 is assigned.
+Set **key** to hold the string value along with an ETag. If the key already holds a value, it is overwritten. If the key had an existing ETag, the ETag is incremented; otherwise, a new ETag of 1 is assigned. An existing ETag of 9223372036854775807 cannot be incremented, so the command returns an error and leaves the key unchanged.
 
 **Options:**
 
@@ -235,6 +235,7 @@ Sets/updates a key value pair with the given etag only if (1) the etag given in 
 #### **Response**
 
 - **Array reply**: If the sent etag matches the existing etag the reponse will be an array where the first item is the updated etag, and the second value is nil. If the etags do not match then the response array will hold the latest etag, and the latest value in order.
+- **Error reply**: If the update would increment an etag of 9223372036854775807, which cannot be incremented; the key is unchanged.
 
 ---
 

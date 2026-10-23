@@ -131,12 +131,12 @@ namespace Garnet.server
 
         #region SETEX
         /// <inheritdoc />
-        public unsafe GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs)
-            => storageSession.SETEX(key, value, expiryMs, ref stringContext);
+        public unsafe GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs, out bool error)
+            => storageSession.SETEX(key, value, expiryMs, out error, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry)
-            => storageSession.SETEX(key, value, expiry, ref stringContext);
+        public GarnetStatus SETEX(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, out bool error)
+            => storageSession.SETEX(key, value, expiry, out error, ref stringContext);
 
         #endregion
 
@@ -161,8 +161,8 @@ namespace Garnet.server
             => storageSession.APPEND(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />    
-        public GarnetStatus APPEND(PinnedSpanByte key, PinnedSpanByte value, ref PinnedSpanByte output)
-            => storageSession.APPEND(key, value, ref output, ref stringContext);
+        public GarnetStatus APPEND(PinnedSpanByte key, PinnedSpanByte value, ref PinnedSpanByte output, out bool error)
+            => storageSession.APPEND(key, value, ref output, out error, ref stringContext);
 
         #endregion
 
@@ -182,16 +182,33 @@ namespace Garnet.server
             => storageSession.Increment(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus Increment(PinnedSpanByte key, out long output, long incrementCount = 1)
-            => storageSession.Increment(key, out output, incrementCount, ref stringContext);
+        public GarnetStatus Increment(PinnedSpanByte key, out long output, out bool error, long incrementCount = 1)
+            => storageSession.Increment(key, out output, out error, incrementCount, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus Decrement(PinnedSpanByte key, out long output, long decrementCount = 1)
-            => Increment(key, out output, -decrementCount);
+        public GarnetStatus Decrement(PinnedSpanByte key, out long output, out bool error, long decrementCount = 1)
+        {
+            // A decrement is an increment by the negation, and the negation of long.MinValue does not fit in a long
+            if (decrementCount == long.MinValue)
+            {
+                output = 0;
+                error = true;
+                return GarnetStatus.OK;
+            }
+
+            return Increment(key, out output, out error, -decrementCount);
+        }
 
         /// <inheritdoc />
         public GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringOutput output, double val)
         {
+            // Adding NaN or an infinity never produces a finite result
+            if (!double.IsFinite(val))
+            {
+                output.OutputFlags |= StringOutputFlags.NaNOrInfinityError;
+                return GarnetStatus.OK;
+            }
+
             SessionParseState parseState = default;
 
             var input = new StringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
@@ -199,28 +216,27 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, double val)
+        public GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, out bool error, double val)
         {
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
             var stringOutput = StringOutput.FromPinnedSpan(outputBuffer);
 
             var res = IncrementByFloat(key, ref stringOutput, val);
 
+            output = 0;
+            error = false;
+
             if (res == GarnetStatus.WRONGTYPE)
-            {
-                output = 0;
                 return res;
+
+            // The stored value is not a float, or the result would not be finite
+            if (stringOutput.HasError)
+            {
+                error = true;
+                return GarnetStatus.OK;
             }
 
-            if (!stringOutput.HasError)
-            {
-                _ = NumUtils.TryReadDouble(stringOutput.SpanByteAndMemory.Span, out output);
-            }
-            else
-            {
-                output = (stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0 ? double.NaN : 0;
-            }
-
+            _ = NumUtils.TryReadDouble(stringOutput.SpanByteAndMemory.Span, out output);
             return GarnetStatus.OK;
         }
         #endregion

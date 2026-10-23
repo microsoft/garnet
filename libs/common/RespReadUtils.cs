@@ -189,6 +189,10 @@ namespace Garnet.common
                 return false;
             }
 
+            // A sign alone is not a number
+            if (digitsRead == 0)
+                return false;
+
             // Check for overflows and convert digits to long, if possible
             if (negative)
             {
@@ -276,6 +280,13 @@ namespace Garnet.common
                 bytesRead = 1;
             }
 
+            if (!allowLeadingZeros)
+            {
+                // Do not allow leading zeros
+                if (end - ptr > 1 && *ptr == '0')
+                    return false;
+            }
+
             // Parse digits as unsigned 64-bit integer
             if (!TryReadUInt64(ref ptr, end, out var number, out var digitsRead, out var uint64Overflow))
             {
@@ -284,6 +295,10 @@ namespace Garnet.common
                 overflow = uint64Overflow;
                 return false;
             }
+
+            // A sign alone is not a number
+            if (digitsRead == 0)
+                return false;
 
             // Check for overflows and convert digits to int, if possible
             if (negative)
@@ -604,7 +619,8 @@ namespace Garnet.common
             var numberStart = ptr;
             if (!TryReadInt32(ref ptr, end, out number, out var bytesRead))
             {
-                return false;
+                // Every byte of the number is present, so failing to parse it means it is not a number
+                RespParsingException.ThrowNotANumber(numberStart, numberLength);
             }
 
             if ((int)bytesRead != numberLength)
@@ -645,7 +661,8 @@ namespace Garnet.common
             var numberStart = ptr;
             if (!TryReadInt64(ref ptr, end, out number, out var bytesRead))
             {
-                return false;
+                // Every byte of the number is present, so failing to parse it means it is not a number
+                RespParsingException.ThrowNotANumber(numberStart, numberLength);
             }
 
             if ((int)bytesRead != numberLength)

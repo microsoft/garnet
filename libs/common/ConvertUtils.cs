@@ -96,6 +96,18 @@ namespace Garnet.common
             => TryScaleAndAddTicks(DateTimeOffset.UtcNow.Ticks, milliseconds, TimeSpan.TicksPerMillisecond, out ticks);
 
         /// <summary>
+        /// Attempts to add a relative number of ticks, from the current UTC time, to an absolute number of ticks,
+        /// failing instead of throwing or silently overflowing if the result would not be representable as a
+        /// DateTime/DateTimeOffset.
+        /// </summary>
+        /// <param name="relativeTicks">The number of ticks from now.</param>
+        /// <param name="ticks">The resulting absolute number of ticks, when conversion succeeds.</param>
+        /// <returns>True if the conversion succeeded; false if it would overflow the representable date range.</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryRelativeTicksToTicks(long relativeTicks, out long ticks)
+            => TryScaleAndAddTicks(DateTimeOffset.UtcNow.Ticks, relativeTicks, 1, out ticks);
+
+        /// <summary>
         /// Scales <paramref name="value"/> by <paramref name="ticksPerUnit"/> and adds it to
         /// <paramref name="baseTicks"/>, failing instead of throwing or silently wrapping if the result would
         /// not be representable as a DateTime/DateTimeOffset tick count.

@@ -4831,6 +4831,47 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanUseZRandMemberWithUnrepresentableNegativeCount()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            var response = lightClientRequest.SendCommand("ZADD randzset 1 m1 2 m2 3 m3");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n", response);
+
+            // A negative count asks for that many members with repeats, so unlike a positive count it cannot be reduced
+            // to the size of the sorted set; a count below what the packed count field represents is rejected
+            const string expectedResponse = "-ERR value is not an integer or out of range.\r\n+PONG\r\n";
+            foreach (var count in new[] { "-536870913", "-2147483648" })
+            {
+                response = lightClientRequest.SendCommands($"ZRANDMEMBER randzset {count}", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+                response = lightClientRequest.SendCommands($"ZRANDMEMBER randzset {count} WITHSCORES", "PING", 1, 1);
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+            }
+        }
+
+        [Test]
+        public void SortedSetRejectsNaN([Values("nan", "NaN", "-NaN")] string nan)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "nanzset";
+            ClassicAssert.IsTrue(db.SortedSetAdd(key, "a", 1));
+
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("ZADD", key, nan, "b"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZINCRBY", key, nan, "b"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZINCRBY", key, nan, "a"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_NOT_VALID_FLOAT), ex.Message);
+            ex = Assert.Throws<RedisServerException>(() => db.Execute("ZRANGEBYSCORE", key, nan, "+inf"));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT), ex.Message);
+
+            CollectionAssert.AreEqual(new RedisValue[] { "a" }, db.SortedSetRangeByRank(key));
+            ClassicAssert.AreEqual(1, db.SortedSetScore(key, "a"));
+        }
+
+        [Test]
         public async Task CanUseZRandMemberWithSE()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

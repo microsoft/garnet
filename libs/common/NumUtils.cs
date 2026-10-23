@@ -4,7 +4,9 @@
 using System;
 using System.Buffers.Text;
 using System.Diagnostics;
+using System.Globalization;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace Garnet.common
 {
@@ -15,6 +17,11 @@ namespace Garnet.common
     {
         public const int MaximumFormatInt64Length = 20;   // 19 + sign (i.e. -9223372036854775808)
         public const int MaximumFormatDoubleLength = 310;   // (i.e. -1.7976931348623157E+308)
+
+        /// <summary>
+        /// Fixed-point formats, indexed by the number of fractional digits that <see cref="CountCharsInDouble"/> counts
+        /// </summary>
+        static readonly string[] FixedPointFormats = ["F0", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13", "F14", "F15"];
 
         /// <summary>
         /// Writes 64-bit signed integer as ASCII.
@@ -116,8 +123,8 @@ namespace Garnet.common
         /// Writes <see langword="double"/> as ASCII.
         /// </summary>
         /// <param name="value">The value to write</param>
-        /// <param name="integerDigits">Number of digits in the integer part of the double value</param>
-        /// <param name="fractionalDigits">Number of digits in the fractional part of the double value</param>
+        /// <param name="integerDigits">Number of digits in the integer part of the double value, as counted by <see cref="CountCharsInDouble"/></param>
+        /// <param name="fractionalDigits">Number of digits in the fractional part of the double value, as counted by <see cref="CountCharsInDouble"/></param>
         /// <param name="result">Byte pointer, will be updated to point after the written number</param>
         public static void WriteDouble(double value, int integerDigits, int fractionalDigits, ref byte* result)
         {
@@ -129,41 +136,11 @@ namespace Garnet.common
                 return;
             }
 
-            var isNegative = value < 0;
-            if (isNegative)
-            {
-                *result++ = (byte)'-';
-                value = -value;
-            }
-
-            result += integerDigits;
-            var integerPart = Math.Truncate(value);
-            var fractionalPart = fractionalDigits > 0 ? Math.Round(value - integerPart, fractionalDigits) : 0;
-
-            // Convert integer part
-            do
-            {
-                *--result = (byte)((byte)'0' + (integerPart % 10));
-                integerPart /= 10;
-            } while (integerPart >= 1);
-            result += integerDigits;
-
-            if (fractionalDigits > 0)
-            {
-                // Add decimal point
-                *result++ = (byte)'.';
-
-                // Convert fractional part
-                for (int i = 0; i < fractionalDigits; i++)
-                {
-                    fractionalPart *= 10;
-                    int digit = (int)fractionalPart;
-                    *result++ = (byte)((byte)'0' + digit);
-                    fractionalPart = Math.Round(fractionalPart - digit, fractionalDigits - i - 1);
-                }
-
-                result--; // Move back to the last digit
-            }
+            // Fixed-point formatting writes the exact digits of any magnitude, within the length that CountCharsInDouble counted
+            var length = (value < 0 ? 1 : 0) + integerDigits + (fractionalDigits > 0 ? 1 + fractionalDigits : 0);
+            var success = value.TryFormat(new Span<byte>(result, length), out var written, FixedPointFormats[fractionalDigits], CultureInfo.InvariantCulture);
+            Debug.Assert(success && written == length, "The value is written in the number of characters that CountCharsInDouble counted");
+            result += written;
         }
 
         /// <summary>
@@ -215,22 +192,20 @@ namespace Garnet.common
         /// <returns>True if the buffer which <paramref name="source"/> points to consisted only of a valid signed 64-bit integer, otherwise false</returns>
         public static bool TryReadInt64(int length, byte* source, out long result)
         {
+            result = 0;
+            if (length == 0)
+                return false;
+
             var isNegative = *source == '-';
             var beg = isNegative ? source + 1 : source;
             var len = isNegative ? length - 1 : length;
-            result = 0;
 
             // Do not allow leading zeros
-            if (len > 1 && *beg == '0')
+            if (len == 0 || (len > 1 && *beg == '0'))
                 return false;
 
-            // Parse number and check consumed bytes to avoid alphanumeric strings
-            if (!TryParse(new ReadOnlySpan<byte>(beg, len), out result))
-                return false;
-
-            // Negate if parsed value has a leading negative sign
-            result = isNegative ? -result : result;
-            return true;
+            // Parse the sign as well so long.MinValue does not overflow as a positive magnitude.
+            return TryParse(new ReadOnlySpan<byte>(source, length), out result);
         }
 
         /// <summary>
@@ -291,7 +266,9 @@ namespace Garnet.common
             if (isNegative)
             {
                 *result++ = (byte)'-';
-                v = -value;
+
+                // Negate in 64 bits; the magnitude of int.MinValue does not fit in an int
+                v = -v;
             }
 
             result += length;
@@ -311,6 +288,8 @@ namespace Garnet.common
         /// <returns>The number of digits in <paramref name="value"/>.</returns>
         public static int CountDigits(int value)
         {
+            // The magnitude of int.MinValue does not fit in an int
+            if (value == int.MinValue) return 10;
             value = value < 0 ? ((~value) + 1) : value;
 
             if (value < 10) return 1;
@@ -463,10 +442,15 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Return number of digits in given double number incluing the decimal part and `.` character
+        /// Return number of characters needed to write the given double: the sign, the digits of the integer part, and the
+        /// decimal point and up to 15 digits of the fractional part
         /// </summary>
         /// <param name="value">Double value</param>
-        /// <returns>Number of digits in the integer part of the double value</returns>
+        /// <param name="integerDigits">Number of digits in the integer part of the double value</param>
+        /// <param name="signSize">1 if the double value is negative, otherwise 0</param>
+        /// <param name="fractionalDigits">Number of digits in the fractional part of the double value</param>
+        /// <returns>Number of characters needed to write the double value</returns>
+        [SkipLocalsInit]
         public static int CountCharsInDouble(double value, out int integerDigits, out byte signSize, out int fractionalDigits)
         {
             if (value == 0)
@@ -481,7 +465,6 @@ namespace Garnet.common
 
             signSize = (byte)(value < 0 ? 1 : 0); // Add sign if the number is negative
             value = Math.Abs(value);
-            integerDigits = (value < 10) ? 1 : (int)Math.Log10(value) + 1;
 
             fractionalDigits = 0; // Max of 15 significant digits
             while (fractionalDigits <= 14 && Math.Abs(value - Math.Round(value, fractionalDigits)) > 2 * Double.Epsilon) // 2 * Double.Epsilon is used to handle floating point errors
@@ -489,9 +472,16 @@ namespace Garnet.common
                 fractionalDigits++;
             }
 
-            var dotSize = fractionalDigits != 0 ? 1 : 0; // Add decimal point if there are significant digits
+            // Count the integer digits as written: a logarithm counts one too many just below a power of ten, and rounding
+            // the fractional part can carry into the integer part
+            Span<byte> formatted = stackalloc byte[MaximumFormatDoubleLength];
+            var success = value.TryFormat(formatted, out var length, FixedPointFormats[fractionalDigits], CultureInfo.InvariantCulture);
+            Debug.Assert(success, "A double without its sign is at most MaximumFormatDoubleLength characters");
 
-            return signSize + integerDigits + dotSize + fractionalDigits;
+            var dotSize = fractionalDigits != 0 ? 1 : 0; // Add decimal point if there are significant digits
+            integerDigits = length - dotSize - fractionalDigits;
+
+            return signSize + length;
         }
 
         /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out int, out int, char)"/>
@@ -529,12 +519,20 @@ namespace Garnet.common
         ///     F/f             12.45       Fixed point
         ///     E/e             1.245000e1  Exponential
         ///     [+-]inf         plus/minus infinity
+        /// NaN is rejected.
         /// </remarks>
         public static bool TryParseWithInfinity(ReadOnlySpan<byte> source, out double value)
         {
             if (Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
                 bytesConsumed == source.Length)
-                return true;
+            {
+                // Utf8Parser accepts NaN, which is not a number to Redis
+                if (!double.IsNaN(value))
+                    return true;
+
+                value = default;
+                return false;
+            }
 
             return RespReadUtils.TryReadInfinity(source, out value);
         }

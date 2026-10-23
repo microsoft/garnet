@@ -25,7 +25,7 @@ namespace Garnet.test
         public override void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
         {
             int offset = 0;
-            api.Increment(GetNextArg(ref procInput, ref offset), out _);
+            api.Increment(GetNextArg(ref procInput, ref offset), out _, out _);
         }
     }
 }

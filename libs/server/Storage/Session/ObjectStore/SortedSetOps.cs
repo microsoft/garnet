@@ -362,13 +362,15 @@ namespace Garnet.server
         /// <param name="increment"></param>
         /// <param name="member"></param>
         /// <param name="newScore"></param>
+        /// <param name="error">True if <paramref name="increment"/> is NaN or the new score would be NaN; the sorted set is unchanged, and a missing key is not created.</param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus SortedSetIncrement<TObjectContext>(PinnedSpanByte key, double increment, PinnedSpanByte member,
-            out double newScore, ref TObjectContext objectContext)
+            out double newScore, out bool error, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<FixedSpanByteKey, ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             newScore = 0;
+            error = false;
 
             if (key.Length == 0)
                 return GarnetStatus.OK;
@@ -389,6 +391,19 @@ namespace Garnet.server
                 ref output);
 
             scratchBufferBuilder.RewindScratchBuffer(incrSlice);
+
+            // The reply is an error instead of the new score when the increment is not a valid score or the new score would be NaN,
+            // and then a missing key is not created, so the status is NOTFOUND
+            if (status is GarnetStatus.OK or GarnetStatus.NOTFOUND)
+            {
+                var outputSpan = output.SpanByteAndMemory.ReadOnlySpan;
+                if (!outputSpan.IsEmpty && outputSpan[0] == '-')
+                {
+                    error = true;
+                    output.SpanByteAndMemory.Dispose();
+                    return GarnetStatus.OK;
+                }
+            }
 
             // Process output
             if (status == GarnetStatus.OK)
@@ -625,7 +640,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;
@@ -753,7 +768,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, ExpireOption.None, ref ssUnifiedTransactionalContext);
+                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, out _, ExpireOption.None, ref ssUnifiedTransactionalContext);
                     writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
@@ -1170,7 +1185,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;
@@ -1428,7 +1443,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, out _, ExpireOption.None, ref unifiedContext);
                 }
 
                 return status;

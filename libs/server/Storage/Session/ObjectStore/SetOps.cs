@@ -423,7 +423,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
                     }
 
                     count = members.Count;
@@ -594,7 +594,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
                     }
 
                     count = members.Count;
@@ -861,7 +861,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = EXPIRE(key, TimeSpan.Zero, out _, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
                     }
 
                     count = diffSet.Count;

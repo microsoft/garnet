@@ -30,8 +30,15 @@ namespace Garnet.server
                     return false;
                 case RespCommand.SETEXXX:
                     return false;
-                case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
+                    // The new record's ETag is one past the ETag sent by the client
+                    if (input.parseState.GetLong(1) == long.MaxValue)
+                    {
+                        WriteEtagOverflowError(ref output);
+                        return false;
+                    }
+                    return true;
+                case RespCommand.SETIFGREATER:
                 case RespCommand.SETWITHETAG:
                 // add etag on first insertion, already tracked by header.CheckWithEtagFlag()
                 case RespCommand.SET:
@@ -820,6 +827,9 @@ namespace Garnet.server
                     {
                         // Try to grow in place.
                         var originalLength = logRecord.ValueSpan.Length;
+                        if (AppendExceedsMaxSize(originalLength, appendLength, ref output))
+                            return IPUResult.NotUpdated;
+
                         totalLength = originalLength + appendLength;
 
                         // Try to grow in place. We are not changing the presence of ETag or Expiration
@@ -1027,6 +1037,11 @@ namespace Garnet.server
                 case RespCommand.RICREATE:
                     // Index already exists — never copy-update, reject in caller
                     return false;
+                case RespCommand.APPEND:
+                    // An expired value is logically absent, so appending to it starts a new value
+                    if (srcLogRecord.DataHeader.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+                        return true;
+                    return !AppendExceedsMaxSize(srcLogRecord.ValueSpan.Length, input.parseState.GetArgSliceByRef(0).Length, ref output);
                 case RespCommand.RIPROMOTE:
                     // Always copy to tail to promote from read-only region
                     return true;
@@ -1159,7 +1174,8 @@ namespace Garnet.server
 
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
-                    _ = TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrByFloat);
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrByFloat))
+                        return false;
                     break;
 
                 case RespCommand.SETBIT:

@@ -141,6 +141,8 @@ namespace Garnet.test.Resp
         [TestCase("-2147483649")] // Should cause overflow
         [TestCase("123abc")]      // Not a number
         [TestCase("abc121cba")]   // Not a number
+        [TestCase("-")]           // Sign without digits
+        [TestCase("+")]           // Sign without digits
         public static unsafe void ReadIntWithLengthHeaderExceptionsTest(string text)
         {
             var bytes = Encoding.ASCII.GetBytes($"${text.Length}\r\n{text}\r\n");
@@ -187,6 +189,8 @@ namespace Garnet.test.Resp
         [TestCase("10000000000000000000")] // Should cause overflow
         [TestCase("123abc")]               // Not a number
         [TestCase("abc121cba")]            // Not a number
+        [TestCase("-")]                    // Sign without digits
+        [TestCase("+")]                    // Sign without digits
         public static unsafe void ReadLongWithLengthHeaderExceptionsTest(string text)
         {
             var bytes = Encoding.ASCII.GetBytes($"${text.Length}\r\n{text}\r\n");
@@ -199,6 +203,55 @@ namespace Garnet.test.Resp
                     _ = RespReadUtils.TryReadInt64WithLengthHeader(out var length, ref start, ptr + bytes.Length);
                 }
             });
+        }
+
+        /// <summary>
+        /// A sign without digits is not an integer.
+        /// </summary>
+        /// <param name="text">A lone sign.</param>
+        [TestCase("-")]
+        [TestCase("+")]
+        public static unsafe void SignWithoutDigitsIsNotAnInteger(string text)
+        {
+            // The trailing CRLF stands in for the rest of the network buffer, which the parsers may peek at
+            var bytes = Encoding.ASCII.GetBytes($"{text}\r\n");
+            fixed (byte* ptr = bytes)
+            {
+                var start = ptr;
+                ClassicAssert.IsFalse(RespReadUtils.TryReadInt64Safe(ref start, ptr + text.Length, out _, out _, out _, out _));
+
+                start = ptr;
+                ClassicAssert.IsFalse(RespReadUtils.TryReadInt32Safe(ref start, ptr + text.Length, out _, out _, out _, out _));
+            }
+        }
+
+        /// <summary>
+        /// When leading zeros are disallowed, 32-bit and 64-bit integers both reject them.
+        /// </summary>
+        /// <param name="text">Integer encoded as an ASCII string.</param>
+        /// <param name="expected">Whether the whole string parses as an integer.</param>
+        [TestCase("007", false)]
+        [TestCase("-007", false)]
+        [TestCase("+007", false)]
+        [TestCase("0", true)]
+        [TestCase("-0", true)]
+        [TestCase("70", true)]
+        [TestCase("-70", true)]
+        public static unsafe void LeadingZerosAreRejectedWhenDisallowed(string text, bool expected)
+        {
+            var bytes = Encoding.ASCII.GetBytes($"{text}\r\n");
+            fixed (byte* ptr = bytes)
+            {
+                var start = ptr;
+                var success = RespReadUtils.TryReadInt64Safe(ref start, ptr + text.Length, out _, out var bytesRead, out _, out _, allowLeadingZeros: false)
+                    && (int)bytesRead == text.Length;
+                ClassicAssert.AreEqual(expected, success, "Int64");
+
+                start = ptr;
+                success = RespReadUtils.TryReadInt32Safe(ref start, ptr + text.Length, out _, out bytesRead, out _, out _, allowLeadingZeros: false)
+                    && (int)bytesRead == text.Length;
+                ClassicAssert.AreEqual(expected, success, "Int32");
+            }
         }
 
         /// <summary>

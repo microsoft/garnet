@@ -225,7 +225,9 @@ namespace Garnet.server
 
             if (parseState.Count >= 2)
             {
-                if (!parseState.TryGetInt(1, out paramCount))
+                // A negative count returns that many fields, repeats allowed, so unlike a positive count it cannot be
+                // capped below; reject one that the packed count field cannot carry
+                if (!parseState.TryGetInt(1, out paramCount) || paramCount < (int.MinValue >> 2))
                 {
                     return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
                 }
