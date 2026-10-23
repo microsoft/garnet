@@ -1239,9 +1239,8 @@ namespace Tsavorite.core
             logReader.OnEndReadRecords();
 
             // ReadRecordObjects returned false because the Overflow key did not match. The base call transferred ctx.record to diskLogRecord,
-            // so get the previous record's address from it, then release it so it is not taken as the result if the chain ends here.
+            // so get the previous record's address from it; the caller disposes the record.
             prevAddressToRead = diskLogRecord.Info.PreviousAddress;
-            diskLogRecord.Dispose();
             return false;
         }
 

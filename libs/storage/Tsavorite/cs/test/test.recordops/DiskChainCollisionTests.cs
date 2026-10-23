@@ -11,10 +11,10 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Objects
 {
-    using ClassAllocator = ObjectAllocator<StoreFunctions<CollidingKeyComparer, DefaultRecordTriggers>>;
-    using ClassStoreFunctions = StoreFunctions<CollidingKeyComparer, DefaultRecordTriggers>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<CollidingKeyComparer, DiskRecordDisposalTriggers>>;
+    using ClassStoreFunctions = StoreFunctions<CollidingKeyComparer, DiskRecordDisposalTriggers>;
     using CollisionContext = BasicContext<TestSpanByteKey, PinnedSpanByte, CollisionOutput, Empty, CollisionFunctions,
-        StoreFunctions<CollidingKeyComparer, DefaultRecordTriggers>, ObjectAllocator<StoreFunctions<CollidingKeyComparer, DefaultRecordTriggers>>>;
+        StoreFunctions<CollidingKeyComparer, DiskRecordDisposalTriggers>, ObjectAllocator<StoreFunctions<CollidingKeyComparer, DiskRecordDisposalTriggers>>>;
 
     /// <summary>Full-key equality with a constant hash, so every key shares one hash bucket and tag.</summary>
     internal readonly struct CollidingKeyComparer : IKeyComparer
@@ -92,6 +92,37 @@ namespace Tsavorite.test.Objects
         public void OnException(Exception exception, long numberOfRecords) => this.exception = exception;
     }
 
+    /// <summary>The <see cref="DiskLogRecord"/>s passed to OnDisposeDiskRecord: their number, and the values of those with an object value.</summary>
+    internal sealed class DiskRecordDisposals
+    {
+        internal int recordCount;
+        internal readonly List<int> objectValues = [];
+
+        internal void Clear()
+        {
+            recordCount = 0;
+            objectValues.Clear();
+        }
+    }
+
+    /// <summary>Records each <see cref="DiskLogRecord"/> passed to OnDisposeDiskRecord in a <see cref="DiskRecordDisposals"/>.</summary>
+    internal readonly struct DiskRecordDisposalTriggers : IRecordTriggers
+    {
+        private readonly DiskRecordDisposals disposals;
+
+        internal DiskRecordDisposalTriggers(DiskRecordDisposals disposals) => this.disposals = disposals;
+
+        public void OnDisposeDiskRecord(ref DiskLogRecord logRecord, DisposeReason reason)
+        {
+            // Some callers pass an unset record when there is nothing to dispose.
+            if (disposals is null || !logRecord.IsSet)
+                return;
+            disposals.recordCount++;
+            if (logRecord.DataHeader.ValueIsObject)
+                disposals.objectValues.Add(((TestObjectValue)logRecord.ValueObject).value);
+        }
+    }
+
     /// <summary>
     /// Pending disk reads whose hash chain contains records for other keys in the same bucket and tag. When an on-disk record has an
     /// Overflow key, the key is compared only after it is read from the object log, so a mismatch is detected after the record has
@@ -111,6 +142,7 @@ namespace Tsavorite.test.Objects
 
         private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
+        private DiskRecordDisposals disposals;
 
         [SetUp]
         public void Setup()
@@ -118,6 +150,7 @@ namespace Tsavorite.test.Objects
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"), deleteOnClose: true);
+            disposals = new DiskRecordDisposals();
 
             store = new(new KVSettings
             {
@@ -129,7 +162,7 @@ namespace Tsavorite.test.Objects
                 PageSize = MinKvLogPageSize,
                 MaxInlineKeySize = MaxInlineKeyBytes,
                 MaxInlineValueSize = MaxInlineValueBytes,
-            }, StoreFunctions.Create(new CollidingKeyComparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+            }, StoreFunctions.Create(new CollidingKeyComparer(), () => new TestObjectValue.Serializer(), new DiskRecordDisposalTriggers(disposals)),
                 (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
 
@@ -230,6 +263,31 @@ namespace Tsavorite.test.Objects
             // The read of B first reads A, whose Overflow key does not match, then continues to A's PreviousAddress, which is B.
             ReadFromDiskAndVerify(bContext, functions, keyB, MakeValue(2, valueKind));
             ReadFromDiskAndVerify(bContext, functions, keyA, MakeValue(1, valueKind));
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory), Category(ReadTestCategory), Category(OverflowFieldCategory)]
+        public void OnDisposeDiskRecordReceivesMismatchedOverflowKeyRecord([Values] ValueKind valueKind, [Values] bool keyExists)
+        {
+            using var session = store.NewSession<TestSpanByteKey, PinnedSpanByte, CollisionOutput, Empty, CollisionFunctions>(new CollisionFunctions());
+            var bContext = session.BasicContext;
+
+            // If B exists it is inserted first, so A precedes it in the hash chain.
+            var keyA = MakeKey(1, overflow: true);
+            var keyB = MakeKey(2, overflow: true);
+            if (keyExists)
+                Upsert(bContext, keyB, 2, valueKind);
+            Upsert(bContext, keyA, 1, valueKind);
+            store.Log.FlushAndEvict(wait: true);
+            disposals.Clear();
+
+            // A's record is passed to OnDisposeDiskRecord whether the chain continues to B or ends at A, then B's record if it exists.
+            // A's value is not read, so OnDisposeDiskRecord must not see a value object for it.
+            var (status, _) = ReadPending(bContext, keyB);
+            ClassicAssert.AreEqual(keyExists, status.Found, $"Unexpected status; {status}");
+            ClassicAssert.AreEqual(keyExists ? 2 : 1, disposals.recordCount, "Unexpected number of records passed to OnDisposeDiskRecord");
+            CollectionAssert.AreEqual(keyExists && valueKind == ValueKind.Object ? [2 * 1000] : Array.Empty<int>(), disposals.objectValues,
+                "Unexpected object values passed to OnDisposeDiskRecord");
         }
 
         [Test]
