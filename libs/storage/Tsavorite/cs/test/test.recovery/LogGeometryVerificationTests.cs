@@ -43,7 +43,7 @@ namespace Tsavorite.test.recovery
         public void TearDown() => OnTearDown();
 
         static TsavoriteKV<ObjStoreFunctions, ObjAllocator> CreateObjectStore(IDevice log, IDevice objlog, string checkpointDir,
-                int pageSize, long segmentSize, long objectLogSegmentSize, long objectLogPageSize = 0)
+                int pageSize, long segmentSize, long objectLogSegmentSize, long objectLogPageSize = 0, long objectLogMemorySize = 0)
             => new(new()
             {
                 IndexSize = 1L << 20,
@@ -55,6 +55,7 @@ namespace Tsavorite.test.recovery
                 SegmentSize = segmentSize,
                 ObjectLogSegmentSize = objectLogSegmentSize,
                 ObjectLogPageSize = objectLogPageSize,
+                ObjectLogMemorySize = objectLogMemorySize,
                 CheckpointDir = checkpointDir,
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance),
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
@@ -97,14 +98,15 @@ namespace Tsavorite.test.recovery
         }
 
         // Recovers the checkpoint under the given geometry, returning the TsavoriteException thrown, or null if recovery succeeded.
-        async Task<TsavoriteException> TryRecoverWith(Guid token, int pageSize, long segmentSize, long objectLogSegmentSize, long objectLogPageSize = 0)
+        async Task<TsavoriteException> TryRecoverWith(Guid token, int pageSize, long segmentSize, long objectLogSegmentSize, long objectLogPageSize = 0,
+            long objectLogMemorySize = 0)
         {
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
             try
             {
-                using var store = CreateObjectStore(log, objlog, checkpointDir, pageSize, segmentSize, objectLogSegmentSize, objectLogPageSize);
+                using var store = CreateObjectStore(log, objlog, checkpointDir, pageSize, segmentSize, objectLogSegmentSize, objectLogPageSize, objectLogMemorySize);
                 try
                 {
                     _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
@@ -170,6 +172,18 @@ namespace Tsavorite.test.recovery
             var ex = await TryRecoverWith(token, BasePageSize, BaseSegmentSize, BaseObjectLogSegmentSize, BaseObjectLogSegmentSize / 4).ConfigureAwait(false);
             ClassicAssert.IsNotNull(ex, "recovery with a mismatched ObjectLogPageSize must fail");
             StringAssert.Contains("ObjectLogPageSize mismatch", ex.Message);
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task DifferentObjectLogMemorySizeRecovers()
+        {
+            // The object log's memory size is not geometry: it decides only how many pages stay in memory, so a checkpoint written with the
+            // default count recovers with the minimum.
+            var token = BuildCheckpoint();
+            var ex = await TryRecoverWith(token, BasePageSize, BaseSegmentSize, BaseObjectLogSegmentSize,
+                objectLogMemorySize: KVSettings.MinObjectLogPageCount * BaseObjectLogSegmentSize).ConfigureAwait(false);
+            ClassicAssert.IsNull(ex, $"recovery with a different ObjectLogMemorySize must succeed, but threw: {ex?.Message}");
         }
     }
 }

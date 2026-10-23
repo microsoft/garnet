@@ -57,7 +57,20 @@ namespace Garnet.server
         public string SegmentSize = "1g";
 
         /// <summary>
-        /// Size of each object-log segment in bytes on disk (rounds down to power of 2).
+        /// Total object-log memory buffer in bytes (rounds down to power of 2). Must be at least four times <see cref="ObjectLogPageSize"/>.
+        /// Also applies to each Snapshot checkpoint's object log, so object-log memory can double while a Snapshot checkpoint runs.
+        /// </summary>
+        public string ObjectLogMemorySize = "64m";
+
+        /// <summary>
+        /// Size of each object-log page in bytes (rounds down to power of 2; 4k to 128m). Must be no larger than <see cref="ObjectLogSegmentSize"/>.
+        /// Also applies to each Snapshot checkpoint's object log.
+        /// </summary>
+        public string ObjectLogPageSize = "8m";
+
+        /// <summary>
+        /// Size of each object-log segment (file) in bytes on disk (rounds down to power of 2). This is the granularity at which object-log files
+        /// are created and truncated. Also applies to each Snapshot checkpoint's object log.
         /// </summary>
         public string ObjectLogSegmentSize = "1g";
 
@@ -185,15 +198,35 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get segment size bits for either the main log or object log
+        /// Get main-log segment size in bits
         /// </summary>
         /// <returns></returns>
-        public int SegmentSizeBits(bool isObj)
+        public int SegmentSizeBits() => PowerOf2SizeBits(SegmentSize, nameof(SegmentSize));
+
+        /// <summary>
+        /// Get object-log memory size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int ObjectLogMemorySizeBits() => PowerOf2SizeBits(ObjectLogMemorySize, nameof(ObjectLogMemorySize));
+
+        /// <summary>
+        /// Get object-log page size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int ObjectLogPageSizeBits() => PowerOf2SizeBits(ObjectLogPageSize, nameof(ObjectLogPageSize));
+
+        /// <summary>
+        /// Get object-log segment size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int ObjectLogSegmentSizeBits() => PowerOf2SizeBits(ObjectLogSegmentSize, nameof(ObjectLogSegmentSize));
+
+        int PowerOf2SizeBits(string value, string propName)
         {
-            long size = ParseSize(isObj ? ObjectLogSegmentSize : SegmentSize, out _);
-            long adjustedSize = PreviousPowerOf2(size);
+            var size = ParseSize(value, out _);
+            var adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower {SegmentType} than specified (power of 2)", isObj ? "ObjSegmentSize" : "SegmentSize");
+                logger?.LogInformation("Warning: using lower {PropName} than specified (power of 2)", propName);
             return (int)Math.Log(adjustedSize, 2);
         }
 

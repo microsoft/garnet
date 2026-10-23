@@ -73,6 +73,10 @@ namespace Tsavorite.core
         /// size rather than the page count.</summary>
         internal const int MinPageCount = 4;
 
+        /// <summary>Maximum number of pages. <see cref="ComputeMaxExclusiveAddress"/> reserves the page ring, rounded up to a power of 2,
+        /// as headroom below <see cref="int.MaxValue"/> page numbers; a larger ring would round up to 2^31 and leave no page numbers.</summary>
+        internal const int MaxPageCount = 1 << 30;
+
         /// <summary>Default device segment size in bits; file segmentation only.</summary>
         internal const int DefaultSegmentSizeBits = 33; // 8 GB
 
@@ -131,8 +135,8 @@ namespace Tsavorite.core
 
             if (settings.PageSizeBits < LogSettings.kMinPageSizeBits || settings.PageSizeBits > LogSettings.kMaxPageSizeBits)
                 throw new TsavoriteException($"{nameof(ObjectLogSettings.PageSizeBits)} ({settings.PageSizeBits}) must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
-            if (settings.PageCount < MinPageCount)
-                throw new TsavoriteException($"{nameof(ObjectLogSettings.PageCount)} ({settings.PageCount}) must be at least {MinPageCount}");
+            if (settings.PageCount < MinPageCount || settings.PageCount > MaxPageCount)
+                throw new TsavoriteException($"{nameof(ObjectLogSettings.PageCount)} ({settings.PageCount}) must be between {MinPageCount} and {MaxPageCount}");
             if (settings.SegmentSizeBits < settings.PageSizeBits || settings.SegmentSizeBits > LogSettings.kMaxSegmentSizeBits)
                 throw new TsavoriteException($"{nameof(ObjectLogSettings.SegmentSizeBits)} ({settings.SegmentSizeBits}) must be between {nameof(ObjectLogSettings.PageSizeBits)} ({settings.PageSizeBits}) and {LogSettings.kMaxSegmentSizeBits}");
 
@@ -188,6 +192,9 @@ namespace Tsavorite.core
         #region Geometry and addresses
         /// <summary>Size of a page in bytes. An allocation never spans pages, so this also bounds a single chunk.</summary>
         internal int PageSize => (int)allocator.GetPageSize();
+
+        /// <summary>Number of pages in the circular buffer.</summary>
+        internal int PageCount => allocator.MaxAllocatedPageCount;
 
         /// <summary>Lowest address still live; bytes below this have been truncated.</summary>
         internal long BeginAddress => allocator.BeginAddress;

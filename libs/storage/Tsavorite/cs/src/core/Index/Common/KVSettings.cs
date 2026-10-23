@@ -62,15 +62,33 @@ namespace Tsavorite.core
         public long SegmentSize = 1L << 30;
 
         /// <summary>
-        /// Size of an object log segment (group of pages), in bytes. Rounds down to power of 2.
+        /// Size of an object-log segment (file) on disk, in bytes. Rounds down to power of 2. This is the granularity at which object-log files are
+        /// created and truncated, and must be at least <see cref="ObjectLogPageSize"/>. Also applies to each Snapshot checkpoint's object log.
         /// </summary>
+        /// <remarks>Recorded in a checkpoint; recovering that checkpoint with a different value fails.</remarks>
         public long ObjectLogSegmentSize = 1L << 30;
 
         /// <summary>
-        /// Object-log page size, in bytes; zero derives it from <see cref="ObjectLogSegmentSize"/>. Rounds down to power of 2.
+        /// Size of an object-log page, in bytes; zero uses 8 MB, or <see cref="ObjectLogSegmentSize"/> if that is smaller. Rounds down to power of
+        /// 2, and must be between 4 KB and 128 MB and no larger than <see cref="ObjectLogSegmentSize"/>. A page bounds a single object-log write,
+        /// so larger out-of-line values are written in pieces of at most a page. Also applies to each Snapshot checkpoint's object log.
         /// </summary>
-        /// <remarks>For tests, which shrink it to reach object-log page cuts with small data.</remarks>
-        internal long ObjectLogPageSize;
+        /// <remarks>Recorded in a checkpoint; recovering that checkpoint with a different value fails.</remarks>
+        public long ObjectLogPageSize;
+
+        /// <summary>
+        /// Size of the object log's in-memory page buffer, in bytes; zero uses eight pages of <see cref="ObjectLogPageSize"/>. Rounds down to
+        /// power of 2, and must hold at least <see cref="MinObjectLogPageCount"/> pages. Also applies to each Snapshot checkpoint's object log,
+        /// which has a buffer of its own while the checkpoint runs, so object-log memory can double then.
+        /// </summary>
+        /// <remarks>Not recorded in a checkpoint; it may change between runs.</remarks>
+        public long ObjectLogMemorySize;
+
+        /// <summary>
+        /// Minimum number of <see cref="ObjectLogPageSize"/> pages that <see cref="ObjectLogMemorySize"/> must hold: the writer fills one page
+        /// while earlier pages flush.
+        /// </summary>
+        public const int MinObjectLogPageCount = ObjectLog.MinPageCount;
 
         /// <summary>
         /// Chunking parameters for object-log writes; null uses the defaults.
@@ -285,6 +303,7 @@ namespace Tsavorite.core
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
                 ObjectLogSegmentSizeBits = Utility.NumBitsPreviousPowerOf2(ObjectLogSegmentSize),
                 ObjectLogPageSizeBits = ObjectLogPageSize > 0 ? Utility.NumBitsPreviousPowerOf2(ObjectLogPageSize) : 0,
+                ObjectLogMemorySizeBits = ObjectLogMemorySize > 0 ? Utility.NumBitsPreviousPowerOf2(ObjectLogMemorySize) : 0,
                 ObjectLogWriterSettings = ObjectLogWriterSettings,
                 MutableFraction = MutableFraction,
                 PreallocateLog = PreallocateLog,

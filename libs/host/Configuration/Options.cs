@@ -76,7 +76,15 @@ namespace Garnet
         public string SegmentSize { get; set; }
 
         [MemorySizeValidation]
-        [Option("object-log-segment", Required = false, HelpText = "Size of each object-log segment in bytes on disk (rounds down to power of 2)")]
+        [Option("objectlog-memory", Required = false, HelpText = "Total object-log memory buffer in bytes (rounds down to power of 2). Must be at least four times ObjectLogPageSize. Also applies to each Snapshot checkpoint's object log, so object-log memory can double while a Snapshot checkpoint runs.")]
+        public string ObjectLogMemorySize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("objectlog-page-size", Required = false, HelpText = "Size of each object-log page in bytes (rounds down to power of 2; 4k to 128m). Must be no larger than ObjectLogSegmentSize. Also applies to each Snapshot checkpoint's object log.")]
+        public string ObjectLogPageSize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("objectlog-segment-size", Required = false, HelpText = "Size of each object-log segment (file) in bytes on disk (rounds down to power of 2). This is the granularity at which object-log files are created and truncated. Also applies to each Snapshot checkpoint's object log.")]
         public string ObjectLogSegmentSize { get; set; }
 
         [MemorySizeValidation]
@@ -909,6 +917,8 @@ namespace Garnet
                 PageSize = PageSize,
                 PageCount = PageCount,
                 SegmentSize = SegmentSize,
+                ObjectLogMemorySize = ObjectLogMemorySize,
+                ObjectLogPageSize = ObjectLogPageSize,
                 ObjectLogSegmentSize = ObjectLogSegmentSize,
                 IndexMemorySize = IndexMemorySize,
                 IndexMaxMemorySize = IndexMaxMemorySize,

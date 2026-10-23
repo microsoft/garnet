@@ -155,6 +155,10 @@ namespace Garnet.test
         /// </summary>
         const string ObjectLogSegmentArg = "4m";
 
+        /// <summary>The object-log page size for the recovering stores, which must not exceed <see cref="ObjectLogSegmentArg"/>. A cv7 object log has
+        /// no pages, so this only shapes the current-format object log the upgrade writes, and a later recovery must use the same value.</summary>
+        const string ObjectLogPageArg = "4m";
+
         [SetUp]
         public void Setup()
         {
@@ -193,7 +197,7 @@ namespace Garnet.test
         {
             RequireArtifacts();
 
-            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, tryRecover: true, upgrade: true))
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, objectLogPageSize: ObjectLogPageArg, tryRecover: true, upgrade: true))
             {
                 ClassicAssert.IsTrue(server.IsUpgradeRun);
                 server.RunUpgrade();
@@ -203,7 +207,7 @@ namespace Garnet.test
             var stillDownlevel = V7CheckpointFixture.CountDownlevelRecordsOnMainLog(new DirectoryInfo(TestUtils.MethodTestDir).FullName);
             ClassicAssert.AreEqual(0, stillDownlevel, "records were left in the downlevel encoding after the upgrade");
 
-            using var recovered = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, tryRecover: true);
+            using var recovered = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, objectLogPageSize: ObjectLogPageArg, tryRecover: true);
             recovered.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             V7Corpus.Verify(redis.GetDatabase(0), V7Corpus.Build(V7Corpus.Profile.Full));
@@ -236,7 +240,7 @@ namespace Garnet.test
             // only an --upgrade run configures. Because the checkpoint is intact and recovers once that device is present, recovery
             // refuses with a dedicated exception the host treats as fatal regardless of FailOnRecoveryError, rather than discarding
             // the dataset and coming up empty.
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, tryRecover: true, failOnRecoveryError: failOnRecoveryError);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, objectLogPageSize: ObjectLogPageArg, tryRecover: true, failOnRecoveryError: failOnRecoveryError);
             var ex = Assert.Throws<TsavoriteObjectLogUpgradeRequiredException>(() => server.Start(),
                 "recovering a downlevel object-log checkpoint without --upgrade must refuse, not come up empty");
             StringAssert.Contains("UpgradeObjectLogDevice", ex.Message);
@@ -255,7 +259,7 @@ namespace Garnet.test
         {
             var corpus = V7Corpus.Build(V7Corpus.Profile.Smoke);
 
-            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, useFoldOverCheckpoints: useFoldOver))
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, objectLogPageSize: ObjectLogPageArg, useFoldOverCheckpoints: useFoldOver))
             {
                 server.Start();
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -263,7 +267,7 @@ namespace Garnet.test
                 _ = redis.GetDatabase(0).Execute("SAVE");
             }
 
-            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, useFoldOverCheckpoints: useFoldOver, tryRecover: true))
+            using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, objectLogSegmentSize: ObjectLogSegmentArg, objectLogPageSize: ObjectLogPageArg, useFoldOverCheckpoints: useFoldOver, tryRecover: true))
             {
                 server.Start();
                 using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

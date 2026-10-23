@@ -1204,19 +1204,29 @@ directory records what the writer did instead of re-deriving it.
 
 ### 12.6 Buffer and page sizing
 
-`IStreamBuffer.BufferSize` is a plain 4 MB constant; it no longer derives from `LogSettings.kMinObjectLogSegmentSizeBits`.
+`IStreamBuffer.BufferSize` is a plain 4 MB constant, and is the writer's default chunk size.
 
-`ObjectLog`'s default page is twice that, 8 MB: a page at least twice the buffer means a full buffer usually fits with
-room to spare, so page-tail cuts are occasional rather than near-universal. Page size is configurable, trading mutable
-memory against flush throughput, and in production must stay at or above the buffer size because a chunk cannot exceed
-a page. That relation is the writer's constraint rather than the log's, so `ObjectLog` itself enforces only
-`LogSettings.kMinPageSizeBits`; tests need both the buffer size and the page size settable far below the defaults, or
-every multi-chunk case would need a 16 MB object.
+`KVSettings.ObjectLogPageSize`, `ObjectLogMemorySize`, and `ObjectLogSegmentSize` configure the object log's geometry
+(in Garnet, `--objectlog-page-size`, `--objectlog-memory`, and `--objectlog-segment-size`). Every object log a store
+opens uses it: the main object log, each Snapshot checkpoint's, and those that recovery and the up-conversion open.
+
+The default page is 8 MB, twice the buffer: a full buffer usually fits with room to spare, so page-tail cuts are
+occasional rather than near-universal. A page may range from 4 KB (`LogSettings.kMinPageSizeBits`) to 128 MB, and is no
+larger than a segment, because a device write never spans a segment. A page size of zero takes the default, or the
+segment size if that is smaller. The writer caps a chunk at the page size less its length prefix, so a page below the
+buffer size still works, at the cost of more chunks and directory entries per record. Tests rely on this to reach
+multi-chunk cases without 16 MB objects.
 
 The default page count is eight: one writer fills the tail page while earlier pages flush, and eight pages let several
-page flushes overlap the writer before an allocation must wait for one. At the default page size that is 64 MB for the
-main object log, and as much again for a Snapshot checkpoint's object log while the checkpoint runs. Counting this page
-ring in `LogSizeTracker` is separate work.
+page flushes overlap the writer before an allocation must wait for one. `ObjectLogMemorySize` sets the count as memory
+over page size, from four (`ObjectLog.MinPageCount`) to 2^30 (`ObjectLog.MaxPageCount`, which keeps the headroom of
+section 12.7 within a 32-bit page number); zero takes the default count. Garnet's defaults are 64 MB of 8 MB pages. A
+Snapshot checkpoint's object log has a ring of its own while the checkpoint runs, so object-log memory can double then.
+Counting these rings in `LogSizeTracker` is separate work.
+
+A checkpoint records the page and segment sizes, and recovery fails with `TsavoriteLogGeometryMismatchException` if
+either differs from the store's configuration: a segment size decides which file an address resolves to, and a reader
+assumes no extent spans a page. The memory size is not recorded, and may change between runs.
 
 ### 12.7 The address ceiling
 

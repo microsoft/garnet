@@ -6,7 +6,7 @@ title: Log Compaction
 
 When Garnet is configured to run with storage using `EnableStorageTier` or `--storage-tier`, data that does not fit in memory will spill to disk storage.
 Data on disk is split into segments, with one physical file per segment. The size of each main-log segment is configured using `SegmentSize` or `--segment`,
-and the size of each object-log segment is configured using `ObjectLogSegmentSize` or `--object-log-segment`.
+and the size of each object-log segment is configured using `ObjectLogSegmentSize` or `--objectlog-segment-size`.
 
 File segments continue to get created and added over time, so we need a way to delete older segments. This is where compaction comes in.
 

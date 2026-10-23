@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server.Auth.Settings;
@@ -1086,9 +1087,15 @@ namespace Garnet.server
                 logger?.LogInformation("[Store] No log memory size limit will be enforced");
             }
 
-            kvSettings.SegmentSize = 1L << SegmentSizeBits(isObj: false);
-            kvSettings.ObjectLogSegmentSize = 1L << SegmentSizeBits(isObj: true);
+            kvSettings.SegmentSize = 1L << SegmentSizeBits();
             logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
+
+            GetObjectLogSizeBits(out var objectLogMemorySizeBits, out var objectLogPageSizeBits, out var objectLogSegmentSizeBits);
+            kvSettings.ObjectLogMemorySize = 1L << objectLogMemorySizeBits;
+            kvSettings.ObjectLogPageSize = 1L << objectLogPageSizeBits;
+            kvSettings.ObjectLogSegmentSize = 1L << objectLogSegmentSizeBits;
+            logger?.LogInformation("[Store] Using object log memory size of {ObjectLogMemorySize}, page size of {ObjectLogPageSize}, and disk segment size of {ObjectLogSegmentSize}",
+                PrettySize(kvSettings.ObjectLogMemorySize), PrettySize(kvSettings.ObjectLogPageSize), PrettySize(kvSettings.ObjectLogSegmentSize));
 
             logger?.LogInformation("[Store] Using hash index size of {IndexMemorySize} ({indexCacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
             logger?.LogInformation("[Store] Hash index size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(indexCacheLines * 4L));
@@ -1349,6 +1356,45 @@ namespace Garnet.server
                 throw new Exception($"{nameof(InitialIORecordSize)} value '{InitialIORecordSize}' ({sizeInBytes} bytes) exceeds the page size ({1L << PageSizeBits()} bytes).");
 
             return (int)sizeInBytes;
+        }
+
+        /// <summary>
+        /// Get the object-log sizes in bits, validating them against each other. Tsavorite enforces the absolute page-size bounds.
+        /// </summary>
+        /// <param name="memorySizeBits">Object-log memory size in bits</param>
+        /// <param name="pageSizeBits">Object-log page size in bits</param>
+        /// <param name="segmentSizeBits">Object-log segment size in bits</param>
+        void GetObjectLogSizeBits(out int memorySizeBits, out int pageSizeBits, out int segmentSizeBits)
+        {
+            memorySizeBits = ObjectLogMemorySizeBits();
+            pageSizeBits = ObjectLogPageSizeBits();
+            segmentSizeBits = ObjectLogSegmentSizeBits();
+
+            // Report these with the Garnet option names, rather than leaving them to the generic Tsavorite messages.
+            if (pageSizeBits > segmentSizeBits)
+            {
+                var effectivePage = PrettySize(1L << pageSizeBits);
+                var effectiveSegment = PrettySize(1L << segmentSizeBits);
+                var msg = $"ObjectLogPageSize (effective {effectivePage} after rounding down to a power of two) " +
+                          $"cannot be larger than ObjectLogSegmentSize (effective {effectiveSegment}). " +
+                          $"Increase --objectlog-segment-size to at least {effectivePage}, or reduce --objectlog-page-size.";
+                logger?.LogError("{msg}", msg);
+                throw new Exception(msg);
+            }
+
+            // The object log fills one page while earlier pages flush, so its buffer must hold several pages.
+            var minPageCountBits = BitOperations.Log2(KVSettings.MinObjectLogPageCount);
+            if (memorySizeBits < pageSizeBits + minPageCountBits)
+            {
+                var effectiveMemory = PrettySize(1L << memorySizeBits);
+                var effectivePage = PrettySize(1L << pageSizeBits);
+                var minMemory = PrettySize(1L << (pageSizeBits + minPageCountBits));
+                var msg = $"ObjectLogMemorySize (effective {effectiveMemory} after rounding down to a power of two) " +
+                          $"must be at least {KVSettings.MinObjectLogPageCount} times ObjectLogPageSize (effective {effectivePage}). " +
+                          $"Increase --objectlog-memory to at least {minMemory}, or reduce --objectlog-page-size.";
+                logger?.LogError("{msg}", msg);
+                throw new Exception(msg);
+            }
         }
 
         /// <summary>

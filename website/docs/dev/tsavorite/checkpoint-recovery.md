@@ -56,7 +56,7 @@ trivially appendable, which is the basis for the versioning rule below.
 | 9 | `headAddress`, `beginAddress` | |
 | 10 | `beginAddressObjectLogSegment` | |
 | 11 | `hlogEndObjectLogTail`, `snapshotStartObjectLogTail`, `snapshotEndObjectLogTail` | Object log positions |
-| 12 | `segmentSize`, `objectLogSegmentSize` | v8 only; written by the store, not the host |
+| 12 | `segmentSize`, `objectLogSegmentSize`, `objectLogPageSize` | v8 only; written by the store, not the host. Recovery fails if any differs from the store's configuration; the object log's memory size is not recorded and may change between runs |
 | 13 | `cookie` | Host-supplied; length, then one line per byte |
 | 14 | `databaseMapping` | Host-supplied; length, then one line per entry |
 | 15 | `swapEpoch` | Host-supplied |

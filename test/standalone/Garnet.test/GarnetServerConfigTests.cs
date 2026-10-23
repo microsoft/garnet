@@ -2223,6 +2223,71 @@ namespace Garnet.test
         }
 
         [Test]
+        public void ObjectLogSizesFlowToKVSettings()
+        {
+            // Defaults from defaults.conf: 64m of memory in 8m pages, over 1g segments.
+            var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments([], out var options, out var invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            ClassicAssert.AreEqual("64m", options.ObjectLogMemorySize);
+            ClassicAssert.AreEqual("8m", options.ObjectLogPageSize);
+            ClassicAssert.AreEqual("1g", options.ObjectLogSegmentSize);
+            using (var kvSettings = options.GetServerOptions().GetSettings(null, null, null, out _))
+            {
+                ClassicAssert.AreEqual(1L << 26, kvSettings.ObjectLogMemorySize);
+                ClassicAssert.AreEqual(1L << 23, kvSettings.ObjectLogPageSize);
+                ClassicAssert.AreEqual(1L << 30, kvSettings.ObjectLogSegmentSize);
+            }
+
+            // Configured sizes override the defaults, rounding down to a power of two.
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--objectlog-memory", "100m", "--objectlog-page-size", "16m", "--objectlog-segment-size", "64m"],
+                out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            using (var kvSettings = options.GetServerOptions().GetSettings(null, null, null, out _))
+            {
+                ClassicAssert.AreEqual(1L << 26, kvSettings.ObjectLogMemorySize);
+                ClassicAssert.AreEqual(1L << 24, kvSettings.ObjectLogPageSize);
+                ClassicAssert.AreEqual(1L << 26, kvSettings.ObjectLogSegmentSize);
+            }
+
+            // ObjectLogPageSize > ObjectLogSegmentSize should throw, naming both options.
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--objectlog-page-size", "8m", "--objectlog-segment-size", "4m"],
+                out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            var ex = Assert.Throws<Exception>(() => options.GetServerOptions().GetSettings(null, null, null, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("ObjectLogPageSize"), $"Expected message to mention ObjectLogPageSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("ObjectLogSegmentSize"), $"Expected message to mention ObjectLogSegmentSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("--objectlog-segment-size"), $"Expected message to mention --objectlog-segment-size, got: {ex.Message}");
+
+            // ObjectLogMemorySize below four pages should throw, naming both options.
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--objectlog-memory", "16m", "--objectlog-page-size", "8m"],
+                out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            ex = Assert.Throws<Exception>(() => options.GetServerOptions().GetSettings(null, null, null, out _));
+            ClassicAssert.IsTrue(ex.Message.Contains("ObjectLogMemorySize"), $"Expected message to mention ObjectLogMemorySize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("ObjectLogPageSize"), $"Expected message to mention ObjectLogPageSize, got: {ex.Message}");
+            ClassicAssert.IsTrue(ex.Message.Contains("--objectlog-memory"), $"Expected message to mention --objectlog-memory, got: {ex.Message}");
+
+            // Four pages is the minimum that succeeds.
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--objectlog-memory", "32m", "--objectlog-page-size", "8m"],
+                out options, out invalidOptions, out _, out _, silentMode: true);
+            ClassicAssert.IsTrue(parseSuccessful);
+            ClassicAssert.AreEqual(0, invalidOptions.Count);
+            using (var kvSettings = options.GetServerOptions().GetSettings(null, null, null, out _))
+            {
+                ClassicAssert.AreEqual(1L << 25, kvSettings.ObjectLogMemorySize);
+                ClassicAssert.AreEqual(1L << 23, kvSettings.ObjectLogPageSize);
+            }
+
+            // The segment option's former name is no longer accepted.
+            parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(["--object-log-segment", "1g"], out _, out _, out _, out _, silentMode: true);
+            ClassicAssert.IsFalse(parseSuccessful, "--object-log-segment was renamed to --objectlog-segment-size");
+        }
+
+        [Test]
         public void MaxInlineValueSizeParsing()
         {
             // Default value from defaults.conf is null (computed based on page size at runtime)

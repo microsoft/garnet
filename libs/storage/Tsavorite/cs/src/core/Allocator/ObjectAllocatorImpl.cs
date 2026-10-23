@@ -56,6 +56,9 @@ namespace Tsavorite.core
         /// <summary>Page size, in bits, of this allocator's object logs.</summary>
         readonly int objectLogPageSizeBits;
 
+        /// <summary>Pages in the in-memory ring of each of this allocator's object logs.</summary>
+        readonly int objectLogPageCount;
+
         /// <summary>Segment size, in bits, of this allocator's object-log devices.</summary>
         readonly int objectLogSegmentSizeBits;
 
@@ -204,16 +207,26 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfDeserializationBuffers)} must be between {LogSettings.kMinDeserializationBuffers} and {LogSettings.kMaxDeserializationBuffers - 1} and a power of 2");
             numberOfDeserializationBuffers = settings.LogSettings.NumberOfDeserializationBuffers;
 
-            if (settings.LogSettings.ObjectLogSegmentSizeBits is < LogSettings.kMinObjectLogSegmentSizeBits or > LogSettings.kMaxSegmentSizeBits)
-                throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogSegmentSizeBits)} must be between {LogSettings.kMinObjectLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
             objectLogSegmentSizeBits = settings.LogSettings.ObjectLogSegmentSizeBits;
+            if (objectLogSegmentSizeBits is < LogSettings.kMinObjectLogSegmentSizeBits or > LogSettings.kMaxSegmentSizeBits)
+                throw new TsavoriteException($"{nameof(KVSettings.ObjectLogSegmentSize)} (2^{objectLogSegmentSizeBits}) must be between 2^{LogSettings.kMinObjectLogSegmentSizeBits} and 2^{LogSettings.kMaxSegmentSizeBits} bytes");
 
             // An object-log page bounds a single chunk, and a device write never spans a segment, so the page is at most the segment.
             objectLogPageSizeBits = settings.LogSettings.ObjectLogPageSizeBits > 0
                 ? settings.LogSettings.ObjectLogPageSizeBits
                 : Math.Min(ObjectLog.DefaultPageSizeBits, objectLogSegmentSizeBits);
-            if (objectLogPageSizeBits < LogSettings.kMinPageSizeBits || objectLogPageSizeBits > objectLogSegmentSizeBits)
-                throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogPageSizeBits)} ({objectLogPageSizeBits}) must be between {LogSettings.kMinPageSizeBits} and the object-log segment size bits ({objectLogSegmentSizeBits})");
+            if (objectLogPageSizeBits < LogSettings.kMinPageSizeBits || objectLogPageSizeBits > LogSettings.kMaxPageSizeBits || objectLogPageSizeBits > objectLogSegmentSizeBits)
+                throw new TsavoriteException($"{nameof(KVSettings.ObjectLogPageSize)} (2^{objectLogPageSizeBits}) must be between 2^{LogSettings.kMinPageSizeBits} and 2^{LogSettings.kMaxPageSizeBits} bytes, and no larger than {nameof(KVSettings.ObjectLogSegmentSize)} (2^{objectLogSegmentSizeBits})");
+
+            objectLogPageCount = ObjectLog.DefaultPageCount;
+            var objectLogMemorySizeBits = settings.LogSettings.ObjectLogMemorySizeBits;
+            if (objectLogMemorySizeBits > 0)
+            {
+                var pageCount = objectLogMemorySizeBits >= objectLogPageSizeBits ? 1L << (objectLogMemorySizeBits - objectLogPageSizeBits) : 0;
+                if (pageCount is < ObjectLog.MinPageCount or > ObjectLog.MaxPageCount)
+                    throw new TsavoriteException($"{nameof(KVSettings.ObjectLogMemorySize)} (2^{objectLogMemorySizeBits}) must hold between {ObjectLog.MinPageCount} and {ObjectLog.MaxPageCount} pages of {nameof(KVSettings.ObjectLogPageSize)} (2^{objectLogPageSizeBits})");
+                objectLogPageCount = (int)pageCount;
+            }
             objectLogWriterSettings = settings.LogSettings.ObjectLogWriterSettings ?? ObjectLogWriterSettings.Default;
 
             objectPages = new ObjectPage[BufferSize];
@@ -740,6 +753,7 @@ namespace Tsavorite.core
             {
                 LogDevice = logDevice,
                 PageSizeBits = objectLogPageSizeBits,
+                PageCount = objectLogPageCount,
                 SegmentSizeBits = objectLogSegmentSizeBits,
                 Epoch = objectLogEpoch,
                 Logger = logger,

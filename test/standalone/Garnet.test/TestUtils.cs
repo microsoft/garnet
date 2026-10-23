@@ -527,7 +527,8 @@ namespace Garnet.test
             string networkSendBufferMinSize = null,
             string sessionScratchBufferMaxRetainedSize = null,
             int? sessionParseStateMaxRetainedArgs = null,
-            string objectLogSegmentSize = null
+            string objectLogSegmentSize = null,
+            string objectLogPageSize = null
         )
         {
             if (useAzureStorage)
@@ -646,6 +647,9 @@ namespace Garnet.test
 
             if (!string.IsNullOrEmpty(objectLogSegmentSize))
                 opts.ObjectLogSegmentSize = objectLogSegmentSize;
+
+            if (!string.IsNullOrEmpty(objectLogPageSize))
+                opts.ObjectLogPageSize = objectLogPageSize;
 
             if (pageCount != 0)
             {

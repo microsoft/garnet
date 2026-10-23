@@ -31,8 +31,11 @@ The hybrid log stores record headers, inline data, objectId slots, optionals, an
 object log stores overflow bytes and serialized heap-object bytes.
 
 The object log is an `ObjectLog`: a log-structured store composed over `TsavoriteLogAllocatorImpl`, with its own page
-ring of eight 8 MiB pages by default. A page flush writes its records' components into that ring, and the ring's own
-flush makes them durable; reads take recent bytes from the ring and older ones from the device.
+ring of eight 8 MiB pages by default. `KVSettings.ObjectLogPageSize`, `ObjectLogMemorySize`, and `ObjectLogSegmentSize`
+configure it, for the main object log and each Snapshot checkpoint's alike (see
+[Object-log serialization](objectlog-serialization.md), section 12.6). A page flush writes its records' components into
+that ring, and the ring's own flush makes them durable; reads take recent bytes from the ring and older ones from the
+device.
 `LogSettings.NumberOfDeserializationBuffers` sizes the read-ahead ring used only to read a version 7 object log.
 
 ## Adaptive record fields

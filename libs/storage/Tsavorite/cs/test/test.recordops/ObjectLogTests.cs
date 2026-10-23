@@ -129,6 +129,16 @@ namespace Tsavorite.test.Objects
             _ = Assert.Throws<TsavoriteException>(() => _ = new ObjectLog(settings));
         }
 
+        /// <summary>A ring above <see cref="ObjectLog.MaxPageCount"/> would round up to 2^31 pages, leaving the address ceiling no page
+        /// numbers below its headroom.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ConstructorRejectsTooManyPages()
+        {
+            var settings = DefaultSettings(device);
+            settings.PageCount = ObjectLog.MaxPageCount + 1;
+            _ = Assert.Throws<TsavoriteException>(() => _ = new ObjectLog(settings));
+        }
+
         /// <summary>A segment is one or more pages, so a segment smaller than a page is a configuration error rather than
         /// something the device quietly absorbs.</summary>
         [Test, Category(ObjectLogCategory)]
@@ -665,7 +675,7 @@ namespace Tsavorite.test.Objects
         [Test, Category(ObjectLogCategory)]
         public void TheCeilingReservesHeadroomForTheAllocatorsPageArithmetic(
             [Values(LogSettings.kMinPageSizeBits, ObjectLog.DefaultPageSizeBits, LogSettings.kMaxPageSizeBits)] int pageSizeBits,
-            [Values(ObjectLog.MinPageCount, ObjectLog.DefaultPageCount, 1024)] int pageCount)
+            [Values(ObjectLog.MinPageCount, ObjectLog.DefaultPageCount, 1024, ObjectLog.MaxPageCount)] int pageCount)
         {
             var ceiling = ObjectLog.ComputeMaxExclusiveAddress(pageSizeBits, pageCount);
             var lastAllowedPage = (ceiling - 1) >> pageSizeBits;

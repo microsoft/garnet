@@ -17,12 +17,9 @@ namespace Tsavorite.core
 
         /// <summary>Minimum number of bits for a main-log segment (segments consist of one or more pages)</summary>
         public const int kMinMainLogSegmentSizeBits = kMinPageSizeBits;
-        /// <summary>Minimum number of bits for an object-log segment (segments consist of one or more object-log pages). An object-log page is at most a
-        ///     segment, and must hold a full <see cref="IStreamBuffer.BufferSize"/> chunk, which is guaranteed as both are powers of 2 as long as this
-        ///     minimum is observed.</summary>
-        public const int kMinObjectLogSegmentSizeBits = 22; // 4MB
-        /// <summary>Maximum number of bits for a main-log or object-log segment (segments consist of one or more pages). This is also the size of the read/write buffers
-        ///     for object serialization to the object log.</summary>
+        /// <summary>Minimum number of bits for an object-log segment (segments consist of one or more object-log pages)</summary>
+        public const int kMinObjectLogSegmentSizeBits = kMinPageSizeBits;
+        /// <summary>Maximum number of bits for a main-log or object-log segment (segments consist of one or more pages)</summary>
         public const int kMaxSegmentSizeBits = 62;
 
         public const int kMinPageCount = 2;
@@ -146,10 +143,15 @@ namespace Tsavorite.core
         public int NumberOfDeserializationBuffers = 4;
 
         /// <summary>
-        /// Object-log page size, in bits; zero derives it from <see cref="ObjectLogSegmentSizeBits"/>. An object-log page bounds a single chunk.
+        /// Object-log page size, in bits; zero uses <see cref="ObjectLog.DefaultPageSizeBits"/>, or <see cref="ObjectLogSegmentSizeBits"/> if that is
+        /// smaller. An object-log page bounds a single chunk.
         /// </summary>
-        /// <remarks>For tests, which shrink it to reach page cuts with small data.</remarks>
         internal int ObjectLogPageSizeBits;
+
+        /// <summary>
+        /// Size of an object log's in-memory page ring, in bits; zero uses <see cref="ObjectLog.DefaultPageCount"/> pages.
+        /// </summary>
+        internal int ObjectLogMemorySizeBits;
 
         /// <summary>
         /// Chunking parameters for object-log writes; null uses <see cref="ObjectLogWriterSettings.Default"/>.

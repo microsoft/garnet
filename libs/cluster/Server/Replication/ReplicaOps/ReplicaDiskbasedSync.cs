@@ -226,8 +226,8 @@ namespace Garnet.cluster
         {
             return type switch
             {
-                CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => (true, serverOptions.SegmentSizeBits(isObj: false)),
-                CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => (true, serverOptions.SegmentSizeBits(isObj: true)),
+                CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => (true, serverOptions.SegmentSizeBits()),
+                CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => (true, serverOptions.ObjectLogSegmentSizeBits()),
                 _ => (false, 0)
             };
         }
