@@ -187,24 +187,54 @@ Bulk string of endpoint "address:port" or "unassigned:0"
 #### Syntax
 
 ```bash
-	CLUSTER FAILOVER [FORCE | ABORT]
+	CLUSTER FAILOVER [FORCE | TAKEOVER | ABORT]
 ```
 
 This command is sent to a replica to start a manual failover and take the role of its primary.
-It can be called to safely swap the current primary to a replica node without any data loss, if the primary is reachable.
-When a replica receives the above command it executes the following steps
+With no option, it coordinates with the reachable primary to pause writes and wait for replication catch-up before promotion.
+This hand-off does not protect against competing promotions or provide an unconditional no-data-loss guarantee.
+When a replica receives the command with no option, it executes the following steps:
 
-1. Issue stop writes to primary. Behavior can be overriden using FORCE option.
-2. Primary replies with current replication offset after it has blocked any writes. Behavior can be overriden using FORCE option.
-3. Replica awaits for its local replication offset to match that of the primary. Behavior can be overriden using FORCE option.
+1. Issue stop writes to primary.
+2. Primary replies with current replication offset after it has blocked any writes.
+3. Replica waits for its local replication offset to catch up with that of the primary.
 4. Replica takes over as new primary and bumps its local config epoch.
 5. New primary propagates configuration change through gossip.
 
-The cluster operator can also use the ABORT option to abort an ongoing failover where appropriate.
+`FORCE` and `TAKEOVER` are both accepted for Redis protocol compatibility. Both skip steps 1-3, allowing promotion
+without contacting the old primary or waiting for replication catch-up. Writes not replicated to the promoted
+replica can be lost. Unlike Redis Cluster, Garnet does not perform quorum voting for default or `FORCE` failover;
+there is no voting phase for `TAKEOVER` to bypass.
+
+The cluster operator can also use the `ABORT` option to request cancellation of an ongoing failover on the receiving node.
+Cancellation is not a fencing mechanism or proof that a promotion has not already occurred.
+
+#### External coordination requirement
+
+Garnet is a passive cluster data plane. Leader election and failover authorization belong to an
+[external control plane](../cluster/overview.md#control-plane); implementing leader election inside Garnet is not planned.
+
+**The coordinator must allow only one in-flight failover per replication group**, across all replicas and failover
+entry points, including primary-initiated `FAILOVER`. This requirement applies to default, `FORCE`, and `TAKEOVER`
+failovers. Per-node failover exclusion does not serialize requests sent to different replicas.
+
+Concurrent promotions of replicas of the same primary are unsupported. They can create competing writable primaries
+and conflicting slot ownership, causing acknowledged writes to be lost when the configuration converges.
+Configuration epochs and gossip resolve configuration conflicts; they do not reconcile divergent writes or establish
+exclusive promotion authority.
+
+A coordinator should use the following procedure:
+
+1. Obtain exclusive coordination authority for the replication group and select one target replica. Serialize automated controllers, operator commands, and retries through that same authority.
+2. Use default failover when the primary is reachable. Before a forced promotion, fence the old primary from serving writes, for example by stopping it or isolating its client access. Electing a single controller does not fence an isolated data node.
+3. Treat `+OK` as acceptance of a background task, not completion. Inspect the target's `INFO REPLICATION` fields `master_failover_state` and `last_failover_state`, and verify its role and slot ownership. Verify that the relevant reachable nodes agree on the new owner before declaring the transition complete; an unreachable former owner must remain fenced.
+4. Keep exclusive coordination authority through the entire asynchronous transition, not just command submission. After a timeout, lost response, coordinator restart, or lease expiry, reconcile the existing attempt before retrying or selecting another replica. A replacement coordinator must account for unfinished work.
+5. Before authorizing another target, establish that the previous candidate cannot serve competing writes. A client timeout, expired coordinator lease, or `ABORT` response is not sufficient evidence. If exclusivity cannot be established, stop automated promotion and require fencing and recovery.
 
 #### RESP Reply
-Returns +OK on success, otherwise --ERR message if any.
-This does not mean that FAILOVER has succeeded, only that the failover background task has started.
+Returns `+OK` when the failover background task is accepted, or an error if the request cannot be accepted.
+For `ABORT`, `+OK` acknowledges the cancellation request. Neither response proves that a new primary has been established
+or that cluster configuration has converged.
 
 ----
 
