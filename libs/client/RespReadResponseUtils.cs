@@ -128,7 +128,7 @@ namespace Garnet.client
             }
 
             // A reply that can never be accepted is a protocol error, not a reason to wait for more bytes
-            if (length > RespReadUtils.MaxArgumentLengthBytes)
+            if (length > RespLimits.MaxArgumentLengthBytes)
             {
                 RespParsingException.ThrowInvalidStringLength(length);
             }
@@ -173,7 +173,7 @@ namespace Garnet.client
         /// advanced only when the whole reply has been read.
         /// </remarks>
         /// <exception cref="RespParsingException">Thrown if the reply is malformed, declares an element count
-        /// that can never be received, or nests deeper than <see cref="RespReadUtils.MaxNestingDepth"/>.</exception>
+        /// that can never be received, or nests deeper than <see cref="RespLimits.MaxNestingDepth"/>.</exception>
         public static bool TryReadStringArrayWithLengthHeader(out string[] result, ref byte* ptr, byte* end)
         {
             result = null;

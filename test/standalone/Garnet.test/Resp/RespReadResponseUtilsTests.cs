@@ -248,19 +248,19 @@ namespace Garnet.test.Resp
         [Test]
         public void AFullReceiveBufferAtOrAboveTheLimitIsRejected()
         {
-            Assert.DoesNotThrow(() => RespParsingException.ThrowIfReceiveBufferLimitExceeded(RespReadUtils.MaxReceiveBufferBytes - 1));
-            _ = Assert.Throws<RespParsingException>(() => RespParsingException.ThrowIfReceiveBufferLimitExceeded(RespReadUtils.MaxReceiveBufferBytes));
+            Assert.DoesNotThrow(() => RespParsingException.ThrowIfReceiveBufferLimitExceeded(RespLimits.MaxReceiveBufferBytes - 1));
+            _ = Assert.Throws<RespParsingException>(() => RespParsingException.ThrowIfReceiveBufferLimitExceeded(RespLimits.MaxReceiveBufferBytes));
             _ = Assert.Throws<RespParsingException>(() => RespParsingException.ThrowIfReceiveBufferLimitExceeded(int.MaxValue));
         }
 
         [Test]
         public void NestingIsLimited()
         {
-            ClassicAssert.IsTrue(ReadStrings(Nested(RespReadUtils.MaxNestingDepth, "*1\r\n+a\r\n"), out var result, out _));
+            ClassicAssert.IsTrue(ReadStrings(Nested(RespLimits.MaxNestingDepth, "*1\r\n+a\r\n"), out var result, out _));
             CollectionAssert.AreEqual(new[] { "a" }, result);
 
             _ = Assert.Throws<RespParsingException>(() =>
-                ReadStrings(Nested(RespReadUtils.MaxNestingDepth + 1, "*1\r\n+a\r\n"), out _, out _));
+                ReadStrings(Nested(RespLimits.MaxNestingDepth + 1, "*1\r\n+a\r\n"), out _, out _));
 
             // Rejected from the headers alone, before the rest of a deep reply arrives
             _ = Assert.Throws<RespParsingException>(() => ReadStrings(Nested(100_000, "*1\r\n"), out _, out _));
@@ -269,7 +269,7 @@ namespace Garnet.test.Resp
         [Test]
         public void DeepArraysResumeTheirParentsAndStopAtTheReplyBoundary()
         {
-            var reply = "*2\r\n" + Nested(RespReadUtils.MaxNestingDepth - 2, "*3\r\n*-1\r\n*0\r\n+tail\r\n") + "+after\r\n";
+            var reply = "*2\r\n" + Nested(RespLimits.MaxNestingDepth - 2, "*3\r\n*-1\r\n*0\r\n+tail\r\n") + "+after\r\n";
 
             ClassicAssert.IsTrue(ReadStrings(reply + "+next\r\n", out var result, out var consumed));
             CollectionAssert.AreEqual(new[] { ", , tail", "after" }, result);

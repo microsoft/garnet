@@ -385,7 +385,7 @@ namespace Garnet.test.Resp
         [Test]
         public static unsafe void RejectOversizedLengths()
         {
-            var bigBuffer = GC.AllocateUninitializedArray<byte>(RespReadUtils.MaxArgumentLengthBytes + 1, pinned: true);
+            var bigBuffer = GC.AllocateUninitializedArray<byte>(RespLimits.MaxArgumentLengthBytes + 1, pinned: true);
 
             var smallToCopy = Encoding.ASCII.GetBytes("$1234\r\n" + new string('a', 1234) + "\r\n");
             var bigToCopy = "$536870913\r\n"u8;

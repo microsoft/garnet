@@ -66,7 +66,7 @@ namespace Garnet.client
             if (reservedBytes != 0 && reservedBytes != allocationSize)
                 throw new InvalidOperationException($"Reserved {reservedBytes} bytes for a {allocationSize}-byte request allocation.");
 
-            var entry = pool.Get(allocationSize, PoolEntryBufferType.OutOfLinePayload);
+            var entry = pool.Get(allocationSize, PoolEntryBufferType.ClientOutOfLinePayload);
             ObjectDisposedException.ThrowIf(entry is null, pool);
             return new LightRequestContext(entry, length, outOfLineRentedBytesWaiters);
         }

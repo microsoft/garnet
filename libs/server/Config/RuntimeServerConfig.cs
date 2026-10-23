@@ -38,7 +38,6 @@ namespace Garnet.server
         static readonly Dictionary<byte[], ServerConfigType>.AlternateLookup<ReadOnlySpan<byte>> NameToTypeSpanLookup =
             NameToType.GetAlternateLookup<ReadOnlySpan<byte>>();
 
-
         // All types handled by this table (settable + read-only), for CONFIG GET *.
         static readonly ServerConfigType[] runtimeTypes = BuildRuntimeTypes();
 

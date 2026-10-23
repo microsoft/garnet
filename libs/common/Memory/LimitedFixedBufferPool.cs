@@ -213,6 +213,9 @@ namespace Garnet.common
             Interlocked.Decrement(ref totalReferences);
         }
 
+        // Reserves length bytes of the idle-byte budget only if they fit. The compare-and-swap keeps pooledBytes
+        // at or below maxPooledBytes at every instant, so a concurrent return never observes a transient overshoot
+        // and drops a buffer that would have fit. A buffer that does not fit is left to the GC.
         bool TryReservePooledBytes(int length)
         {
             while (true)

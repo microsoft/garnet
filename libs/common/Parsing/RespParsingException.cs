@@ -81,9 +81,9 @@ namespace Garnet.common.Parsing
         /// <param name="currentSize">Current size of the full receive buffer.</param>
         public static void ThrowIfReceiveBufferLimitExceeded(int currentSize)
         {
-            if (currentSize >= RespReadUtils.MaxReceiveBufferBytes)
+            if (currentSize >= RespLimits.MaxReceiveBufferBytes)
             {
-                Throw($"Message exceeds the receive buffer limit of '{RespReadUtils.MaxReceiveBufferBytes}' bytes.");
+                Throw($"Message exceeds the receive buffer limit of '{RespLimits.MaxReceiveBufferBytes}' bytes.");
             }
         }
 

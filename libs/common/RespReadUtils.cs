@@ -17,39 +17,6 @@ namespace Garnet.common
     public static unsafe class RespReadUtils
     {
         /// <summary>
-        /// Maximum size a single RESP element can be.
-        /// 
-        /// This matches the default Redis max string size of 512MB.
-        /// </summary>
-        public const int MaxArgumentLengthBytes = 512 * 1_024 * 1_024;
-
-        /// <summary>
-        /// Maximum nesting depth of a structured value: a nested RESP array reply, or a Lua table converted
-        /// to or from JSON.
-        ///
-        /// This matches the Redis maximum JSON nesting depth of 1000.
-        /// </summary>
-        public const int MaxNestingDepth = 1000;
-
-        /// <summary>
-        /// Largest size a connection's receive buffer grows to; a message that does not fit in it is a protocol
-        /// error that closes the connection.
-        ///
-        /// This matches the default Redis client-query-buffer-limit of 1GB.
-        /// </summary>
-        public const int MaxReceiveBufferBytes = 1 << 30;
-
-        /// <summary>
-        /// Smallest encoding of an array element ("+\r\n" or ":\r\n").
-        /// </summary>
-        public const int MinArrayElementBytes = 3;
-
-        /// <summary>
-        /// Largest element count an array can declare: the most elements a full receive buffer can hold.
-        /// </summary>
-        public const int MaxArrayLength = MaxReceiveBufferBytes / MinArrayElementBytes;
-
-        /// <summary>
         /// Tries to read the leading sign of the given ASCII-encoded number.
         /// </summary>
         /// <param name="ptr">String to try reading sign from.</param>
@@ -745,7 +712,7 @@ namespace Garnet.common
         public static bool TrySkipByteArrayWithLengthHeader(ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
+            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespLimits.MaxArgumentLengthBytes)
                 return false;
 
             // Advance read pointer to the end of the array (including terminator)
@@ -808,7 +775,7 @@ namespace Garnet.common
             result = default;
 
             // Parse RESP string header
-            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
+            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespLimits.MaxArgumentLengthBytes)
                 return false;
 
             // Advance read pointer to the end of the array (including terminator)
@@ -915,7 +882,7 @@ namespace Garnet.common
                 return false;
 
             // Parse RESP string header
-            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
+            if (!TryReadUnsignedLengthHeader(out var length, ref ptr, end) || length > RespLimits.MaxArgumentLengthBytes)
                 return false;
 
             // Extract string content + '\r\n' terminator
@@ -980,7 +947,7 @@ namespace Garnet.common
         public static bool TryReadPtrWithSignedLengthHeader(ref byte* stringPtr, ref int length, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!TryReadSignedLengthHeader(out length, ref ptr, end) || length > RespReadUtils.MaxArgumentLengthBytes)
+            if (!TryReadSignedLengthHeader(out length, ref ptr, end) || length > RespLimits.MaxArgumentLengthBytes)
             {
                 return false;
             }
@@ -1186,8 +1153,8 @@ namespace Garnet.common
         /// <param name="allowNestedArrays">Whether elements may themselves be arrays.</param>
         /// <returns>True if the whole reply has been received; false if more bytes are needed.</returns>
         /// <exception cref="RespParsingException">Thrown if the reply is malformed, declares an array longer than
-        /// <see cref="MaxArrayLength"/> or a bulk string longer than <see cref="MaxArgumentLengthBytes"/>, or nests
-        /// deeper than <see cref="MaxNestingDepth"/>.</exception>
+        /// <see cref="RespLimits.MaxArrayLength"/> or a bulk string longer than <see cref="RespLimits.MaxArgumentLengthBytes"/>, or nests
+        /// deeper than <see cref="RespLimits.MaxNestingDepth"/>.</exception>
         public static bool TrySkipArrayReply(ref byte* ptr, byte* end, bool allowNestedArrays)
         {
             if (!TryReadSignedArrayLength(out var length, ref ptr, end))
@@ -1195,13 +1162,13 @@ namespace Garnet.common
                 return false;
             }
 
-            if (length > MaxArrayLength)
+            if (length > RespLimits.MaxArrayLength)
             {
                 RespParsingException.ThrowInvalidLength(length);
             }
 
             // Explicit counters bound stack usage independently of the reply's nesting.
-            Span<int> remaining = stackalloc int[allowNestedArrays ? MaxNestingDepth : 1];
+            Span<int> remaining = stackalloc int[allowNestedArrays ? RespLimits.MaxNestingDepth : 1];
             var depth = 0;
             remaining[depth] = Math.Max(length, 0);
             while (depth >= 0)
@@ -1230,13 +1197,13 @@ namespace Garnet.common
                             return false;
                         break;
                     case (byte)'*' when allowNestedArrays:
-                        if (depth + 1 >= MaxNestingDepth)
+                        if (depth + 1 >= RespLimits.MaxNestingDepth)
                         {
-                            RespParsingException.ThrowExcessiveNestingDepth(MaxNestingDepth);
+                            RespParsingException.ThrowExcessiveNestingDepth(RespLimits.MaxNestingDepth);
                         }
                         if (!TryReadSignedArrayLength(out length, ref ptr, end))
                             return false;
-                        if (length > MaxArrayLength)
+                        if (length > RespLimits.MaxArrayLength)
                         {
                             RespParsingException.ThrowInvalidLength(length);
                         }
@@ -1258,7 +1225,7 @@ namespace Garnet.common
                 return false;
             }
 
-            if (length > MaxArgumentLengthBytes)
+            if (length > RespLimits.MaxArgumentLengthBytes)
             {
                 RespParsingException.ThrowInvalidStringLength(length);
             }
@@ -1339,7 +1306,7 @@ namespace Garnet.common
         public static bool TryReadPtrWithLengthHeader(ref byte* result, ref int len, ref byte* ptr, byte* end)
         {
             // Parse RESP string header
-            if (!TryReadUnsignedLengthHeader(out len, ref ptr, end) || len > RespReadUtils.MaxArgumentLengthBytes)
+            if (!TryReadUnsignedLengthHeader(out len, ref ptr, end) || len > RespLimits.MaxArgumentLengthBytes)
             {
                 return false;
             }

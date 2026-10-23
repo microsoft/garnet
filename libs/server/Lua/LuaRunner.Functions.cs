@@ -14,6 +14,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Garnet.common;
+using Garnet.common.Parsing;
 using KeraLua;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -1135,7 +1136,7 @@ namespace Garnet.server
             // Encode the unknown type on the top of the stack
             static int Encode(LuaRunner self, int depth)
             {
-                if (depth > RespReadUtils.MaxNestingDepth)
+                if (depth > RespLimits.MaxNestingDepth)
                 {
                     // Match Redis max decoding depth
                     return self.LuaWrappedError(1, self.constStrs.CannotSerializeNesting);
@@ -1483,12 +1484,12 @@ namespace Garnet.server
 
             try
             {
-                var parsed = JsonNode.Parse(buff, documentOptions: new JsonDocumentOptions { MaxDepth = RespReadUtils.MaxNestingDepth });
+                var parsed = JsonNode.Parse(buff, documentOptions: new JsonDocumentOptions { MaxDepth = RespLimits.MaxNestingDepth });
                 return Decode(this, parsed);
             }
             catch (Exception e)
             {
-                if (e.Message.Contains($"maximum configured depth of {RespReadUtils.MaxNestingDepth}"))
+                if (e.Message.Contains($"maximum configured depth of {RespLimits.MaxNestingDepth}"))
                 {
                     // Maximum depth exceeded, munge to a compatible Redis error
                     return LuaWrappedError(1, constStrs.FoundTooManyNested);

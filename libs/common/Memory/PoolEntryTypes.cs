@@ -36,7 +36,7 @@ namespace Garnet.common
         ShrinkTransportReceiveBuffer = 8,
 
         /// <summary>Out-of-line command payload (NetworkWriter).</summary>
-        OutOfLinePayload = 9,
+        ClientOutOfLinePayload = 9,
     }
 
     /// <summary>
