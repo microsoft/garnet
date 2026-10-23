@@ -127,8 +127,8 @@ namespace Garnet.client
         /// out-of-line from a rented buffer.</param>
         /// <param name="ringPageCount">Power-of-two multiplier of <paramref name="ringPageSizeBytes"/> giving the
         /// capacity of the circular inline buffer.</param>
-        /// <param name="maxOutstandingRequests">Maximum number of requests awaiting local send completion, regardless of size. Zero derives one request per header-sized unit of the inline buffer.</param>
-        /// <param name="completionCapacity">Maximum number of outstanding response-expecting requests; rounds
+        /// <param name="maxActiveRequestCapacity">Maximum number of requests awaiting local send completion, regardless of size. Zero derives one request per header-sized unit of the inline buffer.</param>
+        /// <param name="maxActiveCompletionCapacity">Maximum number of outstanding response-expecting requests; rounds
         /// up to a power of two and bounds the completion lane before producers back-pressure on replies.</param>
         /// <param name="maxSendChunkSizeBytes">Maximum number of request bytes dispatched in one transport send.</param>
         /// <param name="transport">Struct-specialized transport used to send chunks and handle flush failures.</param>
@@ -138,8 +138,8 @@ namespace Garnet.client
         public DuplexOperationChannel(
             int ringPageSizeBytes,
             int ringPageCount,
-            int maxOutstandingRequests,
-            int completionCapacity,
+            int maxActiveRequestCapacity,
+            int maxActiveCompletionCapacity,
             int maxSendChunkSizeBytes,
             TTransport transport,
             LightEpoch epoch,
@@ -157,8 +157,8 @@ namespace Garnet.client
             store = new DuplexRingRecordStore<TRequestContext, TCompletionContext, DuplexOperationAsyncFlushResult<TRequestContext>>(
                 ringPageSizeBytes,
                 ringPageCount,
-                maxOutstandingRequests,
-                completionCapacity);
+                maxActiveRequestCapacity,
+                maxActiveCompletionCapacity);
             controller = new DuplexAdmissionController(
                 store.InlineBufferCapacity,
                 store.CompletionCapacity,
