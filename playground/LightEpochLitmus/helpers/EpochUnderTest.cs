@@ -30,7 +30,7 @@ namespace Tsavorite.epoch.litmus
 
         public FixedEpoch() { }
 
-        public int EntryCount { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => epoch.EntryCount; }
+        public int EntryCount { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => LightEpoch.EntryCount; }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long TestHookAnnouncedEpochAt(int entry) => epoch.TestHookAnnouncedEpochAt(entry);
