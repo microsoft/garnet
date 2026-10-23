@@ -6,6 +6,7 @@
 		<SignAssembly>true</SignAssembly>
 		<AssemblyOriginatorKeyFile>../../Garnet.snk</AssemblyOriginatorKeyFile>
 		<DelaySign>false</DelaySign>
+		<DefineConstants>$(DefineConstants);GARNET_CLIENT_EPOCH_BENCHMARK</DefineConstants>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -25,6 +26,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<Compile Include="..\..\libs\storage\Tsavorite\cs\benchmark\BDN-Tsavorite.Benchmark\EpochTests.cs" Link="Client\EpochTests.cs" />
+		<Compile Include="..\..\libs\storage\Tsavorite\cs\benchmark\BDN-Tsavorite.Benchmark\EpochBenchmarkEnvironment.cs" Link="Client\EpochBenchmarkEnvironment.cs" />
 		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="Custom\MyDictObject.cs" />
 		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="Custom\MyDictSet.cs" />
 		<Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="Custom\MyDictGet.cs" />

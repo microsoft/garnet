@@ -1,97 +1,220 @@
-﻿// Copyright (c) Microsoft Corporation. All rights reserved.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using BenchmarkDotNet.Attributes;
+#if GARNET_CLIENT_EPOCH_BENCHMARK
+using Garnet.client;
+
+namespace BDN.benchmark.Client
+#else
 using Tsavorite.core;
 
 namespace BenchmarkDotNetTests
+#endif
 {
     /// <summary>
-    /// <see cref="LightEpoch"/> operations run concurrently by <see cref="Threads"/> threads sharing one instance.
-    /// Each invocation performs a fixed total number of operations split evenly across the threads, so
-    /// <c>Threads = 1</c> measures a single uncontended thread and larger counts show how throughput scales as
-    /// threads contend on the epoch table, <c>CurrentEpoch</c>, and the drain list. Worker threads are created
-    /// once in <see cref="Setup"/> and released per invocation by a barrier, so thread startup is not measured.
+    /// Direct epoch costs without worker dispatch, barriers, or concurrent drain activity.
+    /// The same source is compiled against the Tsavorite and client implementations.
     /// </summary>
     public class EpochTests
     {
+        const int Operations = 100_000;
+
+        LightEpoch epoch;
+        EpochBenchmarkEnvironment.Affinity affinity;
+
+        [GlobalSetup]
+        public void Setup()
+        {
+            EpochBenchmarkEnvironment.Report();
+            affinity = EpochBenchmarkEnvironment.Pin(0, 1);
+            epoch = new LightEpoch();
+            EpochWorkloads.ResumeSuspend(epoch, 1_000);
+        }
+
+        [GlobalCleanup]
+        public void TearDown()
+        {
+            try
+            {
+                epoch?.Dispose();
+            }
+            finally
+            {
+                affinity?.Dispose();
+            }
+        }
+
+        [Benchmark(OperationsPerInvoke = Operations)]
+        public void ResumeSuspend() => EpochWorkloads.ResumeSuspend(epoch, Operations);
+
+        [Benchmark(OperationsPerInvoke = Operations)]
+        public void ProtectAndDrain() => EpochWorkloads.ProtectAndDrain(epoch, Operations);
+
+        [Benchmark(OperationsPerInvoke = Operations)]
+        public void BumpAndSuspend() => EpochWorkloads.BumpAndSuspend(epoch, Operations);
+    }
+
+    /// <summary>
+    /// Aggregate epoch throughput under contention, measured separately from direct operation costs.
+    /// Thread creation and metadata warmup happen before measurement.
+    /// </summary>
+    public class EpochContentionTests
+    {
         const int ResumeSuspendOps = 1_000_000;
-        const int ProtectAndDrainOps = 1_000_000;
         const int BumpOps = 100_000;
 
         [Params(1, 2, 4, 8)]
         public int Threads { get; set; }
 
+        enum Workload
+        {
+            ResumeSuspend,
+            BumpAndSuspend,
+            BumpWhileProtected
+        }
+
         LightEpoch epoch;
         Thread[] workers;
+        Exception[] workerErrors;
         Barrier start;
         Barrier done;
-        Action<int> work;
+        CountdownEvent ready;
+        Workload workload;
         int opsPerThread;
         volatile bool stopping;
 
         [GlobalSetup]
         public void Setup()
         {
+            EpochBenchmarkEnvironment.Report();
             epoch = new LightEpoch();
             stopping = false;
-
-            // The invoking thread is one participant in each barrier, so it waits for every worker to finish.
             start = new Barrier(Threads + 1);
             done = new Barrier(Threads + 1);
-
+            ready = new CountdownEvent(Threads);
             workers = new Thread[Threads];
+            workerErrors = new Exception[Threads];
             for (var t = 0; t < Threads; t++)
             {
-                workers[t] = new Thread(WorkerLoop) { IsBackground = true, Name = $"EpochTests-{t}" };
+                var index = t;
+                workers[t] = new Thread(() => WorkerLoop(index)) { IsBackground = true, Name = $"EpochContentionTests-{t}" };
                 workers[t].Start();
+            }
+            ready.Wait();
+            try
+            {
+                ThrowWorkerErrors();
+            }
+            catch
+            {
+                TearDown();
+                throw;
             }
         }
 
         [GlobalCleanup]
         public void TearDown()
         {
+            if (stopping)
+                return;
             stopping = true;
             start.SignalAndWait();
             foreach (var worker in workers)
                 worker.Join();
-
             start.Dispose();
             done.Dispose();
+            ready.Dispose();
             epoch.Dispose();
         }
 
-        void WorkerLoop()
+        void WorkerLoop(int index)
         {
-            while (true)
+            EpochBenchmarkEnvironment.Affinity affinity = null;
+            try
             {
-                start.SignalAndWait();
-                if (stopping)
-                    return;
-
-                work(opsPerThread);
-                done.SignalAndWait();
+                try
+                {
+                    affinity = EpochBenchmarkEnvironment.Pin(index, Threads);
+                    EpochWorkloads.ResumeSuspend(epoch, 1_000);
+                }
+                catch (Exception exception)
+                {
+                    workerErrors[index] = exception;
+                }
+                finally
+                {
+                    ready.Signal();
+                }
+                while (true)
+                {
+                    start.SignalAndWait();
+                    if (stopping)
+                        return;
+                    try
+                    {
+                        if (workerErrors[index] != null)
+                            continue;
+                        switch (workload)
+                        {
+                            case Workload.ResumeSuspend:
+                                EpochWorkloads.ResumeSuspend(epoch, opsPerThread);
+                                break;
+                            case Workload.BumpAndSuspend:
+                                EpochWorkloads.BumpAndSuspend(epoch, opsPerThread);
+                                break;
+                            case Workload.BumpWhileProtected:
+                                EpochWorkloads.BumpWhileProtected(epoch, opsPerThread);
+                                break;
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        workerErrors[index] = exception;
+                    }
+                    finally
+                    {
+                        done.SignalAndWait();
+                    }
+                }
+            }
+            finally
+            {
+                affinity?.Dispose();
             }
         }
 
-        void Run(Action<int> work, int totalOps)
+        void Run(Workload workload, int totalOps)
         {
-            this.work = work;
+            this.workload = workload;
             opsPerThread = totalOps / Threads;
             start.SignalAndWait();
             done.SignalAndWait();
+            ThrowWorkerErrors();
         }
 
-        [Benchmark]
-        public void ResumeSuspend() => Run(RunResumeSuspend, ResumeSuspendOps);
+        void ThrowWorkerErrors()
+        {
+            foreach (var error in workerErrors)
+            {
+                if (error != null)
+                    throw new AggregateException("Epoch benchmark worker failed", workerErrors.Where(error => error != null));
+            }
+        }
 
-        [Benchmark]
-        public void ProtectAndDrain() => Run(RunProtectAndDrain, ProtectAndDrainOps);
+        [Benchmark(OperationsPerInvoke = ResumeSuspendOps)]
+        public void ResumeSuspend() => Run(Workload.ResumeSuspend, ResumeSuspendOps);
 
-        [Benchmark]
-        public void BumpCurrentEpoch() => Run(RunBumpCurrentEpoch, BumpOps);
+        [Benchmark(OperationsPerInvoke = BumpOps)]
+        public void BumpAndSuspend() => Run(Workload.BumpAndSuspend, BumpOps);
 
-        void RunResumeSuspend(int ops)
+        [Benchmark(OperationsPerInvoke = BumpOps)]
+        public void BumpWhileProtected() => Run(Workload.BumpWhileProtected, BumpOps);
+    }
+
+    static class EpochWorkloads
+    {
+        internal static void ResumeSuspend(LightEpoch epoch, int ops)
         {
             for (var i = 0; i < ops; i++)
             {
@@ -100,26 +223,50 @@ namespace BenchmarkDotNetTests
             }
         }
 
-        void RunProtectAndDrain(int ops)
+        internal static void ProtectAndDrain(LightEpoch epoch, int ops)
         {
             epoch.Resume();
-            for (var i = 0; i < ops; i++)
+            try
             {
-                epoch.ProtectAndDrain();
+                for (var i = 0; i < ops; i++)
+                    epoch.ProtectAndDrain();
             }
-            epoch.Suspend();
+            finally
+            {
+                epoch.Suspend();
+            }
         }
 
         static void MyAction() { }
 
-        void RunBumpCurrentEpoch(int ops)
+        internal static void BumpAndSuspend(LightEpoch epoch, int ops)
         {
-            epoch.Resume();
             for (var i = 0; i < ops; i++)
             {
-                epoch.BumpCurrentEpoch(MyAction);
+                epoch.Resume();
+                try
+                {
+                    epoch.BumpCurrentEpoch(MyAction);
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
             }
-            epoch.Suspend();
+        }
+
+        internal static void BumpWhileProtected(LightEpoch epoch, int ops)
+        {
+            epoch.Resume();
+            try
+            {
+                for (var i = 0; i < ops; i++)
+                    epoch.BumpCurrentEpoch(MyAction);
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
         }
     }
 }
