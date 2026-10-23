@@ -624,14 +624,8 @@ namespace Garnet.server
                 return true;
             }
 
-            // 4 fields × 2 = 8 elements
-            while (!RespWriteUtils.TryWriteArrayLength(8, ref dcurr, dend))
-                SendAndReset();
-
-            // tree_handle
-            while (!RespWriteUtils.TryWriteBulkString("tree_handle"u8, ref dcurr, dend))
-                SendAndReset();
-            while (!RespWriteUtils.TryWriteAsciiBulkString(treeHandle.ToString(), ref dcurr, dend))
+            // 3 fields × 2 = 6 elements
+            while (!RespWriteUtils.TryWriteArrayLength(6, ref dcurr, dend))
                 SendAndReset();
 
             // is_live

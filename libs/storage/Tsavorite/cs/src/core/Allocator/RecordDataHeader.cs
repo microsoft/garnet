@@ -124,7 +124,7 @@ namespace Tsavorite.core
         /// <summary>Offset of the nameSpace byte in the header (byte 7).</summary>
         internal const byte NamespaceOffsetInHeader = 7;
         /// <summary>Offset of the recordType byte in the header (byte 6).</summary>
-        internal const byte RecordTypeOffsetInHeader = 6;
+        public const byte RecordTypeOffsetInHeader = 6;
 
         /// <summary>The 8-byte word backing all fields. All access MUST go through this word to ensure atomic reads/writes.</summary>
         [FieldOffset(0)]
