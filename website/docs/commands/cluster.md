@@ -202,6 +202,40 @@ When a replica receives the above command it executes the following steps
 
 The cluster operator can also use the ABORT option to abort an ongoing failover where appropriate.
 
+For primary-initiated failover (`FAILOVER TO host port`), application writes wait while writes are paused.
+After the pause ends, keyed writes receive `MOVED` to the new primary or proceed locally if the node remains primary.
+`FLUSHDB` and `FLUSHALL` also wait, then recheck the node's role; reads remain available under normal cluster admission rules.
+Writes arriving on a replica redirect immediately (database flushes return a read-only replica error).
+`READONLY` and `READWRITE` only control replica reads, not write admission or failover waiting.
+Internal replication replay remains exempt from the application-write pause.
+Transactions containing `FLUSHDB` or `FLUSHALL` wait and recheck the node's role before EXEC starts,
+including transactions with no keys. Once admitted, they retain their cluster-session epoch through
+commit instead of waiting between transaction commands.
+An explicit `FAILOVER TO host port TIMEOUT milliseconds` limits how long that operation holds its write pause,
+including waits for session epochs. Omitting `TIMEOUT` leaves the pause unlimited.
+`FAILOVER ABORT` cancels these waits and releases the operation's pause without restoring primary status after demotion.
+After demotion, cancellation can leave the node redirecting to a replica that has not yet promoted; it does not guarantee successful handoff.
+
+Failover cancels and drains primary maintenance before capturing the AOF synchronization target.
+The suspension method drains cluster-session epochs before canceling primary maintenance, so admitted
+`WaitForCommit` requests can finish. Local commits remain permitted during this drain even after demotion,
+and task-category cancellation stops commits last so background mutations can finish. Commits stop before
+replica synchronization can change AOF addresses. `CLUSTER REPLICATE` and `REPLICAOF`
+use the same ordering.
+Background collection and other primary tasks cannot restart during this interval, including through `CONFIG SET`.
+Cancellation releases the write pause without waiting for a stalled maintenance cycle, but the failover worker
+retains ownership until that cycle finishes. Cleanup restarts enabled maintenance only if the node remains primary.
+Role-independent tasks, including automatic index growth, remain active during role-specific task suspension.
+Replica-initiated failover also drains maintenance on the old primary before returning its final AOF offset.
+Primary-initiated failover publishes its demotion before requesting takeover. The promoted node explicitly
+reattaches the old primary with `REPLICAOF`, without relying on automatic replication reestablishment.
+
+Paused writes briefly spin, then synchronously block on a shared task so the .NET thread pool can compensate
+by adding workers. Each paused connection still occupies a worker. Configure `--maxthreads`
+with headroom for reads, replication, failover, and cancellation processing; exhausting that limit can stall
+even timeout cleanup and `FAILOVER ABORT`. Increasing the limit mitigates starvation but does not guarantee
+progress for an unlimited number of paused writers.
+
 #### RESP Reply
 Returns +OK on success, otherwise --ERR message if any.
 This does not mean that FAILOVER has succeeded, only that the failover background task has started.
@@ -420,6 +454,8 @@ Upon receipt of the command, the instance will immediately try to attach to the 
 After receiving it, it will initiate aof sync from primary and start responding to read requests.
 The request to replicate is executed async, so the response to the client will be immediate.
 This does not mean replica has attached succesfully, only that replicate request was initiated succesfully.
+If attachment fails and the node resets to primary, configured primary maintenance is restarted after recovery
+cleanup. Automatic index growth remains active across attachment and rollback.
 
 #### RESP Reply
 Returns +OK on success, otherwise --ERR message if any.
