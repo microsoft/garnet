@@ -253,19 +253,18 @@ namespace Tsavorite.test.recovery
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
         /// <summary>
-        /// Snapshot-recovers records whose overflow VALUE exceeds the 4 MB discovery window, so each carries a leading ChunkHeader
-        /// AND its sentinel objectId read hint may UNDER-count the true extent. The snapshot-region recovery copy cannot size
-        /// such a record by its size hint; instead it sizes by the successor object record's snapshot position minus
-        /// this record's, copying the record's exact raw key+value+header+padding extent verbatim. A trailing small (headerless, at most
-        /// 511 B) overflow record keeps the headered ones off the last-record-on-page path (still guarded). Recovery uses a small heap budget so
-        /// the object page is evicted and thus flushed through the snapshot-copy path. Every value must read back byte-for-byte.
+        /// Snapshot-recovers records whose overflow VALUE spans several 4 MB chunks, so each has a directory and its value hint sizes only
+        /// the top directory record, not the value. The snapshot-region recovery copy therefore cannot size such a record by its hint; it
+        /// follows the record's directory to copy every chunk to the main object log. A trailing small (exact-size, at most 511 B) overflow
+        /// record follows them on the page. Recovery uses a small heap budget so the object page is evicted and thus flushed through the
+        /// snapshot-copy path. Every value must read back byte-for-byte.
         /// </summary>
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoverSnapshotHeaderedOverflowValue()
         {
-            const int headeredLen = (16 * 1024 * 1024) + 5000;   // > 4 MB discovery window -> leading ChunkHeader + under-counting hint
-            const int numHeadered = 3;                           // records 0..2 have sentinel values; record 3 has a small trailing overflow value
+            const int headeredLen = (16 * 1024 * 1024) + 5000;   // spans several 4 MB chunks -> a directory record
+            const int numHeadered = 3;                           // records 0..2 have multi-chunk values; record 3 has a small trailing overflow value
             const int smallLen = 100;                            // <= kOutOfLineExactSizeCutoff (511) -> headerless and exactly sized by its hint
 
             static byte[] MakeValue(int key, int len) { var v = new byte[len]; new Span<byte>(v).Fill((byte)(0x30 + key)); return v; }
@@ -331,17 +330,15 @@ namespace Tsavorite.test.recovery
         }
 
         /// <summary>
-        /// FoldOver-recovers multiple records whose overflow VALUE is headered (> 511 bytes: a leading ChunkHeader precedes the data).
-        /// FoldOver recovery reuses the on-disk object bytes in place and reconstructs each record's object-log position by accumulating
-        /// per-record extents; if that accumulation advances by the data length only (omitting the ChunkHeader + any DMA/straddle padding),
-        /// the second and later records' reconstructed positions drift earlier and read back corrupted. Every value must read back
-        /// byte-for-byte, which fails if the extent accounting under-counts a headered value.
+        /// FoldOver-recovers multiple records whose overflow VALUE is length-prefixed (&gt; 511 bytes). Recovery reads each record's value
+        /// from the main object log at its stamped position, sizing the first read from the record's page-count hint, which must cover the
+        /// prefix as well as the data. Every value must read back byte-for-byte, which fails if any record's position or extent is wrong.
         /// </summary>
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoverFoldOverHeaderedOverflowValue([Values(2000, 200000)] int headeredLen)
         {
-            const int numRecords = 4;   // multiple headered records so any per-record extent drift compounds and is detected
+            const int numRecords = 4;   // multiple length-prefixed records, so an error in any one record's position or extent is detected
 
             static byte[] MakeValue(int key, int len) { var v = new byte[len]; new Span<byte>(v).Fill((byte)(0x41 + key)); return v; }
 

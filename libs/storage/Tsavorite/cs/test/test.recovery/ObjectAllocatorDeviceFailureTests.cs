@@ -127,6 +127,74 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(ObjectIdMapCategory)]
+        public void PageIsNotDurableUntilItsObjectLogBytesAre()
+        {
+            // A page's main-log write and its object-log flush run concurrently, and the page completes only once both have. If it
+            // completed on its main-log write alone, FlushedUntilAddress would cover records whose objects are not yet on the device,
+            // so a crash could recover records that point at object bytes that were never written.
+            var ioTimeout = TimeSpan.FromSeconds(30);
+            var gatedLog = new GatedCompletionDevice(Devices.CreateLogDevice(Path.Join(MethodTestDir, "join.log"), deleteOnClose: true));
+            var gatedObjectLog = new GatedCompletionDevice(Devices.CreateLogDevice(Path.Join(MethodTestDir, "join.obj.log"), deleteOnClose: true));
+            try
+            {
+                store = new(new()
+                {
+                    IndexSize = 1L << 13,
+                    LogDevice = gatedLog,
+                    ObjectLogDevice = gatedObjectLog,
+                    MutableFraction = 0.1,
+                    LogMemorySize = 1L << (MinKvLogPageSizeBits + 5),
+                    PageSize = MinKvLogPageSize,
+                    loggerFactory = TestLoggerFactory
+                }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance),
+                   (allocatorSettings, functions) => new(allocatorSettings, functions));
+
+                using (var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
+                {
+                    var context = session.BasicContext;
+                    for (var key = 0; key < 4; ++key)
+                        _ = context.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue(1024), Empty.Default);
+                }
+
+                var flushedBefore = store.Log.FlushedUntilAddress;
+                var tailAddress = store.Log.TailAddress;
+                Assert.That(tailAddress, Is.GreaterThan(flushedBefore), "the records must not be flushed yet, or this test proves nothing");
+
+                gatedLog.Gate = true;
+                gatedObjectLog.Gate = true;
+                store.Log.ShiftReadOnlyAddress(tailAddress, wait: false);
+                gatedObjectLog.WaitForPending(1, ioTimeout);
+                gatedLog.WaitForPending(1, ioTimeout);
+
+                // Complete every main-log write. The callbacks run on IO threads, so give a premature completion time to show.
+                gatedLog.Gate = false;
+                var mainWrites = gatedLog.CapturedCount;
+                for (var ii = 0; ii < mainWrites; ++ii)
+                {
+                    gatedLog.Release(ii);
+                    gatedLog.WaitForCompletion(ii, ioTimeout);
+                }
+                Assert.That(SpinWait.SpinUntil(() => store.Log.FlushedUntilAddress != flushedBefore, TimeSpan.FromMilliseconds(500)), Is.False,
+                    "FlushedUntilAddress must not cover the page while its object-log bytes are not durable");
+
+                gatedObjectLog.Gate = false;
+                for (var ii = 0; ii < gatedObjectLog.CapturedCount; ++ii)
+                    gatedObjectLog.Release(ii);
+                Assert.That(SpinWait.SpinUntil(() => store.Log.FlushedUntilAddress >= tailAddress, ioTimeout), Is.True,
+                    "the page must complete once its object-log bytes are durable");
+            }
+            finally
+            {
+                store?.Dispose();
+                store = null;
+                gatedLog.Dispose();
+                gatedObjectLog.Dispose();
+            }
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
         public void WriteFailureIsSurfacedAndDoesNotHangTheWaiter([Values] bool synchronous)
         {
             // A device write can fail two ways: rejected at submission, so the completion callback runs INLINE on the submitting
@@ -302,7 +370,7 @@ namespace Tsavorite.test
                 Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectAllocatorDeviceFailureTests.snapshot.log"), deleteOnClose: true));
             using var snapshotObjectLogDevice = new ControlledReadFailureDevice(
                 Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectAllocatorDeviceFailureTests.snapshot.obj.log"), deleteOnClose: true));
-            using var flushBuffers = store.hlogBase.CreateCircularFlushBuffers(snapshotObjectLogDevice, logger: null);
+            using var snapshotObjectLog = store.hlogBase.CreateSnapshotObjectLog(snapshotObjectLogDevice);
 
             Assert.That(snapshotStartAddress % snapshotLogDevice.SectorSize, Is.Not.Zero,
                 "The snapshot must start mid-sector to exercise the read-back path.");
@@ -313,13 +381,50 @@ namespace Tsavorite.test
             coordination.BeginCutoffCapture(startPage);
             coordination.PublishReadOnlyFlushCutoff(0);
             coordination.BeginFlushing();
-            store.hlogBase.AsyncFlushPagesForSnapshot(flushBuffers, startPage, endPage, snapshotStartAddress, snapshotEndAddress,
-                long.MaxValue, snapshotLogDevice, snapshotObjectLogDevice, coordination, out var completedTask, throttleCheckpointFlushDelayMs: -1);
+            store.hlogBase.AsyncFlushPagesForSnapshot(snapshotObjectLog, startPage, endPage, snapshotStartAddress, snapshotEndAddress,
+                long.MaxValue, snapshotLogDevice, coordination, out var completedTask, throttleCheckpointFlushDelayMs: -1);
 
             Assert.DoesNotThrowAsync(async () => await completedTask);
             Assert.That(snapshotLogDevice.ReadCount, Is.Zero, "A fresh snapshot sector has no existing prefix to preserve.");
             Assert.That(snapshotLogDevice.WriteCount, Is.EqualTo(1));
             Assert.That(logDevice.ReadCount, Is.Zero, "Snapshot read-back must not read from the allocator's main-log device.");
+        }
+
+        [Test]
+        [Category(TsavoriteKVTestCategory)]
+        [Category(ObjectIdMapCategory)]
+        public void ObjectLogTruncatesAtAPageInAReusedBufferSlot()
+        {
+            // Without a LogSizeTracker, an evicted page's buffer slot is cleared and reused for a later page without being allocated again. That
+            // later page's header must start unstamped: a zeroed floor reads as a stamped floor of 0, the ReadOnly flush's stamp does not replace
+            // it, and main object-log truncation at that page then never advances.
+            const int pageSize = MinKvLogPageSize;
+            CreateStore(useLargeObjects: true, captureFlushFailures: false, segmentSize: pageSize * 2, objectLogSegmentSize: 1L << 22);
+            var reusedSlotPage = store.hlogBase.BufferSize + 2;
+
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var context = session.BasicContext;
+            var input = new TestLargeObjectInput();
+            var output = new TestLargeObjectOutput();
+            long truncateAddress = 0;
+
+            for (var key = 0; store.Log.TailAddress < (long)(reusedSlotPage + 2) * pageSize; key++)
+            {
+                var recordAddress = store.Log.TailAddress;
+                if (truncateAddress == 0
+                    && recordAddress > ((long)reusedSlotPage * pageSize) + PageHeader.Size
+                    && store.hlogBase.GetOffsetOnPage(recordAddress) > PageHeader.Size)
+                    truncateAddress = recordAddress;
+
+                _ = context.Upsert(new TestObjectKey { key = key }, ref input, new TestLargeObjectValue(1 << 11), ref output);
+            }
+
+            Assert.That(truncateAddress, Is.GreaterThan(0), "The test did not create a record on a page in a reused buffer slot.");
+            store.Log.Flush(wait: true);
+            store.Log.ShiftBeginAddress(truncateAddress, truncateLog: true);
+
+            Assert.That(SpinWait.SpinUntil(() => store.hlogBase.ObjectLogBeginAddress > LogAddress.FirstValidAddress, TimeSpan.FromSeconds(10)), Is.True,
+                "The main object log must truncate below the floor of a page in a reused buffer slot.");
         }
 
         [Test]

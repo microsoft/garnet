@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -334,6 +335,130 @@ namespace Tsavorite.test.Objects
             Assert.That(log.FlushedUntilAddress, Is.GreaterThanOrEqualTo(flushedThrough));
             for (var ii = 0; ii < addresses.Count; ++ii)
                 VerifyRead(log, addresses[ii], 200, (byte)ii, $"record {ii} after drained flush");
+        }
+
+        /// <summary>Records each <see cref="ObjectLog.OnFlushed"/> callback invocation.</summary>
+        sealed class FlushNotification
+        {
+            internal readonly ManualResetEventSlim Invoked = new(false);
+            internal int Count;
+            internal uint ErrorCode;
+            internal Exception Exception;
+            internal int ThreadId;
+
+            internal static void Callback(uint errorCode, uint numBytes, object context, Exception exception)
+            {
+                var notification = (FlushNotification)context;
+                notification.ErrorCode = errorCode;
+                notification.Exception = exception;
+                notification.ThreadId = Environment.CurrentManagedThreadId;
+                _ = Interlocked.Increment(ref notification.Count);
+                notification.Invoked.Set();
+            }
+        }
+
+        static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(30);
+
+        /// <summary>An address that is already durable completes the notification before <see cref="ObjectLog.OnFlushed"/> returns.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void OnFlushedCompletesAtOnceWhenAlreadyDurable()
+        {
+            var log = CreateLog();
+            for (var ii = 0; ii < 20; ++ii)
+                _ = Write(log, 200, (byte)ii);
+            var flushedThrough = log.FlushTail(wait: true);
+
+            var notification = new FlushNotification();
+            log.OnFlushed(flushedThrough, FlushNotification.Callback, notification);
+
+            Assert.That(notification.Count, Is.EqualTo(1), "an already-durable address must complete the notification at once");
+            Assert.That(notification.ErrorCode, Is.Zero);
+            Assert.That(notification.ThreadId, Is.EqualTo(Environment.CurrentManagedThreadId));
+        }
+
+        /// <summary>A notification registered while its flush is in flight completes, exactly once, when that flush reaches the device.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void OnFlushedCompletesWhenTheFlushReachesTheDevice()
+        {
+            var gated = new GatedCompletionDevice(device);
+            var log = CreateLog(settings => settings.LogDevice = gated);
+            for (var ii = 0; ii < 20; ++ii)
+                _ = Write(log, 200, (byte)ii);
+
+            gated.Gate = true;
+            var flushedThrough = log.FlushTail(wait: false);
+            gated.WaitForPending(1, FlushTimeout);
+
+            var notification = new FlushNotification();
+            log.OnFlushed(flushedThrough, FlushNotification.Callback, notification);
+            Assert.That(notification.Count, Is.Zero, "the notification must wait for the flush");
+
+            gated.Gate = false;
+            for (var ii = 0; ii < gated.CapturedCount; ++ii)
+                gated.Release(ii);
+
+            Assert.That(notification.Invoked.Wait(FlushTimeout), Is.True, "the notification must complete once the flush is durable");
+            Assert.That(notification.ErrorCode, Is.Zero);
+            Assert.That(log.FlushedUntilAddress, Is.GreaterThanOrEqualTo(flushedThrough));
+            Assert.That(notification.Count, Is.EqualTo(1));
+        }
+
+        /// <summary>A failed flush below the address fails the notification, and a later notification past the failure fails at once.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void OnFlushedReportsAFailedFlush()
+        {
+            const uint IoError = 5;
+            var gated = new GatedCompletionDevice(device);
+            var log = CreateLog(settings => settings.LogDevice = gated);
+            for (var ii = 0; ii < 20; ++ii)
+                _ = Write(log, 200, (byte)ii);
+
+            gated.Gate = true;
+            var flushedThrough = log.FlushTail(wait: false);
+            gated.WaitForPending(1, FlushTimeout);
+
+            var pending = new FlushNotification();
+            log.OnFlushed(flushedThrough, FlushNotification.Callback, pending);
+
+            gated.Gate = false;
+            for (var ii = 0; ii < gated.CapturedCount; ++ii)
+                gated.Release(ii, IoError);
+
+            Assert.That(pending.Invoked.Wait(FlushTimeout), Is.True, "a failed flush must fail the notification rather than strand it");
+            Assert.That(pending.ErrorCode, Is.EqualTo(IoError));
+            Assert.That(pending.Exception, Is.InstanceOf<TsavoriteException>());
+            Assert.That(pending.Count, Is.EqualTo(1));
+
+            var late = new FlushNotification();
+            log.OnFlushed(flushedThrough, FlushNotification.Callback, late);
+            Assert.That(late.Count, Is.EqualTo(1), "a notification past a known failure must fail at once");
+            Assert.That(late.ErrorCode, Is.EqualTo(IoError));
+        }
+
+        /// <summary>Disposing the log fails a notification whose flush can no longer complete, rather than stranding its caller.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void DisposeFailsPendingOnFlushedNotifications()
+        {
+            var log = CreateLog();
+            for (var ii = 0; ii < 20; ++ii)
+                _ = Write(log, 200, (byte)ii);
+            var tailAddress = log.TailAddress;
+
+            // No flush covers the tail, so only disposal can complete this notification.
+            var notification = new FlushNotification();
+            log.OnFlushed(tailAddress, FlushNotification.Callback, notification);
+            Assert.That(notification.Count, Is.Zero);
+
+            log.Dispose();
+
+            Assert.That(notification.Count, Is.EqualTo(1));
+            Assert.That(notification.ErrorCode, Is.Not.Zero);
+            Assert.That(notification.Exception, Is.InstanceOf<ObjectDisposedException>());
+
+            var late = new FlushNotification();
+            log.OnFlushed(tailAddress, FlushNotification.Callback, late);
+            Assert.That(late.Count, Is.EqualTo(1), "a notification on a disposed log must fail at once");
+            Assert.That(late.Exception, Is.InstanceOf<ObjectDisposedException>());
         }
 
         [Test, Category(ObjectLogCategory)]

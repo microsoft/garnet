@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -195,7 +196,9 @@ namespace Tsavorite.test.recovery
                 objlog.Dispose();
             }
 
-            TransformCheckpointToV7(checkpointDir, MethodTestDir, token);
+            // A record with both an overflow key and an overflow value has a directory in the current object log, not the dense key-then-value
+            // bytes the in-place transform assumes, so write the v7 object log densely from the known bytes.
+            TransformCheckpointToV7Dense(checkpointDir, MethodTestDir, token, i => (MakeKey(i, keySize), MakePayload(i, valueSize)));
             return token;
         }
 
@@ -267,7 +270,7 @@ namespace Tsavorite.test.recovery
             return token;
         }
 
-        // Build a FoldOver checkpoint of object-value records, transformed to a DENSE v7 object log so LARGE values (headered in the
+        // Build a FoldOver checkpoint of object-value records, transformed to a DENSE v7 object log so LARGE values (length-prefixed in the
         // current format, dense in v7) are exercised.
         Guid BuildV7DenseObjectValueFixture(int numRecords, int valueSize)
         {
@@ -331,7 +334,8 @@ namespace Tsavorite.test.recovery
         }
 
         // Rewrite the checkpoint's metadata and main-log records in place so the checkpoint reads as version 7 (keeps the current
-        // object log; only valid for headerless records whose current object bytes are already dense).
+        // object log; only valid for records with one out-of-line component of at most 511 bytes, whose current bytes are stored headerless
+        // at the record's position, as v7 dense bytes are. A record with two components has a directory: use TransformCheckpointToV7Dense).
         static unsafe void TransformCheckpointToV7(string checkpointDir, string logDir, Guid token)
         {
             var namingScheme = new DefaultCheckpointNamingScheme(new DirectoryInfo(checkpointDir).FullName);
@@ -366,7 +370,8 @@ namespace Tsavorite.test.recovery
         }
 
         // Convert a single record from the current objectId-hint encoding to the v7 split-length encoding. The object-log bytes and the
-        // record's object-log position (segment+offset) are left untouched; the current headerless bytes are byte-identical to v7 dense.
+        // record's object-log position are left untouched, so this is only valid for a record whose position addresses a single exact-size
+        // extent: those bytes are byte-identical to v7 dense.
         static unsafe void StampRecordAsV7(long physicalAddress)
         {
             var logRecord = new LogRecord(physicalAddress);
@@ -378,6 +383,9 @@ namespace Tsavorite.test.recovery
             var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
             var objectLogPositionPtr = (ulong*)logRecord.GetObjectLogPositionAddress(logRecord.GetOptionalStartAddress());
             var positionWord = *objectLogPositionPtr;
+            ClassicAssert.IsFalse(ObjectLogPositionInfo.WordHasDirectory(positionWord), "record has a directory, so its current bytes are not v7 dense");
+            ClassicAssert.AreNotEqual(0UL, positionWord & (dataHeader.KeyIsOverflow ? ObjectLogPositionInfo.kKeyIsExactSizeMask : ObjectLogPositionInfo.kValueIsExactSizeMask),
+                "record's extent is length-prefixed, so its current bytes are not v7 dense");
             _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, HybridLogRecoveryInfo.CheckpointVersion);
 
             if (dataHeader.KeyIsOverflow)
@@ -491,7 +499,7 @@ namespace Tsavorite.test.recovery
                 ClassicAssert.Greater(info.mainLogRecoveryEndAddress, info.beginAddress, "mixed v7 snapshot fixture expects a non-empty hybrid-log region");
                 ClassicAssert.Greater(info.recoveredTailAddress, info.mainLogRecoveryEndAddress, "mixed v7 snapshot fixture expects a non-empty snapshot region");
             }
-            var segmentSizeBits = info.snapshotEndObjectLogTail.SegmentSizeBits;
+            var segmentSizeBits = BitOperations.Log2((ulong)info.objectLogSegmentSize);
             var recordIndex = 0;
 
             // Region 1: the hybrid-log region, read from the main log with objects in the main object log.
@@ -528,10 +536,11 @@ namespace Tsavorite.test.recovery
             var snapshotDenseEnd = denseSnapshotObjectLog.Position;
             WriteDenseObjectLogFile(FindSnapshotSegmentZero(checkpointDir, token, "snapshot.obj.dat"), denseSnapshotObjectLog);
 
-            info.hlogEndObjectLogTail = new ObjectLogPositionInfo((ulong)denseMainObjectLog.Position, segmentSizeBits);
-            info.snapshotStartObjectLogTail = new ObjectLogPositionInfo(DenseObjectLogStart, segmentSizeBits);
-            info.snapshotEndObjectLogTail = new ObjectLogPositionInfo((ulong)snapshotDenseEnd, segmentSizeBits);
-            info.beginAddressObjectLogSegment = 0;
+            info.hlogEndObjectLogTail = denseMainObjectLog.Position;
+            info.legacySnapshotStartObjectLogTail = DenseObjectLogStart;
+            info.snapshotEndObjectLogTail = snapshotDenseEnd;
+            info.objectLogBeginAddress = 0;
+            info.legacyObjectLogSegmentSizeBits = segmentSizeBits;
             checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
         }
 
@@ -651,7 +660,7 @@ namespace Tsavorite.test.recovery
             ClassicAssert.AreEqual(0, info.useSnapshotFile, "expected a FoldOver checkpoint");
             var beginAddress = info.beginAddress;
             var tailAddress = info.recoveredTailAddress;
-            var segmentSizeBits = info.hlogEndObjectLogTail.SegmentSizeBits;
+            var segmentSizeBits = BitOperations.Log2((ulong)info.objectLogSegmentSize);
 
             var mainLogSegment = FindLogSegmentZero(logDir, MainLogName);
             var pageBytes = File.ReadAllBytes(mainLogSegment);
@@ -714,10 +723,11 @@ namespace Tsavorite.test.recovery
             File.WriteAllBytes(objectLogSegment, denseBytes);
 
             // Point the object-log tail fields at the dense end and re-serialize the metadata at target version 7.
-            info.hlogEndObjectLogTail = new ObjectLogPositionInfo((ulong)denseEnd, segmentSizeBits);
-            info.snapshotStartObjectLogTail = info.hlogEndObjectLogTail;
-            info.snapshotEndObjectLogTail = info.hlogEndObjectLogTail;
-            info.beginAddressObjectLogSegment = 0;
+            info.hlogEndObjectLogTail = denseEnd;
+            info.legacySnapshotStartObjectLogTail = denseEnd;
+            info.snapshotEndObjectLogTail = denseEnd;
+            info.objectLogBeginAddress = 0;
+            info.legacyObjectLogSegmentSizeBits = segmentSizeBits;
             checkpointManager.CommitLogCheckpointMetadata(token, info.ToByteArray(targetVersion: 7));
         }
 
@@ -821,9 +831,9 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoverV7LargeObjectValueFoldOver([Values(513, 1024, 4096, 20000)] int valueSize)
         {
-            // valueSize > 507 makes the serialized object exceed the 511-byte exact-size cutoff, so the current format would frame it with a
-            // leading ChunkHeader. v7 stored it dense; the dense fixture writer reproduces that. Verifies the current reader decodes a large
-            // v7 (headerless/dense) object value.
+            // valueSize > 507 makes the serialized object exceed the 511-byte exact-size cutoff, so the current format would length-prefix
+            // it. v7 stored it dense; the dense fixture writer reproduces that. Verifies the legacy reader decodes a large v7 (dense) object
+            // value.
             const int numRecords = 6;
             var token = BuildV7DenseObjectValueFixture(numRecords, valueSize);
 
@@ -1268,8 +1278,8 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async Task RecoverV7LargeObjectValueFoldOverLowMem([Values(1024, 20000)] int valueSize)
         {
-            // The decisive up-conversion test: values above the exact-size cutoff are stored dense (headerless) by v7 but require a leading
-            // ChunkHeader in the current format, so conversion must re-serialize them to the upgrade object log at new positions. The tight
+            // The decisive up-conversion test: values above the exact-size cutoff are stored dense by v7 but length-prefixed in the current
+            // format, so conversion must re-serialize them to the upgrade object log at new positions. The tight
             // memory budget evicts every record during recovery, so the read-back below must fetch the converted objects from that device.
             const int numRecords = 40;
             var token = BuildV7DenseObjectValueFixture(numRecords, valueSize);

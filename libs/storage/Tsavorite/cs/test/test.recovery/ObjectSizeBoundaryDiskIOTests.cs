@@ -21,26 +21,26 @@ namespace Tsavorite.test.recovery
     /// evicts the whole log so every record's objects live only on disk, then issues a pending <c>Read</c> that must fault each
     /// record's key/value back through the <see cref="ObjectLogReader{TStoreFunctions}"/> and verify it byte-for-byte. Where the
     /// recovery sweep exercises the checkpoint/recover reader path, this exercises the runtime pending-IO reader path over the
-    /// same size boundaries (headerless exact-size vs a leading ChunkHeader vs chunked continuation). Black-box by construction,
+    /// same size boundaries (headerless exact-size vs length-prefixed vs multi-chunk with a directory). Black-box by construction,
     /// so it survives a change to the on-disk length encoding.
     /// </summary>
     [TestFixture]
     public class ObjectSizeBoundaryDiskIOTests : TestBase
     {
         // Sizes straddling every object-log encoding boundary (see ObjectSizeBoundaryRecoveryTests for the rationale of each point).
-        // 2 MB / 3 MB land in the objectId size-hint sentinel window (extent >= ~2 MB saturates the 9-bit objectId page count to its
-        // sentinel; the single-record read-ahead then issues a 4 MB initial read that OVERSHOOTS
-        // these sub-4 MB values, including the last record near the object-log tail (short read past the written data).
+        // 2 MB / 3 MB saturate the value hint (an extent of 511 or more 4 KB pages hints ObjectLogExtent.LargeValueHint), so the
+        // single-record read sizes its first read as a full chunk plus its prefix, clamped to the object-log page and tail, rather than
+        // from the value's length -- including for the last record near the object-log tail.
         static readonly int[] BoundarySizes =
         [
             1, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536,
             131071, 131072, 131073, 262144,
-            // Bracket the value sentinel seam: the objectId hint stops being an exact 4 KB page count and saturates to the
-            // 511 sentinel at page count 511. The crossing data length is not fixed, because the extent adds a ChunkHeader
-            // plus runtime sector-alignment padding, so these stay below it, sit on it, and clear it for any padding.
-            (509 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
-            (510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
-            (511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            // Bracket the value hint's saturation seam: the objectId hint stops being an exact 4 KB page count and saturates to
+            // ObjectLogExtent.LargeValueHint at page count 511. An overflow value's extent adds exactly the 4-byte length prefix, so
+            // these give extents of exactly 509, 510, and 511 pages; an object's serializer framing shifts each slightly higher.
+            (509 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
+            (510 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
+            (511 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
             2 * 1024 * 1024, 3 * 1024 * 1024,
             (4 * 1024 * 1024) - 1, 4 * 1024 * 1024, (4 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
@@ -48,9 +48,8 @@ namespace Tsavorite.test.recovery
         // Large object-log segment: no single value spans a segment boundary (isolating pure size-boundary behavior).
         const long NoSplitObjectLogSegmentSize = 1L << 30;      // 1 GB
 
-        // Object-log segment small enough that one DMA'd overflow value spans several segments, so WriteOverflowDma's per-segment
-        // write loop must iterate more than twice (a single device write cannot cross an object-log segment).
-        const long DmaMultiSegmentObjectLogSegmentSize = 1L << 22;   // 4 MB
+        // Object-log segment small enough that one overflow value's chunks span several segments.
+        const long MultiSegmentObjectLogSegmentSize = 1L << 22;   // 4 MB
 
         [SetUp]
         public void Setup() => RecreateDirectory(MethodTestDir);
@@ -183,21 +182,19 @@ namespace Tsavorite.test.recovery
             }
         }
 
-        // A single overflow value large enough to take the DMA path (> MaxCopySpanLen) whose sector-aligned interior spans THREE
-        // object-log segments, so WriteOverflowDma's per-segment write loop runs more than twice. Every other test here uses a
-        // segment large enough that an interior crosses at most one boundary, which cannot distinguish a correctly iterating loop
-        // from one that fails to reduce its remaining count.
+        // A single overflow value whose chunks span THREE or more object-log segments. Every other test here uses a segment large
+        // enough that a value crosses at most one boundary.
         [Test]
         [Category("TsavoriteKV"), Category("ObjectIdMap")]
         public void ReadOverflowValueSpanningMultipleObjectLogSegments()
         {
-            const int valueSize = 10 * 1024 * 1024;   // > 2 * DmaMultiSegmentObjectLogSegmentSize, so the interior needs 3+ writes
+            const int valueSize = 10 * 1024 * 1024;   // > 2 * MultiSegmentObjectLogSegmentSize, so the value's chunks span 3+ segments
             const int numRecords = 2;
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "dmaseg.log"), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "dmaseg.obj.log"), deleteOnClose: false);
             try
             {
-                using var store = CreateOverflowStore(log, objlog, DmaMultiSegmentObjectLogSegmentSize);
+                using var store = CreateOverflowStore(log, objlog, MultiSegmentObjectLogSegmentSize);
                 using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
                 var bContext = session.BasicContext;
 
@@ -231,10 +228,10 @@ namespace Tsavorite.test.recovery
         [
             17, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536, 131071, 131072, 131073,
             // Bracket the page-count seam, where the count outgrows the 9-bit objectId hint and its high bits move into the raw
-            // RDH KeyLength field. The crossing data length is not fixed, because the extent adds a ChunkHeader plus runtime
-            // sector-alignment padding, so these stay below it, sit on it, and clear it for any padding.
-            (510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
-            (511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            // RDH KeyLength field. A key's extent adds exactly the 4-byte length prefix, so these give extents of exactly 510 and
+            // 511 pages, and 2 MB is past the seam.
+            (510 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
+            (511 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
             (2 * 1024 * 1024) - 1, 2 * 1024 * 1024, (2 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
 

@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -53,9 +53,6 @@ namespace Tsavorite.core
         /// This is updated atomically when we start the <see cref="BufferAndLoad"/> of a page.</summary>
         /// <remarks>This array is in parallel with <see cref="loadCompletionEvents"/>, <see cref="loadCTSs"/>, and <see cref="loadedPages"/>.</remarks>
         private long[] nextLoadedPages;
-
-        /// <summary>The circular buffer we cycle through for object-log deserialization.</summary>
-        CircularDiskReadBuffer[] objectReadBuffers;
 
         /// <summary>Number of bits in the size of the log page</summary>
         private readonly int logPageSizeBits;
@@ -151,14 +148,6 @@ namespace Tsavorite.core
             nextAddress = beginAddress;
         }
 
-        /// <summary>Initialize read buffers</summary>
-        public virtual void InitializeReadBuffers(AllocatorBase allocatorBase = default)
-        {
-            objectReadBuffers = new CircularDiskReadBuffer[frameSize];
-            for (var i = 0; i < frameSize; i++)
-                objectReadBuffers[i] = allocatorBase?.CreateCircularReadBuffers();
-        }
-
         /// <summary>
         /// Buffer and load
         /// </summary>
@@ -216,8 +205,6 @@ namespace Tsavorite.core
                         // before every return, so this is then a no-op.
                         WaitForPriorFrameLoad(nextFrame, val);
 
-                        var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
-
                         var frameIndex = i;
                         var frameRepairLatch = 0;
                         _ = Interlocked.Increment(ref pendingDrainCallbacks);
@@ -252,7 +239,7 @@ namespace Tsavorite.core
 
                             try
                             {
-                                AsyncReadPageFromDeviceToFrame(readBuffer, readPage: frameIndex + allocator.GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
+                                AsyncReadPageFromDeviceToFrame(readPage: frameIndex + allocator.GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
                                     context: Empty.Default, ref loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             }
                             catch (Exception ex)
@@ -314,7 +301,7 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
+        internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
 
         /// <summary>
@@ -558,10 +545,6 @@ namespace Tsavorite.core
                 loadCompletionEvents?[i]?.Dispose();
                 loadCTSs?[i]?.Dispose();
                 loadCTSs?[i] = null;
-
-                // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
-                // things and leaves it in an "initialized" state.
-                objectReadBuffers?[i]?.Dispose();
             }
             loadCompletionEvents = default;
         }
@@ -581,8 +564,6 @@ namespace Tsavorite.core
                 loadedPages[i] = -1;
                 nextLoadedPages[i] = -1;
                 loadCTSs[i] = new CancellationTokenSource();
-                // readBuffers do not need to be reset because that is done in its Dispose, leaving it in an "initialized" state.
-                // Also, OnBeginReadRecords() will do reinitialization internally.
             }
             currentAddress = -1;
             nextAddress = beginAddress;

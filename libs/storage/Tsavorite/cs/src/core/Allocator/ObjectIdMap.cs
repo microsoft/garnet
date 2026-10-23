@@ -22,12 +22,13 @@ namespace Tsavorite.core
         // ── objectId slot bit layout ─────────────────────────────────────────────────────────────────────────────────
         // The 32-bit objectId slot at keyAddress/valueAddress holds the ObjectIdMap index in its low bits. A 128 MB page with
         // a 32-byte minimum record holds at most 2^22 records, so the index needs at most 22 bits; the top 9 bits are
-        // reclaimable to carry an out-of-line component's read-size HINT on the flushed/on-disk record. The hint's meaning is
-        // selected by the per-component ObjectLogPositionInfo.Key/ValueIsExactSize flag:
-        //   flag SET   -> the 9 bits are the EXACT byte length (0..511) of the out-of-line component; NO leading ChunkHeader.
-        //   flag CLEAR -> for a VALUE, the 9 bits are a 4 KB-page count whose max value is the discovery sentinel; for a KEY they are the
-        //                 low 9 bits of an exact page count whose high 10 bits are in raw RDH KeyLength.
-        //                 A leading ChunkHeader carries the exact logical payload length.
+        // reclaimable to carry a read-size HINT on the flushed/on-disk record, describing the object-log extent the record's position
+        // addresses. The overflow key's slot sizes that extent when the key is overflow, else the value's slot does. The hint's
+        // meaning is selected by the matching ObjectLogPositionInfo.Key/ValueIsExactSize flag:
+        //   flag SET   -> the 9 bits are the EXACT byte length (0..511) of the extent, which is stored headerless.
+        //   flag CLEAR -> the extent is length-prefixed. For a VALUE slot, the 9 bits are a 4 KB-page count that saturates at
+        //                 ObjectLogExtent.LargeValueHint; for a KEY slot they are the low 9 bits of an exact page count whose high
+        //                 10 bits are in raw RDH KeyLength.
         // Either way the hint lets IO for Read/RMW and recovery size the initial object-log read without an RDH length field
         // (those are reserved for hybrid values). The stamp is applied to the disk image (and, on the no-copy live-page flush,
         // to the live slot), so all in-memory reads of the slot as an index MUST go through GetIndex to mask off the hint bits.
@@ -48,9 +49,9 @@ namespace Tsavorite.core
         internal const int ObjectIdSizeHintMask = (1 << ObjectIdSizeHintBits) - 1;  // 0x1FF
 
         /// <summary>Largest value the 9-bit objectId read-size hint can hold. When the record's exact-size flag is SET this is the
-        /// largest out-of-line byte length encodable as an exact size (one below the 512-byte sector size, so an exact-size component
-        /// never needs a leading ChunkHeader). For a non-exact value this is the page-count sentinel; for a non-exact key it is an
-        /// ordinary low-9-bit page-count value.</summary>
+        /// largest extent length encodable as an exact size (<see cref="ObjectLogExtent.ExactCutoff"/>). For a non-exact value slot it is
+        /// the saturated page count <see cref="ObjectLogExtent.LargeValueHint"/>; for a non-exact key slot it is an ordinary low-9-bit
+        /// page-count value.</summary>
         internal const int MaxObjectIdSizeHint = ObjectIdSizeHintMask;            // 511
 
         /// <summary>Extract the ObjectIdMap index from a (possibly size-hint-stamped) objectId slot value; passes <see cref="InvalidObjectId"/> through unchanged.</summary>
@@ -59,7 +60,7 @@ namespace Tsavorite.core
 
         /// <summary>Extract the out-of-line read-size hint from the top bits of an objectId slot. Its meaning depends on the record's
         /// <see cref="ObjectLogPositionInfo.kKeyIsExactSizeMask"/> / <see cref="ObjectLogPositionInfo.kValueIsExactSizeMask"/> flag:
-        /// flag set -&gt; exact byte length; flag clear -&gt; page count/sentinel for a value, or the low bits of an exact key page count.</summary>
+        /// flag set -&gt; exact byte length; flag clear -&gt; a page count for a value slot, or the low bits of an exact key page count.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int GetSizeHint(int slot) => (slot >> ObjectIdSizeHintShift) & ObjectIdSizeHintMask;
 

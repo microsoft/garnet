@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -111,7 +111,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         protected override void WriteAsyncToDeviceForSnapshot<TContext>(int startPage, int flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
             var alignedPageSize = (pageSize + (sectorSize - 1)) & ~(sectorSize - 1);
@@ -195,7 +195,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Read pages from specified device
         /// </summary>
-        internal void AsyncReadPageFromDeviceToFrame<TContext>(
+        /// <remarks>Hides the base implementation, which bounds an object allocator's record walk; a TsavoriteLog page has no records to walk.</remarks>
+        internal new void AsyncReadPageFromDeviceToFrame<TContext>(
                                         long readPage,
                                         long untilAddress,
                                         DeviceIOCompletionCallback callback,

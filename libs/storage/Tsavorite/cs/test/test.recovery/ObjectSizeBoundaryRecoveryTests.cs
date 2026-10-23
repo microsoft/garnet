@@ -17,11 +17,11 @@ namespace Tsavorite.test.recovery
     using SbKeyStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordTriggers>;
 
     /// <summary>
-    /// Sweeps out-of-line VALUE sizes across every object-log serialization boundary (sub-sector exact-size cutoff, sector,
-    /// 4 KB page, 64 KB, and multi-buffer chunk sizes) for BOTH object and overflow values, checkpointing (Snapshot and
+    /// Sweeps out-of-line VALUE sizes across every object-log serialization boundary (exact-size cutoff, sector, 4 KB page, 64 KB,
+    /// saturated value hint, and multi-chunk sizes) for BOTH object and overflow values, checkpointing (Snapshot and
     /// FoldOver) and recovering, then reading every record back byte-for-byte. This gives explicit coverage of the size
-    /// boundaries the object-log length encoding pivots on (headerless exact-size vs a leading ChunkHeader vs chunked
-    /// continuation). It complements the fixed-size recovery tests (which cover a couple of points) with a systematic sweep.
+    /// boundaries the object-log length encoding pivots on (headerless exact-size vs length-prefixed vs multi-chunk with a
+    /// directory). It complements the fixed-size recovery tests (which cover a couple of points) with a systematic sweep.
     ///
     /// The size sweep uses a large object-log segment so no single value spans a segment boundary; a separate pair of tests
     /// (<see cref="RecoverObjectValueSpanningObjectLogSegmentBoundary"/> and
@@ -33,25 +33,24 @@ namespace Tsavorite.test.recovery
         // Sizes straddling every object-log encoding boundary:
         //   1, 100                : tiny headerless
         //   511, 512, 513         : exact-size cutoff (kOutOfLineExactSizeCutoff = 511) / sub-sector / sector boundary (512 B)
-        //   1023, 1024            : old exact-size cutoff (now headered) / boundary of the objectId 9-bit exact range
+        //   1023, 1024            : length-prefixed, around 1 KB
         //   4095, 4096            : 4 KB page boundary
         //   65535, 65536          : 64 KB boundary
-        //   262144                : 256 KB (single buffer, well past the copy-span cutoff)
-        //   2 MB, 3 MB            : objectId size-hint sentinel window -- extent >= 511*4 KB (~2 MB) saturates the 9-bit objectId page
-        //                           count to its sentinel (one 4 MB read + header-follow)
-        //                           the 4 MB initial read OVERSHOOTS these sub-4 MB values, incl. the last record near the
-        //                           object-log tail (short read past written data). 3 MB * 6 records writes ~18 MB in a 1 GB segment.
-        //   5 MB                  : multi-buffer chunked object / large overflow, at/above BOTH sentinels (leading ChunkHeader + extend)
+        //   262144                : 256 KB (one chunk)
+        //   2 MB, 3 MB            : saturated value hint -- an extent of 511 or more 4 KB pages hints ObjectLogExtent.LargeValueHint, so
+        //                           the first read is a full chunk plus its prefix, clamped to the object-log page and tail, rather than
+        //                           the value's length. 3 MB * 6 records writes ~18 MB in a 1 GB segment.
+        //   5 MB                  : more than one 4 MB chunk, so the record has a directory
         static readonly int[] BoundarySizes =
         [
             1, 100, 510, 511, 512, 513, 1023, 1024, 4095, 4096, 65535, 65536,
             131071, 131072, 131073, 262144,
-            // Bracket the value sentinel seam: the objectId hint stops being an exact 4 KB page count and saturates to the
-            // 511 sentinel at page count 511. The crossing data length is not fixed, because the extent adds a ChunkHeader
-            // plus runtime sector-alignment padding, so these stay below it, sit on it, and clear it for any padding.
-            (509 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
-            (510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
-            (511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+            // Bracket the value hint's saturation seam: the objectId hint stops being an exact 4 KB page count and saturates to
+            // ObjectLogExtent.LargeValueHint at page count 511. An overflow value's extent adds exactly the 4-byte length prefix, so
+            // these give extents of exactly 509, 510, and 511 pages; an object's serializer framing shifts each slightly higher.
+            (509 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
+            (510 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
+            (511 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
             2 * 1024 * 1024, 3 * 1024 * 1024,
             (4 * 1024 * 1024) - 1, 4 * 1024 * 1024, (4 * 1024 * 1024) + 1, 5 * 1024 * 1024
         ];
@@ -265,11 +264,10 @@ namespace Tsavorite.test.recovery
         // Small-memory recovery: same size sweep, but recover under a tight LogSizeTracker budget so the deferred object load
         // must evict during recovery. For the larger sizes the object heap alone exceeds the budget, forcing the per-page cutoff
         // (FindHeadAddressCutoffOnPage) and snapshot-page flush (FlushSnapshotPageForRecovery) to run and the evicted records'
-        // objects to be read back from the copied main object-log -- exercising the object-log length decode and verbatim-copy
-        // sizing for every headerless/headered/chunked/sentinel boundary under memory pressure, not just tiny fixed-size objects.
-        // Includes the 5 MB multi-buffer point: the last object record on a page (no successor to bound its extent) is copied by
-        // following its ChunkHeader framing to the exact on-disk extent, so a value spanning multiple 4 MB read-ahead buffers is
-        // copied whole rather than truncated.
+        // objects to be read back from the main object log they were copied to -- exercising the snapshot-to-main record copy and
+        // the hint decode for every exact, length-prefixed, saturated-hint, and directory size under memory pressure, not just tiny
+        // fixed-size objects. Includes the 5 MB point, whose record has a directory, so the copy must follow the directory to copy
+        // every chunk rather than truncating the value.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverObjectValueLowMemBoundaries(
@@ -349,18 +347,15 @@ namespace Tsavorite.test.recovery
         }
 
         // Explicit segment-crossing coverage: 6 x 5 MB object values in 16 MB object-log segments, so some record's object-log
-        // data spans a segment boundary during recovery. Objects use precise chunk extents, so this recovers correctly.
+        // data spans a segment boundary during recovery.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverObjectValueSpanningObjectLogSegmentBoundary(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
             => RunObjectValueRecovery(checkpointType, 5 * 1024 * 1024, numRecords: 6, SplitObjectLogSegmentSize);
 
-        // Same segment-crossing scenario for OVERFLOW values. Fixed: WriteOverflowDma now DMAs the whole sector-aligned interior,
-        // iterating across object-log segment boundaries (one device write per segment) so only a sub-sector end fragment is buffered;
-        // the old code DMA'd only the first segment then handed the segment-crossing remainder to the buffered path, corrupting the
-        // object-log layout at the boundary and mis-decoding a later record's ChunkHeader during recovery Pass2. (Short method name to
-        // stay under the Windows MAX_PATH limit for the deep Snapshot checkpoint device path.)
+        // Same segment-crossing scenario for OVERFLOW values. (Short method name to stay under the Windows MAX_PATH limit for the
+        // deep Snapshot checkpoint device path.)
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverOvfValueSpanningObjLogSegment(
@@ -463,17 +458,16 @@ namespace Tsavorite.test.recovery
         //
         // The sizes cross both encoding seams of ComputeOverflowKeySizeHint. 512 bytes is the first size past kOutOfLineExactSizeCutoff,
         // where the objectId hint stops being an exact byte count and becomes a 4 KB page count. The second seam is page count 512, the
-        // first count too large for the 9-bit objectId hint, whose high bits then move into the raw RDH KeyLength field. The data length
-        // at which that crossing happens is not fixed, because the extent adds a ChunkHeader plus runtime sector-alignment padding, so
-        // the seam is bracketed rather than named: 510 pages' worth stays below it for any padding, 511 pages' worth sits on it, and
-        // 2 MB is above it for any padding. ObjectIdSlotAndPositionFlagsTests pins the exact transition at the encoder.
+        // first count too large for the 9-bit objectId hint, whose high bits then move into the raw RDH KeyLength field. A key's extent
+        // adds exactly the 4-byte length prefix, so 510 and 511 pages' worth give extents of exactly that many pages, and 2 MB is above
+        // the seam. ObjectIdSlotAndPositionFlagsTests pins the exact transition at the encoder.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverOverflowKey(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values(512,
-                    (510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
-                    (511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize,
+                    (510 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
+                    (511 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
                     2 * 1024 * 1024,
                     5 * 1024 * 1024)] int keySize)
             => RunOverflowKeyRecovery(checkpointType, keySize, numRecords: RecordCountForSize(keySize));

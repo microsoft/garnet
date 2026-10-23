@@ -20,35 +20,52 @@ namespace Tsavorite.core
     /// </summary>
     public abstract class AllocatorBase
     {
-        /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger) => default;
         /// <summary>Maximum number of Snapshot page writes to issue concurrently while coordinating with ReadOnly flushing.
         /// Zero means this allocator does not require Snapshot/ReadOnly page coordination.</summary>
         internal int SnapshotFlushWindowSize = 0;
-        /// <summary>Create the circular flush buffers for object deserialization from device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
-        /// <summary>Create the circular flush buffers for object deserialization from device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers() => default;
 
-        /// <summary>Returns the lowest segment in use in the object log; will be zero unless the database has been truncated.</summary>
-        internal virtual int LowestObjectLogSegmentInUse => 0;
-        /// <summary>Get the ObjectLog tail position, if this is ObjectAllocator.</summary>
-        internal virtual ObjectLogPositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
-        /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
-        internal virtual void SetObjectLogTail(ObjectLogPositionInfo tail) { }
+        /// <summary>Create the object log a Snapshot checkpoint writes its objects to, over <paramref name="snapshotObjectLogDevice"/>; null if this
+        /// allocator has no out-of-line data. Only implemented by ObjectAllocator.</summary>
+        internal virtual ObjectLog CreateSnapshotObjectLog(IDevice snapshotObjectLogDevice) => null;
+
+        /// <summary>Recreate the main object log positioned at a recovered checkpoint's object-log tail. Only implemented by ObjectAllocator.</summary>
+        /// <param name="beginAddress">The checkpoint's object-log begin address</param>
+        /// <param name="tailAddress">The checkpoint's object-log tail; zero if it recorded none</param>
+        internal virtual void RestoreObjectLog(long beginAddress, long tailAddress) { }
+
+        /// <summary>Open a checkpoint's snapshot object log for recovery to read, selected afterwards by passing <paramref name="snapshotObjectLogDevice"/>.
+        /// Only implemented by ObjectAllocator.</summary>
+        /// <param name="snapshotObjectLogDevice">The checkpoint's snapshot object-log device</param>
+        /// <param name="tailAddress">The snapshot object log's recorded tail; zero if it recorded none</param>
+        internal virtual void OpenRecoverySnapshotObjectLog(IDevice snapshotObjectLogDevice, long tailAddress) { }
+
+        /// <summary>Close the snapshot object log <see cref="OpenRecoverySnapshotObjectLog"/> opened. Must precede disposing its device.</summary>
+        internal virtual void CloseRecoverySnapshotObjectLog() { }
+
+        /// <summary>The object log a recovery flush copies or writes objects to; null if none. Only implemented by ObjectAllocator.</summary>
+        internal virtual ObjectLog RecoveryFlushObjectLog => null;
+
+        /// <summary>The recovery snapshot object log open over <paramref name="snapshotObjectLogDevice"/>, or null.</summary>
+        internal virtual ObjectLog GetRecoverySnapshotObjectLog(IDevice snapshotObjectLogDevice) => null;
+
+        /// <summary>The main object log's begin address; zero if this allocator has none.</summary>
+        internal virtual long ObjectLogBeginAddress => 0;
+
+        /// <summary>The main object log's durable end, its FlushedUntilAddress; zero if this allocator has none.</summary>
+        internal virtual long ObjectLogFlushedUntilAddress => 0;
+
+        /// <summary>The object-log page size, in bytes; zero if this allocator has no object log.</summary>
+        internal virtual long ObjectLogPageSize => 0;
 
         /// <summary>Begin up-converting a downlevel object log: subsequent recovery flushes append current-format object bytes to the
-        /// upgrade device while reads continue to resolve against the downlevel device.</summary>
+        /// conversion's destination while reads continue to resolve against the downlevel device.</summary>
         internal virtual void BeginObjectLogUpgrade() { }
 
         /// <summary>Whether a downlevel object-log up-conversion is in progress.</summary>
         internal virtual bool IsUpgradingObjectLog => false;
 
-        /// <summary>Finish up-converting a downlevel object log, making the destination device the live object log.</summary>
-        /// <param name="adoptConvertedTailNow">Whether to adopt the converted append position as the live object-log tail immediately.
-        /// Snapshot recovery passes true because it has already called <see cref="SetObjectLogTail"/> before the snapshot conversion phase;
-        /// FoldOver passes false because it calls <see cref="SetObjectLogTail"/> afterward, which then adopts the converted position.</param>
-        internal virtual void CompleteObjectLogUpgrade(bool adoptConvertedTailNow) { }
+        /// <summary>Finish up-converting a downlevel object log, making the conversion's destination the live object log.</summary>
+        internal virtual void CompleteObjectLogUpgrade() { }
 
         /// <summary>Whether a downlevel object-log up-conversion completed, making the upgrade device the live object log.</summary>
         internal virtual bool ObjectLogWasUpgraded => false;
@@ -56,8 +73,14 @@ namespace Tsavorite.core
         /// <summary>Calculate the total serialized object size on a loaded page. Only implemented by ObjectAllocator.</summary>
         internal virtual long CalculatePageObjectSizes(int page, long startAddress, long untilAddress, int checkpointVersion) => 0;
         /// <summary>Load objects for records on an already-loaded page for recovery pass 2.</summary>
+        /// <param name="page">The page</param>
+        /// <param name="fromAddress">The first address to load</param>
+        /// <param name="untilAddress">The end of the range to load</param>
+        /// <param name="objectLogDevice">Null for the main object log; otherwise the snapshot object-log device being recovered</param>
+        /// <param name="checkpointVersion">The checkpoint version, which selects the object-log decode</param>
+        /// <param name="legacyReadEnd">For a downlevel snapshot object log, its exclusive durable end</param>
         internal virtual void LoadObjectsForRecoveryPass2(int page, long fromAddress, long untilAddress, IDevice objectLogDevice, int checkpointVersion,
-            ObjectLogPositionInfo hardReadEndPosition = default)
+            long legacyReadEnd = 0)
         { }
 
         /// <summary>Return a recovered snapshot-region page that stays resident to the state a freshly allocated page would have, so a
@@ -124,14 +147,16 @@ namespace Tsavorite.core
             _ = MonotonicUpdate(ref serializedObjectCacheMaxAddress, logicalAddress, out _);
         }
 
-        /// <summary>Return the first object-log position recorded in the header of <paramref name="page"/>, or an unset position when
-        /// this allocator has no object log or the page contains no out-of-line records.</summary>
-        internal virtual ObjectLogPositionInfo GetLowestObjectLogPositionForPage(int page) => new();
         /// <summary>Compute the hash code of a record's overflow key during recovery Pass 1 (index build) by reading the key bytes from
         /// the object log, since the objectIdMap is not yet populated so <see cref="LogRecord.Key"/> cannot resolve it. Only implemented
         /// by the object allocator; other allocators never have overflow keys, so this is never called for them.</summary>
-        internal virtual long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer readBuffers, IDevice objectLogDevice,
-            int checkpointVersion, ObjectLogPositionInfo hardReadEndPosition = default)
+        /// <param name="logRecord">The disk-image record</param>
+        /// <param name="legacyReadBuffers">Read buffers reused across a downlevel recovery's key reads; created on demand</param>
+        /// <param name="objectLogDevice">Null for the main object log; otherwise the snapshot object-log device being recovered</param>
+        /// <param name="checkpointVersion">The checkpoint version, which selects the object-log decode</param>
+        /// <param name="legacyReadEnd">For a downlevel snapshot object log, its exclusive durable end</param>
+        internal virtual long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer legacyReadBuffers, IDevice objectLogDevice,
+            int checkpointVersion, long legacyReadEnd = 0)
             => throw new TsavoriteException("Overflow keys are only supported by the object allocator");
     }
 
@@ -447,10 +472,9 @@ namespace Tsavorite.core
         /// <param name="callback"></param>
         /// <param name="result"></param>
         /// <param name="device"></param>
-        /// <param name="objectLogDevice"></param>
         /// <param name="fuzzyStartLogicalAddress">Start address of fuzzy region, which contains old and new version records (we use this to selectively flush only old-version records during snapshot checkpoint)</param>
         protected abstract void WriteAsyncToDeviceForSnapshot<TContext>(int startPage, int flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> result, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress);
+            PageAsyncFlushResult<TContext> result, IDevice device, long fuzzyStartLogicalAddress);
 
         /// <summary>Read page from device (async)</summary>
         protected abstract void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
@@ -959,11 +983,12 @@ namespace Tsavorite.core
         /// bytes, so it must fail recovery rather than proceed.
         /// </summary>
         /// <remarks>
-        /// Checkpoints below <see cref="HybridLogRecoveryInfo.LogGeometryCheckpointVersion"/> record no geometry (all three values
-        /// are zero), so nothing can be verified for them. That is unavoidable: <c>ObjectLogSegmentSize</c> in particular is the bit
-        /// position at which <see cref="ObjectLogPositionInfo"/> splits its packed segment/offset word, and it is taken solely
-        /// from settings at construction, so a downlevel recovery with the wrong value misresolves every object-log position with
-        /// nothing to detect it. The assumed values are logged so an operator can confirm them against the original configuration.
+        /// Checkpoints below <see cref="HybridLogRecoveryInfo.LogGeometryCheckpointVersion"/> record no geometry (all values are zero),
+        /// so nothing can be verified for them. That is unavoidable: such a checkpoint's object log is a dense file whose positions split
+        /// at <c>ObjectLogSegmentSize</c>, taken solely from settings at construction, so a downlevel recovery with the wrong value
+        /// misresolves every object-log position with nothing to detect it. The assumed values are logged so an operator can confirm them
+        /// against the original configuration. A current object log is addressed flat, but its page size still decides where an extent
+        /// may lie, and its segment size names its files.
         /// </remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void VerifyLogGeometry(HybridLogRecoveryInfo info)
@@ -987,6 +1012,8 @@ namespace Tsavorite.core
                 throw new TsavoriteLogGeometryMismatchException($"Recovery SegmentSize mismatch: checkpoint (version {info.hybridLogRecoveryVersion}) was written with {info.segmentSize} but this store is configured with {SegmentSize}");
             if (info.objectLogSegmentSize != actualObjectLogSegmentSize)
                 throw new TsavoriteLogGeometryMismatchException($"Recovery ObjectLogSegmentSize mismatch: checkpoint (version {info.hybridLogRecoveryVersion}) was written with {info.objectLogSegmentSize} but this store is configured with {actualObjectLogSegmentSize}");
+            if (info.objectLogPageSize != ObjectLogPageSize)
+                throw new TsavoriteLogGeometryMismatchException($"Recovery ObjectLogPageSize mismatch: checkpoint (version {info.hybridLogRecoveryVersion}) was written with {info.objectLogPageSize} but this store is configured with {ObjectLogPageSize}");
         }
 
         /// <summary>
@@ -1015,7 +1042,7 @@ namespace Tsavorite.core
             // object-log tail captured at the hybrid-log/snapshot boundary is unset exactly when the main object log carries no downlevel
             // bytes to rewrite in place; a FoldOver checkpoint, or a snapshot with a non-empty hybrid-log region, has them and still needs
             // a separate device to avoid an unsupported in-place rewrite.
-            if (info.useSnapshotFile != 0 && !info.hlogEndObjectLogTail.HasData)
+            if (info.useSnapshotFile != 0 && info.hlogEndObjectLogTail == 0)
                 return;
 
             throw new TsavoriteObjectLogUpgradeRequiredException($"Recovering checkpoint version {info.hybridLogRecoveryVersion} requires up-converting its object log,"
@@ -2705,20 +2732,19 @@ namespace Tsavorite.core
         /// <param name="checkpointVersion">The checkpoint metadata version being recovered; selects the downlevel-vs-current object-log record decode
         ///     for the records being flushed.</param>
         /// <param name="snapshotObjectLogDevice">For the snapshot-replay flush, the snapshot object-log device whose object bytes (for records at/above
-        ///     <paramref name="formerFlushedUntilAddress"/>) are copied into the main object-log during the flush. Null for non-object or hybrid-log-only flushes.</param>
+        ///     <paramref name="formerFlushedUntilAddress"/>) are copied into the main object log during the flush; recovery has opened the snapshot
+        ///     object log over it. Null for non-object or hybrid-log-only flushes.</param>
         /// <param name="formerFlushedUntilAddress">The former FlushedUntilAddress (hybrid-log/snapshot boundary); records at/above it have their objects copied.</param>
-        /// <param name="snapshotObjectLogReadEndWord">Exclusive durable end of <paramref name="snapshotObjectLogDevice"/>, encoded in that
-        /// device's object-log address space. Zero when no snapshot object-log bound applies.</param>
         /// <param name="untilAddress">Exclusive end of the flush; a page that contains it is flushed only up to it.</param>
         public void AsyncFlushPagesForRecovery<TContext>(long scanFromAddress, int flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context,
-            int checkpointVersion, IDevice snapshotObjectLogDevice = null, long formerFlushedUntilAddress = long.MaxValue,
-            ulong snapshotObjectLogReadEndWord = 0, long untilAddress = long.MaxValue)
+            int checkpointVersion, IDevice snapshotObjectLogDevice = null, long formerFlushedUntilAddress = long.MaxValue, long untilAddress = long.MaxValue)
         {
             Debug.Assert(scanFromAddress < GetLogicalAddressOfStartOfPage(flushPageStart + 1), $"scanFromAddress ({scanFromAddress}) must be on flushPageStart ({flushPageStart})");
 
-            // When copying snapshot object bytes into the main object-log, we need write buffers on the main object-log device (as for a normal flush).
-            // An object-log up-conversion likewise writes object bytes, re-serializing each record in current format onto the upgrade device.
-            var copyObjects = snapshotObjectLogDevice is not null || IsUpgradingObjectLog;
+            // Copying snapshot object bytes into the main object log, or up-converting a downlevel object log by re-serializing each record in the
+            // current format, writes object bytes; the hybrid-log region writes none.
+            var snapshotObjectLog = snapshotObjectLogDevice is null ? null : GetRecoverySnapshotObjectLog(snapshotObjectLogDevice);
+            var destinationObjectLog = snapshotObjectLogDevice is not null || IsUpgradingObjectLog ? RecoveryFlushObjectLog : null;
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
@@ -2726,9 +2752,6 @@ namespace Tsavorite.core
                 var flushFromAddress = Math.Max(scanFromAddress, pageStartAddress);
                 var flushUntilAddress = Math.Min(untilAddress, pageEndAddress);
 
-                // When copying snapshot object bytes into the main object-log, rent this page's object-log write buffers; the hybrid-log region
-                // (which reuses the stored lengths/positions without writing object bytes) needs none.
-                var flushBuffers = copyObjects ? CreateCircularFlushBuffers(objectLogDevice: null, logger) : null;
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
                     page = flushPage,
@@ -2743,47 +2766,33 @@ namespace Tsavorite.core
                     fromAddress = flushFromAddress,
                     untilAddress = flushUntilAddress,
                     flushRequestState = FlushRequestState.Recovery,
-                    recoverySnapshotObjectLogDevice = snapshotObjectLogDevice,
-                    recoverySnapshotObjectLogReadEnd = snapshotObjectLogReadEndWord == 0
-                        ? default
-                        : new ObjectLogPositionInfo(snapshotObjectLogReadEndWord, GetObjectLogTail().SegmentSizeBits),
+                    objectLog = destinationObjectLog,
+                    recoverySnapshotObjectLog = snapshotObjectLog,
                     recoveryFormerFlushedUntilAddress = formerFlushedUntilAddress,
                     checkpointVersion = checkpointVersion,
-                    flushBuffers = flushBuffers
                 };
 
-                try
-                {
-                    // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object-log to the main
-                    // object-log using flushBuffers; otherwise (hybrid-log region) we reuse the stored lengths/positions without writing object bytes.
-                    WriteAsync(flushPage, callback, asyncResult);
-                }
-                finally
-                {
-                    // WriteAsync issues all of this page's object-log and main-log device writes synchronously before returning, and the recovery completion
-                    // callback (AsyncFlushPageCallbackForRecovery) never reuses flushBuffers, so dispose it here, even if WriteAsync throws. Dispose defers the
-                    // actual return-to-pool (ClearBuffers) until any still-in-flight writes complete.
-                    flushBuffers?.Dispose();
-                }
+                // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object log to the main
+                // object log; otherwise (hybrid-log region) we reuse the stored positions without writing object bytes.
+                WriteAsync(flushPage, callback, asyncResult);
             }
         }
 
         /// <summary>
         /// Flush pages from startPage (inclusive) to endPage (exclusive) to specified log device and obj device for a snapshot checkpoint.
         /// </summary>
-        /// <param name="flushBuffers"></param>
+        /// <param name="objectLog">The checkpoint's object log, which receives the pages' out-of-line components; null if there are none</param>
         /// <param name="startPage"></param>
         /// <param name="endPage"></param>
         /// <param name="startLogicalAddress"></param>
         /// <param name="endLogicalAddress"></param>
         /// <param name="fuzzyStartLogicalAddress"></param>
         /// <param name="logDevice"></param>
-        /// <param name="objectLogDevice"></param>
         /// <param name="completedTask">Task that completes when all pages are flushed, or faults if an exception occurs</param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, int startPage, int endPage, long startLogicalAddress, long endLogicalAddress,
-            long fuzzyStartLogicalAddress, IDevice logDevice, IDevice objectLogDevice, SnapshotFlushCoordination coordination,
+        internal void AsyncFlushPagesForSnapshot(ObjectLog objectLog, int startPage, int endPage, long startLogicalAddress, long endLogicalAddress,
+            long fuzzyStartLogicalAddress, IDevice logDevice, SnapshotFlushCoordination coordination,
             out Task completedTask, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
@@ -2857,7 +2866,7 @@ namespace Tsavorite.core
                             untilAddress = flushEndAddress,
                             count = 1,
                             flushRequestState = FlushRequestState.Snapshot,
-                            flushBuffers = flushBuffers,
+                            objectLog = objectLog,
                             snapshotFlushCoordination = coordination
                         };
 
@@ -2872,7 +2881,7 @@ namespace Tsavorite.core
                         try
                         {
                             coordination?.ReservePage(flushPage);
-                            WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, objectLogDevice, fuzzyStartLogicalAddress);
+                            WriteAsyncToDeviceForSnapshot(startPage, flushPage, (int)flushSize, AsyncFlushPageForSnapshotCallback, asyncResult, logDevice, fuzzyStartLogicalAddress);
                         }
                         catch (Exception writeEx)
                         {
@@ -2989,7 +2998,7 @@ namespace Tsavorite.core
         /// Read pages from specified device
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers,
+        internal void AsyncReadPageFromDeviceToFrame<TContext>(
                                         long readPage,
                                         long untilAddress,
                                         DeviceIOCompletionCallback callback,
@@ -3015,7 +3024,6 @@ namespace Tsavorite.core
                 context = context,
                 handle = completed,
                 cts = cts,
-                readBuffers = readBuffers,
                 // Default to a full page; overridden below for a partial last page. This bounds the object-record walk in
                 // ObjectAllocatorImpl.DeserializeObjectsOnPage to the valid data extent, not the sector-aligned device read length.
                 maxAddressOffsetOnPage = PageSize
@@ -3269,7 +3277,7 @@ namespace Tsavorite.core
                 var _flush = FlushedUntilAddress;
                 if (GetOffsetOnPage(_flush) > 0 && PendingFlush[GetPage(_flush) % BufferSize].RemoveNextAdjacent(_flush, out PageAsyncFlushResult<Empty> request))
                 {
-                    request.flushBuffers = result.flushBuffers;  // Reuse the flush buffers from the completed flush to continue the flush chain
+                    request.objectLog = result.objectLog;  // Reuse the object log of the completed flush to continue the flush chain
                     WriteAsync(GetPage(request.fromAddress), AsyncFlushPageCallback, request);  // Call the overridden WriteAsync for the derived allocator class
                 }
 

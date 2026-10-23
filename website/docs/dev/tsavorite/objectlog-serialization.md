@@ -1,11 +1,16 @@
 # Object-log serialization
 
-This document describes the current file format and code paths used by Tsavorite's `ObjectAllocator` to persist and
-reload a record's out-of-line pieces:
+This document describes the file format and code paths used by Tsavorite's `ObjectAllocator` to persist and reload a
+record's out-of-line pieces:
 
 - an overflow key;
 - an overflow value; or
 - a serialized object value.
+
+> **Status:** the object log is written and read through `ObjectLog` (section 12), and section 12.10 is the authority on
+> its record format. Sections 3-9 still describe the previous file format (`ChunkHeader` framing, write buffers, and
+> direct IO) and are pending a rewrite; where they disagree with section 12, section 12 and the code are authoritative.
+> Version 7 checkpoints, which use that previous format, are read by `LegacyObjectLogReader` (section 7.5).
 
 The hybrid log stores the record header, inline fields, objectId slots, optionals, and the object-log position. The
 object log stores the bytes referenced by those slots. The two logs are written and read together, but their metadata
@@ -18,7 +23,8 @@ has deliberately separate responsibilities:
 - The high 9 bits of each out-of-line field's objectId slot contain an initial object-log read hint.
 - `KeyIsExactSize` / `ValueIsExactSize` bits in the object-log position word select whether that 9-bit value is an
   exact byte length or a page-count hint.
-- `ChunkHeader` framing carries authoritative lengths for every non-exact overflow component and framed object chunk.
+- A 4-byte length prefix carries the exact length of every extent that is not exact-size, and a directory carries the
+  exact length of every chunk it lists (section 12.10).
 
 Inline values never enter the object log. Migration and replication use an independent network record format; see
 [Migration / Replication record layout](../migration-replication-record-layout.md).
@@ -30,22 +36,17 @@ Inline values never enter the object log. Migration and replication use an indep
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/LogRecord.cs` / `LogRecord_cv7.cs` - metadata stamping/decoding,
 >   objectId-map assignment, and legacy decoding.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectAllocatorImpl.cs` - page flush, disk read, scan, and recovery orchestration.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogWriter.cs` - overflow/object serialization.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogReader.cs` - overflow/object framing and deserialization.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/CircularDiskWriteBuffer.cs` / `DiskWriteBuffer.cs` -
->   buffered object-log writes.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/CircularDiskReadBuffer.cs` / `DiskReadBuffer.cs` -
->   read-ahead and direct reads.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDmaAlignment.cs` - direct-IO alignment.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogPositionInfo.cs` - position arithmetic
->   and format flags.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate that is
->   replacing the hand-managed object-log file; see section 12.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate; see section 12.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogWriter.cs` / `ObjectLogReader.cs` - writing and
+>   reading a record's components; see section 12.10.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogExtent.cs` - extent framing and read hints.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDirectory.cs` - directory entry, record
 >   header, and layout arithmetic; see section 12.9.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ChunkHeader.cs` /
->   `ChunkedRecordConstants.cs` - authoritative framing.
-> - `libs/storage/Tsavorite/cs/src/core/Allocator/OverflowByteArray.cs` - owned overflow storage and direct-IO slack.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogPositionInfo.cs` - position word layout and
+>   format flags.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/LegacyObjectLogReader.cs` / `LegacyObjectLogPosition.cs` /
+>   `CircularDiskReadBuffer.cs` / `DiskReadBuffer.cs` - reading a version 7 object log.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/OverflowByteArray.cs` - owned overflow storage.
 > - `libs/storage/Tsavorite/cs/src/core/Index/CheckpointManagement/RecoveryInfo.cs` - checkpoint format versions.
 
 ---
@@ -1120,10 +1121,9 @@ The following formats are separate and must not borrow each other's length seman
 
 ## 12. ObjectLog: the log-structured substrate
 
-> **Status: in progress.** `ObjectLog` and the writer and reader that lay records out on it (section 12.10) exist and are
-> tested, but nothing above them uses them yet. Sections 1-11 describe the format as it is written and read today. This
-> section describes the substrate that replaces the hand-managed object-log file underneath them, and will grow as each
-> layer is ported onto it.
+> **Status:** `ObjectLog` is the object log: the main object log, each Snapshot checkpoint's own object log, and recovery's
+> up-conversion target are all `ObjectLog`s, written and read by the writer and reader in section 12.10. Sections 3-9
+> still describe the previous format; this section describes the substrate and the format that replace it.
 
 ### 12.1 What it is and why
 
@@ -1213,9 +1213,10 @@ a page. That relation is the writer's constraint rather than the log's, so `Obje
 `LogSettings.kMinPageSizeBits`; tests need both the buffer size and the page size settable far below the defaults, or
 every multi-chunk case would need a 16 MB object.
 
-The default page count is eight. The writer runs up to four concurrent fill buffers, so the mutable region has to cover
-at least that many pages; eight pages at the default mutable fraction leaves seven. Counting this page ring in
-`LogSizeTracker` is separate work.
+The default page count is eight: one writer fills the tail page while earlier pages flush, and eight pages let several
+page flushes overlap the writer before an allocation must wait for one. At the default page size that is 64 MB for the
+main object log, and as much again for a Snapshot checkpoint's object log while the checkpoint runs. Counting this page
+ring in `LogSizeTracker` is separate work.
 
 ### 12.7 The address ceiling
 
@@ -1253,9 +1254,10 @@ Each object log is written in hybrid-log page order: the main object log by the 
 recovery, before the store opens), and the checkpoint (snapshot) object log by the Snapshot worker.
 
 Addressing must not rely on that order, for the reason given in section 12.5, so a writer that interleaves with these
-needs no format change. Truncation does rely on it: `GetLowestObjectLogSegmentInUse` reads only the boundary page's
-`PageHeader.objectLogLowestPositionWord`, which bounds the object-log references of that page and every later page only
-while the main object log is written in page order. A writer that breaks that order must keep that floor a lower bound.
+needs no format change. Truncation does rely on it: main-log truncation reads only the boundary page's
+`PageHeader.objectLogLowestPositionWord` (its floor) and truncates the main object log below it, and that floor bounds
+the object-log references of that page and every later page only while the main object log is written in page order. A
+writer that breaks that order must keep that floor a lower bound.
 
 ### 12.9 The directory
 
@@ -1339,7 +1341,7 @@ The spare bits in both words read back as zero, so a later format can claim them
 
 ### 12.10 Extent framing, hints, and writing a record
 
-`ObjectLogChunkWriter` writes a record's out-of-line components to an `ObjectLog`, and `ObjectLogChunkReader` reads them
+`ObjectLogWriter` writes a record's out-of-line components to an `ObjectLog`, and `ObjectLogReader` reads them
 back.
 
 **Framing.** The extent a position addresses — a single component, or a top directory record — is exact or
@@ -1375,3 +1377,39 @@ than a chunk is emitted straight from the source. Each emitted chunk is one allo
 record, and every entry is validated before any data is read. Component lengths are then exact: an overflow array is
 allocated once at its final size, and an object's deserializer is bounded by its own byte count. Each entry outside the
 top record is one read.
+
+### 12.11 Page flushes, checkpoints, and recovery
+
+**A page flush.** Each main-log page flush writes its records' components to the main `ObjectLog`, stamping each record
+with the writer's position word and hints. A ReadOnly flush that writes a page's first record first stamps the page
+header's floor: the object log's tail, which section 12.8 makes a lower bound for this page and every later one. It then
+requests the object log's flush without waiting (`FlushTail(wait: false)`) and issues the page's own device writes. The
+page completes once its device writes and that object-log flush have all completed, through one join that invokes the
+page callback exactly once with the first error; the object log reports durability through `ObjectLog.OnFlushed`, so no
+thread blocks on it. The main log's `FlushedUntilAddress` therefore never covers a record whose object bytes are not
+durable.
+
+A Snapshot flush stamps no floor. It writes the same live page before the ReadOnly flush does, and its tail is an address
+in the checkpoint's object log, which bounds nothing in the main one; the ReadOnly flush keeps an existing floor, so a
+Snapshot stamp would reach the main log. A page buffer cleared for reuse gets a fresh, unstamped header for the same
+reason: a zeroed floor reads as a floor of 0.
+
+**A checkpoint.** PREPARE records the main object log's begin address. A Snapshot checkpoint creates its own `ObjectLog`
+over the checkpoint's object-log device, and its Checkpoint Flush writes there. At PERSISTENCE_CALLBACK, the main log's
+recovery end is sampled first, and then each object log's durable end, its `FlushedUntilAddress`. A ReadOnly flush that
+completed in between would otherwise put a page in the recovery range whose object bytes lie past the recorded end, where
+appends after recovery would overwrite them. The main object log's tail is not recorded: a ReadOnly flush of a later page
+may have appended bytes it has not yet flushed, which a crash would lose. The Snapshot's object log is complete at that
+point, so its durable end is its tail, and it is disposed before its device.
+
+**Recovery** creates a fresh main `ObjectLog` and restores it to the checkpoint's begin address and recorded end. When no
+recovered record references the main object log - a Snapshot whose main-log range is empty - it restores with the begin
+address at that end, so nothing is read from a device that may hold none of that log. Snapshot-region pages that
+recovery flushes to the main log have their records' components copied from the checkpoint's object log into the main
+one, and their floors restamped there. A version 7 checkpoint's objects are instead deserialized from the old format and
+re-serialized into the current one.
+
+**Replication** transfers each object log as a byte range of its file: the main object log from the start of the segment
+holding its begin address to its recorded end, and the checkpoint's object log from its start to its recorded end. A log
+that holds nothing gets an empty range, since its file may not exist. That includes a main object log first created
+during the checkpoint, which records a begin address of zero.

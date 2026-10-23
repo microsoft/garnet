@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Linq;
 using Garnet.common;
@@ -74,11 +75,19 @@ namespace Garnet.test
             ClassicAssert.IsNotEmpty(objectLogBefore, "the fixture should have written object-log segments");
             var bytesBefore = objectLogBefore.Select(File.ReadAllBytes).ToArray();
 
+            long recordedObjectLogEnd, objectLogSegmentSize;
             using (var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, tryRecover: true, upgrade: true))
             {
                 ClassicAssert.IsTrue(server.IsUpgradeRun);
                 server.RunUpgrade();
+
+                // The run takes no checkpoint, so the latest one is the one it recovered.
+                var store = server.Provider.StoreWrapper.store;
+                store.GetLatestCheckpointTokens(out var hlogToken, out _, out _);
+                recordedObjectLogEnd = store.GetLogFileSize(hlogToken).hybridLogObjectFileEndAddress;
+                objectLogSegmentSize = store.hlogBase.GetObjectLogSegmentSize();
             }
+            ClassicAssert.Greater(recordedObjectLogEnd, 0, "the checkpoint should have recorded an object-log end");
 
             ClassicAssert.IsFalse(ObjectLogUpgradeSwap.HasPendingSwap(new DirectoryInfo(TestUtils.MethodTestDir).FullName), "no swap should have been journaled");
             ClassicAssert.IsEmpty(Directory.GetFiles(storeDir, GarnetServerOptions.ObjectLogFileName + "_pre_upgrade_*"), "nothing should have been retired");
@@ -87,11 +96,14 @@ namespace Garnet.test
             CollectionAssert.AreEqual(objectLogBefore, objectLogAfter, "the live object-log segments should be untouched");
             for (var i = 0; i < objectLogAfter.Length; i++)
             {
-                // Closing the store can append, but every byte that was already durable must still be there: a swap would have
-                // replaced the file wholesale with the (empty) upgrade device.
+                // Recovery resumes appending at the object-log end the checkpoint recorded, which need not be sector-aligned, so closing the
+                // store can rewrite the sector holding it: the bytes past that end are sector padding, not durable data. Every byte below it
+                // must still be there; a swap would have replaced the file wholesale with the (empty) upgrade device.
+                var segmentStart = long.Parse(Path.GetExtension(objectLogAfter[i]).TrimStart('.')) * objectLogSegmentSize;
+                var durableLength = (int)Math.Clamp(recordedObjectLogEnd - segmentStart, 0, bytesBefore[i].Length);
                 var after = File.ReadAllBytes(objectLogAfter[i]);
-                ClassicAssert.GreaterOrEqual(after.Length, bytesBefore[i].Length, $"segment {objectLogAfter[i]} shrank");
-                CollectionAssert.AreEqual(bytesBefore[i], after.Take(bytesBefore[i].Length).ToArray(), $"segment {objectLogAfter[i]} was rewritten");
+                ClassicAssert.GreaterOrEqual(after.Length, durableLength, $"segment {objectLogAfter[i]} shrank");
+                CollectionAssert.AreEqual(bytesBefore[i].Take(durableLength).ToArray(), after.Take(durableLength).ToArray(), $"segment {objectLogAfter[i]} was rewritten");
             }
 
             VerifyContents();

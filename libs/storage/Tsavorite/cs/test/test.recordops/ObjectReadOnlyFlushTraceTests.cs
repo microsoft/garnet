@@ -22,10 +22,10 @@ namespace Tsavorite.test.Objects
     {
         const int InlineValueLimit = 16 * 1024;
 
-        // The 511/512 pair confirms that inline data bypasses object-log framing at the same sizes that split its exact/headered encodings.
+        // The 511/512 pair confirms that inline data bypasses object-log framing at the same sizes that split its exact/length-prefixed encodings.
         static readonly int[] InlineValueSizes = [1, 511, 512, 4096, InlineValueLimit];
 
-        // These cover headerless exact data, the first headered size, buffered/direct-write boundaries, and a multi-buffer-sized payload.
+        // These cover headerless exact data, the first length-prefixed size, mid-size payloads, and a payload larger than one 4 MB chunk.
         static readonly int[] OverflowValueSizes = [1, 511, 512, 4096, 128 * 1024, (128 * 1024) + 1, (4 * 1024 * 1024) + 1];
         static readonly int[] OverflowKeySizes = [4, 511, 512, 4096, 128 * 1024, (128 * 1024) + 1, (4 * 1024 * 1024) + 1];
 

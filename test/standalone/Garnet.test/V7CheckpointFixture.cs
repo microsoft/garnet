@@ -172,9 +172,10 @@ namespace Garnet.test
             var positionWord = *objectLogPositionPtr;
             _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, HybridLogRecoveryInfo.CheckpointVersion);
 
-            // A component the current format frames with a leading ChunkHeader is NOT byte-identical to v7 dense, so reusing its bytes
-            // would silently misframe the fixture rather than exercise the up-conversion. The exact-size flag is precisely the
-            // "headerless, and the extent is the true length" condition this reuse depends on.
+            // A component the current format length-prefixes, or a record with a directory, is NOT byte-identical to v7 dense, so reusing
+            // its bytes would silently misframe the fixture rather than exercise the up-conversion. A single exact-size extent is precisely
+            // the "headerless, and the extent is the true length" condition this reuse depends on.
+            ClassicAssert.IsFalse(ObjectLogPositionInfo.WordHasDirectory(positionWord), "fixture record has a directory, so its current bytes are not v7 dense");
             ClassicAssert.AreNotEqual(0UL, positionWord & ObjectLogPositionInfo.kValueIsExactSizeMask,
                 "fixture value is not stored exact-size/headerless, so its current bytes are not v7 dense");
             ClassicAssert.LessOrEqual((long)valueLength, (long)RecordDataHeader.kOutOfLineExactSizeCutoff, "fixture value is too large to reuse as v7 dense bytes");

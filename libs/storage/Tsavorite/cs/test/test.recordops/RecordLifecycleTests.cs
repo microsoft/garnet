@@ -264,19 +264,16 @@ namespace Tsavorite.test
         }
 
         /// <summary>
-        /// A page whose out-of-line components are ALL zero length must materialize them rather than open a zero-length
-        /// object-log read.
+        /// A page whose out-of-line components are ALL zero length must still return every record when it is read back.
         /// </summary>
         /// <remarks>
-        /// Reachable, not theoretical. <c>ComputeObjectIdValueSizeHint</c> stamps a component of 511 bytes or fewer as exact-size
-        /// with its byte count as the hint, so a zero-length one decodes through <c>DecodeObjectIdValueInitialReadExtent</c> to a
-        /// zero extent while still being stamped -- and so still counted into the page walk's <c>startPosition</c>. The other
-        /// branch cannot reach zero: a component over 511 bytes is stamped with a 4 KB page count, which is at least 1. The walk
-        /// then called <c>OnBeginReadRecords</c> with a zero total and tripped "TotalLength cannot be 0" on an IO completion
-        /// thread, taking the process with it.
-        /// <para>The KEY must be inline. With an overflow key the key's own extent dominates the walk and the zero total never
-        /// arises -- which is exactly why <c>ObjectLogScanTests</c>, whose fixture keys are overflow, cannot pin this.
-        /// <see cref="TestObjectKey"/> is inline, so the zero-length value is the page's only out-of-line component.</para>
+        /// A zero-byte object is stored as an exact extent of length zero: the record carries a stamped position, an exact-size flag,
+        /// and a hint of zero, so its extent is empty. A larger component cannot produce an empty extent, because one over 511 bytes is
+        /// length-prefixed and hinted with a 4 KB page count of at least 1. Reading the page back must therefore handle records whose
+        /// extents, and so the page's whole object-log range, are empty.
+        /// <para>The KEY must be inline. An overflow key makes the record's extent non-empty -- which is exactly why
+        /// <c>ObjectLogScanTests</c>, whose fixture keys are overflow, cannot pin this. <see cref="TestObjectKey"/> is inline, so the
+        /// zero-length value is the page's only out-of-line component.</para>
         /// </remarks>
         [Test, Category("TsavoriteKV")]
         public void AllZeroLengthComponentPageIsMaterializedNotRead()

@@ -43,6 +43,7 @@ namespace Tsavorite.core
                     // Allocators without an object log return -1; record 0 there, matching "not applicable" in the metadata.
                     var objectLogSegmentSize = store.hlogBase.GetObjectLogSegmentSize();
                     store._hybridLogCheckpoint.info.objectLogSegmentSize = objectLogSegmentSize > 0 ? objectLogSegmentSize : 0;
+                    store._hybridLogCheckpoint.info.objectLogPageSize = store.hlogBase.ObjectLogPageSize;
                     break;
 
                 case Phase.IN_PROGRESS:
@@ -82,31 +83,34 @@ namespace Tsavorite.core
 
         protected void ObjectLog_OnPrepare()
         {
-            // This will be zero unless Truncate() has removed enough main-log segments to allow freeing one or more object-log segments.
-            store._hybridLogCheckpoint.info.beginAddressObjectLogSegment = store.hlogBase.LowestObjectLogSegmentInUse;
+            // The object log's lowest live address, which truncation has advanced along with the main log's BeginAddress.
+            store._hybridLogCheckpoint.info.objectLogBeginAddress = store.hlogBase.ObjectLogBeginAddress;
         }
 
-        protected CircularDiskWriteBuffer ObjectLog_OnWaitFlush()
+        /// <summary>For a Snapshot checkpoint, create the object log its Checkpoint Flush writes objects to; null for FoldOver or a store without
+        /// out-of-line data.</summary>
+        protected ObjectLog ObjectLog_OnWaitFlush()
         {
             if (store._hybridLogCheckpoint.info.useSnapshotFile != 0)
-            {
-                // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
-                store._hybridLogCheckpoint.info.snapshotStartObjectLogTail = store.hlogBase.GetObjectLogTail();
-
-                // Flush buffers are only used for Snapshot checkpoints.
-                store._hybridLogCheckpoint.objectLogFlushBuffers = store.hlogBase.CreateCircularFlushBuffers(store._hybridLogCheckpoint.snapshotFileObjectLogDevice, store.hlogBase.logger);
-                store._hybridLogCheckpoint.objectLogFlushBuffers?.InitializeOwnObjectLogFilePosition(store._hybridLogCheckpoint.snapshotFileObjectLogDevice.SegmentSize);
-            }
-            return store._hybridLogCheckpoint.objectLogFlushBuffers;
+                store._hybridLogCheckpoint.snapshotObjectLog = store.hlogBase.CreateSnapshotObjectLog(store._hybridLogCheckpoint.snapshotFileObjectLogDevice);
+            return store._hybridLogCheckpoint.snapshotObjectLog;
         }
 
+        /// <summary>Record the object logs' durable ends, and close a Snapshot checkpoint's object log.</summary>
+        /// <remarks>Call after sampling the main log's recovery end. Each page in that range completed only once its object bytes were durable, so
+        /// the main object log's FlushedUntilAddress, sampled afterwards, covers them. Its tail is not used: a ReadOnly flush of a later page may
+        /// have appended bytes it has not yet flushed, which a crash would lose and which recovery would then try to read back. A Snapshot's object
+        /// log is recorded the same way; its Checkpoint Flush is complete here, so its durable end is its tail.</remarks>
         protected void ObjectLog_OnPersistenceCallback()
         {
-            // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
-            store._hybridLogCheckpoint.info.hlogEndObjectLogTail = store.hlogBase.GetObjectLogTail();
+            store._hybridLogCheckpoint.info.hlogEndObjectLogTail = store.hlogBase.ObjectLogFlushedUntilAddress;
 
-            if (store._hybridLogCheckpoint.info.useSnapshotFile != 0)
-                store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.objectLogFlushBuffers?.filePosition ?? new();
+            if (store._hybridLogCheckpoint.snapshotObjectLog is not null)
+            {
+                store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.snapshotObjectLog.FlushedUntilAddress;
+                store._hybridLogCheckpoint.snapshotObjectLog.Dispose();
+                store._hybridLogCheckpoint.snapshotObjectLog = null;
+            }
         }
 
         /// <inheritdoc />

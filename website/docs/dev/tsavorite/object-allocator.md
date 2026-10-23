@@ -22,7 +22,7 @@ The allocator keeps hybrid-log records compact:
 hybrid-log pages remain practical because large payloads occupy only objectId slots in those pages, which also gives
 object-memory tracking and recovery eviction finer granularity.
 
-For the exact persisted field encoding, chunk framing, direct IO, and recovery rules, see
+For the exact persisted field encoding, extent framing, and recovery rules, see
 [Object-log serialization](objectlog-serialization.md).
 
 ## Hybrid log and object log
@@ -30,11 +30,10 @@ For the exact persisted field encoding, chunk framing, direct IO, and recovery r
 The hybrid log stores record headers, inline data, objectId slots, optionals, and object-log positions. The separate
 object log stores overflow bytes and serialized heap-object bytes.
 
-Object-log IO uses circular pools of sector-aligned 4 MiB buffers. The read and write buffer counts are configurable
-through `LogSettings.NumberOfDeserializationBuffers` and `LogSettings.NumberOfFlushBuffers`; both default to four.
-Writers can flush one buffer while filling another, and readers issue bounded read-ahead while consuming earlier
-buffers. Large overflow payloads use aligned direct IO for their interior instead of copying all bytes through the
-ring.
+The object log is an `ObjectLog`: a log-structured store composed over `TsavoriteLogAllocatorImpl`, with its own page
+ring of eight 8 MiB pages by default. A page flush writes its records' components into that ring, and the ring's own
+flush makes them durable; reads take recent bytes from the ring and older ones from the device.
+`LogSettings.NumberOfDeserializationBuffers` sizes the read-ahead ring used only to read a version 7 object log.
 
 ## Adaptive record fields
 
@@ -43,33 +42,33 @@ An objectId slot has two simultaneous roles in a flushed current-format record:
 - its low 23 bits remain the `ObjectIdMap` index; and
 - its high 9 bits carry an initial object-log read hint.
 
-The high four bits of the object-log position word are format flags, while the low 60 bits hold the segment and
-offset. Exact out-of-line components of at most 511 bytes are headerless and carry their byte length in the objectId
-hint. Larger components use the hint only to size initial IO; `ChunkHeader` framing in the object log carries
-authoritative lengths.
+The high four bits of the object-log position word are format flags, while the low 60 bits hold a flat object-log
+address. The position addresses one extent: the record's only out-of-line component, or a directory that lists its
+chunks. An extent of at most 511 bytes is headerless and carries its byte length in the hint; a larger one uses the hint
+only to size its first read, and a 4-byte length prefix carries its exact length.
 
 Every in-memory objectId lookup masks the hint bits through `ObjectIdMap.GetIndex()`. Stamping disk-read metadata
 therefore does not change the object resolved by a live record and does not change the record's physical size.
 
 ## Flush flow
 
-`ObjectAllocatorImpl.AsyncFlushPagesForReadOnly()` creates one `CircularDiskWriteBuffer` for the issued range. For
-each page, `ObjectLogWriter` serializes out-of-line components in record order and stamps their resulting positions
-and hints into the resident page. The object-log writes are issued before the hybrid-log page write, and a shared
-completion batch prevents `FlushedUntilAddress` from advancing until both are durable.
+For each page, `ObjectLogWriter` writes out-of-line components to the main `ObjectLog` in record order and stamps their
+resulting positions and hints into the resident page. The page then requests the object log's flush and issues its own
+device writes, and it completes only once both are durable, so `FlushedUntilAddress` never covers a record whose objects
+are not on the device.
 
 Current-format ReadOnly, Snapshot, and recovery flushes write the resident page directly rather than allocating and
 copying a full page image. A write covers whole sectors, `[alignedStartOffset, RoundUp(endOffset, sectorSize))`; bytes
 above the logical endpoint reach disk verbatim, and recovery never parses them because it bounds its record walk by the
 unrounded endpoint. A ReadOnly or Snapshot page whose `objectIdMap` is empty has no out-of-line data, so it writes that
-span directly without renting an object-log ring or walking its records. ReadOnly releases epoch protection while object
-serialization and device IO run.
+span directly without walking its records. ReadOnly releases epoch protection while object serialization and device IO
+run.
 
-Object-log Snapshot writes use a fixed-size completion window, normally the object-log flush-buffer count. Several
-pages may be in flight, but `SnapshotFlushCoordination` advances the ReadOnly page limit only through the contiguous
-completed prefix. A ReadOnly flush therefore waits only when it catches an unfinished Snapshot page; completed pages
-remain available for main-object-log restamping and eviction. Real-device allocators without an object log retain
-uncoordinated parallel Snapshot issuance.
+Object-allocator Snapshot writes use a fixed-size completion window of up to 64 pages. Several pages may be in flight,
+but `SnapshotFlushCoordination` advances the ReadOnly page limit only through the contiguous completed prefix. A
+ReadOnly flush therefore waits only when it catches an unfinished Snapshot page; completed pages remain available for
+main-object-log restamping and eviction. Real-device allocators without an object log retain uncoordinated parallel
+Snapshot issuance.
 
 The no-copy path requires a record's flush-critical bytes to remain readable until its asynchronous page write
 completes. `OnDispose` implementations must copy off cleanup state and defer clearing those bytes until that write
@@ -77,14 +76,14 @@ finishes.
 
 ## Read and recovery flow
 
-Point reads, scans, and recovery use `CircularDiskReadBuffer` plus `ObjectLogReader`. A page scan establishes bounded
-same-address-space read-ahead; each record's hints and framing then tighten or extend demand. Large overflow reads can
-read directly into their final `OverflowByteArray`, while heap-object deserializers receive a dense logical stream
-with chunk headers and alignment padding removed.
+Point reads, scans, and recovery use `ObjectLogReader`. One read fetches the extent a record's position addresses,
+sized by its hint; a directory then gives the exact address and length of every chunk, so an overflow array is
+allocated once at its final size and a heap-object deserializer reads a dense stream bounded by its own byte count. A
+version 7 object log is read instead through `LegacyObjectLogReader` and its `CircularDiskReadBuffer` read-ahead ring.
 
 Snapshot recovery first restores the durable main-log prefix and overlays only the Snapshot suffix. If an evicted
-Snapshot page must become durable in the main log, its object bytes are copied verbatim to the main object log and
-the live record positions are repointed before the page is written.
+Snapshot page must become durable in the main log, its records' components are copied from the checkpoint's object log
+into the main object log, and the live records are restamped with their new positions before the page is written.
 
 ## Transient objectId remapping
 

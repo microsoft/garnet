@@ -29,7 +29,10 @@ namespace Tsavorite.core
         [FieldOffset(sizeof(int))]
         internal int unusedInt1;
 
-        /// <summary>The lowest object-log position on this main-log page, if ObjectAllocator. Contains both segmentId and offset on segment</summary>
+        /// <summary>The object-log floor of this main-log page, if ObjectAllocator: the object log's tail before the page's first flush wrote any
+        /// of its records. Object-log bytes this page or any later page references are at or above it, because the main object log is written
+        /// in page order, so truncation never goes past it. Unstamped (see <see cref="ObjectLogPositionInfo.WordIsUnstamped"/>) until a flush
+        /// stamps it.</summary>
         [FieldOffset(sizeof(long))]
         internal ulong objectLogLowestPositionWord;
 
@@ -62,23 +65,22 @@ namespace Tsavorite.core
         internal static unsafe void Initialize(long physicalAddressOfStartOfPage) => (*(PageHeader*)physicalAddressOfStartOfPage).Initialize();
 
         /// <summary>
-        /// Set the lowest object-log position on this main-log page, if ObjectAllocator.
+        /// Set the object-log floor of this main-log page, if ObjectAllocator.
         /// </summary>
-        /// <param name="position">The position in the object log.</param>
-        /// <param name="force">Overwrite an already-stamped position. Used when up-converting a downlevel object log, where the page's
-        /// existing stamp refers to the downlevel device that the conversion is replacing.</param>
-        internal void SetLowestObjectLogPosition(in ObjectLogPositionInfo position, bool force = false)
+        /// <param name="address">The object-log address.</param>
+        /// <param name="force">Overwrite an already-stamped floor. Used when a flush writes the page's objects into a different object-log address
+        /// space than the floor refers to.</param>
+        internal void SetLowestObjectLogAddress(long address, bool force = false)
         {
             if (force || ObjectLogPositionInfo.WordIsUnstamped(objectLogLowestPositionWord))
-                objectLogLowestPositionWord = position.word;
+                objectLogLowestPositionWord = (ulong)address & ObjectLogPositionInfo.AddressMask;
         }
 
         /// <summary>
-        /// Get the lowest object-log position on this main-log page, if ObjectAllocator.
+        /// Get the object-log floor of this main-log page, if ObjectAllocator; -1 if it is unstamped.
         /// </summary>
-        /// <param name="segmentBits">The number of bits in the object log's segments.</param>
-        internal ObjectLogPositionInfo GetLowestObjectLogPosition(int segmentBits)
-            => ObjectLogPositionInfo.WordIsUnstamped(objectLogLowestPositionWord) ? new() : new(objectLogLowestPositionWord, segmentBits);
+        internal readonly long GetLowestObjectLogAddress()
+            => ObjectLogPositionInfo.WordIsUnstamped(objectLogLowestPositionWord) ? -1 : (long)(objectLogLowestPositionWord & ObjectLogPositionInfo.AddressMask);
 
         public override readonly string ToString()
             => $"HeaderVer {headerVersion}, RecordVer {recordVersion}, lowObjLogPos {objectLogLowestPositionWord}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";

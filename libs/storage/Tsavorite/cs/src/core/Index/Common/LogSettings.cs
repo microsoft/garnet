@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 #pragma warning disable IDE1006 // Naming Styles
@@ -17,10 +17,9 @@ namespace Tsavorite.core
 
         /// <summary>Minimum number of bits for a main-log segment (segments consist of one or more pages)</summary>
         public const int kMinMainLogSegmentSizeBits = kMinPageSizeBits;
-        /// <summary>Minimum number of bits for an object-log segment (segments consist of one or more pages). A segment must be at least
-        ///     <see cref="IStreamBuffer.BufferSize"/> and a multiple of it, which is guaranteed as both are powers of 2 as long as this
+        /// <summary>Minimum number of bits for an object-log segment (segments consist of one or more object-log pages). An object-log page is at most a
+        ///     segment, and must hold a full <see cref="IStreamBuffer.BufferSize"/> chunk, which is guaranteed as both are powers of 2 as long as this
         ///     minimum is observed.</summary>
-        /// <remarks>During flush we may create multiple buffers, depending on the degree of parallelism allowed by page concurrency and <see cref="NumberOfFlushBuffers"/>.</remarks>
         public const int kMinObjectLogSegmentSizeBits = 22; // 4MB
         /// <summary>Maximum number of bits for a main-log or object-log segment (segments consist of one or more pages). This is also the size of the read/write buffers
         ///     for object serialization to the object log.</summary>
@@ -33,14 +32,9 @@ namespace Tsavorite.core
         /// <summary>Maximum number of bits for the size of the in-memory portion of the log</summary>
         public const int kMaxMemorySizeBits = kMaxSegmentSizeBits;
 
-        /// <summary>Minimum <see cref="NumberOfFlushBuffers"/> per flush operation. Must be a power of 2</summary>
-        public const int kMinFlushBuffers = 2;
-        /// <summary>Maximum <see cref="NumberOfFlushBuffers"/> per flush operation. Must be a power of 2</summary>
-        public const int kMaxFlushBuffers = 64;
-
-        /// <summary>Minimum <see cref="NumberOfFlushBuffers"/> per flush operation. Must be a power of 2</summary>
+        /// <summary>Minimum <see cref="NumberOfDeserializationBuffers"/>. Must be a power of 2</summary>
         public const int kMinDeserializationBuffers = 2;
-        /// <summary>Maximum <see cref="NumberOfFlushBuffers"/> per flush operation. Must be a power of 2</summary>
+        /// <summary>Maximum <see cref="NumberOfDeserializationBuffers"/>. Must be a power of 2</summary>
         public const int kMaxDeserializationBuffers = 64;
 
         /// <summary>Maximum size of a string (key or value) is 512MB</summary>
@@ -146,17 +140,21 @@ namespace Tsavorite.core
         public int MaxInlineValueSize = DefaultMaxInlineValueSize;
 
         /// <summary>
-        /// Number of page buffers during a Flush operation on a page or portion of a page. There may be multiple sets of buffers at any given time,
-        /// depending on page parallelism. Must be a power of 2.
+        /// Number of read buffers for deserializing a downlevel (version 7) checkpoint's object log during recovery. Must be a power of 2.
         /// </summary>
-        /// <remarks>Validated for all allocators, but only used by <see cref="ObjectAllocator{TStoreFunctions}"/>.</remarks>
-        public int NumberOfFlushBuffers = 4;
+        /// <remarks>Only used by <see cref="ObjectAllocator{TStoreFunctions}"/>; a current object log is read through its own pages.</remarks>
+        public int NumberOfDeserializationBuffers = 4;
 
         /// <summary>
-        /// Number of page buffers during a Flush operation on a page or portion of a page. There may be multiple sets of buffers at any given time,
-        /// depending on page parallelism. Must be a power of 2.
+        /// Object-log page size, in bits; zero derives it from <see cref="ObjectLogSegmentSizeBits"/>. An object-log page bounds a single chunk.
         /// </summary>
-        /// <remarks>Validated for all allocators, but only used by <see cref="ObjectAllocator{TStoreFunctions}"/>.</remarks>
-        public int NumberOfDeserializationBuffers = 4;
+        /// <remarks>For tests, which shrink it to reach page cuts with small data.</remarks>
+        internal int ObjectLogPageSizeBits;
+
+        /// <summary>
+        /// Chunking parameters for object-log writes; null uses <see cref="ObjectLogWriterSettings.Default"/>.
+        /// </summary>
+        /// <remarks>For tests, which shrink them to reach multi-chunk records and directory spines with small data.</remarks>
+        internal ObjectLogWriterSettings ObjectLogWriterSettings;
     }
 }

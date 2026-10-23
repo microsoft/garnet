@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -64,12 +65,12 @@ namespace Tsavorite.core
         /// spare and page-tail cuts are occasional rather than near-universal.</summary>
         internal const int DefaultPageSizeBits = 23;    // 8 MB
 
-        /// <summary>Default number of pages. The writer runs up to four concurrent fill buffers, so the mutable region must cover at
-        /// least that many pages; at <see cref="DefaultPageSizeBits"/> and the default mutable fraction, eight pages leaves seven.</summary>
+        /// <summary>Default number of pages. One writer fills the tail page while earlier pages flush; eight pages at
+        /// <see cref="DefaultPageSizeBits"/> let several page flushes overlap the writer before an allocation must wait for one.</summary>
         internal const int DefaultPageCount = 8;
 
-        /// <summary>Minimum number of pages, for the same reason as <see cref="DefaultPageCount"/>. Tests shrink the page size rather
-        /// than the page count.</summary>
+        /// <summary>Minimum number of pages, leaving the writer room to fill a page while earlier pages flush. Tests shrink the page
+        /// size rather than the page count.</summary>
         internal const int MinPageCount = 4;
 
         /// <summary>Default device segment size in bits; file segmentation only.</summary>
@@ -104,12 +105,29 @@ namespace Tsavorite.core
         private readonly LightEpoch epoch;
         private readonly bool isEpochOwned;
         private readonly IDevice device;
+        private readonly ILogger logger;
         private bool disposed;
+
+        /// <summary>Callers waiting, through <see cref="OnFlushed"/>, for <see cref="FlushedUntilAddress"/> to reach an address.</summary>
+        private readonly List<FlushWaiter> flushWaiters = [];
+        private readonly object flushWaitersLock = new();
+
+        /// <summary>The earliest flush failure reported by the allocator; null until one occurs. A failed flush never advances
+        /// <see cref="FlushedUntilAddress"/>, so a later wait past it fails at once.</summary>
+        private CommitInfo? flushFailure;
+
+        private readonly struct FlushWaiter(long untilAddress, DeviceIOCompletionCallback callback, object context)
+        {
+            internal readonly long UntilAddress = untilAddress;
+            internal readonly DeviceIOCompletionCallback Callback = callback;
+            internal readonly object Context = context;
+        }
 
         /// <summary>Create an object log over <paramref name="settings"/>'s device.</summary>
         internal ObjectLog(ObjectLogSettings settings)
         {
             device = settings.LogDevice ?? throw new TsavoriteException($"{nameof(ObjectLogSettings)}.{nameof(ObjectLogSettings.LogDevice)} must be specified");
+            logger = settings.Logger;
 
             if (settings.PageSizeBits < LogSettings.kMinPageSizeBits || settings.PageSizeBits > LogSettings.kMaxPageSizeBits)
                 throw new TsavoriteException($"{nameof(ObjectLogSettings.PageSizeBits)} ({settings.PageSizeBits}) must be between {LogSettings.kMinPageSizeBits} and {LogSettings.kMaxPageSizeBits}");
@@ -146,7 +164,7 @@ namespace Tsavorite.core
 
             try
             {
-                allocator = new TsavoriteLogAllocatorImpl(new AllocatorSettings(logSettings, epoch, settings.Logger));
+                allocator = new TsavoriteLogAllocatorImpl(new AllocatorSettings(logSettings, epoch, settings.Logger) { flushCallback = OnAllocatorFlush });
                 allocator.Initialize();
             }
             catch
@@ -506,6 +524,91 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Invoke <paramref name="callback"/> once <see cref="FlushedUntilAddress"/> reaches <paramref name="untilAddress"/>, or with a nonzero
+        /// error code if a flush below it fails or the log is disposed first.
+        /// </summary>
+        /// <param name="untilAddress">The address to wait for. The caller is responsible for having requested a flush that covers it (see
+        /// <see cref="FlushTail"/>).</param>
+        /// <param name="callback">Invoked exactly once, with <c>numBytes</c> zero: on this thread if the outcome is already known, otherwise on the
+        /// thread that completes the flush. It must not throw.</param>
+        /// <param name="context">Passed to <paramref name="callback"/>.</param>
+        /// <remarks>This lets a main-log page complete once its object bytes are durable without a thread blocking on the object-log flush.</remarks>
+        internal void OnFlushed(long untilAddress, DeviceIOCompletionCallback callback, object context)
+        {
+            uint errorCode;
+            Exception exception;
+            lock (flushWaitersLock)
+            {
+                if (FlushedUntilAddress >= untilAddress)
+                    (errorCode, exception) = (0, null);
+                else if (disposed)
+                    (errorCode, exception) = (uint.MaxValue, new ObjectDisposedException(nameof(ObjectLog)));
+                else if (flushFailure is CommitInfo failure && failure.FromAddress < untilAddress)
+                    (errorCode, exception) = (failure.ErrorCode, CreateFlushFailureException(failure));
+                else
+                {
+                    flushWaiters.Add(new FlushWaiter(untilAddress, callback, context));
+                    return;
+                }
+            }
+            InvokeFlushWaiter(new FlushWaiter(untilAddress, callback, context), errorCode, exception);
+        }
+
+        /// <summary>The allocator's flush callback: reports each advance of <see cref="FlushedUntilAddress"/>, and the earliest flush failure once
+        /// every flush below it has completed.</summary>
+        private void OnAllocatorFlush(CommitInfo info)
+        {
+            List<FlushWaiter> completed = null, failed = null;
+            lock (flushWaitersLock)
+            {
+                if (info.ErrorCode != 0)
+                    flushFailure ??= info;
+
+                // Read FlushedUntilAddress afresh: concurrent completions may report their advances out of order.
+                var flushedUntilAddress = FlushedUntilAddress;
+                for (var ii = flushWaiters.Count - 1; ii >= 0; ii--)
+                {
+                    var waiter = flushWaiters[ii];
+                    if (waiter.UntilAddress <= flushedUntilAddress)
+                        (completed ??= []).Add(waiter);
+                    else if (flushFailure is CommitInfo failure && failure.FromAddress < waiter.UntilAddress)
+                        (failed ??= []).Add(waiter);
+                    else
+                        continue;
+                    flushWaiters.RemoveAt(ii);
+                }
+            }
+
+            if (completed is not null)
+            {
+                for (var ii = completed.Count - 1; ii >= 0; ii--)
+                    InvokeFlushWaiter(completed[ii], errorCode: 0, exception: null);
+            }
+            if (failed is not null)
+            {
+                var exception = CreateFlushFailureException(flushFailure.Value);
+                for (var ii = failed.Count - 1; ii >= 0; ii--)
+                    InvokeFlushWaiter(failed[ii], flushFailure.Value.ErrorCode, exception);
+            }
+        }
+
+        private void InvokeFlushWaiter(in FlushWaiter waiter, uint errorCode, Exception exception)
+        {
+            try
+            {
+                waiter.Callback(errorCode, numBytes: 0, waiter.Context, exception);
+            }
+            catch (Exception ex)
+            {
+                // The callback runs on a flush-completion path, which an exception would tear down.
+                logger?.LogError(ex, "Object log flush callback for address {untilAddress} threw", waiter.UntilAddress);
+            }
+        }
+
+        private static TsavoriteException CreateFlushFailureException(CommitInfo failure)
+            => new($"Object log flush [{failure.FromAddress}, {failure.UntilAddress}) failed with error code {failure.ErrorCode}", failure.Exception);
+
         /// <summary>Retire everything below <paramref name="newBeginAddress"/>, deleting device segments that fall entirely below it.</summary>
         /// <remarks>Acquires epoch protection if the caller does not hold it: the shift publishes addresses and then bumps the epoch to
         /// run the page-close and device-truncate work behind that barrier.</remarks>
@@ -552,9 +655,23 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (disposed)
-                return;
-            disposed = true;
+            List<FlushWaiter> abandoned;
+            lock (flushWaitersLock)
+            {
+                if (disposed)
+                    return;
+                disposed = true;
+                abandoned = [.. flushWaiters];
+                flushWaiters.Clear();
+            }
+
+            // A waiter's flush can no longer complete, so fail it rather than leave its caller waiting.
+            if (abandoned.Count > 0)
+            {
+                var exception = new ObjectDisposedException(nameof(ObjectLog));
+                foreach (var waiter in abandoned)
+                    InvokeFlushWaiter(waiter, uint.MaxValue, exception);
+            }
 
             allocator.Dispose();
             if (isEpochOwned)

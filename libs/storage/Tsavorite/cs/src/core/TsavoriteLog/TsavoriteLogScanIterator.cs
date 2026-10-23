@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -643,9 +643,9 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer _ /*readBuffers*/, long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
+        internal override void AsyncReadPageFromDeviceToFrame<TContext>(long readPage, long untilAddress, TContext context, ref CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => allocator.AsyncReadPageFromDeviceToFrame(readBuffers: null, readPage, untilAddress, AsyncReadPagesToFrameCallback, context, frame, ref completed, devicePageOffset, device, objectLogDevice, cts);
+            => allocator.AsyncReadPageFromDeviceToFrame(readPage, untilAddress, AsyncReadPagesToFrameCallback, context, frame, ref completed, devicePageOffset, device, objectLogDevice, cts);
 
         private unsafe void AsyncReadPagesToFrameCallback(uint errorCode, uint numBytes, object context, Exception ioException)
         {

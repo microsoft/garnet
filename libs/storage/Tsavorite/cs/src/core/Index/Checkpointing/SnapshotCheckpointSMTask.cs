@@ -102,7 +102,6 @@ namespace Tsavorite.core
                         endLogicalAddress: store._hybridLogCheckpoint.info.recoveredTailAddress,
                         fuzzyStartLogicalAddress: store._hybridLogCheckpoint.info.fuzzyRegionStartAddress,
                         logDevice: store._hybridLogCheckpoint.snapshotFileDevice,
-                        objectLogDevice: store._hybridLogCheckpoint.snapshotFileObjectLogDevice,
                         coordination: store._hybridLogCheckpoint.snapshotFlushCoordination,
                         out store._hybridLogCheckpoint.flushedTask,
                         store.ThrottleCheckpointFlushDelayMs);
@@ -114,11 +113,11 @@ namespace Tsavorite.core
                     // Set actual FlushedUntil to the latest possible main-log data on disk, but no further than the checkpoint's
                     // tail: a ReadOnly flush can pass it before this sample, and bytes beyond it belong to later versions.
                     // NullDevice has no durable main-log prefix; Head may advance behind Snapshot for eviction, so recovery must
-                    // still begin the snapshot overlay at the captured Snapshot start.
-                    ObjectLog_OnPersistenceCallback();
+                    // still begin the snapshot overlay at the captured Snapshot start. The object logs' durable ends are sampled after this.
                     store._hybridLogCheckpoint.info.mainLogRecoveryEndAddress = Math.Min(store.hlogBase.IsNullDevice
                         ? store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress
                         : store.hlogBase.FlushedUntilAddress, store._hybridLogCheckpoint.info.recoveredTailAddress);
+                    ObjectLog_OnPersistenceCallback();
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.snapshotFileDevice?.Dispose();
                     store._hybridLogCheckpoint.snapshotFileDevice = null;

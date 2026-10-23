@@ -48,9 +48,6 @@ namespace Tsavorite.core
         /// <summary>The cancellation token source, if any, for the Read operation</summary>
         internal CancellationTokenSource cts;
 
-        /// <summary>Read buffers if Reading ObjectAllocator.</summary>
-        public CircularDiskReadBuffer readBuffers;
-
         /// <summary>Number of bytes read.</summary>
         public uint numBytesRead;
 
@@ -99,8 +96,6 @@ namespace Tsavorite.core
             RestorePreservedPagePrefix();
             handle?.Dispose();
             handle = null;
-            readBuffers?.Dispose();
-            readBuffers = null;
         }
     }
 
@@ -137,8 +132,9 @@ namespace Tsavorite.core
         /// <summary>Context object for the callback</summary>
         public TContext context;
 
-        /// <summary>Flush buffers if flushing ObjectAllocator.</summary>
-        public CircularDiskWriteBuffer flushBuffers;
+        /// <summary>The object log this page's out-of-line components are written to, if flushing ObjectAllocator; null when the page is
+        /// written inline only.</summary>
+        internal ObjectLog objectLog;
 
         /// <summary>Count of active pending flush operations; the callback decrements this and when it hits 0, the overall flush operation is complete.</summary>
         public int count;
@@ -183,15 +179,9 @@ namespace Tsavorite.core
         /// <summary>Runtime-only Snapshot/ReadOnly page-ordering state. Set only for Snapshot page writes.</summary>
         internal SnapshotFlushCoordination snapshotFlushCoordination;
 
-        /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogPositionInfo"/>.</summary>
-        internal ObjectLogPositionInfo ObjectLogPositionInfo;
-
-        /// <summary>During snapshot recovery, the snapshot object-log device that is the source for copying object bytes into the main object-log
+        /// <summary>During snapshot recovery, the snapshot object log that is the source for copying object bytes into the main object log
         /// (for records at/above <see cref="recoveryFormerFlushedUntilAddress"/>). Null for non-recovery flushes and for the hybrid-log region.</summary>
-        internal IDevice recoverySnapshotObjectLogDevice;
-
-        /// <summary>Exclusive durable end of <see cref="recoverySnapshotObjectLogDevice"/> in that device's logical address space.</summary>
-        internal ObjectLogPositionInfo recoverySnapshotObjectLogReadEnd;
+        internal ObjectLog recoverySnapshotObjectLog;
 
         /// <summary>During snapshot recovery, the former FlushedUntilAddress (the hybrid-log/snapshot boundary). Records whose logical address is at or
         /// above this are in the snapshot region and their objects must be copied from the snapshot object-log to the main object-log during the flush.</summary>
@@ -208,7 +198,7 @@ namespace Tsavorite.core
             static string bstr(bool value) => value ? "T" : "F";
             return $"page {page}, isFor {flushRequestState}, ctx {context}, count {count}, partial {bstr(partial)},"
                  + $" fromAddr {fromAddress} (0x{fromAddress:X}), untilAddr {untilAddress} (0x{untilAddress:X}),"
-                 + $" flushCompTrack [{flushCompletionTracker}], circFlushBufs [{flushBuffers}]";
+                 + $" flushCompTrack [{flushCompletionTracker}], objectLog [{objectLog}]";
         }
 
         /// <summary>
@@ -241,155 +231,45 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// A class to carry callback and context through operations that may chain callbacks.
-    /// </summary>
-    internal sealed class DiskWriteCallbackContext
-    {
-        /// <summary>Return value from <see cref="Release(uint, Exception)"/> when another caller already performed the release.</summary>
-        internal const long AlreadyReleased = long.MinValue;
-
-        /// <summary>If we had separate Writes for multiple spans of a single array, this is a refcounted wrapper for the <see cref="GCHandle"/>;
-        /// it is released after the write and if it is the final release, all spans have been written and the GCHandle is freed (and the object unpinned).</summary>
-        public RefCountedPinnedGCHandle refCountedGCHandle { get; private set; }
-
-        /// <summary>Separate public Set() call so we ensure it is AddRef'd</summary>
-        /// <param name="refGcHandle"></param>
-        public void SetRefCountedHandle(RefCountedPinnedGCHandle refGcHandle)
-        {
-            Debug.Assert(!gcHandle.IsAllocated, "Cannot have both GCHandle and RefCountedPinnedGCHandle");
-            refCountedGCHandle = refGcHandle;
-            refCountedGCHandle.AddRef();
-        }
-
-        /// <summary>If this Write is from a <see cref="OverflowByteArray"/>, this <see cref="GCHandle"/> keeps its byte[] pinned during the Write.
-        /// It is freed (and the array unpinned) after the Write. Used instead of <see cref="refCountedGCHandle"/> for only a single span of the array to avoid a heap allocation.</summary>
-        private readonly GCHandle gcHandle;
-
-        /// <summary>The countdown callback for the entire partial flush, including <see cref="DiskWriteBuffer"/>s, external writes, and final sector-aligning write.</summary>
-        private readonly CountdownCallbackAndContext countdownCallbackAndContext;
-
-        /// <summary>The countdown event if this write is associated with a <see cref="DiskWriteBuffer"/>.</summary>
-        private CountdownEvent bufferCountdownEvent;
-        int released;
-
-        public override string ToString()
-        {
-            static string bstr(bool value) => value ? "T" : "F";
-            var countdownString = bufferCountdownEvent is null ? "null" : bufferCountdownEvent.CurrentCount.ToString();
-            var cbcString = countdownCallbackAndContext is null ? "null" : countdownCallbackAndContext.ToString();
-            return $"refCntGcH [{refCountedGCHandle}], gcH {bstr(gcHandle.IsAllocated)}, countdown {countdownString}, cb&c {cbcString}";
-        }
-
-        public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext)
-        {
-            countdownCallbackAndContext = callbackAndContext;
-            callbackAndContext.Increment();
-        }
-
-        public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext, RefCountedPinnedGCHandle refGcHandle) : this(callbackAndContext)
-            => SetRefCountedHandle(refGcHandle);
-
-        public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext, GCHandle gcHandle) : this(callbackAndContext)
-            => this.gcHandle = gcHandle;
-
-        /// <summary>This write is associated with a <see cref="DiskWriteBuffer"/> so we need to signal the countdown event for that buffer when we are done.</summary>
-        public void SetBufferCountdownEvent(CountdownEvent countdownEvent) => bufferCountdownEvent = countdownEvent;
-
-        /// <summary>Publish that this Snapshot page has reached a write submission whose normal callback or
-        /// synchronous-failure unwind will release the external page context.</summary>
-        internal void MarkSnapshotWriteAttempted()
-        {
-            if (countdownCallbackAndContext?.context is PageAsyncFlushResult<Empty> result
-                && result.flushRequestState == FlushRequestState.Snapshot)
-                result.snapshotDeviceWriteIssued = true;
-        }
-
-        public long Release(uint errorCode = 0, Exception ioException = null)
-        {
-            if (Interlocked.Exchange(ref released, 1) != 0)
-                return AlreadyReleased;
-
-            refCountedGCHandle?.Release();
-            if (gcHandle.IsAllocated)
-                gcHandle.Free();
-            _ = bufferCountdownEvent?.Signal();
-            countdownCallbackAndContext?.RecordError(errorCode, ioException);
-            return countdownCallbackAndContext?.Decrement() ?? 0;
-        }
-    }
-
-    /// <summary>
-    /// Hold the callback and context for a refcounted callback and context. Used to ensure global completion of multi-buffer writes (which use a "local"
-    /// callback) before invoking the external callback.
+    /// Joins the parts of one page flush -- its device writes, and the durability of the object-log bytes its records reference -- so the
+    /// page's callback runs exactly once, after all of them, with the first error any of them reported.
     /// </summary>
     /// <remarks>
-    /// The sequence is illustrated for flushes:
-    /// <list type="bullet">
-    ///     <item>Initialize the field to a new instance of this at the start of a partial flush</item>
-    ///     <item>AddRef and Release for each operation (for flushes, there will be two levels of refcount:
-    ///         <list type="bullet">
-    ///             <item>Per-buffer</item>
-    ///             <item>Globally (within the <see cref="CircularDiskWriteBuffer"/>), to await the completion of all partial flushes before invoking the external callback.</item>
-    ///         </list>
-    ///     </item>    
-    /// </list>
-    /// When the count hits zero, if the callback is not null, call it; it will only be set to non-null when we have completed a partial flush. This allows the count to drop to 0 and
-    /// be increased again throughout the partial flush, as various data spans are written.
+    /// Once-only matters beyond counting: a Snapshot page's callback releases the page's native snapshot-IO unit on its first invocation,
+    /// so a callback per part would release it while a write is still in flight. The issuer holds a sentinel part until it has submitted
+    /// every part, so an early completion cannot finish the join.
     /// </remarks>
-    internal sealed class CountdownCallbackAndContext
+    internal sealed class PageFlushJoin
     {
-        /// <summary>Original caller's callback</summary>
-        public DeviceIOCompletionCallback callback;
-        /// <summary>Original caller's callback context</summary>
-        public object context;
-        /// <summary>Number of bytes written</summary>
-        private uint numBytes;
-        /// <summary>Number of in-flight operations</summary>
-        internal long count;
-        /// <summary>First non-zero device error observed across the batch of writes (0 == no error). Propagated to <see cref="callback"/> so an upper
-        /// layer (e.g. <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/>.AsyncFlushPageCallback) does not treat a failed flush as successful and
-        /// advance FlushedUntilAddress past unflushed data.</summary>
-        private int firstErrorCode;
-        /// <summary>The device exception (if any) that accompanied the first non-zero <see cref="firstErrorCode"/>, forwarded to <see cref="callback"/> alongside the error code.</summary>
-        private Exception firstException;
+        readonly DeviceIOCompletionCallback callback;
+        readonly object context;
+        int pending = 1;
+        int firstErrorCode;
+        Exception firstException;
 
-        public override string ToString()
-        {
-            var callbackString = callback is null ? "null" : callback.ToString();
-            var contextString = context is null ? "null" : context.ToString();
-            return $"numBytes {numBytes}, count {count}, firstErrorCode {firstErrorCode}, callback {callbackString}, context {contextString}";
-        }
-
-        public void Set(DeviceIOCompletionCallback callback, object context, uint numBytes)
+        /// <summary>Create a join holding the issuer's sentinel part.</summary>
+        /// <param name="callback">The page's flush callback.</param>
+        /// <param name="context">The page's flush result, passed to <paramref name="callback"/>.</param>
+        internal PageFlushJoin(DeviceIOCompletionCallback callback, object context)
         {
             this.callback = callback;
             this.context = context;
-            this.numBytes = numBytes;
-            // Intentionally do NOT reset firstErrorCode here. A fresh instance is created per partial flush
-            // (CircularDiskWriteBuffer.OnBeginPartialFlush -> new()), and within a flush a device write can
-            // complete with an error and call RecordError before OnPartialFlushComplete installs the callback
-            // via Set(). Resetting here would discard such a pre-Set error and let a failed flush report success.
         }
 
-        internal void Increment() => _ = Interlocked.Increment(ref count);
+        /// <summary>A completion callback for one part, whose context is the join.</summary>
+        internal static readonly DeviceIOCompletionCallback PartCallback = static (errorCode, numBytes, context, ioException)
+            => ((PageFlushJoin)context).Complete(errorCode, ioException);
 
-        /// <summary>Record a device write error; the first non-zero error is retained and forwarded to the caller's callback on final completion.</summary>
-        internal void RecordError(uint errorCode, Exception ioException)
-        {
-            if (errorCode != 0)
-            {
-                // The thread that wins the race to set firstErrorCode also owns firstException, keeping the two consistent.
-                if (Interlocked.CompareExchange(ref firstErrorCode, (int)errorCode, 0) == 0)
-                    firstException = ioException;
-            }
-        }
+        /// <summary>Add a part, before submitting it.</summary>
+        internal void Add() => _ = Interlocked.Increment(ref pending);
 
-        internal long Decrement()
+        /// <summary>Complete a part, or the issuer's sentinel; the last completion invokes the page's callback.</summary>
+        internal void Complete(uint errorCode, Exception ioException)
         {
-            var remaining = Interlocked.Decrement(ref count);
-            if (remaining == 0)
-                callback?.Invoke(errorCode: (uint)firstErrorCode, numBytes, context, ioException: firstException);
-            return remaining;
+            if (errorCode != 0 && Interlocked.CompareExchange(ref firstErrorCode, unchecked((int)errorCode), 0) == 0)
+                firstException = ioException;
+            if (Interlocked.Decrement(ref pending) == 0)
+                callback(unchecked((uint)Volatile.Read(ref firstErrorCode)), numBytes: 0, context, firstException);
         }
     }
 

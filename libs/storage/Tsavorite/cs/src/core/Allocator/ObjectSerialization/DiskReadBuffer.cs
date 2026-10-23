@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    /// <summary>One buffer of the <see cref="CircularDiskReadBuffer"/> ring that <see cref="LegacyObjectLogReader{TStoreFunctions}"/> reads a
+    /// downlevel (cv7) object log through.</summary>
     internal sealed unsafe class DiskReadBuffer : IDisposable
     {
         internal readonly IDevice device;
@@ -26,7 +28,7 @@ namespace Tsavorite.core
         const int NoPosition = -1;
 
         /// <summary>Current read position (we do not support write in this buffer). This class only supports Read and no Seek,
-        /// so currentPosition is always where <see cref="ObjectLogReader{TStoreFunctions}"/> will read from next.</summary>
+        /// so currentPosition is always where <see cref="LegacyObjectLogReader{TStoreFunctions}"/> will read from next.</summary>
         /// <remarks>This will be either 0 or greater than or equal to <see cref="PageHeader.Size"/>.</remarks>
         internal int currentPosition;
 
@@ -45,7 +47,7 @@ namespace Tsavorite.core
         /// <summary>
         /// The starting position in the file that we read this buffer from.
         /// </summary>
-        internal ObjectLogPositionInfo startFilePosition;
+        internal LegacyObjectLogPosition startFilePosition;
 
         internal int AvailableLength => endPosition - currentPosition;
 
@@ -75,7 +77,7 @@ namespace Tsavorite.core
         /// <param name="startPosition">Start position in the buffer (relative to start of buffer)</param>
         /// <param name="alignedReadLength">Number of bytes to read</param>
         /// <param name="callback">The <see cref="CircularDiskReadBuffer"/> callback.</param>
-        internal void ReadFromDevice(ObjectLogPositionInfo filePosition, int startPosition, uint alignedReadLength, DeviceIOCompletionCallback callback)
+        internal void ReadFromDevice(LegacyObjectLogPosition filePosition, int startPosition, uint alignedReadLength, DeviceIOCompletionCallback callback)
         {
             IncrementOrResetCountdown(ref countdownEvent);
             startFilePosition = filePosition;
@@ -86,7 +88,18 @@ namespace Tsavorite.core
             device.ReadAsync(filePosition.SegmentId, filePosition.Offset, (IntPtr)memory.aligned_pointer, (uint)alignedReadLength, callback, context: this);
         }
 
-        internal static void IncrementOrResetCountdown(ref CountdownEvent countdownEvent) => DiskWriteBuffer.IncrementOrResetCountdown(ref countdownEvent);
+        internal static void IncrementOrResetCountdown(ref CountdownEvent countdownEvent)
+        {
+            if (countdownEvent is null)
+                countdownEvent = new(1);
+            else if (!countdownEvent.TryAddCount(1))
+            {
+                // This means we've enqueued one or more earlier reads which have completed.
+                // First wait to be sure the callback has signaled the contained event, then Reset the event with a new count.
+                countdownEvent.Wait(); // This should usually be immediate
+                countdownEvent.Reset(1);
+            }
+        }
 
         internal bool HasData => endPosition > 0;
 
@@ -114,7 +127,7 @@ namespace Tsavorite.core
                 countdownEvent.Wait();
         }
 
-        internal ObjectLogPositionInfo GetCurrentFilePosition()
+        internal LegacyObjectLogPosition GetCurrentFilePosition()
         {
             var bufferFilePos = startFilePosition;
             bufferFilePos.Advance((uint)currentPosition);

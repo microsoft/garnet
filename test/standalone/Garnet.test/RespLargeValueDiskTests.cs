@@ -11,10 +11,9 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     /// <summary>
-    /// Regression tests for flushing large overflow string values to the object log on disk.
-    /// Reproduces the scenario that crashed a large SET on the native (O_DIRECT) device: a large
-    /// overflow value must round-trip through the sector-aligned buffered write path when its record
-    /// is evicted/flushed to the object log, and read back byte-for-byte from disk.
+    /// Regression tests for flushing large overflow string values to the object log on disk: a large overflow value must round-trip
+    /// when its record is evicted/flushed to the object log, and read back byte-for-byte from disk, including on the native
+    /// (O_DIRECT) device, which enforces alignment.
     /// </summary>
     [TestFixture]
     public class RespLargeValueDiskTests : TestBase
@@ -36,8 +35,8 @@ namespace Garnet.test
             TestUtils.OnTearDown();
         }
 
-        // Sizes chosen to exercise: just over the 128 KB direct-write threshold, a multiple of the
-        // 4 MB object-log flush buffer, an 8 MB value, and a non-sector-multiple large value.
+        // Sizes chosen to exercise: a value well under one 4 MB object-log chunk, values just over and at a multiple of the chunk
+        // size, and a non-sector-multiple value spanning three chunks.
         [Test]
         [TestCase(256 * 1024)]
         [TestCase(4 * 1024 * 1024 + 512)]
@@ -58,10 +57,8 @@ namespace Garnet.test
 
             // Insert filler and wait until the large value's record (and its overflow value) is flushed to
             // the object log on disk. On the default Linux device this write uses O_DIRECT (true alignment
-            // enforcement), so if the buggy direct-DMA path is taken the misaligned write fails, the
-            // read-only flush cannot advance, the low-memory resizer spins waiting for it, and this test
-            // hangs (a regression trips the suite timeout). With the fix the flush completes and the value
-            // is served from disk.
+            // enforcement), so a misaligned write would fail, the read-only flush could not advance, the
+            // low-memory resizer would spin waiting for it, and this test would hang until the suite timeout.
             var target = TestUtils.GetStoreAddressInfo(iServer).TailAddress;
             await TestUtils.FlushAndWaitForStoreAsync(db, iServer, target, timeoutMs: 30000).ConfigureAwait(false);
 
@@ -74,36 +71,35 @@ namespace Garnet.test
 
         /// <summary>
         /// Writes "shim" overflow records of varying size before each large overflow value so that the large
-        /// values begin at a spread of offsets relative to the 512-byte device sector boundary, then flushes
-        /// everything to the object log and reads every record back byte-for-byte from disk.
+        /// values begin at a spread of object-log offsets, then flushes everything to the object log and reads
+        /// every record back byte-for-byte from disk.
         /// </summary>
         /// <remarks>
-        /// The object-log write buffer flushes on sector boundaries. Whether a large overflow value needs a
-        /// leading sector-aligning fragment, a trailing fragment, and/or crosses one or more 4 MB flush buffers
-        /// depends on where the buffer position sits (mod the sector size) when the value is written. Any string
-        /// value larger than the &lt;= 4 KB inline limit becomes object-log overflow, so the sub-sector "shim"
-        /// records walk the buffer position across a full sector, producing various near-sector-end combinations.
-        /// This hardens both the buffered write path and the direct-DMA write path (taken for values above
-        /// <c>MaxCopySpanLen</c>), whose start/interior/end fragment split is driven by exactly these offsets.
+        /// The object-log writer cuts a record's bytes into chunks, each within one object-log page, and cuts a chunk
+        /// at a page end when the page's remaining space is worth filling. Where those cuts fall depends on the log
+        /// tail's offset when the value is written. Any string value larger than the &lt;= 4 KB inline limit becomes
+        /// object-log overflow, so the "shim" records walk the tail across a range of offsets, including offsets near
+        /// a sector end. The large values cover lengths staged through the writer's chunk buffer and lengths at and
+        /// around the 4 MB chunk size, which a single chunk cannot hold.
         /// </remarks>
         [Test]
         public async Task LargeValueFlushWithPrecedingSectorCombinations()
         {
             const int OverflowBase = 8 * 1024;         // > the <= 4 KB inline limit, so shims are object-log overflow
-            const int DirectThreshold = 128 * 1024;    // MaxCopySpanLen: values above this take the direct-DMA path
-            const int FlushBuffer = 4 * 1024 * 1024;   // IStreamBuffer.BufferSize (object-log write buffer)
+            const int MidLargeBase = 128 * 1024;       // well under one object-log chunk
+            const int ChunkSize = 4 * 1024 * 1024;     // IStreamBuffer.BufferSize, the object-log writer's default chunk size
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var iServer = redis.GetServer(TestUtils.EndPoint);
 
             // Sub-sector shim sizes sweep a full sector (residues incl. 0/1/near-511) so successive large values
-            // start at varying offsets relative to the sector boundary.
+            // start at varying offsets.
             int[] shims = [0, 1, 7, 31, 63, 64, 65, 127, 255, 256, 384, 511];
-            // Cheap "large" values just over the direct-write threshold, with sector-multiple and off-by-one lengths.
-            int[] smallLarge = [DirectThreshold + 512, DirectThreshold + 1, DirectThreshold + 511, 192 * 1024];
-            // A few multi-buffer / buffer-boundary values (sector-multiple and non-multiple lengths).
-            int[] bufferBoundaryLarge = [FlushBuffer, FlushBuffer + 512, FlushBuffer + 511, FlushBuffer - 1];
+            // Cheap "large" values staged through the chunk buffer, with sector-multiple and off-by-one lengths.
+            int[] smallLarge = [MidLargeBase + 512, MidLargeBase + 1, MidLargeBase + 511, 192 * 1024];
+            // A few values at and around the chunk size (sector-multiple and non-multiple lengths).
+            int[] bufferBoundaryLarge = [ChunkSize, ChunkSize + 512, ChunkSize + 511, ChunkSize - 1];
 
             var records = new List<(RedisKey key, int seed, int size)>();
             var seed = 0;

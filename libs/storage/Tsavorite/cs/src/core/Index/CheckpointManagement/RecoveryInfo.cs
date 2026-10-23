@@ -106,27 +106,36 @@ namespace Tsavorite.core
         public long beginAddress;
 
         /// <summary>
-        /// The objectLog segment for hlog's BeginAddress (<see cref="ObjectAllocatorImpl{TStoreFunctions}.lowestObjectLogSegmentInUse"/>) at PREPARE;
-        /// corresponds to <see cref="beginAddress"/>. Will be zero unless the log has been truncated.
+        /// The main object log's BeginAddress at PREPARE; corresponds to <see cref="beginAddress"/>. For a v7 checkpoint, the start of the lowest
+        /// object-log segment then in use. Zero if the store has no object log, or had not yet created it at PREPARE.
         /// </summary>
-        internal int beginAddressObjectLogSegment;
+        internal long objectLogBeginAddress;
 
         /// <summary>
-        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> taken at PERSISTENCE_CALLBACK (matching the main log's FlushedUntilAddress
-        /// then, which <see cref="mainLogRecoveryEndAddress"/> may cap at <see cref="recoveredTailAddress"/>).
-        /// This is incremented for any flushes due to ReadOnlyAddress growth during the snapshot.
+        /// The main object log's durable end, its FlushedUntilAddress, at PERSISTENCE_CALLBACK; recovery resumes appending there. Sampled after
+        /// <see cref="mainLogRecoveryEndAddress"/>, so it covers the object bytes of every record in the main-log recovery range. It may also cover
+        /// bytes of records past that range, which recovery does not read. For a v7 checkpoint, the object log's tail. Zero if the store has no
+        /// object log.
         /// </summary>
-        internal ObjectLogPositionInfo hlogEndObjectLogTail;
+        internal long hlogEndObjectLogTail;
 
         /// <summary>
-        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> at the start of the checkpoint (start of WAIT_FLUSH).
+        /// The durable end of a Snapshot checkpoint's object log at PERSISTENCE_CALLBACK, after the Checkpoint Flush has completed, which is its
+        /// tail. Zero for a FoldOver checkpoint or a store without an object log.
         /// </summary>
-        internal ObjectLogPositionInfo snapshotStartObjectLogTail;
+        internal long snapshotEndObjectLogTail;
 
         /// <summary>
-        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> at the end of the checkpoint (at PERSISTENCE_CALLBACK).
+        /// For a v7 checkpoint only: the segment size bits its object-log positions were split at. Its object log is a dense file read by the
+        /// downlevel reader; recovery does not otherwise use this, but the v7 layout and checksum carry it.
         /// </summary>
-        internal ObjectLogPositionInfo snapshotEndObjectLogTail;
+        internal int legacyObjectLogSegmentSizeBits;
+
+        /// <summary>
+        /// For a v7 checkpoint only: the main object-log tail at the start of WAIT_FLUSH. Recovery does not use it, but the v7 layout and
+        /// checksum carry it.
+        /// </summary>
+        internal long legacySnapshotStartObjectLogTail;
 
         /// <summary>
         /// User cookie
@@ -141,10 +150,16 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Object-log segment size, in bytes, of the store that wrote this checkpoint. Appended in v8; zero for a v7 checkpoint, whose
-        /// metadata did not record it. This is the split point for <see cref="ObjectLogPositionInfo"/>'s packed segment/offset word,
-        /// so recovering with a different value resolves every object-log position to a different segment and offset.
+        /// metadata did not record it. A v7 object log is a dense file whose positions split at this size, so recovering one with a different
+        /// value resolves every object-log position to a different segment and offset.
         /// </summary>
         public long objectLogSegmentSize;
+
+        /// <summary>
+        /// Object-log page size, in bytes, of the store that wrote this checkpoint. An extent never spans an object-log page, so recovering with a
+        /// different page size would reject or misplace extents. Zero for a v7 checkpoint or a store without an object log.
+        /// </summary>
+        public long objectLogPageSize;
 
         /// <summary>
         /// Maps a host-defined storage slot to the logical database id that occupied it when this
@@ -185,14 +200,17 @@ namespace Tsavorite.core
             pageSize = 0;
             segmentSize = 0;
             objectLogSegmentSize = 0;
+            objectLogPageSize = 0;
             headAddress = 0;
 
             databaseMapping = null;
             swapEpoch = 0;
 
-            hlogEndObjectLogTail = new();       // Marks as "unset"
-            snapshotStartObjectLogTail = new();
-            snapshotEndObjectLogTail = new();
+            objectLogBeginAddress = 0;
+            hlogEndObjectLogTail = 0;
+            snapshotEndObjectLogTail = 0;
+            legacyObjectLogSegmentSizeBits = 0;
+            legacySnapshotStartObjectLogTail = 0;
         }
 
         /// <summary>
@@ -248,16 +266,40 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             beginAddress = long.Parse(value);
 
-            value = reader.ReadLine();
-            beginAddressObjectLogSegment = int.Parse(value);
-
-            hlogEndObjectLogTail.Deserialize(reader);
-            snapshotStartObjectLogTail.Deserialize(reader);
-            snapshotEndObjectLogTail.Deserialize(reader);
+            long objectLogFieldsChecksum;
+            if (cversion >= LogGeometryCheckpointVersion)
+            {
+                value = reader.ReadLine();
+                objectLogBeginAddress = long.Parse(value);
+                value = reader.ReadLine();
+                hlogEndObjectLogTail = long.Parse(value);
+                value = reader.ReadLine();
+                snapshotEndObjectLogTail = long.Parse(value);
+                legacyObjectLogSegmentSizeBits = 0;
+                legacySnapshotStartObjectLogTail = 0;
+                objectLogFieldsChecksum = ObjectLogFieldsChecksum();
+            }
+            else
+            {
+                // A v7 checkpoint records the lowest object-log segment in use, then three positions, each a segment-split word with the
+                // segment size bits it was written with. The positions' address bits are flat file offsets; an unset position reads as zero.
+                value = reader.ReadLine();
+                var beginSegment = int.Parse(value);
+                var (hlogEndBits, hlogEndWord) = ReadLegacyPosition(reader);
+                var (snapshotStartBits, snapshotStartWord) = ReadLegacyPosition(reader);
+                var (snapshotEndBits, snapshotEndWord) = ReadLegacyPosition(reader);
+                legacyObjectLogSegmentSizeBits = Math.Max(hlogEndBits, Math.Max(snapshotStartBits, snapshotEndBits));
+                objectLogBeginAddress = legacyObjectLogSegmentSizeBits > 0 ? (long)beginSegment << legacyObjectLogSegmentSizeBits : 0;
+                hlogEndObjectLogTail = LegacyWordToAddress(hlogEndWord);
+                legacySnapshotStartObjectLogTail = LegacyWordToAddress(snapshotStartWord);
+                snapshotEndObjectLogTail = LegacyWordToAddress(snapshotEndWord);
+                objectLogFieldsChecksum = beginSegment ^ (long)hlogEndWord ^ (long)snapshotStartWord ^ (long)snapshotEndWord;
+            }
 
             // Appended in v8; v7 metadata ends the scalar fields at the object-log tails.
             segmentSize = 0;
             objectLogSegmentSize = 0;
+            objectLogPageSize = 0;
             if (cversion >= LogGeometryCheckpointVersion)
             {
                 value = reader.ReadLine();
@@ -265,6 +307,9 @@ namespace Tsavorite.core
 
                 value = reader.ReadLine();
                 objectLogSegmentSize = long.Parse(value);
+
+                value = reader.ReadLine();
+                objectLogPageSize = long.Parse(value);
             }
 
             // Read user cookie
@@ -300,11 +345,23 @@ namespace Tsavorite.core
                 swapEpoch = long.Parse(value);
             }
 
-            if (checksum != ChecksumCore(cversion, addressSlotValue, segmentSize, objectLogSegmentSize))
+            if (checksum != ChecksumCore(cversion, addressSlotValue, segmentSize, objectLogSegmentSize, objectLogPageSize, objectLogFieldsChecksum))
                 throw new TsavoriteException("Invalid checksum for checkpoint");
 
             Deserialized = true;
         }
+
+        /// <summary>Read a v7 object-log position: its segment size bits, then its word.</summary>
+        private static (int segmentSizeBits, ulong word) ReadLegacyPosition(StreamReader reader)
+        {
+            var segmentSizeBits = int.Parse(reader.ReadLine());
+            var word = ulong.Parse(reader.ReadLine());
+            return (segmentSizeBits, word);
+        }
+
+        /// <summary>The flat address a v7 position word carries; zero if it carries none.</summary>
+        private static long LegacyWordToAddress(ulong word)
+            => word == 0 || ObjectLogPositionInfo.WordIsUnstamped(word) ? 0 : (long)(word & ObjectLogPositionInfo.AddressMask);
 
         /// <summary>
         ///  Recover info from token
@@ -363,13 +420,21 @@ namespace Tsavorite.core
             var addressSlotValue = writesLogGeometry ? pageSize : recoveredTailAddress;
             var trailingSegmentSize = writesLogGeometry ? segmentSize : 0;
             var trailingObjectLogSegmentSize = writesLogGeometry ? objectLogSegmentSize : 0;
+            var trailingObjectLogPageSize = writesLogGeometry ? objectLogPageSize : 0;
+
+            // v7 recorded the object log as a lowest segment and three segment-split words.
+            var legacyBeginSegment = legacyObjectLogSegmentSizeBits > 0 ? (int)(objectLogBeginAddress >> legacyObjectLogSegmentSizeBits) : 0;
+            var objectLogFieldsChecksum = writesLogGeometry
+                ? ObjectLogFieldsChecksum()
+                : legacyBeginSegment ^ hlogEndObjectLogTail ^ legacySnapshotStartObjectLogTail ^ snapshotEndObjectLogTail;
 
             using (MemoryStream ms = new())
             {
                 using (StreamWriter writer = new(ms))
                 {
                     writer.WriteLine(targetVersion); // checkpoint version
-                    writer.WriteLine(ChecksumCore(targetVersion, addressSlotValue, trailingSegmentSize, trailingObjectLogSegmentSize));
+                    writer.WriteLine(ChecksumCore(targetVersion, addressSlotValue, trailingSegmentSize, trailingObjectLogSegmentSize, trailingObjectLogPageSize,
+                        objectLogFieldsChecksum));
 
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
@@ -383,16 +448,27 @@ namespace Tsavorite.core
                     writer.WriteLine(headAddress);
                     writer.WriteLine(beginAddress);
 
-                    writer.WriteLine(beginAddressObjectLogSegment);
-
-                    hlogEndObjectLogTail.Serialize(writer);
-                    snapshotStartObjectLogTail.Serialize(writer);
-                    snapshotEndObjectLogTail.Serialize(writer);
+                    if (writesLogGeometry)
+                    {
+                        writer.WriteLine(objectLogBeginAddress);
+                        writer.WriteLine(hlogEndObjectLogTail);
+                        writer.WriteLine(snapshotEndObjectLogTail);
+                    }
+                    else
+                    {
+                        writer.WriteLine(legacyBeginSegment);
+                        foreach (var address in (ReadOnlySpan<long>)[hlogEndObjectLogTail, legacySnapshotStartObjectLogTail, snapshotEndObjectLogTail])
+                        {
+                            writer.WriteLine(legacyObjectLogSegmentSizeBits);
+                            writer.WriteLine((ulong)address);
+                        }
+                    }
 
                     if (writesLogGeometry)
                     {
                         writer.WriteLine(segmentSize);
                         writer.WriteLine(objectLogSegmentSize);
+                        writer.WriteLine(objectLogPageSize);
                     }
 
                     // Write user cookie
@@ -421,24 +497,26 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Checksum over the fixed scalar fields. The fifth address slot and the appended trailing values are passed in so a
-        /// downlevel checkpoint validates against the raw values it actually serialized: v7 metadata wrote a duplicate
-        /// of <see cref="recoveredTailAddress"/> in the slot and had no trailing values, which reduces this to the v7 formula.
+        /// Checksum over the fixed scalar fields. The fifth address slot, the appended trailing values, and the object-log fields' checksum are
+        /// passed in so a downlevel checkpoint validates against the raw values it actually serialized: v7 metadata wrote a duplicate of
+        /// <see cref="recoveredTailAddress"/> in the slot, xored its object-log segment and position words, and had no trailing values, which
+        /// reduces this to the v7 formula.
         /// </summary>
-        private readonly long ChecksumCore(int cversion, long addressSlotValue, long trailingSegmentSize, long trailingObjectLogSegmentSize)
+        private readonly long ChecksumCore(int cversion, long addressSlotValue, long trailingSegmentSize, long trailingObjectLogSegmentSize,
+            long trailingObjectLogPageSize, long objectLogFieldsChecksum)
         {
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
             var checksum = long1 ^ long2 ^ version ^ mainLogRecoveryEndAddress ^ snapshotFileLogicalStartAddress ^ fuzzyRegionStartAddress ^ recoveredTailAddress
-                ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word;
+                ^ headAddress ^ beginAddress ^ objectLogFieldsChecksum;
 
             // A downlevel checkpoint duplicated recoveredTailAddress into the fifth slot and appended no geometry, so xor the
             // slot in as that version did and stop; folding would not reproduce the checksum it was written with.
             if (cversion < LogGeometryCheckpointVersion)
                 return checksum ^ addressSlotValue;
 
-            checksum ^= LogGeometryChecksum(addressSlotValue, trailingSegmentSize, trailingObjectLogSegmentSize);
+            checksum ^= LogGeometryChecksum(addressSlotValue, trailingSegmentSize, trailingObjectLogSegmentSize, trailingObjectLogPageSize);
 
             // The host-supplied fields joined the checksum after MinRecoverableCheckpointVersion, so a
             // checkpoint at that version must be checksummed without them or it will not verify.
@@ -447,6 +525,13 @@ namespace Tsavorite.core
 
             return checksum;
         }
+
+        /// <summary>
+        /// Checksum of the object-log addresses. Folded rather than xored, because the main and snapshot object-log tails can be equal (both empty,
+        /// for instance), and xoring equal values would cancel them and leave both unprotected.
+        /// </summary>
+        private readonly long ObjectLogFieldsChecksum()
+            => Fold(Fold(Fold(FnvOffsetBasis, objectLogBeginAddress), hlogEndObjectLogTail), snapshotEndObjectLogTail);
 
         /// <summary>FNV-1a offset basis, for folding sequences and position-sensitive scalars.</summary>
         private const long FnvOffsetBasis = unchecked((long)14695981039346656037);
@@ -466,8 +551,8 @@ namespace Tsavorite.core
         /// default, so xoring both would cancel them and leave the geometry unprotected at stock configuration. Folding also
         /// distinguishes the two from each other, so a checkpoint whose segment sizes were transposed does not verify.
         /// </remarks>
-        private static long LogGeometryChecksum(long pageSizeValue, long segmentSizeValue, long objectLogSegmentSizeValue)
-            => Fold(Fold(Fold(FnvOffsetBasis, pageSizeValue), segmentSizeValue), objectLogSegmentSizeValue);
+        private static long LogGeometryChecksum(long pageSizeValue, long segmentSizeValue, long objectLogSegmentSizeValue, long objectLogPageSizeValue)
+            => Fold(Fold(Fold(Fold(FnvOffsetBasis, pageSizeValue), segmentSizeValue), objectLogSegmentSizeValue), objectLogPageSizeValue);
 
         /// <summary>
         /// Checksum of the host-supplied fields. These are sequences rather than scalars, so they are
@@ -513,12 +598,12 @@ namespace Tsavorite.core
             logger?.LogInformation("Page Size: {pageSize}", pageSize);
             logger?.LogInformation("Segment Size: {segmentSize}", segmentSize);
             logger?.LogInformation("Object Log Segment Size: {objectLogSegmentSize}", objectLogSegmentSize);
+            logger?.LogInformation("Object Log Page Size: {objectLogPageSize}", objectLogPageSize);
             logger?.LogInformation("Head Address: {headAddress}", headAddress);
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
-            logger?.LogInformation("Begin object log segment: {beginObjLogSegment}", beginAddressObjectLogSegment);
-            logger?.LogInformation("Hybrid Log End Object Tail Position: {hlogEndObjLogTail}", hlogEndObjectLogTail);
-            logger?.LogInformation("Snapshot Begin Object Log Tail Position: {snapshotStartObjLogTail}", snapshotStartObjectLogTail);
-            logger?.LogInformation("Snapshot End Object Log Tail Position: {snapshotEndObjLogTail}", snapshotEndObjectLogTail);
+            logger?.LogInformation("Object Log Begin Address: {objectLogBeginAddress}", objectLogBeginAddress);
+            logger?.LogInformation("Hybrid Log End Object Log Tail: {hlogEndObjLogTail}", hlogEndObjectLogTail);
+            logger?.LogInformation("Snapshot End Object Log Tail: {snapshotEndObjLogTail}", snapshotEndObjectLogTail);
             if (databaseMapping?.Length > 0)
                 logger?.LogInformation("Database Mapping (slot -> logical): {databaseMapping}; Swap Epoch: {swapEpoch}", string.Join(",", databaseMapping), swapEpoch);
         }
@@ -530,7 +615,9 @@ namespace Tsavorite.core
         public IDevice snapshotFileDevice;
         public IDevice snapshotFileObjectLogDevice;
         public Task flushedTask;
-        internal CircularDiskWriteBuffer objectLogFlushBuffers;
+
+        /// <summary>The Snapshot checkpoint's object log, over <see cref="snapshotFileObjectLogDevice"/>.</summary>
+        internal ObjectLog snapshotObjectLog;
         internal SnapshotFlushCoordination snapshotFlushCoordination;
 
         public void Initialize(Guid token, long _version, ICheckpointManager checkpointManager)
@@ -542,8 +629,10 @@ namespace Tsavorite.core
         public void Dispose()
         {
             snapshotFileDevice?.Dispose();
+
+            // The object log writes its device, so it goes first.
+            snapshotObjectLog?.Dispose();
             snapshotFileObjectLogDevice?.Dispose();
-            objectLogFlushBuffers?.Dispose();
             snapshotFlushCoordination?.Dispose();
             this = default;
         }

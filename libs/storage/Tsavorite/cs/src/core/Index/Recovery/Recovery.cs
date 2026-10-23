@@ -24,8 +24,9 @@ namespace Tsavorite.core
         public int recoveryDevicePageOffset;
         /// <summary>Object log recovery device, obtained from CheckpointManager.</summary>
         public IDevice objectLogRecoveryDevice;
-        /// <summary>Exclusive durable end of <see cref="objectLogRecoveryDevice"/> in the snapshot object-log address space.</summary>
-        public ObjectLogPositionInfo objectLogRecoveryReadEnd;
+        /// <summary>For a downlevel checkpoint, the exclusive durable end of <see cref="objectLogRecoveryDevice"/>; a current-format snapshot
+        /// object log is bounded by its own tail.</summary>
+        public long objectLogRecoveryReadEnd;
 
         /// <summary>The current head address; updated as pages are evicted during recovery.</summary>
         public long headAddress;
@@ -52,7 +53,7 @@ namespace Tsavorite.core
         /// the live records. Such a page must subsequently deserialize from the main object log.</summary>
         public bool[] snapshotPageFlushedToMain;
 
-        /// <summary>Read buffers reused across every isolated overflow-key read of this recovery, so the pooled object-log read buffer is
+        /// <summary>Read buffers reused across every isolated overflow-key read of a downlevel recovery, so the pooled object-log read buffer is
         /// rented once rather than per record. Bound to one device; replaced when the main/snapshot object log alternates.</summary>
         public CircularDiskReadBuffer IsolatedKeyReadBuffers;
 
@@ -194,16 +195,17 @@ namespace Tsavorite.core
         /// <summary>Hybrid log file end address</summary>
         public long hybridLogFileEndAddress;
 
-        /// <summary>True if this snapshot had object log records</summary>
+        /// <summary>True if this checkpoint has object-log data to transfer: in the main object log, the snapshot object log, or both. Each
+        /// object-log range below is empty (start equals end) when its file has none.</summary>
         public bool hasSnapshotObjects;
 
-        /// <summary>Address of <see cref="HybridLogRecoveryInfo.beginAddressObjectLogSegment"/>; the start of the lowest object log segment
-        /// in use by the hybrid log at snapshot PREPARE time</summary>
+        /// <summary>Start of the main object-log range: the start of the segment holding the main object log's begin address at PREPARE</summary>
         public long hybridLogObjectFileStartAddress;
-        /// <summary>The hlogEndObjectLogTail taken at PERSISTENCE_CALLBACK, corresponding to the hlog's FlushedUntilAddress at that point</summary>
+        /// <summary>End of the main object-log range: its durable end at PERSISTENCE_CALLBACK, which covers the objects of the main-log range; the
+        /// range start when the main object log holds nothing</summary>
         public long hybridLogObjectFileEndAddress;
-        /// <summary>The snapshotEndObjectLogTail taken at PERSISTENCE_CALLBACK, which corresponds to the object log position for the final TailAddress
-        /// written by the checkpoint. (Start address is always 0.)</summary>
+        /// <summary>End of the snapshot object-log range: the durable end of the checkpoint's own object log, or zero when it holds nothing. (Start
+        /// address is always 0.)</summary>
         public long snapshotObjectFileEndAddress;
     }
 
@@ -291,8 +293,30 @@ namespace Tsavorite.core
         {
             using var current = new HybridLogCheckpointInfo();
             current.Recover(token, checkpointManager, out var _);
-            var hasSnapshotObjects = current.info.snapshotEndObjectLogTail.HasData;
-            var snapshotDeviceOffset = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.snapshotFileLogicalStartAddress));
+            var info = current.info;
+            var snapshotDeviceOffset = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(info.snapshotFileLogicalStartAddress));
+
+            // Object log file info. Object-log addresses are device addresses, so each range is a flat byte range of its file:
+            //   - The main object log from the start of the segment holding its begin address at PREPARE (a transfer starts sector-aligned) to its
+            //     durable end at PERSISTENCE_CALLBACK. That end was sampled after the main log's recovery end, so it covers the objects of every
+            //     record in the main-log range, and perhaps of records past it, which recovery does not read.
+            //   - The snapshot object log from its start to its durable end at PERSISTENCE_CALLBACK, when the Checkpoint Flush was complete.
+            // A checkpoint can have main object-log data and none in the snapshot, or the reverse. An object log that holds nothing ends where it
+            // begins: for the current format, at the first valid address, or at the main log's begin address once truncation has moved it, and
+            // the main log records a begin of zero when it was created after PREPARE. Its file may not exist, so its range is made empty (start
+            // equals end), which transfers nothing. hasSnapshotObjects is set when either range has data.
+            var isDownlevel = HybridLogRecoveryInfo.UsesDownlevelObjectLog(info.hybridLogRecoveryVersion);
+            var objectLogSegmentSize = info.objectLogSegmentSize > 0 ? info.objectLogSegmentSize
+                : info.legacyObjectLogSegmentSizeBits > 0 ? 1L << info.legacyObjectLogSegmentSizeBits : 0;
+            var hybridLogObjectFileStartAddress = objectLogSegmentSize > 0 ? info.objectLogBeginAddress & ~(objectLogSegmentSize - 1) : 0;
+            var emptyMainObjectLogEnd = isDownlevel ? info.objectLogBeginAddress : Math.Max(info.objectLogBeginAddress, LogAddress.FirstValidAddress);
+            var hybridLogObjectFileEndAddress = info.hlogEndObjectLogTail > emptyMainObjectLogEnd
+                ? Math.Max(hybridLogObjectFileStartAddress, info.hlogEndObjectLogTail)
+                : hybridLogObjectFileStartAddress;
+            var emptySnapshotObjectLogEnd = isDownlevel ? 0 : LogAddress.FirstValidAddress;
+            var snapshotObjectFileEndAddress = info.snapshotEndObjectLogTail > emptySnapshotObjectLogEnd ? info.snapshotEndObjectLogTail : 0;
+            var hasObjects = hybridLogObjectFileEndAddress > hybridLogObjectFileStartAddress || snapshotObjectFileEndAddress > 0;
+
             return new LogFileInfo
             {
                 // Hybrid (main log file) info:
@@ -304,28 +328,14 @@ namespace Tsavorite.core
                 //     - TailAddress taken at the start of WAIT_FLUSH minus the start offset. This TailAddress is the maximum logical address that will be written to the snapshot.
                 // The overlap between the FlushedUntilAddress for the main log being recorded after the flush completes and the FlushedUntilAddress for the snapshot 
                 // being recorded before the flush starts ensures there is no gap.
-                hybridLogFileStartAddress = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.beginAddress)),
-                hybridLogFileEndAddress = current.info.mainLogRecoveryEndAddress,
-                snapshotFileEndAddress = current.info.recoveredTailAddress - snapshotDeviceOffset,
+                hybridLogFileStartAddress = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(info.beginAddress)),
+                hybridLogFileEndAddress = info.mainLogRecoveryEndAddress,
+                snapshotFileEndAddress = info.recoveredTailAddress - snapshotDeviceOffset,
 
-                // Object log file info:
-                //   - The object log address range is from:
-                //     - The start of the in-use object segment corresponding to main-log BeginAddress at PREPARE (matching this.hybridLogFileStartAddress) to...
-                //     - The hLogEndObjectLogTail taken at PERSISTENCE_CALLBACK. This matches this.hybridLogFileEndAddress unless that was capped at the
-                //       TailAddress, in which case it also covers objects of records past the TailAddress, which recovery does not read.
-                //   - The snapshot address range starts at 0 in the snapshot file and includes all object-log data until the final TailAddress. In detail, it is from:
-                //     - The objectLogTail taken at the start of WAIT_FLUSH as info.snapshotStartObjectLogTail, corresponding to the main log's FlushedUntilAddress at
-                //       that point (which is used to calculate this.snapshotDeviceOffset) to...
-                //     - The snapshotEndObjectLogTail which is taken at PERSISTENCE_CALLBACK, which corresponds to the main-log TailAddress taken at WAIT_FLUSH.
-                //       The snapshotEndObjectLogTail grows during the Flush, so is not final until PERSISTENCE_CALLBACK; but it will only be written for records
-                //       up to the TailAddress at the start of WAIT_FLUSH.
-                // Note that there are no object-log segments for the mutable region of the hybrid log; they are not written until ReadOnlyAddress growth triggers
-                // a main-log Flush. However the snapshot does cause object-log segments for the mutable range to be written.
-                hasSnapshotObjects = hasSnapshotObjects,
-                hybridLogObjectFileStartAddress = hasSnapshotObjects ? (long)current.info.beginAddressObjectLogSegment << current.info.hlogEndObjectLogTail.SegmentSizeBits : 0,
-                hybridLogObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.hlogEndObjectLogTail.CurrentAddress : 0,
-                snapshotObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.snapshotEndObjectLogTail.CurrentAddress : 0,
-
+                hasSnapshotObjects = hasObjects,
+                hybridLogObjectFileStartAddress = hybridLogObjectFileStartAddress,
+                hybridLogObjectFileEndAddress = hybridLogObjectFileEndAddress,
+                snapshotObjectFileEndAddress = snapshotObjectFileEndAddress,
             };
         }
 
@@ -573,6 +583,19 @@ namespace Tsavorite.core
             RecoveryOptions options = new(fuzzyRegionStartAddress: recoveredHLCInfo.info.fuzzyRegionStartAddress, undoNextVersion,
                 checkpointVersion: recoveredHLCInfo.info.hybridLogRecoveryVersion);
 
+            // Position the main object log at the checkpoint's tail before anything reads it, so reads are bounded by it and appends -- recovery's
+            // copies of snapshot-region objects, and everything after recovery -- start there. Only records in the main-log recovery range
+            // reference it, so a Snapshot whose main-log range is empty references nothing below the tail, which may not even be present (the
+            // checkpoint may be loaded on fresh devices); it begins at the tail and reads nothing. A downlevel checkpoint's object log is a dense
+            // file the downlevel reader reads directly, and its up-conversion writes a fresh object log.
+            if (!HybridLogRecoveryInfo.UsesDownlevelObjectLog(recoveredHLCInfo.info.hybridLogRecoveryVersion))
+            {
+                var mainObjectLogIsReferenced = recoveredHLCInfo.info.useSnapshotFile == 0
+                    || recoveredHLCInfo.info.mainLogRecoveryEndAddress > recoveredHLCInfo.info.beginAddress;
+                hlogBase.RestoreObjectLog(mainObjectLogIsReferenced ? recoveredHLCInfo.info.objectLogBeginAddress : recoveredHLCInfo.info.hlogEndObjectLogTail,
+                    recoveredHLCInfo.info.hlogEndObjectLogTail);
+            }
+
             // Make index consistent for version v
             long readOnlyAddress;
             long finalHeadAddress;
@@ -581,9 +604,6 @@ namespace Tsavorite.core
             {
                 recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.recoveredTailAddress,
                         recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, headAddress, options, cancellationToken).ConfigureAwait(false);
-
-                // FoldOver objects are already durable in the main object-log; set the tail to its end so subsequent writes append after it.
-                hlogBase.SetObjectLogTail(recoveredHLCInfo.info.hlogEndObjectLogTail);
                 finalHeadAddress = recoveryStatus.headAddress;
                 readOnlyAddress = tailAddress;
             }
@@ -597,18 +617,13 @@ namespace Tsavorite.core
                 recoveryStatus = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.mainLogRecoveryEndAddress,
                         recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, headAddress, options, cancellationToken).ConfigureAwait(false);
 
-                // Initialize the main object-log tail to the end of the hybrid-log objects BEFORE recovering the snapshot pages: the snapshot-region flushes copy
-                // each record's objects from the snapshot object-log into the main object-log starting here, advancing the tail (via OnPartialFlushComplete) as they go.
-                // This must happen after the hybrid-log phase (which runs with the tail unset, like before) and before the snapshot phase.
-                hlogBase.SetObjectLogTail(recoveredHLCInfo.info.hlogEndObjectLogTail);
-
                 // Then recover snapshot into mutable region. The snapshot-region pages are read (without their objects), flushed to the main log with their objects
-                // copied into the main object-log (so they are durable and can be evicted into a smaller memory budget), and then objects are loaded once over the full
+                // copied into the main object log (so they are durable and can be evicted into a smaller memory budget), and then objects are loaded once over the full
                 // recovered range (both the hybrid-log and snapshot regions), honoring the final headAddress.
                 finalHeadAddress = await RecoverHybridLogFromSnapshotFileAsync(scanFromAddress: recoveredHLCInfo.info.mainLogRecoveryEndAddress,
                         recoverFromAddress, untilAddress: recoveredHLCInfo.info.recoveredTailAddress,
                         snapshotStartAddress: recoveredHLCInfo.info.snapshotFileLogicalStartAddress, snapshotEndAddress: recoveredHLCInfo.info.recoveredTailAddress,
-                        snapshotObjectLogReadEnd: recoveredHLCInfo.info.snapshotEndObjectLogTail,
+                        snapshotObjectLogTail: recoveredHLCInfo.info.snapshotEndObjectLogTail,
                         recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, headAddress: recoveryStatus.headAddress,
                         options, cancellationToken).ConfigureAwait(false);
 
@@ -800,7 +815,7 @@ namespace Tsavorite.core
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
             hlogBase.AsyncFlushPagesForRecovery(recoveryStatus.snapshotScanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery,
                 recoveryStatus, recoveryStatus.checkpointVersion, recoveryStatus.objectLogRecoveryDevice, formerFlushedUntilAddress: recoveryStatus.snapshotScanFromAddress,
-                snapshotObjectLogReadEndWord: recoveryStatus.objectLogRecoveryReadEnd.word, untilAddress: recoveryStatus.snapshotUntilAddress);
+                untilAddress: recoveryStatus.snapshotUntilAddress);
             recoveryStatus.WaitFlush(pageIndex);
             recoveryStatus.snapshotPageFlushedToMain[pageIndex] = true;
         }
@@ -980,17 +995,17 @@ namespace Tsavorite.core
         {
             if (!upgradeObjectLog || checkpointType == CheckpointType.Snapshot)
                 return;
-            hlogBase.CompleteObjectLogUpgrade(adoptConvertedTailNow: false);
+            hlogBase.CompleteObjectLogUpgrade();
             TrimResidentPagesToBudget(recoveryStatus, untilAddress);
         }
 
         /// <summary>
         /// Up-convert one page of a downlevel checkpoint's object log. The page's objects are deserialized from the downlevel object log and
         /// the page is then rewritten: inline record images go back to the main log in place (the up-conversion is size-stable), while the
-        /// objects are re-serialized in current format — inserting a ChunkHeader wherever one is now required — and appended to the upgrade
-        /// object-log device. Pages are converted one at a time and awaited, so object-log appends stay in ascending main-log order, which is
-        /// what the next-record extent hints stamped during conversion assume. Converting before the page can be evicted is required: an evicted
-        /// page would keep its downlevel object-log positions, which resolve against the wrong file once the upgrade device becomes live.
+        /// objects are re-serialized in the current format and appended to the upgrade object log. Pages are converted one at a time and
+        /// awaited, so object-log appends stay in ascending main-log order, which the page floors stamped during conversion assume.
+        /// Converting before the page can be evicted is required: an evicted page would keep its downlevel object-log positions, which
+        /// resolve against the wrong log once the upgrade log becomes live.
         /// </summary>
         /// <param name="recoveryStatus">The <see cref="RecoveryStatus"/> instance</param>
         /// <param name="scanFromAddress">The lowest address being recovered</param>
@@ -1120,7 +1135,7 @@ namespace Tsavorite.core
                 pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
             if (RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage,
-                options, isSnapshotPage: false, ref recoveryStatus.IsolatedKeyReadBuffers, objectLogRecoveryDevice: null, objectLogRecoveryReadEnd: default))
+                options, isSnapshotPage: false, ref recoveryStatus.IsolatedKeyReadBuffers, objectLogRecoveryDevice: null, objectLogRecoveryReadEnd: 0))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -1145,19 +1160,19 @@ namespace Tsavorite.core
         /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, </param>
         /// <param name="snapshotStartAddress">The start of the mutable region; the FlushedUntilAddress at the start of the WAIT_FLUSH phase</param>
         /// <param name="snapshotEndAddress">The end of the snapshot; the tailAddress at the start of the WAIT_FLUSH phase</param>
-        /// <param name="snapshotObjectLogReadEnd">Exclusive durable end of the snapshot object-log address space.</param>
+        /// <param name="snapshotObjectLogTail">The tail of the checkpoint's snapshot object log.</param>
         /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
         /// <param name="guid">The checkpoint token guid</param>
         /// <param name="headAddress">The headAddress resulting from the preceding hybrid-log recovery phase (the lowest resident address); seeds eviction tracking here</param>
         /// <param name="options">The recovery options</param>
         /// <returns>The final headAddress (lowest resident address) after reading the snapshot pages and loading objects</returns>
         private async ValueTask<long> RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress,
-            long snapshotStartAddress, long snapshotEndAddress, ObjectLogPositionInfo snapshotObjectLogReadEnd,
+            long snapshotStartAddress, long snapshotEndAddress, long snapshotObjectLogTail,
             long nextVersion, Guid guid, long headAddress, RecoveryOptions options,
             CancellationToken cancellationToken)
         {
-            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, snapshotObjectLogReadEnd, guid, out int startPage,
-                out int endPage, out int snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
+            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, snapshotObjectLogTail, options.checkpointVersion, guid,
+                out int startPage, out int endPage, out int snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
 
             // Seed the head from the preceding hybrid-log phase so the snapshot-read loop (TrimLogPages) and the deferred object load
             // evict from, and track, the correct lowest-resident address across the full recovered range.
@@ -1243,10 +1258,9 @@ namespace Tsavorite.core
 
             if (upgradeObjectLog)
             {
-                // Both regions are converted, so the upgrade device becomes the live object log and its append position the live tail.
-                // The conversion pass has already loaded each page's objects from the current-format bytes it wrote, so the deferred
-                // object load has nothing left to do.
-                hlogBase.CompleteObjectLogUpgrade(adoptConvertedTailNow: true);
+                // Both regions are converted, so the conversion's destination becomes the live object log. The conversion pass has already
+                // loaded each page's objects from the current-format bytes it wrote, so the deferred object load has nothing left to do.
+                hlogBase.CompleteObjectLogUpgrade();
                 TrimResidentPagesToBudget(recoveryStatus, untilAddress);
             }
             else
@@ -1264,15 +1278,18 @@ namespace Tsavorite.core
             }
 
             var finalHeadAddress = recoveryStatus.headAddress;
+
+            // The snapshot object log reads its device, so close it before the device is disposed.
+            hlogBase.CloseRecoverySnapshotObjectLog();
             recoveryStatus.Dispose();
             return finalHeadAddress;
         }
 
         /// <summary>
         /// Up-convert one snapshot-region page of a downlevel checkpoint. The page's objects are deserialized from the downlevel SNAPSHOT
-        /// object log and the page is then flushed to the main log, re-serializing those objects in current format onto the upgrade device.
-        /// This replaces the verbatim snapshot-to-main object copy, whose downlevel bytes lack the ChunkHeader framing the current format
-        /// requires. Pages are converted one at a time and awaited, in ascending main-log order, which is what the next-record extent hints
+        /// object log and the page is then flushed to the main log, re-serializing those objects in the current format onto the upgrade
+        /// object log. A current-format snapshot's records are copied to the main object log instead, but a downlevel snapshot's object bytes
+        /// are not in the current format. Pages are converted one at a time and awaited, in ascending main-log order, which the page floors
         /// stamped during conversion assume.
         /// </summary>
         /// <param name="recoveryStatus">The <see cref="RecoveryStatus"/> instance</param>
@@ -1513,6 +1530,8 @@ namespace Tsavorite.core
         /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, </param>
         /// <param name="snapshotStartAddress">The start of the mutable region; the FlushedUntilAddress at the start of the WAIT_FLUSH phase</param>
         /// <param name="snapshotEndAddress">The end of the snapshot; the tailAddress at the start of the WAIT_FLUSH phase</param>
+        /// <param name="snapshotObjectLogTail">The tail of the checkpoint's snapshot object log</param>
+        /// <param name="checkpointVersion">The checkpoint version, which selects the object-log decode</param>
         /// <param name="guid">The checkpoint token guid</param>
         /// <param name="startPage">The first page to read; the page of <paramref name="scanFromAddress"/></param>
         /// <param name="endPage">The last page to read; the page of <paramref name="untilAddress"/></param>
@@ -1520,7 +1539,7 @@ namespace Tsavorite.core
         /// <param name="recoveryStatus">The allocated <see cref="RecoveryStatus"/> instance</param>
         /// <param name="numPagesToReadPerIteration">The number of pages to read per iteration</param>
         private void GetSnapshotPageRangesToRead(long scanFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress,
-            ObjectLogPositionInfo snapshotObjectLogReadEnd, Guid guid,
+            long snapshotObjectLogTail, int checkpointVersion, Guid guid,
             out int startPage, out int endPage, out int snapshotEndPage, out RecoveryStatus recoveryStatus, out int numPagesToReadPerIteration)
         {
             // Compute startPage and endPage
@@ -1539,13 +1558,18 @@ namespace Tsavorite.core
 
             recoveryDevice.Initialize(hlogBase.GetMainLogSegmentSize());
             objectLogRecoveryDevice?.Initialize(hlogBase.GetObjectLogSegmentSize());
+            var isDownlevel = HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion);
             recoveryStatus = new RecoveryStatus(hlogBase.BufferSize)
             {
                 recoveryDevice = recoveryDevice,
                 objectLogRecoveryDevice = objectLogRecoveryDevice,
-                objectLogRecoveryReadEnd = snapshotObjectLogReadEnd,
+                objectLogRecoveryReadEnd = isDownlevel ? snapshotObjectLogTail : 0,
                 recoveryDevicePageOffset = snapshotStartPage
             };
+
+            // A current-format snapshot object log is read through an object log positioned at its tail, selected by passing its device.
+            if (!isDownlevel && objectLogRecoveryDevice is not null)
+                hlogBase.OpenRecoverySnapshotObjectLog(objectLogRecoveryDevice, snapshotObjectLogTail);
 
             // Read as many pages as buffer allows, leaving room for at least 1 page for eviction.
             numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, endPage - startPage);
@@ -1659,13 +1683,13 @@ namespace Tsavorite.core
         /// <param name="objectLogRecoveryDevice">The object-log device to read overflow keys from during index build: <c>null</c> for the
         /// main object log (FoldOver/hybrid-log pages), or the snapshot object-log device for snapshot pages. Only used when a record has an
         /// overflow key (whose bytes are not yet in the transient objectIdMap during Pass 1).</param>
-        /// <param name="objectLogRecoveryReadEnd">Exclusive durable end of <paramref name="objectLogRecoveryDevice"/>; unset for the main
-        /// object log during early recovery.</param>
+        /// <param name="objectLogRecoveryReadEnd">For a downlevel checkpoint, the exclusive durable end of <paramref name="objectLogRecoveryDevice"/>;
+        /// zero for the main object log, or for a current-format snapshot object log, which is bounded by its own tail.</param>
         /// <returns>True if we touched the page (and thus it needs to be flushed), else false</returns>
         private unsafe bool RecoverFromPage(long recoverFromAddress, long pageFromAddressOffset, long pageUntilAddressOffset,
                                      long pageStartLogicalAddress, long pageStartPhysicalAddress, in RecoveryOptions options,
                                      bool isSnapshotPage, ref CircularDiskReadBuffer isolatedKeyReadBuffers,
-                                     IDevice objectLogRecoveryDevice, ObjectLogPositionInfo objectLogRecoveryReadEnd)
+                                     IDevice objectLogRecoveryDevice, long objectLogRecoveryReadEnd)
         {
             Debug.Assert(pageFromAddressOffset >= hlogBase.pageHeaderSize, $"fromLogicalAddressInPage {pageFromAddressOffset} must be >= hlogBase.pageHeaderSize {hlogBase.pageHeaderSize} (which may be 0)");
             Debug.Assert(pageUntilAddressOffset <= hlogBase.GetPageSize(), $"pageSize {pageUntilAddressOffset} must be <= PageSize {hlogBase.GetPageSize()}");

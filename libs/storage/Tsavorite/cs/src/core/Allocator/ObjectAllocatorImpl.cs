@@ -32,8 +32,35 @@ namespace Tsavorite.core
         /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
         internal ObjectPage[] objectPages;
 
-        /// <summary>The position information for the next write to the object log.</summary>
-        ObjectLogPositionInfo objectLogTail;
+        /// <summary>The object log that ReadOnly flushes write and reads resolve against; null until first needed, and always null when
+        /// <see cref="HasPersistentObjectLog"/> is false. While a downlevel checkpoint is being up-converted, flushes write
+        /// <see cref="upgradeObjectLog"/> instead.</summary>
+        ObjectLog mainObjectLog;
+
+        /// <summary>Destination of a downlevel object-log up-conversion while it runs: an object log over <see cref="upgradeObjectLogDevice"/>, or
+        /// <see cref="mainObjectLog"/> itself for a self-contained snapshot. Null otherwise.</summary>
+        ObjectLog upgradeObjectLog;
+
+        /// <summary>A checkpoint's snapshot object log, opened by recovery to read snapshot-region objects and to copy them into the main object
+        /// log; and the device it is over, which recovery passes to select it.</summary>
+        ObjectLog recoverySnapshotObjectLog;
+        IDevice recoverySnapshotObjectLogDevice;
+
+        /// <summary>The epoch shared by this allocator's object logs, created with the first of them. Sharing it keeps each store to one more
+        /// <see cref="LightEpoch"/> instance, of which a process has a fixed number.</summary>
+        LightEpoch objectLogEpoch;
+
+        /// <summary>Serializes object-log creation and replacement.</summary>
+        readonly object objectLogLock = new();
+
+        /// <summary>Page size, in bits, of this allocator's object logs.</summary>
+        readonly int objectLogPageSizeBits;
+
+        /// <summary>Segment size, in bits, of this allocator's object-log devices.</summary>
+        readonly int objectLogSegmentSizeBits;
+
+        /// <summary>Chunking parameters for writes to this allocator's object logs.</summary>
+        readonly ObjectLogWriterSettings objectLogWriterSettings;
 
         /// <summary>
         /// We use the LastIssued here because we don't want <see cref="OnPagesMarkedReadOnlyWorker"/> to wait for IO to complete which is when
@@ -123,47 +150,36 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>The lowest object-log segment in use; adjusted with Truncate to remain consistent with BeginAddress.</summary>
-        internal int lowestObjectLogSegmentInUse = 0;
-
         // Default to max sizes so testing a size as "greater than" will always be false
         readonly int maxInlineKeySize;
         readonly int maxInlineValueSize;
 
-        readonly int numberOfFlushBuffers;
+        /// <summary>Read buffers for the downlevel (cv7) object-log reader; current-format reads go through <see cref="ObjectLog"/>.</summary>
         readonly int numberOfDeserializationBuffers;
 
-        /// <summary>Default number of concurrently issued Snapshot pages. This is independent of the object-log
-        /// serialization-buffer count; tune it from checkpoint throughput and foreground-latency measurements.</summary>
+        /// <summary>Default number of concurrently issued Snapshot pages; tune it from checkpoint throughput and foreground-latency
+        /// measurements.</summary>
         const int DefaultSnapshotFlushWindowSize = 64;
 
-        /// <summary>The object log the allocator reads and writes. While a downlevel checkpoint is being up-converted this remains the
-        /// downlevel (read-source) device, and is repointed to <see cref="upgradeObjectLogDevice"/> by <see cref="CompleteObjectLogUpgrade"/>
-        /// once every page has been converted.</summary>
+        /// <summary>The device under <see cref="mainObjectLog"/>. While a downlevel checkpoint is being up-converted it holds the downlevel object
+        /// log, which the legacy reader reads; <see cref="CompleteObjectLogUpgrade"/> repoints it to <see cref="upgradeObjectLogDevice"/>.</summary>
         private IDevice objectLogDevice;
 
         /// <summary>Device receiving up-converted object bytes while recovering a downlevel checkpoint; null otherwise.
         /// <see cref="objectLogDevice"/> is the read source for that conversion.</summary>
         private readonly IDevice upgradeObjectLogDevice;
 
-        /// <summary>Append position on <see cref="upgradeObjectLogDevice"/> while up-converting a downlevel checkpoint. This is kept
-        /// separate from <see cref="objectLogTail"/> -- which continues to bound reads of the downlevel <see cref="objectLogDevice"/>
-        /// throughout the conversion -- so a read bound is never applied to the write device or vice versa. The two are swapped by
-        /// <see cref="CompleteObjectLogUpgrade"/>.</summary>
-        private ObjectLogPositionInfo upgradeObjectLogTail;
-
         /// <summary>Whether a downlevel object-log up-conversion is in progress; set for the duration of the ascending conversion pass.</summary>
         private bool isUpgradingObjectLog;
 
-        /// <summary>Whether a downlevel object-log up-conversion has completed, so the live object log is <see cref="upgradeObjectLogDevice"/>
-        /// and the live tail comes from <see cref="upgradeObjectLogTail"/> rather than from the checkpoint's downlevel tail.</summary>
+        /// <summary>Whether a downlevel object-log up-conversion has completed, so the live object log is the one the conversion wrote.</summary>
         private bool objectLogWasUpgraded;
 
         /// <summary>The free pages of the log</summary>
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
         /// <summary>Segment size</summary>
-        private long ObjectLogSegmentSize;
+        private readonly long ObjectLogSegmentSize;
 
         /// <inheritdoc/>
         public override string ToString() => BaseToString($" (LI {LastIssuedFlushedUntilAddress}, OG {OngoingFlushedUntilAddress}, No {NoFlushUntilAddress})");
@@ -182,9 +198,6 @@ namespace Tsavorite.core
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
             pageHeaderSize = PageHeader.Size;
 
-            if (settings.LogSettings.NumberOfFlushBuffers < LogSettings.kMinFlushBuffers || settings.LogSettings.NumberOfFlushBuffers > LogSettings.kMaxFlushBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfFlushBuffers))
-                throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfFlushBuffers)} must be between {LogSettings.kMinFlushBuffers} and {LogSettings.kMaxFlushBuffers - 1} and a power of 2");
-            numberOfFlushBuffers = settings.LogSettings.NumberOfFlushBuffers;
             SnapshotFlushWindowSize = Math.Min(DefaultSnapshotFlushWindowSize, BufferSize);
 
             if (settings.LogSettings.NumberOfDeserializationBuffers < LogSettings.kMinDeserializationBuffers || settings.LogSettings.NumberOfDeserializationBuffers > LogSettings.kMaxDeserializationBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfDeserializationBuffers))
@@ -193,7 +206,15 @@ namespace Tsavorite.core
 
             if (settings.LogSettings.ObjectLogSegmentSizeBits is < LogSettings.kMinObjectLogSegmentSizeBits or > LogSettings.kMaxSegmentSizeBits)
                 throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogSegmentSizeBits)} must be between {LogSettings.kMinObjectLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
-            objectLogTail = new(0, settings.LogSettings.ObjectLogSegmentSizeBits);
+            objectLogSegmentSizeBits = settings.LogSettings.ObjectLogSegmentSizeBits;
+
+            // An object-log page bounds a single chunk, and a device write never spans a segment, so the page is at most the segment.
+            objectLogPageSizeBits = settings.LogSettings.ObjectLogPageSizeBits > 0
+                ? settings.LogSettings.ObjectLogPageSizeBits
+                : Math.Min(ObjectLog.DefaultPageSizeBits, objectLogSegmentSizeBits);
+            if (objectLogPageSizeBits < LogSettings.kMinPageSizeBits || objectLogPageSizeBits > objectLogSegmentSizeBits)
+                throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogPageSizeBits)} ({objectLogPageSizeBits}) must be between {LogSettings.kMinPageSizeBits} and the object-log segment size bits ({objectLogSegmentSizeBits})");
+            objectLogWriterSettings = settings.LogSettings.ObjectLogWriterSettings ?? ObjectLogWriterSettings.Default;
 
             objectPages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
@@ -299,6 +320,11 @@ namespace Tsavorite.core
             if (offset == 0)
                 objectPages[index].Clear();
             base.ClearPage(index, offset);
+
+            // A page cleared from its start may be reused for a later page without being allocated again, so it needs a fresh header. A zeroed
+            // header's floor reads as a stamped floor of 0, which a flush's stamp does not replace and which holds main object-log truncation back.
+            if (offset == 0 && pagePointers[index] != 0)
+                PageHeader.Initialize(pagePointers[index]);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -677,159 +703,264 @@ namespace Tsavorite.core
                 freePagePool.Dispose();
                 foreach (var value in localValues)
                     value.Clear();
+
+                // Before base.Dispose: disposing an object log fails the flush waiters of pages still in flight, whose callbacks run against
+                // this allocator.
+                DisposeObjectLogs();
                 base.Dispose();
             }
         }
 
+        /// <summary>Dispose every object log this allocator owns, then their shared epoch.</summary>
+        void DisposeObjectLogs()
+        {
+            lock (objectLogLock)
+            {
+                CloseRecoverySnapshotObjectLogCore();
+                if (upgradeObjectLog is not null && !ReferenceEquals(upgradeObjectLog, mainObjectLog))
+                    upgradeObjectLog.Dispose();
+                upgradeObjectLog = null;
+                mainObjectLog?.Dispose();
+                mainObjectLog = null;
+                objectLogEpoch?.Dispose();
+                objectLogEpoch = null;
+            }
+        }
+
+        /// <summary>Whether this allocator writes its objects to a persistent object log: it has an object-log device and a persisted main log.
+        /// Without one, flushes write inline images only, as for the read cache and the in-memory stores of iterators and compaction.</summary>
+        bool HasPersistentObjectLog => objectLogDevice is not null and not NullDevice && device is not NullDevice;
+
+        /// <summary>Create an object log over <paramref name="logDevice"/> with this allocator's geometry and shared epoch.</summary>
+        /// <remarks>The caller holds <see cref="objectLogLock"/>.</remarks>
+        ObjectLog CreateObjectLogCore(IDevice logDevice)
+        {
+            objectLogEpoch ??= new LightEpoch();
+            return new ObjectLog(new ObjectLogSettings
+            {
+                LogDevice = logDevice,
+                PageSizeBits = objectLogPageSizeBits,
+                SegmentSizeBits = objectLogSegmentSizeBits,
+                Epoch = objectLogEpoch,
+                Logger = logger,
+            });
+        }
+
+        /// <summary>The main object log, created on first use.</summary>
+        ObjectLog EnsureMainObjectLog()
+        {
+            var log = Volatile.Read(ref mainObjectLog);
+            if (log is not null)
+                return log;
+            lock (objectLogLock)
+            {
+                if (mainObjectLog is null)
+                    Volatile.Write(ref mainObjectLog, CreateObjectLogCore(objectLogDevice));
+                return mainObjectLog;
+            }
+        }
+
+        /// <summary>The object log that ReadOnly and recovery flushes write: the up-conversion's destination while one runs, otherwise the main
+        /// object log. Null when this allocator has no persistent object log.</summary>
+        ObjectLog FlushObjectLog => isUpgradingObjectLog ? upgradeObjectLog : HasPersistentObjectLog ? EnsureMainObjectLog() : null;
+
+        /// <inheritdoc/>
+        internal override ObjectLog RecoveryFlushObjectLog => FlushObjectLog;
+
+        /// <inheritdoc/>
+        internal override ObjectLog GetRecoverySnapshotObjectLog(IDevice snapshotObjectLogDevice)
+            => ReferenceEquals(snapshotObjectLogDevice, recoverySnapshotObjectLogDevice) ? recoverySnapshotObjectLog : null;
+
+        /// <summary>The object log a current-format read resolves against: the main object log when <paramref name="logDevice"/> is null, otherwise
+        /// the recovery snapshot object log over that device.</summary>
+        ObjectLog GetReadObjectLog(IDevice logDevice)
+        {
+            if (logDevice is null)
+                return Volatile.Read(ref mainObjectLog) ?? throw new TsavoriteException("A record references the object log, but this store has none open");
+            if (ReferenceEquals(logDevice, recoverySnapshotObjectLogDevice))
+                return recoverySnapshotObjectLog;
+            throw new TsavoriteException("No object log is open over the device a recovery read requested");
+        }
+
+        /// <inheritdoc/>
+        internal override ObjectLog CreateSnapshotObjectLog(IDevice snapshotObjectLogDevice)
+        {
+            if (snapshotObjectLogDevice is null or NullDevice)
+                return null;
+            lock (objectLogLock)
+                return CreateObjectLogCore(snapshotObjectLogDevice);
+        }
+
+        /// <inheritdoc/>
+        internal override void RestoreObjectLog(long beginAddress, long tailAddress)
+        {
+            if (!HasPersistentObjectLog)
+                return;
+
+            // A fresh object log, so nothing appended before this recovery survives, positioned at the durable end the checkpoint recorded. A
+            // checkpoint taken before the store wrote its object log records no end, and the log starts empty; one taken while the object log was
+            // still uncreated at PREPARE records no begin, which is the log's start.
+            lock (objectLogLock)
+            {
+                mainObjectLog?.Dispose();
+                mainObjectLog = null;
+                var log = CreateObjectLogCore(objectLogDevice);
+                try
+                {
+                    if (tailAddress > 0)
+                        log.RestoreTail(Math.Max(beginAddress, LogAddress.FirstValidAddress), tailAddress);
+                }
+                catch
+                {
+                    log.Dispose();
+                    throw;
+                }
+                Volatile.Write(ref mainObjectLog, log);
+            }
+        }
+
+        /// <inheritdoc/>
+        internal override void OpenRecoverySnapshotObjectLog(IDevice snapshotObjectLogDevice, long tailAddress)
+        {
+            lock (objectLogLock)
+            {
+                CloseRecoverySnapshotObjectLogCore();
+                if (snapshotObjectLogDevice is null || tailAddress <= 0)
+                    return;
+                var log = CreateObjectLogCore(snapshotObjectLogDevice);
+                try
+                {
+                    log.RestoreTail(LogAddress.FirstValidAddress, tailAddress);
+                }
+                catch
+                {
+                    log.Dispose();
+                    throw;
+                }
+                recoverySnapshotObjectLog = log;
+                recoverySnapshotObjectLogDevice = snapshotObjectLogDevice;
+            }
+        }
+
+        /// <inheritdoc/>
+        internal override void CloseRecoverySnapshotObjectLog()
+        {
+            lock (objectLogLock)
+                CloseRecoverySnapshotObjectLogCore();
+        }
+
+        void CloseRecoverySnapshotObjectLogCore()
+        {
+            recoverySnapshotObjectLog?.Dispose();
+            recoverySnapshotObjectLog = null;
+            recoverySnapshotObjectLogDevice = null;
+        }
+
+        /// <inheritdoc/>
+        internal override long ObjectLogBeginAddress => Volatile.Read(ref mainObjectLog)?.BeginAddress ?? 0;
+
+        /// <inheritdoc/>
+        internal override long ObjectLogFlushedUntilAddress => Volatile.Read(ref mainObjectLog)?.FlushedUntilAddress ?? 0;
+
+        /// <inheritdoc/>
+        internal override long ObjectLogPageSize => 1L << objectLogPageSizeBits;
+
         protected override void TruncateUntilAddressBlocking(long toAddress)
         {
-            // First get the segment of the object log to remove. We've put the lowest object log position used by a page into its PageHeader.
-            // If toAddress is in the middle of a main log page, we must limit objectlog truncation to the lowest segment used by the that page.
-            // If toAddress is not past the PageHeader, then assume it is the start of the page and its PageHeader hasn't been written, so use
-            // the previous page.
-            var objectLogSegment = -1;
-            if (objectLogDevice is not null)
+            // A page header holds a floor below which neither that page nor any later one has object-log bytes, because the main object log is
+            // written in page order. If toAddress is in the middle of a page, that page's retained records bound the truncation, so use its floor;
+            // if toAddress is not past the PageHeader, the header may not have been written, so use the previous page's.
+            var objectLogFloor = -1L;
+            var objectLog = Volatile.Read(ref mainObjectLog);
+            if (objectLog is not null)
             {
                 var addressOfStartOfMainLogPage = GetAddressOfStartOfPageOfAddress(toAddress);
                 if (GetOffsetOnPage(toAddress) <= PageHeader.Size && addressOfStartOfMainLogPage >= PageSize)
                     addressOfStartOfMainLogPage -= PageSize;
-                objectLogSegment = GetLowestObjectLogSegmentInUse(addressOfStartOfMainLogPage);
+                objectLogFloor = ReadObjectLogFloor(addressOfStartOfMainLogPage);
             }
 
             // Now do the actual truncations.
             base.TruncateUntilAddressBlocking(toAddress);
-            if (objectLogSegment >= 0)
-            {
-                objectLogDevice.TruncateUntilSegment(objectLogSegment);
-                _ = MonotonicUpdate(ref lowestObjectLogSegmentInUse, objectLogSegment, out _);
-            }
+            if (objectLog is not null && objectLogFloor > objectLog.BeginAddress)
+                objectLog.Truncate(objectLogFloor);
         }
 
         protected override void RemoveSegment(int segment)
         {
-            // if segment is not the last segment (which should be the case), we can use the page header of the start of the segment to get
-            // the highest object log segment to remove because we know its PageHeader has been written. Otherwise, we have to use the previous
-            // page's PageHeader to get the object log segment to remove.
-            var objectLogSegment = -1;
-            if (objectLogDevice is not null)
+            // If segment is not the last segment (which should be the case), the PageHeader at its start has been written. Otherwise use the
+            // previous page's.
+            var objectLogFloor = -1L;
+            var objectLog = Volatile.Read(ref mainObjectLog);
+            if (objectLog is not null)
             {
                 var addressOfStartOfMainLogPage = GetStartLogicalAddressOfSegment(segment);
                 if (segment >= device.EndSegment)
                     addressOfStartOfMainLogPage -= PageSize;
-                objectLogSegment = GetLowestObjectLogSegmentInUse(addressOfStartOfMainLogPage);
+                objectLogFloor = ReadObjectLogFloor(addressOfStartOfMainLogPage);
             }
 
-            // Now do the actual truncations; TruncateUntilSegment does not remove the passed segment.
             base.RemoveSegment(segment);
-            if (objectLogSegment >= 0)
-            {
-                objectLogDevice.TruncateUntilSegment(objectLogSegment);
-                _ = MonotonicUpdate(ref lowestObjectLogSegmentInUse, objectLogSegment, out _);
-            }
+            if (objectLog is not null && objectLogFloor > objectLog.BeginAddress)
+                objectLog.Truncate(objectLogFloor);
         }
 
-        private int GetLowestObjectLogSegmentInUse(long addressOfStartOfMainLogPage)
+        /// <summary>Read the object-log floor from the durable header of the main-log page starting at <paramref name="addressOfStartOfMainLogPage"/>.</summary>
+        /// <returns>The floor, or -1 if there is none to use.</returns>
+        private long ReadObjectLogFloor(long addressOfStartOfMainLogPage)
         {
-            Debug.Assert(objectLogDevice is not null, "GetHighestObjectLogSegmentToRemove should not be called if there is no objectLogDevice");
-            var objectLogSegment = -1;
-
-            // If we're on the first main-log page, we won't be able to remove any object log segments.
-            // If we're not past the PageHeader of the second page, then the PageHeader probably hasn't been written, so we can't read it.
+            // If we're on the first main-log page, we can't remove anything; if we're not past the PageHeader of the second page, it probably
+            // hasn't been written, so we can't read it.
             if (addressOfStartOfMainLogPage <= PageSize + PageHeader.Size)
-                return objectLogSegment;
+                return -1;
 
             var buffer = bufferPool.Get(sectorSize);
             try
             {
                 if (!TryReadDevice(device, (ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize,
-                    nameof(GetLowestObjectLogSegmentInUse), out var errorCode, out var numBytesRead, out var ioException))
+                    nameof(ReadObjectLogFloor), out var errorCode, out var numBytesRead, out var ioException))
                 {
-                    throw CreateReadException(nameof(GetLowestObjectLogSegmentInUse), (ulong)addressOfStartOfMainLogPage, (uint)sectorSize,
+                    throw CreateReadException(nameof(ReadObjectLogFloor), (ulong)addressOfStartOfMainLogPage, (uint)sectorSize,
                         errorCode, numBytesRead, ioException);
                 }
 
-                var pageHeader = *(PageHeader*)buffer.aligned_pointer;
-                if (!ObjectLogPositionInfo.WordIsUnstamped(pageHeader.objectLogLowestPositionWord))
-                {
-                    // Recovery verifies that the checkpoint's ObjectLogSegmentSize matches the settings the store was opened with, so the
-                    // live objectLogTail's segment bits are the same bits the page header was stamped under.
-                    var objectLogPosition = new ObjectLogPositionInfo(pageHeader.objectLogLowestPositionWord, objectLogTail.SegmentSizeBits);
-                    objectLogSegment = objectLogPosition.SegmentId;
-                }
+                return ((PageHeader*)buffer.aligned_pointer)->GetLowestObjectLogAddress();
             }
             finally
             {
                 bufferPool.Return(buffer);
             }
-
-            return objectLogSegment;
         }
 
-        /// <inheritdoc/>
-        internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger)
-        {
-            // While up-converting, a flush appends current-format bytes to the destination device; the downlevel device stays the read source.
-            var localObjectLogDevice = objectLogDevice ?? (isUpgradingObjectLog ? UpgradeDestinationObjectLogDevice : this.objectLogDevice);
-            return localObjectLogDevice is not null
-                ? new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, localObjectLogDevice, logger)
-                : null;
-        }
+        /// <summary>Create read buffers for the downlevel (cv7) object-log reader over <paramref name="legacyObjectLogDevice"/>, or over
+        /// <see cref="objectLogDevice"/> when it is null.</summary>
+        CircularDiskReadBuffer CreateLegacyReadBuffers(IDevice legacyObjectLogDevice)
+            => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, legacyObjectLogDevice ?? objectLogDevice, logger);
 
-        /// <inheritdoc/>
-        internal override CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger)
-            => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice ?? this.objectLogDevice, logger);
-
-        /// <inheritdoc/>
-        internal override CircularDiskReadBuffer CreateCircularReadBuffers()
-            => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice, logger);
-
-        /// <summary>Return the exclusive logical bound for reads submitted through <paramref name="readBuffers"/>. A supplied recovery
-        /// bound belongs to that reader's snapshot object-log address space. Otherwise, the allocator's <see cref="objectLogTail"/> bounds
-        /// only its main object-log device once that tail is set. An unset main tail during early recovery, or a non-main reader without
-        /// an explicit bound, selects an unbounded logical read rather than applying a tail from another device.</summary>
-        ObjectLogPositionInfo GetObjectLogReadHardEnd(CircularDiskReadBuffer readBuffers, ObjectLogPositionInfo suppliedHardEnd = default)
-            => suppliedHardEnd.HasData
-                ? suppliedHardEnd
-                : readBuffers.UsesDevice(objectLogDevice)
-                ? objectLogTail
-                : new ObjectLogPositionInfo(ObjectLogPositionInfo.NotSet, objectLogTail.SegmentSizeBits);
-
-        /// <inheritdoc/>
-        internal override int LowestObjectLogSegmentInUse => lowestObjectLogSegmentInUse;
-        /// <inheritdoc/>
-        internal override ObjectLogPositionInfo GetObjectLogTail() => objectLogTail;
-
-        /// <inheritdoc/>
-        internal override ObjectLogPositionInfo GetLowestObjectLogPositionForPage(int page)
-        {
-            var pageIndex = GetPageIndexForPage(page);
-            if (!IsAllocated(pageIndex))
-                return new();
-            var pagePhysicalAddress = GetPhysicalAddress(GetLogicalAddressOfStartOfPage(page));
-            return ((PageHeader*)pagePhysicalAddress)->GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits);
-        }
-        /// <inheritdoc/>
-        internal override void SetObjectLogTail(ObjectLogPositionInfo tail)
-        {
-            Debug.Assert(!objectLogTail.HasData, $"SetObjectLogTail should be called only when we have not already set objectLogTail, such as in Recovery");
-
-            // A completed up-conversion replaced the object log, so the checkpoint's downlevel tail no longer describes the live device.
-            // The position the conversion appended to is the live tail.
-            objectLogTail = objectLogWasUpgraded ? upgradeObjectLogTail : tail;
-        }
+        /// <summary>The exclusive bound for a downlevel read: <paramref name="legacyReadEnd"/>, the snapshot object log's end, or no bound for the
+        /// downlevel main object log, which recovery reads before any of its tails are known.</summary>
+        LegacyObjectLogPosition GetLegacyReadHardEnd(long legacyReadEnd)
+            => new(legacyReadEnd > 0 ? (ulong)legacyReadEnd : ObjectLogPositionInfo.NotSet, objectLogSegmentSizeBits);
 
         /// <inheritdoc/>
         internal override void BeginObjectLogUpgrade()
         {
-            Debug.Assert(UpgradeDestinationObjectLogDevice is not null, $"{nameof(BeginObjectLogUpgrade)} requires an object-log device to receive the converted bytes");
             Debug.Assert(!isUpgradingObjectLog, $"{nameof(BeginObjectLogUpgrade)} should be called only once");
 
-            // The destination device is empty - a new upgrade device, or the empty main object log of a self-contained snapshot - so
-            // conversion appends from its start. objectLogTail is left alone: for a FoldOver or non-empty-hybrid-log snapshot it holds the
-            // downlevel tail from the checkpoint metadata and continues to bound reads of the downlevel main device during conversion; for a
-            // self-contained snapshot it is the unset boundary tail and the main device is never read (the downlevel bytes come from the
-            // checkpoint's snapshot object log).
-            upgradeObjectLogTail = new(0, objectLogTail.SegmentSizeBits);
+            // The destination starts empty: a new object log over the upgrade device, or the main object log of a self-contained snapshot, whose
+            // downlevel bytes all live in the checkpoint's snapshot object log. Downlevel bytes on objectLogDevice stay there for the downlevel
+            // reader until the conversion completes.
+            lock (objectLogLock)
+            {
+                if (upgradeObjectLogDevice is not null)
+                    upgradeObjectLog = CreateObjectLogCore(upgradeObjectLogDevice);
+                else
+                {
+                    mainObjectLog?.Dispose();
+                    Volatile.Write(ref mainObjectLog, CreateObjectLogCore(objectLogDevice));
+                    upgradeObjectLog = mainObjectLog;
+                }
+            }
             isUpgradingObjectLog = true;
         }
 
@@ -840,65 +971,62 @@ namespace Tsavorite.core
         internal override bool ObjectLogWasUpgraded => objectLogWasUpgraded;
 
         /// <inheritdoc/>
-        internal override void CompleteObjectLogUpgrade(bool adoptConvertedTailNow)
+        internal override void CompleteObjectLogUpgrade()
         {
             Debug.Assert(isUpgradingObjectLog, $"{nameof(CompleteObjectLogUpgrade)} requires {nameof(BeginObjectLogUpgrade)}");
 
-            // Every page has been converted, so the destination device becomes the live object log. With a separate upgrade device this
-            // repoints the live device to it; for a self-contained snapshot the destination is already the main device, so this is a no-op.
-            objectLogDevice = UpgradeDestinationObjectLogDevice;
+            // Every page has been converted and points into the destination, so it becomes the live object log.
+            lock (objectLogLock)
+            {
+                if (!ReferenceEquals(upgradeObjectLog, mainObjectLog))
+                {
+                    mainObjectLog?.Dispose();
+                    Volatile.Write(ref mainObjectLog, upgradeObjectLog);
+                    objectLogDevice = upgradeObjectLogDevice;
+                }
+                upgradeObjectLog = null;
+            }
             objectLogWasUpgraded = true;
             isUpgradingObjectLog = false;
-
-            // Snapshot recovery has already called SetObjectLogTail (before the snapshot conversion phase, so that phase appends after the
-            // hybrid-log objects), so the converted append position must be adopted now; for a self-contained snapshot the tail set there is
-            // the unset boundary tail, which is why the adoption cannot be conditioned on the tail already having data. FoldOver instead calls
-            // SetObjectLogTail after this, and that call adopts the converted position because objectLogWasUpgraded is now set.
-            if (adoptConvertedTailNow)
-                objectLogTail = upgradeObjectLogTail;
-
-            // lowestObjectLogSegmentInUse needs no reset: conversion appends from segment 0 of the new device, and the field is only ever
-            // raised by object-log truncation, which cannot run during the recovery read phase.
-            Debug.Assert(lowestObjectLogSegmentInUse == 0, "Object-log truncation should not have run during up-conversion");
         }
 
         /// <inheritdoc/>
-        internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer readBuffers, IDevice objectLogDevice,
-            int checkpointVersion, ObjectLogPositionInfo hardReadEndPosition = default)
+        internal override long ComputeRecoveryOverflowKeyHash(in LogRecord logRecord, ref CircularDiskReadBuffer legacyReadBuffers, IDevice objectLogDevice,
+            int checkpointVersion, long legacyReadEnd = 0)
         {
-            // The transient objectIdMap is not populated during recovery Pass 1 (index build), so LogRecord.Key cannot resolve an overflow
-            // key. Read just this record's overflow key bytes from the object log — the main object log for FoldOver/hybrid-log pages, or the
-            // snapshot object log (passed as objectLogDevice) for snapshot pages — and hash them. Overflow keys are rare and Recovery is a rare
-            // startup operation, so the extra per-record IO is acceptable. objectLogTail.SegmentSizeBits is the static object-log segment size
-            // (set at construction from config), valid for decoding both the main and snapshot object-log positions.
-            var startPosition = new ObjectLogPositionInfo(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _, checkpointVersion), objectLogTail.SegmentSizeBits);
-            //
-            // The key is read through the streaming ring rather than as one direct read into a caller-allocated buffer, even though the
-            // record bounds the key's whole on-disk extent. For a headered key that bound is an exact 4 KB page count covering
-            // ChunkHeader + alignment padding + payload, so it rounds up past the last record's written extent. A FoldOver Pass 1 reads
-            // the main object log before objectLogTail is set, so GetObjectLogReadHardEnd yields no durable end to clamp the request
-            // against, and the segment file reports no written extent to clamp against either. ReadDirect requires its exact byte count
-            // and would fault on the resulting short read at end of file. The ring requests the same extent but tracks the bytes actually
-            // available, so the rounding slack is harmless.
-            //
-            // The ring is owned by the caller (RecoveryStatus) and reused across every isolated key read, so its pooled 4 MB buffer is
-            // rented from the depot once per recovery rather than per overflow-key record. A ring is bound to one device, so switching
-            // between the main and snapshot object logs replaces it; recovery processes the hybrid-log and snapshot regions in phases,
-            // so that happens at most a few times.
-            var device = objectLogDevice ?? this.objectLogDevice;
-            if (readBuffers is not null && !readBuffers.UsesDevice(device))
+            // The transient objectIdMap is not populated during recovery Pass 1 (index build), so LogRecord.Key cannot resolve an overflow key. Read
+            // just this record's key from the object log -- the main one for FoldOver and hybrid-log pages, or the snapshot one (passed as
+            // objectLogDevice) for snapshot pages -- and hash it. Overflow keys are rare and recovery is a startup operation, so the extra read per
+            // record is acceptable.
+            if (!HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion))
             {
-                readBuffers.Dispose();
-                readBuffers = null;
+                using var reader = new ObjectLogReader<TStoreFunctions>(GetReadObjectLog(objectLogDevice), storeFunctions);
+                var recordRef = logRecord.GetObjectLogRecordRef();
+                reader.BeginRecord(in recordRef);
+                var key = reader.ReadKey();
+                fixed (byte* keyPtr = key.Span)
+                    return storeFunctions.GetKeyHashCode64(ConditionallyHoistedKey.CreatePinned(keyPtr, key.Length));
             }
-            readBuffers ??= CreateCircularReadBuffers(device, logger);
 
-            readBuffers.nextFileReadPosition = startPosition;
-            var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
+            // A downlevel key is read through the streaming ring rather than as one direct read: the record bounds the key's extent, but the
+            // downlevel object log is a dense file with no page structure, and the ring tracks the bytes actually available at its end. The ring is
+            // owned by the caller and reused across every key read, so its pooled buffer is rented once per recovery. A ring is bound to one device,
+            // so switching between the main and snapshot object logs replaces it.
+            var startPosition = new LegacyObjectLogPosition(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out _, checkpointVersion), objectLogSegmentSizeBits);
+            var legacyDevice = objectLogDevice ?? this.objectLogDevice;
+            if (legacyReadBuffers is not null && !legacyReadBuffers.UsesDevice(legacyDevice))
+            {
+                legacyReadBuffers.Dispose();
+                legacyReadBuffers = null;
+            }
+            legacyReadBuffers ??= CreateLegacyReadBuffers(legacyDevice);
+
+            legacyReadBuffers.nextFileReadPosition = startPosition;
+            var logReader = new LegacyObjectLogReader<TStoreFunctions>(legacyReadBuffers, storeFunctions);
+            logReader.OnBeginReadRecords(startPosition, (ulong)keyLength, GetLegacyReadHardEnd(objectLogDevice is null ? 0 : legacyReadEnd));
             try
             {
-                return logReader.ReadOverflowKeyHashCodeForRecovery(in logRecord, objectLogTail.SegmentSizeBits, checkpointVersion);
+                return logReader.ReadOverflowKeyHashCodeForRecovery(in logRecord, objectLogSegmentSizeBits, checkpointVersion);
             }
             finally
             {
@@ -914,11 +1042,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal override bool HasUpgradeObjectLogDevice => upgradeObjectLogDevice is not null;
-
-        /// <summary>Destination device for up-converted object bytes: the separate upgrade device when one is configured, otherwise the
-        /// main object-log device itself. The latter is used only for a self-contained snapshot, whose main object log is empty, so the
-        /// conversion writes into empty space and never aliases a read source (reads come from the checkpoint's snapshot object log).</summary>
-        private IDevice UpgradeDestinationObjectLogDevice => upgradeObjectLogDevice ?? objectLogDevice;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -942,38 +1065,26 @@ namespace Tsavorite.core
             // the current TailAddress is, but for normal flush operations we do set it to page alignment to eliminate concerns about rewriting partial sectors.
             GetFlushPageRange(fromAddress, untilAddress, out var startPage, out var numPages);
 
-            // Create the buffers we will use for all ranges of the flush. Each page that has out-of-line data rents pooled object-log write
-            // buffers from this instance; pages that are entirely inline skip it (see WriteAsync). ObjectAllocator flushes are page-aligned and
-            // never use the PendingFlush chaining path, so once this loop has issued every page's write, no further writes will reference these
-            // buffers and it is safe to Dispose below.
-            var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
+            // The object log each page's out-of-line components go to; null if this allocator has none, in which case pages are written inline.
+            var objectLog = FlushObjectLog;
             var snapshotCoordination = GetSnapshotFlushCoordinationForReadOnlyRange(untilAddress);
 
-            try
+            // Write each page (or partial page) in the range.
+            for (var flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
             {
-                // Write each page (or partial page) in the range.
-                for (var flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
+                WaitForSnapshotPage(snapshotCoordination, flushPage);
+                if (!PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
                 {
-                    WaitForSnapshotPage(snapshotCoordination, flushPage);
-                    if (!PrepareFlushAsyncResult(fromAddress, untilAddress, noFlush, flushPage, out var asyncResult))
-                    {
-                        NoteSkippedFlushEnd(asyncResult.untilAddress);
-                        continue;
-                    }
-
-                    asyncResult.flushBuffers = flushBuffers;
-
-                    // ObjectAllocator does not use PendingFlush chaining; every page in this range is issued here.
-                    Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
-                        $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
-                    WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
+                    NoteSkippedFlushEnd(asyncResult.untilAddress);
+                    continue;
                 }
-            }
-            finally
-            {
-                // Dispose the shared flush buffers so their pooled object-log write buffers are returned to the pool, even if a page write throws;
-                // Dispose defers the actual return (ClearBuffers) until any still-in-flight device writes complete.
-                flushBuffers?.Dispose();
+
+                asyncResult.objectLog = objectLog;
+
+                // ObjectAllocator does not use PendingFlush chaining; every page in this range is issued here.
+                Debug.Assert(PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count == 0,
+                    $"Expected PendingFlush count {PendingFlush[GetPageIndexForAddress(asyncResult.fromAddress)].list.Count} to be 0 for ObjectAllocator");
+                WriteAsync(flushPage, AsyncFlushPageCallback, asyncResult);
             }
         }
 
@@ -990,27 +1101,19 @@ namespace Tsavorite.core
         /// normally. Garnet's object-log upgrade flow does exactly this.</item>
         /// </list>
         /// Because of (2) an unstamped position is NOT evidence of a flush defect, and this condition cannot be asserted against.
-        /// It is also why "is there anything to read" is decided from the component extent -- see <c>ObjectLogReader.objectDataBudget</c> --
-        /// rather than from the stamp: an in-memory deserialization cannot affect an extent.
-        /// <para>What the stamp still decides is whether a <i>position</i> may be used. Reading from an unstamped position would consume
-        /// bytes belonging to a different record, so the walk must not seek there.</para>
-        /// <para>Read extents play no part in this test. A zero extent is a legitimate zero-length out-of-line value, which contributes no
-        /// object-log bytes but is still stamped and still materialized -- as an absent object rather than a deserialized one, because
-        /// zero bytes carry no type information; see <c>ObjectLogReader.MaterializeRecordObjectsWithoutReading</c>. A zero position word
-        /// is offset 0 of segment 0 -- a real position -- because the unstamped marker lives in the segment+offset bits.</para>
+        /// <para>Reading from an unstamped position would consume bytes belonging to a different record, so the walk must not read there.</para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static bool RecordHasNoReadablePosition(in LogRecord logRecord)
             => ObjectLogPositionInfo.WordIsUnstamped(logRecord.RawObjectLogPositionWord);
 
         protected override void WriteAsync<TContext>(int flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-            => WriteAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
+            => WriteAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage), (uint)PageSize, callback, asyncResult, device);
 
         protected override void WriteAsyncToDeviceForSnapshot<TContext>(int startPage, int flushPage, int pageFlushSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
-            VerifyCompatibleSectorSize(objectLogDevice);
 
             // ReadOnly cannot publish FlushedUntilAddress into this page until Snapshot advances its watermark past
             // the page. HeadAddress is capped by FlushedUntilAddress for real devices and directly by the Snapshot
@@ -1021,15 +1124,13 @@ namespace Tsavorite.core
             // We are writing to a separate device which starts at startPage. Eventually, startPage becomes the basis of
             // HybridLogRecoveryInfo.snapshotFileLogicalStartAddress, which is the page starting at offset 0 of the snapshot file.
             WriteAsync(flushPage, (ulong)GetFileOffsetOfPage(flushPage - startPage), (uint)pageFlushSize,
-                        callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
+                        callback, asyncResult, device, fuzzyStartLogicalAddress);
         }
 
         private void WriteAsync<TContext>(int flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
-                        IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress = long.MaxValue)
+                        IDevice device, long fuzzyStartLogicalAddress = long.MaxValue)
         {
-            // We flush within the DiskStreamWriteBuffer, so we do not use the asyncResult here for IO (until the final callback), but it has necessary fields.
-
             // Short circuit if we are using a null device
             if (device is NullDevice)
             {
@@ -1041,28 +1142,36 @@ namespace Tsavorite.core
             var pageStart = GetLogicalAddressOfStartOfPage(asyncResult.page);
             var logPagePointer = (byte*)pagePointers[flushPage % BufferSize];
 
+            // The object log this page's out-of-line components go to, or null if the page is written inline only; and, for a recovery flush of
+            // snapshot-region pages, the snapshot object log their bytes are copied from.
+            var objectLog = asyncResult.objectLog;
+            var snapshotSourceLog = asyncResult.recoverySnapshotObjectLog;
+            var formerFlushedUntilAddress = asyncResult.recoveryFormerFlushedUntilAddress;
+            var isRecovery = asyncResult.flushRequestState == FlushRequestState.Recovery;
+
             // asyncResult.fromAddress is either start of page or start of a record past the page header
             Debug.Assert(asyncResult.fromAddress - pageStart is >= PageHeader.Size or 0, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
             int startOffset = (int)(asyncResult.fromAddress - pageStart), endOffset = startOffset + (int)numBytesToWrite;
             var isFirstRecordOnPage = startOffset <= PageHeader.Size;
 
-            // Write the object log position into the header if this is the first record on the page. If there are no records on the page, we will
-            // write the page's inline span directly, so we want the header updated regardless of whether we have objects (this may be a page with no
-            // objects after some pages with objects, and so we want Truncate() to know it has to preserve those object log segments).
-            if (isFirstRecordOnPage)
+            // An up-conversion rewrites the page's floor even when it starts mid-page, as it may on the first page it converts: the records below its
+            // start are below BeginAddress, and the floor it would otherwise leave is a position in the downlevel object log.
+            var writesPageHeader = isFirstRecordOnPage || (isRecovery && isUpgradingObjectLog);
+
+            // Stamp the page's object-log floor: the destination's tail before this flush writes any of the page's records. A page header's floor bounds
+            // truncation of the main object log, so it must be a main object-log address no greater than any position a record on this page or a later
+            // page references; the main object log is written in page order, which makes its tail here such a bound. A ReadOnly flush keeps a floor an
+            // earlier fragment of the page stamped, and stamps an object-free page too, so truncation can advance past it. A Snapshot flush stamps
+            // nothing: its destination is the checkpoint's object log, whose addresses bound nothing in the main one, and the live header it would
+            // stamp is the one a later ReadOnly flush writes to the main log, which keeps an existing floor. A recovery flush stamps only when it writes
+            // the page's objects into a new address space: an up-conversion, or the copy of a page that starts in the snapshot region, whose header
+            // came from the snapshot file. A recovery flush that writes no objects leaves the header it read from the main log alone.
+            if (writesPageHeader && objectLog is not null)
             {
-                // While up-converting, the page's stamp is a position on the downlevel device the conversion is replacing, so it must be
-                // overwritten with the position on the upgrade device where this page's objects are about to be written.
-                //
-                // A recovery flush of a snapshot-region page is the same situation in a different address space: the page carries the header
-                // it was checkpointed with, whose position is in the SNAPSHOT object log, while this flush copies its objects into the MAIN
-                // object log and repoints its records there. Without the overwrite the stamp stays in the snapshot's address space, and
-                // GetLowestObjectLogSegmentInUse would feed that unrelated segment id to the main device's TruncateUntilSegment.
-                var forceStamp = isUpgradingObjectLog || asyncResult.flushRequestState == FlushRequestState.Recovery;
-                if (isUpgradingObjectLog)
-                    ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(upgradeObjectLogTail, force: true);
-                else
-                    ((PageHeader*)logPagePointer)->SetLowestObjectLogPosition(objectLogTail, force: forceStamp);
+                if (asyncResult.flushRequestState == FlushRequestState.ReadOnly)
+                    ((PageHeader*)logPagePointer)->SetLowestObjectLogAddress(objectLog.TailAddress);
+                else if (isRecovery && (isUpgradingObjectLog || (snapshotSourceLog is not null && pageStart >= formerFlushedUntilAddress)))
+                    ((PageHeader*)logPagePointer)->SetLowestObjectLogAddress(objectLog.TailAddress, force: true);
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
@@ -1082,7 +1191,7 @@ namespace Tsavorite.core
             // Adjust so the first record on the page includes the page header. We've already asserted fromAddress such that startOffset is either 0 or >= PageHeader.
             var logicalAddress = asyncResult.fromAddress;
             var firstRecordOffset = startOffset;
-            if (isFirstRecordOnPage)
+            if (writesPageHeader)
             {
                 if (startOffset == 0)
                 {
@@ -1101,10 +1210,10 @@ namespace Tsavorite.core
             var alignedStartOffset = RoundDown(startOffset, deviceSectorSize);
 
             // A page whose records are entirely inline (no Overflow keys/values and no Object values, i.e. the page's objectIdMap is empty) has
-            // nothing to serialize to the object log, so write its inline span directly and skip renting an object-log write buffer and walking
-            // every record. This also covers using ObjectAllocator for string-only purposes, where there are no flushBuffers at all. The span and
-            // destination are the ones the serializing path computes below, so a Snapshot lands at its own device's page offset and stops at the
-            // checkpoint boundary; Snapshot page ordering and fuzzy rules still apply through its coordination callbacks.
+            // nothing to serialize to the object log, so write its inline span directly and skip walking every record. This also covers an
+            // ObjectAllocator with no object log, which is used for string-only purposes. The span and destination are the ones the serializing path
+            // computes below, so a Snapshot lands at its own device's page offset and stops at the checkpoint boundary; Snapshot page ordering and
+            // fuzzy rules still apply through its coordination callbacks.
             //
             // The test is objectIdMap.Count, which is page-scoped, so a sub-range flush of a page that has objects outside that range still
             // serializes. Narrowing it to the range would mean either deferring the writer until the walk below reaches its first out-of-line
@@ -1118,14 +1227,14 @@ namespace Tsavorite.core
             var pageHasNoObjectsToFlush = objectIdMap.Count == 0
                 && asyncResult.flushRequestState is FlushRequestState.ReadOnly or FlushRequestState.Snapshot;
             var writeInlineOnly = false;
-            if (asyncResult.flushBuffers is null || pageHasNoObjectsToFlush)
+            if (objectLog is null || pageHasNoObjectsToFlush)
             {
                 // Recovery never takes the inline path, for two independent reasons. Its objectIdMap is empty because records read from disk
                 // still carry object-log positions in their objectId slots rather than map indices, so Count is not a test for "no out-of-line
-                // data" here and would report zero for a page full of overflow keys and objects. And a recovery flush exists to stamp records:
-                // snapshot-region records copy their object bytes into the main object log and are repointed, and legacy records are
-                // up-converted, so there is no case with nothing to do.
-                if (asyncResult.flushRequestState != FlushRequestState.Recovery)
+                // data" here and would report zero for a page full of overflow keys and objects. And a recovery flush must examine every record:
+                // snapshot-region records copy their object bytes into the main object log and are repointed, legacy records are up-converted,
+                // and a downlevel record that reaches a plain recovery flush must fail rather than be persisted.
+                if (!isRecovery)
                     writeInlineOnly = true;
             }
 
@@ -1145,16 +1254,16 @@ namespace Tsavorite.core
             // Correctness also relies on the OnDispose contract that a record stays READABLE (byte-consistent) throughout a flush --
             // OnDispose implementations copy off whatever they need for cleanup rather than tearing the record's flush-critical bytes
             // -- so the async device write always observes a consistent record even if a concurrent op supersedes it. The stamping is
-            // non-destructive to in-memory readers (the ValueLength property masks the raw field to ObjectIdSize; the objectId slot is
-            // untouched), and the page stays resident throughout the flush (HeadAddress <= FlushedUntilAddress until it completes).
+            // non-destructive to in-memory readers (the ValueLength property masks the raw field to ObjectIdSize; the objectId slot keeps
+            // its index bits), and the page stays resident throughout the flush (HeadAddress <= FlushedUntilAddress until it completes).
             //
             // Recovery and Snapshot enter without epoch protection. Snapshot ordering prevents FlushedUntilAddress, and
             // therefore HeadAddress, from reaching the active page. ReadOnly enters protected from the epoch callback that
             // marked the range immutable; release that hold during serialization and IO, then restore it before returning.
             //
-            // Suspending is necessary because object serialization and the device write below can block on IO, and an epoch held
-            // across IO stalls reclamation process-wide: queued drain-list actions cannot fire, and every thread waiting on a
-            // BumpCurrentEpoch barrier waits behind this one.
+            // Suspending is necessary because object serialization can block on object-log IO, and an epoch held across IO stalls
+            // reclamation process-wide: queued drain-list actions cannot fire, and every thread waiting on a BumpCurrentEpoch barrier
+            // waits behind this one.
             //
             // Suspending is safe because this page's residency does not depend on holding the epoch. Eviction is capped at
             // FlushedUntilAddress, which cannot advance past this page until this flush's own completion callback records the
@@ -1163,16 +1272,12 @@ namespace Tsavorite.core
             // epoch. TrySuspend reports whether it actually released a hold, so only ReadOnly Resumes in the finally.
             var protectEpochWhenDone = epoch.TrySuspend();
 
-            // Overflow keys and values are written to, and object values are serialized to, this writer, if we have flushBuffers.
+            // Overflow keys and values are written to, and object values are serialized to, this writer, if the page has an object log.
             ObjectLogWriter<TStoreFunctions> logWriter = null;
 
-            // For a snapshot-region recovery flush, the reader over the snapshot object-log device from which each record's object bytes are
-            // copied into the main object-log (appended via logWriter). Null for non-recovery flushes and for the hybrid-log region (whose
-            // objects are already durable in the main object-log).
-            var isSnapshotRecoveryCopy = asyncResult.recoverySnapshotObjectLogDevice is not null;
-            var formerFlushedUntilAddress = asyncResult.recoveryFormerFlushedUntilAddress;
-            CircularDiskReadBuffer snapshotObjectReadBuffers = null;
-            ObjectLogReader<TStoreFunctions> snapshotObjectReader = null;
+            // For a snapshot-region recovery flush, the reader over the snapshot object log from which each record's object bytes are copied into
+            // the main object log through logWriter.
+            ObjectLogReader<TStoreFunctions> snapshotReader = null;
 
             // Do everything below here in the try{} to be sure the epoch is Resumed()d if we Suspended it.
             try
@@ -1188,26 +1293,15 @@ namespace Tsavorite.core
                 // Record traversal and metadata stamping are page-relative. The page remains resident until this flush's callback completes.
                 var recordsBasePtr = (byte*)logPagePointer;
 
-                // While up-converting a downlevel object log the writer appends to the upgrade device and advances that device's own
-                // tail; objectLogTail is left holding the downlevel tail, which continues to bound reads of the downlevel device.
-                ref var flushObjectLogTail = ref isUpgradingObjectLog ? ref upgradeObjectLogTail : ref objectLogTail;
+                if (objectLog is not null && !writeInlineOnly)
+                    logWriter = new(objectLog, storeFunctions, objectLogWriterSettings);
 
-                if (asyncResult.flushBuffers is not null && !writeInlineOnly)
-                {
-                    logWriter = new(device, asyncResult.flushBuffers, storeFunctions);
-                    _ = logWriter.OnBeginPartialFlush(flushObjectLogTail);
-                }
+                // Whether this flush appended to objectLog, so the page must wait for those bytes to be durable.
+                var wroteObjects = false;
 
                 // Include page header when calculating end address. Using page-relative addressing makes both paths look identical.
                 var endPhysicalAddress = (long)recordsBasePtr + startOffset + numBytesToWrite;
                 var physicalAddress = (long)recordsBasePtr + firstRecordOffset;
-
-                // Recovery does not reserialize current-format records. Hybrid-log records already point to durable main object-log bytes and
-                // are written unchanged; snapshot-region records copy their framed bytes verbatim into the main object log and are repointed
-                // as the copy advances, tracked by recoveryOngoingPageHeader below.
-                ref var pageHeader = ref *(PageHeader*)recordsBasePtr;
-
-                var recoveryOngoingPageHeader = asyncResult.flushRequestState == FlushRequestState.Recovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
 
                 // A page with nothing to serialize skips the record walk and writes its span as it is.
                 if (writeInlineOnly)
@@ -1229,11 +1323,11 @@ namespace Tsavorite.core
                         // true and the else branch is unreachable.
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
                         {
-                            // Fully-inline records have nothing to serialize. This is always false when there is no logWriter (no
-                            // flushBuffers), i.e. an ObjectAllocator used for inline string records only.
+                            // Fully-inline records have nothing to serialize. This is always false when there is no logWriter, i.e. an
+                            // ObjectAllocator used for inline string records only.
                             if (logRecord.DataHeader.RecordHasObjects)
                             {
-                                if (asyncResult.flushRequestState != FlushRequestState.Recovery)
+                                if (!isRecovery)
                                 {
                                     // Capture the out-of-line components BEFORE consulting the live record's state. The capture roots the
                                     // byte[]/object while it is still reachable, so the bytes written to the object log stay valid even if a
@@ -1252,20 +1346,12 @@ namespace Tsavorite.core
                                     // persists, recovery skips the image, and the superseding record (already CAS'd into the chain) wins.
                                     if (captureIsComplete && logRecord.Info.Valid)
                                     {
-                                        var recordStartPosition = logWriter.GetNextRecordStartPosition();
-                                        Debug.Assert(asyncResult.flushRequestState != FlushRequestState.ReadOnly || !isFirstRecordOnPage || recordStartPosition.CurrentAddress == objectLogTail.CurrentAddress,
-                                            $"ObjectLogPosition mismatch on first record for ReadOnly flush: rec {recordStartPosition.CurrentAddress}, tail {objectLogTail.CurrentAddress}");
-
-                                        // WriteRecordObjects can do disk IO and must not hold the epoch. The setter writes ObjectLogPosition and stamps
-                                        // key/value read-size hints into the objectId slots in the record image being flushed. In-memory readers mask
+                                        // WriteRecordObjects can wait on object-log IO and must not hold the epoch. Stamping writes the position
+                                        // word and the key/value read-size hints into the record image being flushed. In-memory readers mask
                                         // via ObjectIdMap.GetIndex, so stamping a live page is non-destructive. RDH lengths remain exact.
-                                        var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                        logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow,
-                                            logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
-
-                                        // Only a record that actually wrote to the object log clears this; a skipped record advances no writer
-                                        // position, so the next record with objects still verifies its start position against objectLogTail.
-                                        isFirstRecordOnPage = false;
+                                        var result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, logRecord.DataHeader.ValueIsObject, valueObject);
+                                        logRecord.SetObjectLogPositionAndHints(in result);
+                                        wroteObjects = true;
 
                                         // Test-only interleave point: the record's bytes are now in the object log and its position is stamped,
                                         // so a test can assert the freeze invariant or race a dispose against the in-flight write.
@@ -1281,70 +1367,50 @@ namespace Tsavorite.core
                                             "A Valid record lost its captured heap during object-log flush; expected the live record to be Invalid (elided).");
                                     }
                                 }
+                                else if (isUpgradingObjectLog)
+                                {
+                                    // Up-converting a downlevel object log. The ascending conversion pass has already deserialized this
+                                    // page's objects -- from the main object log for hybrid-log-region pages, from the snapshot object log
+                                    // for snapshot-region pages -- so re-serialize them in the current format, appending to the conversion's
+                                    // destination. Only the object-log extent changes; the record's inline image keeps its size and is
+                                    // rewritten in place.
+                                    if (!logRecord.TryGetOutOfLineComponents(out var keyOverflow, out var valueOverflow, out var valueObject))
+                                        throw new TsavoriteException($"Object-log upgrade could not capture the out-of-line components of the record at {logicalAddress}");
+
+                                    var result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, logRecord.DataHeader.ValueIsObject, valueObject);
+                                    logRecord.SetObjectLogPositionAndHints(in result);
+                                    wroteObjects = true;
+
+                                    // In-place main-log rewrite is only sound while the inline image is size-stable. Fail loudly rather
+                                    // than write a page whose records no longer line up with the addresses recovery assigned them.
+                                    if (logRecord.AllocatedSize != logRecordSize)
+                                        throw new TsavoriteException($"Object-log upgrade changed the inline size of the record at {logicalAddress} from {logRecordSize} to {logRecord.AllocatedSize}");
+                                }
+                                else if (snapshotSourceLog is not null && logicalAddress >= formerFlushedUntilAddress)
+                                {
+                                    // Snapshot-region recovery flush: the record's objects live only in the snapshot object log. Copy them into the
+                                    // main object log so the page becomes durable and can be evicted, then repoint the record there. The objects
+                                    // are not deserialized; the copy re-chunks them for the destination, so the record takes the new position and
+                                    // hints, while its inline image keeps its size.
+                                    var recordRef = logRecord.GetObjectLogRecordRef();
+                                    snapshotReader ??= new(snapshotSourceLog, storeFunctions);
+                                    snapshotReader.BeginRecord(in recordRef);
+                                    var result = snapshotReader.CopyRecordTo(logWriter);
+                                    snapshotReader.EndRecord();
+                                    logRecord.SetObjectLogPositionAndHints(in result);
+                                    wroteObjects = true;
+                                }
                                 else
                                 {
-                                    if (isUpgradingObjectLog)
-                                    {
-                                        // Up-converting a downlevel object log. The ascending conversion pass has already deserialized this
-                                        // page's objects -- from the main object log for hybrid-log-region pages, from the snapshot object log
-                                        // for snapshot-region pages -- so re-serialize them through the current-format writer, which frames
-                                        // anything past the headerless maximum with a ChunkHeader, appending to the upgrade device. This
-                                        // supersedes the snapshot-region verbatim copy, whose downlevel bytes lack that framing. Only the
-                                        // object-log extent changes; the record's inline image keeps its size and is rewritten in place.
-                                        if (!logRecord.TryGetOutOfLineComponents(out var keyOverflow, out var valueOverflow, out var valueObject))
-                                            throw new TsavoriteException($"Object-log upgrade could not capture the out-of-line components of the record at {logicalAddress}");
+                                    // A downlevel record reaching here was not up-converted. Recovery begins the up-conversion whenever a
+                                    // downlevel checkpoint has an object log, and converts every page before it can be evicted or flushed,
+                                    // so this cannot happen; fail loudly rather than persist a page in a format later releases cannot decode.
+                                    if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(asyncResult.checkpointVersion))
+                                        throw new TsavoriteException($"Recovery flush reached the downlevel record at {logicalAddress} without up-converting it");
 
-                                        var recordStartPosition = logWriter.GetNextRecordStartPosition();
-                                        var valueObjectLength = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, in valueObject);
-                                        logRecord.SetObjectLogPositionAndSizeHints(recordStartPosition, valueObjectLength, in keyOverflow, in valueOverflow,
-                                            logWriter.lastKeyAlignmentPadding, logWriter.lastValueAlignmentPadding, (long)logWriter.lastObjectFirstChunkExtent);
-
-                                        // In-place main-log rewrite is only sound while the inline image is size-stable. Fail loudly rather
-                                        // than write a page whose records no longer line up with the addresses recovery assigned them.
-                                        if (logRecord.AllocatedSize != logRecordSize)
-                                            throw new TsavoriteException($"Object-log upgrade changed the inline size of the record at {logicalAddress} from {logRecordSize} to {logRecord.AllocatedSize}");
-                                    }
-                                    else if (isSnapshotRecoveryCopy && logicalAddress >= formerFlushedUntilAddress)
-                                    {
-                                        // Snapshot-region recovery flush: the record's objects live only in the snapshot object-log. Copy their bytes
-                                        // into the main object-log (appended at the current objectLogTail via logWriter) so the page becomes durable and
-                                        // can be evicted, then repoint the disk-image record to that main object-log position. The objects are NOT
-                                        // deserialized at this point, so read the position/lengths from the record's on-disk encoding (not from objectIdMap),
-                                        // and repoint, which preserves the record's unchanged lengths and format flag.
-                                        var snapshotPositionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var copyKeyLength, out var copyValueLength, asyncResult.checkpointVersion);
-
-                                        // Demand-load the snapshot object reader on the first valid record with objects, so pages with few or no object
-                                        // records avoid an up-front full-page pre-pass. Each record extends demand from its own hints and framing.
-                                        snapshotObjectReader ??= CreateSnapshotObjectReader(snapshotPositionWord,
-                                            copyKeyLength, copyValueLength, asyncResult.recoverySnapshotObjectLogDevice,
-                                            asyncResult.recoverySnapshotObjectLogReadEnd, out snapshotObjectReadBuffers);
-
-                                        var snapshotPosition = new ObjectLogPositionInfo(snapshotPositionWord, objectLogTail.SegmentSizeBits);
-                                        logWriter.AlignNextRecordStartLike(snapshotPosition);
-                                        var mainRecordPosition = logWriter.GetNextRecordStartPosition();
-                                        logRecord.RepointObjectLogPosition(mainRecordPosition);
-
-                                        // Follow this record's own hints and framing to its exact terminal boundary. No following record or page
-                                        // contributes an endpoint, so reads never mix object-log address spaces or depend on scan-ahead.
-                                        var copiedLength = logWriter.CopyRecoveredObjectBytesFollowingFraming(snapshotObjectReader, in logRecord, snapshotPositionWord,
-                                            copyKeyLength, copyValueLength, objectLogTail.SegmentSizeBits);
-                                        recoveryOngoingPageHeader.Advance(copiedLength);
-                                    }
-                                    else
-                                    {
-                                        // A downlevel record reaching here was not up-converted. Recovery begins the up-conversion whenever a
-                                        // downlevel checkpoint has an object log, and converts every page before it can be evicted or flushed,
-                                        // so this cannot happen; fail loudly rather than persist a page in a format later releases cannot decode.
-                                        if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(asyncResult.checkpointVersion))
-                                            throw new TsavoriteException($"Downlevel record at {logicalAddress} reached the recovery flush without being up-converted");
-
-                                        // Current-format hybrid-log-region record. Its object bytes are already durable in the main object-log and its
-                                        // record (object-log position + objectId size hints) is already correct; the only recovery
-                                        // mutation for this page -- SetInvalid on undone v+1 records -- was applied to the live page by RecoverFromPage
-                                        // and is already present on the live page. So persist the record VERBATIM.
-                                    }
-
-                                    isFirstRecordOnPage = false;
+                                    // Current-format hybrid-log-region record. Its object bytes are already durable in the main object log and its
+                                    // position and hints are already correct; the only recovery mutation for this page -- SetInvalid on undone v+1
+                                    // records -- was applied to the live page by RecoverFromPage. So persist the record VERBATIM.
                                 }
                             }
                         }
@@ -1360,7 +1426,11 @@ namespace Tsavorite.core
                     physicalAddress += logRecordSize;   // advance in source buffer
                 }
 
-                // Object serialization and metadata stamping are complete. Write the page span.
+                // Object serialization and metadata stamping are complete. Ask the object log to flush what this page appended; the page completes
+                // only once those bytes are durable as well as its own, since its records reference them.
+                var objectLogFlushUntilAddress = wroteObjects ? objectLog.FlushTail(wait: false) : 0;
+
+                // Write the page span.
                 {
                     // Write whole sectors: [alignedStartOffset, RoundUp(endOffset)). Bytes above the logical endpoint go to disk verbatim
                     // from the live page, because they are never read back:
@@ -1400,25 +1470,28 @@ namespace Tsavorite.core
                             WaitForWritesBelow(pageStart + startOffset);
                     }
 
-                    if (logWriter is not null)
-                    {
-                        logWriter.OnPartialFlushComplete(firstSectorPtr, firstSectorLength, writePtr, writeLength, device, writeAddress, callback, asyncResult,
-                            ref flushObjectLogTail);
-                    }
-                    else
-                    {
-                        asyncResult.count = (firstSectorLength > 0 ? 1 : 0) + (writeLength > 0 ? 1 : 0);
-                        if (firstSectorLength > 0)
-                            device.WriteAsync((IntPtr)firstSectorPtr, writeAddress, (uint)firstSectorLength, callback, asyncResult);
-                        if (writeLength > 0)
-                            device.WriteAsync((IntPtr)writePtr, writeAddress + (uint)firstSectorLength, (uint)writeLength, callback, asyncResult);
-                    }
-
-                    // Main device write submitted: its completion callback owns releasing this page's native
-                    // snapshot-IO unit and buffers. Set inside the try (before the finally that disposes logWriter
-                    // and readers) so a throw from that cleanup does not make the issuer double-release. If the
-                    // submit itself threw, the flag stays false and the issuer releases (exactly-once via the claim).
+                    // The page's callback runs once, after its device writes and the object-log flush have all completed. The callback owns
+                    // releasing this page's native snapshot-IO unit and buffers from here on, including when a submission below throws: that
+                    // part completes with the error, so the join still runs the callback, and the throw propagates to the issuer.
                     asyncResult.snapshotDeviceWriteIssued = true;
+                    var join = new PageFlushJoin(callback, asyncResult);
+                    try
+                    {
+                        if (firstSectorLength > 0)
+                            SubmitWrite(join, device, firstSectorPtr, writeAddress, firstSectorLength);
+                        if (writeLength > 0)
+                            SubmitWrite(join, device, writePtr, writeAddress + (uint)firstSectorLength, writeLength);
+                        if (objectLogFlushUntilAddress > 0)
+                        {
+                            join.Add();
+                            objectLog.OnFlushed(objectLogFlushUntilAddress, PageFlushJoin.PartCallback, join);
+                        }
+                    }
+                    finally
+                    {
+                        // The issuer's sentinel; held until every part is submitted, so an early completion cannot finish the join.
+                        join.Complete(errorCode: 0, ioException: null);
+                    }
                 }
             }
             finally
@@ -1426,8 +1499,21 @@ namespace Tsavorite.core
                 if (protectEpochWhenDone)
                     epoch.Resume();
                 logWriter?.Dispose();
-                snapshotObjectReader?.OnEndReadRecords();
-                snapshotObjectReadBuffers?.Dispose();
+                snapshotReader?.Dispose();
+            }
+
+            static void SubmitWrite(PageFlushJoin join, IDevice device, byte* source, ulong destinationAddress, int length)
+            {
+                join.Add();
+                try
+                {
+                    device.WriteAsync((IntPtr)source, destinationAddress, (uint)length, PageFlushJoin.PartCallback, join);
+                }
+                catch (Exception ex)
+                {
+                    join.Complete(uint.MaxValue, ex);
+                    throw;
+                }
             }
         }
 
@@ -1526,27 +1612,6 @@ namespace Tsavorite.core
                     localFlushEvent.Wait();
                 localFlushEvent = flushEvent;
             }
-        }
-
-        /// <summary>
-        /// Demand-loads (creates and seeds) the reader over the snapshot object-log for a snapshot-region recovery flush, on the first valid record
-        /// with objects on the page. Each record subsequently grows or tightens demand from its own hints and framing.
-        /// </summary>
-        /// <param name="firstPositionWord">The snapshot object-log position word of the first object record (the read-ahead start).</param>
-        /// <param name="firstKeyLength">The first object record's key length.</param>
-        /// <param name="firstValueLength">The first object record's value length.</param>
-        /// <param name="snapshotObjectLogDevice">The snapshot object-log device to read from.</param>
-        /// <param name="readBuffers">Outputs the created read buffers; the caller disposes them.</param>
-        private ObjectLogReader<TStoreFunctions> CreateSnapshotObjectReader(ulong firstPositionWord,
-            int firstKeyLength, ulong firstValueLength, IDevice snapshotObjectLogDevice, ObjectLogPositionInfo hardReadEndPosition,
-            out CircularDiskReadBuffer readBuffers)
-        {
-            var startPosition = new ObjectLogPositionInfo(firstPositionWord, objectLogTail.SegmentSizeBits);
-            readBuffers = CreateCircularReadBuffers(snapshotObjectLogDevice, logger);
-            var reader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            reader.OnBeginReadRecords(startPosition, firstKeyLength > 0 ? (ulong)firstKeyLength : firstValueLength,
-                GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
-            return reader;
         }
 
         /// <summary>
@@ -1700,15 +1765,6 @@ namespace Tsavorite.core
             if (diskLogRecord.DataHeader.RecordIsInline)
                 return true;
 
-            // This is a runtime pending read of the live log, which is written in the current object-log format, so decode as current.
-            var startPosition = new ObjectLogPositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, HybridLogRecoveryInfo.CheckpointVersion), objectLogTail.SegmentSizeBits);
-            var totalBytesToRead = (ulong)keyLength + valueLength;
-
-            // 'using' is OK here as we complete the object reads before returning.
-            using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-
-            var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-
             // A record read back from disk was necessarily written by a flush, so it must carry a position. The in-memory unstamping
             // that RecordHasNoReadablePosition describes cannot apply here: this is a dedicated single-record IO buffer, not a shared
             // page that an earlier walk could have deserialized in place. So an unstamped record means a Valid record reached disk
@@ -1716,31 +1772,73 @@ namespace Tsavorite.core
             if (RecordHasNoReadablePosition(in diskLogRecord.logRecord))
                 throw new TsavoriteException($"Record read from disk at {ctx.logicalAddress} has out-of-line components but an unstamped object-log position");
 
-            // Nothing to read: the only out-of-line component is zero length. Materialize it rather than opening a zero-length read range.
-            if (totalBytesToRead == 0)
-            {
-                logReader.MaterializeRecordObjectsWithoutReading(ref diskLogRecord.logRecord);
-                prevAddressToRead = 0;
-                return true;
-            }
-
-            logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers));
-            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits, HybridLogRecoveryInfo.CheckpointVersion))
+            // This is a runtime pending read of the live log, which is written in the current object-log format.
+            using var reader = new ObjectLogReader<TStoreFunctions>(GetReadObjectLog(logDevice: null), storeFunctions);
+            if (ReadRecordObjects(reader, ref diskLogRecord.logRecord, ctx.requestKey))
             {
                 // Success. The deserialized heap object's Dispose() will be invoked when the DiskLogRecord
                 // is disposed (ObjectIdMap.Free → IHeapObject.Dispose), unless the object is transferred out
                 // (e.g. via CopyToTail) in which case the transient ObjectIdMap slot is cleared without disposing.
-                // Default the output arguments for reading a previous record.
                 prevAddressToRead = 0;
                 return true;
             }
 
-            // Ensure we have finished all object reads
-            logReader.OnEndReadRecords();
-
-            // If readBuffer.Read returned false it was due to an Overflow key mismatch or an Invalid record, so get the previous record.
+            // The overflow key did not match, so get the previous record.
             prevAddressToRead = (*(RecordInfo*)ctx.record.GetValidPointer()).PreviousAddress;
             return false;
+        }
+
+        /// <summary>
+        /// Read <paramref name="logRecord"/>'s out-of-line components through <paramref name="reader"/> and materialize them in the record.
+        /// </summary>
+        /// <param name="reader">The reader over the object log the record's position belongs to.</param>
+        /// <param name="logRecord">A record read from disk, still carrying its object-log position and hints.</param>
+        /// <param name="requestedKey">The requested key, if not ReadAtAddress; a record whose overflow key does not match it is not read further.
+        /// Without one this is ReadAtAddress (an implicit match), a scan, or recovery.</param>
+        /// <returns>False if <paramref name="requestedKey"/> is set and the record's overflow key does not match it; otherwise true.</returns>
+        private bool ReadRecordObjects<TKey>(ObjectLogReader<TStoreFunctions> reader, ref LogRecord logRecord, TKey requestedKey)
+            where TKey : IKey
+#if NET9_0_OR_GREATER
+                , allows ref struct
+#endif
+        {
+            // Capture the position and hints before materializing anything: assigning a component unstamps the record.
+            var recordRef = logRecord.GetObjectLogRecordRef();
+            var keyWasSet = false;
+            try
+            {
+                reader.BeginRecord(in recordRef);
+                if (recordRef.KeyIsOverflow)
+                {
+                    // This assignment also allocates the slot in ObjectIdMap, replacing the size hint the flush stamped in the objectId slot.
+                    logRecord.KeyOverflow = reader.ReadKey();
+                    if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord))
+                        return false;
+                    keyWasSet = true;
+                }
+
+                if (recordRef.ValueIsOverflow)
+                    logRecord.ValueOverflow = reader.ReadValueOverflow();
+                else if (recordRef.ValueIsObject)
+                {
+                    // An object that serialized to no bytes carries no type information, so the reader records it as absent (null) rather than
+                    // invoking the deserializer on an empty stream.
+                    logRecord.SetDeserializedValueObject(reader.ReadValueObject());
+                }
+
+                // Restore non-inline length fields to ObjectIdSize for in-memory record length correctness.
+                logRecord.OnObjectReadComplete();
+                return true;
+            }
+            catch
+            {
+                logRecord.OnDeserializationError(keyWasSet);
+                throw;
+            }
+            finally
+            {
+                reader.EndRecord();
+            }
         }
 
         protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
@@ -1755,11 +1853,10 @@ namespace Tsavorite.core
             // For a partial page read the caller sets maxAddressOffsetOnPage to the scan/recovery end (untilAddress), which can be
             // mid-page and is smaller than the sector-aligned device read length. Walking to the aligned length would process records
             // that lie ABOVE untilAddress (the page physically continues past the requested range). Such a record can straddle the
-            // read end, so the fields GetObjectLogRecordStartPositionAndLengths reads near its tail -- the ObjectLogPosition word and
-            // the raw RDH ValueLength bits -- fall past the bytes actually transferred and are read from the un-read buffer tail.
-            // That tail is only incidentally zero (the read buffer is cleared before the read); a different boundary alignment could
-            // bisect a field and yield arbitrary bytes. Either way the resulting position/length is bogus and corrupts the computed
-            // object-log range. Only fall back to the read length when the caller left the extent unset.
+            // read end, so the fields read near its tail -- the ObjectLogPosition word and the raw RDH length bits -- fall past the bytes
+            // actually transferred and are read from the un-read buffer tail. That tail is only incidentally zero (the read buffer is
+            // cleared before the read); a different boundary alignment could bisect a field and yield arbitrary bytes. Either way the
+            // resulting position would be bogus. Only fall back to the read length when the caller left the extent unset.
             if (asyncResult.maxAddressOffsetOnPage == 0)
                 asyncResult.maxAddressOffsetOnPage = aligned_read_length;
 
@@ -1789,7 +1886,8 @@ namespace Tsavorite.core
             {
                 // The remaining callers are runtime reads and the post-recovery head read (RecoveryPhase.None), which read the live
                 // current-format log into a transient map, so decode as current.
-                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, transientObjectIdMap, result.readBuffers, HybridLogRecoveryInfo.CheckpointVersion);
+                DeserializeObjectsOnPage((long)result.destinationPtr, result.maxAddressOffsetOnPage, transientObjectIdMap, objectLogDevice: null,
+                    HybridLogRecoveryInfo.CheckpointVersion);
             }
 
             // Call the "real" page read callback
@@ -1799,37 +1897,87 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Deserialize objects on a page that has already been loaded into memory (physical addresses).
-        /// Scans records to determine object log ranges, reads from the object log via the provided readBuffers, and deserializes objects.
         /// </summary>
         /// <param name="pageStartPhysicalAddress">Physical start address of the page in memory</param>
         /// <param name="maxAddressOffsetOnPage">Maximum offset on the page (PageSize or less for partial pages)</param>
         /// <param name="objectIdMap">The ObjectIdMap to use for deserialized objects</param>
-        /// <param name="readBuffers">The circular read buffers for object log reading</param>
+        /// <param name="objectLogDevice">The object log to read: null for the main object log, otherwise the snapshot object log being recovered</param>
         /// <param name="checkpointVersion">The checkpoint metadata version whose object-log encoding is being decoded; current-format for a runtime read.</param>
-        /// <param name="hardReadEndPosition">Exclusive durable endpoint in the selected object-log address space</param>
+        /// <param name="legacyReadEnd">For a downlevel snapshot object log, its exclusive durable end; unused otherwise</param>
         /// <param name="minAddressOffsetOnPage">First record offset to scan; callers use this to split a page at an object-log address-space boundary</param>
-        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap,
-            CircularDiskReadBuffer readBuffers, int checkpointVersion, ObjectLogPositionInfo hardReadEndPosition = default,
-            long minAddressOffsetOnPage = PageHeader.Size)
+        private void DeserializeObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap, IDevice objectLogDevice,
+            int checkpointVersion, long legacyReadEnd = 0, long minAddressOffsetOnPage = PageHeader.Size)
         {
-            ObjectLogPositionInfo startPosition = new(), initialEndPosition = new();
+            if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion))
+            {
+                using var legacyReadBuffers = CreateLegacyReadBuffers(objectLogDevice);
+                DeserializeLegacyObjectsOnPage(pageStartPhysicalAddress, maxAddressOffsetOnPage, objectIdMap, legacyReadBuffers, checkpointVersion,
+                    GetLegacyReadHardEnd(objectLogDevice is null ? 0 : legacyReadEnd), minAddressOffsetOnPage);
+                return;
+            }
+
+            ObjectLogReader<TStoreFunctions> reader = null;
+            try
+            {
+                var recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
+                var endAddress = pageStartPhysicalAddress + maxAddressOffsetOnPage;
+                while (recordAddress < endAddress)
+                {
+                    var logRecord = new LogRecord(recordAddress, objectIdMap);
+
+                    // PAGE-EXTENT GUARD -- not a record-validity or stamping test. The device read is sector-aligned, so endAddress
+                    // over-estimates the page's valid extent by up to a sector and this walk can reach bytes no flush ever wrote.
+                    // A zeroed RecordDataHeader marks that boundary: every real record sets at least one inline flag, and bit 0
+                    // (KeyIsInline) is set even for a zero-length key, so word == 0 means "no record here". Parsing those bytes
+                    // would report KeyIsOverflow/ValueIsOverflow set -- out-of-line is the absence of the inline flags -- and yield
+                    // a bogus minimum AllocatedSize, stepping the walk off the record boundary.
+                    var allocatedSize = logRecord.AllocatedSize;
+                    if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordAddress + allocatedSize > endAddress)
+                        break;
+                    recordAddress += allocatedSize;
+
+                    if (!logRecord.DataHeader.RecordHasObjects || !logRecord.Info.Valid)
+                        continue;
+
+                    // Reading from a record with no readable position would consume another record's bytes; see RecordHasNoReadablePosition.
+                    // Materialize its components without reading, so the record is still accounted for, and leave the recovered-object
+                    // accounting alone because the record added no object-log bytes.
+                    if (RecordHasNoReadablePosition(in logRecord))
+                    {
+                        logRecord.MaterializeObjectsWithoutReading();
+                        continue;
+                    }
+
+                    reader ??= new(GetReadObjectLog(objectLogDevice), storeFunctions);
+                    _ = ReadRecordObjects(reader, ref logRecord, default(EmptyKey));
+                    TrackRecoveredObjectRecord(in logRecord);
+                }
+            }
+            finally
+            {
+                reader?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Deserialize objects on a page of a downlevel (cv7) checkpoint, whose object log is a dense file read through the streaming ring.
+        /// </summary>
+        private void DeserializeLegacyObjectsOnPage(long pageStartPhysicalAddress, long maxAddressOffsetOnPage, ObjectIdMap objectIdMap,
+            CircularDiskReadBuffer readBuffers, int checkpointVersion, LegacyObjectLogPosition hardReadEndPosition, long minAddressOffsetOnPage)
+        {
+            LegacyObjectLogPosition startPosition = new(), initialEndPosition = new();
             var recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
             var endAddress = pageStartPhysicalAddress + maxAddressOffsetOnPage;
 
-            // Establish an initial same-device read range from record positions and the final record's first-component hint.
-            // A later record position is a safe successor bound for the preceding record because callers split mixed
-            // snapshot/main pages at the exact address-space boundary. Stop scanning once one full ring fill is required;
-            // framing and subsequent record hints extend demand as the ring is consumed.
+            // Establish an initial read range from record positions and the final record's first-component length. A later record
+            // position is a safe successor bound for the preceding record because callers split mixed snapshot/main pages at the exact
+            // address-space boundary. Stop scanning once one full ring fill is required; component lengths extend demand as the ring is
+            // consumed.
             while (recordAddress < endAddress)
             {
                 var logRecord = new LogRecord(recordAddress);
 
-                // PAGE-EXTENT GUARD -- not a record-validity or stamping test. The device read is sector-aligned, so endAddress
-                // over-estimates the page's valid extent by up to a sector and this walk can reach bytes no flush ever wrote.
-                // A zeroed RecordDataHeader marks that boundary: every real record sets at least one inline flag, and bit 0
-                // (KeyIsInline) is set even for a zero-length key, so word == 0 means "no record here". Parsing those bytes
-                // would report KeyIsOverflow/ValueIsOverflow set -- out-of-line is the absence of the inline flags -- and yield
-                // a bogus minimum AllocatedSize, stepping the walk off the record boundary.
+                // Must match the walk in DeserializeObjectsOnPage; see the page-extent guard there.
                 var allocatedSize = logRecord.AllocatedSize;
                 if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordAddress + allocatedSize > endAddress)
                     break;
@@ -1837,15 +1985,12 @@ namespace Tsavorite.core
 
                 if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                 {
-                    // Contribute no read range for a record with no readable position; see RecordHasNoReadablePosition. Reading its
-                    // position would consume bytes belonging to another record. A zero read extent is NOT this case: that is a
-                    // legitimate zero-length out-of-line value, which contributes no bytes but is still materialized below.
                     if (RecordHasNoReadablePosition(in logRecord))
                         continue;
 
-                    var position = new ObjectLogPositionInfo(
+                    var position = new LegacyObjectLogPosition(
                         logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion),
-                        objectLogTail.SegmentSizeBits);
+                        objectLogSegmentSizeBits);
 
                     if (!startPosition.IsSet)
                         startPosition = position;
@@ -1866,21 +2011,17 @@ namespace Tsavorite.core
             if (!startPosition.IsSet)
                 return;
 
+            // Every out-of-line component on this page may be zero length, leaving nothing to read; materialize instead of opening a
+            // zero-length read range.
             var totalBytesToRead = initialEndPosition - startPosition;
-
-            // Every out-of-line component on this page is zero length. That is legitimate and reachable: a component of 511 bytes or
-            // fewer is stamped exact-size with its byte count as the hint (ComputeObjectIdValueSizeHint), so a zero-length one decodes
-            // to a zero extent while still being stamped and still counted into startPosition by the first pass. There is nothing to
-            // read, and opening a zero-length read range trips the reader's "TotalLength cannot be 0" assert. Materialize instead,
-            // exactly as the single-record disk path does for the same case.
             var hasBytesToRead = totalBytesToRead > 0;
 
             // Second pass: deserialize objects
             readBuffers.nextFileReadPosition = startPosition;
             recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
-            var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
+            var logReader = new LegacyObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             if (hasBytesToRead)
-                logReader.OnBeginReadRecords(startPosition, totalBytesToRead, GetObjectLogReadHardEnd(readBuffers, hardReadEndPosition));
+                logReader.OnBeginReadRecords(startPosition, totalBytesToRead, hardReadEndPosition);
 
             try
             {
@@ -1896,16 +2037,13 @@ namespace Tsavorite.core
 
                     if (logRecord.DataHeader.RecordHasObjects && logRecord.Info.Valid)
                     {
-                        // The first pass contributed no read range for these; see RecordHasNoReadablePosition. Materialize the
-                        // components without reading, so the record is still accounted for, then leave the recovered-object
-                        // accounting alone because the record added no object-log bytes.
                         if (!hasBytesToRead || RecordHasNoReadablePosition(in logRecord))
                         {
-                            logReader.MaterializeRecordObjectsWithoutReading(ref logRecord);
+                            logRecord.MaterializeObjectsWithoutReading();
                             continue;
                         }
 
-                        _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), startPosition.SegmentSizeBits, checkpointVersion);
+                        _ = logReader.ReadRecordObjects(ref logRecord, default(EmptyKey), objectLogSegmentSizeBits, checkpointVersion);
                         TrackRecoveredObjectRecord(in logRecord);
                     }
                 }
@@ -1933,19 +2071,40 @@ namespace Tsavorite.core
                 logSizeTracker.UpdateSize(in logRecord, add: true);
         }
 
+        /// <summary>
+        /// A disk-image record's object-log position and a best-guess size for its object-log bytes, from its stamped hints.
+        /// </summary>
+        /// <remarks>
+        /// For a current-format record the size is what its first read covers: exact for a single small component, a page-count bound for a
+        /// larger one, and the top directory record's size for a record with a directory. For a downlevel record it is exact. Budget estimates
+        /// tolerate the error.
+        /// </remarks>
+        private static long EstimateRecordObjectLogExtent(in LogRecord logRecord, int checkpointVersion, out long position)
+        {
+            if (HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion))
+            {
+                position = (long)logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
+                return keyLength + (long)valueLength;
+            }
+
+            var recordRef = logRecord.GetObjectLogRecordRef();
+            position = (long)(recordRef.PositionWord & ObjectLogPositionInfo.AddressMask);
+            return recordRef.KeyIsOverflow
+                ? ObjectLogExtent.KeyInitialRead(recordRef.KeyRdhLengthBits, recordRef.KeySizeHint, (recordRef.PositionWord & ObjectLogPositionInfo.kKeyIsExactSizeMask) != 0)
+                : ObjectLogExtent.ValueInitialRead(recordRef.ValueSizeHint, (recordRef.PositionWord & ObjectLogPositionInfo.kValueIsExactSizeMask) != 0);
+        }
+
         /// <inheritdoc/>
         internal override long CalculatePageObjectSizes(int page, long startAddress, long untilAddress, int checkpointVersion)
         {
             var recordAddress = Math.Max(startAddress, GetFirstValidLogicalAddressOnPage(page));
             var endAddress = Math.Min(untilAddress, GetLogicalAddressOfStartOfPage(page + 1));
 
-            // These are disk-image records (recovery, before object deserialization), so their ObjectLogPosition and objectId size hints
-            // hold the on-disk values. Estimate the page's
-            // object-log bytes as the span from the first object record's start position to the last object record's start position plus
-            // that last record's size hints. This is a best guess (the eviction/budget logic tolerates an over-estimate).
-            ObjectLogPositionInfo startPosition = new(), endPosition = new();
-            var endKeyLength = 0;
-            ulong endValueLength = 0;
+            // These are disk-image records (recovery, before object deserialization), so their positions and hints hold the on-disk values.
+            // A page's records are written to the object log in order, so estimate the page's object-log bytes as the span from the first
+            // object record's position to the last object record's position plus that record's estimated extent. This is a best guess (the
+            // eviction/budget logic tolerates an over-estimate).
+            long startPosition = -1, endPosition = -1, endExtent = 0;
 
             while (recordAddress < endAddress)
             {
@@ -1958,18 +2117,15 @@ namespace Tsavorite.core
                 if (recordAddress > endAddress)
                     ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {recordAddress - endAddress} bytes");
 
-                if (logRecord.Info.Valid && logRecord.DataHeader.RecordHasObjects)
+                if (logRecord.Info.Valid && logRecord.DataHeader.RecordHasObjects && !RecordHasNoReadablePosition(in logRecord))
                 {
-                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength, checkpointVersion), objectLogTail.SegmentSizeBits);
-                    if (!startPosition.IsSet)
+                    endExtent = EstimateRecordObjectLogExtent(in logRecord, checkpointVersion, out endPosition);
+                    if (startPosition < 0)
                         startPosition = endPosition;
                 }
             }
 
-            if (!startPosition.IsSet)
-                return 0;
-            endPosition.Advance((ulong)endKeyLength + endValueLength);
-            return (long)(endPosition - startPosition);
+            return startPosition < 0 ? 0 : Math.Max(0, endPosition + endExtent - startPosition);
         }
 
         /// <summary>
@@ -2012,7 +2168,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         internal override void LoadObjectsForRecoveryPass2(int page, long fromAddress, long untilAddress, IDevice objectLogDevice, int checkpointVersion,
-            ObjectLogPositionInfo hardReadEndPosition = default)
+            long legacyReadEnd = 0)
         {
             var pageStartAddress = GetFirstValidLogicalAddressOnPage(page);
             var address = Math.Max(fromAddress, pageStartAddress);
@@ -2024,8 +2180,7 @@ namespace Tsavorite.core
             var maxOffset = endAddress - GetLogicalAddressOfStartOfPage(page);
             var minOffset = address - GetLogicalAddressOfStartOfPage(page);
             var objectIdMapToUse = objectPages[page % BufferSize].objectIdMap;
-            using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
-            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, readBuffers, checkpointVersion, hardReadEndPosition, minOffset);
+            DeserializeObjectsOnPage(pagePhysicalAddress, maxOffset, objectIdMapToUse, objectLogDevice, checkpointVersion, legacyReadEnd, minOffset);
         }
 
         /// <inheritdoc/>
@@ -2064,12 +2219,10 @@ namespace Tsavorite.core
                 if (recordAddress > stopAddress)
                     ThrowTsavoriteException($"Unaligned end of page; record exceeded page by {recordAddress - stopAddress} bytes");
 
-                if (logRecord.Info.Valid && logRecord.DataHeader.RecordHasObjects)
+                if (logRecord.Info.Valid && logRecord.DataHeader.RecordHasObjects && !RecordHasNoReadablePosition(in logRecord))
                 {
-                    // Disk-image record (recovery, before object deserialization): use the format-aware decode for a best-guess per-record
-                    // object size (exact below the field sentinel). The objectId slots hold stale ids, so the legacy decode is not usable here.
-                    _ = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength, checkpointVersion);
-                    overBudgetAmount -= keyLength + (long)valueLength;
+                    // Disk-image record (recovery, before object deserialization): a best-guess per-record object size from its hints.
+                    overBudgetAmount -= EstimateRecordObjectLogExtent(in logRecord, checkpointVersion, out _);
                     if (overBudgetAmount <= 0)
                         return recordAddress;
                 }

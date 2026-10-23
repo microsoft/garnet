@@ -16,12 +16,13 @@ namespace Tsavorite.test.recovery
 
     /// <summary>
     /// Verifies that recovery rejects a checkpoint whose recorded log geometry does not match the geometry this store is
-    /// configured with. PageSize and SegmentSize determine how logical addresses resolve to segment files and offsets, and
-    /// ObjectLogSegmentSize is the bit position at which <see cref="ObjectLogPositionInfo"/> splits its packed
-    /// segment/offset word; recovering under any of the wrong values reads the wrong bytes with nothing else to detect it.
+    /// configured with. PageSize and SegmentSize determine how logical addresses resolve to segment files and offsets,
+    /// ObjectLogSegmentSize does the same for object-log addresses, and ObjectLogPageSize bounds the chunks the object log was
+    /// written in, which a reader assumes never span an object-log page; recovering under any of the wrong values reads the wrong
+    /// bytes with nothing else to detect it.
     ///
     /// The downlevel (v7) skip is covered by <see cref="V7DownlevelRecoveryTests"/>: v7 metadata records no geometry, so all
-    /// three values read back as zero and would fail every comparison if the version guard were not honored.
+    /// four values read back as zero and would fail every comparison if the version guard were not honored.
     /// </summary>
     [TestFixture]
     public class LogGeometryVerificationTests : TestBase
@@ -42,7 +43,7 @@ namespace Tsavorite.test.recovery
         public void TearDown() => OnTearDown();
 
         static TsavoriteKV<ObjStoreFunctions, ObjAllocator> CreateObjectStore(IDevice log, IDevice objlog, string checkpointDir,
-                int pageSize, long segmentSize, long objectLogSegmentSize)
+                int pageSize, long segmentSize, long objectLogSegmentSize, long objectLogPageSize = 0)
             => new(new()
             {
                 IndexSize = 1L << 20,
@@ -53,6 +54,7 @@ namespace Tsavorite.test.recovery
                 LogMemorySize = 1L << 20,
                 SegmentSize = segmentSize,
                 ObjectLogSegmentSize = objectLogSegmentSize,
+                ObjectLogPageSize = objectLogPageSize,
                 CheckpointDir = checkpointDir,
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestLargeObjectValue.Serializer(), DefaultRecordTriggers.Instance),
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
@@ -95,14 +97,14 @@ namespace Tsavorite.test.recovery
         }
 
         // Recovers the checkpoint under the given geometry, returning the TsavoriteException thrown, or null if recovery succeeded.
-        async Task<TsavoriteException> TryRecoverWith(Guid token, int pageSize, long segmentSize, long objectLogSegmentSize)
+        async Task<TsavoriteException> TryRecoverWith(Guid token, int pageSize, long segmentSize, long objectLogSegmentSize, long objectLogPageSize = 0)
         {
             var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
             try
             {
-                using var store = CreateObjectStore(log, objlog, checkpointDir, pageSize, segmentSize, objectLogSegmentSize);
+                using var store = CreateObjectStore(log, objlog, checkpointDir, pageSize, segmentSize, objectLogSegmentSize, objectLogPageSize);
                 try
                 {
                     _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
@@ -157,6 +159,17 @@ namespace Tsavorite.test.recovery
             var ex = await TryRecoverWith(token, BasePageSize, BaseSegmentSize, BaseObjectLogSegmentSize * 2).ConfigureAwait(false);
             ClassicAssert.IsNotNull(ex, "recovery with a mismatched ObjectLogSegmentSize must fail");
             StringAssert.Contains("ObjectLogSegmentSize mismatch", ex.Message);
+        }
+
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task MismatchedObjectLogPageSizeFailsRecovery()
+        {
+            // The base object-log segment size derives a page of the same size, so an explicit smaller page differs only in page size.
+            var token = BuildCheckpoint();
+            var ex = await TryRecoverWith(token, BasePageSize, BaseSegmentSize, BaseObjectLogSegmentSize, BaseObjectLogSegmentSize / 4).ConfigureAwait(false);
+            ClassicAssert.IsNotNull(ex, "recovery with a mismatched ObjectLogPageSize must fail");
+            StringAssert.Contains("ObjectLogPageSize mismatch", ex.Message);
         }
     }
 }

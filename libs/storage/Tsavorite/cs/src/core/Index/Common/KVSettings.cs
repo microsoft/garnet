@@ -67,6 +67,18 @@ namespace Tsavorite.core
         public long ObjectLogSegmentSize = 1L << 30;
 
         /// <summary>
+        /// Object-log page size, in bytes; zero derives it from <see cref="ObjectLogSegmentSize"/>. Rounds down to power of 2.
+        /// </summary>
+        /// <remarks>For tests, which shrink it to reach object-log page cuts with small data.</remarks>
+        internal long ObjectLogPageSize;
+
+        /// <summary>
+        /// Chunking parameters for object-log writes; null uses the defaults.
+        /// </summary>
+        /// <remarks>For tests, which shrink them to reach multi-chunk records and directory spines with small data.</remarks>
+        internal ObjectLogWriterSettings ObjectLogWriterSettings;
+
+        /// <summary>
         /// Total size of in-memory part of main log, in bytes. Rounds down to power of 2.
         /// </summary>
         public long LogMemorySize = 1L << 34;
@@ -272,6 +284,8 @@ namespace Tsavorite.core
                 PageCount = PageCount,
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
                 ObjectLogSegmentSizeBits = Utility.NumBitsPreviousPowerOf2(ObjectLogSegmentSize),
+                ObjectLogPageSizeBits = ObjectLogPageSize > 0 ? Utility.NumBitsPreviousPowerOf2(ObjectLogPageSize) : 0,
+                ObjectLogWriterSettings = ObjectLogWriterSettings,
                 MutableFraction = MutableFraction,
                 PreallocateLog = PreallocateLog,
                 ReadCacheSettings = GetReadCacheSettings(),

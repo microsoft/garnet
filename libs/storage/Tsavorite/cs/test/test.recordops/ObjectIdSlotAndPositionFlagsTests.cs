@@ -9,11 +9,11 @@ namespace Tsavorite.test.Objects
 {
     /// <summary>
     /// Unit tests for the object-log out-of-line size-hint primitives: the <see cref="ObjectLogPositionInfo"/> position-word
-    /// Key/ValueIsExactSize flag bits, and the <see cref="ObjectIdMap"/> objectId-slot index/size-hint bit layout. An out-of-line
-    /// component whose byte length is &lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> stores its exact length in the top bits of
-    /// its objectId slot (no leading ChunkHeader), flagged in the record's position word. Larger keys combine those bits with raw
-    /// RDH KeyLength to encode an exact page count; values retain the objectId-only sentinel scheme. See
-    /// website/docs/dev/tsavorite/objectlog-serialization.md.
+    /// Key/ValueIsExactSize flag bits, and the <see cref="ObjectIdMap"/> objectId-slot index/size-hint bit layout. An extent whose payload
+    /// is &lt;= <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> bytes is stored headerless with its exact length in the top bits of the
+    /// sizing objectId slot, flagged in the record's position word. A larger extent is length-prefixed: a key slot combines those bits
+    /// with raw RDH KeyLength to encode an exact page count, and a value slot saturates its page count at
+    /// <see cref="ObjectLogExtent.LargeValueHint"/>. See website/docs/dev/tsavorite/objectlog-serialization.md.
     /// </summary>
     [TestFixture]
     internal class ObjectIdSlotAndPositionFlagsTests
@@ -75,19 +75,19 @@ namespace Tsavorite.test.Objects
         [Test]
         [Category("Smoke")]
         public void DecodeExactSizeReturnsExactBytes([Values(0, 1, 128, 510, 511)] int sizeHint)
-            => Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(sizeHint, isExactSize: true), Is.EqualTo((ulong)sizeHint));
+            => Assert.That(ObjectLogExtent.ValueInitialRead(sizeHint, isExact: true), Is.EqualTo((long)sizeHint));
 
         [Test]
         [Category("Smoke")]
         public void DecodePageCountReturnsPageExtent([Values(1, 2, 64, 128, 510)] int pageCount)
-            => Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(pageCount, isExactSize: false),
-                Is.EqualTo((ulong)(uint)pageCount * RecordDataHeader.kFlushPageSize));
+            => Assert.That(ObjectLogExtent.ValueInitialRead(pageCount, isExact: false),
+                Is.EqualTo((long)pageCount * ObjectLogExtent.HintPageSize));
 
         [Test]
         [Category("Smoke")]
-        public void DecodeSentinelReturnsOneDiscoveryWindow()
-            => Assert.That(RecordDataHeader.DecodeObjectIdValueInitialReadExtent(ObjectIdMap.MaxObjectIdSizeHint, isExactSize: false),
-                Is.EqualTo((ulong)IStreamBuffer.BufferSize));
+        public void DecodeLargeValueHintReturnsLargeInitialRead()
+            => Assert.That(ObjectLogExtent.ValueInitialRead(ObjectLogExtent.LargeValueHint, isExact: false),
+                Is.EqualTo((long)ObjectLogExtent.LargeInitialRead));
 
         [TestCase(0, 0, true, 0UL)]
         [TestCase(4, 511, true, 511UL)]
@@ -102,10 +102,10 @@ namespace Tsavorite.test.Objects
         [TestCase(0, 0, 0, 4, true)]
         [TestCase(511, 511, 511, 4, true)]
         [TestCase(512, 520, 1, 0, false)]
-        [TestCase((510 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize, 510 * RecordDataHeader.kFlushPageSize, 510, 0, false)]
-        [TestCase((511 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize, 511 * RecordDataHeader.kFlushPageSize, 511, 0, false)]
-        [TestCase((512 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize, 512 * RecordDataHeader.kFlushPageSize, 0, 1, false)]
-        [TestCase((513 * RecordDataHeader.kFlushPageSize) - ChunkHeader.TotalSize, 513 * RecordDataHeader.kFlushPageSize, 1, 1, false)]
+        [TestCase((510 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize, 510 * RecordDataHeader.kFlushPageSize, 510, 0, false)]
+        [TestCase((511 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize, 511 * RecordDataHeader.kFlushPageSize, 511, 0, false)]
+        [TestCase((512 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize, 512 * RecordDataHeader.kFlushPageSize, 0, 1, false)]
+        [TestCase((513 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize, 513 * RecordDataHeader.kFlushPageSize, 1, 1, false)]
         public void ComputeOverflowKeyPageCountRoundTrips(int dataLength, int extent, int expectedObjectIdHint, int expectedRdhBits, bool expectedExact)
         {
             var hint = RecordDataHeader.ComputeOverflowKeySizeHint(dataLength, extent, out var rdhBits, out var isExact);
@@ -138,11 +138,10 @@ namespace Tsavorite.test.Objects
         }
 
         [Test]
-        public void OverflowKeyPageCountCoversMaximumConfiguredKeyAndAlignment()
+        public void OverflowKeyPageCountCoversMaximumConfiguredKey()
         {
             const long maxConfiguredKeyLength = 1L << LogSettings.kMaxStringSizeBits;
-            const int maxSectorAlignmentPadding = (1 << 16) - 1;
-            var extent = maxConfiguredKeyLength + ChunkHeader.TotalSize + maxSectorAlignmentPadding;
+            var extent = ObjectLogExtent.ExtentLength(maxConfiguredKeyLength);
 
             var hint = RecordDataHeader.ComputeOverflowKeySizeHint(maxConfiguredKeyLength, extent, out var rdhBits, out var isExact);
             var decodedExtent = RecordDataHeader.DecodeOverflowKeyInitialReadExtent(rdhBits, hint, isExact);
@@ -332,7 +331,7 @@ namespace Tsavorite.test.Objects
         public void PositionAdvanceHandlesSegmentBoundaries(ulong distance, int expectedSegment, ulong expectedOffset)
         {
             const int segmentBits = 12;
-            ObjectLogPositionInfo position = new(((ulong)3 << segmentBits) | 4000, segmentBits);
+            LegacyObjectLogPosition position = new(((ulong)3 << segmentBits) | 4000, segmentBits);
 
             position.Advance(distance);
 
@@ -343,8 +342,8 @@ namespace Tsavorite.test.Objects
         [Test]
         public void PositionSubtractionRejectsReversedPositions()
         {
-            ObjectLogPositionInfo earlier = new(100, 12);
-            ObjectLogPositionInfo later = new(200, 12);
+            LegacyObjectLogPosition earlier = new(100, 12);
+            LegacyObjectLogPosition later = new(200, 12);
 
             Assert.Throws<System.IO.InvalidDataException>(() => _ = earlier - later);
         }
@@ -352,8 +351,8 @@ namespace Tsavorite.test.Objects
         [Test]
         public void PositionSubtractionRejectsDifferentSegmentSizes()
         {
-            ObjectLogPositionInfo left = new(200, 12);
-            ObjectLogPositionInfo right = new(100, 13);
+            LegacyObjectLogPosition left = new(200, 12);
+            LegacyObjectLogPosition right = new(100, 13);
 
             Assert.Throws<System.IO.InvalidDataException>(() => _ = left - right);
         }

@@ -28,9 +28,9 @@ namespace Tsavorite.core
     /// rather than hoping a background race reproduces.
     /// </summary>
     /// <remarks>
-    /// Modelled on <see cref="ObjectLogWriterDiagnostics"/>: non-generic so a test can reach it without naming the store-functions
-    /// type, and every entry point is <see cref="ConditionalAttribute"/> on DEBUG so a Release build compiles out the calls and their
-    /// arguments entirely -- the flush carries no production cost, not even a null check.
+    /// Non-generic so a test can reach it without naming the store-functions type, and every entry point is
+    /// <see cref="ConditionalAttribute"/> on DEBUG so a Release build compiles out the calls and their arguments entirely -- the flush
+    /// carries no production cost, not even a null check.
     /// <para>The callback runs ON THE FLUSH THREAD while it holds no epoch, so a handler may block, but it must not perform a store
     /// operation that would re-enter this allocator's flush path. Handlers are expected to signal the test thread and optionally wait.</para>
     /// </remarks>

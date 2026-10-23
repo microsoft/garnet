@@ -50,8 +50,8 @@ namespace Tsavorite.test.Objects
     }
 
     /// <summary>
-    /// Covers the object-log format written by <see cref="ObjectLogChunkWriter{TStoreFunctions}"/> and read by
-    /// <see cref="ObjectLogChunkReader{TStoreFunctions}"/>: single extents, exact and length-prefixed; directories, including mixed
+    /// Covers the object-log format written by <see cref="ObjectLogWriter{TStoreFunctions}"/> and read by
+    /// <see cref="ObjectLogReader{TStoreFunctions}"/>: single extents, exact and length-prefixed; directories, including mixed
     /// key/value chunks, page cuts, combined final data, and spines; zero-length components; copying between logs; IO counts; and
     /// rejection of corrupt structure.
     /// </summary>
@@ -67,8 +67,8 @@ namespace Tsavorite.test.Objects
         IDevice device;
         ReadCountingDevice countingDevice;
         ObjectLog objectLog;
-        ObjectLogChunkWriter<ClassStoreFunctions> writer;
-        ObjectLogChunkReader<ClassStoreFunctions> reader;
+        ObjectLogWriter<ClassStoreFunctions> writer;
+        ObjectLogReader<ClassStoreFunctions> reader;
         ClassStoreFunctions storeFunctions;
 
         [SetUp]
@@ -352,9 +352,9 @@ namespace Tsavorite.test.Objects
 
             using var destinationDevice = Devices.CreateLogDevice(Path.Join(MethodTestDir, "copy.obj.log"), deleteOnClose: false);
             using var destinationLog = new ObjectLog(new ObjectLogSettings { LogDevice = destinationDevice, PageSizeBits = 13, PageCount = 8, SegmentSizeBits = 16 });
-            using var destinationWriter = new ObjectLogChunkWriter<ClassStoreFunctions>(destinationLog, storeFunctions,
+            using var destinationWriter = new ObjectLogWriter<ClassStoreFunctions>(destinationLog, storeFunctions,
                 new ObjectLogWriterSettings { ChunkSize = 2048, MinPartialBytes = MinPartialBytes });
-            using var destinationReader = new ObjectLogChunkReader<ClassStoreFunctions>(destinationLog, storeFunctions);
+            using var destinationReader = new ObjectLogReader<ClassStoreFunctions>(destinationLog, storeFunctions);
 
             reader.BeginRecord(record.Ref);
             ObjectLogWriteResult copied;

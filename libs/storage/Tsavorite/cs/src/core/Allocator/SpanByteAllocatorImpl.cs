@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -238,7 +238,7 @@ namespace Tsavorite.core
                     (uint)AlignedPageSizeBytes, callback, asyncResult, device);
 
         protected override void WriteAsyncToDeviceForSnapshot<TContext>(int startPage, int flushPage, int pageSize, DeviceIOCompletionCallback callback,
-            PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
+            PageAsyncFlushResult<TContext> asyncResult, IDevice device, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
             if (useNativeLogPages)

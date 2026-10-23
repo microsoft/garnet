@@ -293,17 +293,10 @@ namespace Tsavorite.core
         /// <summary>Largest exact 4 KB-page count encodable for an overflow key.</summary>
         internal const int kMaxOverflowKeyPageCount = (1 << kOverflowKeyPageCountBits) - 1;
 
-        /// <summary>The total on-disk extent of an out-of-line overflow key or value: the data length when it fits headerless,
-        /// else a leading <see cref="ChunkHeader"/> + any direct-IO alignment padding + the data.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long OverflowOnDiskExtent(long dataLength, int alignmentPadding)
-            => dataLength <= kOutOfLineExactSizeCutoff ? dataLength : ChunkHeader.TotalSize + alignmentPadding + dataLength;
-
-        /// <summary>Compute the objectId-slot read-size hint (see <see cref="ObjectIdMap.StampSizeHint"/>) for an out-of-line value,
-        /// using the exact byte length (<paramref name="isExact"/> true, no leading ChunkHeader) when <paramref name="dataLength"/>
-        /// fits headerless, else the on-disk extent's
-        /// 4 KB-page count (isExact false, leading ChunkHeader present) clamped to <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> as the sentinel.
-        /// The sentinel means "read a 4 MB discovery window and follow the ChunkHeader chain."</summary>
+        /// <summary>Compute the objectId-slot read-size hint (see <see cref="ObjectIdMap.StampSizeHint"/>) for an out-of-line extent:
+        /// the exact byte length (<paramref name="isExact"/> true, stored headerless) when <paramref name="dataLength"/> is at most
+        /// <see cref="kOutOfLineExactSizeCutoff"/>, else the 4 KB-page count of <paramref name="totalOnDiskExtent"/> (isExact false), saturating
+        /// at <see cref="ObjectIdMap.MaxObjectIdSizeHint"/>. See <see cref="ObjectLogExtent"/> for how a reader sizes its first read from it.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int ComputeObjectIdValueSizeHint(long dataLength, long totalOnDiskExtent, out bool isExact)
         {
@@ -318,11 +311,11 @@ namespace Tsavorite.core
             return pageCount >= ObjectIdMap.MaxObjectIdSizeHint ? ObjectIdMap.MaxObjectIdSizeHint : pageCount;
         }
 
-        /// <summary>Encode an overflow key's initial read extent. Headerless keys use an exact byte count in the objectId hint and keep
-        /// <paramref name="rdhKeyLengthBits"/> at the in-memory physical-slot value. Headered keys store the exact rounded-up 4 KB page
-        /// count across the raw RDH KeyLength field (high bits) and objectId hint (low bits), avoiding a sentinel or discovery loop.</summary>
-        /// <param name="dataLength">Logical key payload length.</param>
-        /// <param name="totalOnDiskExtent">Header, direct-IO padding, and payload bytes.</param>
+        /// <summary>Encode the initial read extent described by an overflow key's slot. An exact (headerless) extent uses its byte count in the
+        /// objectId hint and keeps <paramref name="rdhKeyLengthBits"/> at the in-memory physical-slot value. A larger extent stores its exact
+        /// rounded-up 4 KB page count across the raw RDH KeyLength field (high bits) and objectId hint (low bits), so it needs no sentinel.</summary>
+        /// <param name="dataLength">The extent's payload length.</param>
+        /// <param name="totalOnDiskExtent">The extent's length on the log, including its length prefix.</param>
         /// <param name="rdhKeyLengthBits">Raw value to store in the RDH KeyLength field.</param>
         /// <param name="isExact">Whether the objectId hint is an exact headerless byte length.</param>
         /// <returns>The low page-count bits, or exact byte length, to store in the objectId hint.</returns>
@@ -345,29 +338,14 @@ namespace Tsavorite.core
             return (int)pageCount & ObjectIdMap.ObjectIdSizeHintMask;
         }
 
-        /// <summary>Decode an overflow key's initial read extent. Exact-size keys use only the objectId hint as a byte length.
-        /// Headered keys combine the raw RDH KeyLength high bits with the objectId hint low bits to recover the exact 4 KB page count.</summary>
+        /// <summary>Decode the initial read extent described by an overflow key's slot. An exact extent uses only the objectId hint as a byte
+        /// length. A larger one combines the raw RDH KeyLength high bits with the objectId hint low bits to recover the exact 4 KB page count.</summary>
         internal static ulong DecodeOverflowKeyInitialReadExtent(int rdhKeyLengthBits, int objectIdSizeHint, bool isExactSize)
         {
             if (isExactSize)
                 return (ulong)(uint)objectIdSizeHint;
             var pageCount = ((ulong)(uint)rdhKeyLengthBits << ObjectIdMap.ObjectIdSizeHintBits) | (uint)objectIdSizeHint;
             return pageCount * kFlushPageSize;
-        }
-
-        /// <summary>The initial read-ahead extent (bytes) for
-        /// an out-of-line value derived from its objectId size hint (see <see cref="ObjectIdMap.GetSizeHint"/>) and the record's
-        /// <see cref="ObjectLogPositionInfo.kValueIsExactSizeMask"/> flag. Exact flag set -&gt; that many bytes (headerless); else the
-        /// 4 KB-page count * 4 KB, or one 4 MB read buffer when the hint is at the <see cref="ObjectIdMap.MaxObjectIdSizeHint"/> sentinel
-        /// (the reader learns the true length from the ChunkHeader(s) and extends).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static ulong DecodeObjectIdValueInitialReadExtent(int sizeHint, bool isExactSize)
-        {
-            if (isExactSize)
-                return (ulong)(uint)sizeHint;                                             // exact bytes (0..511), headerless
-            if (sizeHint >= ObjectIdMap.MaxObjectIdSizeHint)
-                return (ulong)IStreamBuffer.BufferSize;                                   // sentinel -> 4 MB block
-            return (ulong)(uint)sizeHint * kFlushPageSize;                                // page count * 4 KB
         }
 
         internal readonly int ExtendedNamespaceLength

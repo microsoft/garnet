@@ -1588,77 +1588,59 @@ namespace Tsavorite.core
                 : objectIdMap.TryGetHeapObject(*(int*)valueAddress, out valueObject);
         }
 
-        /// <summary>
-        /// Writes the object-log start position and stamps key/value initial-read hints into the objectId slots before the main-log page is flushed.
-        /// </summary>
-        /// <param name="objectLogFilePosition">The starting position of the serialized key and value data in the object log.</param>
-        /// <param name="valueObjectLength">The serialized length of the value object if it is an object and not inline or overflow. Overflow
-        ///     fields have their length taken from <paramref name="keyOverflow"/> / <paramref name="valueOverflow"/>.</param>
-        /// <param name="keyOverflow">The overflow key the caller already captured and wrote to the object log (used when
-        ///     <see cref="RecordDataHeader.KeyIsOverflow"/>); its <see cref="OverflowByteArray.Length"/> is the authoritative on-disk key length.</param>
-        /// <param name="valueOverflow">The overflow value the caller already captured and wrote to the object log (used when
-        ///     <see cref="RecordDataHeader.ValueIsOverflow"/>); its <see cref="OverflowByteArray.Length"/> is the authoritative on-disk value length.</param>
-        /// <remarks>The effective RDH KeyLength/ValueLength properties remain exact inline lengths or the physical objectId-slot size.
-        /// For an overflow key, the raw RDH KeyLength bits are also stamped with the high portion of its page-count read hint; because
-        /// KeyIsInline is false, this does not affect physical record sizing. Stamping preserves each objectId slot's low index bits.
-        /// <para>The overflow lengths come from the caller's captured instances -- the same bytes that were written to the object log -- rather
-        /// than from a fresh <see cref="ObjectIdMap"/> lookup. That keeps the stamped hint consistent with the written data and avoids
-        /// re-reading a slot that a concurrent operation may have freed between the object write and here.</para></remarks>
-        internal readonly void SetObjectLogPositionAndSizeHints(in ObjectLogPositionInfo objectLogFilePosition, ulong valueObjectLength,
-            in OverflowByteArray keyOverflow, in OverflowByteArray valueOverflow,
-            int keyAlignmentPadding = 0, int valueAlignmentPadding = 0, long valueObjectFirstChunkExtent = 0)
+        /// <summary>Stamp the position word and initial-read hints that an object-log write produced for this record.</summary>
+        /// <param name="result">The write's result: the position word with its flags, and the key and value slot hints.</param>
+        /// <remarks>Non-destructive to in-memory readers: each objectId slot keeps its index bits, and an overflow key's raw RDH KeyLength
+        /// carries hint bits that do not affect the record's physical layout. See <see cref="ObjectLogWriter{TStoreFunctions}"/>.</remarks>
+        internal readonly void SetObjectLogPositionAndHints(in ObjectLogWriteResult result)
         {
-            if (DataHeader.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
+            var dataHeader = DataHeader;
+            if (dataHeader.RecordIsInline)
             {
-                Debug.Fail("Cannot call SetObjectLogPositionAndSizeHints for an inline record");
+                Debug.Fail("Cannot call SetObjectLogPositionAndHints for an inline record");
                 return;
             }
 
-            var dataHeader = DataHeader;
-
             var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-
-            // Write ObjectLogPosition, which clears any stale flag bits and marks the objectId-hint format.
-            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-            *objectLogPositionPtr = objectLogFilePosition.word;
+            *(ulong*)GetObjectLogPositionAddress(valueAddress + valueLength) = result.PositionWord;
 
             if (dataHeader.KeyIsOverflow)
             {
                 var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                var keyLen = keyOverflow.Length;
-                var keyExtent = RecordDataHeader.OverflowOnDiskExtent(keyLen, keyAlignmentPadding);
-                var keySizeHint = RecordDataHeader.ComputeOverflowKeySizeHint(keyLen, keyExtent, out var rdhKeyLengthBits, out var keyIsExact);
-                *(int*)keyAddress = ObjectIdMap.StampSizeHint(ObjectIdMap.GetIndex(*(int*)keyAddress), keySizeHint);
-                dataHeader.KeyLength = rdhKeyLengthBits;
+                *(int*)keyAddress = ObjectIdMap.StampSizeHint(ObjectIdMap.GetIndex(*(int*)keyAddress), result.KeySizeHint);
+                dataHeader.KeyLength = result.KeyRdhLengthBits;
                 SetDataHeader(dataHeader);
-                if (keyIsExact)
-                    ObjectLogPositionInfo.SetKeyIsExactSize(objectLogPositionPtr);
             }
-
-            // An object's hint covers its headerless prefix and first framed chunk; continuation headers drive later discovery windows.
-            var valLen = dataHeader.ValueIsOverflow ? (long)valueOverflow.Length : (long)valueObjectLength;
             if (!dataHeader.ValueIsInline)
-            {
-                var initialExtent = dataHeader.ValueIsObject
-                    ? valueObjectFirstChunkExtent
-                    : RecordDataHeader.OverflowOnDiskExtent(valLen, valueAlignmentPadding);
-                StampSizeHint(valLen, initialExtent, (int*)valueAddress, objectLogPositionPtr, isKey: false);
-            }
+                *(int*)valueAddress = ObjectIdMap.StampSizeHint(ObjectIdMap.GetIndex(*(int*)valueAddress), result.ValueSizeHint);
         }
 
-        /// <summary>Stamp an out-of-line component's initial-read hint and set its exact-size position flag.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void StampSizeHint(long dataLength, long initialOnDiskExtent, int* objectIdPtr, ulong* objectLogPositionPtr, bool isKey)
+        /// <summary>What <see cref="ObjectLogReader{TStoreFunctions}"/> needs to find this record's out-of-line components: the position word
+        /// and the hints stamped by <see cref="SetObjectLogPositionAndHints"/>.</summary>
+        /// <remarks>Capture this before materializing any component: assigning <see cref="KeyOverflow"/> or a value object unstamps the word.</remarks>
+        internal readonly ObjectLogRecordRef GetObjectLogRecordRef()
         {
-            var sizeHint = RecordDataHeader.ComputeObjectIdValueSizeHint(dataLength, initialOnDiskExtent, out var isExact);
-            *objectIdPtr = ObjectIdMap.StampSizeHint(ObjectIdMap.GetIndex(*objectIdPtr), sizeHint);
-            if (isExact)
+            var dataHeader = DataHeader;
+            Debug.Assert(dataHeader.RecordHasObjects, "GetObjectLogRecordRef is only meaningful for a record with out-of-line components");
+            var recordRef = new ObjectLogRecordRef
             {
-                if (isKey)
-                    ObjectLogPositionInfo.SetKeyIsExactSize(objectLogPositionPtr);
-                else
-                    ObjectLogPositionInfo.SetValueIsExactSize(objectLogPositionPtr);
+                PositionWord = *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()),
+                KeyIsOverflow = dataHeader.KeyIsOverflow,
+                ValueIsOverflow = dataHeader.ValueIsOverflow,
+                ValueIsObject = dataHeader.ValueIsObject,
+            };
+            if (recordRef.KeyIsOverflow)
+            {
+                var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
+                recordRef.KeySizeHint = ObjectIdMap.GetSizeHint(*(int*)keyAddress);
+                recordRef.KeyRdhLengthBits = dataHeader.GetKeyLengthRaw();
             }
+            if (!dataHeader.ValueIsInline)
+            {
+                var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
+                recordRef.ValueSizeHint = ObjectIdMap.GetSizeHint(*(int*)valueAddress);
+            }
+            return recordRef;
         }
 
         /// <summary>
@@ -1678,131 +1660,41 @@ namespace Tsavorite.core
             }
         }
 
-        internal readonly bool KeyIsExactSize
-        {
-            get
-            {
-                Debug.Assert(DataHeader.KeyIsOverflow, "KeyIsExactSize is only meaningful for an overflow key");
-                return ObjectLogPositionInfo.GetKeyIsExactSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
-            }
-        }
-
-        internal readonly int KeyObjectIdSizeHint
-        {
-            get
-            {
-                Debug.Assert(DataHeader.KeyIsOverflow, "KeyObjectIdSizeHint is only meaningful for an overflow key");
-                var (_, keyAddress) = DataHeader.GetKeyFieldInfo(physicalAddress);
-                return ObjectIdMap.GetSizeHint(*(int*)keyAddress);
-            }
-        }
-
-        /// <summary>The overflow key's initial object-log read extent. A headerless key uses the exact byte count from its objectId hint.
-        /// A headered key combines that hint with raw RDH KeyLength to recover its exact rounded-up 4 KB page extent.</summary>
-        internal readonly ulong KeyInitialReadExtent
-        {
-            get
-            {
-                Debug.Assert(DataHeader.KeyIsOverflow, "KeyInitialReadExtent is only meaningful for an overflow key");
-                var dataHeader = DataHeader;
-                var (_, keyAddress) = dataHeader.GetKeyFieldInfo(physicalAddress);
-                return RecordDataHeader.DecodeOverflowKeyInitialReadExtent(dataHeader.GetKeyLengthRaw(),
-                    ObjectIdMap.GetSizeHint(*(int*)keyAddress), KeyIsExactSize);
-            }
-        }
-
-        /// <summary>For a non-inline value on a hint-format record, true if the value is stored headerless with its exact byte length carried
-        /// in its objectId size hint (the ValueIsExactSize position flag is set); false if it is headered/chunked with a leading ChunkHeader
-        /// that carries the length. Reads the position-word flag written at flush time.</summary>
-        internal readonly bool ValueIsExactSize
-        {
-            get
-            {
-                Debug.Assert(!DataHeader.ValueIsInline, "ValueIsExactSize is only meaningful for a non-inline value");
-                return ObjectLogPositionInfo.GetValueIsExactSize((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
-            }
-        }
-
-        /// <summary>The out-of-line value's objectId size hint (top <see cref="ObjectIdMap.ObjectIdSizeHintBits"/> bits of its objectId slot):
-        /// the exact byte length when <see cref="ValueIsExactSize"/> is set, else a 4 KB-page count whose max value
-        /// (<see cref="ObjectIdMap.MaxObjectIdSizeHint"/>) is the "read in large blocks and follow the ChunkHeader(s)" sentinel.</summary>
-        internal readonly int ValueObjectIdSizeHint
-        {
-            get
-            {
-                Debug.Assert(!DataHeader.ValueIsInline, "ValueObjectIdSizeHint is only meaningful for a non-inline value");
-                var (_, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
-                return ObjectIdMap.GetSizeHint(*(int*)valueAddress);
-            }
-        }
-
         /// <summary>
-        /// Repoints this record's object-log position word to <paramref name="objectLogFilePosition"/> without touching the
-        /// objectId size hints or the <see cref="ObjectIdMap"/>, preserving the record's existing format flags.
+        /// Returns the object-log start position and key/value first-read extents.
         /// </summary>
-        /// <param name="objectLogFilePosition">The new object-log position (e.g. the main object-log position a snapshot record's bytes were copied to).</param>
         /// <remarks>
-        /// Used by the snapshot-recovery flush, which copies a record's object bytes from the snapshot object-log to the main object-log
-        /// verbatim and repoints the live record to the main position before writing it. The record's objects are NOT deserialized at this point,
-        /// so unlike the setters this does not read lengths from objectIdMap; the copied lengths and encoding are unchanged, so ALL existing
-        /// position-word flag bits are preserved (the unused bit 63, Key/ValueIsExactSize) — only the segment+offset is taken from
-        /// the new position. A downlevel record copied verbatim stays downlevel; a hint-format record keeps its size-hint flags to match its
-        /// verbatim-copied objectId-slot stamp.
+        /// A downlevel (cv7) record carries its exact component lengths in the split RDH/objectId encoding. A current-format record carries
+        /// hints, decoded as <see cref="ObjectLogExtent"/> decodes them: the extents its first reads cover, which are exact lengths only for
+        /// a single component of at most <see cref="ObjectLogExtent.ExactCutoff"/> bytes.
         /// </remarks>
-        internal readonly void RepointObjectLogPosition(in ObjectLogPositionInfo objectLogFilePosition)
-        {
-            if (DataHeader.RecordIsInline)
-            {
-                Debug.Fail("Cannot call RepointObjectLogPosition for an inline record");
-                return;
-            }
-
-            var (valueLength, valueAddress) = DataHeader.GetValueFieldInfo(physicalAddress);
-            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-            *objectLogPositionPtr = (objectLogFilePosition.word & ObjectLogPositionInfo.AddressMask)
-                                  | (*objectLogPositionPtr & ~ObjectLogPositionInfo.AddressMask);
-        }
-
-        /// <summary>
-        /// Returns the object-log start position and key/value initial-read extents. For current-format records these are decoded from
-        /// each objectId slot's size hint and exact-size position flag. downlevel (cv7) records use the split RDH/objectId encoding.
-        /// </summary>
-        /// <param name="keyLength">Outputs the key initial-read extent.</param>
-        /// <param name="valueObjectLength">Outputs the value initial-read extent.</param>
+        /// <param name="keyLength">Outputs the key's first-read extent, or 0 for an inline key.</param>
+        /// <param name="valueObjectLength">Outputs the value's first-read extent, or 0 for an inline value.</param>
         /// <param name="checkpointVersion">The checkpoint metadata version whose object-log encoding is being decoded; the current version for a
         /// live read. Recovery passes the recovered checkpoint version to select the downlevel cv7 decode.</param>
-        /// <returns>The object log position word for this record, with flag bits masked off (segment+offset only).</returns>
+        /// <returns>The object log position word for this record, with flag bits masked off.</returns>
         internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength, int checkpointVersion)
         {
             if (IsDownlevelObjectLogRecord(checkpointVersion))
                 return GetObjectLogRecordStartPositionAndLengths_cv7(out keyLength, out valueObjectLength);
 
-            var dataHeader = DataHeader;
-            var word = *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
-            if (dataHeader.KeyIsOverflow)
-                keyLength = checked((int)KeyInitialReadExtent);
-            else
+            if (DataHeader.RecordIsInline)
+            {
+                Debug.Fail("Cannot call GetObjectLogRecordStartPositionAndLengths for an inline record");
                 keyLength = 0;
-
-            if (!dataHeader.ValueIsInline)
-            {
-                var (_, valueAddress) = dataHeader.GetValueFieldInfo(physicalAddress);
-                var sizeHint = ObjectIdMap.GetSizeHint(*(int*)valueAddress);
-                var valueIsExact = (word & ObjectLogPositionInfo.kValueIsExactSizeMask) != 0;
-                valueObjectLength = RecordDataHeader.DecodeObjectIdValueInitialReadExtent(sizeHint, valueIsExact);
-            }
-            else // ValueIsInline is true; valueObjectLength will be ignored
-            {
                 valueObjectLength = 0;
-                if (dataHeader.RecordIsInline) // If the record is fully inline, we should not be called here
-                {
-                    Debug.Fail("Cannot call GetObjectLogRecordStartPositionAndLengths for an inline record");
-                    return 0;
-                }
+                return 0;
             }
 
-            // Mask off flag bits to return just segment+offset.
-            return word & ObjectLogPositionInfo.AddressMask;
+            var recordRef = GetObjectLogRecordRef();
+            keyLength = recordRef.KeyIsOverflow
+                ? checked((int)ObjectLogExtent.KeyInitialRead(recordRef.KeyRdhLengthBits, recordRef.KeySizeHint,
+                    (recordRef.PositionWord & ObjectLogPositionInfo.kKeyIsExactSizeMask) != 0))
+                : 0;
+            valueObjectLength = recordRef.ValueIsOutOfLine
+                ? (ulong)ObjectLogExtent.ValueInitialRead(recordRef.ValueSizeHint, (recordRef.PositionWord & ObjectLogPositionInfo.kValueIsExactSizeMask) != 0)
+                : 0;
+            return recordRef.PositionWord & ObjectLogPositionInfo.AddressMask;
         }
 
         /// <summary>Whether this record's object log uses the downlevel (cv7) split-length encoding. Recovery selects the decode from the
@@ -1828,6 +1720,42 @@ namespace Tsavorite.core
             // still needs. Leaving it stamped lets a later flush that skips this record (Invalid, lost capture) persist a
             // position for object bytes it did not write.
             ObjectLogPositionInfo.Unstamp((ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()));
+        }
+
+        /// <summary>Materialize this record's out-of-line components without reading any object-log bytes, then unstamp it like a normal read.</summary>
+        /// <remarks>
+        /// For a record that has out-of-line components but no readable position: one the flush skipped, or one whose only out-of-line component
+        /// is zero length. Reading its position would consume bytes belonging to a different record, but simply skipping it would leave its
+        /// components unmaterialized.
+        /// <para>Overflow components are materialized as empty byte arrays. An object value is recorded as absent and no deserializer is invoked:
+        /// zero bytes carry no type information, so there is nothing a deserializer could reconstruct. The value slot is still allocated, holding
+        /// null, rather than left unset, because <see cref="ValueObject"/> resolves an unset id through <c>objectArray.Get(-1)</c>.</para>
+        /// </remarks>
+        internal readonly void MaterializeObjectsWithoutReading()
+        {
+            Debug.Assert(DataHeader.RecordHasObjects, "Inline records have no out-of-line components to materialize");
+
+            var keyWasSet = false;
+            try
+            {
+                if (DataHeader.KeyIsOverflow)
+                {
+                    KeyOverflow = new OverflowByteArray(0, startOffset: 0, endOffset: 0, zeroInit: false);
+                    keyWasSet = true;
+                }
+
+                if (DataHeader.ValueIsOverflow)
+                    ValueOverflow = new OverflowByteArray(0, startOffset: 0, endOffset: 0, zeroInit: false);
+                else if (DataHeader.ValueIsObject)
+                    SetDeserializedValueObject(null);
+
+                OnObjectReadComplete();
+            }
+            catch
+            {
+                OnDeserializationError(keyWasSet);
+                throw;
+            }
         }
 
         internal readonly void OnDeserializationError(bool keyWasSet)

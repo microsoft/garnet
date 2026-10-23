@@ -128,7 +128,7 @@ namespace Tsavorite.test
                 }
             }
 
-            internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context,
+            internal override void AsyncReadPageFromDeviceToFrame<TContext>(long readPage, long untilAddress, TContext context,
                     ref CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
             {
                 LastReadCts = cts;
