@@ -577,7 +577,7 @@ namespace Garnet.test
                             out var reservation,
                             out _);
                         ClassicAssert.IsTrue(reserved);
-                        var address = reservation.requestAddress;
+                        var address = reservation.inlineDataBufferAddress;
 
                         // Publish only even slots; odd slots stay reserved-but-unpublished (schedule slot
                         // published == 0), which the teardown walk must skip without reclaiming a buffer.

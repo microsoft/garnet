@@ -674,7 +674,7 @@ namespace Garnet.client
                             out var flushEvent))
                         {
                             taskId = reservation.completionTicket;
-                            address = reservation.requestAddress;
+                            address = reservation.inlineDataBufferAddress;
                             requestId = reservation.requestId;
                             break;
                         }
@@ -857,7 +857,7 @@ namespace Garnet.client
                             out var reservation,
                             out var flushEvent))
                         {
-                            address = reservation.requestAddress;
+                            address = reservation.inlineDataBufferAddress;
                             requestId = reservation.requestId;
                             break;
                         }

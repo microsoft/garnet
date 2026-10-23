@@ -224,13 +224,13 @@ namespace BDN.benchmark.Client
 
                 if (inline)
                 {
-                    var destination = channel.RegisterInlineRecord(reservation.requestAddress);
+                    var destination = channel.RegisterInlineRecord(reservation.inlineDataBufferAddress);
                     source.AsSpan().CopyTo(new Span<byte>(destination, source.Length));
-                    channel.PublishInlineRecord(reservation.requestId, reservation.requestAddress, source.Length);
+                    channel.PublishInlineRecord(reservation.requestId, reservation.inlineDataBufferAddress, source.Length);
                 }
                 else
                 {
-                    channel.RegisterOfflineRecord(reservation.requestId, reservation.requestAddress, request);
+                    channel.RegisterOfflineRecord(reservation.requestId, reservation.inlineDataBufferAddress, request);
                     requestRegistered = true;
                 }
 

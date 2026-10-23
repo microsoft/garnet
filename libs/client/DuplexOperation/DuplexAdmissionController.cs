@@ -19,13 +19,15 @@ namespace Garnet.client
     /// </summary>
     internal readonly struct DuplexOperationReservation
     {
-        internal readonly long requestAddress;
+        // Free-running inline address where an inline record starts; map it to a buffer offset with
+        // GetInlineBufferOffset. Unused for out-of-line records, which reserve no inline bytes.
+        internal readonly long inlineDataBufferAddress;
         internal readonly ushort completionTicket;
         internal readonly ushort requestId;
 
-        internal DuplexOperationReservation(long requestAddress, ushort completionTicket, ushort requestId)
+        internal DuplexOperationReservation(long inlineDataBufferAddress, ushort completionTicket, ushort requestId)
         {
-            this.requestAddress = requestAddress;
+            this.inlineDataBufferAddress = inlineDataBufferAddress;
             this.completionTicket = completionTicket;
             this.requestId = requestId;
         }
@@ -51,9 +53,9 @@ namespace Garnet.client
         // thread that drives the flush.
         const int BackpressureSpinBudget = 16;
 
-        readonly int inlineBufferCapacity;
-        readonly int completionCapacity;
-        readonly int scheduleCapacity;
+        readonly int inlineDataBufferCapacity;
+        readonly int activeCompletionCapacity;
+        readonly int requestCapacity;
         readonly LightEpoch epoch;
         readonly Action<int, int> onPagesMarkedReadOnly;
         readonly Action flushReadOnlyRequests;
@@ -65,8 +67,10 @@ namespace Garnet.client
         int readOnlyFromRequestId;
         long readOnlyInlineAddress;
         long activeFlushUntilAddress;
-        int completionReservations;
-        int scheduleReservations;
+        // Completions reserved until their reply is consumed; bounded by completionCapacity.
+        int activeCompletions;
+        // Request ids reserved until the flush scan passes them; bounded by requestCapacity.
+        int activeRequests;
         int ongoingAggressiveShiftReadOnly;
         int activeFlushCount;
         int activePerOperationFlushResults;
@@ -90,24 +94,24 @@ namespace Garnet.client
 
         internal bool IsIdle
             => GetTailAddress() == Volatile.Read(ref flushedInlineAddress) &&
-               Volatile.Read(ref completionReservations) == 0 &&
-               Volatile.Read(ref scheduleReservations) == 0 &&
+               Volatile.Read(ref activeCompletions) == 0 &&
+               Volatile.Read(ref activeRequests) == 0 &&
                Volatile.Read(ref activeFlushCount) == 0 &&
                Volatile.Read(ref activePerOperationFlushResults) == 0 &&
                Volatile.Read(ref ongoingAggressiveShiftReadOnly) == 0;
 
         internal DuplexAdmissionController(
-            int inlineBufferCapacity,
+            int inlineDataBufferCapacity,
             int completionCapacity,
-            int scheduleCapacity,
+            int requestCapacity,
             LightEpoch epoch,
             Action<int, int> onPagesMarkedReadOnly,
             Action<Exception> onFlushError)
         {
-            Debug.Assert(System.Numerics.BitOperations.IsPow2(inlineBufferCapacity));
-            this.inlineBufferCapacity = inlineBufferCapacity;
-            this.completionCapacity = completionCapacity;
-            this.scheduleCapacity = scheduleCapacity;
+            Debug.Assert(System.Numerics.BitOperations.IsPow2(inlineDataBufferCapacity));
+            this.inlineDataBufferCapacity = inlineDataBufferCapacity;
+            this.activeCompletionCapacity = completionCapacity;
+            this.requestCapacity = requestCapacity;
             this.epoch = epoch;
             this.onPagesMarkedReadOnly = onPagesMarkedReadOnly;
             flushReadOnlyRequests = FlushReadOnlyRequests;
@@ -128,6 +132,10 @@ namespace Garnet.client
             idleStateChanged.Dispose();
         }
 
+        /// <summary>
+        /// Continuation queued by <see cref="AggressiveShiftReadOnlyRunner"/> when a flush completes with more requests
+        /// to shift. It inherits the flusher role, so it re-enters the runner without the role compare-and-swap.
+        /// </summary>
         void IThreadPoolWorkItem.Execute()
         {
             if (Volatile.Read(ref disposed) != 0)
@@ -182,11 +190,7 @@ namespace Garnet.client
         /// operation. On backpressure, returns false and identifies the capacity event that the caller should await.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool TryScheduleOperation(
-            int requestSize,
-            bool expectsCompletion,
-            out DuplexOperationReservation reservation,
-            out CompletionEvent waitEvent)
+        internal bool TryScheduleOperation(int requestSize, bool expectsCompletion, out DuplexOperationReservation reservation, out CompletionEvent waitEvent)
         {
             // Inline-buffer backpressure (the schedule claim is already held) clears on a flush completion. Kick
             // the flusher once, then spin that window with a bounded progressive policy: it begins CPU-local but
@@ -197,7 +201,7 @@ namespace Garnet.client
             // the next flush, which is signalled by CompleteFlushPart advancing the flushed inline address.
             var spinner = ConfiguredSpinWait.BoundedProgressive(BackpressureSpinBudget);
             var completionReserved = false;
-            var scheduleReserved = false;
+            var requestReserved = false;
             var flushKicked = false;
             while (true)
             {
@@ -205,11 +209,11 @@ namespace Garnet.client
 
                 if (expectsCompletion && !completionReserved)
                 {
-                    if (!TryReserveCompletion())
+                    if (!TryReserveActiveCompletion())
                     {
                         waitEvent = completionFreed;
                         ArmWaiter(ref completionFreedWaiters);
-                        if (!TryReserveCompletion())
+                        if (!TryReserveActiveCompletion())
                         {
                             reservation = default;
                             return false;
@@ -218,24 +222,24 @@ namespace Garnet.client
                     completionReserved = true;
                 }
 
-                if (!scheduleReserved)
+                if (!requestReserved)
                 {
-                    if (!TryReserveSchedule())
+                    if (!TryReserveActiveRequest())
                     {
                         waitEvent = requestFreed;
                         ArmWaiter(ref requestFreedWaiters);
-                        if (!TryReserveSchedule())
+                        if (!TryReserveActiveRequest())
                         {
                             if (completionReserved)
-                                ReleaseCompletions(1);
+                                ReleaseActiveCompletions(1);
                             reservation = default;
                             return false;
                         }
                     }
-                    scheduleReserved = true;
+                    requestReserved = true;
                 }
 
-                if (TryReserveRequest(requestSize, expectsCompletion, out reservation))
+                if (TryReserveEntry(requestSize, expectsCompletion, out reservation))
                 {
                     waitEvent = default;
                     return true;
@@ -262,13 +266,13 @@ namespace Garnet.client
 
                 waitEvent = requestFreed;
                 ArmWaiter(ref requestFreedWaiters);
-                if (TryReserveRequest(requestSize, expectsCompletion, out reservation))
+                if (TryReserveEntry(requestSize, expectsCompletion, out reservation))
                     return true;
 
                 if (completionReserved)
-                    ReleaseCompletionsQuiet(1);
-                if (scheduleReserved)
-                    ReleaseScheduleReservationsQuiet(1);
+                    _ = Interlocked.Decrement(ref activeCompletions);
+                if (requestReserved)
+                    _ = Interlocked.Decrement(ref activeRequests);
                 reservation = default;
                 return false;
             }
@@ -282,7 +286,7 @@ namespace Garnet.client
         /// inline capacity until it is flushed past. Returns false, changing nothing, on inline backpressure.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryReserveRequest(int size, bool expectsCompletion, out DuplexOperationReservation reservation)
+        bool TryReserveEntry(int size, bool expectsCompletion, out DuplexOperationReservation reservation)
         {
             while (true)
             {
@@ -292,12 +296,12 @@ namespace Garnet.client
 
                 if (size > 0)
                 {
-                    var offset = address & (inlineBufferCapacity - 1);
-                    if (offset + size > inlineBufferCapacity)
-                        address += inlineBufferCapacity - offset;
+                    var offset = address & (inlineDataBufferCapacity - 1);
+                    if (offset + size > inlineDataBufferCapacity)
+                        address += inlineDataBufferCapacity - offset;
 
                     var used = LightPageAndOffset.InlineDistance(Volatile.Read(ref flushedInlineAddress), address + size);
-                    if (used > inlineBufferCapacity)
+                    if (used > inlineDataBufferCapacity)
                     {
                         // The flushed address can only trail the tail, so a distance beyond the capacity is either
                         // genuine backpressure or a tail that moved after it was read (a later flush then makes
@@ -320,57 +324,46 @@ namespace Garnet.client
             }
         }
 
-        bool TryReserveCompletion()
+        bool TryReserveActiveCompletion()
         {
-            if (Interlocked.Increment(ref completionReservations) <= completionCapacity)
+            if (Interlocked.Increment(ref activeCompletions) <= activeCompletionCapacity)
                 return true;
 
-            _ = Interlocked.Decrement(ref completionReservations);
+            _ = Interlocked.Decrement(ref activeCompletions);
             return false;
         }
 
-        void ReleaseCompletions(int count)
+        bool TryReserveActiveRequest()
         {
-            _ = Interlocked.Add(ref completionReservations, -count);
+            if (Interlocked.Increment(ref activeRequests) <= requestCapacity)
+                return true;
+
+            _ = Interlocked.Decrement(ref activeRequests);
+            return false;
+        }
+
+        void ReleaseActiveCompletions(int count)
+        {
+            _ = Interlocked.Add(ref activeCompletions, -count);
             SignalIfArmed(ref completionFreedWaiters, ref completionFreed);
         }
 
-        bool TryReserveSchedule()
-        {
-            if (Interlocked.Increment(ref scheduleReservations) <= scheduleCapacity)
-                return true;
-
-            _ = Interlocked.Decrement(ref scheduleReservations);
-            return false;
-        }
-
-        internal void ReleaseScheduleReservations(int count)
+        internal void ReleaseActiveRequests(int count)
         {
             if (count <= 0)
                 return;
 
-            _ = Interlocked.Add(ref scheduleReservations, -count);
+            _ = Interlocked.Add(ref activeRequests, -count);
             SignalIfArmed(ref requestFreedWaiters, ref requestFreed);
             SignalIfArmed(ref idleStateWaiters, ref idleStateChanged);
         }
-
-        // Give back reservations taken but not used by an attempt that bailed on byte-ring backpressure, without
-        // signalling. The attempt is about to park on requestFreed; the flush that frees inline bytes (always
-        // possible when bailing, since backpressure means unflushed data exists) sets requestFreed and wakes it.
-        // Broadcasting here instead would make every flush wakeup fan out into N re-bails, each re-broadcasting,
-        // convoying all producers on CompletionEvent.Set's SemaphoreSlim monitor lock.
-        void ReleaseScheduleReservationsQuiet(int count)
-            => _ = Interlocked.Add(ref scheduleReservations, -count);
-
-        void ReleaseCompletionsQuiet(int count)
-            => _ = Interlocked.Add(ref completionReservations, -count);
 
         internal void AdvanceCompletion(int consumedCount)
         {
             if (consumedCount <= 0)
                 return;
 
-            ReleaseCompletions(consumedCount);
+            ReleaseActiveCompletions(consumedCount);
             SignalIfArmed(ref idleStateWaiters, ref idleStateChanged);
         }
 
@@ -379,8 +372,7 @@ namespace Garnet.client
         /// re-checking the wait condition.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void ArmWaiter(ref int waiters)
-            => _ = Interlocked.Exchange(ref waiters, 1);
+        static void ArmWaiter(ref int waiters) => _ = Interlocked.Exchange(ref waiters, 1);
 
         /// <summary>
         /// Signals <paramref name="ev"/> only if a waiter armed <paramref name="waiters"/>. Call after the freed

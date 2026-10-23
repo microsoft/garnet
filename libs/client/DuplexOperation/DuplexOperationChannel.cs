@@ -378,7 +378,7 @@ namespace Garnet.client
             }
 
             FlushRun(ref flushFailed);
-            controller.ReleaseScheduleReservations(released); // Free the schedule slots the flush consumed.
+            controller.ReleaseActiveRequests(released); // Free the request reservations the flush consumed.
             controller.CompleteFlushPart(); // Release the scanner-owned range sentinel.
 
             void FlushRun(ref bool flushFailed)

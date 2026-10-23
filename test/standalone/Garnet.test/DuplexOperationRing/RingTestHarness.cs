@@ -301,7 +301,7 @@ namespace Garnet.test
                         out var flushEvent))
                     {
                         taskId = reservation.completionTicket;
-                        address = reservation.requestAddress;
+                        address = reservation.inlineDataBufferAddress;
                         requestId = reservation.requestId;
                         break;
                     }
