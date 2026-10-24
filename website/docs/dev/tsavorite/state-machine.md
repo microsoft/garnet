@@ -558,10 +558,11 @@ if (sessionFunctions.Ctx.IsInV1
 return hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
 ```
 
-Note that this is a *different* hazard from the one that caching the superseded
-object's bytes solves. `CacheSerializedObjectData` preserves the `(v)`
-**content** when a `(v+1)` record shares the object through a shallow clone; it
-says nothing about the **slot**. Both are needed.
+Note that this is a *different* hazard from the one that preserving the superseded
+object's `(v)` content solves: `CacheSerializedObjectData` caches its bytes, and a
+Snapshot checkpoint captures them into its object log instead. Either way, that
+preserves the `(v)` **content** when a `(v+1)` record shares the object through a
+shallow clone; it says nothing about the **slot**. Both are needed.
 
 ### The same shape, without a checkpoint
 

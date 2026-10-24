@@ -45,7 +45,6 @@ namespace Tsavorite.core
 
                         // Update final logical address to the flushed tail - this may not be necessary
                         store._hybridLogCheckpoint.info.recoveredTailAddress = tailAddress;
-                        _ = ObjectLog_OnWaitFlush();
                     }
                     finally
                     {

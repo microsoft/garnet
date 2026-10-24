@@ -29,6 +29,7 @@ namespace Tsavorite.core
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     store._hybridLogCheckpoint.info.useSnapshotFile = 1;
                     ObjectLog_OnPrepare();
+                    ObjectLog_OnPrepareSnapshot();
                     if (store.hlogBase.SnapshotFlushCoordinationWindowSize > 0)
                     {
                         store._hybridLogCheckpoint.snapshotFlushCoordination =
@@ -42,9 +43,7 @@ namespace Tsavorite.core
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
 
                     store._hybridLogCheckpoint.snapshotFileDevice = store.checkpointManager.GetSnapshotLogDevice(store._hybridLogCheckpointToken);
-                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice = store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
                     store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetMainLogSegmentSize());
-                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(store.hlogBase.GetObjectLogSegmentSize());
 
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress but no records
                     // have actually been written; get all records in memory for the (non-NullDevice) Snapshot to write.
@@ -96,7 +95,7 @@ namespace Tsavorite.core
                     // is capped by FlushedUntilAddress, the active Snapshot page remains resident without epoch protection.
                     // Because we are writing pages outside epoch protection, the callee must be able to handle concurrent page
                     // changes during the flush; correctness is not affected as we will only read safe pages during recovery.
-                    store.hlogBase.AsyncFlushPagesForSnapshot(ObjectLog_OnWaitFlush(),
+                    store.hlogBase.AsyncFlushPagesForSnapshot(store._hybridLogCheckpoint.snapshotObjectLog,
                         startPage, endPage,
                         startLogicalAddress: store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress,
                         endLogicalAddress: store._hybridLogCheckpoint.info.recoveredTailAddress,
@@ -117,6 +116,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpoint.info.mainLogRecoveryEndAddress = Math.Min(store.hlogBase.IsNullDevice
                         ? store._hybridLogCheckpoint.info.snapshotFileLogicalStartAddress
                         : store.hlogBase.FlushedUntilAddress, store._hybridLogCheckpoint.info.recoveredTailAddress);
+                    ObjectLog_OnSnapshotCapturesEnd();
                     ObjectLog_OnPersistenceCallback();
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.snapshotFileDevice?.Dispose();

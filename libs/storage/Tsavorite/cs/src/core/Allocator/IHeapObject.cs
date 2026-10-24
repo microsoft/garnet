@@ -57,7 +57,8 @@ namespace Tsavorite.core
         /// Whether an ongoing checkpoint still needs this object's (v) image. This only narrows caching *within* a
         /// checkpoint: the (v) image is captured when the destination is in the new version and this is also true.
         /// False means there is nothing to preserve - the source was itself written after this checkpoint's
-        /// transaction start - so the source value may be released immediately instead of serialized.
+        /// transaction start, or a Snapshot checkpoint recovers its (v) value from elsewhere - so the source value
+        /// may be released immediately instead of serialized.
         /// </param>
         /// <returns>True if the (v) bytes were cached, so the caller can note that a later sweep has work to do.</returns>
         bool CacheSerializedObjectData(ref LogRecord dstLogRecord, ref RMWInfo rmwInfo, bool srcIsOnMemoryLog, bool checkpointNeedsSourceImage);

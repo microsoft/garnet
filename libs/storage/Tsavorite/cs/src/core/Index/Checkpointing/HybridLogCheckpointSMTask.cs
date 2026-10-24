@@ -73,6 +73,7 @@ namespace Tsavorite.core
                 case Phase.REST:
                     store.CleanupLogCheckpoint();
                     store.storeFunctions.OnCheckpoint(CheckpointTrigger.CheckpointCompleted, guid);
+                    store.hlogBase.EndSnapshotCaptures(store._hybridLogCheckpoint.snapshotCaptures);
                     store._hybridLogCheckpoint.Dispose();
                     var nextTcs = new TaskCompletionSource<LinkedCheckpointInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
                     store.checkpointTcs.SetResult(new LinkedCheckpointInfo { NextTask = nextTcs.Task });
@@ -87,26 +88,45 @@ namespace Tsavorite.core
             store._hybridLogCheckpoint.info.objectLogBeginAddress = store.hlogBase.ObjectLogBeginAddress;
         }
 
-        /// <summary>For a Snapshot checkpoint, create the object log its Checkpoint Flush writes objects to; null for FoldOver or a store without
-        /// out-of-line data.</summary>
-        protected ObjectLog ObjectLog_OnWaitFlush()
+        /// <summary>For a Snapshot checkpoint, create the object log its Checkpoint Flush writes objects to, and publish the captures that
+        /// <c>(v+1)</c> CopyUpdates write there. Both exist before the version shift, so the first <c>(v+1)</c> CopyUpdate finds them.</summary>
+        protected void ObjectLog_OnPrepareSnapshot()
         {
-            if (store._hybridLogCheckpoint.info.useSnapshotFile != 0)
-                store._hybridLogCheckpoint.snapshotObjectLog = store.hlogBase.CreateSnapshotObjectLog(store._hybridLogCheckpoint.snapshotFileObjectLogDevice);
-            return store._hybridLogCheckpoint.snapshotObjectLog;
+            store._hybridLogCheckpoint.snapshotFileObjectLogDevice = store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
+            store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(store.hlogBase.GetObjectLogSegmentSize());
+            store._hybridLogCheckpoint.snapshotObjectLog = store.hlogBase.CreateSnapshotObjectLog(store._hybridLogCheckpoint.snapshotFileObjectLogDevice);
+            store._hybridLogCheckpoint.snapshotCaptures = store.hlogBase.BeginSnapshotCaptures(store._hybridLogCheckpoint.snapshotObjectLog);
+        }
+
+        /// <summary>Stop a Snapshot checkpoint's captures, and index those that recovery copies into the main log.</summary>
+        /// <remarks>Call after sampling the main log's recovery end; no later CopyUpdate needs a capture. A source below that end was written
+        /// by its ReadOnly flush before the sample, so before the CopyUpdate; a source at or above it was written by the Checkpoint Flush,
+        /// which is complete. The captures stay published until the checkpoint ends, so those CopyUpdates release their sources rather than
+        /// caching their images.</remarks>
+        protected void ObjectLog_OnSnapshotCapturesEnd()
+        {
+            var captures = store._hybridLogCheckpoint.snapshotCaptures;
+            if (captures is null)
+                return;
+            captures.CloseAndDrain();
+            if (captures.Failure is not null)
+                throw new TsavoriteException("A Snapshot checkpoint could not capture the value a CopyUpdate superseded", captures.Failure);
+            store.hlogBase.WriteSnapshotCaptureIndex(captures, store._hybridLogCheckpoint.info.mainLogRecoveryEndAddress, ref store._hybridLogCheckpoint.info);
         }
 
         /// <summary>Record the object logs' durable ends, and close a Snapshot checkpoint's object log.</summary>
         /// <remarks>Call after sampling the main log's recovery end. Each page in that range completed only once its object bytes were durable, so
         /// the main object log's FlushedUntilAddress, sampled afterwards, covers them. Its tail is not used: a ReadOnly flush of a later page may
         /// have appended bytes it has not yet flushed, which a crash would lose and which recovery would then try to read back. A Snapshot's object
-        /// log is recorded the same way; its Checkpoint Flush is complete here, so its durable end is its tail.</remarks>
+        /// log is complete here: its Checkpoint Flush is done and its captures are stopped and indexed. Flushing its tail makes its durable end
+        /// its tail.</remarks>
         protected void ObjectLog_OnPersistenceCallback()
         {
             store._hybridLogCheckpoint.info.hlogEndObjectLogTail = store.hlogBase.ObjectLogFlushedUntilAddress;
 
             if (store._hybridLogCheckpoint.snapshotObjectLog is not null)
             {
+                _ = store._hybridLogCheckpoint.snapshotObjectLog.FlushTail(wait: true);
                 store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.snapshotObjectLog.FlushedUntilAddress;
                 store._hybridLogCheckpoint.snapshotObjectLog.Dispose();
                 store._hybridLogCheckpoint.snapshotObjectLog = null;
@@ -146,6 +166,9 @@ namespace Tsavorite.core
             // reference, so clearing afterward would find nothing to clear and leave the allocator holding a closed
             // object until the next PREPARE overwrites it. FoldOver installs no coordination, so this is a no-op there.
             store.hlogBase.ClearSnapshotFlushCoordination(store._hybridLogCheckpoint.snapshotFlushCoordination);
+
+            // Likewise unpublish the captures, so later CopyUpdates do not write into the object log Dispose closes.
+            store.hlogBase.EndSnapshotCaptures(store._hybridLogCheckpoint.snapshotCaptures);
 
             // Releases any snapshot devices and flush buffers already created, and clears the checkpoint so the next
             // one can run. Matches the cleanup CompleteCheckpointAsync performs when it observes a failed checkpoint.

@@ -80,8 +80,9 @@ namespace Tsavorite.core
                 // If we are here, SerializationPhase is one of the .SERIALIZ* states. This means that one of the following is true:
                 // - Another thread is currently serializing this object (e.g. checkpoint and eviction)
                 // - CopyUpdate() is serializing this object
-                // - Serialization is complete. If the serializedBytes array is null, it means the checkpoint has completed and cleared it
-                //   and the object has been superseded in the database so is no longer reachable, so we can write a null indicator.
+                // - Serialization is complete. If the serializedBytes array is null, the object has been superseded in the database so is no
+                //   longer reachable, so we can write a null indicator: either no checkpoint needed its (v) image, a checkpoint has completed
+                //   and cleared it, or a Snapshot checkpoint captured it into its own object log.
 
                 if (SerializationPhase == SerializationPhase.SERIALIZED)
                 {
@@ -129,21 +130,13 @@ namespace Tsavorite.core
 
             // No (v) image is at stake. Outside a checkpoint the new record is in the source's version, so it supersedes the source in
             // every later checkpoint, and no completed checkpoint recovers a source that a flush is still writing: a flush that has not
-            // serialized the source writes a null value for it. Within a checkpoint, the checkpoint does not capture this source (it was
-            // written after the transaction start). Release the old version rather than serializing it; the new version already exists.
+            // serialized the source writes a null value for it. Within a checkpoint, either the checkpoint does not capture this source (it
+            // was written after the transaction start), or a Snapshot checkpoint finds its (v) value elsewhere: the source is a read-cache
+            // copy of a durable main-log record, or the checkpoint has sampled the end of its main-log range. Release the old version rather
+            // than serializing it; the new version already exists.
             if (!dstLogRecord.Info.IsInNewVersion || !checkpointNeedsSourceImage)
             {
-                // Wait for any concurrent ongoing serialization of oldValue to complete
-                while (true)
-                {
-                    if (SerializationPhase == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZED))
-                        break;
-
-                    if ((int)SerializationPhase >= (int)SerializationPhase.SERIALIZED)
-                        break;
-
-                    _ = Thread.Yield();
-                }
+                MarkSuperseded();
                 rmwInfo.ClearSourceValueObject = true;
                 return false;
             }
@@ -184,6 +177,40 @@ namespace Tsavorite.core
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Finish a Snapshot checkpoint's capture of this object as a CopyUpdate source: give the new record its clone, then mark this object
+        /// superseded with no cached bytes.
+        /// </summary>
+        /// <remarks>
+        /// The capture wrote this object's (v) value to the checkpoint's object log, so a later flush of the superseded record writes the null
+        /// image rather than the live object, whose collections the clone shares and the (v+1) record goes on to mutate. The source keeps its
+        /// value object, as it does for a cached image, so a flush that walks the record still finds its components.
+        /// </remarks>
+        /// <param name="dstLogRecord">The CopyUpdate's new record.</param>
+        internal void CompleteCapture(ref LogRecord dstLogRecord)
+        {
+            Debug.Assert(dstLogRecord.DataHeader.ValueIsObject, $"{GetCurrentMethodName()} must be called for non-object {nameof(dstLogRecord)}.");
+            if (!dstLogRecord.ValueObjectIsSet)
+                _ = dstLogRecord.TrySetValueObject(Clone());
+            MarkSuperseded();
+        }
+
+        /// <summary>Whether a CopyUpdate has superseded this object, so it has reached its final serialization phase.</summary>
+        internal bool IsSuperseded => Volatile.Read(ref serializationPhaseInt) >= (int)SerializationPhase.SERIALIZED;
+
+        /// <summary>Move to the final serialization phase without caching bytes, once any serialization in progress completes.</summary>
+        void MarkSuperseded()
+        {
+            while (true)
+            {
+                if (SerializationPhase == SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZED))
+                    return;
+                if (SerializationPhase >= SerializationPhase.SERIALIZED)
+                    return;
+                _ = Thread.Yield();
+            }
         }
 
         /// <inheritdoc />

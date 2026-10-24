@@ -54,6 +54,30 @@ namespace Tsavorite.core
         /// <summary>The main object log's durable end, its FlushedUntilAddress; zero if this allocator has none.</summary>
         internal virtual long ObjectLogFlushedUntilAddress => 0;
 
+        /// <summary>Publish captures for a Snapshot checkpoint whose object log is <paramref name="snapshotObjectLog"/>, so its (v+1) CopyUpdates
+        /// write superseded (v) values there. Returns null, and publishes nothing, if this allocator has no out-of-line data. Only implemented by
+        /// ObjectAllocator.</summary>
+        internal virtual SnapshotCaptures BeginSnapshotCaptures(ObjectLog snapshotObjectLog) => null;
+
+        /// <summary>The captures of the Snapshot checkpoint in progress, or null.</summary>
+        internal virtual SnapshotCaptures ActiveSnapshotCaptures => null;
+
+        /// <summary>Stop publishing <paramref name="captures"/>, if they are still published.</summary>
+        internal virtual void EndSnapshotCaptures(SnapshotCaptures captures) { }
+
+        /// <summary>Write the (v) out-of-line components of <paramref name="sourceRecord"/>, the source of a (v+1) CopyUpdate, to the checkpoint's
+        /// object log. Only implemented by ObjectAllocator.</summary>
+        /// <returns>False if <paramref name="captures"/> no longer admits captures, so the source needs none.</returns>
+        internal virtual bool TryCaptureCopyUpdateSource(SnapshotCaptures captures, ref LogRecord sourceRecord, long logicalAddress) => false;
+
+        /// <summary>Write the index of the captures of records below <paramref name="untilAddress"/> to the checkpoint's object log and record its
+        /// location in <paramref name="info"/>. Only implemented by ObjectAllocator.</summary>
+        internal virtual void WriteSnapshotCaptureIndex(SnapshotCaptures captures, long untilAddress, ref HybridLogRecoveryInfo info) { }
+
+        /// <summary>Copy a recovered Snapshot checkpoint's indexed captures from its object log, over <paramref name="snapshotObjectLogDevice"/>,
+        /// into the main object log, and restamp their records on the main log device. Only implemented by ObjectAllocator.</summary>
+        internal virtual void ApplySnapshotCaptures(IDevice snapshotObjectLogDevice, in HybridLogRecoveryInfo info) { }
+
         /// <summary>The object-log page size, in bytes; zero if this allocator has no object log.</summary>
         internal virtual long ObjectLogPageSize => 0;
 

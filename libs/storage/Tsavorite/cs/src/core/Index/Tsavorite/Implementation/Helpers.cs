@@ -133,12 +133,36 @@ namespace Tsavorite.core
         /// Snapshot having written the source's page does not make the image unnecessary. Snapshot recovery reads the main log
         /// below the <c>FlushedUntilAddress</c> sampled at <see cref="Phase.PERSISTENCE_CALLBACK"/> and the snapshot file only
         /// above it, so a page the ReadOnly flush writes again before that sample is recovered from the ReadOnly image, and that
-        /// flush still needs the <c>(v)</c> content.
+        /// flush still needs the <c>(v)</c> content. A Snapshot checkpoint provides it by capturing the value; see
+        /// <see cref="TryCaptureCopyUpdateSource"/>.
         /// </para>
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool CheckpointNeedsSourceImage(long srcLogicalAddress, RecordInfo srcRecordInfo)
             => srcLogicalAddress <= _hybridLogCheckpoint.info.fuzzyRegionStartAddress || !srcRecordInfo.IsInNewVersion;
+
+        /// <summary>
+        /// For a Snapshot checkpoint that captures CopyUpdate sources, capture this main-log source's <c>(v)</c> value into the checkpoint's
+        /// object log unless its main-log image is durable, and mark the source superseded.
+        /// </summary>
+        /// <remarks>
+        /// <para>A durable main-log image holds the <c>(v)</c> value: the ReadOnly flush wrote it before this CopyUpdate could change the
+        /// shared object, and recovery reads it there, below the main-log recovery end that PERSISTENCE_CALLBACK samples later. A NullDevice
+        /// main log has no durable image, so its sources are always captured.</para>
+        /// <para>A durable source still keeps its value object, because the Checkpoint Flush may yet walk it and requires a Valid record to
+        /// keep its heap; it writes the null image there, which recovery does not read.</para>
+        /// </remarks>
+        /// <returns>True if the source keeps its value object, captured or not. False if the checkpoint has stopped capturing, having
+        /// completed its Checkpoint Flush; the caller then releases the source as when no checkpoint needs its image.</returns>
+        private bool TryCaptureCopyUpdateSource(SnapshotCaptures captures, HeapObjectBase sourceObject, ref LogRecord sourceRecord, long sourceAddress,
+            ref LogRecord newLogRecord)
+        {
+            if ((hlogBase.IsNullDevice || sourceAddress >= hlogBase.FlushedUntilAddress)
+                    && !hlogBase.TryCaptureCopyUpdateSource(captures, ref sourceRecord, sourceAddress))
+                return false;
+            sourceObject.CompleteCapture(ref newLogRecord);
+            return true;
+        }
 
         /// <summary>
         /// Dispose the resources of an in-memory source record that is being deleted. If an ongoing checkpoint or an

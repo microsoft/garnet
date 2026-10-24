@@ -594,6 +594,22 @@ namespace Tsavorite.core
                     || recoveredHLCInfo.info.mainLogRecoveryEndAddress > recoveredHLCInfo.info.beginAddress;
                 hlogBase.RestoreObjectLog(mainObjectLogIsReferenced ? recoveredHLCInfo.info.objectLogBeginAddress : recoveredHLCInfo.info.hlogEndObjectLogTail,
                     recoveredHLCInfo.info.hlogEndObjectLogTail);
+
+                // A Snapshot's (v+1) CopyUpdates captured the (v) values of main-log records whose images may hold the null value a later ReadOnly
+                // flush wrote. Repoint those records at copies of their captures before anything reads the main log.
+                if (recoveredHLCInfo.info.useSnapshotFile != 0 && recoveredHLCInfo.info.captureIndexCount > 0)
+                {
+                    var snapshotObjectLogDevice = checkpointManager.GetSnapshotObjectLogDevice(recoveredHLCInfo.info.guid);
+                    try
+                    {
+                        snapshotObjectLogDevice.Initialize(hlogBase.GetObjectLogSegmentSize());
+                        hlogBase.ApplySnapshotCaptures(snapshotObjectLogDevice, in recoveredHLCInfo.info);
+                    }
+                    finally
+                    {
+                        snapshotObjectLogDevice.Dispose();
+                    }
+                }
             }
 
             // Make index consistent for version v

@@ -46,6 +46,10 @@ namespace Tsavorite.core
         ObjectLog recoverySnapshotObjectLog;
         IDevice recoverySnapshotObjectLogDevice;
 
+        /// <summary>The captures of the Snapshot checkpoint in progress: published at its PREPARE, before any (v+1) CopyUpdate can supersede a (v)
+        /// value, and withdrawn when it completes or aborts. Null otherwise.</summary>
+        SnapshotCaptures snapshotCaptures;
+
         /// <summary>The epoch shared by this allocator's object logs, created with the first of them. Sharing it keeps each store to one more
         /// <see cref="LightEpoch"/> instance, of which a process has a fixed number.</summary>
         LightEpoch objectLogEpoch;
@@ -806,6 +810,222 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
+        internal override SnapshotCaptures BeginSnapshotCaptures(ObjectLog snapshotObjectLog)
+        {
+            var captures = snapshotObjectLog is null ? null : new SnapshotCaptures(snapshotObjectLog);
+            Volatile.Write(ref snapshotCaptures, captures);
+            return captures;
+        }
+
+        /// <inheritdoc/>
+        internal override SnapshotCaptures ActiveSnapshotCaptures => Volatile.Read(ref snapshotCaptures);
+
+        /// <inheritdoc/>
+        internal override void EndSnapshotCaptures(SnapshotCaptures captures)
+        {
+            if (captures is not null)
+                _ = Interlocked.CompareExchange(ref snapshotCaptures, null, captures);
+        }
+
+        /// <summary>The captures published for the Snapshot checkpoint that writes <paramref name="objectLog"/>; null for any other object log.</summary>
+        SnapshotCaptures GetSnapshotCaptures(ObjectLog objectLog)
+        {
+            var captures = Volatile.Read(ref snapshotCaptures);
+            return captures is not null && ReferenceEquals(captures.Log, objectLog) ? captures : null;
+        }
+
+        /// <summary>The capture of the record at <paramref name="logicalAddress"/>, if a (v+1) CopyUpdate has captured it.</summary>
+        /// <remarks>A capture is recorded before its source object is marked superseded, so testing the object first skips the lookup for the
+        /// records that cannot have one, and orders the lookup after the capture it may find.</remarks>
+        static bool TryGetSnapshotCapture(SnapshotCaptures captures, long logicalAddress, IHeapObject valueObject, out SnapshotCapture capture)
+        {
+            if (captures is not null && valueObject is HeapObjectBase { IsSuperseded: true })
+                return captures.TryGet(logicalAddress, out capture);
+            capture = default;
+            return false;
+        }
+
+        /// <inheritdoc/>
+        internal override bool TryCaptureCopyUpdateSource(SnapshotCaptures captures, ref LogRecord sourceRecord, long logicalAddress)
+        {
+            if (!captures.TryBeginCapture())
+                return false;
+            try
+            {
+                // The source is a (v) record held by this CopyUpdate, so its components cannot change until PostCopyUpdater runs.
+                if (!sourceRecord.TryGetOutOfLineComponents(out var keyOverflow, out _, out var valueObject))
+                    throw new TsavoriteException($"Could not capture the out-of-line components of the CopyUpdate source at {logicalAddress}");
+
+                using var writer = new ObjectLogWriter<TStoreFunctions>(captures.Log, storeFunctions, objectLogWriterSettings);
+                var result = writer.WriteRecordObjects(in keyOverflow, default, valueIsObject: true, valueObject);
+                captures.Add(logicalAddress, in result, sourceRecord.DataHeader.KeyIsOverflow);
+            }
+            catch (Exception ex)
+            {
+                // The checkpoint cannot recover this record's (v) value, so it fails; the operation that superseded the record proceeds.
+                captures.RecordFailure(ex);
+            }
+            finally
+            {
+                captures.EndCapture();
+            }
+            return true;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>Writes nothing without a persistent main object log, including on a NullDevice main log: no main-log record recovers its
+        /// objects, so there is nothing to repoint.</remarks>
+        internal override void WriteSnapshotCaptureIndex(SnapshotCaptures captures, long untilAddress, ref HybridLogRecoveryInfo info)
+        {
+            if (!HasPersistentObjectLog)
+                return;
+            var index = captures.EncodeIndex(untilAddress, out var count);
+            if (count == 0)
+                return;
+
+            using var writer = new ObjectLogWriter<TStoreFunctions>(captures.Log, storeFunctions, objectLogWriterSettings);
+            writer.BeginRecord(hasKey: false, hasValue: true, valueIsObject: false);
+            writer.AppendValue(index);
+            var result = writer.FinishRecord();
+            info.captureIndexPositionWord = (long)result.PositionWord;
+            info.captureIndexSizeHint = result.ValueSizeHint;
+            info.captureIndexCount = count;
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// <para>A captured record's main-log image may hold the null value its ReadOnly flush wrote after the capture, so recovery repoints it at
+        /// a copy of the capture before anything reads the main log. Every copy is durable before any record is repointed, so a crash midway
+        /// leaves each record pointing at a durable copy or at its earlier image. Recovering again restores the main object log to the same tail,
+        /// copies again, and repoints every record again.</para>
+        /// <para>The copies follow every object-log byte of the main-log recovery range, so a repointed record's references stay above the floor
+        /// in its page's header, which truncation reads.</para>
+        /// </remarks>
+        internal override void ApplySnapshotCaptures(IDevice snapshotObjectLogDevice, in HybridLogRecoveryInfo info)
+        {
+            if (info.captureIndexCount <= 0)
+                return;
+            if (!HasPersistentObjectLog)
+                throw new TsavoriteException($"The checkpoint has {info.captureIndexCount} captured values for main-log records, but this store has no persistent object log");
+
+            var mainObjectLog = EnsureMainObjectLog();
+            OpenRecoverySnapshotObjectLog(snapshotObjectLogDevice, info.snapshotEndObjectLogTail);
+            try
+            {
+                SnapshotCapture[] captures;
+                ObjectLogWriteResult[] copies;
+                using (var reader = new ObjectLogReader<TStoreFunctions>(GetRecoverySnapshotObjectLog(snapshotObjectLogDevice), storeFunctions))
+                {
+                    reader.BeginRecord(new ObjectLogRecordRef
+                    {
+                        PositionWord = (ulong)info.captureIndexPositionWord,
+                        ValueIsOverflow = true,
+                        ValueSizeHint = (int)info.captureIndexSizeHint,
+                    });
+                    var index = reader.ReadValueOverflow();
+                    reader.EndRecord();
+                    captures = SnapshotCaptures.DecodeIndex(index.ReadOnlySpan, info.captureIndexCount);
+
+                    copies = new ObjectLogWriteResult[captures.Length];
+                    using var writer = new ObjectLogWriter<TStoreFunctions>(mainObjectLog, storeFunctions, objectLogWriterSettings);
+                    for (var i = 0; i < captures.Length; i++)
+                    {
+                        if (captures[i].Address < info.beginAddress || captures[i].Address >= info.mainLogRecoveryEndAddress)
+                            throw new TsavoriteException($"Capture index entry {i} at address {captures[i].Address} is outside the main-log recovery range [{info.beginAddress}, {info.mainLogRecoveryEndAddress})");
+                        reader.BeginRecord(captures[i].RecordRef);
+                        copies[i] = reader.CopyRecordTo(writer);
+                        reader.EndRecord();
+                    }
+                }
+                _ = mainObjectLog.FlushTail(wait: true);
+
+                RepointCapturedRecords(captures, copies, info.mainLogRecoveryEndAddress);
+            }
+            finally
+            {
+                CloseRecoverySnapshotObjectLog();
+            }
+        }
+
+        /// <summary>Stamp each captured record's main-log image, in place on the device, with the position and hints of its copy.</summary>
+        /// <remarks>Records are visited in address order, so records whose images share a read extent are restamped with one read and one write.
+        /// Reads stop at <paramref name="untilAddress"/>, the main-log recovery end: every repointed record lies below it, and the device need
+        /// hold nothing past the sector it ends in.</remarks>
+        private void RepointCapturedRecords(SnapshotCapture[] captures, ObjectLogWriteResult[] copies, long untilAddress)
+        {
+            // Covers most records with objects in one read; a larger record is read again in full.
+            const int ProbeLength = 4096;
+
+            SectorAlignedMemory buffer = null;
+            var bufferCapacity = 0;
+            long bufferStart = 0;       // Logical address of the buffer's first byte
+            long bufferEnd = 0;         // Logical address just past the buffer's last byte
+            ulong bufferDeviceAddress = 0;
+            var bufferIsDirty = false;
+            try
+            {
+                for (var i = 0; i < captures.Length; i++)
+                {
+                    var address = captures[i].Address;
+                    var readLimit = Math.Min(GetLogicalAddressOfStartOfPage(GetPage(address) + 1), untilAddress);
+                    if (address < bufferStart || address + RecordInfo.Size + RecordDataHeader.Size > bufferEnd)
+                        Load(address, (int)Math.Min(ProbeLength, readLimit - address));
+
+                    var record = new LogRecord(buffer.aligned_pointer + (address - bufferStart));
+                    var recordSize = record.AllocatedSize;
+                    if (address + recordSize > bufferEnd)
+                    {
+                        if (address + recordSize > readLimit)
+                            throw new TsavoriteException($"The main-log record at {address} that a capture repoints ends past its page or the main-log recovery end");
+                        Load(address, recordSize);
+                        record = new LogRecord(buffer.aligned_pointer + (address - bufferStart));
+                    }
+
+                    var dataHeader = record.DataHeader;
+                    if (!record.Info.Valid || !dataHeader.ValueIsObject || dataHeader.KeyIsOverflow != captures[i].KeyIsOverflow)
+                        throw new TsavoriteException($"The main-log record at {address} does not match its capture: valid {record.Info.Valid}, value is object "
+                            + $"{dataHeader.ValueIsObject}, key is overflow {dataHeader.KeyIsOverflow} where the capture has {captures[i].KeyIsOverflow}");
+                    record.SetObjectLogPositionAndHints(in copies[i]);
+                    bufferIsDirty = true;
+                }
+                WriteBack();
+            }
+            finally
+            {
+                buffer?.Return();
+            }
+
+            void Load(long address, int numBytes)
+            {
+                WriteBack();
+                ComputeAlignedReadExtent(address, numBytes, out var alignedReadStart, out var alignedReadLength, out var validOffset);
+                if (buffer is null || bufferCapacity < alignedReadLength)
+                {
+                    buffer?.Return();
+                    buffer = null;
+                    buffer = bufferPool.Get((int)alignedReadLength, clearOnReturn: false);
+                    bufferCapacity = (int)alignedReadLength;
+                }
+                if (!TryReadDevice(device, alignedReadStart, (IntPtr)buffer.aligned_pointer, alignedReadLength, "Capture repoint",
+                        out var errorCode, out _, out var ioException))
+                    throw new TsavoriteException($"Could not read the main-log records that captures repoint, at device offset {alignedReadStart}: error {errorCode}", ioException);
+                bufferStart = address - validOffset;
+                bufferEnd = bufferStart + alignedReadLength;
+                bufferDeviceAddress = alignedReadStart;
+            }
+
+            void WriteBack()
+            {
+                if (!bufferIsDirty)
+                    return;
+                bufferIsDirty = false;
+                if (!TryWriteDevice(device, (IntPtr)buffer.aligned_pointer, bufferDeviceAddress, (uint)(bufferEnd - bufferStart),
+                        out var errorCode, out var ioException))
+                    throw new TsavoriteException($"Could not write the main-log records that captures repoint, at device offset {bufferDeviceAddress}: error {errorCode}", ioException);
+            }
+        }
+
+        /// <inheritdoc/>
         internal override void RestoreObjectLog(long beginAddress, long tailAddress)
         {
             if (!HasPersistentObjectLog)
@@ -1310,6 +1530,10 @@ namespace Tsavorite.core
                 if (objectLog is not null && !writeInlineOnly)
                     logWriter = new(objectLog, storeFunctions, objectLogWriterSettings);
 
+                // A Snapshot flush stamps the capture of a record that a (v+1) CopyUpdate superseded rather than serializing the live object,
+                // which the new record may already have changed.
+                var snapshotCaptures = asyncResult.flushRequestState == FlushRequestState.Snapshot ? GetSnapshotCaptures(objectLog) : null;
+
                 // Whether this flush appended to objectLog, so the page must wait for those bytes to be durable.
                 var wroteObjects = false;
 
@@ -1363,9 +1587,20 @@ namespace Tsavorite.core
                                         // WriteRecordObjects can wait on object-log IO and must not hold the epoch. Stamping writes the position
                                         // word and the key/value read-size hints into the record image being flushed. In-memory readers mask
                                         // via ObjectIdMap.GetIndex, so stamping a live page is non-destructive. RDH lengths remain exact.
-                                        var result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, logRecord.DataHeader.ValueIsObject, valueObject);
+                                        // A capture that completes while this flush serializes the record replaces what the flush wrote: the
+                                        // flush may have written the null image the capture left, or a serializer that bypasses the
+                                        // serialization claim may have read the live object.
+                                        ObjectLogWriteResult result;
+                                        if (TryGetSnapshotCapture(snapshotCaptures, logicalAddress, valueObject, out var capture))
+                                            result = capture.Result;
+                                        else
+                                        {
+                                            result = logWriter.WriteRecordObjects(in keyOverflow, in valueOverflow, logRecord.DataHeader.ValueIsObject, valueObject);
+                                            wroteObjects = true;
+                                            if (TryGetSnapshotCapture(snapshotCaptures, logicalAddress, valueObject, out capture))
+                                                result = capture.Result;
+                                        }
                                         logRecord.SetObjectLogPositionAndHints(in result);
-                                        wroteObjects = true;
 
                                         // Test-only interleave point: the record's bytes are now in the object log and its position is stamped,
                                         // so a test can assert the freeze invariant or race a dispose against the in-flight write.
@@ -1754,6 +1989,27 @@ namespace Tsavorite.core
                 }
 
                 return false;
+            }
+            finally
+            {
+                result.DisposeHandle();
+            }
+        }
+
+        /// <summary>Write <paramref name="writeLength"/> sector-aligned bytes to <paramref name="writeDevice"/> and wait for the write to complete.</summary>
+        /// <returns>False if the write failed, with the device's error code and exception.</returns>
+        private bool TryWriteDevice(IDevice writeDevice, IntPtr sourceAddress, ulong destinationAddress, uint writeLength,
+            out uint errorCode, out Exception ioException)
+        {
+            // The read result and callback record any device completion.
+            PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
+            try
+            {
+                writeDevice.WriteAsync(sourceAddress, destinationAddress, writeLength, AsyncReadPageCallback, result);
+                result.handle.Wait();
+                errorCode = result.errorCode;
+                ioException = result.ioException;
+                return errorCode == 0;
             }
             finally
             {

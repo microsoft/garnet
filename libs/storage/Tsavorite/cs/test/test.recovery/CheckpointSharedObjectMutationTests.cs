@@ -434,7 +434,7 @@ namespace Tsavorite.test.recovery
         /// A Snapshot checkpoint recovers from the main log every page below the main log's <c>FlushedUntilAddress</c> as
         /// sampled at <see cref="Phase.PERSISTENCE_CALLBACK"/>, and overlays the snapshot file only above it. So a page that
         /// Snapshot has written and that the ReadOnly flush then rewrites before that sample is recovered from the ReadOnly
-        /// image, and that image must still carry the <c>(v)</c> content.
+        /// image, and that image must still resolve to the <c>(v)</c> content.
         /// </summary>
         /// <remarks>
         /// Snapshot is held on a record of the following page, so the source's page is complete while coordination is still
@@ -588,9 +588,10 @@ namespace Tsavorite.test.recovery
         /// has no coordination. The flush walks with the epoch suspended, so the state machine advances meanwhile.
         /// </summary>
         /// <remarks>
-        /// The page is recovered from this flush's image, so the image must carry the record's (v) content either way. The
+        /// The page is recovered from this flush's image, so the image must resolve to the record's (v) content either way. The
         /// serialization claim orders the two: if the flush serializes the record first, it writes the unedited value and the RMW's
-        /// preserved image is redundant; if the RMW goes first, the flush writes the preserved image instead of the live value.
+        /// preserved image is redundant. If the RMW goes first, a FoldOver flush writes the preserved image instead of the live
+        /// value, and a Snapshot flush writes a null value that recovery repoints at the RMW's capture.
         /// </remarks>
         [Test]
         [Category("TsavoriteKV")]

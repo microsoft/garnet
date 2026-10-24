@@ -54,8 +54,8 @@ trivially appendable, which is the basis for the versioning rule below.
 | 7 | `fuzzyRegionStartAddress`, `recoveredTailAddress` | Bounds of the fuzzy region and the snapshot |
 | 8 | fifth address slot | `pageSize` from v8; a duplicate of `recoveredTailAddress` in v7 |
 | 9 | `headAddress`, `beginAddress` | |
-| 10 | `beginAddressObjectLogSegment` | |
-| 11 | `hlogEndObjectLogTail`, `snapshotStartObjectLogTail`, `snapshotEndObjectLogTail` | Object log positions |
+| 10 | `objectLogBeginAddress` | v7 records the lowest object-log segment in use instead |
+| 11 | `hlogEndObjectLogTail`, `snapshotEndObjectLogTail`, `captureIndexPositionWord`, `captureIndexSizeHint`, `captureIndexCount` | Object-log positions, and the location and entry count of a Snapshot's capture index. v7 records three segment-split position words, `hlogEndObjectLogTail`, `snapshotStartObjectLogTail` and `snapshotEndObjectLogTail`, and no capture index |
 | 12 | `segmentSize`, `objectLogSegmentSize`, `objectLogPageSize` | v8 only; written by the store, not the host. Recovery fails if any differs from the store's configuration; the object log's memory size is not recorded and may change between runs |
 | 13 | `cookie` | Host-supplied; length, then one line per byte |
 | 14 | `databaseMapping` | Host-supplied; length, then one line per entry |
