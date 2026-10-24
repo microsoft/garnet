@@ -785,7 +785,9 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
-            if (status.NotFound && !status.Record.Created)
+            // A missing or expired key is not found unless the operation created it. The status cannot tell: an expired record
+            // reports the same status whether it was recreated or tombstoned, and a revivified one reports no new record.
+            if (status.NotFound && !output.HasCreatedKey)
                 return GarnetStatus.NOTFOUND;
 
             if (status.Found && output.HasWrongType)
