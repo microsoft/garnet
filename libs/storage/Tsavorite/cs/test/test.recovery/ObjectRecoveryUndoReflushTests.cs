@@ -80,23 +80,29 @@ namespace Tsavorite.test.recovery.objects
                     for (var i = 0; i < NumStable; i++)
                         _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
 
-                    ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot), "failed to initiate Snapshot checkpoint");
-
-                    var guard = 0;
-                    while (store.SystemState.Phase != Phase.IN_PROGRESS)
+                    // Hold the state machine in IN_PROGRESS, before WAIT_FLUSH's hooks sample the tail and issue the Snapshot flush, so the
+                    // fuzzy records below land in the checkpoint's fuzzy region and ReadOnlyAddress is sampled before the Snapshot flush. A
+                    // full checkpoint pauses on its way into WAIT_INDEX_CHECKPOINT, after IN_PROGRESS is published; recovery below passes no
+                    // index token, so it recovers the log as for a log-only checkpoint. Polling for IN_PROGRESS could miss the phase entirely:
+                    // in Release the machine can pass through it between two samples.
+                    var reachedInProgress = new ManualResetEventSlim(false);
+                    var releaseInProgress = new ManualResetEventSlim(false);
+                    store.stateMachineDriver.UnsafeRegisterCallback(new PauseBeforePhase(Phase.WAIT_INDEX_CHECKPOINT, reachedInProgress, releaseInProgress));
+                    ClassicAssert.IsTrue(store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot), "failed to initiate Snapshot checkpoint");
+                    try
                     {
-                        bContext.Refresh();
-                        if (++guard > 1_000_000)
-                        {
-                            Assert.Fail($"state machine never reached IN_PROGRESS (stuck at {store.SystemState.Phase})");
-                            return;
-                        }
-                    }
+                        Assert.That(reachedInProgress.Wait(TimeSpan.FromSeconds(30)), Is.True, "state machine never reached IN_PROGRESS");
+                        Assert.That(store.SystemState.Phase, Is.EqualTo(Phase.IN_PROGRESS));
 
-                    for (var i = NumStable; i < NumStable + NumFuzzy; i++)
-                        _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
-                    flushedObservedDuringCheckpoint = store.Log.FlushedUntilAddress;
-                    readOnlyBeforeSnapshotFlush = store.Log.ReadOnlyAddress;
+                        for (var i = NumStable; i < NumStable + NumFuzzy; i++)
+                            _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+                        flushedObservedDuringCheckpoint = store.Log.FlushedUntilAddress;
+                        readOnlyBeforeSnapshotFlush = store.Log.ReadOnlyAddress;
+                    }
+                    finally
+                    {
+                        releaseInProgress.Set();
+                    }
                 }
 
                 await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
@@ -319,6 +325,7 @@ namespace Tsavorite.test.recovery.objects
         {
             var logMemorySize = 64L * MinKvLogPageSize;
             Guid token;
+            long fuzzyEndAddress;
 
             // Phase 1: build the fuzzy FoldOver checkpoint.
             Prepare(logMemorySize, out var log, out var objlog, out var store);
@@ -332,24 +339,30 @@ namespace Tsavorite.test.recovery.objects
                     for (var i = 0; i < NumStable; i++)
                         _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
 
-                    // Start a FoldOver checkpoint and pump the state machine to IN_PROGRESS (version bumps v -> v+1).
-                    ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.FoldOver), "failed to initiate FoldOver checkpoint");
-
-                    var guard = 0;
-                    while (store.SystemState.Phase != Phase.IN_PROGRESS)
+                    // Hold the state machine in IN_PROGRESS (version v+1), before WAIT_FLUSH's hooks sample the tail and shift the read-only
+                    // address to it, so the fuzzy records below land in the checkpoint's fuzzy region. A full checkpoint pauses on its way
+                    // into WAIT_INDEX_CHECKPOINT, after IN_PROGRESS is published; recovery below passes no index token, so it recovers the
+                    // log as for a log-only checkpoint. Polling for IN_PROGRESS could miss the phase entirely: in Release the machine can
+                    // pass through it between two samples.
+                    var reachedInProgress = new ManualResetEventSlim(false);
+                    var releaseInProgress = new ManualResetEventSlim(false);
+                    store.stateMachineDriver.UnsafeRegisterCallback(new PauseBeforePhase(Phase.WAIT_INDEX_CHECKPOINT, reachedInProgress, releaseInProgress));
+                    ClassicAssert.IsTrue(store.TryInitiateFullCheckpoint(out token, CheckpointType.FoldOver), "failed to initiate FoldOver checkpoint");
+                    try
                     {
-                        bContext.Refresh();
-                        if (++guard > 1_000_000)
-                        {
-                            Assert.Fail($"state machine never reached IN_PROGRESS (stuck at {store.SystemState.Phase})");
-                            return;
-                        }
-                    }
+                        Assert.That(reachedInProgress.Wait(TimeSpan.FromSeconds(30)), Is.True, "state machine never reached IN_PROGRESS");
+                        Assert.That(store.SystemState.Phase, Is.EqualTo(Phase.IN_PROGRESS));
 
-                    // Fuzzy (v+1) records written during IN_PROGRESS: NEW keys so that, on recovery, an undone record is
-                    // NotFound (a clean detector that the undo path fired). These land below the FoldOver untilAddress.
-                    for (var i = NumStable; i < NumStable + NumFuzzy; i++)
-                        _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+                        // Fuzzy (v+1) records: NEW keys so that, on recovery, an undone record is NotFound (a clean detector that the
+                        // undo path fired).
+                        for (var i = NumStable; i < NumStable + NumFuzzy; i++)
+                            _ = bContext.Upsert(new TestObjectKey { key = i }, new TestObjectValue { value = i });
+                        fuzzyEndAddress = store.Log.TailAddress;
+                    }
+                    finally
+                    {
+                        releaseInProgress.Set();
+                    }
                 }
 
                 await store.CompleteCheckpointAsync().AsTask().ConfigureAwait(false);
@@ -358,6 +371,16 @@ namespace Tsavorite.test.recovery.objects
             {
                 Destroy(log, objlog, store);
             }
+
+            // The fuzzy records must lie below the checkpoint's recovered tail, where recovery has to undo them. Past it they would read
+            // back NotFound without any undo, and the undone-key check below would pass without exercising the undo-reflush.
+            var checkpointInfo = default(HybridLogRecoveryInfo);
+            checkpointInfo.Recover(token,
+                new DeviceLogCommitCheckpointManager(
+                    new LocalStorageNamedDeviceFactoryCreator(),
+                    new DefaultCheckpointNamingScheme(new DirectoryInfo(Path.Combine(MethodTestDir, "check-points")).FullName)));
+            Assert.That(fuzzyEndAddress, Is.LessThanOrEqualTo(checkpointInfo.recoveredTailAddress),
+                "the fuzzy records were written past the checkpoint's recovered tail, so recovery would not undo them");
 
             // Run 1 recovery: the undo-reflush touches the boundary page; the recovering run reads the correct live page.
             Prepare(logMemorySize, out log, out objlog, out store);
