@@ -646,6 +646,76 @@ namespace Garnet.test
             ClassicAssert.IsTrue(expectedResult.OrderBy(t => t).SequenceEqual(strResult.OrderBy(t => t)));
         }
 
+        [TestCase("smove:self", false)]
+        [TestCase("", false)]
+        [TestCase("smove:self", true)]
+        public void SmoveSameKeyPreservesMemberAndExpiration(string key, bool emptyMember)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            byte[] memberBytes = emptyMember ? [] : [0, 255, 128, 13, 10];
+            RedisValue member = memberBytes;
+
+            ClassicAssert.IsFalse(db.SetMove(key, key, member));
+            ClassicAssert.IsTrue(db.SetAdd(key, member));
+            ClassicAssert.IsTrue(db.KeyExpire(key, TimeSpan.FromMinutes(5)));
+            var expiration = (long)db.Execute("PEXPIRETIME", key);
+            ClassicAssert.Greater(expiration, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+
+            ClassicAssert.IsFalse(db.SetMove(key, key, "absent"));
+            var moved = db.SetMove(key, key, member);
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.IsTrue(moved);
+                ClassicAssert.IsTrue(db.SetContains(key, member));
+                ClassicAssert.AreEqual(1, db.SetLength(key));
+                ClassicAssert.AreEqual(expiration, (long)db.Execute("PEXPIRETIME", key));
+            });
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void SmoveSameKeyRejectsWrongType(bool objectStore)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const string key = "smove:wrongtype";
+            if (objectStore)
+                db.HashSet(key, "field", "value");
+            else
+                db.StringSet(key, "value");
+
+            var exception = Assert.Throws<RedisServerException>(() => db.SetMove(key, key, "value"));
+            Assert.That(exception.Message, Does.StartWith("WRONGTYPE"));
+            ClassicAssert.AreEqual("value", objectStore ? db.HashGet(key, "field").ToString() : db.StringGet(key).ToString());
+        }
+
+        [Test]
+        public async Task SmoveSameKeyInTransactionAsync()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            const string key = "smove:transaction";
+            var transaction = db.CreateTransaction();
+            var added = transaction.SetAddAsync(key, "member");
+            var moved = transaction.SetMoveAsync(key, key, "member");
+            var absent = transaction.SetMoveAsync(key, key, "absent");
+            var count = transaction.SetLengthAsync(key);
+
+            ClassicAssert.IsTrue(await transaction.ExecuteAsync());
+            ClassicAssert.IsTrue(await added);
+            var moveResult = await moved;
+            var absentResult = await absent;
+            var cardinality = await count;
+            Assert.Multiple(() =>
+            {
+                ClassicAssert.IsTrue(moveResult);
+                ClassicAssert.IsFalse(absentResult);
+                ClassicAssert.AreEqual(1, cardinality);
+                ClassicAssert.IsTrue(db.SetContains(key, "member"));
+            });
+        }
+
         [Test]
         public void CanDoSRANDMEMBERWithCountCommandSE()
         {
@@ -1188,9 +1258,17 @@ namespace Garnet.test
             response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"mySourceSet\" \"notAValue\"");
             TestUtils.AssertEqualUpToExpectedLength(expectedFailureResponse, response);
 
-            // Move into self
+            // The member was already moved out of the source.
             response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"mySourceSet\" \"twoS\"");
             TestUtils.AssertEqualUpToExpectedLength(expectedFailureResponse, response);
+
+            // Move a member that is still in the source into itself.
+            response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"mySourceSet\" \"threeS\"");
+            TestUtils.AssertEqualUpToExpectedLength(expectedSuccessfulResponse, response);
+            response = lightClientRequest.SendCommand("SISMEMBER \"mySourceSet\" \"threeS\"");
+            TestUtils.AssertEqualUpToExpectedLength(expectedSuccessfulResponse, response);
+            response = lightClientRequest.SendCommand("SCARD \"mySourceSet\"");
+            TestUtils.AssertEqualUpToExpectedLength(":3\r\n", response);
 
             // Common value
             response = lightClientRequest.SendCommand("SMOVE \"mySourceSet\" \"myDestinationSet\" \"common\"");
@@ -1219,7 +1297,9 @@ namespace Garnet.test
 
             //Same key.
             response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "sourceSet", "sourceValue"]).ConfigureAwait(false);
-            ClassicAssert.AreEqual(response, 0);
+            ClassicAssert.AreEqual(response, 1);
+            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SISMEMBER", ["sourceSet", "sourceValue"]).ConfigureAwait(false), 1);
+            ClassicAssert.AreEqual(await db.ExecuteForLongResultAsync("SCARD", ["sourceSet"]).ConfigureAwait(false), 2);
 
             //Move non-common member.
             response = await db.ExecuteForLongResultAsync("SMOVE", ["sourceSet", "destinationSet", "sourceValue"]).ConfigureAwait(false);
