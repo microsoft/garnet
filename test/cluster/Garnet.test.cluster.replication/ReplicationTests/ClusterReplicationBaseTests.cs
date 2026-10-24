@@ -90,6 +90,47 @@ namespace Garnet.test.cluster
             context?.TearDown();
         }
 
+        [Test]
+        [Category("REPLICATION")]
+        public void ClusterDumpRestoreReplicatesContentsAndAbsoluteExpiration()
+        {
+            context.CreateInstances(2, disableObjects: false, enableAOF: true, useTLS: useTLS,
+                asyncReplay: asyncReplay, sublogCount: sublogCount, useClusterAnnounceHostname: true);
+            context.CreateConnection(useTLS: useTLS);
+            _ = context.clusterTestUtils.SimpleSetupCluster(1, 1, logger: context.logger);
+            var primary = context.clusterTestUtils.GetServer(0);
+            var replica = context.clusterTestUtils.GetServer(1);
+            var commands = new (string Type, string Command, object[] Arguments)[]
+            {
+                ("string", "SET", ["source", "value"]),
+                ("list", "RPUSH", ["source", "one", "two", "one"]),
+                ("set", "SADD", ["source", "one", "two"]),
+                ("hash", "HSET", ["source", "field", "value"]),
+                ("zset", "ZADD", ["source", "1.5", "one", "-2", "two"])
+            };
+            var expected = new Dictionary<string, (byte[] Dump, long Deadline)>();
+            foreach (var (type, command, arguments) in commands)
+            {
+                _ = primary.Execute(0, "DEL", ["source"]);
+                _ = primary.Execute(0, command, arguments);
+                var dump = (byte[])primary.Execute(0, "DUMP", ["source"]);
+                _ = primary.Execute(0, "RESTORE", [type, 60_000, dump]);
+                var deadline = (long)primary.Execute(0, "PEXPIRETIME", [type]);
+                expected[type] = (dump, deadline);
+            }
+
+            context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
+            _ = replica.Execute("READONLY");
+            foreach (var (type, (dump, deadline)) in expected)
+            {
+                CollectionAssert.AreEqual(dump, (byte[])replica.Execute(0, "DUMP", [type], CommandFlags.NoRedirect));
+                ClassicAssert.AreEqual(deadline, (long)replica.Execute(0, "PEXPIRETIME", [type], CommandFlags.NoRedirect));
+            }
+            var error = Assert.Throws<RedisServerException>(() => replica.Execute(0, "RESTORE",
+                ["replica-write", 0, expected["set"].Dump], CommandFlags.NoRedirect));
+            ClassicAssert.That(error.Message, Does.Contain("READONLY").Or.Contain("MOVED"));
+        }
+
         [Test, Order(1)]
         [Category("REPLICATION")]
         public void ClusterSRTest([Values] bool disableObjects)
