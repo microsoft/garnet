@@ -304,9 +304,8 @@ namespace Garnet.cluster
         /// <returns></returns>
         public async Task<bool> BeginAsyncReplicaFailoverAsync()
         {
-            // CLUSTER FAILOVER OPTIONS
-            // FORCE: Do not await for the primary since it might be unreachable
-            // TAKEOVER: Same as force but also do not await for voting from other primaries
+            // FORCE and TAKEOVER skip primary coordination and replication catch-up.
+            // An external coordinator authorizes and serializes promotions; Garnet does not perform voting.
             var failoverSucceeded = false;
             try
             {
@@ -314,12 +313,6 @@ namespace Garnet.cluster
                 if (option is FailoverOption.DEFAULT && !await PauseWritesAndWaitForSyncAsync().ConfigureAwait(false))
                 {
                     return false;
-                }
-
-                // If TAKEOVER option is set skip voting
-                if (option is FailoverOption.DEFAULT or FailoverOption.FORCE)
-                {
-                    //TODO: implement voting
                 }
 
                 // Transition to primary role
