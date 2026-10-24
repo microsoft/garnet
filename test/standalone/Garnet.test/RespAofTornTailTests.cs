@@ -3,6 +3,7 @@
 
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -10,10 +11,10 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     /// <summary>
-    /// Recovery test for a "torn tail" AOF: an ungraceful shutdown that leaves the final commit
-    /// record half-written. Recovery must not crash (FailOnRecoveryError is set so a bad recovery
-    /// surfaces as a startup exception) and must replay every committed operation up to the last
-    /// valid commit.
+    /// Recovery tests for the tail of the AOF. A "torn tail" - an ungraceful shutdown that leaves the final commit
+    /// record half-written - must be reported, and recovery must not crash (FailOnRecoveryError is set so a bad
+    /// recovery surfaces as a startup exception) and must replay every committed operation up to the last valid
+    /// commit. An intact tail must recover without reporting anything.
     /// </summary>
     [TestFixture]
     public class RespAofTornTailTests : TestBase
@@ -59,9 +60,13 @@ namespace Garnet.test
 
             // 4. Recover. With the fix, recovery stops at the last VALID commit and must not throw
             //    even though FailOnRecoveryError is set. (Without the fix this throws on replay.)
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, failOnRecoveryError: true);
+            var recoveryLog = new StringWriter();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, failOnRecoveryError: true,
+                logTo: TextWriter.Synchronized(recoveryLog));
             Assert.DoesNotThrow(() => server.Start(),
                 "recovery must not crash on a torn-tail commit record");
+            Assert.That(AofWarnings(recoveryLog.ToString()), Has.Some.Contains("torn"),
+                "the dropped torn-tail commit record must be reported");
 
             // 5. All committed operations up to the last valid commit must be replayed. The single
             //    torn-tail operation (key{numKeys-1}) may be dropped, so assert through numKeys-2.
@@ -94,6 +99,49 @@ namespace Garnet.test
                         $"post-recovery key{i} must be recovered from the AOF");
             }
         }
+
+        /// <summary>
+        /// Recovery reads to the end of the written AOF to find its latest commit. Reaching that end is how recovery
+        /// completes, whether the AOF is empty (a first start with recovery enabled) or holds committed data.
+        /// </summary>
+        [Test]
+        public void IntactAofRecoveryReportsNoWarnings()
+        {
+            const int numKeys = 1000;
+            var log = new StringWriter();
+            var logTo = TextWriter.Synchronized(log);
+
+            // A first start with recovery enabled recovers an empty AOF
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, logTo: logTo);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                for (var i = 0; i < numKeys; i++)
+                    db.StringSet("key" + i, "value" + i);
+            }
+
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, failOnRecoveryError: true, logTo: logTo);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                for (var i = 0; i < numKeys; i++)
+                    ClassicAssert.AreEqual("value" + i, db.StringGet("key" + i).ToString(), $"key{i} must be recovered from the AOF");
+            }
+
+            Assert.That(AofWarnings(log.ToString()), Is.Empty, "recovering an intact AOF must not report warnings or errors");
+        }
+
+        /// <summary>
+        /// The warning, error, and critical entries the AOF logger wrote to a <see cref="NUnitLoggerProvider"/> log,
+        /// each from its category through its message.
+        /// </summary>
+        private static string[] AofWarnings(string log)
+            => [.. Regex.Matches(log, @"\((?:warn|errr|crit)\)\] \|[^|]*\| <GarnetLog \[aof\]>.*?\^.*?\^", RegexOptions.Singleline).Select(m => m.Value)];
 
         /// <summary>
         /// Corrupts the AOF to look like an ungraceful shutdown mid commit-record write:

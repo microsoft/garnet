@@ -2983,14 +2983,17 @@ namespace Tsavorite.core
                 CommittedUntilAddress = long.MaxValue;
                 beginAddress = info.BeginAddress;
                 allocator.HeadAddress = long.MaxValue;
+                var scanStartAddress = info.UntilAddress;
                 try
                 {
-                    using var scanIterator = Scan(info.UntilAddress, long.MaxValue, recover: false);
+                    using var scanIterator = Scan(scanStartAddress, long.MaxValue, recover: false);
                     _ = scanIterator.ScanForwardForCommit(ref info);
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogWarning(ex, "Fast-commit scan forward from {untilAddress} failed; recovering from the last commit metadata instead", info.UntilAddress);
+                    // The scan updates info at each valid commit it finds, so info holds the last one found before the failure
+                    logger?.LogWarning(ex, "Fast-commit recovery scan from {scanStartAddress} failed; recovering to the last valid commit found (until address {untilAddress}, commitNum {commitNum})",
+                        scanStartAddress, info.UntilAddress, info.CommitNum);
                 }
             }
 
