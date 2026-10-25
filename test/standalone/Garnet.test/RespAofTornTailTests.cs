@@ -3,6 +3,7 @@
 
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -60,9 +61,9 @@ namespace Garnet.test
 
             // 4. Recover. With the fix, recovery stops at the last VALID commit and must not throw
             //    even though FailOnRecoveryError is set. (Without the fix this throws on replay.)
-            var recoveryLog = new StringWriter();
+            var recoveryLog = new LogCapture();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, failOnRecoveryError: true,
-                logTo: TextWriter.Synchronized(recoveryLog));
+                logTo: recoveryLog);
             Assert.DoesNotThrow(() => server.Start(),
                 "recovery must not crash on a torn-tail commit record");
             Assert.That(AofWarnings(recoveryLog.ToString()), Has.Some.Contains("torn"),
@@ -108,11 +109,10 @@ namespace Garnet.test
         public void IntactAofRecoveryReportsNoWarnings()
         {
             const int numKeys = 1000;
-            var log = new StringWriter();
-            var logTo = TextWriter.Synchronized(log);
+            var log = new LogCapture();
 
             // A first start with recovery enabled recovers an empty AOF
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, logTo: logTo);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, logTo: log);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -123,7 +123,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, failOnRecoveryError: true, logTo: logTo);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true, commitWait: true, lowMemory: true, failOnRecoveryError: true, logTo: log);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
@@ -142,6 +142,44 @@ namespace Garnet.test
         /// </summary>
         private static string[] AofWarnings(string log)
             => [.. Regex.Matches(log, @"\((?:warn|errr|crit)\)\] \|[^|]*\| <GarnetLog \[aof\]>.*?\^.*?\^", RegexOptions.Singleline).Select(m => m.Value)];
+
+        /// <summary>
+        /// Collects log output, serializing reads with the writes that server threads may still be making.
+        /// </summary>
+        private sealed class LogCapture : TextWriter
+        {
+            private readonly StringBuilder text = new();
+
+            /// <inheritdoc/>
+            public override Encoding Encoding => Encoding.Unicode;
+
+            /// <inheritdoc/>
+            public override void Write(char value)
+            {
+                lock (text)
+                {
+                    _ = text.Append(value);
+                }
+            }
+
+            /// <inheritdoc/>
+            public override void Write(string value)
+            {
+                lock (text)
+                {
+                    _ = text.Append(value);
+                }
+            }
+
+            /// <inheritdoc/>
+            public override string ToString()
+            {
+                lock (text)
+                {
+                    return text.ToString();
+                }
+            }
+        }
 
         /// <summary>
         /// Corrupts the AOF to look like an ungraceful shutdown mid commit-record write:
