@@ -1549,6 +1549,23 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase("--5")]
+        [TestCase("-+5")]
+        public void IncrementRejectsStoredValuesWithTwoSigns(string storedValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "test";
+            db.StringSet(key, storedValue);
+
+            var incrError = Assert.Throws<RedisServerException>(() => db.StringIncrement(key));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", incrError.Message);
+            var incrByError = Assert.Throws<RedisServerException>(() => db.StringIncrement(key, 2));
+            ClassicAssert.AreEqual("ERR value is not an integer or out of range.", incrByError.Message);
+            ClassicAssert.AreEqual(storedValue, db.StringGet(key).ToString());
+        }
+
+        [Test]
         public void SimpleIncrementByFloatWithNoKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -5930,6 +5947,4 @@ namespace Garnet.test
             ClassicAssert.AreEqual("testvalue", db.StringGet("testkey").ToString());
         }
     }
-        }
-
 }
