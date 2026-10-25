@@ -1057,8 +1057,11 @@ namespace Tsavorite.core
             // Deserialize from the downlevel object log, which is still the allocator's read device, using the downlevel decode.
             hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, objectLogDevice: null, recoveryStatus.checkpointVersion);
 
+            // The flush stops where the loaded range does. Past it, the page holds records this recovery did not process, such as next-version
+            // records in the sector holding the tail, whose value slots hold object ids from the process that wrote them.
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
-            hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus, options.checkpointVersion);
+            hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus, options.checkpointVersion,
+                untilAddress: untilAddress);
             recoveryStatus.WaitFlush(pageIndex);
 
             // Converted pages are durable and carry current-format positions, so they are safe to evict. Reclaim from the bottom up while
@@ -1349,9 +1352,12 @@ namespace Tsavorite.core
             hlogBase.LoadObjectsForRecoveryPass2(page, pageFromAddress, pageUntilAddress, recoveryStatus.objectLogRecoveryDevice,
                 recoveryStatus.checkpointVersion, recoveryStatus.objectLogRecoveryReadEnd);
 
-            // Flush without the snapshot device: the objects are resident now, so they are re-serialized from the page rather than copied.
+            // Flush without the snapshot device: the objects are resident now, so they are re-serialized from the page rather than copied. The
+            // flush stops at the recovered tail: past it, the Snapshot's image of its tail page holds the next-version records written after the
+            // tail was sampled, which recovery does not process and whose value slots hold object ids from the process that wrote them.
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Pending;
-            hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus, options.checkpointVersion);
+            hlogBase.AsyncFlushPagesForRecovery(scanFromAddress, page, 1, AsyncFlushPageCallbackForRecovery, recoveryStatus, options.checkpointVersion,
+                untilAddress: untilAddress);
             recoveryStatus.WaitFlush(pageIndex);
 
             // The page's records now carry main-object-log positions, so any later load for this page reads from the main (upgrade) device.

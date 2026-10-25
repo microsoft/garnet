@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -434,6 +435,144 @@ namespace Tsavorite.test.recovery
 
             TransformSnapshotCheckpointToV7Dense(checkpointDir, token, i => (null, SerializeLargeObject(MakePayload(i, valueSize))));
             return token;
+        }
+
+        /// <summary>Keys of the next-version records written past a checkpoint's recovered tail; disjoint from the stable keys.</summary>
+        const int NextVersionKeyBase = 1_000_000;
+
+        // Build a dense v7 Snapshot whose tail page image also holds next-version records past the recovered tail. The Snapshot flush is held at
+        // its first record on the tail page while those records are written, so the page it then writes carries them; their value slots hold
+        // object ids from this process rather than object-log positions. Returns the token and the recovered tail.
+        (Guid token, long recoveredTail) BuildV7DenseSnapshotWithNextVersionSuffixFixture(int numRecords, int valueSize, int suffixCount)
+        {
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            Guid token;
+            long recoveredTail;
+
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                for (var key = 0; key < numRecords; key++)
+                    _ = bContext.Upsert(new TestObjectKey { key = key }, new TestLargeObjectValue() { value = MakePayload(key, valueSize) });
+                var tailPage = store.hlogBase.GetPage(store.Log.TailAddress);
+
+                using var reached = new ManualResetEventSlim(false);
+                using var release = new ManualResetEventSlim(false);
+                var blocked = 0;
+                ObjectFlushInjection.Hook = (phase, address) =>
+                {
+                    if (phase != ObjectFlushPhase.AfterRecordWritten || store.hlogBase.GetPage(address) != tailPage || Interlocked.Exchange(ref blocked, 1) != 0)
+                        return;
+                    reached.Set();
+                    _ = release.Wait(TimeSpan.FromSeconds(30));
+                };
+
+                long firstSuffixEnd;
+                try
+                {
+                    ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.Snapshot), "failed to initiate Snapshot checkpoint");
+                    ClassicAssert.IsTrue(reached.Wait(TimeSpan.FromSeconds(30)), "the Snapshot flush never reached the tail page");
+                    recoveredTail = store._hybridLogCheckpoint.info.recoveredTailAddress;
+
+                    _ = bContext.Upsert(new TestObjectKey { key = NextVersionKeyBase }, new TestLargeObjectValue() { value = MakePayload(NextVersionKeyBase, valueSize) });
+                    firstSuffixEnd = store.Log.TailAddress;
+                    for (var i = 1; i < suffixCount; i++)
+                        _ = bContext.Upsert(new TestObjectKey { key = NextVersionKeyBase + i }, new TestLargeObjectValue() { value = MakePayload(NextVersionKeyBase + i, valueSize) });
+                }
+                finally
+                {
+                    release.Set();
+                }
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+
+                ClassicAssert.AreEqual(tailPage, store.hlogBase.GetPage(recoveredTail), "the recovered tail should be on the held page");
+                ClassicAssert.AreEqual(tailPage, store.hlogBase.GetPage(firstSuffixEnd - 1), "the first next-version record should share the tail page");
+            }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            TransformSnapshotCheckpointToV7Dense(checkpointDir, token, i => (null, SerializeLargeObject(MakePayload(i, valueSize))));
+            return (token, recoveredTail);
+        }
+
+        // Build a dense v7 FoldOver whose main log holds a next-version record in the sector holding the recovered tail. A flush writes a page up
+        // to the end of the sector holding its end, from the live page, so holding the FoldOver flush at its first record on the tail page while
+        // that record is written puts it on disk. Stable records are written until the tail is early enough in its sector to leave room for it.
+        // Returns the token and the number of stable records.
+        (Guid token, int numRecords) BuildV7DenseFoldOverWithNextVersionInTailSectorFixture(int minRecords, int valueSize, int suffixCount)
+        {
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            Guid token;
+            int numRecords;
+
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20);
+                using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+                var bContext = session.BasicContext;
+                var sectorSize = (int)log.SectorSize;
+                numRecords = 0;
+                while (numRecords < minRecords || store.hlogBase.GetOffsetOnPage(store.Log.TailAddress) <= PageHeader.Size
+                    || store.Log.TailAddress % sectorSize is < 64 or > 256)
+                {
+                    _ = bContext.Upsert(new TestObjectKey { key = numRecords }, new TestLargeObjectValue() { value = MakePayload(numRecords, valueSize) });
+                    numRecords++;
+                }
+                var tailPage = store.hlogBase.GetPage(store.Log.TailAddress);
+
+                using var reached = new ManualResetEventSlim(false);
+                using var release = new ManualResetEventSlim(false);
+                var hookThread = -1;
+                var blocked = 0;
+                ObjectFlushInjection.Hook = (phase, address) =>
+                {
+                    if (phase != ObjectFlushPhase.AfterRecordWritten || store.hlogBase.GetPage(address) != tailPage || Interlocked.Exchange(ref blocked, 1) != 0)
+                        return;
+                    hookThread = Environment.CurrentManagedThreadId;
+                    reached.Set();
+                    _ = release.Wait(TimeSpan.FromSeconds(30));
+                };
+
+                long recoveredTail, firstSuffixEnd;
+                try
+                {
+                    ClassicAssert.IsTrue(store.TryInitiateHybridLogCheckpoint(out token, CheckpointType.FoldOver), "failed to initiate FoldOver checkpoint");
+                    ClassicAssert.IsTrue(reached.Wait(TimeSpan.FromSeconds(30)), "the FoldOver flush never reached the tail page");
+                    ClassicAssert.AreNotEqual(Environment.CurrentManagedThreadId, hookThread, "the flush hook ran on the test thread");
+                    recoveredTail = store._hybridLogCheckpoint.info.recoveredTailAddress;
+
+                    _ = bContext.Upsert(new TestObjectKey { key = NextVersionKeyBase }, new TestLargeObjectValue() { value = MakePayload(NextVersionKeyBase, valueSize) });
+                    firstSuffixEnd = store.Log.TailAddress;
+                    for (var i = 1; i < suffixCount; i++)
+                        _ = bContext.Upsert(new TestObjectKey { key = NextVersionKeyBase + i }, new TestLargeObjectValue() { value = MakePayload(NextVersionKeyBase + i, valueSize) });
+                }
+                finally
+                {
+                    release.Set();
+                }
+                store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
+
+                ClassicAssert.AreEqual(recoveredTail / sectorSize, (firstSuffixEnd - 1) / sectorSize, "the first next-version record should end in the tail's sector");
+            }
+            finally
+            {
+                ObjectFlushInjection.Reset();
+                log.Dispose();
+                objlog.Dispose();
+            }
+
+            TransformCheckpointToV7Dense(checkpointDir, MethodTestDir, token, i => (null, SerializeLargeObject(MakePayload(i, valueSize))));
+            return (token, numRecords);
         }
 
         // Build a Snapshot checkpoint whose recovered range spans BOTH regions: a hybrid-log region already flushed to the main log and a
@@ -910,6 +1049,94 @@ namespace Tsavorite.test.recovery
                 log.Dispose();
                 objlog.Dispose();
                 upgradeObjlog.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A Snapshot's image of its tail page holds the next-version records written after the checkpoint sampled its tail. Recovery leaves them
+        /// alone, so their value slots still hold object ids from the process that wrote them; the up-conversion's flush of that page must stop at
+        /// the recovered tail rather than re-serialize them.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7SnapshotWithNextVersionRecordsPastTheTail([Values(100, 1024)] int valueSize)
+        {
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("needs the DEBUG flush injection points");
+
+            const int numRecords = 20;
+            const int suffixCount = 4;
+            var (token, _) = BuildV7DenseSnapshotWithNextVersionSuffixFixture(numRecords, valueSize, suffixCount);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                VerifyObjectValueRange(store, 0, numRecords, valueSize, "after v7 snapshot recovery");
+                VerifyNotRecovered(store, NextVersionKeyBase, suffixCount);
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A FoldOver flush writes its last page up to the end of the sector holding the tail, from the live page, so that sector can hold
+        /// next-version records past the recovered tail. Recovery reads them back but does not process them; the up-conversion's flush of that
+        /// page must stop at the recovered tail rather than re-serialize them.
+        /// </summary>
+        [Test]
+        [Category("TsavoriteKV"), Category("CheckpointRestore")]
+        public async Task RecoverV7FoldOverWithNextVersionRecordsInTheTailSector([Values(100, 1024)] int valueSize)
+        {
+            if (!ObjectFlushInjection.IsAvailable)
+                Assert.Ignore("needs the DEBUG flush injection points");
+
+            const int suffixCount = 2;
+            var (token, numRecords) = BuildV7DenseFoldOverWithNextVersionInTailSectorFixture(minRecords: 20, valueSize, suffixCount);
+
+            var checkpointDir = Path.Combine(MethodTestDir, CheckpointDirName);
+            IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, MainLogName), deleteOnClose: false);
+            IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, ObjectLogName), deleteOnClose: false);
+            IDevice upgradeObjlog = CreateUpgradeObjectLog();
+            try
+            {
+                using var store = CreateObjectStore(log, objlog, checkpointDir, 1L << 20, upgradeObjlog);
+                _ = await store.RecoverAsync(default, token).ConfigureAwait(false);
+                VerifyObjectValueRange(store, 0, numRecords, valueSize, "after v7 FoldOver recovery");
+                VerifyNotRecovered(store, NextVersionKeyBase, suffixCount);
+            }
+            finally
+            {
+                log.Dispose();
+                objlog.Dispose();
+                upgradeObjlog.Dispose();
+            }
+        }
+
+        // Assert that keys [firstKey, firstKey + count), written past a checkpoint's recovered tail, were not recovered.
+        static void VerifyNotRecovered(TsavoriteKV<ObjStoreFunctions, ObjAllocator> store, int firstKey, int count)
+        {
+            using var session = store.NewSession<TestObjectKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
+            var bContext = session.BasicContext;
+            for (var key = firstKey; key < firstKey + count; key++)
+            {
+                TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Object };
+                TestLargeObjectOutput output = new();
+                var status = bContext.Read(new TestObjectKey { key = key }, ref input, ref output);
+                if (status.IsPending)
+                {
+                    ClassicAssert.IsTrue(bContext.CompletePendingWithOutputs(out var completed, wait: true));
+                    (status, output) = GetSinglePendingResult(completed);
+                }
+                ClassicAssert.IsFalse(status.Found, $"key {key}, past the recovered tail, should not be recovered");
             }
         }
 
