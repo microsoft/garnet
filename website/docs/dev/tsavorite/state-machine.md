@@ -630,14 +630,16 @@ parks a flush mid-write and asserts disposal is declined and then drained;
 same for a CopyUpdate; and
 `FlushBoundarySectorRecoveryTests.SupersedingABoundarySectorRecordKeepsTheFoldOverImage`
 recovers a FoldOver after an RMW, Upsert, or Delete of a record in its last
-sector, with and without the next flush in flight, and
+sector, with and without the next flush in flight, followed by a second flush
+that writes that sector from the image the first one kept, and
 `RecoveredFlushBoundaryTests.FoldOverRecoveryThenPartialFlushKeepsBoundarySectorReadable`
 does the same for the first flush after recovery.
 
-`SpanByteAllocator` still writes that sector again from the live page and reports
-nothing as frozen for flush, so eliding a record there, or a Delete's
-`ClearOptionals`, can still change a completed FoldOver's image. It is not used by
-Garnet; keeping the same partial-sector image there would close it.
+`SpanByteAllocator` reports nothing as frozen for flush, but its ReadOnly flushes
+take the same partial-sector image, so eliding a record in that sector, or a
+Delete's `ClearOptionals` there, does not change a completed FoldOver's image
+either. `InlineFlushBoundarySectorRecoveryTests` covers both, including the first
+flush after recovery.
 
 ## Rules for state-machine task code
 

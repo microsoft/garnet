@@ -578,10 +578,12 @@ write rounds down to the sector boundary, so it writes that prefix again, and it
 page: a completed FoldOver recovers those records from the main log, and since they became durable they may have changed
 in memory - elided, disposed, released by a CopyUpdate, or rewritten by recovery's object load. So the flush writes its
 first sector from a pooled sector buffer holding the durable prefix followed by the live bytes from its own start. The
-prefix comes from the `PartialSectorImage` the previous ReadOnly flush kept of the sector it ended in, or, when no image
-describes that sector (after recovery or a reset), from reading the sector back from the device. If the range below the
-flush was skipped rather than written, because it lies below `BeginAddress`, nothing reads the prefix and it comes from
-the live page. The rest of the span is written directly from the live page.
+prefix comes from the `PartialSectorImage` the previous ReadOnly flush of that page kept of the sector it ended in, or,
+when no image describes that sector (after recovery or a reset), from reading the sector back from the device. A prefix
+that lies entirely below `BeginAddress` comes from the live page: nothing reads it, and it may never have been written,
+because the flush of a range below `BeginAddress` is skipped. The rest of the span is written directly from the live
+page. `AllocatorBase` holds this mechanism, and `SpanByteAllocator`'s ReadOnly flushes use it too, since superseding a
+record there elides it or clears its optional fields in the live page.
 
 Devices do not order overlapping writes, and the object allocator issues adjacent fragments without the `PendingFlush`
 chaining `AllocatorBase` uses for the same reason. So a flush that starts mid-sector issues its writes only once

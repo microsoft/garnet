@@ -143,6 +143,8 @@ namespace Tsavorite.core
         /// Always false: this allocator's records have no heap fields and no object log, so disposal neither frees an
         /// <see cref="ObjectIdMap"/> slot nor leaves an ObjectLogPosition referring to freed bytes. Flushing writes the
         /// live page, but it only DMAs the record image; it never reads a record to resolve or re-serialize anything.
+        /// A flush that starts mid-sector writes the durable records below its start as they were made durable, not from the
+        /// live page, so a record that changes after it becomes durable does not change a completed checkpoint's image of it.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool IsFrozenForFlush(long logicalAddress) => false;

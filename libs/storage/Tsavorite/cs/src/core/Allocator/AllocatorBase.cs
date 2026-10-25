@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -789,6 +790,284 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Writes a ReadOnly flush of part of an inline page, as <see cref="WriteInlinePageAsync"/> does, except that a flush starting mid-sector
+        /// writes the durable bytes below its start as they were made durable rather than from the live page; see <see cref="partialSectorImages"/>.
+        /// </summary>
+        /// <param name="flushPage">The page being flushed</param>
+        /// <param name="alignedDestinationAddress">The device address of the start of the page</param>
+        /// <param name="callback">The flush's completion callback</param>
+        /// <param name="asyncResult">The flush's result</param>
+        /// <param name="device">The device to write to</param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private protected void WriteInlinePartialPageForReadOnlyAsync<TContext>(int flushPage, ulong alignedDestinationAddress, DeviceIOCompletionCallback callback,
+                PageAsyncFlushResult<TContext> asyncResult, IDevice device)
+        {
+            Debug.Assert(asyncResult.partial && asyncResult.flushRequestState == FlushRequestState.ReadOnly, "Expected a ReadOnly flush of part of a page");
+            var pageStart = GetLogicalAddressOfStartOfPage(asyncResult.page);
+            var logPagePointer = (byte*)pagePointers[flushPage % BufferSize];
+            var startOffset = (int)(asyncResult.fromAddress - pageStart);
+            var endOffset = (int)(asyncResult.untilAddress - pageStart);
+
+            // A flush from the page's first record writes the page header below it from the live page: no record below it is durable.
+            if (startOffset <= pageHeaderSize)
+                startOffset = 0;
+            var alignedStartOffset = RoundDown(startOffset, sectorSize);
+            var alignedEndOffset = RoundUp(endOffset, sectorSize);
+
+            SectorAlignedMemory firstSector = null;
+            if (alignedStartOffset != startOffset)
+            {
+                if (!TryGetDurableSectorPrefix(flushPage, pageStart + alignedStartOffset, startOffset - alignedStartOffset,
+                        alignedDestinationAddress + (ulong)alignedStartOffset, device, callback, asyncResult, out firstSector))
+                    return;
+
+                // Complete the first sector with the live bytes from the start of the flush.
+                if (firstSector is not null)
+                {
+                    var prefixLength = startOffset - alignedStartOffset;
+                    Buffer.MemoryCopy(logPagePointer + startOffset, firstSector.aligned_pointer + prefixLength, sectorSize - prefixLength, sectorSize - prefixLength);
+                }
+            }
+
+            RecordPartialSectorImage(flushPage, pageStart, alignedStartOffset, endOffset, logPagePointer, firstSector);
+
+            if (firstSector is null)
+            {
+                device.WriteAsync((IntPtr)(logPagePointer + alignedStartOffset), alignedDestinationAddress + (ulong)alignedStartOffset,
+                    (uint)(alignedEndOffset - alignedStartOffset), callback, asyncResult);
+                return;
+            }
+
+            // Write the first sector from firstSector and the rest of the span from the live page, as parts of one flush.
+            var restOffset = alignedStartOffset + sectorSize;
+            var join = new PageFlushJoin(callback, asyncResult);
+            try
+            {
+                SubmitFlushPart(join, device, firstSector.aligned_pointer, alignedDestinationAddress + (ulong)alignedStartOffset, sectorSize);
+                if (alignedEndOffset > restOffset)
+                    SubmitFlushPart(join, device, logPagePointer + restOffset, alignedDestinationAddress + (ulong)restOffset, alignedEndOffset - restOffset);
+            }
+            finally
+            {
+                // The issuer's sentinel; held until every part is submitted, so an early completion cannot finish the join.
+                join.Complete(errorCode: 0, ioException: null);
+            }
+        }
+
+        /// <summary>Submits one device write of a page flush whose parts are joined by <paramref name="join"/>.</summary>
+        /// <remarks>A submission that throws completes its part with the error, so the join still runs the page's callback, and rethrows to the issuer.</remarks>
+        private protected static void SubmitFlushPart(PageFlushJoin join, IDevice device, byte* source, ulong destinationAddress, int length)
+        {
+            join.Add();
+            try
+            {
+                device.WriteAsync((IntPtr)source, destinationAddress, (uint)length, PageFlushJoin.PartCallback, join);
+            }
+            catch (Exception ex)
+            {
+                join.Complete(uint.MaxValue, ex);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// For each buffer page, indexed by page % <see cref="BufferSize"/>, the durable part of the sector its last ReadOnly flush ended in, which the
+        /// next flush of the page starts in and writes again. Null for an allocator whose records do not change once flushed, as in TsavoriteLog. An
+        /// element is null if that flush ended on a sector boundary, or no ReadOnly flush of the page has run since the allocator was initialized,
+        /// reset, or recovered.
+        /// </summary>
+        /// <remarks>
+        /// Device writes are sector-aligned, so a ReadOnly flush that starts mid-sector writes the bytes below its start again. Those bytes are durable
+        /// and may be a completed checkpoint's image, while the records they hold may since have changed in memory: elided, or their optional fields
+        /// cleared, after being superseded, or rewritten by recovery's object load. So the flush writes them from here, or reads them back from the
+        /// device when it has no image of them, never from the live page.
+        /// <para>
+        /// One element per page suffices because the flushes of a page are issued in address order, and one that starts mid-page is not issued until
+        /// the flush before it has recorded its image. The image is keyed by its address, so one recorded for an earlier use of the buffer page is never
+        /// taken for this one.
+        /// </para>
+        /// </remarks>
+        private protected PartialSectorImage[] partialSectorImages;
+
+        /// <summary>
+        /// The bytes a ReadOnly flush wrote for the durable part of the sector it ended in: [<see cref="SectorStart"/>, <see cref="SectorStart"/> +
+        /// <see cref="Bytes"/>.Length).
+        /// </summary>
+        private protected sealed class PartialSectorImage
+        {
+            /// <summary>Logical address of the start of the sector.</summary>
+            internal readonly long SectorStart;
+
+            /// <summary>The bytes written, from the start of the sector to the end of the flush.</summary>
+            internal readonly byte[] Bytes;
+
+            internal PartialSectorImage(long sectorStart, byte[] bytes)
+            {
+                SectorStart = sectorStart;
+                Bytes = bytes;
+            }
+        }
+
+        /// <summary>Makes this allocator's ReadOnly flushes write the durable bytes below a mid-sector start as they were made durable; see
+        /// <see cref="partialSectorImages"/>.</summary>
+        private protected void KeepPartialSectorImages() => partialSectorImages = new PartialSectorImage[BufferSize];
+
+        private void ClearPartialSectorImages()
+        {
+            if (partialSectorImages is not null)
+                Array.Clear(partialSectorImages);
+        }
+
+        /// <summary>
+        /// Gets the bytes that a ReadOnly flush starting mid-sector writes again below its start: the durable part of that sector, from
+        /// <see cref="partialSectorImages"/>, or read back from the device when there is no image of it. None if those bytes are all below
+        /// BeginAddress: nothing reads them, and they may never have been written, as when the flush of the range below BeginAddress was skipped.
+        /// </summary>
+        /// <param name="flushPage">The page being flushed</param>
+        /// <param name="sectorStartAddress">Logical address of the sector the flush starts in</param>
+        /// <param name="prefixLength">Number of bytes from the start of the sector to the start of the flush</param>
+        /// <param name="deviceAddress">Device address of the sector</param>
+        /// <param name="device">The device the flush writes</param>
+        /// <param name="callback">The flush's completion callback, which receives a read-back failure</param>
+        /// <param name="asyncResult">The flush's result, which returns <paramref name="firstSector"/> to the pool when the flush completes</param>
+        /// <param name="firstSector">A sector buffer starting with the durable bytes; null if the bytes may come from the live page</param>
+        /// <returns>False if the read-back failed, in which case the failure has been reported to <paramref name="callback"/></returns>
+        private protected bool TryGetDurableSectorPrefix<TContext>(int flushPage, long sectorStartAddress, int prefixLength, ulong deviceAddress, IDevice device,
+            DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult, out SectorAlignedMemory firstSector)
+        {
+            firstSector = null;
+            if (sectorStartAddress + prefixLength <= BeginAddress)
+                return true;
+
+            firstSector = bufferPool.Get(sectorSize);
+            asyncResult.freeBuffer1 = firstSector;
+            var image = Volatile.Read(ref partialSectorImages[flushPage % BufferSize]);
+            if (image is not null && image.SectorStart == sectorStartAddress && image.Bytes.Length == prefixLength)
+            {
+                image.Bytes.AsSpan().CopyTo(new Span<byte>(firstSector.aligned_pointer, prefixLength));
+                return true;
+            }
+
+            // No image of this sector, as for the first flush after recovery: read it back once its earlier write has completed. Neither the wait nor
+            // the read may hold the epoch. The page stays resident without it, because eviction cannot pass FlushedUntilAddress, which is below it.
+            var resumeEpoch = epoch.TrySuspend();
+            try
+            {
+                WaitForWritesBelow(sectorStartAddress + prefixLength);
+                if (TryReadDevice(device, deviceAddress, (IntPtr)firstSector.aligned_pointer, (uint)sectorSize, "Partial-sector flush read-back",
+                        out var errorCode, out var numBytesRead, out var ioException))
+                    return true;
+                callback(errorCode, numBytesRead, asyncResult, ioException);
+                return false;
+            }
+            finally
+            {
+                if (resumeEpoch)
+                    epoch.Resume();
+            }
+        }
+
+        /// <summary>
+        /// Keeps what a ReadOnly flush writes for the durable part of the sector it ends in, which the next flush of the page writes again. Call it
+        /// before submitting the flush's writes, so the image is in place before the flush can complete.
+        /// </summary>
+        /// <param name="flushPage">The page being flushed</param>
+        /// <param name="pageStart">Logical address of the start of the page</param>
+        /// <param name="alignedStartOffset">Page offset of the sector the flush starts in</param>
+        /// <param name="endOffset">Page offset where the flush ends</param>
+        /// <param name="logPagePointer">The live page</param>
+        /// <param name="firstSector">The flush's completed first sector, or null</param>
+        private protected void RecordPartialSectorImage(int flushPage, long pageStart, int alignedStartOffset, int endOffset, byte* logPagePointer,
+            SectorAlignedMemory firstSector)
+        {
+            var endSectorOffset = RoundDown(endOffset, sectorSize);
+            var length = endOffset - endSectorOffset;
+            PartialSectorImage image = null;
+            if (length > 0)
+            {
+                // A flush that ends in the sector it composed writes that sector from firstSector, not the live page.
+                var source = firstSector is not null && endSectorOffset == alignedStartOffset ? firstSector.aligned_pointer : logPagePointer + endSectorOffset;
+                image = new PartialSectorImage(pageStart + endSectorOffset, new ReadOnlySpan<byte>(source, length).ToArray());
+            }
+            Volatile.Write(ref partialSectorImages[flushPage % BufferSize], image);
+        }
+
+        /// <summary>
+        /// Blocks until every flush write below <paramref name="address"/> has completed, so that a write of the sector holding it cannot be
+        /// overtaken by an earlier write of the same sector that is still in flight.
+        /// </summary>
+        /// <remarks>The caller must not hold the epoch. Returns early if the allocator is disposed, or if a failed flush below
+        /// <paramref name="address"/> means FlushedUntilAddress can never reach it.</remarks>
+        private protected void WaitForWritesBelow(long address)
+        {
+            Debug.Assert(!epoch.ThisInstanceProtected(), "WaitForWritesBelow must not hold the epoch");
+            var spins = 0;
+            var localFlushEvent = flushEvent;
+            while (FlushedUntilAddress < address)
+            {
+                if (IsDisposed || HasFlushFailedBelow(address))
+                    return;
+                if (++spins < Constants.kFlushSpinCount)
+                    _ = Thread.Yield();
+                else
+                    localFlushEvent.Wait();
+                localFlushEvent = flushEvent;
+            }
+        }
+
+        private static void SyncReadCallback(uint errorCode, uint numBytes, object context, Exception ioException)
+        {
+            var result = (PageAsyncReadResult<Empty>)context;
+            result.errorCode = errorCode;
+            result.numBytesRead = numBytes;
+            result.ioException = ioException;
+            _ = result.handle.Signal();
+        }
+
+        /// <summary>Reads <paramref name="readLength"/> bytes from <paramref name="readDevice"/> and waits for them.</summary>
+        /// <returns>False, with the failure logged, if the read failed or was short; a short read is reported as an <see cref="EndOfStreamException"/>.</returns>
+        private protected bool TryReadDevice(IDevice readDevice, ulong sourceAddress, IntPtr destinationAddress, uint readLength, string operation,
+            out uint errorCode, out uint numBytesRead, out Exception ioException)
+        {
+            PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
+            try
+            {
+                readDevice.ReadAsync(sourceAddress, destinationAddress, readLength, SyncReadCallback, result);
+                result.handle.Wait();
+
+                errorCode = result.errorCode;
+                numBytesRead = result.numBytesRead;
+                ioException = result.ioException;
+
+                if (errorCode == 0 && numBytesRead == readLength)
+                    return true;
+
+                if (errorCode == 0)
+                {
+                    errorCode = uint.MaxValue;
+                    ioException = new EndOfStreamException($"{operation} read {numBytesRead} of {readLength} bytes at device offset {sourceAddress}");
+                }
+
+                if (ioException is null)
+                {
+                    logger?.LogError("{operation} failed reading {readLength} bytes at device offset {sourceAddress}: error {errorCode}; transferred {numBytesRead} bytes",
+                        operation, readLength, sourceAddress, errorCode, numBytesRead);
+                }
+                else
+                {
+                    logger?.LogError("{operation} failed reading {readLength} bytes at device offset {sourceAddress}: {exception}; transferred {numBytesRead} bytes",
+                        operation, readLength, sourceAddress, Utility.GetCallbackExceptionDetail(ioException), numBytesRead);
+                }
+
+                return false;
+            }
+            finally
+            {
+                result.DisposeHandle();
+            }
+        }
+
         internal readonly ILogger logger;
 
         /// <summary>Instantiate base allocator implementation</summary>
@@ -1265,6 +1544,7 @@ namespace Tsavorite.core
             ClosedUntilAddress = firstValidAddress;
             FlushedUntilAddress = firstValidAddress;
             BeginAddress = firstValidAddress;
+            ClearPartialSectorImages();
 
             // Initialize TailAddress (the address of the next allocaton); this will always be nonzero.
             TailPageOffset.Page = (int)GetPage(firstValidAddress);
@@ -2433,6 +2713,10 @@ namespace Tsavorite.core
             FlushedUntilAddress = readonlyAddress;
             ReadOnlyAddress = readonlyAddress;
             SafeReadOnlyAddress = readonlyAddress;
+
+            // The first flush after recovery starts at readonlyAddress, usually mid-sector. It has no image of the durable bytes below its start,
+            // and the resident copy of them may have changed in memory before it runs, so it reads them back from the device.
+            ClearPartialSectorImages();
 
             // for the last page which contains tailoffset, it must be open
             var pageIndex = GetPageIndexForAddress(tailAddress);
