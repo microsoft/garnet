@@ -2537,6 +2537,7 @@ namespace Tsavorite.core
             var mergePage = mergeFromAddress >= 0 ? GetPage(mergeFromAddress) : -1;
             Debug.Assert(mergeFromAddress < 0 || recoveryPhase == RecoveryPhase.Pass1,
                 "Snapshot suffix merge is performed during recovery Pass 1");
+            var recoveryStatus = context as RecoveryStatus;
 
             completed = new CountdownEvent(numPages);
             for (int readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
@@ -2602,12 +2603,16 @@ namespace Tsavorite.core
                 asyncResult.destinationPtr = destinationPtr;
 
                 // Call the overridden ReadAsync for the derived allocator class
+                recoveryStatus?.BeginIO();
                 try
                 {
                     ReadAsync(offsetInFile, destinationPtr, readLength, AsyncReadPagesForRecoveryCallback, asyncResult, usedDevice);
                 }
                 catch
                 {
+                    // A submit that throws runs no callback, unless the device ran it synchronously first; retire the read once either way.
+                    if (asyncResult.TryClaimRecoveryIORetirement())
+                        recoveryStatus?.EndIO();
                     asyncResult.Free();
                     throw;
                 }
@@ -2745,6 +2750,7 @@ namespace Tsavorite.core
             // current format, writes object bytes; the hybrid-log region writes none.
             var snapshotObjectLog = snapshotObjectLogDevice is null ? null : GetRecoverySnapshotObjectLog(snapshotObjectLogDevice);
             var destinationObjectLog = snapshotObjectLogDevice is not null || IsUpgradingObjectLog ? RecoveryFlushObjectLog : null;
+            var recoveryStatus = context as RecoveryStatus;
             for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(flushPage);
@@ -2774,7 +2780,19 @@ namespace Tsavorite.core
 
                 // For the snapshot region (records at/above formerFlushedUntilAddress) we copy object bytes from the snapshot object log to the main
                 // object log; otherwise (hybrid-log region) we reuse the stored positions without writing object bytes.
-                WriteAsync(flushPage, callback, asyncResult);
+                recoveryStatus?.BeginIO();
+                try
+                {
+                    WriteAsync(flushPage, callback, asyncResult);
+                }
+                catch
+                {
+                    // Once a write is submitted the callback runs, and retires the flush, even if the submission then throws. Before that no callback
+                    // runs, unless the device ran it synchronously and then threw; retire the flush once either way.
+                    if (!asyncResult.snapshotDeviceWriteIssued && asyncResult.TryClaimRecoveryIORetirement())
+                        recoveryStatus?.EndIO();
+                    throw;
+                }
             }
         }
 

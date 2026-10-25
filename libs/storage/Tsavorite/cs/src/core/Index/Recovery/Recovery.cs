@@ -62,6 +62,10 @@ namespace Tsavorite.core
         /// <summary>Signals completion of an in-progress page flush.</summary>
         private readonly SemaphoreSlim flushSemaphore = new(0);
 
+        /// <summary>Page reads and flushes issued for this recovery whose completion callbacks have not yet run. A failed or cancelled recovery can
+        /// leave some in flight, and their callbacks use this instance; reads also use its devices and write into log pages.</summary>
+        private int outstandingIO;
+
         public RecoveryStatus(int bufferSize)
         {
             readStatus = new ReadStatus[bufferSize];
@@ -138,11 +142,29 @@ namespace Tsavorite.core
 
         internal void Dispose()
         {
-            recoveryDevice.Dispose();
+            // A failed or cancelled recovery can leave reads or flushes in flight: their callbacks signal the semaphores below, and reads use the devices.
+            WaitForOutstandingIO();
+            recoveryDevice?.Dispose();
             objectLogRecoveryDevice?.Dispose();
             IsolatedKeyReadBuffers?.Dispose();
             readSemaphore.Dispose();
             flushSemaphore.Dispose();
+        }
+
+        /// <summary>Count a page read or flush about to be submitted.</summary>
+        internal void BeginIO() => Interlocked.Increment(ref outstandingIO);
+
+        /// <summary>Retire a page read or flush: from its completion callback, as the last thing it does with this instance, or from its issuer when
+        /// the submit threw and no callback will run. Each request is retired once; see <see cref="PageAsyncReadResult{TContext}.TryClaimRecoveryIORetirement"/>.</summary>
+        internal void EndIO() => Interlocked.Decrement(ref outstandingIO);
+
+        /// <summary>Wait until every page read and flush issued for this recovery has called back. Cancellation abandons waits, not the IO they
+        /// wait for, so a recovery that fails or is cancelled must call this before its caller can free the pages or devices that IO uses.</summary>
+        internal void WaitForOutstandingIO()
+        {
+            var spinner = new SpinWait();
+            while (Volatile.Read(ref outstandingIO) > 0)
+                spinner.SpinOnce();
         }
     }
 
@@ -920,69 +942,78 @@ namespace Tsavorite.core
             recoveryStatus.headAddress = headAddress;
             recoveryStatus.checkpointVersion = options.checkpointVersion;
 
-            // Free any pages still allocated below startPage before reading. The store is freshly constructed for recovery with the allocator's minimum
-            // pages allocated at page 0 (Head=Begin=Tail=0); when the checkpoint's BeginAddress is above page 0 those low pages lie below the first page we
-            // read (startPage), and the upward-only read/eviction never reaches them. Freeing them up front keeps them out of AllocatedPageCount for the
-            // whole budget-checked recovery, instead of carrying the dead pages through every budget check and reclaiming them at the end.
-            for (var deadPage = 0; deadPage < startPage && deadPage < hlogBase.BufferSize; deadPage++)
+            try
             {
-                if (hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(deadPage)))
-                    hlogBase.EvictPageForRecovery(deadPage);
-            }
-
-            // A downlevel object log must be up-converted into the upgrade device before any page can be evicted, because an evicted page keeps
-            // the object-log positions stamped on it. Recovery has already failed if a downlevel checkpoint has an object log but no upgrade
-            // device, so an object log here means the upgrade device is present. This is started even when this phase has no pages to read,
-            // because a snapshot recovery whose hybrid-log region is empty still has a snapshot region to convert.
-            var upgradeObjectLog = HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion) && hlogBase.HasObjectLogDevice;
-            if (upgradeObjectLog)
-                hlogBase.BeginObjectLogUpgrade();
-
-            if (untilAddress <= scanFromAddress)
-            {
-                CompleteObjectLogUpgradeIfDone(recoveryStatus, untilAddress, upgradeObjectLog, checkpointType);
-                return recoveryStatus;
-            }
-
-            for (int page = startPage; page < endPage; page += numPagesToReadPerIteration)
-            {
-                var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
-                for (var p = page; p < end; p++)
+                // Free any pages still allocated below startPage before reading. The store is freshly constructed for recovery with the allocator's minimum
+                // pages allocated at page 0 (Head=Begin=Tail=0); when the checkpoint's BeginAddress is above page 0 those low pages lie below the first page we
+                // read (startPage), and the upward-only read/eviction never reaches them. Freeing them up front keeps them out of AllocatedPageCount for the
+                // whole budget-checked recovery, instead of carrying the dead pages through every budget check and reclaiming them at the end.
+                for (var deadPage = 0; deadPage < startPage && deadPage < hlogBase.BufferSize; deadPage++)
                 {
-                    // Ensure page has been read into memory
-                    var pageIndex = hlogBase.GetPageIndexForPage(p);
-                    await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
-
-                    // We make an extra pass to clear locks when reading every page back into memory
-                    ClearBitsOnPage(p, untilAddress, in options, recoveryStatus.headAddress);
-                    if (upgradeObjectLog)
-                    {
-                        // The conversion rewrites the whole page, so it subsumes the undo flush that ProcessReadPageAndFlush would issue.
-                        _ = ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
-                        UpgradeObjectLogPageForRecovery(recoveryStatus, scanFromAddress, untilAddress, p, in options);
-                        continue;
-                    }
-                    ProcessReadPageAndFlush(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, in options, recoveryStatus, p, pageIndex);
+                    if (hlogBase.IsAllocated(hlogBase.GetPageIndexForPage(deadPage)))
+                        hlogBase.EvictPageForRecovery(deadPage);
                 }
-            }
 
-            await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
+                // A downlevel object log must be up-converted into the upgrade device before any page can be evicted, because an evicted page keeps
+                // the object-log positions stamped on it. Recovery has already failed if a downlevel checkpoint has an object log but no upgrade
+                // device, so an object log here means the upgrade device is present. This is started even when this phase has no pages to read,
+                // because a snapshot recovery whose hybrid-log region is empty still has a snapshot region to convert.
+                var upgradeObjectLog = HybridLogRecoveryInfo.UsesDownlevelObjectLog(options.checkpointVersion) && hlogBase.HasObjectLogDevice;
+                if (upgradeObjectLog)
+                    hlogBase.BeginObjectLogUpgrade();
 
-            if (upgradeObjectLog)
-            {
-                CompleteObjectLogUpgradeIfDone(recoveryStatus, untilAddress, upgradeObjectLog, checkpointType);
+                if (untilAddress <= scanFromAddress)
+                {
+                    CompleteObjectLogUpgradeIfDone(recoveryStatus, untilAddress, upgradeObjectLog, checkpointType);
+                    return recoveryStatus;
+                }
+
+                for (int page = startPage; page < endPage; page += numPagesToReadPerIteration)
+                {
+                    var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
+                    for (var p = page; p < end; p++)
+                    {
+                        // Ensure page has been read into memory
+                        var pageIndex = hlogBase.GetPageIndexForPage(p);
+                        await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+
+                        // We make an extra pass to clear locks when reading every page back into memory
+                        ClearBitsOnPage(p, untilAddress, in options, recoveryStatus.headAddress);
+                        if (upgradeObjectLog)
+                        {
+                            // The conversion rewrites the whole page, so it subsumes the undo flush that ProcessReadPageAndFlush would issue.
+                            _ = ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, p, pageIndex);
+                            UpgradeObjectLogPageForRecovery(recoveryStatus, scanFromAddress, untilAddress, p, in options);
+                            continue;
+                        }
+                        ProcessReadPageAndFlush(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, in options, recoveryStatus, p, pageIndex);
+                    }
+                }
+
+                await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
+
+                if (upgradeObjectLog)
+                {
+                    CompleteObjectLogUpgradeIfDone(recoveryStatus, untilAddress, upgradeObjectLog, checkpointType);
+                    return recoveryStatus;
+                }
+
+                // Defer object loading when this is the hybrid-log phase of a snapshot recovery; RecoverHybridLogFromSnapshotFileAsync
+                // loads the objects once after the snapshot pages have also been read (without their objects), so the final headAddress
+                // (after eviction over the full recovered range) is honored. For FoldOver there is no following snapshot phase.
+                if (checkpointType != CheckpointType.Snapshot)
+                {
+                    RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, snapshotObjectLogDevice: null, snapshotBoundaryPage: int.MaxValue);
+                    TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+                }
                 return recoveryStatus;
             }
-
-            // Defer object loading when this is the hybrid-log phase of a snapshot recovery; RecoverHybridLogFromSnapshotFileAsync
-            // loads the objects once after the snapshot pages have also been read (without their objects), so the final headAddress
-            // (after eviction over the full recovered range) is honored. For FoldOver there is no following snapshot phase.
-            if (checkpointType != CheckpointType.Snapshot)
+            catch
             {
-                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, snapshotObjectLogDevice: null, snapshotBoundaryPage: int.MaxValue);
-                TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+                // Reads and flushes this phase issued may still be in flight, writing into pages the caller may free once this throws.
+                recoveryStatus.WaitForOutstandingIO();
+                throw;
             }
-            return recoveryStatus;
         }
 
         /// <summary>
@@ -1174,115 +1205,120 @@ namespace Tsavorite.core
             GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, snapshotObjectLogTail, options.checkpointVersion, guid,
                 out int startPage, out int endPage, out int snapshotEndPage, out var recoveryStatus, out int numPagesToReadPerIteration);
 
-            // Seed the head from the preceding hybrid-log phase so the snapshot-read loop (TrimLogPages) and the deferred object load
-            // evict from, and track, the correct lowest-resident address across the full recovered range.
-            recoveryStatus.headAddress = headAddress;
-            recoveryStatus.checkpointVersion = options.checkpointVersion;
-
-            // Mark this as snapshot recovery: eviction (read-time and load-time) must flush a snapshot-region page to the main log before freeing
-            // it (FlushIfNeededThenEvictPageForRecovery), since it was read from the snapshot file and is not otherwise durable. scanFromAddress is
-            // the hybrid-log/snapshot boundary; pages at or above its page are the snapshot region (read from the snapshot device without their
-            // objects), pages strictly below it are the hybrid-log region (already durable on the main log/object-log).
-            recoveryStatus.snapshotScanFromAddress = scanFromAddress;
-            recoveryStatus.snapshotUntilAddress = untilAddress;
-            var snapshotBoundaryPage = hlogBase.GetPage(scanFromAddress);
-
-            // The hybrid-log phase leaves a downlevel up-conversion open when there is a snapshot region to convert as well, so that the
-            // snapshot-region flushes keep appending to the upgrade device and re-stamping each page header.
-            var upgradeObjectLog = hlogBase.IsUpgradingObjectLog;
-
-            // Snapshot recovery overlays the snapshot image only at/above scanFromAddress, which is the recovered
-            // mainLogRecoveryEndAddress. Usually the preceding main-log recovery leaves this boundary page resident. An
-            // index checkpoint may make that replay unnecessary, however, so load the durable main prefix on demand
-            // before issuing the snapshot suffix read.
-            if (hlogBase.GetOffsetOnPage(scanFromAddress) > 0)
+            try
             {
-                var boundaryPageIndex = hlogBase.GetPageIndexForPage(snapshotBoundaryPage);
-                if (!hlogBase.IsAllocated(boundaryPageIndex))
+                // Seed the head from the preceding hybrid-log phase so the snapshot-read loop (TrimLogPages) and the deferred object load
+                // evict from, and track, the correct lowest-resident address across the full recovered range.
+                recoveryStatus.headAddress = headAddress;
+                recoveryStatus.checkpointVersion = options.checkpointVersion;
+
+                // Mark this as snapshot recovery: eviction (read-time and load-time) must flush a snapshot-region page to the main log before freeing
+                // it (FlushIfNeededThenEvictPageForRecovery), since it was read from the snapshot file and is not otherwise durable. scanFromAddress is
+                // the hybrid-log/snapshot boundary; pages at or above its page are the snapshot region (read from the snapshot device without their
+                // objects), pages strictly below it are the hybrid-log region (already durable on the main log/object-log).
+                recoveryStatus.snapshotScanFromAddress = scanFromAddress;
+                recoveryStatus.snapshotUntilAddress = untilAddress;
+                var snapshotBoundaryPage = hlogBase.GetPage(scanFromAddress);
+
+                // The hybrid-log phase leaves a downlevel up-conversion open when there is a snapshot region to convert as well, so that the
+                // snapshot-region flushes keep appending to the upgrade device and re-stamping each page header.
+                var upgradeObjectLog = hlogBase.IsUpgradingObjectLog;
+
+                // Snapshot recovery overlays the snapshot image only at/above scanFromAddress, which is the recovered
+                // mainLogRecoveryEndAddress. Usually the preceding main-log recovery leaves this boundary page resident. An
+                // index checkpoint may make that replay unnecessary, however, so load the durable main prefix on demand
+                // before issuing the snapshot suffix read.
+                if (hlogBase.GetOffsetOnPage(scanFromAddress) > 0)
                 {
-                    recoveryStatus.readStatus[boundaryPageIndex] = ReadStatus.Pending;
-                    hlogBase.AsyncReadPagesForRecovery(snapshotBoundaryPage, 1, scanFromAddress, recoveryStatus,
-                        recoveryPhase: RecoveryPhase.Pass1);
-                    await recoveryStatus.WaitReadAsync(boundaryPageIndex, cancellationToken).ConfigureAwait(false);
-                    ClearBitsOnPage(snapshotBoundaryPage, scanFromAddress, in options, recoveryStatus.headAddress);
-                }
-            }
-
-            // Notify application of checkpoint token before processing snapshot records
-            if (storeFunctions.CallOnDiskRead)
-                storeFunctions.OnRecovery(guid);
-
-            for (int page = startPage; page < endPage; page += numPagesToReadPerIteration)
-            {
-                var batchEnd = Math.Min(page + numPagesToReadPerIteration, endPage);
-                for (var pendingPage = page; pendingPage < batchEnd; pendingPage++)
-                    recoveryStatus.snapshotPageFlushedToMain[hlogBase.GetPageIndexForPage(pendingPage)] = false;
-
-                _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page,
-                    cancellationToken, mergeFromAddress: scanFromAddress).ConfigureAwait(false);
-                var end = batchEnd;
-
-                for (var p = page; p < end; p++)
-                {
-                    int pageIndex = hlogBase.GetPageIndexForPage(p);
-                    if (p < snapshotEndPage)
+                    var boundaryPageIndex = hlogBase.GetPageIndexForPage(snapshotBoundaryPage);
+                    if (!hlogBase.IsAllocated(boundaryPageIndex))
                     {
-                        // Ensure the page is read from file
-                        await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
-
-                        // We make an extra pass to clear locks when reading pages back into memory
-                        ClearBitsOnPage(p, untilAddress, in options, recoveryStatus.headAddress, snapshotFromAddress: scanFromAddress);
+                        recoveryStatus.readStatus[boundaryPageIndex] = ReadStatus.Pending;
+                        hlogBase.AsyncReadPagesForRecovery(snapshotBoundaryPage, 1, scanFromAddress, recoveryStatus,
+                            recoveryPhase: RecoveryPhase.Pass1);
+                        await recoveryStatus.WaitReadAsync(boundaryPageIndex, cancellationToken).ConfigureAwait(false);
+                        ClearBitsOnPage(snapshotBoundaryPage, scanFromAddress, in options, recoveryStatus.headAddress);
                     }
-                    else
+                }
+
+                // Notify application of checkpoint token before processing snapshot records
+                if (storeFunctions.CallOnDiskRead)
+                    storeFunctions.OnRecovery(guid);
+
+                for (int page = startPage; page < endPage; page += numPagesToReadPerIteration)
+                {
+                    var batchEnd = Math.Min(page + numPagesToReadPerIteration, endPage);
+                    for (var pendingPage = page; pendingPage < batchEnd; pendingPage++)
+                        recoveryStatus.snapshotPageFlushedToMain[hlogBase.GetPageIndexForPage(pendingPage)] = false;
+
+                    _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, numPagesToReadPerIteration, page,
+                        cancellationToken, mergeFromAddress: scanFromAddress).ConfigureAwait(false);
+                    var end = batchEnd;
+
+                    for (var p = page; p < end; p++)
                     {
-                        await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken).ConfigureAwait(false);
-                        if (!hlogBase.IsAllocated(pageIndex))
-                            hlog.AllocatePage(pageIndex);
+                        int pageIndex = hlogBase.GetPageIndexForPage(p);
+                        if (p < snapshotEndPage)
+                        {
+                            // Ensure the page is read from file
+                            await recoveryStatus.WaitReadAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+
+                            // We make an extra pass to clear locks when reading pages back into memory
+                            ClearBitsOnPage(p, untilAddress, in options, recoveryStatus.headAddress, snapshotFromAddress: scanFromAddress);
+                        }
                         else
-                            hlogBase.ClearPage(pageIndex);
+                        {
+                            await recoveryStatus.WaitFlushAsync(pageIndex, cancellationToken).ConfigureAwait(false);
+                            if (!hlogBase.IsAllocated(pageIndex))
+                                hlog.AllocatePage(pageIndex);
+                            else
+                                hlogBase.ClearPage(pageIndex);
+                        }
+                    }
+
+                    RecoverSnapshotPages(Math.Max(recoverFromAddress, scanFromAddress), untilAddress, nextVersion, in options, recoveryStatus, page, end);
+
+                    if (upgradeObjectLog)
+                    {
+                        // Convert this batch before the next batch's read can evict any of it; an evicted page would keep its snapshot
+                        // object-log positions, which resolve against the wrong file once the upgrade device becomes live.
+                        for (var p = page; p < end; p++)
+                            UpgradeSnapshotObjectLogPageForRecovery(recoveryStatus, scanFromAddress, untilAddress, p, in options);
                     }
                 }
 
-                RecoverSnapshotPages(Math.Max(recoverFromAddress, scanFromAddress), untilAddress, nextVersion, in options, recoveryStatus, page, end);
+                await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
 
                 if (upgradeObjectLog)
                 {
-                    // Convert this batch before the next batch's read can evict any of it; an evicted page would keep its snapshot
-                    // object-log positions, which resolve against the wrong file once the upgrade device becomes live.
-                    for (var p = page; p < end; p++)
-                        UpgradeSnapshotObjectLogPageForRecovery(recoveryStatus, scanFromAddress, untilAddress, p, in options);
+                    // Both regions are converted, so the conversion's destination becomes the live object log. The conversion pass has already
+                    // loaded each page's objects from the current-format bytes it wrote, so the deferred object load has nothing left to do.
+                    hlogBase.CompleteObjectLogUpgrade();
+                    TrimResidentPagesToBudget(recoveryStatus, untilAddress);
                 }
+                else
+                {
+                    // Deferred object load: a single top-down pass over the full recovered range [headAddress, untilAddress), evicting bottom-up to honor the
+                    // memory budget and flushing any evicted snapshot page to the main log first. Records on snapshot-region pages (snapshotBoundaryPage and above)
+                    // still carry their snapshot object-log positions, so their objects are read from the snapshot object-log device; hybrid-log-region pages (below
+                    // the boundary) reference the main object-log (null device). The device is selected per page inside the pass. This leaves a clean, unbroken set
+                    // of resident pages down to headAddress with their objects loaded.
+                    RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, recoveryStatus.objectLogRecoveryDevice, snapshotBoundaryPage);
+
+                    // Bring AllocatedPageCount within the hard MaxAllocatedPageCount cap for object-free pages (see TrimResidentPagesToBudget): the per-batch
+                    // read-time trim targets the delta-padded highTargetSize and does not run after the final batch, so an inline store can settle one page over.
+                    TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+                }
+
+                return recoveryStatus.headAddress;
             }
-
-            await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
-
-            if (upgradeObjectLog)
+            finally
             {
-                // Both regions are converted, so the conversion's destination becomes the live object log. The conversion pass has already
-                // loaded each page's objects from the current-format bytes it wrote, so the deferred object load has nothing left to do.
-                hlogBase.CompleteObjectLogUpgrade();
-                TrimResidentPagesToBudget(recoveryStatus, untilAddress);
+                // On success and on failure alike. The snapshot object log reads its device, so close it first; Dispose then waits for any read
+                // or flush that a failure or cancellation left in flight before it closes the devices.
+                hlogBase.CloseRecoverySnapshotObjectLog();
+                recoveryStatus.Dispose();
             }
-            else
-            {
-                // Deferred object load: a single top-down pass over the full recovered range [headAddress, untilAddress), evicting bottom-up to honor the
-                // memory budget and flushing any evicted snapshot page to the main log first. Records on snapshot-region pages (snapshotBoundaryPage and above)
-                // still carry their snapshot object-log positions, so their objects are read from the snapshot object-log device; hybrid-log-region pages (below
-                // the boundary) reference the main object-log (null device). The device is selected per page inside the pass. This leaves a clean, unbroken set
-                // of resident pages down to headAddress with their objects loaded.
-                RecoveryLoadObjectsPass2(recoveryStatus, recoveryStatus.headAddress, untilAddress, recoveryStatus.objectLogRecoveryDevice, snapshotBoundaryPage);
-
-                // Bring AllocatedPageCount within the hard MaxAllocatedPageCount cap for object-free pages (see TrimResidentPagesToBudget): the per-batch
-                // read-time trim targets the delta-padded highTargetSize and does not run after the final batch, so an inline store can settle one page over.
-                TrimResidentPagesToBudget(recoveryStatus, untilAddress);
-            }
-
-            var finalHeadAddress = recoveryStatus.headAddress;
-
-            // The snapshot object log reads its device, so close it before the device is disposed.
-            hlogBase.CloseRecoverySnapshotObjectLog();
-            recoveryStatus.Dispose();
-            return finalHeadAddress;
         }
 
         /// <summary>
@@ -1552,24 +1588,30 @@ namespace Tsavorite.core
             if (snapshotEndAddress > hlogBase.GetFirstValidLogicalAddressOnPage(snapshotEndPage) && snapshotEndAddress > snapshotStartAddress)
                 snapshotEndPage++;
 
-            // By default first page has one extra record
-            var recoveryDevice = checkpointManager.GetSnapshotLogDevice(guid);
-            var objectLogRecoveryDevice = hlogBase._wrapper.HasObjectLog ? checkpointManager.GetSnapshotObjectLogDevice(guid) : null;
-
-            recoveryDevice.Initialize(hlogBase.GetMainLogSegmentSize());
-            objectLogRecoveryDevice?.Initialize(hlogBase.GetObjectLogSegmentSize());
+            // The status owns the snapshot devices from here on, so a failure below disposes them with it.
             var isDownlevel = HybridLogRecoveryInfo.UsesDownlevelObjectLog(checkpointVersion);
             recoveryStatus = new RecoveryStatus(hlogBase.BufferSize)
             {
-                recoveryDevice = recoveryDevice,
-                objectLogRecoveryDevice = objectLogRecoveryDevice,
+                recoveryDevice = checkpointManager.GetSnapshotLogDevice(guid),
                 objectLogRecoveryReadEnd = isDownlevel ? snapshotObjectLogTail : 0,
                 recoveryDevicePageOffset = snapshotStartPage
             };
+            try
+            {
+                var objectLogRecoveryDevice = hlogBase._wrapper.HasObjectLog ? checkpointManager.GetSnapshotObjectLogDevice(guid) : null;
+                recoveryStatus.objectLogRecoveryDevice = objectLogRecoveryDevice;
+                recoveryStatus.recoveryDevice.Initialize(hlogBase.GetMainLogSegmentSize());
+                objectLogRecoveryDevice?.Initialize(hlogBase.GetObjectLogSegmentSize());
 
-            // A current-format snapshot object log is read through an object log positioned at its tail, selected by passing its device.
-            if (!isDownlevel && objectLogRecoveryDevice is not null)
-                hlogBase.OpenRecoverySnapshotObjectLog(objectLogRecoveryDevice, snapshotObjectLogTail);
+                // A current-format snapshot object log is read through an object log positioned at its tail, selected by passing its device.
+                if (!isDownlevel && objectLogRecoveryDevice is not null)
+                    hlogBase.OpenRecoverySnapshotObjectLog(objectLogRecoveryDevice, snapshotObjectLogTail);
+            }
+            catch
+            {
+                recoveryStatus.Dispose();
+                throw;
+            }
 
             // Read as many pages as buffer allows, leaving room for at least 1 page for eviction.
             numPagesToReadPerIteration = Math.Min(hlogBase.BufferSize - 1, endPage - startPage);
@@ -1773,6 +1815,10 @@ namespace Tsavorite.core
                     result.context.SignalFlushedError(pageIndex);
                 else
                     result.context.SignalFlushed(pageIndex);
+
+                // Last: once retired, a failed recovery may dispose the RecoveryStatus.
+                if (result.TryClaimRecoveryIORetirement())
+                    result.context.EndIO();
             }
         }
     }
@@ -1893,6 +1939,10 @@ namespace Tsavorite.core
                 result.context.SignalRead(pageIndex);
 
             result.DisposeHandle();
+
+            // Last: once retired, a failed recovery may dispose the RecoveryStatus and the device this read used.
+            if (result.TryClaimRecoveryIORetirement())
+                result.context.EndIO();
         }
     }
 }

@@ -63,6 +63,13 @@ namespace Tsavorite.core
         /// <summary>The recovery phase for this read. Non-<see cref="RecoveryPhase.None"/> uses the non-transient <see cref="ObjectIdMap"/>.</summary>
         internal RecoveryPhase recoveryPhase;
 
+        /// <summary>Guards retiring this read exactly once from its recovery's count of outstanding IO (<see cref="RecoveryStatus.EndIO"/>). The
+        /// completion callback retires it, or the issuer does when the submit throws; a device may run the callback synchronously and then throw.</summary>
+        int recoveryIORetired;
+
+        /// <summary>Claim the right to retire this read from its recovery's outstanding IO; true for exactly one caller.</summary>
+        internal bool TryClaimRecoveryIORetirement() => Interlocked.Exchange(ref recoveryIORetired, 1) == 0;
+
         /// <inheritdoc/>
         public override string ToString()
             => $"page {page}, recovPhase {recoveryPhase}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}),"
@@ -154,12 +161,19 @@ namespace Tsavorite.core
         /// <summary>Optional second sector buffer for a split partial-page write.</summary>
         internal SectorAlignedMemory freeBuffer2;
 
-        /// <summary>Set once the main snapshot device write for this page has been submitted (so its completion
-        /// callback is guaranteed to fire and owns releasing this page's native snapshot-IO unit and buffers).
-        /// Read by the issuing thread to decide, on a throw during issuance, whether it must release them itself
-        /// (write never submitted) or defer to the callback (write submitted). Set and read only on the single
-        /// FlushRunner issuing thread, so no memory barrier is needed. Used only by the native log-page backend.</summary>
+        /// <summary>Set once this page's write has been submitted, so its completion callback is guaranteed to run: by <see cref="ObjectAllocator{TStoreFunctions}"/>
+        /// for every flush, and by the other allocators for Snapshot writes. Read by the issuing thread on a throw during issuance, to decide whether it
+        /// must release this page's native snapshot-IO unit and buffers (Snapshot), or retire it from recovery's outstanding IO (recovery), itself, or
+        /// leave that to the callback. Set and read only on the issuing thread, so no memory barrier is needed.</summary>
         internal bool snapshotDeviceWriteIssued;
+
+        /// <summary>Guards retiring this flush exactly once from its recovery's count of outstanding IO (<see cref="RecoveryStatus.EndIO"/>). The
+        /// completion callback retires it, or the issuer does when the submit throws before a write is submitted; a device may run the callback
+        /// synchronously and then throw.</summary>
+        int recoveryIORetired;
+
+        /// <summary>Claim the right to retire this flush from its recovery's outstanding IO; true for exactly one caller.</summary>
+        internal bool TryClaimRecoveryIORetirement() => Interlocked.Exchange(ref recoveryIORetired, 1) == 0;
 
         /// <summary>Guards exactly-once release of this page's native snapshot-IO unit (the allocator's DirectVmBlockOwner count)
         /// across the completion callback and the issuer's exception path — the only overlap being the exotic case
