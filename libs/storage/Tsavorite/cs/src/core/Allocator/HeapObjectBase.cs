@@ -181,12 +181,12 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Finish a Snapshot checkpoint's capture of this object as a CopyUpdate source: give the new record its clone, then mark this object
-        /// superseded with no cached bytes.
+        /// superseded with no serialized bytes.
         /// </summary>
         /// <remarks>
         /// The capture wrote this object's (v) value to the checkpoint's object log, so a later flush of the superseded record writes the null
         /// image rather than the live object, whose collections the clone shares and the (v+1) record goes on to mutate. The source keeps its
-        /// value object, as it does for a cached image, so a flush that walks the record still finds its components.
+        /// value object, so a flush that walks the record still finds its components.
         /// </remarks>
         /// <param name="dstLogRecord">The CopyUpdate's new record.</param>
         internal void CompleteCapture(ref LogRecord dstLogRecord)

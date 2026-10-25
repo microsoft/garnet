@@ -177,8 +177,8 @@ namespace Tsavorite.core
         /// branch and the four <c>InternalRMW</c> expiration paths (<see cref="RMWAction.ExpireAndStop"/> and
         /// <see cref="RMWAction.ExpireAndResume"/>, both before and after the new record is allocated), whose net effect
         /// is a Delete. Two of those run before any CAS, so there need not be a new record at all. An ordinary
-        /// CopyUpdate does *not* come here — it caches the source's bytes via <c>CacheSerializedObjectData</c> and
-        /// defers clearing so <c>PostCopyUpdater</c> can still read the source.
+        /// CopyUpdate does *not* come here: <c>InternalRMW</c> preserves its source's <c>(v)</c> value or releases the source,
+        /// after <c>PostCopyUpdater</c> has read it.
         /// <para>
         /// Disposal clears the record's heap fields, which returns the value's <see cref="ObjectIdMap"/> slot to that page's
         /// free list for reuse by another record. A frozen record must keep its value until the flush that is reading it has

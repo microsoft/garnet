@@ -611,7 +611,7 @@ namespace Tsavorite.core
                             var needsSourceImage = isMemoryLogRecord
                                 && CheckpointNeedsSourceImage(stackCtx.recSrc.LogicalAddress, srcLogRecord.Info);
 
-                            // A Snapshot checkpoint captures the (v) value it needs into its object log rather than caching it on the source.
+                            // A Snapshot checkpoint captures the (v) value it needs into its object log.
                             // A read-cache source is a copy of a durable main-log record, so no checkpoint needs its image.
                             var captured = false;
                             if (needsSourceImage && newLogRecord.Info.IsInNewVersion && srcLogRecord.ValueObject is HeapObjectBase sourceObject

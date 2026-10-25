@@ -559,10 +559,10 @@ return hlog.IsFrozenForFlush(stackCtx.recSrc.LogicalAddress);
 ```
 
 Note that this is a *different* hazard from the one that preserving the superseded
-object's `(v)` content solves: `CacheSerializedObjectData` caches its bytes, and a
-Snapshot checkpoint captures them into its object log instead. Either way, that
-preserves the `(v)` **content** when a `(v+1)` record shares the object through a
-shallow clone; it says nothing about the **slot**. Both are needed.
+object's `(v)` content solves (see
+[Persisting superseded `(v)` values during a checkpoint](objectlog-serialization.md#13-persisting-superseded-v-values-during-a-checkpoint)).
+That preserves the `(v)` **content** when a `(v+1)` record shares the object
+through a shallow clone; it says nothing about the **slot**. Both are needed.
 
 ### The same shape, without a checkpoint
 

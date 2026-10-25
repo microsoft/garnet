@@ -101,8 +101,8 @@ namespace Tsavorite.core
         /// <summary>Stop a Snapshot checkpoint's captures, and index those that recovery copies into the main log.</summary>
         /// <remarks>Call after sampling the main log's recovery end; no later CopyUpdate needs a capture. A source below that end was written
         /// by its ReadOnly flush before the sample, so before the CopyUpdate; a source at or above it was written by the Checkpoint Flush,
-        /// which is complete. The captures stay published until the checkpoint ends, so those CopyUpdates release their sources rather than
-        /// caching their images.</remarks>
+        /// which is complete. The captures stay published until the checkpoint ends, and a CopyUpdate that finds admission closed releases
+        /// its source.</remarks>
         protected void ObjectLog_OnSnapshotCapturesEnd()
         {
             var captures = store._hybridLogCheckpoint.snapshotCaptures;

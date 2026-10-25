@@ -35,8 +35,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// The captures of one Snapshot checkpoint: the (v) values that its (v+1) CopyUpdates wrote to its object log, in place of caching
-    /// serialized bytes on the superseded object.
+    /// The captures of one Snapshot checkpoint: the (v) values that its (v+1) CopyUpdates wrote to its object log.
     /// </summary>
     /// <remarks>
     /// <para>A source is captured only while its main-log image is not durable. The Checkpoint Flush stamps a capture's position into the

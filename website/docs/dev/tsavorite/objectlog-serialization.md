@@ -633,46 +633,12 @@ page. ReadOnly does not consume `ObjectLogPosition`; after Snapshot completes th
 `ObjectIdMap`, serializes it to the main object log, and replaces the Snapshot position. No page-image copy or metadata
 journal is required.
 
-ReadOnly's image is not discardable. `mainLogRecoveryEndAddress` is the main log's `FlushedUntilAddress` at
-`PERSISTENCE_CALLBACK`, capped at `recoveredTailAddress` because ReadOnly may by then have flushed later versions past the
-checkpoint's tail. Recovery reads the main log below it, so a page that ReadOnly writes after Snapshot has
-completed it, but before that sample, is recovered from ReadOnly's image. So is a page below
-`snapshotFileLogicalStartAddress` that ReadOnly writes during the checkpoint, which Snapshot never writes.
-
-A `(v)` record superseded during the checkpoint therefore needs its `(v)` content for whichever flush recovery reads, so a
-`(v+1)` CopyUpdate captures it into the checkpoint's object log, unless the source's main-log image is already durable
-(below `FlushedUntilAddress`; a `NullDevice` main log is never durable). The capture is written before `PostCopyUpdater`
-can change the objects the new record shares, and leaves the source object `SERIALIZED` with no cached bytes.
-
-- Snapshot stamps a captured record with its capture's position rather than serializing it. A capture that completes while
-  Snapshot serializes the record replaces what Snapshot wrote.
-- ReadOnly writes the null image for a captured value, as it does outside a checkpoint.
-- `PERSISTENCE_CALLBACK` closes admission after sampling `mainLogRecoveryEndAddress` and waits for admitted captures. No
-  later CopyUpdate needs one: a source below that address was serialized by ReadOnly before the sample, and one above it by
-  Snapshot, which has completed. The captures of records below it are indexed in a record of the checkpoint's object log,
-  located by `captureIndexPositionWord`, `captureIndexSizeHint` and `captureIndexCount` in the metadata. A failed capture
-  fails the checkpoint.
-- Recovery, before it reads the main log, copies each indexed capture into the main object log at its recovered tail and
-  restamps the record's position and hints in place on the main-log device. The copies are durable before any record is
-  restamped, and recovering again repeats them.
-
-A durable source is not captured, because ReadOnly serialized its `(v)` value before the CopyUpdate could change it. It is
-released, as outside a checkpoint, because no flush walks it again: Snapshot starts at `snapshotFileLogicalStartAddress`,
-which is no lower than the `FlushedUntilAddress` of any CopyUpdate before it was sampled, and above it ReadOnly wrote the
-source only after Snapshot completed its page. A captured source keeps its value object, as a source with cached bytes does:
-releasing it rewrites its value field as inline, and Snapshot, which stamps the capture, or ReadOnly, whose image recovery
-repoints, may still walk it. FoldOver and streaming snapshot checkpoints still cache the `(v)` bytes with
-`CacheSerializedObjectData`.
-
-Outside a checkpoint the superseded content is discardable. A CopyUpdate's new record is then in the source's version, so
-it supersedes the source in every later checkpoint, and no completed checkpoint recovers a source at or above
-`FlushedUntilAddress` from the main log. ReadOnly therefore writes either the pre-update image, if it serialized the value
-before the CopyUpdate, or a null value. Only the record image itself must stay intact while the source is frozen for flush
-(see [The same shape, without a checkpoint](state-machine.md#the-same-shape-without-a-checkpoint)).
-
 Snapshot leaves fuzzy v+1 records unchanged. Recovery uses the exact persisted `fuzzyRegionStartAddress` as the fuzzy lower
 boundary and invalidates such records before hashing overflow keys or reading payloads. RDH must still describe the record's
 stable allocation so recovery can advance to the next record.
+
+A record that a `(v+1)` CopyUpdate supersedes during the checkpoint keeps its `(v)` value for whichever of these images
+recovery reads; section 13 describes how.
 
 ---
 
@@ -1155,12 +1121,9 @@ The object log has been a file that the allocator addressed by segment and offse
 deleting segments. `ObjectLog` replaces that with a log-structured store composed over `TsavoriteLogAllocatorImpl`,
 which already provides concurrent allocation, a page ring, flushing, eviction, and truncation.
 
-A further motivation is retiring `CacheSerializedObjectData`, which preserves a `(v)` record's image during a Snapshot
-checkpoint by serializing it into a managed `byte[]` on the RMW thread - materializing the whole object in memory
-exactly where that hurts most. Writing those bytes to the object log instead would need three things the old object log
-could not do: concurrent allocation, stamping a record's position outside a flush, and a durability deadline later than
-"now". All three fall out of the allocator. A Snapshot checkpoint now writes them there (section 5.7); FoldOver and
-streaming snapshot checkpoints still cache them.
+`ObjectLog` also lets a `(v+1)` CopyUpdate write the `(v)` value it supersedes during a Snapshot checkpoint into the
+checkpoint's object log (section 13). That needs concurrent allocation, stamping a record's position outside a flush, and a
+durability deadline later than "now", all of which the allocator provides.
 
 `ObjectLog` **composes** the allocator rather than wrapping `TsavoriteLog` or sharing a base class with it. The overlap
 with `TsavoriteLog` proper is about sixty lines of entry framing; the divergence is its entire commit, recovery,
@@ -1292,7 +1255,7 @@ Addressing must not rely on that order, for the reason given in section 12.5, so
 needs no format change. Truncation does rely on it: main-log truncation reads only the boundary page's
 `PageHeader.objectLogLowestPositionWord` (its floor) and truncates the main object log below it, and that floor bounds
 the object-log references of that page and every later page only while the main object log is written in page order. A
-writer that breaks that order must keep that floor a lower bound. Recovery's copies of a Snapshot's captures (section 5.7)
+writer that breaks that order must keep that floor a lower bound. Recovery's copies of a Snapshot's captures (section 13)
 do: they repoint records on pages below the main-log recovery end at bytes appended after every byte of that range.
 
 ### 12.9 The directory
@@ -1431,7 +1394,7 @@ Snapshot stamp would reach the main log. A page buffer cleared for reuse gets a 
 reason: a zeroed floor reads as a floor of 0.
 
 **A checkpoint.** PREPARE records the main object log's begin address. A Snapshot checkpoint creates its own `ObjectLog`
-over the checkpoint's object-log device at PREPARE, so its `(v+1)` CopyUpdates can capture into it (section 5.7), and its
+over the checkpoint's object-log device at PREPARE, so its `(v+1)` CopyUpdates can capture into it (section 13), and its
 Checkpoint Flush writes there. At PERSISTENCE_CALLBACK, the main log's recovery end is sampled first, then captures stop
 and are indexed, and then each object log's durable end, its `FlushedUntilAddress`. A ReadOnly flush that
 completed in between would otherwise put a page in the recovery range whose object bytes lie past the recorded end, where
@@ -1442,7 +1405,7 @@ point and is flushed, so its durable end is its tail, and it is disposed before 
 **Recovery** creates a fresh main `ObjectLog` and restores it to the checkpoint's begin address and recorded end. When no
 recovered record references the main object log - a Snapshot whose main-log range is empty - it restores with the begin
 address at that end, so nothing is read from a device that may hold none of that log. It then copies a Snapshot's
-indexed captures into it and repoints their records (section 5.7). Snapshot-region pages that
+indexed captures into it and repoints their records (section 13). Snapshot-region pages that
 recovery flushes to the main log have their records' components copied from the checkpoint's object log into the main
 one, and their floors restamped there. A version 7 checkpoint's objects are instead deserialized from the old format and
 re-serialized into the current one.
@@ -1451,3 +1414,147 @@ re-serialized into the current one.
 holding its begin address to its recorded end, and the checkpoint's object log from its start to its recorded end. A log
 that holds nothing gets an empty range, since its file may not exist. That includes a main object log first created
 during the checkpoint, which records a begin address of zero.
+
+---
+
+## 13. Persisting superseded `(v)` values during a checkpoint
+
+A checkpoint recovers version `v`. A `(v+1)` CopyUpdate that supersedes a `(v)` record with an object value gives the
+new record a shallow clone of the object, so `PostCopyUpdater` changes collections the source still references. A flush
+that serialized the source afterwards would write `(v+1)` content into a `(v)` record. This section describes how a
+Snapshot checkpoint keeps the `(v)` value for whichever image recovery reads. Only object values are at risk, because a
+CopyUpdate copies inline and overflow values rather than sharing them. FoldOver and streaming snapshot checkpoints keep
+the `(v)` value by caching its serialized bytes on the superseded object (`CacheSerializedObjectData`).
+
+### 13.1 Outside a checkpoint
+
+Outside a checkpoint the superseded value is discardable. A CopyUpdate's new record is then in the source's version, so
+it supersedes the source in every later checkpoint, and no completed checkpoint recovers a source at or above
+`FlushedUntilAddress` from the main log. ReadOnly therefore writes either the pre-update image, if it serialized the
+value before the CopyUpdate, or a null value: the superseded object is `SERIALIZED` with no bytes, so `Serialize` writes
+only its type, marked null. Only the record image itself must stay intact while the source is frozen for flush (see [The
+same shape, without a checkpoint](state-machine.md#the-same-shape-without-a-checkpoint)).
+
+### 13.2 Which image recovery reads
+
+Snapshot recovery reads the main log below `mainLogRecoveryEndAddress` and the snapshot file at or above it. That
+address is the main log's `FlushedUntilAddress` at `PERSISTENCE_CALLBACK`, capped at `recoveredTailAddress` because
+ReadOnly may by then have flushed later versions past the checkpoint's tail. On a `NullDevice` main log it is
+`snapshotFileLogicalStartAddress`.
+
+So ReadOnly's image is not discardable:
+- A page that ReadOnly writes after Snapshot has completed it, but before the sample, is recovered from ReadOnly's
+  image. This range, which both flushes write, is the overlap.
+- So is a page below `snapshotFileLogicalStartAddress` that ReadOnly writes during the checkpoint. Snapshot never writes
+  that page.
+
+A superseded record therefore needs its `(v)` value in ReadOnly's image if it lands below `mainLogRecoveryEndAddress`,
+and in Snapshot's image if it lands at or above it. Which one is not known until `PERSISTENCE_CALLBACK`.
+
+### 13.3 Capturing a superseded value
+
+A `(v+1)` CopyUpdate of a `(v)` main-log source captures the source's value into the checkpoint's object log, unless the
+source's main-log image is already durable. A durable image is below `FlushedUntilAddress`, so ReadOnly serialized the
+`(v)` value before the CopyUpdate could change it. A `NullDevice` main log has no durable image, so its sources are
+always captured. The checkpoint creates its object log and publishes its captures at `PREPARE`, before the first `(v+1)`
+operation.
+
+- **The capture.** It writes the source's overflow key, if any, and its object value as one record, and registers the
+  record's position under the source's address. The source object then gives the new record its clone and is marked
+  `SERIALIZED` with no bytes, so a later flush of the source writes the null image. All of this happens before
+  `PostCopyUpdater`.
+- **A failed capture** does not fail the CopyUpdate. It fails the checkpoint, at `PERSISTENCE_CALLBACK`.
+- **Read-cache and disk sources are not captured.** A read-cache source, or a source a pending operation read from disk,
+  is a copy of a durable main-log value.
+- **A durable source is released**, as outside a checkpoint, because no flush walks it again. Snapshot starts at
+  `snapshotFileLogicalStartAddress`, which is no lower than the `FlushedUntilAddress` of any CopyUpdate before it was
+  sampled. Above it, ReadOnly wrote the source only after Snapshot completed its page.
+- **A captured source keeps its value object until eviction.** Releasing it would rewrite its value field as inline, and
+  Snapshot, which stamps the capture, or ReadOnly, whose image recovery repoints, may still walk it.
+
+### 13.4 Flushing a captured record
+
+- **Snapshot** stamps a captured record with its capture's position instead of serializing it. It checks for a capture
+  again after serializing a record, and a capture that completed in between replaces what it wrote. That write may hold
+  the null image, or, from a serializer that bypasses the serialization phase, the live object.
+- **ReadOnly** writes the null image for a captured value, as it does outside a checkpoint. If the record lands below
+  `mainLogRecoveryEndAddress`, recovery repoints it (section 13.6).
+
+### 13.5 Ending captures, and the capture index
+
+At `PERSISTENCE_CALLBACK`, after sampling `mainLogRecoveryEndAddress`, the checkpoint closes admission and waits for the
+captures already admitted. No later CopyUpdate needs a capture:
+- a source below that address was serialized by ReadOnly before the sample;
+- one at or above it was serialized by Snapshot, which has completed.
+
+The captures stay published until the checkpoint completes or aborts, and a CopyUpdate that finds admission closed
+releases its source.
+
+The checkpoint then indexes the captures of records below `mainLogRecoveryEndAddress`:
+- **Contents:** their addresses, positions and hints, in address order, written as one record in the checkpoint's object
+  log.
+- **Location:** `captureIndexPositionWord`, `captureIndexSizeHint` and `captureIndexCount` in the metadata.
+- **What's left out:** captures of records at or above that address, which Snapshot stamped in its image. A store
+  without a persistent main object log writes no index.
+
+Finally it flushes the checkpoint's object log and records its durable end.
+
+### 13.6 Recovering captures
+
+Before it reads the main log, recovery repoints every indexed record:
+1. It copies each indexed capture from the checkpoint's object log into the main object log, starting at the main object
+   log's recovered tail, without deserializing it.
+2. It flushes the copies.
+3. It restamps each record's position and hints in place on the main-log device, after checking that the record is
+   valid, has an object value, and matches the capture's key kind. It reads and writes only the sector-aligned extent
+   that holds the record, bounded by the record's page and by `mainLogRecoveryEndAddress`.
+
+- **Crash safety.** The copies are durable before any record is restamped, so a crash leaves each record pointing at a
+  durable copy or at its null image. Recovering again restores the main object log to the same tail and repeats all
+  three steps.
+- **Truncation floors stay lower bounds.** The copies follow every object-log byte of the main-log range, so each
+  restamped record stays above its page's floor (section 12.8).
+- **Records at or above `mainLogRecoveryEndAddress`** are read from the snapshot file with Snapshot's stamp, and
+  recovery's snapshot-region flush copies them like any other record there (section 7.4).
+
+### 13.7 Why captures go to the checkpoint's object log
+
+Capturing into the main object log would look simpler: ReadOnly would stamp the capture's position, and recovery, which
+reads the main log below `mainLogRecoveryEndAddress`, would need no index and no copy. A Snapshot cannot do that, for
+two reasons.
+
+- **A `NullDevice` main log has no main object log.** Recovery reads every captured record from the snapshot file, so
+  the capture must be in the checkpoint's object log.
+- **Even with a persistent main log, the CopyUpdate cannot know which image recovery will read.**
+  - **When the image is decided.** `mainLogRecoveryEndAddress` is sampled at `PERSISTENCE_CALLBACK`, after the
+    CopyUpdate (section 13.2). A record that Snapshot writes after the CopyUpdate can land on either side: below it, if
+    ReadOnly also writes the page before the sample, or at or above it, if not.
+  - **That's the usual case.** A hot record's first `(v+1)` update typically comes before `WAIT_FLUSH`, when Snapshot
+    starts.
+  - **So Snapshot needs the `(v)` value either way,** and it cannot serialize the live object, which the new record has
+    changed. With the capture in the main object log, Snapshot could only:
+    - copy the capture into the checkpoint's object log. That's a second write of most captures on every checkpoint,
+      wasted whenever the record lands below `mainLogRecoveryEndAddress`; or
+    - stamp its image with a main-object-log position. That needs a flag in the position word that recovery cannot
+      follow: recovery reads the snapshot range from the checkpoint's object-log device in single-device ranges (section
+      7.2), and its snapshot-region flush copies every record's components from the checkpoint's object log (section
+      7.4).
+
+In the checkpoint's object log, a capture is written once, and Snapshot stamps it in place for a record it writes. Only
+the captures of records that land below `mainLogRecoveryEndAddress` need more. They are known exactly at
+`PERSISTENCE_CALLBACK`, so they are indexed then, and copied into the main object log only when that checkpoint is
+recovered.
+
+The second reason does not arise for FoldOver, which writes no snapshot image and recovers every record from the main
+log.
+
+### 13.8 Why recovery copies captures
+
+Recovery copies an indexed capture rather than leaving the main-log record pointing into the checkpoint's object log,
+because the main log outlives the checkpoint. A checkpoint's files are deleted once a newer checkpoint completes, but a
+superseded record is still read after that:
+- a pending read for another key reads the overflow key of each record it passes on the hash chain;
+- iterators read every record's components;
+- later recoveries hash overflow keys and load the objects of every record on resident pages.
+
+The position word's one spare bit also could not say which checkpoint's object log a record points into.
