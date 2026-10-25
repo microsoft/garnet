@@ -445,7 +445,7 @@ namespace Tsavorite.core
             new ReadOnlySpan<byte>(memory.aligned_pointer + validOffset, numBytes).CopyTo(destination);
         }
 
-        private sealed class ReadContext(uint requestedBytes)
+        internal sealed class ReadContext(uint requestedBytes)
         {
             internal readonly ManualResetEventSlim Completed = new(initialState: false);
             internal readonly uint RequestedBytes = requestedBytes;
@@ -476,6 +476,104 @@ namespace Tsavorite.core
             // guarantees this by never letting an entry span a page.
             if (GetPage(logicalAddress) != GetPage(logicalAddress + numBytes - 1))
                 throw new TsavoriteException($"Object log read of {numBytes} bytes at address {logicalAddress} spans a page boundary");
+        }
+
+        /// <summary>
+        /// Start reading [<paramref name="logicalAddress"/>, <paramref name="logicalAddress"/> + <paramref name="numBytes"/>) into a buffer
+        /// the returned read owns, for a reader that knows ahead of time which bytes it will want.
+        /// </summary>
+        /// <remarks>
+        /// A range below HeadAddress is read from the device and stops at HeadAddress, since the bytes above it may not be on the device
+        /// yet; a range at or above HeadAddress is copied from memory now. So the read may cover less than was asked for: see
+        /// <see cref="RangeRead.EndAddress"/>. The caller must dispose the read, which waits for its IO.
+        /// </remarks>
+        /// <returns>The read, or null if the range is not within [BeginAddress, TailAddress) and one page, so nothing was read.</returns>
+        internal RangeRead TryBeginRangeRead(long logicalAddress, int numBytes)
+        {
+            // One epoch acquisition covers validation, the choice of path, and the submission, as for Read.
+            var scopeAcquiredEpoch = BeginScope();
+            try
+            {
+                if (numBytes <= 0 || logicalAddress < allocator.BeginAddress || logicalAddress + numBytes > TailAddress
+                        || GetPage(logicalAddress) != GetPage(logicalAddress + numBytes - 1))
+                    return null;
+
+                var headAddress = allocator.HeadAddress;
+                if (logicalAddress >= headAddress)
+                {
+                    // An address at or above HeadAddress cannot be evicted while this scope holds the epoch, so the copy is safe.
+                    var copy = allocator.bufferPool.Get(numBytes, clearOnReturn: false);
+                    new ReadOnlySpan<byte>(GetPhysicalAddress(logicalAddress), numBytes).CopyTo(new Span<byte>(copy.aligned_pointer, numBytes));
+                    return new RangeRead(logicalAddress, numBytes, copy, validOffset: 0, context: null);
+                }
+
+                if (logicalAddress + numBytes > headAddress)
+                    numBytes = (int)(headAddress - logicalAddress);
+                var memory = SubmitDeviceRead(logicalAddress, numBytes, out var context, out var validOffset);
+                return new RangeRead(logicalAddress, numBytes, memory, validOffset, context);
+            }
+            finally
+            {
+                EndScope(scopeAcquiredEpoch);
+            }
+        }
+
+        /// <summary>A range of the log read into a buffer the read owns; see <see cref="TryBeginRangeRead"/>.</summary>
+        /// <remarks>Used by one thread at a time.</remarks>
+        internal sealed class RangeRead : IDisposable
+        {
+            /// <summary>The first address read.</summary>
+            internal readonly long StartAddress;
+
+            /// <summary>One past the last address read.</summary>
+            internal readonly long EndAddress;
+
+            readonly SectorAlignedMemory memory;
+            readonly int validOffset;
+
+            /// <summary>The device read, or null when the range was copied from memory.</summary>
+            readonly ReadContext context;
+
+            /// <summary>Whether the device read is known to have covered the range; null until its completion is observed.</summary>
+            bool? succeeded;
+
+            internal RangeRead(long startAddress, int length, SectorAlignedMemory memory, int validOffset, ReadContext context)
+            {
+                StartAddress = startAddress;
+                EndAddress = startAddress + length;
+                this.memory = memory;
+                this.validOffset = validOffset;
+                this.context = context;
+            }
+
+            /// <summary>Copy the bytes at <paramref name="logicalAddress"/>, which must lie within this read, to <paramref name="destination"/>,
+            /// waiting for the device read if it is still in flight.</summary>
+            /// <returns>False if the device read failed or fell short, so the bytes are not available here.</returns>
+            internal bool TryCopyTo(long logicalAddress, Span<byte> destination)
+            {
+                Debug.Assert(logicalAddress >= StartAddress && logicalAddress + destination.Length <= EndAddress, "The bytes must lie within the read");
+                if (context is not null)
+                {
+                    if (succeeded is null)
+                    {
+                        context.Completed.Wait();
+                        succeeded = context.ErrorCode == 0 && context.BytesTransferred >= (uint)(validOffset + EndAddress - StartAddress);
+                    }
+                    if (!succeeded.Value)
+                        return false;
+                }
+                new ReadOnlySpan<byte>(memory.aligned_pointer + validOffset + (logicalAddress - StartAddress), destination.Length).CopyTo(destination);
+                return true;
+            }
+
+            /// <summary>Wait for the device read, if any, and return the buffer.</summary>
+            public void Dispose()
+            {
+                // Never return a buffer a device read may still write into.
+                context?.Completed.Wait();
+                memory.Return();
+                context?.Completed.Dispose();
+            }
         }
         #endregion
 

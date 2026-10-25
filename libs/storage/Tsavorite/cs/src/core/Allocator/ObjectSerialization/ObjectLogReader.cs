@@ -21,8 +21,9 @@ namespace Tsavorite.core
     /// lengths are then exact, so an overflow array is allocated once at its final size and an object's deserializer is bounded by
     /// its own byte count.</para>
     /// <para>Entries sharing an address belong to one chunk: each after the first starts where the previous one ended.</para>
-    /// <para>No epoch is held while deserializing; <see cref="ObjectLog.Read"/> takes its own scope per read. The reader is used by one
-    /// thread at a time.</para>
+    /// <para>No epoch is held while deserializing; <see cref="ObjectLog.Read"/> takes its own scope per read. A walk over a page's records
+    /// may attach an <see cref="ObjectLogReadAhead"/> through <see cref="ReadAhead"/>, which serves the reads it holds from a few large
+    /// windows; the rest go to <see cref="ObjectLog.Read"/>. The reader is used by one thread at a time.</para>
     /// </remarks>
     internal sealed unsafe class ObjectLogReader<TStoreFunctions> : IStreamBuffer
         where TStoreFunctions : IStoreFunctions
@@ -66,6 +67,10 @@ namespace Tsavorite.core
         IObjectSerializer<IHeapObject> valueObjectSerializer;
         PinnedMemoryStream<ObjectLogReader<TStoreFunctions>> pinnedMemoryStream;
         bool disposed;
+
+        /// <summary>Reads ahead through the extents of the page whose records are being read; null to read each extent directly. Set by
+        /// the page walk, which owns it.</summary>
+        internal ObjectLogReadAhead ReadAhead;
 
         /// <summary>Create a reader over <paramref name="log"/>.</summary>
         /// <param name="log">The log to read from.</param>
@@ -140,7 +145,7 @@ namespace Tsavorite.core
                 if (topPayloadLength > 0)
                 {
                     EnsureCapacity(ref topBuffer, topPayloadLength);
-                    log.Read(topAddress, topPayloadLength, topBuffer);
+                    ReadLog(topAddress, topPayloadLength, topBuffer);
                 }
                 return;
             }
@@ -155,7 +160,7 @@ namespace Tsavorite.core
                 ThrowCorrupt($"a length-prefixed extent at {topAddress} has room for only {Math.Min(initialRead, available)} bytes");
             var readLength = (int)Math.Min(initialRead, available);
             EnsureCapacity(ref topBuffer, readLength);
-            log.Read(topAddress, readLength, topBuffer);
+            ReadLog(topAddress, readLength, topBuffer);
 
             var payloadLength = Unsafe.ReadUnaligned<int>(ref topBuffer[0]);
             if (payloadLength <= ObjectLogExtent.ExactCutoff || (long)ObjectLogExtent.LengthPrefixSize + payloadLength > available)
@@ -165,7 +170,7 @@ namespace Tsavorite.core
             if (extentLength > readLength)
             {
                 EnsureCapacity(ref topBuffer, extentLength, preserve: readLength);
-                log.Read(topAddress + readLength, extentLength - readLength, topBuffer.AsSpan(readLength));
+                ReadLog(topAddress + readLength, extentLength - readLength, topBuffer.AsSpan(readLength));
             }
             topPayloadOffset = ObjectLogExtent.LengthPrefixSize;
             topPayloadLength = payloadLength;
@@ -199,7 +204,7 @@ namespace Tsavorite.core
                         ThrowCorrupt($"a spine link to {link.Address} does not point backward from {recordAddress}");
                     ValidateExtent(link.Address, link.Length);
                     EnsureCapacity(ref spineBuffer, link.Length);
-                    log.Read(link.Address, link.Length, spineBuffer);
+                    ReadLog(link.Address, link.Length, spineBuffer);
 
                     DirectoryEntry[] spineEntries;
                     fixed (byte* p = spineBuffer)
@@ -351,7 +356,7 @@ namespace Tsavorite.core
             if (address >= combinedStart && address + destination.Length <= combinedEnd)
                 topBuffer.AsSpan((int)(address - topAddress), destination.Length).CopyTo(destination);
             else
-                log.Read(address, destination.Length, destination);
+                ReadDataEntry(address, destination);
         }
 
         /// <summary>The bytes of entry <paramref name="index"/>, valid until the next call.</summary>
@@ -374,9 +379,24 @@ namespace Tsavorite.core
                 return;
             }
             EnsureCapacity(ref chunkBuffer, length);
-            log.Read(address, length, chunkBuffer);
+            ReadDataEntry(address, chunkBuffer.AsSpan(0, length));
             array = chunkBuffer;
             offset = 0;
+        }
+
+        /// <summary>Read the bytes of a log extent, from the read-ahead when it holds them.</summary>
+        void ReadLog(long address, int length, Span<byte> destination)
+        {
+            if (ReadAhead is null || !ReadAhead.TryRead(address, length, destination.Slice(0, length)))
+                log.Read(address, length, destination);
+        }
+
+        /// <summary>Read a data entry. Data entries are read in ascending address order, after the record's top extent and spine, so nothing
+        /// below this entry is read again.</summary>
+        void ReadDataEntry(long address, Span<byte> destination)
+        {
+            ReadAhead?.Release(address);
+            ReadLog(address, destination.Length, destination);
         }
 
         /// <summary>Deserialize the object value, or return null for an object that serialized to nothing.</summary>
@@ -468,6 +488,9 @@ namespace Tsavorite.core
         /// <summary>Finish the record begun by <see cref="BeginRecord"/>.</summary>
         internal void EndRecord()
         {
+            // A page's later records lie at or above the end of this record's top extent, so the read-ahead can let go of the bytes below it.
+            if (inRecord)
+                ReadAhead?.Release(topAddress + topPayloadOffset + topPayloadLength);
             inRecord = false;
             valueRemaining = 0;
             segmentRemaining = 0;

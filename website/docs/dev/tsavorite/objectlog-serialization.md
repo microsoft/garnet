@@ -39,6 +39,8 @@ Inline values never enter the object log. Migration and replication use an indep
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLog.cs` - the log-structured substrate; see section 12.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogWriter.cs` / `ObjectLogReader.cs` - writing and
 >   reading a record's components; see section 12.10.
+> - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogReadAhead.cs` - reading ahead through a page's
+>   records' extents; see section 12.10.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogExtent.cs` - extent framing and read hints.
 > - `libs/storage/Tsavorite/cs/src/core/Allocator/ObjectSerialization/ObjectLogDirectory.cs` - directory entry, record
 >   header, and layout arithmetic; see section 12.9.
@@ -1389,6 +1391,21 @@ than a chunk is emitted straight from the source. Each emitted chunk is one allo
 record, and every entry is validated before any data is read. Component lengths are then exact: an overflow array is
 allocated once at its final size, and an object's deserializer is bounded by its own byte count. Each entry outside the
 top record is one read.
+
+**Reading a page's records.** A walk over the records of a main-log page read from disk - recovery's object load, a
+scan, and the copy of a Snapshot's objects into the main object log during recovery - reads ahead instead of reading
+each extent on its own. A flush writes a page's records to the object log in address order, so their extents lie
+between the first record's position and the last one's, plus the last one's top extent, and the walk reads them in
+ascending order. Within a record, the top extent comes first, then any spine records below it, then the data entries in
+ascending order, all at or above the end of the previous record's top extent. `ObjectLogReadAhead` reads that range in
+windows of up to 4 MB, never spanning an object-log page, with up to `NumberOfDeserializationBuffers` (4) of them in
+flight or resident. It lets go of a window once the walk has passed it, at each data entry and at the end of each
+record, and starts the next. A window at or above `HeadAddress` is copied from memory; one below it is read from the
+device and stops at `HeadAddress`. The read-ahead only saves IOs: a read it cannot serve - outside the range, below what
+was released, beyond the windows read so far, or in a window whose read failed - goes to `ObjectLog.Read`, so bytes out
+of that order cost reads, never correctness. The first record's data chunks lie below the range and are read directly.
+Disposing the read-ahead waits for its windows' reads before returning their buffers. A page with fewer than two records
+to read gets no read-ahead, and a single-record pending read never does.
 
 ### 12.11 Page flushes, checkpoints, and recovery
 

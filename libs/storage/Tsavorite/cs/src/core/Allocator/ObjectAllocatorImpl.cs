@@ -120,7 +120,8 @@ namespace Tsavorite.core
         readonly int maxInlineKeySize;
         readonly int maxInlineValueSize;
 
-        /// <summary>Read buffers for the downlevel (cv7) object-log reader; current-format reads go through <see cref="ObjectLog"/>.</summary>
+        /// <summary>Windows a page walk reads ahead through: the downlevel (cv7) reader's ring buffers, or the current-format
+        /// <see cref="ObjectLogReadAhead"/>'s windows, each <see cref="IStreamBuffer.BufferSize"/> bytes.</summary>
         readonly int numberOfDeserializationBuffers;
 
         /// <summary>Default number of concurrently issued Snapshot pages; tune it from checkpoint throughput and foreground-latency
@@ -1250,8 +1251,9 @@ namespace Tsavorite.core
             ObjectLogWriter<TStoreFunctions> logWriter = null;
 
             // For a snapshot-region recovery flush, the reader over the snapshot object log from which each record's object bytes are copied into
-            // the main object log through logWriter.
+            // the main object log through logWriter, and its read-ahead over the page's extents there.
             ObjectLogReader<TStoreFunctions> snapshotReader = null;
+            ObjectLogReadAhead snapshotReadAhead = null;
 
             // Do everything below here in the try{} to be sure the epoch is Resumed()d if we Suspended it.
             try
@@ -1367,7 +1369,11 @@ namespace Tsavorite.core
                                     // are not deserialized; the copy re-chunks them for the destination, so the record takes the new position and
                                     // hints, while its inline image keeps its size.
                                     var recordRef = logRecord.GetObjectLogRecordRef();
-                                    snapshotReader ??= new(snapshotSourceLog, storeFunctions);
+                                    if (snapshotReader is null)
+                                    {
+                                        snapshotReader = new(snapshotSourceLog, storeFunctions);
+                                        snapshotReader.ReadAhead = snapshotReadAhead = StartPageReadAhead(snapshotSourceLog, physicalAddress, endPhysicalAddress);
+                                    }
                                     snapshotReader.BeginRecord(in recordRef);
                                     var result = snapshotReader.CopyRecordTo(logWriter);
                                     snapshotReader.EndRecord();
@@ -1474,6 +1480,7 @@ namespace Tsavorite.core
                     epoch.Resume();
                 logWriter?.Dispose();
                 snapshotReader?.Dispose();
+                snapshotReadAhead?.Dispose();
             }
         }
 
@@ -1730,6 +1737,7 @@ namespace Tsavorite.core
             }
 
             ObjectLogReader<TStoreFunctions> reader = null;
+            ObjectLogReadAhead readAhead = null;
             try
             {
                 var recordAddress = pageStartPhysicalAddress + minAddressOffsetOnPage;
@@ -1747,6 +1755,7 @@ namespace Tsavorite.core
                     var allocatedSize = logRecord.AllocatedSize;
                     if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordAddress + allocatedSize > endAddress)
                         break;
+                    var thisRecordAddress = recordAddress;
                     recordAddress += allocatedSize;
 
                     if (!logRecord.DataHeader.RecordHasObjects || !logRecord.Info.Valid)
@@ -1761,7 +1770,12 @@ namespace Tsavorite.core
                         continue;
                     }
 
-                    reader ??= new(GetReadObjectLog(objectLogDevice), storeFunctions);
+                    if (reader is null)
+                    {
+                        var log = GetReadObjectLog(objectLogDevice);
+                        reader = new(log, storeFunctions);
+                        reader.ReadAhead = readAhead = StartPageReadAhead(log, thisRecordAddress, endAddress);
+                    }
                     _ = ReadRecordObjects(reader, ref logRecord, default(EmptyKey));
                     TrackRecoveredObjectRecord(in logRecord);
                 }
@@ -1769,7 +1783,47 @@ namespace Tsavorite.core
             finally
             {
                 reader?.Dispose();
+                readAhead?.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Start reading ahead through the object-log extents of the records in a page buffer, from <paramref name="recordPhysicalAddress"/>
+        /// to <paramref name="endPhysicalAddress"/>, that have objects and a readable position; or return null if fewer than two do, since a
+        /// single record's reads gain nothing from it.
+        /// </summary>
+        /// <remarks>
+        /// A flush writes a page's records to the object log in address order, so their extents lie between the first record's position and
+        /// the last record's, plus the last one's top extent. A record's earlier data chunks precede its top extent, so the first record's are
+        /// below the range and read directly; every other record's lie within it.
+        /// </remarks>
+        private ObjectLogReadAhead StartPageReadAhead(ObjectLog log, long recordPhysicalAddress, long endPhysicalAddress)
+        {
+            long startAddress = -1, endAddress = 0;
+            var recordCount = 0;
+            while (recordPhysicalAddress < endPhysicalAddress)
+            {
+                var logRecord = new LogRecord(recordPhysicalAddress);
+
+                // Must match the walk in DeserializeObjectsOnPage; see the page-extent guard there.
+                var allocatedSize = logRecord.AllocatedSize;
+                if (logRecord.DataHeader.word == 0 || allocatedSize <= 0 || recordPhysicalAddress + allocatedSize > endPhysicalAddress)
+                    break;
+                recordPhysicalAddress += allocatedSize;
+
+                if (!logRecord.DataHeader.RecordHasObjects || !logRecord.Info.Valid || RecordHasNoReadablePosition(in logRecord))
+                    continue;
+
+                var recordRef = logRecord.GetObjectLogRecordRef();
+                if (startAddress < 0)
+                    startAddress = recordRef.Address;
+                endAddress = Math.Max(endAddress, recordRef.Address + recordRef.TopExtentInitialRead);
+                recordCount++;
+            }
+
+            return recordCount < 2 || endAddress <= startAddress
+                ? null
+                : new ObjectLogReadAhead(log, startAddress, endAddress, IStreamBuffer.BufferSize, numberOfDeserializationBuffers);
         }
 
         /// <summary>
@@ -1901,10 +1955,8 @@ namespace Tsavorite.core
             }
 
             var recordRef = logRecord.GetObjectLogRecordRef();
-            position = (long)(recordRef.PositionWord & ObjectLogPositionInfo.AddressMask);
-            return recordRef.KeyIsOverflow
-                ? ObjectLogExtent.KeyInitialRead(recordRef.KeyRdhLengthBits, recordRef.KeySizeHint, (recordRef.PositionWord & ObjectLogPositionInfo.kKeyIsExactSizeMask) != 0)
-                : ObjectLogExtent.ValueInitialRead(recordRef.ValueSizeHint, (recordRef.PositionWord & ObjectLogPositionInfo.kValueIsExactSizeMask) != 0);
+            position = recordRef.Address;
+            return recordRef.TopExtentInitialRead;
         }
 
         /// <inheritdoc/>

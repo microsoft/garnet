@@ -2,8 +2,10 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -17,6 +19,7 @@ namespace Tsavorite.test.Objects
     {
         readonly IDevice underlying;
         int readCount;
+        int readsToFail;
 
         public ReadCountingDevice(IDevice underlying) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
             => this.underlying = underlying;
@@ -25,6 +28,9 @@ namespace Tsavorite.test.Objects
         public int ReadCount => Volatile.Read(ref readCount);
 
         public void ResetReadCount() => Volatile.Write(ref readCount, 0);
+
+        /// <summary>Complete the next <paramref name="count"/> reads with an error, without reading.</summary>
+        public void FailNextReads(int count) => Volatile.Write(ref readsToFail, count);
 
         public override void Initialize(long segmentSize, LightEpoch epoch = null, bool omitSegmentIdFromFilename = false)
         {
@@ -43,6 +49,11 @@ namespace Tsavorite.test.Objects
             DeviceIOCompletionCallback callback, object context)
         {
             _ = Interlocked.Increment(ref readCount);
+            if (Volatile.Read(ref readsToFail) > 0 && Interlocked.Decrement(ref readsToFail) >= 0)
+            {
+                callback(errorCode: 38, numBytes: 0, context, ioException: null);
+                return;
+            }
             underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
         }
 
@@ -411,6 +422,163 @@ namespace Tsavorite.test.Objects
             countingDevice.ResetReadCount();
             Verify(record, "counted");
             return countingDevice.ReadCount;
+        }
+
+        /// <summary>Records written back to back, alternating exact and length-prefixed single extents.</summary>
+        List<TestRecord> WriteSmallRecords(ValueKind valueKind, int count)
+        {
+            var records = new List<TestRecord>(count);
+            for (var ii = 0; ii < count; ++ii)
+            {
+                var record = new TestRecord(0, valueKind, ii % 2 == 0 ? 100 : 700);
+                Write(record);
+                records.Add(record);
+            }
+            return records;
+        }
+
+        /// <summary>A read-ahead over the extents of <paramref name="records"/>, as a page walk starts one.</summary>
+        ObjectLogReadAhead StartReadAhead(List<TestRecord> records, int maxWindows)
+        {
+            var last = records[^1].Ref;
+            return new ObjectLogReadAhead(objectLog, records[0].Result.Address, last.Address + last.TopExtentInitialRead, PageSize, maxWindows);
+        }
+
+        /// <summary>Verify <paramref name="records"/> in order through <paramref name="readAhead"/>, and return the reads that took.</summary>
+        int VerifyThrough(ObjectLogReadAhead readAhead, List<TestRecord> records, string what)
+        {
+            reader.ReadAhead = readAhead;
+            try
+            {
+                foreach (var record in records)
+                    Verify(record, what);
+            }
+            finally
+            {
+                reader.ReadAhead = null;
+            }
+            return countingDevice.ReadCount;
+        }
+
+        /// <summary>A walk over many small records reads them through the read-ahead's windows: a read per log page, rather than one per
+        /// record, with every record intact.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ReadAheadReadsSmallRecordsInAReadPerPage([Values(ValueKind.Overflow, ValueKind.Object)] ValueKind valueKind)
+        {
+            AlignTailToPageStart();
+            var records = WriteSmallRecords(valueKind, 100);
+            AlignTailToPageStart();
+            ReopenFromDevice();
+
+            countingDevice.ResetReadCount();
+            foreach (var record in records)
+                Verify(record, "direct");
+            var directReads = countingDevice.ReadCount;
+            Assert.That(directReads, Is.EqualTo(records.Count), "without the read-ahead, each record is one read");
+
+            var pagesSpanned = objectLog.GetPage(records[^1].Result.Address) - objectLog.GetPage(records[0].Result.Address) + 1;
+            countingDevice.ResetReadCount();
+            using var readAhead = StartReadAhead(records, maxWindows: 2);
+            var readAheadReads = VerifyThrough(readAhead, records, "read-ahead");
+            Assert.That(readAheadReads, Is.EqualTo(pagesSpanned), "the read-ahead reads each log page the records span once");
+            Assert.That(readAhead.WindowCount, Is.LessThanOrEqualTo(2), "the read-ahead keeps no more windows than it may");
+        }
+
+        /// <summary>Records with directories and chunks on several pages read correctly through the read-ahead, which serves their chunks from
+        /// its windows; the first record's chunks, below the range, are read directly.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ReadAheadServesDirectoryRecordsAndReadsTheRestDirectly()
+        {
+            AlignTailToPageStart();
+            var records = new List<TestRecord>();
+            foreach (var (keyLength, valueKind, valueLength) in new[] { (3000, ValueKind.Object, 9000), (0, ValueKind.Overflow, 300), (200, ValueKind.Object, 200),
+                (0, ValueKind.Overflow, 2500), (1000, ValueKind.Overflow, 5000), (0, ValueKind.Object, 900) })
+            {
+                var record = new TestRecord(keyLength, valueKind, valueLength);
+                Write(record);
+                records.Add(record);
+            }
+            AlignTailToPageStart();
+            ReopenFromDevice();
+
+            countingDevice.ResetReadCount();
+            foreach (var record in records)
+                Verify(record, "direct");
+            var directReads = countingDevice.ReadCount;
+
+            countingDevice.ResetReadCount();
+            using var readAhead = StartReadAhead(records, maxWindows: 2);
+            var readAheadReads = VerifyThrough(readAhead, records, "read-ahead");
+            Assert.That(readAheadReads, Is.LessThan(directReads), "the read-ahead serves chunks that would each be a read");
+        }
+
+        /// <summary>Bytes still in the log's memory are copied into the windows, with no device read.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void ReadAheadCopiesResidentBytesWithoutReading([Values(ValueKind.Overflow, ValueKind.Object)] ValueKind valueKind)
+        {
+            var records = WriteSmallRecords(valueKind, 10);
+            Assert.That(records[0].Result.Address, Is.GreaterThanOrEqualTo(objectLog.HeadAddress), "the records must still be in memory");
+
+            countingDevice.ResetReadCount();
+            using var readAhead = StartReadAhead(records, maxWindows: 2);
+            Assert.That(VerifyThrough(readAhead, records, "resident"), Is.Zero, "resident bytes need no device read");
+        }
+
+        /// <summary>A window whose read fails costs reads, not correctness: the bytes it would have served are read directly.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void AFailedWindowReadFallsBackToDirectReads()
+        {
+            AlignTailToPageStart();
+            var records = WriteSmallRecords(ValueKind.Object, 40);
+            AlignTailToPageStart();
+            ReopenFromDevice();
+
+            // The read-ahead issues its first windows' reads when it starts, so these are the ones that fail.
+            const int MaxWindows = 2;
+            countingDevice.ResetReadCount();
+            countingDevice.FailNextReads(MaxWindows);
+            using var readAhead = StartReadAhead(records, MaxWindows);
+            _ = VerifyThrough(readAhead, records, "after failed windows");
+        }
+
+        /// <summary>Disposing a read-ahead waits for its windows' reads, so their buffers never return to the pool while a device may still
+        /// write into them.</summary>
+        [Test, Category(ObjectLogCategory)]
+        public void DisposingAReadAheadWaitsForItsReads()
+        {
+            AlignTailToPageStart();
+            var records = WriteSmallRecords(ValueKind.Overflow, 40);
+            AlignTailToPageStart();
+            var tail = objectLog.FlushTail(wait: true);
+            CloseLog();
+
+            using var fileDevice = Devices.CreateLogDevice(Path.Join(MethodTestDir, "chunks.obj.log"), deleteOnClose: false);
+            var gatedDevice = new GatedCompletionDevice(fileDevice);
+            using var gatedLog = new ObjectLog(new ObjectLogSettings { LogDevice = gatedDevice, PageSizeBits = PageSizeBits, PageCount = 8, SegmentSizeBits = 16 });
+            gatedLog.RestoreTail(LogAddress.FirstValidAddress, tail);
+
+            gatedDevice.Gate = true;
+            var last = records[^1].Ref;
+            var readAhead = new ObjectLogReadAhead(gatedLog, records[0].Result.Address, last.Address + last.TopExtentInitialRead, PageSize, maxWindows: 2);
+            var released = 0;
+            try
+            {
+                gatedDevice.WaitForPending(2, TimeSpan.FromSeconds(30));
+                var dispose = Task.Run(readAhead.Dispose);
+                Assert.That(dispose.Wait(TimeSpan.FromMilliseconds(500)), Is.False, "Dispose returned while its windows' reads were in flight");
+
+                gatedDevice.Gate = false;
+                for (; released < gatedDevice.CapturedCount; released++)
+                    gatedDevice.Release(released);
+                Assert.That(dispose.Wait(TimeSpan.FromSeconds(30)), Is.True, "Dispose did not return once its windows' reads completed");
+            }
+            finally
+            {
+                gatedDevice.Gate = false;
+                for (; released < gatedDevice.CapturedCount; released++)
+                    gatedDevice.Release(released);
+                readAhead.Dispose();
+            }
         }
 
         /// <summary>Corrupt structure is rejected before any data is read or deserialized.</summary>
