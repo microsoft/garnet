@@ -368,6 +368,11 @@ namespace Tsavorite.test.recovery
             Assert.That(captures, Is.Not.Null, "The Snapshot checkpoint is not capturing");
             Assert.That(captures.TryGet(sourceAddress, out _), Is.EqualTo(expectCapture),
                 expectCapture ? "The RMW did not capture the source's (v) value" : "The RMW captured a source whose image was durable");
+
+            // Releasing a source rewrites its value field as inline. A captured source must keep its object, because the flushes that stamp or
+            // write its record may still walk it; a durable source must be released, as it would be outside a checkpoint.
+            Assert.That(store.hlogBase._wrapper.CreateLogRecord(sourceAddress).DataHeader.ValueIsObject, Is.EqualTo(expectCapture),
+                expectCapture ? "The captured source released its value object" : "The durable source kept its value object");
         }
 
         static void ReadSourceVersion(TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, TestObjectKey key, long sourceAddress, string when)

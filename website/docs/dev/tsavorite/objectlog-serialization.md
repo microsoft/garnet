@@ -656,9 +656,13 @@ can change the objects the new record shares, and leaves the source object `SERI
   restamps the record's position and hints in place on the main-log device. The copies are durable before any record is
   restamped, and recovering again repeats them.
 
-A durable source is not captured, because ReadOnly serialized its `(v)` value before the CopyUpdate could change it. It
-keeps its value object until eviction rather than releasing it, so a Snapshot flush that walks it still finds its
-components. FoldOver and streaming snapshot checkpoints still cache the `(v)` bytes with `CacheSerializedObjectData`.
+A durable source is not captured, because ReadOnly serialized its `(v)` value before the CopyUpdate could change it. It is
+released, as outside a checkpoint, because no flush walks it again: Snapshot starts at `snapshotFileLogicalStartAddress`,
+which is no lower than the `FlushedUntilAddress` of any CopyUpdate before it was sampled, and above it ReadOnly wrote the
+source only after Snapshot completed its page. A captured source keeps its value object, as a source with cached bytes does:
+releasing it rewrites its value field as inline, and Snapshot, which stamps the capture, or ReadOnly, whose image recovery
+repoints, may still walk it. FoldOver and streaming snapshot checkpoints still cache the `(v)` bytes with
+`CacheSerializedObjectData`.
 
 Outside a checkpoint the superseded content is discardable. A CopyUpdate's new record is then in the source's version, so
 it supersedes the source in every later checkpoint, and no completed checkpoint recovers a source at or above

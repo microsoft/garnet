@@ -149,16 +149,20 @@ namespace Tsavorite.core
         /// <para>A durable main-log image holds the <c>(v)</c> value: the ReadOnly flush wrote it before this CopyUpdate could change the
         /// shared object, and recovery reads it there, below the main-log recovery end that PERSISTENCE_CALLBACK samples later. A NullDevice
         /// main log has no durable image, so its sources are always captured.</para>
-        /// <para>A durable source still keeps its value object, because the Checkpoint Flush may yet walk it and requires a Valid record to
-        /// keep its heap; it writes the null image there, which recovery does not read.</para>
+        /// <para>A durable source is released as when no checkpoint needs its image, because no flush walks it again. The Checkpoint Flush
+        /// starts at <c>snapshotFileLogicalStartAddress</c>, which is no lower than the <c>FlushedUntilAddress</c> of any CopyUpdate before it
+        /// was sampled; and above it, the ReadOnly flush that made the source durable waited for the Checkpoint Flush to complete its page.</para>
+        /// <para>A captured source keeps its value object. Releasing it rewrites its value field as inline, and both the Checkpoint Flush,
+        /// which stamps the capture, and the ReadOnly flush, whose image recovery repoints at the capture, may still walk the record.</para>
         /// </remarks>
-        /// <returns>True if the source keeps its value object, captured or not. False if the checkpoint has stopped capturing, having
-        /// completed its Checkpoint Flush; the caller then releases the source as when no checkpoint needs its image.</returns>
+        /// <returns>True if the source was captured, so it keeps its value object. False if it needs no capture, because its image is durable
+        /// or the checkpoint has stopped capturing; the caller then releases it as when no checkpoint needs its image.</returns>
         private bool TryCaptureCopyUpdateSource(SnapshotCaptures captures, HeapObjectBase sourceObject, ref LogRecord sourceRecord, long sourceAddress,
             ref LogRecord newLogRecord)
         {
-            if ((hlogBase.IsNullDevice || sourceAddress >= hlogBase.FlushedUntilAddress)
-                    && !hlogBase.TryCaptureCopyUpdateSource(captures, ref sourceRecord, sourceAddress))
+            if (!hlogBase.IsNullDevice && sourceAddress < hlogBase.FlushedUntilAddress)
+                return false;
+            if (!hlogBase.TryCaptureCopyUpdateSource(captures, ref sourceRecord, sourceAddress))
                 return false;
             sourceObject.CompleteCapture(ref newLogRecord);
             return true;

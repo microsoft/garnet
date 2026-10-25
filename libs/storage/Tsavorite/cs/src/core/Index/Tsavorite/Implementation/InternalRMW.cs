@@ -613,15 +613,15 @@ namespace Tsavorite.core
 
                             // A Snapshot checkpoint captures the (v) value it needs into its object log rather than caching it on the source.
                             // A read-cache source is a copy of a durable main-log record, so no checkpoint needs its image.
-                            var keepsSourceValue = false;
+                            var captured = false;
                             if (needsSourceImage && newLogRecord.Info.IsInNewVersion && srcLogRecord.ValueObject is HeapObjectBase sourceObject
                                 && hlogBase.ActiveSnapshotCaptures is { } snapshotCaptures)
                             {
-                                keepsSourceValue = stackCtx.recSrc.HasMainLogSrc && TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject,
+                                captured = stackCtx.recSrc.HasMainLogSrc && TryCaptureCopyUpdateSource(snapshotCaptures, sourceObject,
                                     ref srcLogRecord.AsMemoryLogRecordRef(), stackCtx.recSrc.LogicalAddress, ref newLogRecord);
                                 needsSourceImage = false;
                             }
-                            if (!keepsSourceValue && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord, needsSourceImage))
+                            if (!captured && srcLogRecord.ValueObject.CacheSerializedObjectData(ref newLogRecord, ref rmwInfo, isMemoryLogRecord, needsSourceImage))
                                 hlogBase.NoteSerializedObjectCache(stackCtx.recSrc.LogicalAddress);
                         }
                         var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);

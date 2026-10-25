@@ -131,9 +131,9 @@ namespace Tsavorite.core
             // No (v) image is at stake. Outside a checkpoint the new record is in the source's version, so it supersedes the source in
             // every later checkpoint, and no completed checkpoint recovers a source that a flush is still writing: a flush that has not
             // serialized the source writes a null value for it. Within a checkpoint, either the checkpoint does not capture this source (it
-            // was written after the transaction start), or a Snapshot checkpoint finds its (v) value elsewhere: the source is a read-cache
-            // copy of a durable main-log record, or the checkpoint has sampled the end of its main-log range. Release the old version rather
-            // than serializing it; the new version already exists.
+            // was written after the transaction start), or a Snapshot checkpoint finds its (v) value elsewhere: its main-log image is durable,
+            // the source is a read-cache copy of a durable main-log record, or the checkpoint has sampled the end of its main-log range. Release
+            // the old version rather than serializing it; the new version already exists.
             if (!dstLogRecord.Info.IsInNewVersion || !checkpointNeedsSourceImage)
             {
                 MarkSuperseded();
