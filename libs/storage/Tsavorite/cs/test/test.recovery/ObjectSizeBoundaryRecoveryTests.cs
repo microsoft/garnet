@@ -365,10 +365,13 @@ namespace Tsavorite.test.recovery
         // ----- Overflow KEY recovery: the checkpoint/recover counterpart of ObjectSizeBoundaryDiskIOTests.ReadOverflowKeyFromDiskAcrossSizeBoundaries. -----
 
         const int OverflowKeyInlineCutoff = 16;                 // keys longer than this go out of line
-        const int OverflowKeyCompanionValueSize = 50;           // small headerless overflow value paired with each overflow key
+        const int OverflowKeyCompanionValueSize = 50;           // small value paired with each overflow key
 
-        // Overflow-key store: SpanByte keys forced out of line (MaxInlineKeySize small), paired with a small overflow value.
-        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize)
+        // Overflow-key store: SpanByte keys forced out of line (MaxInlineKeySize small). With an overflow value the record has a
+        // directory, whose top record the key slot's hint sizes; with an inline value the key is the record's only extent, so the key
+        // slot's hint is the key's own size, including the page-count seam.
+        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyStore(IDevice log, IDevice objlog, string checkpointDir, long memorySize,
+                bool inlineValue)
             => new(new()
             {
                 IndexSize = 1L << 20,
@@ -380,7 +383,7 @@ namespace Tsavorite.test.recovery
                 SegmentSize = 1L << 20,
                 ObjectLogSegmentSize = NoSplitObjectLogSegmentSize,
                 MaxInlineKeySize = OverflowKeyInlineCutoff,
-                MaxInlineValueSize = 0,
+                MaxInlineValueSize = inlineValue ? 1 << 10 : 0,
                 CheckpointDir = checkpointDir,
             }, StoreFunctions.Create(new SpanByteComparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
@@ -398,7 +401,7 @@ namespace Tsavorite.test.recovery
         // Write numRecords overflow-key records, checkpoint, recover into a fresh store, and read every record back by its overflow key.
         // A mis-decoded key length/position after recovery fails the on-disk key comparison and the lookup would not find the record.
         // When recoveryTargetSize > 0, the recovery store is put under LogSizeTracker memory pressure (small-memory recovery).
-        async Task RunOverflowKeyRecovery(CheckpointType checkpointType, int keySize, int numRecords, long recoveryTargetSize = 0)
+        async Task RunOverflowKeyRecovery(CheckpointType checkpointType, int keySize, int numRecords, bool inlineValue, long recoveryTargetSize = 0)
         {
             var checkpointDir = Path.Combine(MethodTestDir, "checkpoints");
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "ovfkey.log"), deleteOnClose: false);
@@ -406,7 +409,7 @@ namespace Tsavorite.test.recovery
             try
             {
                 Guid token;
-                using (var store1 = CreateOverflowKeyStore(log, objlog, checkpointDir, 1L << 20))
+                using (var store1 = CreateOverflowKeyStore(log, objlog, checkpointDir, 1L << 20, inlineValue))
                 {
                     using (var session = store1.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions()))
                     {
@@ -419,7 +422,7 @@ namespace Tsavorite.test.recovery
                     token = checkpointToken;
                 }
 
-                using (var store2 = CreateOverflowKeyStore(log, objlog, checkpointDir, 1L << 20))
+                using (var store2 = CreateOverflowKeyStore(log, objlog, checkpointDir, 1L << 20, inlineValue))
                 {
                     if (recoveryTargetSize > 0)
                     {
@@ -431,7 +434,11 @@ namespace Tsavorite.test.recovery
                     var bContext = session.BasicContext;
                     for (var rec = 0; rec < numRecords; rec++)
                     {
-                        TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = OverflowKeyCompanionValueSize };
+                        TestLargeObjectInput input = new()
+                        {
+                            wantValueStyle = inlineValue ? TestValueStyle.Inline : TestValueStyle.Overflow,
+                            expectedSpanLength = OverflowKeyCompanionValueSize
+                        };
                         TestLargeObjectOutput output = new();
                         var status = bContext.Read(TestSpanByteKey.FromArray(MakeKey(rec, keySize)), ref input, ref output, Empty.Default);
                         if (status.IsPending)
@@ -460,7 +467,8 @@ namespace Tsavorite.test.recovery
         // where the objectId hint stops being an exact byte count and becomes a 4 KB page count. The second seam is page count 512, the
         // first count too large for the 9-bit objectId hint, whose high bits then move into the raw RDH KeyLength field. A key's extent
         // adds exactly the 4-byte length prefix, so 510 and 511 pages' worth give extents of exactly that many pages, and 2 MB is above
-        // the seam. ObjectIdSlotAndPositionFlagsTests pins the exact transition at the encoder.
+        // the seam. ObjectIdSlotAndPositionFlagsTests pins the exact transition at the encoder. Only with an inline value is the key the
+        // record's only extent, so that its hint is the key's own size.
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public Task RecoverOverflowKey(
@@ -469,7 +477,8 @@ namespace Tsavorite.test.recovery
                     (510 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
                     (511 * RecordDataHeader.kFlushPageSize) - ObjectLogExtent.LengthPrefixSize,
                     2 * 1024 * 1024,
-                    5 * 1024 * 1024)] int keySize)
-            => RunOverflowKeyRecovery(checkpointType, keySize, numRecords: RecordCountForSize(keySize));
+                    5 * 1024 * 1024)] int keySize,
+            [Values] bool inlineValue)
+            => RunOverflowKeyRecovery(checkpointType, keySize, numRecords: RecordCountForSize(keySize), inlineValue);
     }
 }

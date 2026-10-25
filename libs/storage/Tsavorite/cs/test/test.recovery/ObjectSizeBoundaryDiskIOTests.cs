@@ -236,9 +236,11 @@ namespace Tsavorite.test.recovery
         ];
 
         const int OverflowKeyInlineCutoff = 16;                 // keys longer than this go out of line
-        const int OverflowKeyCompanionValueSize = 50;           // small headerless overflow value paired with each overflow key
+        const int OverflowKeyCompanionValueSize = 50;           // small value paired with each overflow key
 
-        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyStore(IDevice log, IDevice objlog, long objectLogSegmentSize)
+        // With an overflow value the record has a directory, whose top record the key slot's hint sizes; with an inline value the key
+        // is the record's only extent, so the key slot's hint is the key's own size, including the page-count seam.
+        static TsavoriteKV<SbKeyStoreFunctions, SbKeyAllocator> CreateOverflowKeyStore(IDevice log, IDevice objlog, long objectLogSegmentSize, bool inlineValue)
             => new(new()
             {
                 IndexSize = 1L << 20,
@@ -250,7 +252,7 @@ namespace Tsavorite.test.recovery
                 SegmentSize = 1L << 20,
                 ObjectLogSegmentSize = objectLogSegmentSize,
                 MaxInlineKeySize = OverflowKeyInlineCutoff,     // force keys out of line
-                MaxInlineValueSize = 0,                         // pair with an overflow (raw byte[]) value
+                MaxInlineValueSize = inlineValue ? 1 << 10 : 0, // keep the value inline, or force it out of line as a raw byte[]
             }, StoreFunctions.Create(new SpanByteComparer(), () => new TestObjectValue.Serializer(), DefaultRecordTriggers.Instance),
                (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
@@ -266,27 +268,31 @@ namespace Tsavorite.test.recovery
 
         [Test]
         [Category("TsavoriteKV"), Category("ObjectIdMap")]
-        public void ReadOverflowKeyFromDiskAcrossSizeBoundaries([ValueSource(nameof(KeyBoundarySizes))] int keySize)
+        public void ReadOverflowKeyFromDiskAcrossSizeBoundaries([ValueSource(nameof(KeyBoundarySizes))] int keySize, [Values] bool inlineValue)
         {
             var numRecords = RecordCountForSize(keySize);
             IDevice log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "ovfkey.log"), deleteOnClose: false);
             IDevice objlog = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "ovfkey.obj.log"), deleteOnClose: false);
             try
             {
-                using var store = CreateOverflowKeyStore(log, objlog, NoSplitObjectLogSegmentSize);
+                using var store = CreateOverflowKeyStore(log, objlog, NoSplitObjectLogSegmentSize, inlineValue);
                 using var session = store.NewSession<TestSpanByteKey, TestLargeObjectInput, TestLargeObjectOutput, Empty, TestLargeObjectFunctions>(new TestLargeObjectFunctions());
                 var bContext = session.BasicContext;
 
                 for (var rec = 0; rec < numRecords; rec++)
                     _ = bContext.Upsert(TestSpanByteKey.FromArray(MakeKey(rec, keySize)), MakePayload(rec, OverflowKeyCompanionValueSize).AsSpan(), Empty.Default);
 
-                // Evict so both the overflow key and its value must fault back from the object log; a mis-decoded key length/position
-                // would fail the on-disk key comparison and the lookup would not find the record.
+                // Evict so the overflow key, and the value if it is out of line, must fault back from the object log; a mis-decoded key
+                // length/position would fail the on-disk key comparison and the lookup would not find the record.
                 store.Log.FlushAndEvict(wait: true);
 
                 for (var rec = 0; rec < numRecords; rec++)
                 {
-                    TestLargeObjectInput input = new() { wantValueStyle = TestValueStyle.Overflow, expectedSpanLength = OverflowKeyCompanionValueSize };
+                    TestLargeObjectInput input = new()
+                    {
+                        wantValueStyle = inlineValue ? TestValueStyle.Inline : TestValueStyle.Overflow,
+                        expectedSpanLength = OverflowKeyCompanionValueSize
+                    };
                     TestLargeObjectOutput output = new();
                     var status = bContext.Read(TestSpanByteKey.FromArray(MakeKey(rec, keySize)), ref input, ref output, Empty.Default);
                     ClassicAssert.IsTrue(status.IsPending, $"record {rec} (keySize {keySize}) expected to fault from disk");
