@@ -123,6 +123,13 @@ namespace Garnet.test
                 return;
             }
 
+            if (kind == "ttlhash")
+            {
+                WriteRecord(db, "hash", key);
+                ClassicAssert.AreEqual(1, (int)db.Execute("EXPIRE", key, "3600"));
+                return;
+            }
+
             var reply = kind switch
             {
                 "text" => db.Execute("SET", key, "garnet-string-value"),
@@ -241,6 +248,20 @@ namespace Garnet.test
                 ("hash", ["DELIFGREATER", "5"]),
                 ("hash", ["HSET", "g", "w"]),
                 ("hash", ["EXPIRE", "100"]),
+                ("hash", ["EXPIRE", "100", "NX"]),
+                ("hash", ["EXPIRE", "100", "XX"]),
+                ("hash", ["PERSIST"]),
+
+                ("ttlhash", ["HSET", "g", "w"]),
+                ("ttlhash", ["HDEL", "f"]),
+                ("ttlhash", ["LPUSH", "x"]),
+                ("ttlhash", ["SET", "x", "NX"]),
+                ("ttlhash", ["PERSIST"]),
+                ("ttlhash", ["EXPIRE", "100"]),
+                ("ttlhash", ["EXPIRE", "100", "NX"]),
+                ("ttlhash", ["EXPIRE", "100", "XX"]),
+                ("ttlhash", ["EXPIRE", "100", "GT"]),
+                ("ttlhash", ["EXPIRE", "100", "LT"]),
 
                 ("gone", ["GETEX"]),
                 ("gone", ["GETDEL"]),
