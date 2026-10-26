@@ -202,6 +202,11 @@ namespace Garnet.server
         /// FINISH failed terminally; the set must be deleted before importing again.
         /// </summary>
         ImportFailed = 1 << 3,
+
+        /// <summary>
+        /// Covers all legal flag options
+        /// </summary>
+        All = SuppressCleanup | ImportPending | ImportCompleted | ImportFailed,
     }
 
     /// <summary>

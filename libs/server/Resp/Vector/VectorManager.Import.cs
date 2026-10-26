@@ -127,7 +127,7 @@ namespace Garnet.server
 #endif
 
             while (
-                !quantizationOrImportChannel.Reader.Completion.IsCompleted &&
+                !quantizationOrImportChannel.IsCompleted &&
 #if NET9_0_OR_GREATER
                 activeImportFinalizationsLookup.ContainsKey(key)
 #else
@@ -179,7 +179,7 @@ namespace Garnet.server
             // Queue up finalization tasks
             for (var taskIx = 0; taskIx < quantizationAndImportTasks.Length; taskIx++)
             {
-                if (!quantizationOrImportChannel.Writer.TryWrite(new(keyCopy, QuantizationOrImportStep.FinalizeImport, taskIx, countdown)))
+                if (!quantizationOrImportChannel.TryPublish(new(keyCopy, QuantizationOrImportStep.FinalizeImport, taskIx, 0, 0, countdown)))
                 {
                     _ = activeImportFinalizations.TryRemove(keyCopy, out _);
 

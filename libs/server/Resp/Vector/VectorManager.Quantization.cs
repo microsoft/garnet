@@ -4,7 +4,6 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -35,6 +34,11 @@ namespace Garnet.server
             /// Import has finished, run finalized steps.
             /// </summary>
             FinalizeImport,
+
+            /// <summary>
+            /// Vector Set deleted during import
+            /// </summary>
+            DeleteDuringImport,
         }
 
         /// <summary>
@@ -51,9 +55,9 @@ namespace Garnet.server
             => Interlocked.Decrement(ref count) == 0;
         }
 
-        private readonly record struct QuantizationOrImportState(ReadOnlyMemory<byte> Key, QuantizationOrImportStep Step, int StepIndex, CountdownHolder Countdown);
+        private readonly record struct QuantizationOrImportState(ReadOnlyMemory<byte> Key, QuantizationOrImportStep Step, int StepIndex, ulong Context, nint IndexPointer, CountdownHolder Countdown);
 
-        private readonly Channel<QuantizationOrImportState> quantizationOrImportChannel;
+        private readonly VectorSetCleanupWorkChannel<QuantizationOrImportState> quantizationOrImportChannel;
 
         /// <summary>
         /// Worker tasks that drain <see cref="quantizationOrImportChannel"/>. They run on the .NET thread pool, but a
@@ -86,7 +90,7 @@ namespace Garnet.server
 
         private void EnqueueQuantization(QuantizationOrImportState state)
         {
-            if (!quantizationOrImportChannel.Writer.TryWrite(state))
+            if (!quantizationOrImportChannel.TryPublish(state))
             {
                 logger?.LogCritical("VectorManager quantization channel rejected a request");
                 Debug.Assert(false, "VectorManager quantization channel should never drop a request");
@@ -100,15 +104,15 @@ namespace Garnet.server
         {
             for (var i = 0; i < quantizationAndImportTasks.Length; i++)
             {
-                quantizationAndImportTasks[i] = QuantizationTaskAsync(this, quantizationOrImportChannel.Reader, quantizationOrImportChannel.Writer);
+                quantizationAndImportTasks[i] = QuantizationTaskAsync(this, quantizationOrImportChannel);
             }
 
-            static async Task QuantizationTaskAsync(VectorManager self, ChannelReader<QuantizationOrImportState> reader, ChannelWriter<QuantizationOrImportState> writer)
+            static async Task QuantizationTaskAsync(VectorManager self, VectorSetCleanupWorkChannel<QuantizationOrImportState> channel)
             {
                 // Force async
                 await Task.Yield();
 
-                while (await reader.WaitToReadAsync().ConfigureAwait(false))
+                while (await channel.WaitToReadAsync().ConfigureAwait(false))
                 {
                     using var session = (RespServerSession)self.getTempSession();
                     if (session.activeDbId != self.dbId && !session.TrySwitchActiveDatabaseSession(self.dbId))
@@ -120,7 +124,7 @@ namespace Garnet.server
                     // (not a Span) because it must survive the awaits in the cooperative retry loop below.
                     var indexArray = GC.AllocateArray<byte>(IndexSizeBytes, pinned: true);
 
-                    while (reader.TryRead(out var state))
+                    while (channel.TryRead(out var state))
                     {
                         // Cooperative acquisition. TryProcessQuantizationRequest returns false only when the vector
                         // set lock is currently held by another thread - typically a network VADD that is recreating
@@ -128,7 +132,7 @@ namespace Garnet.server
                         // Instead of spin-waiting on a pool thread (which would consume the pool and starve the
                         // disk-IO completion that releases the lock, deadlocking concurrent VADD), yield the pool
                         // thread and retry so a completion can always be scheduled.
-                        for (var attempt = 0; !TryProcessQuantizationOrImportRequest(self, session, writer, state, indexArray); attempt++)
+                        for (var attempt = 0; !TryProcessQuantizationOrImportRequest(self, session, state, indexArray); attempt++)
                         {
                             if (attempt < 16)
                             {
@@ -137,7 +141,7 @@ namespace Garnet.server
                             else
                             {
                                 // If we're going to delay _but_ are being shutdown, bail on this request
-                                if (reader.Completion.IsCompleted)
+                                if (channel.IsCompleted)
                                 {
                                     break;
                                 }
@@ -153,7 +157,7 @@ namespace Garnet.server
             // handled (or is terminal, e.g. the index was dropped), and false when the set lock was contended and
             // the caller should yield its pool thread and retry. All ref struct / Span / native interop stays inside
             // this synchronous method so it never straddles an await.
-            static bool TryProcessQuantizationOrImportRequest(VectorManager self, RespServerSession session, ChannelWriter<QuantizationOrImportState> writer, QuantizationOrImportState state, byte[] indexArray)
+            static bool TryProcessQuantizationOrImportRequest(VectorManager self, RespServerSession session, QuantizationOrImportState state, byte[] indexArray)
             {
                 try
                 {
@@ -163,9 +167,44 @@ namespace Garnet.server
                         {
                             var keySpan = SpanByte.FromPinnedPointer(keyPtr, state.Key.Length);
 
-                            // Dummy command, we just need something Vector Set-y
+                            // An importing index needs exclusion locking to be dropped
+                            if (state.Step == QuantizationOrImportStep.DeleteDuringImport)
+                            {
+                                // Key will be deleted, so none of the normal reads or locks are usable
+
+                                var keyHash = session.storageSession.stringBasicContext.GetKeyHash((FixedSpanByteKey)keySpan);
+
+                                // Don't block on contention
+                                if (!self.vectorSetLocks.TryAcquireExclusiveLock(keyHash, out var lockToken))
+                                {
+                                    return false;
+                                }
+
+                                // Now we know no quantization tasks are in progress
+                                try
+                                {
+                                    if (state.IndexPointer != 0)
+                                    {
+                                        self.Service.DropIndex(state.Context, state.IndexPointer);
+                                    }
+
+                                    // Now that we've dropped the index, request cleanup
+                                    if (!self.requestCleanupTaskChannel.TryPublish(state.Context))
+                                    {
+                                        self.logger?.LogCritical("VectorManager request cleanup channel rejected a delete request for an importing Vector Set");
+                                    }
+                                }
+                                finally
+                                {
+                                    self.vectorSetLocks.ReleaseLock(lockToken);
+                                }
+
+                                return true;
+                            }
+
+                            // Command which will always acquire a lock (for importing indexes that means VINFO)
                             StringInput input = default;
-                            input.header.cmd = RespCommand.VSIM;
+                            input.header.cmd = RespCommand.VINFO;
 
                             Span<byte> indexSpan = indexArray;
 
@@ -195,7 +234,7 @@ namespace Garnet.server
                                             // Schedule backfill after quantization table is available
                                             for (var i = 0; i < self.quantizationAndImportTaskCount; i++)
                                             {
-                                                self.EnqueueQuantization(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, i, null));
+                                                self.EnqueueQuantization(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, i, 0, 0, null));
                                             }
                                         }
 
@@ -207,7 +246,7 @@ namespace Garnet.server
                                             self.logger?.LogError("Quantization backfill {step}/{total} failed for context {context}", state.StepIndex, self.quantizationAndImportTasks.Length, context);
 
                                             // Post a retry back on the channel
-                                            self.EnqueueQuantization(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, state.StepIndex, null));
+                                            self.EnqueueQuantization(new(state.Key, QuantizationOrImportStep.BackfillQuantizedVectors, state.StepIndex, 0, 0, null));
                                             break;
                                         }
 
