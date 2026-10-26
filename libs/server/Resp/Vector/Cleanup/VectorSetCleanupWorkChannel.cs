@@ -14,9 +14,9 @@ namespace Garnet.server
     {
         private readonly Channel<T> channel;
 
-        public VectorSetCleanupWorkChannel()
+        private VectorSetCleanupWorkChannel(Channel<T> channel)
         {
-            channel = Channel.CreateUnbounded<T>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
+            this.channel = channel;
         }
 
         /// <summary>
@@ -35,6 +35,13 @@ namespace Garnet.server
         public bool HasPending => channel.Reader.TryPeek(out _);
 
         /// <summary>
+        /// Whether any subsequent publishes may succeed.
+        /// 
+        /// Equivalent to checking <see cref="ChannelReader{T}.Completion"/> for completion.
+        /// </summary>
+        public bool IsCompleted => channel.Reader.Completion.IsCompleted;
+
+        /// <summary>
         /// Take the next item, if any.
         /// </summary>
         public bool TryRead(out T item) => channel.Reader.TryRead(out item);
@@ -48,6 +55,18 @@ namespace Garnet.server
             AsyncUtils.BlockingWait(channel.Reader.Completion);
             AsyncUtils.BlockingWait(consumerTask);
         }
+
+        /// <summary>
+        /// Create a new <see cref="VectorSetCleanupWorkChannel{T}"/> which assumes a single reader, but allows multiple writers.
+        /// </summary>
+        public static VectorSetCleanupWorkChannel<T> CreateSingleReaderMultiWriter()
+        => new(Channel.CreateUnbounded<T>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false }));
+
+        /// <summary>
+        /// Create a new <see cref="VectorSetCleanupWorkChannel{T}"/> which allows multiple readers and writers.
+        /// </summary>
+        public static VectorSetCleanupWorkChannel<T> CreateMultiReaderMultiWriter()
+        => new(Channel.CreateUnbounded<T>(new() { SingleWriter = false, SingleReader = false, AllowSynchronousContinuations = false }));
     }
 
     internal static class VectorSetCleanupWorkChannelExtensions

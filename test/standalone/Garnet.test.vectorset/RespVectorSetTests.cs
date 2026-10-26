@@ -425,6 +425,29 @@ namespace Garnet.test
         }
 
         [Test]
+        public async Task XVIMPORTIdValueValidationAsync()
+        {
+            await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig()).ConfigureAwait(false);
+            var db = redis.GetDatabase();
+
+            // All of these terms are internally stored under a 4-byte key
+            var exc0 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", ["foo", "VECTOR", "", "abcdf"]));
+            ClassicAssert.AreEqual("ERR imported id for this term must be 4-bytes", exc0.Message);
+            var exc1 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", ["foo", "NEIGHBORS", "", "abcdf"]));
+            ClassicAssert.AreEqual("ERR imported id for this term must be 4-bytes", exc1.Message);
+            var exc2 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", ["foo", "QUANT", "", "abcdf"]));
+            ClassicAssert.AreEqual("ERR imported id for this term must be 4-bytes", exc2.Message);
+            var exc3 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", ["foo", "ATTRS", "", "abcdf"]));
+            ClassicAssert.AreEqual("ERR imported id for this term must be 4-bytes", exc3.Message);
+            var exc4 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", ["foo", "EXTMAP", "", "abcdf"]));
+            ClassicAssert.AreEqual("ERR imported id for this term must be 4-bytes", exc4.Message);
+
+            // INTMAP stores, under an arbitrary length key, a 4-byte value
+            var exc5 = ClassicAssert.ThrowsAsync<RedisServerException>(() => db.ExecuteAsync("XVIMPORT", ["foo", "INTMAP", "asdfasfdasfd", ""]));
+            ClassicAssert.AreEqual("ERR imported INTMAP value must 4-bytes", exc5.Message);
+        }
+
+        [Test]
         public async Task XVIMPORTFinishParsingAsync()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -1365,6 +1388,30 @@ namespace Garnet.test
                     };
 
                 ClassicAssert.AreEqual(expected, float.Parse(res7[i]));
+            }
+        }
+
+        [Test, CancelAfter(10_000)]
+        public async Task VSIMDoesNotRequireExclusiveIndexLockAsync(CancellationToken cancellationToken)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            ClassicAssert.AreEqual(1, (int)db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "NOQUANT"]));
+
+            // Holding a shared lock on the Vector Set stands in for a concurrent reader; another reader must not wait for it.
+            var vectorManager = server.Provider.StoreWrapper.DefaultDatabase.VectorManager;
+            var locks = (ReadOptimizedLock)typeof(VectorManager).GetField("vectorSetLocks", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(vectorManager);
+            var keyHash = server.Provider.StoreWrapper.DefaultDatabase.Store.GetKeyHash((FixedSpanByteKey)"foo"u8);
+            locks.AcquireSharedLock(keyHash, out var sharedLock);
+            try
+            {
+                var search = (byte[][])await db.ExecuteAsync("VSIM", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", "COUNT", "1"]).WaitAsync(cancellationToken);
+                ClassicAssert.AreEqual(1, search.Length);
+            }
+            finally
+            {
+                locks.ReleaseLock(sharedLock);
             }
         }
 
