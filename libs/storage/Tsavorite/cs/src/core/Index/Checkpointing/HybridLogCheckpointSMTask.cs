@@ -103,6 +103,8 @@ namespace Tsavorite.core
         /// log is recorded the same way; its Checkpoint Flush is complete here, so its durable end is its tail.</remarks>
         protected void ObjectLog_OnPersistenceCallback()
         {
+            Debug.Assert(store._hybridLogCheckpoint.info.useSnapshotFile == 0 || store._hybridLogCheckpoint.info.mainLogRecoveryEndAddress != 0,
+                "A Snapshot checkpoint must sample the main log's recovery end before the object logs' durable ends");
             store._hybridLogCheckpoint.info.hlogEndObjectLogTail = store.hlogBase.ObjectLogFlushedUntilAddress;
 
             if (store._hybridLogCheckpoint.snapshotObjectLog is not null)
